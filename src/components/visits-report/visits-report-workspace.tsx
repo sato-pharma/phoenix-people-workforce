@@ -2,12 +2,35 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2, RefreshCcw, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
-import type { VisitsReportData } from "@/lib/visits-report/types";
+import type {
+  UnmappedCrmIdentityRow,
+  UnmappedCrmResolutionAction,
+  VisitsMappingStatus,
+  VisitsReportData,
+  VisitsReportRow,
+} from "@/lib/visits-report/types";
+
+const RESOLUTION_OPTIONS: Array<{ label: string; value: UnmappedCrmResolutionAction }> = [
+  { label: "Keep Pending", value: "pending" },
+  { label: "Mark Resigned", value: "resigned" },
+  { label: "Map to HR ID…", value: "mapped" },
+];
+
+const ALL = "";
+
+const MAPPING_STATUS_OPTIONS: Array<{ label: string; value: VisitsMappingStatus | "" }> = [
+  { label: "All mapping statuses", value: ALL },
+  { label: "Agent unmapped", value: "agent_unmapped" },
+  { label: "Double visitor unmapped", value: "double_unmapped" },
+  { label: "Either unmapped", value: "either_unmapped" },
+  { label: "Fully mapped", value: "fully_mapped" },
+];
 
 function formatDateTime(value: string | null) {
   if (!value) return "—";
@@ -16,6 +39,41 @@ function formatDateTime(value: string | null) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatTime(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+const exportColumns: ExportColumn[] = [
+  { key: "date", label: "Date" },
+  { key: "agent", label: "Agent" },
+  { key: "agentHrId", label: "Agent HR ID" },
+  { key: "double", label: "Double Visitor" },
+  { key: "doubleHrId", label: "Double HR ID" },
+  { key: "contact", label: "Contact" },
+  { key: "type", label: "Visit Type" },
+  { key: "ampm", label: "AM/PM" },
+  { key: "checkinTime", label: "Nearest Check-in Time" },
+  { key: "checkinAddress", label: "Nearest Check-in Location" },
+  { key: "comment", label: "Comment" },
+];
+
+function toExportRow(row: VisitsReportRow): ExportRow {
+  return {
+    date: row.visitDate,
+    agent: row.agentName ?? "—",
+    agentHrId: row.agentHrId ?? "unmapped",
+    double: row.doubleName ?? "—",
+    doubleHrId: row.doubleName ? (row.doubleHrId ?? "unmapped") : "—",
+    contact: row.contactName ?? row.customerName ?? "—",
+    type: row.visitTypeDescription ?? String(row.visitType ?? "—"),
+    ampm: row.ampm ?? "—",
+    checkinTime: row.nearestCheckinTime ? formatDateTime(row.nearestCheckinTime) : "No check-in that day",
+    checkinAddress: row.nearestCheckinAddress ?? "—",
+    comment: row.comment ?? "",
+  };
 }
 
 function SyncStatusPanel({ data }: { data: VisitsReportData }) {
@@ -38,7 +96,9 @@ function SyncStatusPanel({ data }: { data: VisitsReportData }) {
       if (!response.ok || !payload.success) {
         setMessage(payload.message ?? "Backfill failed.");
       } else {
-        setMessage(`Pulled ${payload.rowsFetched} visits, upserted ${payload.rowsUpserted}.`);
+        setMessage(
+          `Pulled ${payload.rowsFetched} visits (${payload.rowsUpserted} upserted) and ${payload.checkinsFetched ?? 0} check-ins (${payload.checkinsUpserted ?? 0} upserted).`,
+        );
         router.refresh();
       }
     } catch (error) {
@@ -125,12 +185,292 @@ function SyncStatusPanel({ data }: { data: VisitsReportData }) {
   );
 }
 
-export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
+function ExportButton({ data, search, agent, visitType, ampm, mappingStatus }: {
+  agent: string;
+  ampm: string;
+  data: VisitsReportData;
+  mappingStatus: string;
+  search: string;
+  visitType: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function handleExport() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const params = new URLSearchParams({ dateFrom: data.dateFrom, dateTo: data.dateTo });
+      if (agent) params.set("agent", agent);
+      if (search) params.set("search", search);
+      if (visitType) params.set("visitType", visitType);
+      if (ampm) params.set("ampm", ampm);
+      if (mappingStatus) params.set("mappingStatus", mappingStatus);
+
+      const response = await fetch(`/api/admin/visits-report/export?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        setMessage(payload.message ?? "Export failed.");
+        return;
+      }
+      const rows: VisitsReportRow[] = payload.rows;
+      if (rows.length === 0) {
+        setMessage("Nothing to export for this filter.");
+        return;
+      }
+      await downloadXlsxExport({
+        title: "Visits Report",
+        subtitle: `${data.dateFrom} to ${data.dateTo} · ${payload.totalCount} matching visits`,
+        sheetName: "Visits",
+        columns: exportColumns,
+        rows: rows.map(toExportRow),
+      });
+      if (payload.truncated) {
+        setMessage(`Exported the first ${rows.length} of ${payload.totalCount} matching visits — narrow the date range to get the rest.`);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={busy}
+        className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        Export XLSX (full filtered result)
+      </button>
+      {message && <p className="max-w-xs text-right text-[11px] font-medium text-amber-700">{message}</p>}
+    </div>
+  );
+}
+
+function ResolutionCell({
+  identity,
+  onResolved,
+}: {
+  identity: UnmappedCrmIdentityRow;
+  onResolved: (crmId: number, message: string) => void;
+}) {
+  const [action, setAction] = useState<UnmappedCrmResolutionAction>("pending");
+  const [hrIdInput, setHrIdInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const trimmedHrId = hrIdInput.trim();
+    if (action === "mapped" && !trimmedHrId) {
+      setError("Enter an HR ID to map this identity.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/visits-report/resolve-identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          crmId: identity.crmId,
+          crmName: identity.name,
+          mappedHrId: action === "mapped" ? trimmedHrId : undefined,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        setError(payload.message ?? "Failed to save.");
+        return;
+      }
+      const message =
+        action === "mapped"
+          ? `Mapped ${payload.updatedVisits} visit${payload.updatedVisits === 1 ? "" : "s"} to ${payload.resolvedEmployeeHrId} (${payload.resolvedEmployeeName}).`
+          : action === "resigned"
+            ? `Marked ${identity.name} as resigned — hidden from this list.`
+            : `Kept ${identity.name} pending.`;
+      onResolved(identity.crmId, message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <select
+          value={action}
+          onChange={(event) => {
+            setAction(event.target.value as UnmappedCrmResolutionAction);
+            setError(null);
+          }}
+          className="h-8 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-700"
+        >
+          {RESOLUTION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        {action === "mapped" && (
+          <input
+            type="text"
+            value={hrIdInput}
+            onChange={(event) => setHrIdInput(event.target.value)}
+            placeholder="e.g. B-82"
+            className="h-8 w-24 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-800"
+          />
+        )}
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="inline-flex h-8 items-center gap-1.5 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+        >
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Save
+        </button>
+      </div>
+      {error && <p className="text-[11px] font-medium text-rose-600">{error}</p>}
+    </div>
+  );
+}
+
+function UnmappedAgentsPanel({ identities, pathname }: { identities: UnmappedCrmIdentityRow[]; pathname: string }) {
+  const router = useRouter();
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState(identities);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function handleResolved(crmId: number, message: string) {
+    setRows((current) => current.filter((identity) => identity.crmId !== crmId));
+    setToast(message);
+  }
+
+  const term = search.trim().toLowerCase();
+  const filtered = term
+    ? rows.filter((identity) => identity.name.toLowerCase().includes(term) || String(identity.crmId).includes(term))
+    : rows;
+
+  function viewInLog(identity: UnmappedCrmIdentityRow) {
+    const params = new URLSearchParams({
+      tab: "log",
+      dateFrom: identity.firstSeen,
+      dateTo: identity.lastSeen,
+      agent: identity.name,
+      mappingStatus: "either_unmapped",
+    });
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
+        <p className="text-sm font-medium text-slate-600">
+          {rows.length} unmapped CRM {rows.length === 1 ? "identity" : "identities"} across the full visit history — resolve
+          each one as <span className="font-semibold text-slate-900">Resigned</span> (hide it),{" "}
+          <span className="font-semibold text-slate-900">Map to HR ID</span> (fix it now and going forward), or{" "}
+          <span className="font-semibold text-slate-900">Keep Pending</span>.
+        </p>
+        <div className="relative w-64">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by CRM name or ID…"
+            className="h-9 w-full border border-[#D8E0EA] bg-white pl-8 pr-2 text-sm text-slate-800"
+          />
+        </div>
+      </div>
+
+      {toast && (
+        <div className="flex items-center justify-between border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">
+          {toast}
+          <button type="button" onClick={() => setToast(null)} className="text-emerald-700 hover:text-emerald-900">Dismiss</button>
+        </div>
+      )}
+
+      <div className="overflow-x-auto border border-slate-200 bg-white">
+        <table className="w-full min-w-[1100px] text-left text-sm">
+          <thead className="bg-slate-900">
+            <tr>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM ID</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Name</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Seen As</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Unmapped Visits</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
+              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-orange-100">
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
+                  {rows.length === 0 ? "No unmapped CRM identities — everyone maps to an HR ID." : "No identities match this search."}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((identity) => (
+                <tr key={identity.crmId} className="odd:bg-white even:bg-orange-50/30">
+                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{identity.crmId}</td>
+                  <td className="px-3 py-2.5 font-medium text-slate-900">{identity.name}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{identity.roles.join(" + ")}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{identity.visitCount}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
+                  <td className="px-3 py-2.5">
+                    <ResolutionCell identity={identity} onResolved={handleResolved} />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => viewInLog(identity)}
+                      className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                    >
+                      View in Visit Log
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function VisitsReportWorkspace({
+  data,
+  tab,
+  unmappedIdentities,
+  initialFilters,
+}: {
+  data: VisitsReportData;
+  initialFilters: { agent: string; ampm: string; mappingStatus: string; search: string; visitType: string };
+  tab: "log" | "unmapped";
+  unmappedIdentities: UnmappedCrmIdentityRow[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [dateFrom, setDateFrom] = useState(data.dateFrom);
   const [dateTo, setDateTo] = useState(data.dateTo);
-  const [agent, setAgent] = useState("");
+  const [agent, setAgent] = useState(initialFilters.agent);
+  const [search, setSearch] = useState(initialFilters.search);
+  const [visitType, setVisitType] = useState(initialFilters.visitType);
+  const [ampm, setAmpm] = useState(initialFilters.ampm);
+  const [mappingStatus, setMappingStatus] = useState(initialFilters.mappingStatus);
+
+  function switchTab(nextTab: "log" | "unmapped") {
+    router.push(`${pathname}?tab=${nextTab}`);
+  }
 
   function applyFilters(overrides?: { page?: number }) {
     const params = new URLSearchParams({
@@ -140,29 +480,14 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
       pageSize: String(data.pageSize),
     });
     if (agent) params.set("agent", agent);
+    if (search) params.set("search", search);
+    if (visitType) params.set("visitType", visitType);
+    if (ampm) params.set("ampm", ampm);
+    if (mappingStatus) params.set("mappingStatus", mappingStatus);
     router.push(`${pathname}?${params.toString()}`);
   }
 
   const totalPages = Math.max(1, Math.ceil(data.totalCount / data.pageSize));
-
-  const exportColumns: ExportColumn[] = [
-    { key: "date", label: "Date" },
-    { key: "agent", label: "Agent" },
-    { key: "double", label: "Double Visitor" },
-    { key: "contact", label: "Contact" },
-    { key: "type", label: "Visit Type" },
-    { key: "ampm", label: "AM/PM" },
-    { key: "comment", label: "Comment" },
-  ];
-  const exportRows: ExportRow[] = data.rows.map((row) => ({
-    date: row.visitDate,
-    agent: `${row.agentName ?? "—"} (${row.agentHrId ?? "unmapped"})`,
-    double: row.doubleName ? `${row.doubleName} (${row.doubleHrId ?? "unmapped"})` : "—",
-    contact: row.contactName ?? row.customerName ?? "—",
-    type: row.visitTypeDescription ?? String(row.visitType ?? "—"),
-    ampm: row.ampm ?? "—",
-    comment: row.comment ?? "",
-  }));
 
   return (
     <div className="space-y-6">
@@ -172,15 +497,43 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Visits Report</h1>
           <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
             A full mirror of every visit iReports360 has recorded — solo calls, campaign visits, double visits, and leave/vacation
-            entries — synced automatically 3x daily. {data.totalCount} visits in the selected range.
+            entries — synced automatically 3x daily, with a best-effort GPS check-in match per visit. {data.totalCount} visits in the
+            selected range.
           </p>
         </div>
-        <ExportXlsxButton title="Visits Report" subtitle={`${data.dateFrom} to ${data.dateTo} · page ${data.page}`} sheetName="Visits" columns={exportColumns} rows={exportRows} />
+        {tab === "log" && (
+          <ExportButton data={data} search={search} agent={agent} visitType={visitType} ampm={ampm} mappingStatus={mappingStatus} />
+        )}
+      </div>
+
+      <div className="flex gap-2 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => switchTab("log")}
+          className={cn(
+            "border-b-2 px-1 pb-2 text-sm font-bold uppercase tracking-wide transition",
+            tab === "log" ? "border-orange-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-800",
+          )}
+        >
+          Visit Log
+        </button>
+        <button
+          type="button"
+          onClick={() => switchTab("unmapped")}
+          className={cn(
+            "border-b-2 px-1 pb-2 text-sm font-bold uppercase tracking-wide transition",
+            tab === "unmapped" ? "border-orange-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-800",
+          )}
+        >
+          Unmapped Agents
+        </button>
       </div>
 
       <SyncStatusPanel data={data} />
 
-      {!data.schemaReady ? (
+      {tab === "unmapped" ? (
+        <UnmappedAgentsPanel identities={unmappedIdentities} pathname={pathname} />
+      ) : !data.schemaReady ? (
         <div className="border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
           ireports360_visits table is not provisioned yet.
         </div>
@@ -195,14 +548,52 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
               To
               <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm" />
             </label>
-            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <label className="flex w-56 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Agent
-              <select value={agent} onChange={(event) => setAgent(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+              <SearchableSelect value={agent} onValueChange={setAgent} placeholder="All agents">
                 <option value="">All agents</option>
-                {data.filters.agents.map((agentOption) => (
-                  <option key={agentOption.hrId} value={agentOption.hrId}>{agentOption.name}</option>
+                {data.filters.agents.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </SearchableSelect>
+            </label>
+            <label className="flex w-48 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Visit type
+              <SearchableSelect value={visitType} onValueChange={setVisitType} placeholder="All visit types">
+                <option value="">All visit types</option>
+                {data.filters.visitTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </SearchableSelect>
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              AM/PM
+              <select value={ampm} onChange={(event) => setAmpm(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                <option value="">All</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Mapping status
+              <select value={mappingStatus} onChange={(event) => setMappingStatus(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                {MAPPING_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+            </label>
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Search
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Agent, contact, comment…"
+                  className="h-9 w-full border border-[#D8E0EA] bg-white pl-8 pr-2 text-sm text-slate-800"
+                />
+              </div>
             </label>
             <button type="button" onClick={() => applyFilters()} className="h-9 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]">
               Apply
@@ -210,35 +601,36 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
           </div>
 
           <div className="overflow-x-auto border border-slate-200 bg-white">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1500px] text-left text-sm">
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent HR ID</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Double Visitor</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Double HR ID</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Contact</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Type</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">AM/PM</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Check-in</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Comment</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">
                 {data.rows.length === 0 ? (
-                  <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">No visits in this range.</td></tr>
+                  <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
                 ) : (
                   data.rows.map((row, index) => (
                     <tr key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                       <td className="whitespace-nowrap px-3 py-2.5">{formatDate(row.visitDate)}</td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium text-slate-900">{row.agentName ?? "—"}</p>
-                        <p className={cn("text-[11px]", row.agentHrId ? "text-slate-400" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</p>
+                      <td className="px-3 py-2.5 font-medium text-slate-900">{row.agentName ?? "—"}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className={cn("font-semibold", row.agentHrId ? "text-slate-700" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</span>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 font-medium text-slate-900">{row.doubleName ?? <span className="text-slate-400">—</span>}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         {row.doubleName ? (
-                          <>
-                            <p className="font-medium text-slate-900">{row.doubleName}</p>
-                            <p className={cn("text-[11px]", row.doubleHrId ? "text-slate-400" : "text-rose-500")}>{row.doubleHrId ?? "unmapped"}</p>
-                          </>
+                          <span className={cn("font-semibold", row.doubleHrId ? "text-slate-700" : "text-rose-500")}>{row.doubleHrId ?? "unmapped"}</span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -246,6 +638,16 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
                       <td className="px-3 py-2.5">{row.contactName ?? row.customerName ?? "—"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{row.visitTypeDescription ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.ampm ?? "—"}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {row.nearestCheckinTime ? (
+                          <>
+                            <p className="font-medium text-slate-900">{formatTime(row.nearestCheckinTime)}</p>
+                            <p className="max-w-[180px] truncate text-[11px] text-slate-500" title={row.nearestCheckinAddress ?? undefined}>{row.nearestCheckinAddress ?? "—"}</p>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">No check-in</span>
+                        )}
+                      </td>
                       <td className="max-w-[360px] px-3 py-2.5 text-[13px] text-slate-600" style={{ whiteSpace: "pre-wrap" }}>{row.comment ?? ""}</td>
                     </tr>
                   ))

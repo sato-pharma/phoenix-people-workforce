@@ -4,6 +4,7 @@ import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 
 // Drop-in "Export XLSX" button for any admin table. Pass the same columns + rows the
@@ -34,24 +35,7 @@ export function ExportXlsxButton({
     if (disabled) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/exports/table", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, subtitle, sheetName, columns, rows, template }),
-      });
-      if (!response.ok) throw new Error("Export failed");
-
-      const blob = await response.blob();
-      const disposition = response.headers.get("Content-Disposition") ?? "";
-      const match = /filename="(.+?)"/.exec(disposition);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = match?.[1] ?? "phoenix-export.xlsx";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      await downloadXlsxExport({ title, subtitle, sheetName, columns, rows, template });
     } catch (error) {
       console.error("XLSX export failed:", error);
     } finally {

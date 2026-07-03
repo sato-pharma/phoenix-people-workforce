@@ -1,5 +1,6 @@
 export type VisitsSyncTrigger = "cron" | "manual" | "manual_backfill";
 export type VisitsSyncStatus = "running" | "success" | "failed";
+export type VisitsMappingStatus = "agent_unmapped" | "double_unmapped" | "either_unmapped" | "fully_mapped";
 
 export type VisitsReportRow = {
   agentCrmId: number;
@@ -16,9 +17,25 @@ export type VisitsReportRow = {
   doubleHrId: string | null;
   doubleName: string | null;
   id: string;
+  /** Nearest same-day, same-agent GPS check-in — a best-effort correlation, never a guaranteed match. */
+  nearestCheckinAddress: string | null;
+  nearestCheckinTime: string | null;
   visitDate: string;
+  visitDateTime: string | null;
   visitType: number | null;
   visitTypeDescription: string | null;
+};
+
+export type VisitsReportFilterInput = {
+  // Matches against agent_name — the filter dropdown is built from distinct agent names
+  // (there is no reliable single "agent HR ID" to filter by when many rows are unmapped).
+  agentName?: string | null;
+  ampm?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  mappingStatus?: VisitsMappingStatus | null;
+  search?: string | null;
+  visitType?: string | null;
 };
 
 export type VisitsSyncRun = {
@@ -34,17 +51,13 @@ export type VisitsSyncRun = {
   trigger: VisitsSyncTrigger;
 };
 
-export type VisitsReportAgentFilter = {
-  hrId: string;
-  name: string;
-};
-
 export type VisitsReportData = {
   configured: boolean;
   dateFrom: string;
   dateTo: string;
   filters: {
-    agents: VisitsReportAgentFilter[];
+    agents: string[];
+    visitTypes: string[];
   };
   latestSyncRuns: VisitsSyncRun[];
   page: number;
@@ -52,4 +65,32 @@ export type VisitsReportData = {
   rows: VisitsReportRow[];
   schemaReady: boolean;
   totalCount: number;
+};
+
+export type VisitsReportExportResult = {
+  rows: VisitsReportRow[];
+  totalCount: number;
+  truncated: boolean;
+};
+
+/** One row per unmapped CRM identity (crm_id) — a punch-list for fixing
+ * employees.crm_id/crm_username, rolled up from every visit/double-visit row where that
+ * identity currently has no resolved HR ID. */
+export type UnmappedCrmIdentityRow = {
+  crmId: number;
+  firstSeen: string;
+  lastSeen: string;
+  name: string;
+  roles: Array<"agent" | "double">;
+  visitCount: number;
+};
+
+/** Admin resolution for a CRM identity that never auto-maps: resigned (hide, leave
+ * unmapped), mapped (apply a specific employees.hr_id), or pending (default, keep showing). */
+export type UnmappedCrmResolutionAction = "mapped" | "pending" | "resigned";
+
+export type UnmappedCrmResolutionResult = {
+  resolvedEmployeeHrId: string | null;
+  resolvedEmployeeName: string | null;
+  updatedVisits: number;
 };
