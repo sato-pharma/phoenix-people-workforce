@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   classifyVisitedEmployeeStatus,
   extractEmployeeNameAreaLine,
+  markManagerVisitedRows,
+  markResignedVisitedRows,
   normalizeDoubleVisitExcelRows,
   normalizeIReports360DoubleVisits,
   recoverVisitedEmployeesByCrmUsername,
@@ -12,6 +14,7 @@ import {
   buildExecutiveSummary,
   buildManagerMrPairs,
   buildManagerSummariesDetailed,
+  isAutoSyncImport,
   resolveDoubleVisitAccessScope,
 } from "../src/lib/double-visit-analytics/service.ts";
 import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
@@ -475,4 +478,82 @@ export function runDoubleVisitAnalyticsTests() {
     scopeEmployees,
   );
   assert.equal(tmScope.all, true, "Training Manager retains org-wide double-visit visibility");
+
+  // ── isAutoSyncImport(): sentinel check gating the mirror-sync publish/prune guards ──────────
+  assert.equal(isAutoSyncImport("system:ireports360-mirror-sync"), true, "the auto-sync sentinel is recognized");
+  assert.equal(isAutoSyncImport("admin-HR"), false, "a real login id is never treated as auto-sync");
+  assert.equal(isAutoSyncImport(null), false, "null uploaded_by is never treated as auto-sync");
+  assert.equal(isAutoSyncImport(undefined), false, "undefined uploaded_by is never treated as auto-sync");
+  assert.equal(isAutoSyncImport(""), false, "empty string is never treated as auto-sync");
+
+  // ── markResignedVisitedRows(): live employment-status reclassification (mirror source) ──────
+  const resignedCheckPreview = normalizeIReports360DoubleVisits({
+    employees: [
+      employee({ crmId: "500", fullName: "Some Visitor", hrId: "D-9" }),
+      employee({ crmId: "600", employmentStatus: "resigned", fullName: "Left Rep", hrId: "M-50" }),
+      employee({ crmId: "601", employmentStatus: "active", fullName: "Active Rep", hrId: "M-51" }),
+    ],
+    fileName: "iReports360",
+    visits: [
+      { agentID: 600, agentName: "Left Rep", ampm: "AM", attendance: null, callType: null, comment: null, contactID: null, contactName: null, customerName: null, doubleID: 500, doubleName: "Some Visitor", id: 40, saveDate: null, visitDate: "2026-06-10", visitType: 0, visitTypeDescription: null },
+      { agentID: 601, agentName: "Active Rep", ampm: "AM", attendance: null, callType: null, comment: null, contactID: null, contactName: null, customerName: null, doubleID: 500, doubleName: "Some Visitor", id: 41, saveDate: null, visitDate: "2026-06-10", visitType: 0, visitTypeDescription: null },
+    ] satisfies IReports360Visit[],
+  });
+  assert.ok(
+    resignedCheckPreview.rows.every((r) => r.visitedEmployeeStatus === "active_mapped"),
+    "sanity: the CRM path has no text-based resigned concept before the live check runs",
+  );
+  const resignedMarked = markResignedVisitedRows(resignedCheckPreview, [
+    employee({ crmId: "600", employmentStatus: "resigned", fullName: "Left Rep", hrId: "M-50" }),
+    employee({ crmId: "601", employmentStatus: "active", fullName: "Active Rep", hrId: "M-51" }),
+  ]);
+  const leftRow = resignedMarked.rows.find((r) => r.visitedEmployeeHrId === "M-50");
+  const activeRow = resignedMarked.rows.find((r) => r.visitedEmployeeHrId === "M-51");
+  assert.equal(leftRow?.visitedEmployeeStatus, "resigned", "a visited employee who has since resigned is reclassified live");
+  assert.equal(activeRow?.visitedEmployeeStatus, "active_mapped", "a currently-active visited employee is untouched");
+  assert.equal(resignedMarked.summary.activeMappedVisitCount, 1, "resigned reclassification is excluded from active_mapped totals");
+
+  // An unmapped visited employee (no directory match at all) must never become "resigned".
+  const unmappedCheckPreview = normalizeIReports360DoubleVisits({
+    employees: [employee({ crmId: "500", fullName: "Some Visitor", hrId: "D-9" })],
+    fileName: "iReports360",
+    visits: [
+      { agentID: 999, agentName: "Ghost", ampm: "AM", attendance: null, callType: null, comment: null, contactID: null, contactName: null, customerName: null, doubleID: 500, doubleName: "Some Visitor", id: 42, saveDate: null, visitDate: "2026-06-10", visitType: 0, visitTypeDescription: null },
+    ] satisfies IReports360Visit[],
+  });
+  const unmappedMarked = markResignedVisitedRows(unmappedCheckPreview, []);
+  assert.equal(unmappedMarked.rows[0]?.visitedEmployeeStatus, "unmapped", "an unmapped visited employee is never reclassified to resigned");
+
+  // ── DV_ROLE_CODES: Marketing Manager and SFE Manager now resolve to a role code ─────────────
+  // (previously excluded even though both are already recognized elsewhere in this module as
+  // non-MR manager/functional roles — see allowedDoubleVisitorRoles/functionalDoubleVisitorRoles.)
+  const mmSfeEmployees = [
+    employee({ fullName: "Marketing Boss", hrId: "A-9", jobTitle: "Marketing Manager", positionTitle: "Marketing Manager" }),
+    employee({ fullName: "SFE Boss", hrId: "A-2", jobTitle: "SFE Manager", positionTitle: "SFE Manager" }),
+  ];
+  const mmSfeRows = asRows([
+    dvRow({ date: "2026-06-01", dvHrId: "A-9", visit: 3, visitedHrId: "M-1" }),
+    dvRow({ date: "2026-06-01", dvHrId: "A-2", visit: 2, visitedHrId: "M-2" }),
+  ]);
+  const { summaries: mmSfeSummaries } = buildManagerSummariesDetailed(mmSfeRows, mmSfeEmployees, "2026-06-30");
+  const mmSummary = mmSfeSummaries.find((s) => s.managerName === "Marketing Boss");
+  const sfeSummary = mmSfeSummaries.find((s) => s.managerName === "SFE Boss");
+  assert.equal(mmSummary?.roleCode, "MM", "Marketing Manager now resolves to a DV role code instead of null");
+  assert.equal(sfeSummary?.roleCode, "SFE", "SFE Manager now resolves to a DV role code instead of null");
+
+  // A visited Marketing Manager/SFE Manager HR ID is a CRM data error (a DV is always
+  // manager -> Medical Rep) and must be flagged non_mr, exactly like DSM/RM/NSM/PM/GPM/TM.
+  const mmVisitedPreview = normalizeIReports360DoubleVisits({
+    employees: [
+      employee({ crmId: "700", fullName: "Some DSM", hrId: "D-9" }),
+      employee({ crmId: "701", fullName: "Marketing Boss", hrId: "A-9", jobTitle: "Marketing Manager", positionTitle: "Marketing Manager" }),
+    ],
+    fileName: "iReports360",
+    visits: [
+      { agentID: 701, agentName: "Marketing Boss", ampm: "AM", attendance: null, callType: null, comment: null, contactID: null, contactName: null, customerName: null, doubleID: 700, doubleName: "Some DSM", id: 43, saveDate: null, visitDate: "2026-06-10", visitType: 0, visitTypeDescription: null },
+    ] satisfies IReports360Visit[],
+  });
+  assert.equal(mmVisitedPreview.rows[0]?.visitedEmployeeStatus, "active_mapped", "sanity: visited employee resolves before the manager-flag pass");
+  const mmMarked = markManagerVisitedRows(mmVisitedPreview, new Set([canonicalHrIdKey("A-9") as string]));
+  assert.equal(mmMarked.rows[0]?.visitedEmployeeStatus, "non_mr", "a visited Marketing Manager HR ID is flagged non_mr when in managerHrIdKeys");
 }

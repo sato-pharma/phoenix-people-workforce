@@ -618,12 +618,19 @@ export async function tickDvCheckboxesFromPublish(importId: string): Promise<voi
   // Load all active probation employees
   const { data: activeProbation } = await db
     .from("employee_probation")
-    .select("id,hr_id,pm_gpm_dv_done")
+    .select("id,hr_id,dm_dv_done,nsm_dv_done,pm_gpm_dv_done,tm_dv_done")
     .eq("status", "active");
 
   if (!activeProbation || activeProbation.length === 0) return;
 
-  type ProbRow = { id: number; hr_id: string; pm_gpm_dv_done: boolean | null };
+  type ProbRow = {
+    id: number;
+    hr_id: string;
+    dm_dv_done: boolean | null;
+    nsm_dv_done: boolean | null;
+    pm_gpm_dv_done: boolean | null;
+    tm_dv_done: boolean | null;
+  };
   const probByHrId = new Map<string, ProbRow>(
     (activeProbation as ProbRow[]).map(p => [normalizeHrId(p.hr_id) ?? p.hr_id, p]),
   );
@@ -675,23 +682,27 @@ export async function tickDvCheckboxesFromPublish(importId: string): Promise<voi
       const visitedEmp = empByHrId.get(visitedHrId);
       const isDm = visitedEmp && normalizeHrId(visitedEmp.manager_hr_id) === visitorHrId;
 
+      // Only bump the "_at" timestamp on a false->true transition — this function reprocesses
+      // ALL of an import's rows on every publish (including the automatic mirror-sync, which now
+      // republishes the full history multiple times a day), so re-touching an already-true flag's
+      // timestamp would keep bumping a months-old DV to "now" forever.
       if (isDm) {
         updates.dm_dv_done = true;
-        updates.dm_dv_done_at = now;
+        if (probRecord.dm_dv_done !== true) updates.dm_dv_done_at = now;
         updates.dm_dv_done_manually = false;
       } else if (visitorRole === "National Sales Manager") {
         updates.nsm_dv_done = true;
-        updates.nsm_dv_done_at = now;
+        if (probRecord.nsm_dv_done !== true) updates.nsm_dv_done_at = now;
         updates.nsm_dv_done_manually = false;
       } else if (visitorRole === "Training Manager") {
         updates.tm_dv_done = true;
-        updates.tm_dv_done_at = now;
+        if (probRecord.tm_dv_done !== true) updates.tm_dv_done_at = now;
         updates.tm_dv_done_manually = false;
       } else if (visitorRole === "Product Manager" || visitorRole === "Group Product Manager") {
         if (probRecord.pm_gpm_dv_done !== null) {
           // Not CNS (NULL = not applicable for CNS)
           updates.pm_gpm_dv_done = true;
-          updates.pm_gpm_dv_done_at = now;
+          if (probRecord.pm_gpm_dv_done !== true) updates.pm_gpm_dv_done_at = now;
           updates.pm_gpm_dv_done_manually = false;
         }
       }
