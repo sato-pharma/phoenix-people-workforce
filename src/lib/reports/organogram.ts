@@ -43,7 +43,7 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
-function canAccessHeadOffice(access: AccessContext) {
+export function canAccessHeadOffice(access: AccessContext) {
   return access.role === "Super Admin" || access.role === "CEO" || access.scope === "system";
 }
 
@@ -51,7 +51,7 @@ function canAccessHeadOffice(access: AccessContext) {
 // it by the canonical numeric line_id first (rename-safe), falling back to the
 // line-name variants for rows whose id isn't populated.
 const HEAD_OFFICE_LINE_ID = 4;
-function isHeadOfficeRow(row: { lineId?: number | null; lineName: string | null | undefined }) {
+export function isHeadOfficeRow(row: { lineId?: number | null; lineName: string | null | undefined }) {
   if (row.lineId === HEAD_OFFICE_LINE_ID) return true;
   const line = row.lineName?.trim().toLowerCase();
   return line === "office" || line === "head office";
