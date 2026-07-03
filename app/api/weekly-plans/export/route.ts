@@ -5,6 +5,7 @@ import { buildEmployeePlansPdf, buildEmployeePlansWorkbook } from "@/lib/weekly-
 import { getEmployeePlansWorkspace, type EmployeePlan } from "@/lib/weekly-planning/service";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { hrIdsMatch } from "@/lib/hr-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +29,8 @@ function fileDate() {
 }
 
 function plansForScope(workspacePlans: EmployeePlan[], scope: string, accessHrId: string | null | undefined, canAcknowledgeHr: boolean) {
-  if (scope === "own") return workspacePlans.filter((plan) => plan.employeeHrId === accessHrId);
-  if (scope === "manager") return workspacePlans.filter((plan) => plan.status === "submitted" && plan.managerHrId === accessHrId);
+  if (scope === "own") return workspacePlans.filter((plan) => hrIdsMatch(plan.employeeHrId, accessHrId));
+  if (scope === "manager") return workspacePlans.filter((plan) => plan.status === "submitted" && hrIdsMatch(plan.managerHrId, accessHrId));
   if (scope === "ceo") return workspacePlans.filter((plan) => plan.status === "manager_approved");
   if (scope === "hr") return canAcknowledgeHr ? workspacePlans.filter((plan) => ["final_approved", "hr_acknowledged"].includes(plan.status)) : [];
   return workspacePlans;

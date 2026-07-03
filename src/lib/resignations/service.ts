@@ -1,5 +1,5 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { canSeeEmployee, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
@@ -203,7 +203,7 @@ function resolveSubmittedByHrId(
   actor: string,
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
 ) {
-  return directory.employees.some((employee) => employee.hrId === actor) ? actor : null;
+  return directory.employees.some((employee) => hrIdsMatch(employee.hrId, actor)) ? actor : null;
 }
 
 function appendWorkflowNote(
@@ -519,6 +519,15 @@ export async function upsertPayrollResignationCandidates(input: {
   return payload.length;
 }
 
+function isCompanyResignationReader(access: AccessContext) {
+  return (
+    access.scope === "system" ||
+    access.scope === "company" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO"
+  );
+}
+
 export async function getResignationsDashboardData(access?: AccessContext): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
@@ -540,23 +549,24 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   if (resignationsResult.error) throw resignationsResult.error;
   if (candidatesResult.error) throw candidatesResult.error;
 
-  const employeesByHrId = new Map(directory.employees.map((employee) => [employee.hrId.trim().toUpperCase(), employee]));
+  const employeesByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
   const allWorkflowRecords = (resignationsResult.data ?? []).map((row) => {
     const record = mapResignation(row as ResignationRow);
     return {
       ...record,
-      employeeStatus: employeesByHrId.get(record.employeeHrId.trim().toUpperCase())?.employmentStatus ?? record.employeeStatus ?? null,
+      employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
-  const workflowRecords = access
-    ? allWorkflowRecords.filter((record) => {
-        const employee = employeesByHrId.get(record.employeeHrId.trim().toUpperCase());
-        return employee ? canSeeEmployee(access, employee) : false;
-      })
-    : allWorkflowRecords;
-  const workflowHrIds = new Set(workflowRecords.map((record) => record.employeeHrId.trim().toUpperCase()));
+  const scopedAccess = access ?? systemAccessContext;
+  const workflowRecords = isCompanyResignationReader(scopedAccess)
+    ? allWorkflowRecords
+    : allWorkflowRecords.filter((record) => {
+        const employee = employeesByHrId.get(normalizeHrId(record.employeeHrId));
+        return employee ? canSeeEmployee(scopedAccess, employee) : false;
+      });
+  const workflowHrIds = new Set(workflowRecords.map((record) => normalizeHrId(record.employeeHrId)));
   const legacyRecords = historicalEmployees
-    .filter((employee) => !workflowHrIds.has(employee.hr_id.trim().toUpperCase()))
+    .filter((employee) => !workflowHrIds.has(normalizeHrId(employee.hr_id)))
     .map(mapLegacyResignationEmployee);
   const records = [...workflowRecords, ...legacyRecords].sort((left, right) => {
     const dateCompare = right.submittedDate.localeCompare(left.submittedDate);
@@ -1015,7 +1025,7 @@ export async function createResignation(
   }
 
   const directory = await getEmployeeDirectory();
-  const employee = directory.employees.find((item) => item.hrId === employeeHrId);
+  const employee = directory.employees.find((item) => hrIdsMatch(item.hrId, employeeHrId));
   if (!employee) throw new Error("Employee was not found in the directory.");
 
   return createResignationForEmployee({
@@ -1078,7 +1088,7 @@ export async function resignEmployeeAndOpenVacancy(
   hrId: string,
   input: EmployeeResignationInput,
   actor: string,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const employeeHrId = String(hrId || input.employeeHrId || "").trim();
   if (!employeeHrId) {
@@ -1086,7 +1096,7 @@ export async function resignEmployeeAndOpenVacancy(
   }
 
   const directory = await getEmployeeDirectory();
-  const employee = directory.employees.find((item) => item.hrId === employeeHrId);
+  const employee = directory.employees.find((item) => hrIdsMatch(item.hrId, employeeHrId));
   if (!employee) {
     throw new Error("Employee was not found in the directory.");
   }
@@ -1113,6 +1123,11 @@ export async function resignEmployeeAndOpenVacancy(
     expectedNextStatus: "resignation_submitted",
     status: "new",
   });
+
+  const scopedAccess = access ?? systemAccessContext;
+  if (!canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${employee.hrId}.`);
+  }
 
   const rpcResult = await supabase.rpc("phx_resign_employee_and_open_vacancy", {
     p_actor: actor,
@@ -1289,7 +1304,7 @@ async function updateEmployeeResignationDatesFallback(
 }
 
 async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hrId: string) {
-  const dbHrId = hrId.trim().toUpperCase();
+  const dbHrId = normalizeHrId(hrId)?.toUpperCase() ?? hrId.trim().toUpperCase();
   const joinedResult = await supabase
     .from("employees")
     .select(
@@ -1446,7 +1461,7 @@ export async function runResignationWorkflow(
   actor: string,
   note?: string | null,
   rejectedReason?: string | null,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1474,6 +1489,17 @@ export async function runResignationWorkflow(
     expectedNextStatus: expectedNextStatusByAction[action],
     status: currentStatus,
   });
+
+  // getEmployeeDirectory() excludes inactive/terminated employees with no way to opt back in,
+  // but resignation actions (approve/complete/etc) routinely target an employee whose status has
+  // already flipped -- use the inactive-inclusive lookup so the scope check itself doesn't throw
+  // a false Forbidden for every caller (including Super Admin) once that happens.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const employee = directory.find((item) => hrIdsMatch(item.hrId, row.employee_hr_id)) ?? { hrId: row.employee_hr_id, managerHrId: null };
+  const scopedAccess = access ?? systemAccessContext;
+  if (!canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${row.employee_hr_id}.`);
+  }
 
   const now = new Date().toISOString();
   // Persist the canonical HR_ID (never a login token) so the Approvals Hub history matches.

@@ -3,6 +3,7 @@ import { describeUnexpectedError, errorMessageOf } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
+import { resolveRoiDataCoverage } from "@/lib/marketing-requests/roi-labels";
 import {
   assertMarketingWorkspaceAccess,
   normalizeHrId,
@@ -817,6 +818,18 @@ export async function getMarketingRoiReport(
       : actuals.value > 0
         ? 1
         : 0;
+    // Forecast coverage (expected vs required) mirrors the stored roi_coverage_ratio, computed
+    // here so the UI shows it as an explicit FORECAST figure beside the ACTUAL coverage.
+    const forecastCoverageRatio = request.requiredRoiValue > 0
+      ? roundMarketingRatio(request.expectedRoiValue / request.requiredRoiValue)
+      : request.expectedRoiValue > 0
+        ? 1
+        : 0;
+    const dataCoverage = resolveRoiDataCoverage({
+      windowStart: entry.payDate ? entry.payDate.slice(0, 7) : null,
+      windowEnd: endPeriod,
+      salesDataAsOf: ctx.salesDataAsOf,
+    });
 
     const resultStatus = resolveRoiResultStatus({
       salesRows: actuals.salesRows,
@@ -855,6 +868,8 @@ export async function getMarketingRoiReport(
       actualSalesValue: actualValue,
       actualSalesUnits: actuals.units,
       actualCoverageRatio: coverage,
+      forecastCoverageRatio,
+      dataCoverage,
       resultStatus,
       attributionQuality: actuals.quality === "exact_customer" ? "exact_customer" : "no_sales",
       hasSalesData: actuals.salesRows > 0,

@@ -112,6 +112,7 @@ export type EmployeeImportRecord = {
   departmentName: string | null;
   lineName: string | null;
   regionName: string | null;
+  regionCode: string | null;
   areaName: string | null;
   teamName: string | null;
   positionTitle: string | null;
@@ -210,7 +211,10 @@ export type ExistingImportState = {
   departmentCodeToName?: Map<string, string>;
   departmentNameToCode?: Map<string, string>;
   lineCodes?: Set<string>;
+  lineCodeToId?: Map<string, number>;
   areaCodes?: Set<string>;
+  /** (lineCode|areaCode) -> region_code, from public.line_area_region_map. */
+  regionCodeByLineArea?: Map<string, string>;
   teamCodes?: Set<string>;
   teamCodeToTeam?: Map<string, ExistingTeamLookup>;
   teamNameAreaToTeam?: Map<string, ExistingTeamLookup>;
@@ -225,6 +229,7 @@ export type ExistingEmployeeOrgSeat = {
   lineCode: string | null;
   positionCode: string | null;
   regionName: string | null;
+  regionCode: string | null;
 };
 
 export type ExistingTeamLookup = {

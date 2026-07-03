@@ -13,6 +13,25 @@ export function canonicalHrIdForDisplay(value: string | null | undefined) {
   return canonicalHrIdKey(value)?.toUpperCase() ?? null;
 }
 
+export function normalizeHrIdForAccess(value: string | null | undefined) {
+  const normalized = canonicalHrIdKey(value);
+  return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;
+}
+
+// Client-safe HR_ID equality: routes through the legacy alias table (e.g. aaa -> aa)
+// before comparing, with a symbol-stripped fallback for formatting drift (hyphens etc).
+export function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
+  const a = canonicalHrIdKey(left);
+  const b = canonicalHrIdKey(right);
+  if (a && b && a === b) return true;
+
+  const canonicalLeft = normalizeHrIdForAccess(left);
+  const canonicalRight = normalizeHrIdForAccess(right);
+  return Boolean(
+    canonicalLeft && canonicalRight && canonicalLeft === canonicalRight,
+  );
+}
+
 export function hrIdLookupKeys(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
   const canonical = canonicalHrIdKey(value);

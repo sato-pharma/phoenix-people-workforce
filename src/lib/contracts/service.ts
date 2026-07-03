@@ -457,7 +457,7 @@ async function notifyContractWorkflow(
 // and staging smoke is green.
 async function maybeRunNonRenewalTerminalLifecycle(
   record: ContractRenewalRecord,
-  access: Pick<AccessContext, "role"> | undefined,
+  access: AccessContext | undefined,
   actor: string,
 ) {
   if (!WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED) {
@@ -518,7 +518,7 @@ export async function runContractRenewalWorkflow(
   action: ContractRenewalAction,
   actor: string,
   input: {
-    access?: Pick<AccessContext, "role">;
+    access?: AccessContext;
     decisionReason?: string | null;
     newContractDocumentName?: string | null;
     newContractDocumentUrl?: string | null;
@@ -560,6 +560,14 @@ export async function runContractRenewalWorkflow(
     expectedNextStatus: expectedNextStatusByAction[action],
     status: existing.status,
   });
+
+  const contractEmployees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const contractEmployee = contractEmployees.find(
+    (item) => cleanHrId(item.hrId) === cleanHrId(existing.employee_hr_id),
+  );
+  if (!contractEmployee || !canSeeContractRow(input.access, contractEmployee)) {
+    throw new ContractRenewalValidationError(`Forbidden: cannot access employee ${existing.employee_hr_id}.`);
+  }
 
   // Persist the canonical HR_ID (never a login token like "admin-HR") into decision_by /
   // manager_reviewed_by / hr_reviewed_by, so the decision is correctly attributed and the

@@ -61,7 +61,7 @@ Ensure you pushed to the working branch. Check the Vercel dashboard for build er
 
 ### Cron jobs not firing
 
-Vercel Hobby allows only 2 daily cron jobs. Both are configured in `vercel.json`. Sub-daily crons are not supported without a plan upgrade. See [docs/deployment.md](deployment.md).
+The project is on Vercel Pro, which is what allows the `/api/notifications/process` cron to run every 30 minutes (Hobby hard-fails deployment for anything more frequent than daily). Both crons are configured in `vercel.json`. See [docs/deployment.md](deployment.md).
 
 ## Getting Help
 

@@ -48,6 +48,12 @@ import {
   type RoiFilterKey,
   type RoiFilterState,
 } from "@/lib/marketing-requests/roi-report-types";
+import {
+  ROI_ACTUAL_COVERAGE_LABEL,
+  ROI_DATA_COVERAGE_LABEL,
+  ROI_FORECAST_COVERAGE_LABEL,
+  ROI_RESULT_STATUS_LABEL,
+} from "@/lib/marketing-requests/roi-labels";
 import { cn } from "@/lib/utils";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -84,18 +90,21 @@ const ROI_SORT_LABELS: Record<RoiSortKey, string> = {
   resultStatus: "Result",
 };
 
+// Result-status DISPLAY labels come from the shared roi-labels source of truth so the report,
+// the drafts list and the export never drift. The underlying VALUES (on_track/behind/…) are the
+// filter contract and are intentionally left unchanged.
 const RESULT_STATUS_META: Record<MarketingRoiResultStatus, { label: string; className: string }> = {
-  on_track: { label: "On track", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  behind: { label: "Behind", className: "border-amber-200 bg-amber-50 text-amber-700" },
-  awaiting_data: { label: "Awaiting data", className: "border-sky-200 bg-sky-50 text-sky-700" },
-  no_data: { label: "No data", className: "border-slate-200 bg-slate-50 text-slate-500" },
+  on_track: { label: ROI_RESULT_STATUS_LABEL.on_track, className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  behind: { label: ROI_RESULT_STATUS_LABEL.behind, className: "border-amber-200 bg-amber-50 text-amber-700" },
+  awaiting_data: { label: ROI_RESULT_STATUS_LABEL.awaiting_data, className: "border-sky-200 bg-sky-50 text-sky-700" },
+  no_data: { label: ROI_RESULT_STATUS_LABEL.no_data, className: "border-slate-200 bg-slate-50 text-slate-500" },
 };
 
 const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string }> = [
-  { value: "on_track", label: "On track" },
-  { value: "behind", label: "Behind" },
-  { value: "awaiting_data", label: "Awaiting data" },
-  { value: "no_data", label: "No data" },
+  { value: "on_track", label: ROI_RESULT_STATUS_LABEL.on_track },
+  { value: "behind", label: ROI_RESULT_STATUS_LABEL.behind },
+  { value: "awaiting_data", label: ROI_RESULT_STATUS_LABEL.awaiting_data },
+  { value: "no_data", label: ROI_RESULT_STATUS_LABEL.no_data },
 ];
 
 const ROI_ROWS_PER_PAGE = 10;
@@ -815,16 +824,22 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard accent="slate" icon={Target} label="Requests" value={kpi.requestCount} />
         <KpiCard accent="orange" icon={TrendingUp} label="Cost" value={money(kpi.totalEstimatedCost)} />
-        <KpiCard accent="sky" icon={Target} label="Required ROI" value={money(kpi.totalRequiredRoi)} />
+        <KpiCard
+          accent="sky"
+          icon={Target}
+          label="Required ROI"
+          value={money(kpi.totalRequiredRoi)}
+          hint={`${percent(kpi.totalRequiredRoi > 0 ? kpi.totalExpectedRoi / kpi.totalRequiredRoi : 0)} ${ROI_FORECAST_COVERAGE_LABEL.toLowerCase()}`}
+        />
         <KpiCard
           accent="green"
           icon={TrendingUp}
           label="Actual sales"
           value={money(kpi.totalActualValue)}
-          hint={`${percent(kpi.coverageRatio)} of required`}
+          hint={`${percent(kpi.coverageRatio)} ${ROI_ACTUAL_COVERAGE_LABEL.toLowerCase()}`}
         />
         <KpiCard accent="amber" icon={TrendingDown} label="Behind" value={kpi.behindCount} hint={`${kpi.onTrackCount} on track`} />
-        <KpiCard accent="sky" icon={Clock} label="Awaiting data" value={kpi.awaitingDataCount} hint={`${kpi.noDataCount} no data`} />
+        <KpiCard accent="sky" icon={Clock} label={ROI_RESULT_STATUS_LABEL.awaiting_data} value={kpi.awaitingDataCount} hint={`${kpi.noDataCount} ${ROI_RESULT_STATUS_LABEL.no_data.toLowerCase()}`} />
       </div>
 
       {/* trust signals */}
@@ -929,7 +944,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                 </th>
                 <th className="px-3 py-2.5 text-right">
                   <button type="button" onClick={() => toggleSort("actualCoverageRatio")} className="inline-flex w-full items-center justify-end gap-1 font-black">
-                    Coverage <span className="text-[10px] font-black">{sortArrow("actualCoverageRatio")}</span>
+                    Actual coverage <span className="text-[10px] font-black">{sortArrow("actualCoverageRatio")}</span>
                   </button>
                 </th>
                 <th className="px-3 py-2.5">
@@ -1049,14 +1064,22 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
       </td>
       <td className="px-3 py-3 text-right">
         <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required (target)</p>
           <p className="font-semibold text-[#475569]">{money(row.requiredRoiValue)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Expected (forecast)</p>
+          <p className="font-medium text-[#64748B]">{money(row.expectedRoiValue)}</p>
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
           <p className="font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
         </div>
       </td>
       <td className="px-3 py-3 text-right">
-        <p className="font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No data"}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
+        <p className="font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
+        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Forecast</p>
+        <p className="font-medium text-[#64748B]">{percent(row.forecastCoverageRatio)}</p>
+        {row.dataCoverage !== "complete" ? (
+          <p className="mt-1 break-words text-[10px] font-bold leading-4 text-amber-600">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</p>
+        ) : null}
         {row.attributionGapReason ? <p className="mt-1 break-words text-[10px] font-medium leading-4 text-[#94A3B8]">{row.attributionGapReason}</p> : null}
       </td>
       <td className="px-3 py-2.5">
@@ -1085,20 +1108,29 @@ const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { 
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
         <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required (target)</p>
           <p className="mt-0.5 font-bold text-[#334155]">{money(row.requiredRoiValue)}</p>
         </div>
         <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Expected (forecast)</p>
+          <p className="mt-0.5 font-bold text-[#64748B]">{money(row.expectedRoiValue)}</p>
+        </div>
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual sales</p>
           <p className="mt-0.5 font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
         </div>
         <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Coverage</p>
-          <p className="mt-0.5 font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No data"}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual coverage</p>
+          <p className="mt-0.5 font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
+          <p className="mt-0.5 text-[10px] font-bold text-[#94A3B8]">Forecast {percent(row.forecastCoverageRatio)}</p>
         </div>
         <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Window</p>
           <p className="mt-0.5 break-words font-bold text-[#64748B]">{row.roiWindow ?? "No window"}</p>
+        </div>
+        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Data coverage</p>
+          <p className={cn("mt-0.5 break-words font-bold", row.dataCoverage === "complete" ? "text-[#64748B]" : "text-amber-600")}>{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</p>
         </div>
       </div>
 

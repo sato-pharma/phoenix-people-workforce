@@ -98,7 +98,9 @@ export type OrganogramReportRow = {
 export type VacancyReportDiagnosticCode =
   | "line_unresolved"
   | "company_scope_denied"
-  | "line_scope_denied";
+  | "line_scope_denied"
+  | "team_unresolved"
+  | "vacancy_scope_denied";
 
 export type VacancyReportDiagnostic = {
   code: VacancyReportDiagnosticCode;

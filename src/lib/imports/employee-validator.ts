@@ -1,4 +1,5 @@
-﻿import {
+﻿import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
+import {
   createEmployeeColumnLookup,
   requiredEmployeeImportFields,
 } from "@/lib/imports/employee-column-map";
@@ -31,6 +32,10 @@ import {
   type OrgMappingSample,
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
+import {
+  OFFICIAL_AREA_CODE_BY_SLUG,
+  OFFICIAL_LINE_CODE_BY_SLUG,
+} from "@/lib/imports/official-geography";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 
@@ -221,7 +226,11 @@ function buildRecord(
     },
     departmentName: organization.department.displayName,
     lineName: organization.line.displayName,
+    // region is no longer a typed-in column — it's derived from the resolved (line, area) via
+    // line_area_region_map once resolveGlobalLine/resolveGlobalArea run. Kept only as a
+    // display fallback for any row whose line/area didn't resolve.
     regionName: normalizeTextValue(valueFor(row, mapping, "region")),
+    regionCode: null,
     areaName: organization.area.displayName,
     teamName: organization.team.displayName,
     positionTitle: organization.position.displayName,
@@ -456,13 +465,13 @@ function normalizeSeatPart(value: string | null | undefined) {
 
 function employeeOrgSeatKey(record: Pick<
   EmployeeImportRecord,
-  "areaName" | "codes" | "jobTitle" | "lineName" | "normalizedOrganizationNames" | "positionTitle" | "regionName"
+  "areaName" | "codes" | "jobTitle" | "lineName" | "normalizedOrganizationNames" | "positionTitle" | "regionCode" | "regionName"
 >) {
   const line = record.codes.lineCode ?? record.normalizedOrganizationNames.line ?? normalizeSeatPart(record.lineName);
   const area = record.codes.areaCode ?? record.normalizedOrganizationNames.area ?? normalizeSeatPart(record.areaName);
   const position = record.codes.positionCode ?? record.normalizedOrganizationNames.position ?? normalizeSeatPart(record.positionTitle);
   const title = normalizeSeatPart(record.jobTitle ?? record.positionTitle);
-  const region = normalizeSeatPart(record.regionName);
+  const region = normalizeSeatPart(record.regionCode ?? record.regionName);
 
   if (!line || !area || !position || !title) {
     return null;
@@ -479,13 +488,13 @@ function employeeOrgSeatKey(record: Pick<
 
 function employeeOrgSeatLabel(record: Pick<
   EmployeeImportRecord,
-  "areaName" | "jobTitle" | "lineName" | "positionTitle" | "regionName"
+  "areaName" | "jobTitle" | "lineName" | "positionTitle" | "regionCode" | "regionName"
 >) {
   return [
     `Title: ${record.jobTitle ?? record.positionTitle ?? "-"}`,
     `Position: ${record.positionTitle ?? record.jobTitle ?? "-"}`,
     `Area: ${record.areaName ?? "-"}`,
-    `Region: ${record.regionName ?? "-"}`,
+    `Region: ${record.regionCode ?? record.regionName ?? "-"}`,
     `Line: ${record.lineName ?? "-"}`,
   ].join(", ");
 }
@@ -526,6 +535,90 @@ function resolveGlobalDepartment(
   record.normalizedOrganizationNames.department = normalizeDepartmentLookupKey(record.departmentName);
 
   return null;
+}
+
+/**
+ * Line is a governed global lookup, same as department — an import must reference one of the
+ * official codes (PD/CS/AF/HO), never auto-create a new line from a typo or unrecognized spelling.
+ */
+function resolveGlobalLine(
+  record: EmployeeImportRecord,
+  options: EmployeeImportPlanOptions,
+) {
+  const rawLine = record.rawOrganizationValues.line ?? record.lineName;
+  const lineText = normalizeTextValue(rawLine);
+
+  if (!lineText) {
+    return null;
+  }
+
+  const slug = record.codes.lineCode;
+  const officialCode = slug ? OFFICIAL_LINE_CODE_BY_SLUG[slug] : undefined;
+  const knownCodes = options.existingState?.lineCodes;
+
+  if (!officialCode || (knownCodes && !knownCodes.has(officialCode))) {
+    record.codes.lineCode = null;
+    return {
+      rowNumber: record.rowNumber,
+      field: "line" as const,
+      code: "invalid_line",
+      message: `Line "${lineText}" is not one of the official lines (Pedia, CNS, Anti Infective, Head Office).`,
+    };
+  }
+
+  record.codes.lineCode = officialCode;
+  return null;
+}
+
+/**
+ * Area is a governed global lookup, same as line — an import must reference one of the 40 official
+ * Sales-geography areas, never auto-create a new area from a typo or unrecognized spelling.
+ */
+function resolveGlobalArea(
+  record: EmployeeImportRecord,
+  options: EmployeeImportPlanOptions,
+) {
+  const rawArea = record.rawOrganizationValues.area ?? record.areaName;
+  const areaText = normalizeTextValue(rawArea);
+
+  if (!areaText) {
+    return null;
+  }
+
+  const slug = record.codes.areaCode;
+  const officialCode = slug ? OFFICIAL_AREA_CODE_BY_SLUG[slug] : undefined;
+  const knownCodes = options.existingState?.areaCodes;
+
+  if (!officialCode || (knownCodes && !knownCodes.has(officialCode))) {
+    record.codes.areaCode = null;
+    return {
+      rowNumber: record.rowNumber,
+      field: "area" as const,
+      code: "invalid_area",
+      message: `Area "${areaText}" is not one of the 40 official Sales-geography areas. Use the exact area name/code from the master.`,
+    };
+  }
+
+  record.codes.areaCode = officialCode;
+  return null;
+}
+
+/** Once line + area resolve to official codes, region is ALWAYS derived from
+ *  line_area_region_map — never typed in, so it can never drift from the (line, area) pair again. */
+function resolveRegionFromLineArea(
+  record: EmployeeImportRecord,
+  options: EmployeeImportPlanOptions,
+) {
+  const lineCode = record.codes.lineCode;
+  const areaCode = record.codes.areaCode;
+  if (!lineCode || !areaCode) {
+    return;
+  }
+
+  const regionCode = options.existingState?.regionCodeByLineArea?.get(`${lineCode}|${areaCode}`);
+  if (regionCode) {
+    record.regionCode = regionCode;
+  }
 }
 
 function resolveGlobalTeam(
@@ -621,6 +714,7 @@ export function validateEmployeeImportRows(
   const crmIdCounts = new Map<string, number>();
   const crmUsernameCounts = new Map<string, number>();
   const hrIdCounts = new Map<string, number>();
+  const hrIdDisplayByCanonicalKey = new Map<string, string>();
 
   for (const field of missingRequiredColumns) {
     validationErrors.push({
@@ -639,7 +733,11 @@ export function validateEmployeeImportRows(
         message: "Employee row is missing HR_ID.",
       });
     } else if (record.rowType === "employee" && record.hrId) {
-      hrIdCounts.set(record.hrId, (hrIdCounts.get(record.hrId) ?? 0) + 1);
+      const hrIdKey = canonicalHrIdKey(record.hrId)!;
+      hrIdCounts.set(hrIdKey, (hrIdCounts.get(hrIdKey) ?? 0) + 1);
+      if (!hrIdDisplayByCanonicalKey.has(hrIdKey)) {
+        hrIdDisplayByCanonicalKey.set(hrIdKey, record.hrId);
+      }
     }
 
     const crmIdKey = normalizeCrmIdKey(record.crmId);
@@ -684,6 +782,18 @@ export function validateEmployeeImportRows(
       validationErrors.push(departmentError);
     }
 
+    const lineError = resolveGlobalLine(record, options);
+    if (lineError) {
+      validationErrors.push(lineError);
+    }
+
+    const areaError = resolveGlobalArea(record, options);
+    if (areaError) {
+      validationErrors.push(areaError);
+    }
+
+    resolveRegionFromLineArea(record, options);
+
     const teamError = resolveGlobalTeam(record, options);
     if (teamError) {
       validationErrors.push(teamError);
@@ -712,7 +822,7 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.rowType === "employee" && record.managerHrId && record.hrId === record.managerHrId) {
+    if (record.rowType === "employee" && record.managerHrId && hrIdsMatch(record.hrId, record.managerHrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "managerHrId",
@@ -906,7 +1016,7 @@ export function validateEmployeeImportRows(
 
   const duplicateHrIds = Array.from(hrIdCounts.entries())
     .filter(([, count]) => count > 1)
-    .map(([hrId]) => hrId);
+    .map(([hrIdKey]) => hrIdDisplayByCanonicalKey.get(hrIdKey) ?? hrIdKey);
   const duplicateCrmIds = new Set(
     Array.from(crmIdCounts.entries())
       .filter(([, count]) => count > 1)
@@ -918,11 +1028,23 @@ export function validateEmployeeImportRows(
       .map(([crmUsername]) => crmUsername),
   );
 
-  const duplicateHrIdSet = new Set(duplicateHrIds);
+  const duplicateHrIdSet = new Set(
+    Array.from(hrIdCounts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([hrIdKey]) => hrIdKey),
+  );
   const existingCrmIdToHrId = options.existingState?.crmIdToHrId ?? new Map<string, string>();
   const existingCrmUsernameToHrId = options.existingState?.crmUsernameToHrId ?? new Map<string, string>();
-  const terminalEmployeeHrIds = options.existingState?.terminalEmployeeHrIds ?? new Set<string>();
-  const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds ?? terminalEmployeeHrIds;
+  const canonicalHrIdSet = (source: Iterable<string> | undefined) =>
+    new Set(
+      Array.from(source ?? [])
+        .map((hrId) => canonicalHrIdKey(hrId))
+        .filter((hrId): hrId is string => Boolean(hrId)),
+    );
+  const terminalEmployeeHrIds = canonicalHrIdSet(options.existingState?.terminalEmployeeHrIds);
+  const protectedLifecycleHrIds = options.existingState?.protectedLifecycleHrIds
+    ? canonicalHrIdSet(options.existingState.protectedLifecycleHrIds)
+    : terminalEmployeeHrIds;
   const uploadedSeatOwners = new Map<string, EmployeeImportRecord>();
   const existingSeatOwners = new Map<string, string>();
 
@@ -947,6 +1069,7 @@ export function validateEmployeeImportRows(
       },
       positionTitle: null,
       regionName: seat.regionName,
+      regionCode: seat.regionCode,
     });
 
     if (seatKey) {
@@ -955,7 +1078,7 @@ export function validateEmployeeImportRows(
   }
 
   for (const record of records) {
-    if (record.hrId && duplicateHrIdSet.has(record.hrId)) {
+    if (record.hrId && duplicateHrIdSet.has(canonicalHrIdKey(record.hrId)!)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "hrId",
@@ -964,7 +1087,7 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.hrId && protectedLifecycleHrIds.has(record.hrId)) {
+    if (record.hrId && protectedLifecycleHrIds.has(canonicalHrIdKey(record.hrId)!)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "hrId",
@@ -984,7 +1107,7 @@ export function validateEmployeeImportRows(
     }
 
     const existingCrmOwner = crmIdKey ? existingCrmIdToHrId.get(crmIdKey) : null;
-    if (record.hrId && existingCrmOwner && existingCrmOwner !== record.hrId) {
+    if (record.hrId && existingCrmOwner && !hrIdsMatch(existingCrmOwner, record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "crmId",
@@ -1004,7 +1127,7 @@ export function validateEmployeeImportRows(
     }
 
     const existingCrmUsernameOwner = crmUsernameKey ? existingCrmUsernameToHrId.get(crmUsernameKey) : null;
-    if (record.hrId && existingCrmUsernameOwner && existingCrmUsernameOwner !== record.hrId) {
+    if (record.hrId && existingCrmUsernameOwner && !hrIdsMatch(existingCrmUsernameOwner, record.hrId)) {
       validationErrors.push({
         rowNumber: record.rowNumber,
         field: "crmUsername",
@@ -1018,7 +1141,7 @@ export function validateEmployeeImportRows(
       const existingSeatOwner = seatKey ? existingSeatOwners.get(seatKey) : null;
       const uploadedSeatOwner = seatKey ? uploadedSeatOwners.get(seatKey) : null;
 
-      if (seatKey && uploadedSeatOwner && uploadedSeatOwner.hrId !== record.hrId) {
+      if (seatKey && uploadedSeatOwner && !hrIdsMatch(uploadedSeatOwner.hrId, record.hrId)) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field: "area",
@@ -1029,7 +1152,7 @@ export function validateEmployeeImportRows(
         uploadedSeatOwners.set(seatKey, record);
       }
 
-      if (record.hrId && existingSeatOwner && existingSeatOwner !== record.hrId) {
+      if (record.hrId && existingSeatOwner && !hrIdsMatch(existingSeatOwner, record.hrId)) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field: "area",
@@ -1040,18 +1163,18 @@ export function validateEmployeeImportRows(
     }
   }
 
-  const fileHrIds = new Set(
+  const fileHrIds = canonicalHrIdSet(
     records.flatMap((record) =>
       record.rowType === "employee" && record.hrId ? [record.hrId] : [],
     ),
   );
-  const databaseManagerHrIds = options.existingState?.managerHrIds ?? new Set<string>();
+  const databaseManagerHrIds = canonicalHrIdSet(options.existingState?.managerHrIds);
 
   for (const record of records) {
     if (
       record.managerHrId &&
-      !fileHrIds.has(record.managerHrId) &&
-      !databaseManagerHrIds.has(record.managerHrId)
+      !fileHrIds.has(canonicalHrIdKey(record.managerHrId)!) &&
+      !databaseManagerHrIds.has(canonicalHrIdKey(record.managerHrId)!)
     ) {
       validationErrors.push({
         rowNumber: record.rowNumber,
@@ -1077,7 +1200,7 @@ export function validateEmployeeImportRows(
       !failedRowNumbers.has(record.rowNumber) &&
       missingRequiredColumns.length === 0,
   );
-  const existingEmployeeHrIds = options.existingState?.employeeHrIds ?? new Set<string>();
+  const existingEmployeeHrIds = canonicalHrIdSet(options.existingState?.employeeHrIds);
   const importableEmployeeRecords = importableRecords.filter(isEmployeeRecord);
   const vacantPositionsToCreate =
     importableRecords.filter(isVacantPositionRecord);
@@ -1100,10 +1223,10 @@ export function validateEmployeeImportRows(
     missingRequiredColumns,
     duplicateHrIds,
     rowsToInsert: importableEmployeeRecords.filter(
-      (record) => record.hrId && !existingEmployeeHrIds.has(record.hrId),
+      (record) => record.hrId && !existingEmployeeHrIds.has(canonicalHrIdKey(record.hrId)!),
     ),
     rowsToUpdate: importableEmployeeRecords.filter(
-      (record) => record.hrId && existingEmployeeHrIds.has(record.hrId),
+      (record) => record.hrId && existingEmployeeHrIds.has(canonicalHrIdKey(record.hrId)!),
     ),
     vacantPositionsToCreate,
     organizationEntitiesToCreate,

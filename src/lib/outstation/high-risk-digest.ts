@@ -7,7 +7,7 @@
 // Empty-day behaviour: no rows → no notification (no zero-row spam). Idempotent
 // per recipient per day via the outbox dedupe key.
 
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { highRiskReasons, isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -127,6 +127,7 @@ export async function runOutstationHighRiskDigest(): Promise<HighRiskDigestResul
 
     return { ok: true, rowCount: flagged.length, recipientCount: recipients.length, sentCount };
   } catch (error) {
+    logNotificationSendFailure("outstation.highRiskDigest", error);
     return {
       ok: false,
       rowCount: 0,

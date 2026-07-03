@@ -2627,11 +2627,14 @@ export async function updateManagerExpenseAsAdmin(
     .from("outstation_expense_requests")
     .update(updatePayload)
     .eq("id", requestId)
+    .eq("status", existing.status)
     .select("*")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("Outstation request not found after update.");
+  if (!data) {
+    throw new Error("Outstation request state changed. Refresh and retry.");
+  }
 
   const updated = mapOutstationRequestRow(data as Record<string, unknown>);
   const syncedPayrollRows = await syncLinkedOutstationPayrollExpense({

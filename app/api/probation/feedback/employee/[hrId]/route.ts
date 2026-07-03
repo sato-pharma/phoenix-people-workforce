@@ -13,7 +13,7 @@ export async function GET(
 ) {
   try {
     const access = await resolveAccessContext(request);
-    assertPermission(access, "probation", "read");
+    await assertPermission(access, "probation", "read");
 
     const { hrId } = await params;
     const [submissions, eligibility] = await Promise.all([

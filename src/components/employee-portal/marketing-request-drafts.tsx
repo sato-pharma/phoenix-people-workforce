@@ -42,6 +42,11 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
+import {
+  ROI_ACTUAL_IN_TRACKING_NOTE,
+  ROI_FORECAST_COVERAGE_LABEL,
+  forecastRoiStatusLabel,
+} from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingRequestDetail,
   MarketingRequestStepProgress,
@@ -1431,7 +1436,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     </h2>
                   </div>
                   <Badge variant={roiBadgeVariant(roiPreview.roiStatus)}>
-                    {roiPreview.roiStatus.replace(/_/g, " ")}
+                    {forecastRoiStatusLabel(roiPreview.roiStatus)}
                   </Badge>
                 </div>
               </div>
@@ -1817,7 +1822,7 @@ function MarketingRequestDraftWorkspaceInner() {
               label="Expected"
               value={egp(roiPreview.expectedRoiValue)}
             />
-            <RoiMetric label="Coverage" value={`${coveragePct}%`} />
+            <RoiMetric label={ROI_FORECAST_COVERAGE_LABEL} value={`${coveragePct}%`} />
           </div>
 
           {/* Smart coverage bar --- green/amber/red */}
@@ -2009,7 +2014,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       <Badge
                         variant={roiBadgeVariant(draft.roiStatus)}
                       >
-                        {draft.roiStatus.replace(/_/g, " ")}
+                        {forecastRoiStatusLabel(draft.roiStatus)}
                       </Badge>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
@@ -2019,7 +2024,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </span>
                       <span className="text-[10px] font-bold text-slate-500">
                         {Math.round(draft.roiCoverageRatio * 100)}%
-                        coverage
+                        {" "}forecast coverage
                       </span>
                     </div>
                   </div>
@@ -2028,7 +2033,11 @@ function MarketingRequestDraftWorkspaceInner() {
                   <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
                     No draft rows yet.
                   </p>
-                ) : null}
+                ) : (
+                  <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">
+                    Forecast only — {ROI_ACTUAL_IN_TRACKING_NOTE}.
+                  </p>
+                )}
               </>
             )}
           </div>

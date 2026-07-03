@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getScopedVacancyReport } from "@/lib/reports/organogram";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -46,7 +46,23 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "vacancies", "read");
 
-    return NextResponse.json(await getVacancyReport());
+    const report = await getScopedVacancyReport(access);
+
+    if (report.diagnostic?.code === "vacancy_scope_denied") {
+      return NextResponse.json(
+        { error: "forbidden", message: report.diagnostic.message },
+        { status: 403 },
+      );
+    }
+
+    if (report.diagnostic?.code === "line_unresolved" || report.diagnostic?.code === "team_unresolved") {
+      return NextResponse.json(
+        { error: "vacancy_scope_missing", message: report.diagnostic.message },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json(report);
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to vacancy reports." }, { status: 403 });

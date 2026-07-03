@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { BACKFILL_MAX_MAPPINGS, backfillCustomerRows } from "@/lib/sales/normalizer/mapping";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
@@ -21,6 +22,10 @@ export type CustomerMapRow = {
   customerName: string;
   distributorCode: string;
   regionCode: string;
+  // Provenance (phase-4 migration): how the mapping was created and, for auto-applied rows, the
+  // geo-validated confidence. Defaults when the columns are not present yet.
+  source: string;
+  confidence: number | null;
 };
 
 export async function listCustomerMap(filter?: { distributorCode?: string }): Promise<CustomerMapRow[]> {
@@ -31,7 +36,7 @@ export async function listCustomerMap(filter?: { distributorCode?: string }): Pr
   for (;;) {
     let query = supabase
       .from("source_of_sales_customer_map")
-      .select("distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code")
+      .select("distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code,source")
       .eq("active", true)
       .order("distributor_code", { ascending: true })
       .order("customer_code", { ascending: true });
@@ -44,10 +49,12 @@ export async function listCustomerMap(filter?: { distributorCode?: string }): Pr
         address: String(r.address ?? ""),
         areaCode: String(r.area_code ?? ""),
         brickId: String(r.brick_id ?? ""),
+        confidence: null,
         customerCode: String(r.customer_code ?? ""),
         customerName: String(r.customer_name ?? ""),
         distributorCode: String(r.distributor_code ?? ""),
         regionCode: String(r.region_code ?? ""),
+        source: String(r.source ?? ""),
       });
     }
     if (page.length < pageSize) break;
@@ -76,32 +83,45 @@ export async function listCustomerMapPage(input: {
   search?: string;
   limit?: number;
   offset?: number;
+  source?: string;
 }): Promise<CustomerMapPage> {
   const supabase = getSupabaseAdmin();
   const distributorCode = normalizeCodeKey(input.distributorCode);
   const { limit, offset } = clampPageParams(input);
-  let query = supabase
-    .from("source_of_sales_customer_map")
-    .select("distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code", { count: "exact" })
-    .eq("active", true)
-    .eq("distributor_code", distributorCode);
-  const search = String(input.search ?? "").trim();
-  if (search) {
-    const safe = search.replace(/[%,]/g, " ");
-    query = query.or(`customer_code.ilike.%${safe}%,customer_name.ilike.%${safe}%,address.ilike.%${safe}%`);
-  }
-  const result = await query
-    .order("customer_code", { ascending: true })
-    .range(offset, offset + limit - 1);
+  const sourceFilter = String(input.source ?? "").trim();
+  const buildQuery = (withConfidence: boolean) => {
+    let query = supabase
+      .from("source_of_sales_customer_map")
+      .select(
+        withConfidence
+          ? "distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code,source,confidence"
+          : "distributor_code,customer_code,customer_name,address,brick_id,area_code,region_code,source",
+        { count: "exact" },
+      )
+      .eq("active", true)
+      .eq("distributor_code", distributorCode);
+    if (sourceFilter) query = query.eq("source", sourceFilter);
+    const search = String(input.search ?? "").trim();
+    if (search) {
+      const safe = search.replace(/[%,]/g, " ");
+      query = query.or(`customer_code.ilike.%${safe}%,customer_name.ilike.%${safe}%,address.ilike.%${safe}%`);
+    }
+    return query.order("customer_code", { ascending: true }).range(offset, offset + limit - 1);
+  };
+  // The confidence column lands with the phase-4 migration; fall back to the base select before it.
+  let result = await buildQuery(true);
+  if (result.error && /confidence/i.test(result.error.message ?? "")) result = await buildQuery(false);
   if (result.error) throw new SalesWorkflowError("customer_map_list_failed", result.error.message, 500);
-  const rows = ((result.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+  const rows = ((result.data ?? []) as unknown as Array<Record<string, unknown>>).map((r) => ({
     address: String(r.address ?? ""),
     areaCode: String(r.area_code ?? ""),
     brickId: String(r.brick_id ?? ""),
+    confidence: typeof r.confidence === "number" ? Number(r.confidence) : null,
     customerCode: String(r.customer_code ?? ""),
     customerName: String(r.customer_name ?? ""),
     distributorCode: String(r.distributor_code ?? ""),
     regionCode: String(r.region_code ?? ""),
+    source: String(r.source ?? ""),
   }));
   return { rows, total: result.count ?? rows.length, limit, offset };
 }
@@ -152,6 +172,8 @@ export type CustomerMapImportResult = {
   skipped: number;
   totalRead: number;
   updated: number;
+  backfilled: number;
+  backfillSkipped: boolean;
 };
 
 type BrickRef = { areaCode: string; brickId: string; regionCode: string };
@@ -277,7 +299,7 @@ async function loadExistingCustomerKeys(supabase: ReturnType<typeof getSupabaseA
   return keys;
 }
 
-export async function importCustomerMap(input: { actorLoginId: string; file: File; defaultDistributorCode?: string }): Promise<CustomerMapImportResult> {
+export async function importCustomerMap(input: { actorLoginId: string; file: File; defaultDistributorCode?: string; backfill?: boolean }): Promise<CustomerMapImportResult> {
   const validation = validateSpreadsheetFile(input.file, {
     ...xlsxSpreadsheetValidation,
     emptyError: "invalid_customer_map_file",
@@ -362,15 +384,27 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
     }
   }
 
+  // Heal historical NULL-brick rows for the imported mappings. Skipped for very large imports —
+  // thousands of sequential UPDATEs belong in a separate deliberate action, not an upload's tail.
+  let backfilled = 0;
+  const applied = upserts.length > 0 && inserted + updated > 0;
+  const backfillSkipped = input.backfill === true && upserts.length > BACKFILL_MAX_MAPPINGS;
+  if (input.backfill === true && applied && !backfillSkipped) {
+    backfilled = await backfillCustomerRows(
+      supabase,
+      upserts.map((u) => ({ customer_code: u.payload.customer_code, distributor_code: u.payload.distributor_code })),
+    );
+  }
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: "source_of_sales_customer_map",
     entityType: "sales_import_batch",
-    newValues: { blocked: blockedRows.length, inserted, skipped, source: "customer_map_import", totalRead, updated },
-    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked.`,
+    newValues: { backfilled, blocked: blockedRows.length, inserted, skipped, source: "customer_map_import", totalRead, updated },
+    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked${backfilled ? `, ${backfilled} historical rows healed` : ""}.`,
   });
 
-  return { blockedRows, inserted, skipped, totalRead, updated };
+  return { backfillSkipped, backfilled, blockedRows, inserted, skipped, totalRead, updated };
 }
 
 // Add/update ONE customer->brick mapping from the inline "add by field" form (vs the bulk upload).
@@ -382,7 +416,8 @@ export async function addCustomerMapRow(input: {
   customerName?: string;
   address?: string;
   brickId: string;
-}): Promise<void> {
+  backfill?: boolean;
+}): Promise<{ backfilled: number }> {
   const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const brickById = new Map<string, BrickRef>(
     (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
@@ -425,4 +460,12 @@ export async function addCustomerMapRow(input: {
     after: { brick_id: result.payload.brick_id, area_code: result.payload.area_code, region_code: result.payload.region_code },
     actor: input.actorLoginId,
   });
+
+  let backfilled = 0;
+  if (input.backfill === true) {
+    backfilled = await backfillCustomerRows(supabase, [
+      { customer_code: result.payload.customer_code, distributor_code: result.payload.distributor_code },
+    ]);
+  }
+  return { backfilled };
 }

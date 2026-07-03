@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 
 function isCronAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV === "development";
+  // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
+  // real local machine without it may bypass an unset CRON_SECRET during development.
+  if (!secret) return !process.env.VERCEL && process.env.NODE_ENV === "development";
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
@@ -21,7 +23,7 @@ async function runNotificationOutbox(limit: number) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "read");
+    await assertPermission(access, "admin", "update");
 
     const body = await request.json().catch(() => ({}));
     const requestedLimit = Number(body?.limit ?? 10);

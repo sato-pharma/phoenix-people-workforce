@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateFingerprintReportWorkbook } from "@/lib/attendance/fingerprint-report-export";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "read");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:attendance:fingerprint" });
+    const scopeHrIds = await resolveAttendanceScopeHrIds(access);
 
     const url = new URL(request.url);
     const data = await getFingerprintAttendanceReport({
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
       department: url.searchParams.get("department") ?? undefined,
       deviceUserId: url.searchParams.get("deviceUserId") ?? undefined,
       employeeHrId: url.searchParams.get("employeeHrId") ?? undefined,
+      employeeHrIds: scopeHrIds ?? undefined,
       employeeName: url.searchParams.get("employeeName") ?? undefined,
       jobTitle: url.searchParams.get("jobTitle") ?? undefined,
       search: url.searchParams.get("search") ?? undefined,

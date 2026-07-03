@@ -30,7 +30,7 @@ export default async function CustomerMappingPage() {
     await assertPermission(access, "sales", "import");
     [options, initialResult] = await Promise.all([
       loadCustomerMappingFilterOptions(),
-      listCustomerMapping({}),
+      listCustomerMapping({}, access.role),
     ]);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Customer Mapping.";

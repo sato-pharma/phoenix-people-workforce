@@ -282,6 +282,44 @@ async function employeeByHrId(hrId: string | null | undefined): Promise<Notifica
   return (await candidateByHrId(hrId))?.recipient ?? null;
 }
 
+async function candidatesByHrIds(hrIds: string[]): Promise<Map<string, RecipientCandidate>> {
+  const normalized = Array.from(new Set(hrIds.map(cleanHrId).filter(Boolean)));
+  const output = new Map<string, RecipientCandidate>();
+  if (normalized.length === 0) return output;
+
+  try {
+    const [{ data: employeeData, error: employeeError }, { data: authData, error: authError }] = await Promise.all([
+      getSupabaseAdmin()
+        .from("employees")
+        .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
+        .in("hr_id", normalized),
+      getSupabaseAdmin()
+        .from("app_auth_users")
+        .select("login_id,hr_id,name,auth_email,role,is_active,line,manager_hr_id")
+        .in("hr_id", normalized)
+        .eq("is_active", true),
+    ]);
+    if (employeeError) throw employeeError;
+    if (authError) throw authError;
+
+    const employeesByHrId = new Map(((employeeData ?? []) as EmployeeRecipientRow[]).map((row) => [cleanHrId(row.hr_id), row] as const));
+    const authByHrId = new Map(((authData ?? []) as AuthRecipientRow[]).map((row) => [cleanHrId(row.hr_id), row] as const));
+
+    for (const hrId of normalized) {
+      const employee = employeesByHrId.get(hrId) ?? null;
+      if (!employee || !isActiveEmployee(employee)) continue;
+      const auth = authByHrId.get(hrId) ?? null;
+      const role = roleFrom(auth?.role);
+      const candidate = { auth, employee, role };
+      output.set(hrId, { ...candidate, recipient: recipientFromCandidate(candidate) });
+    }
+    return output;
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("Notification batch recipient lookup failed", error);
+    return output;
+  }
+}
+
 async function activeAuthCandidates() {
   try {
     const [{ data: authData, error: authError }, { data: employeeData, error: employeeError }] = await Promise.all([
@@ -354,8 +392,10 @@ async function managerChainFor(hrId: string | null | undefined, maxDepth = 4) {
 
 async function explicitRecipientCandidates(input: ResolveNotificationRecipientsInput, keys: string[]) {
   const hrIds = metadataTexts(input.metadata, keys);
-  const candidates = await Promise.all(hrIds.map((hrId) => candidateByHrId(hrId)));
-  return candidates.filter((candidate): candidate is RecipientCandidate => Boolean(candidate?.recipient.hrId));
+  const candidateMap = await candidatesByHrIds(hrIds);
+  return hrIds
+    .map((hrId) => candidateMap.get(cleanHrId(hrId)))
+    .filter((candidate): candidate is RecipientCandidate => Boolean(candidate?.recipient.hrId));
 }
 
 function accessContextFor(candidate: RecipientCandidate): AccessContext | null {

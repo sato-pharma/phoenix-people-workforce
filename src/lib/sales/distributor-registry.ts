@@ -172,7 +172,7 @@ export async function getDistributorProfileSummary(code: string): Promise<Distri
   if (normalizeCodeKey(code) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) {
     return {
       distributorCode: normalizeCodeKey(code),
-      distributorName: "Office",
+      distributorName: "Marcyrl",
       productColumns: ["Row Labels"],
       customerCodeColumns: [],
       customerNameColumns: [],

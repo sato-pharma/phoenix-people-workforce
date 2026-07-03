@@ -29,7 +29,7 @@ export default async function ResignationsPage() {
   let initialError: string | null = null;
 
   try {
-    initialData = await getResignationsDashboardData();
+    initialData = await getResignationsDashboardData(access);
   } catch (error) {
     initialError = resignationsPageError(error);
   }

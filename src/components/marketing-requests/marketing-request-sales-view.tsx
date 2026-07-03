@@ -5,7 +5,8 @@ import { AlertTriangle, ArrowLeftRight, CalendarRange, Download, ExternalLink, R
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import type { MarketingRoiViewSales, MarketingRoiViewSalesAggregate } from "@/lib/marketing-requests/roi-report-types";
+import type { MarketingRoiViewSales, MarketingRoiViewSalesAggregate, MarketingRoiViewSalesRow } from "@/lib/marketing-requests/roi-report-types";
+import { MarketingRoiExplainPanel } from "@/components/marketing-requests/roi-explain-panel";
 import { cn } from "@/lib/utils";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -70,6 +71,19 @@ function AggregateTable({ title, rows, max }: { title: string; rows: MarketingRo
   );
 }
 
+type SalesRowSortKey = "invoicePeriod" | "distributorName" | "productName" | "customerCode" | "customerName" | "qty" | "value";
+type SortDirection = "asc" | "desc";
+
+function sortSalesRows(rows: MarketingRoiViewSalesRow[], key: SalesRowSortKey, direction: SortDirection): MarketingRoiViewSalesRow[] {
+  const dir = direction === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+  });
+}
+
 export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { requestId: string; viewSalesBasePath: string }) {
   const [data, setData] = React.useState<MarketingRoiViewSales | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -77,6 +91,16 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [exporting, setExporting] = React.useState(false);
+  const [sort, setSort] = React.useState<{ key: SalesRowSortKey; direction: SortDirection }>({ direction: "desc", key: "invoicePeriod" });
+
+  function toggleSort(key: SalesRowSortKey) {
+    setSort((current) => (current.key === key ? { direction: current.direction === "asc" ? "desc" : "asc", key } : { direction: "asc", key }));
+  }
+
+  function sortArrow(key: SalesRowSortKey) {
+    if (sort.key !== key) return "↕";
+    return sort.direction === "asc" ? "↑" : "↓";
+  }
 
   const load = React.useCallback(async (fromPeriod: string, toPeriod: string) => {
     setLoading(true);
@@ -149,6 +173,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
   const maxProduct = data ? Math.max(0, ...data.byProduct.map((row) => row.value)) : 0;
   const maxPharmacy = data ? Math.max(0, ...data.byPharmacy.map((row) => row.value)) : 0;
   const maxMonth = data ? Math.max(0, ...data.byMonth.map((row) => row.value)) : 0;
+  const sortedRows = React.useMemo(() => (data ? sortSalesRows(data.rows, sort.key, sort.direction) : []), [data, sort]);
 
   return (
     <WorkspaceErrorBoundary fallbackTitle="View Sales error">
@@ -256,20 +281,34 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 <table className="w-full min-w-[920px] border-collapse text-left text-[13px]">
                   <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
                     <tr>
-                      <th className="px-3 py-2.5">Period</th>
-                      <th className="px-3 py-2.5">Distributor</th>
-                      <th className="px-3 py-2.5">Product</th>
-                      <th className="px-3 py-2.5">Customer code</th>
-                      <th className="px-3 py-2.5">Pharmacy</th>
-                      <th className="px-3 py-2.5 text-right">Units</th>
-                      <th className="px-3 py-2.5 text-right">Value</th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleSort("invoicePeriod")} className="inline-flex items-center gap-1 font-black">Period {sortArrow("invoicePeriod")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleSort("distributorName")} className="inline-flex items-center gap-1 font-black">Distributor {sortArrow("distributorName")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleSort("productName")} className="inline-flex items-center gap-1 font-black">Product {sortArrow("productName")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleSort("customerCode")} className="inline-flex items-center gap-1 font-black">Customer code {sortArrow("customerCode")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleSort("customerName")} className="inline-flex items-center gap-1 font-black">Pharmacy {sortArrow("customerName")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleSort("qty")} className="inline-flex items-center gap-1 font-black">Units {sortArrow("qty")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleSort("value")} className="inline-flex items-center gap-1 font-black">Value {sortArrow("value")}</button>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.rows.length === 0 ? (
+                    {sortedRows.length === 0 ? (
                       <tr><td className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]" colSpan={7}>No sales matched in this period range.</td></tr>
                     ) : (
-                      data.rows.map((row, index) => (
+                      sortedRows.map((row, index) => (
                         <tr key={`${row.customerCode}-${row.productCode}-${row.invoicePeriod}-${index}`} className="border-t border-[#FEE7D2]">
                           <td className="px-3 py-2 font-mono text-[12px] font-bold text-[#0F172A]">{row.invoicePeriod}</td>
                           <td className="px-3 py-2 font-medium text-[#64748B]">{row.distributorName}</td>
@@ -322,6 +361,12 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             ) : null}
           </>
         ) : null}
+
+        {/* Read-only ROI explainability for this request (loads independently of the sales table).
+            Isolated in its own boundary so a fault here can never take down the sales table above. */}
+        <WorkspaceErrorBoundary fallbackTitle="Explain ROI error">
+          <MarketingRoiExplainPanel requestId={requestId} />
+        </WorkspaceErrorBoundary>
       </div>
     </WorkspaceErrorBoundary>
   );

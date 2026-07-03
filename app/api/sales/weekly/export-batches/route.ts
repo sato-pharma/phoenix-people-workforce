@@ -11,7 +11,7 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "weekly_sales", "read");
+    await assertPermission(access, "weekly_sales", "import");
 
     const body = (await request.json()) as { batchIds?: unknown };
     const rawIds = body?.batchIds;

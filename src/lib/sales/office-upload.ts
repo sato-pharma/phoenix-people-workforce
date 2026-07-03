@@ -64,7 +64,7 @@ async function buildOfficeAllocation(input: { buffer: ArrayBuffer | Buffer; file
 
   const distributor: SalesDistributorOption =
     references.distributors.find((d) => normalizeCodeKey(d.code) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE))
-    ?? { code: OFFICE_DISTRIBUTOR_CODE, name: "Office" };
+    ?? { code: OFFICE_DISTRIBUTOR_CODE, name: "Marcyrl" };
 
   return computeOfficeAllocation({
     brickShare,

@@ -27,6 +27,11 @@ import type {
  *  have not been uploaded yet (≠ behind). */
 export type MarketingRoiResultStatus = "on_track" | "behind" | "no_data" | "awaiting_data";
 
+/** Whether the request's ROI window is fully / partly / not backed by validated SoS data.
+ *  `partial_pending` = some window months are not yet uploaded; `no_validated_data` = the
+ *  window is entirely outside the validated range (or nothing is validated yet). */
+export type MarketingRoiDataCoverage = "complete" | "partial_pending" | "no_validated_data";
+
 /** Keys for every filter dimension offered by the Filter Engine. */
 export type RoiFilterKey =
   | "dm"
@@ -242,6 +247,10 @@ export type MarketingRoiReportRow = {
   actualSalesValue: number;
   actualSalesUnits: number;
   actualCoverageRatio: number;
+  /** forecast coverage = expected_roi_value / required_roi_value (forecast, not actual). */
+  forecastCoverageRatio: number;
+  /** whether the ROI window is fully / partly / not backed by validated SoS data. */
+  dataCoverage: MarketingRoiDataCoverage;
   resultStatus: MarketingRoiResultStatus;
   attributionQuality: MarketingRoiAttributionQuality;
   hasSalesData: boolean;

@@ -53,6 +53,26 @@ export function runContractRenewalHardeningTests() {
   assert.match(dailyRoute, /runBirthdayNotifications/);
   assert.match(dailyRoute, /runVacationSlaDaily/);
 
+  // Finding #41: an unset CRON_SECRET must fail closed on every Vercel environment
+  // (production, preview, `vercel dev`), not just when NODE_ENV happens to say
+  // "development" — Vercel always sets NODE_ENV=production, including on Preview, so
+  // that check alone is not a safe signal. Only a real local machine (no VERCEL env
+  // var at all) may still bypass an unset secret for `npm run dev` convenience.
+  const birthdaysRoute = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
+  const cronAuthRoutes = { birthdaysRoute, dailyRoute, processRoute, reminderRoute };
+  for (const [name, source] of Object.entries(cronAuthRoutes)) {
+    assert.doesNotMatch(
+      source,
+      /if \(!secret\) return process\.env\.NODE_ENV === "development";/,
+      `${name} cron auth must not fail open on NODE_ENV alone`,
+    );
+    assert.match(
+      source,
+      /if \(!secret\) return !process\.env\.VERCEL && process\.env\.NODE_ENV === "development";/,
+      `${name} cron auth must fail closed on every Vercel environment missing CRON_SECRET`,
+    );
+  }
+
   // Vercel Pro hosts two crons: the daily dispatcher and the sub-daily outbox drain
   // (the drain moved off GitHub Actions so it no longer burns Actions minutes). The daily
   // dispatcher must stay daily; any cron beyond these two must be a deliberate change.

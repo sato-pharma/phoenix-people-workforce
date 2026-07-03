@@ -16,11 +16,14 @@ export async function POST(request: Request) {
     }
     await assertPermission(access, "sales", "import");
 
-    const body = (await request.json().catch(() => ({}))) as { mappings?: MappingInput[] };
+    const body = (await request.json().catch(() => ({}))) as { mappings?: MappingInput[]; backfill?: boolean };
     const mappings = Array.isArray(body.mappings) ? body.mappings.filter((m) => m && (m.type === "product" || m.type === "territory" || m.type === "customer") && m.raw && m.code) : [];
     if (mappings.length === 0) return NextResponse.json({ success: false, error: "No mappings to save." }, { status: 400 });
 
-    const result = await saveMappings(mappings);
+    const result = await saveMappings(mappings, {
+      backfill: body.backfill === true,
+      mappedBy: access.loginId ?? undefined,
+    });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
