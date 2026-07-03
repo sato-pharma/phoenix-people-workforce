@@ -11,7 +11,7 @@ import {
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { EmailTemplateContext } from "@/lib/email-templates/service";
-import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -676,8 +676,7 @@ function nullableDateOnly(value: unknown, label: string) {
 }
 
 export function normalizeHrId(value: unknown) {
-  const normalized = cleanText(value)?.toLowerCase() ?? null;
-  return normalized;
+  return canonicalHrIdKey(value as string | null | undefined);
 }
 
 function normalizeScopeText(value: string | null | undefined) {
