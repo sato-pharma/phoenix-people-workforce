@@ -68,7 +68,7 @@ export async function runResignationWorkflowScopeCheckTests() {
   );
   assert.match(
     fnBody,
-    /directory\.find\(\(item\) => item\.hrId === row\.employee_hr_id\)/,
+    /directory\.find\(\(item\) => hrIdsMatch\(item\.hrId, row\.employee_hr_id\)\)/,
     "the employee lookup must match against row.employee_hr_id (the resignation record's own employee)",
   );
 
