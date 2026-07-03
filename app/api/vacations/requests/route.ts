@@ -4,10 +4,12 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { removePendingVacationAttachment, resolvePendingVacationAttachment } from "@/lib/vacation/attachment-transport";
 import {
   createVacationRequest,
   isVacationSchemaMissing,
   vacationErrorMessage,
+  type VacationAttachmentUpload,
 } from "@/lib/vacation/service";
 import {
   assertVacationRouteRateLimit,
@@ -34,6 +36,10 @@ function isFormFile(value: FormDataEntryValue | null): value is File {
 }
 
 export async function POST(request: Request) {
+  // Large sick/compensatory files bypass this function's body entirely — the browser already streamed
+  // them straight to Storage (see /api/vacations/attachments/upload-url) and references them here by
+  // path instead of sending the bytes. Track any such paths so the pending object is always cleaned up.
+  const pendingAttachmentPaths: string[] = [];
   try {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
@@ -59,18 +65,40 @@ export async function POST(request: Request) {
     const oversizedCompensatory = isFormFile(compensatoryPhoto) ? rejectOversizedVacationFile(compensatoryPhoto) : null;
     if (oversizedCompensatory) return oversizedCompensatory;
 
+    let sickAttachment: VacationAttachmentUpload | null = isFormFile(sickDocument)
+      ? {
+          bytes: Buffer.from(await sickDocument.arrayBuffer()),
+          contentType: sickDocument.type || "application/octet-stream",
+          fileName: sickDocument.name || "sick-document",
+          size: sickDocument.size,
+        }
+      : null;
+    let compensatoryAttachment: VacationAttachmentUpload | null = isFormFile(compensatoryPhoto)
+      ? {
+          bytes: Buffer.from(await compensatoryPhoto.arrayBuffer()),
+          contentType: compensatoryPhoto.type || "application/octet-stream",
+          fileName: compensatoryPhoto.name || "compensatory-event-photo",
+          size: compensatoryPhoto.size,
+        }
+      : null;
+    if (body instanceof FormData) {
+      const sickAttachmentStoragePath = formText(body, "sickAttachmentStoragePath");
+      if (!sickAttachment && sickAttachmentStoragePath) {
+        pendingAttachmentPaths.push(sickAttachmentStoragePath);
+        sickAttachment = await resolvePendingVacationAttachment(sickAttachmentStoragePath);
+      }
+      const compensatoryAttachmentStoragePath = formText(body, "compensatoryAttachmentStoragePath");
+      if (!compensatoryAttachment && compensatoryAttachmentStoragePath) {
+        pendingAttachmentPaths.push(compensatoryAttachmentStoragePath);
+        compensatoryAttachment = await resolvePendingVacationAttachment(compensatoryAttachmentStoragePath);
+      }
+    }
+
     const result = await createVacationRequest(
       access,
       body instanceof FormData
         ? {
-            compensatoryAttachment: isFormFile(compensatoryPhoto)
-              ? {
-                  bytes: Buffer.from(await compensatoryPhoto.arrayBuffer()),
-                  contentType: compensatoryPhoto.type || "application/octet-stream",
-                  fileName: compensatoryPhoto.name || "compensatory-event-photo",
-                  size: compensatoryPhoto.size,
-                }
-              : null,
+            compensatoryAttachment,
             compensatoryEventDate: formText(body, "compensatoryEventDate"),
             compensatoryEventLocation: formText(body, "compensatoryEventLocation"),
             compensatoryEventName: formText(body, "compensatoryEventName"),
@@ -80,14 +108,7 @@ export async function POST(request: Request) {
             employeeNote: formText(body, "employeeNote"),
             endDate: formText(body, "endDate"),
             otherReason: formText(body, "otherReason"),
-            sickAttachment: isFormFile(sickDocument)
-              ? {
-                  bytes: Buffer.from(await sickDocument.arrayBuffer()),
-                  contentType: sickDocument.type || "application/octet-stream",
-                  fileName: sickDocument.name || "sick-document",
-                  size: sickDocument.size,
-                }
-              : null,
+            sickAttachment,
             startDate: formText(body, "startDate"),
             vacationType: formText(body, "vacationType"),
           }
@@ -123,5 +144,7 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({ error: "vacation_request_failed", message, success: false }, { status: 400 });
+  } finally {
+    await Promise.all(pendingAttachmentPaths.map((path) => removePendingVacationAttachment(path)));
   }
 }

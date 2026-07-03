@@ -1127,6 +1127,41 @@ function NationalEgyptianVacationPanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Attachment upload transport ───────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+// Sick documents and compensatory-day event photos are often phone camera photos (routinely 5-9MB),
+// which exceed Vercel's ~4.5MB serverless request-body cap. Files above this threshold stream straight
+// to Storage via a short-lived signed upload URL instead of riding through the submit request body;
+// the submit call then references the file by storage path. Small files keep the original direct path.
+const LARGE_ATTACHMENT_THRESHOLD = 4 * 1024 * 1024;
+
+// Hard ceiling for a single evidence file. Matches the server-side limit (route-guards + service.ts)
+// and the leave-attachments storage bucket file_size_limit. Files above this are rejected client-side
+// with a clear message before any upload is attempted.
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_LABEL = "20MB";
+
+async function uploadVacationAttachmentToStorage(file: File, kind: "sick" | "compensatory"): Promise<string> {
+  const urlRes = await fetch("/api/vacations/attachments/upload-url", {
+    body: JSON.stringify({ fileName: file.name, kind }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const urlPayload = (await urlRes.json().catch(() => ({}))) as { signedUrl?: string; path?: string; message?: string };
+  if (!urlRes.ok || !urlPayload.signedUrl || !urlPayload.path) {
+    throw new Error(urlPayload.message ?? "Could not start the upload for this file.");
+  }
+  const putRes = await fetch(urlPayload.signedUrl, {
+    body: file,
+    headers: { "content-type": file.type || "application/octet-stream", "x-upsert": "false" },
+    method: "PUT",
+  });
+  if (!putRes.ok) throw new Error("The file could not be uploaded. Please try again.");
+  return urlPayload.path;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Exported Component (Error Boundary Wrapper) ──────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1181,6 +1216,19 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
   const { enqueue, isOnline, queueLength } = useOfflineQueue(replayVacationRequest);
 
+  // Reject an oversized evidence file at selection time so the employee gets an immediate, clear
+  // message (with the actual file size) instead of a confusing failure when the upload runs.
+  function selectAttachment(file: File | null, label: string, setter: (next: File | null) => void) {
+    if (file && file.size > MAX_ATTACHMENT_BYTES) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      setError(`${label} is too large (${sizeMb}MB). Maximum size is ${MAX_ATTACHMENT_LABEL}.`);
+      setter(null);
+      return;
+    }
+    setError(null);
+    setter(file);
+  }
+
   const durationPreview = useMemo(() => {
     try {
       return {
@@ -1205,7 +1253,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     [dayPart, endDate, startDate, vacationType],
   );
 
-  function buildFormData() {
+  function buildFormData(storagePaths: { sick?: string | null; compensatory?: string | null } = {}) {
     const formData = new FormData();
     formData.append("dayPart", dayPart);
     formData.append("endDate", endDate);
@@ -1216,7 +1264,11 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
       formData.append("otherReason", otherReason);
     }
     if (sickDocument) {
-      formData.append("sickDocument", sickDocument);
+      if (storagePaths.sick) {
+        formData.append("sickAttachmentStoragePath", storagePaths.sick);
+      } else {
+        formData.append("sickDocument", sickDocument);
+      }
     }
     if (vacationType === "compensatory") {
       formData.append("compensatoryEventDate", compensatoryEventDate);
@@ -1224,7 +1276,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
       formData.append("compensatoryEventName", compensatoryEventName);
       formData.append("compensatoryManager1", compensatoryManager1);
       formData.append("compensatoryManager2", compensatoryManager2);
-      if (compensatoryPhoto) formData.append("compensatoryPhoto", compensatoryPhoto);
+      if (compensatoryPhoto) {
+        if (storagePaths.compensatory) {
+          formData.append("compensatoryAttachmentStoragePath", storagePaths.compensatory);
+        } else {
+          formData.append("compensatoryPhoto", compensatoryPhoto);
+        }
+      }
     }
     return formData;
   }
@@ -1245,8 +1303,6 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     setSubmitting(true);
     setError(null);
 
-    const formData = buildFormData();
-
     // Offline queue fallback (#2)
     if (!isOnline) {
       const queuedPayload = buildQueuedPayload();
@@ -1265,6 +1321,15 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     }
 
     try {
+      const storagePaths: { sick?: string | null; compensatory?: string | null } = {};
+      if (sickDocument && sickDocument.size > LARGE_ATTACHMENT_THRESHOLD) {
+        storagePaths.sick = await uploadVacationAttachmentToStorage(sickDocument, "sick");
+      }
+      if (vacationType === "compensatory" && compensatoryPhoto && compensatoryPhoto.size > LARGE_ATTACHMENT_THRESHOLD) {
+        storagePaths.compensatory = await uploadVacationAttachmentToStorage(compensatoryPhoto, "compensatory");
+      }
+      const formData = buildFormData(storagePaths);
+
       const response = await fetch("/api/vacations/requests", {
         body: formData,
         method: "POST",
@@ -1579,13 +1644,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         className="sr-only"
                         required
                         type="file"
-                        onChange={(event) => setSickDocument(event.target.files?.[0] ?? null)}
+                        onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Medical document", setSickDocument)}
                       />
                       <span className="rounded-sm bg-sky-600 px-3 py-1.5 text-[13px] font-bold text-white shadow-sm">
                         Browse medical document
                       </span>
                       <span className="mt-1.5 text-[11px] font-medium leading-4 text-slate-600">
-                        Upload a stamped governmental hospital document. PDF, Word, JPG, PNG, or WEBP accepted.
+                        Upload a stamped governmental hospital document. PDF, Word, JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL}.
                       </span>
                     </label>
                     <p className="text-[11px] font-medium text-slate-500">
@@ -1686,13 +1751,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             id="compensatory-photo"
                             required
                             type="file"
-                            onChange={(event) => setCompensatoryPhoto(event.target.files?.[0] ?? null)}
+                            onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Event photo", setCompensatoryPhoto)}
                           />
                           <span className="rounded-sm bg-orange-500 px-3 py-1.5 text-[13px] font-bold text-white shadow-sm">
                             Browse event photo
                           </span>
                           <span className="mt-1.5 text-[11px] font-medium leading-4 text-slate-600">
-                            Upload the event or conference photo. JPG, PNG, or WEBP accepted.
+                            Upload the event or conference photo. JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL}.
                           </span>
                         </label>
                         <p className="text-[11px] font-medium text-slate-500">
