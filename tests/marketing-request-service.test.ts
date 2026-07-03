@@ -773,4 +773,59 @@ export async function runMarketingRequestServiceTests() {
     /assigned line/i,
     "without a product override a cross-line product stays rejected",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* B-155 named exception: marketing is hard-clamped to EXACTLY the override */
+  /* codes (matching sales), not the usual native-line + override union.     */
+  /* ---------------------------------------------------------------------- */
+
+  const b155Requester = { areaId: 30, hrId: "B-155", lineId: 7, lineName: "Pedia", managerHrId: "A-8" };
+  const b155Products = [
+    { active: true, factory_price: 6, id: 10, line: "Pedia", line_id: 7, product_code: "GU001", product_name: "Guamusin" },
+    { active: true, factory_price: 0, id: 11, line: "Pedia", line_id: 7, product_code: "TG001", product_name: "Tigogrow" },
+    { active: true, factory_price: 0, id: 12, line: "Anti infective", line_id: 1, product_code: "OS001", product_name: "Osteosat" },
+  ];
+  const b155AllowedCodes = new Set(["TG001", "OS001"]);
+
+  const b155Scope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "B-155", role: "Product Manager" }),
+    productRows: b155Products,
+    requester: b155Requester,
+    allowedProductCodes: b155AllowedCodes,
+  });
+  assert.deepEqual(
+    b155Scope.products.map((product) => product.id).sort((a, b) => a - b),
+    [11, 12],
+    "B-155 exception: product picker is EXACTLY his override codes, excluding his own native-line product (Guamusin) which isn't one of them",
+  );
+
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        input: { ...baseInput, products: [{ productId: 10, quantity: 500 }] },
+        pharmacyCodes: [
+          { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
+        ],
+        products: b155Products,
+        requestType,
+        requester: b155Requester,
+        allowedProductCodes: b155AllowedCodes,
+      }),
+    /assigned line/i,
+    "B-155 exception: his own native-line product (Guamusin) is rejected on submit because it's not in his override",
+  );
+
+  const b155Submit = prepareMarketingRequestDraft({
+    customer,
+    input: { ...baseInput, products: [{ productId: 12, quantity: 500 }] },
+    pharmacyCodes: [
+      { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
+    ],
+    products: b155Products,
+    requestType,
+    requester: b155Requester,
+    allowedProductCodes: b155AllowedCodes,
+  });
+  assert.equal(b155Submit.requestRow.line_id, 1, "B-155's Osteosat request is tagged with the product's line (Anti infective), not his own Pedia line");
 }
