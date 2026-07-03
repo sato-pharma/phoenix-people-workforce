@@ -9,6 +9,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { applyOrganogramMirrorSafety } from "@/lib/reports/organogram-safety";
 import {
   getVacancyReport,
+  type OrganogramReportRow,
   type VacancyReportData,
   type VacancyReportDiagnostic,
 } from "@/lib/reports/vacancies";
@@ -161,10 +162,34 @@ export function scopeOrganogramReportData(
       const n = normalizeLineName(rowLine);
       return Boolean(n && allowedNormalized.includes(n));
     };
+
+    // Keep the allowed-line employees AND their management chain upward, so the reporting
+    // hierarchy stays connected to the top even when a manager sits on another line — e.g. a
+    // Product Manager spanning Pedia + Anti infective still shows his Group Product Manager and,
+    // above that, the Marketing Manager who sits on the Head Office line. Without this the line
+    // filter orphans the subtree at the first cross-line manager.
+    const rowByHrId = new Map<string, OrganogramReportRow>();
+    for (const row of report.organogramRows) {
+      const key = normalizeHrIdForAccess(row.hrId);
+      if (key && !rowByHrId.has(key)) rowByHrId.set(key, row);
+    }
+    const ancestorHrIds = new Set<string>();
+    for (const row of report.organogramRows) {
+      if (!matchesAny(row.lineName)) continue;
+      let managerKey = normalizeHrIdForAccess(row.managerHrId);
+      while (managerKey && !ancestorHrIds.has(managerKey)) {
+        ancestorHrIds.add(managerKey);
+        const managerRow = rowByHrId.get(managerKey);
+        managerKey = managerRow ? normalizeHrIdForAccess(managerRow.managerHrId) : null;
+      }
+    }
+    const keepOrganogramRow = (row: OrganogramReportRow) =>
+      matchesAny(row.lineName) || ancestorHrIds.has(normalizeHrIdForAccess(row.hrId) ?? "");
+
     const scopedReport = {
       ...report,
       organogramRows: applyOrganogramMirrorSafety(
-        report.organogramRows.filter((row) => matchesAny(row.lineName)),
+        report.organogramRows.filter(keepOrganogramRow),
       ),
       rows: report.rows.filter((row) => matchesAny(row.lineName)),
     };

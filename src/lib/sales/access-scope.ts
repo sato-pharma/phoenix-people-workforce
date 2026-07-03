@@ -5,7 +5,7 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
-import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
+import { getUserLineScopeOverride, getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -314,11 +314,12 @@ export async function resolveSalesAccessScope(
   ctx: AccessContext,
   opts?: { includeRestricted?: boolean },
 ): Promise<SalesAccessScope> {
-  const [businessScope, rawProductOverride] = await Promise.all([
+  const [businessScope, rawProductOverride, rawLineOverride] = await Promise.all([
     (async (): Promise<BusinessScope> => ctx.scope === "system"
       ? "COMPANY"
       : getSalesScope({ role: ctx.role, salesScopeOverride: await getPersistedSalesScopeOverride(ctx) }))(),
     getUserProductScopeOverride(ctx.loginId ?? ""),
+    getUserLineScopeOverride(ctx.loginId ?? ""),
   ]);
 
   // Build the product-code allowlist from the per-user override.
@@ -340,12 +341,16 @@ export async function resolveSalesAccessScope(
     });
   }
 
-  // Head-office department heads (e.g. Marketing Manager) oversee a fixed set of department product
-  // lines rather than their own (head-office) line. This is a constant, so it covers a marketing
-  // line even when no one currently reports from it (e.g. CNS with no PM assigned).
-  const overseenLineNames = MARKETING_OVERSIGHT_LINE_ROLES.has(ctx.role)
-    ? [...MARKETING_OVERSIGHT_OFFICIAL_LINES]
-    : [];
+  // A per-user line_scope_override (e.g. a Product Manager covering both Pedia and Anti infective)
+  // is the explicit set of product lines that user may see in sales — it REPLACES the single line
+  // on their employee row, exactly like the head-office oversight set below. With no override,
+  // head-office department heads (Marketing Manager) fall back to the fixed department line set
+  // (covers e.g. CNS even when no PM is assigned); everyone else is bounded to their own line.
+  const overseenLineNames = rawLineOverride && rawLineOverride.length > 0
+    ? rawLineOverride
+    : MARKETING_OVERSIGHT_LINE_ROLES.has(ctx.role)
+      ? [...MARKETING_OVERSIGHT_OFFICIAL_LINES]
+      : [];
 
   const currentHrId = resolveEmployeeIdentityId(ctx);
   let viewerLineName: string | null = null;
