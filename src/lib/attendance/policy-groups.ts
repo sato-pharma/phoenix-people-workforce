@@ -30,6 +30,47 @@ function normalizePolicyRows(rows: Array<Omit<AttendancePolicyGroupDbRow, "worki
   })) satisfies AttendancePolicyGroupDbRow[];
 }
 
+// Flexible-hours fields for the weekly-digest generator (migration
+// 20260703180000). Additive to the base policy row; a separate, narrowly-scoped
+// loader so the widely-used loadAttendancePolicyGroups() above is never touched.
+export type AttendanceFlexPolicyGroupDbRow = AttendancePolicyGroupDbRow & {
+  flex_minutes: number | null;
+  required_minutes: number | null;
+  half_day_split_minutes: number;
+  judgment_mode: "every_working_day" | "office_days_only";
+};
+
+const flexPolicySelect = `${policySelectWithWeekdays},flex_minutes,required_minutes,half_day_split_minutes,judgment_mode`;
+
+/**
+ * Same active-policy rows as loadAttendancePolicyGroups(), plus the
+ * flexible-hours columns the digest generator needs. Only policies with
+ * required_minutes set are usable by the flexible-hours engine — policies not
+ * yet migrated to the new model return required_minutes: null and the caller
+ * should skip them (they have no flexible-hours config yet).
+ */
+export async function loadAttendanceFlexPolicyGroups(
+  input: { activeOnly?: boolean } = {},
+): Promise<AttendanceFlexPolicyGroupDbRow[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase.from("attendance_policy_groups").select(flexPolicySelect);
+  if (input.activeOnly) query = query.eq("is_active", true);
+
+  const result = await query
+    .order("target_type")
+    .order("target_value")
+    .order("effective_from", { ascending: false });
+  if (result.error) throw result.error;
+
+  const rows = (result.data ?? []) as Array<
+    Omit<AttendanceFlexPolicyGroupDbRow, "working_weekdays"> & { working_weekdays?: unknown }
+  >;
+  return rows.map((row) => ({
+    ...row,
+    working_weekdays: normalizeAttendanceWorkingWeekdays(row.working_weekdays),
+  }));
+}
+
 export async function loadAttendancePolicyGroups(input: { activeOnly?: boolean } = {}) {
   const supabase = getSupabaseAdmin();
   let query = supabase

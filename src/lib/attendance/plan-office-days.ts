@@ -1,0 +1,85 @@
+// Plan office/field day lookup for the Tier-2 (NSM/GPM/PM) digest gating.
+//
+// Reuses the existing weekly/monthly plan system (src/lib/weekly-planning):
+// an approved plan's employee_plan_items carry an activity_type per date, and
+// "Office" is the literal signal that a day is planned in-office. Any other
+// activity type on an approved plan (Field, Double Visit, Meeting, Travel, ...)
+// means the day is NOT planned in-office. A date with no approved-plan item at
+// all is "no plan" (null) — the caller should treat that as "not an office day"
+// per the confirmed spec (Tier 2 is judged ONLY on a plan-office day).
+//
+// If a day has more than one plan item (e.g. AM/PM split), any "Office" item
+// that day marks it office=true — the employee was expected in the building at
+// least part of the day, so a punch should exist.
+
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { isIsoDate } from "@/lib/attendance/working-days";
+
+const approvedPlanStatuses = ["final_approved", "hr_acknowledged"] as const;
+
+type PlanHeaderRow = {
+  employee_hr_id: string;
+  employee_plan_items: Array<{ activity_date: string; activity_type: string | null }> | null;
+};
+
+function isPlanSchemaMissing(error: unknown) {
+  const text = error instanceof Error ? error.message : JSON.stringify(error);
+  return /employee_plan_headers|employee_plan_items|schema cache|does not exist|PGRST205|42P01/i.test(text);
+}
+
+/**
+ * Map<employeeHrId, Map<dateIso, isOfficeDay>> built from approved weekly/monthly
+ * plans overlapping [dateFromIso, dateToIso]. Only dates with an approved plan
+ * item are present in the inner map — an absent date means "no plan for that day".
+ * Degrades to an empty map (never throws) if the plan tables are unavailable, so
+ * a Tier-2 digest fails closed (no plan data → gating treats it as "not an office
+ * day" → skip, never a wrongful deduction).
+ */
+export async function getPlanOfficeDayMap(input: {
+  dateFromIso: string;
+  dateToIso: string;
+  employeeHrIds: string[];
+}): Promise<Map<string, Map<string, boolean>>> {
+  const officeByEmployee = new Map<string, Map<string, boolean>>();
+  if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) return officeByEmployee;
+
+  const normalizedHrIds = Array.from(
+    new Set(input.employeeHrIds.map((id) => normalizeAttendanceHrId(id)).filter((value): value is string => Boolean(value))),
+  );
+  if (normalizedHrIds.length === 0) return officeByEmployee;
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("employee_plan_headers")
+    .select("employee_hr_id,employee_plan_items(activity_date,activity_type)")
+    .in("employee_hr_id", normalizedHrIds)
+    .in("status", approvedPlanStatuses)
+    .lte("period_start_date", input.dateToIso)
+    .gte("period_end_date", input.dateFromIso);
+
+  if (error) {
+    if (isPlanSchemaMissing(error)) return officeByEmployee;
+    throw new Error(`Plan office-day lookup failed: ${error.message}`);
+  }
+
+  for (const header of (data ?? []) as PlanHeaderRow[]) {
+    const hrId = normalizeAttendanceHrId(header.employee_hr_id);
+    if (!hrId) continue;
+    const byDate = officeByEmployee.get(hrId) ?? new Map<string, boolean>();
+
+    for (const item of header.employee_plan_items ?? []) {
+      if (!isIsoDate(item.activity_date)) continue;
+      if (item.activity_date < input.dateFromIso || item.activity_date > input.dateToIso) continue;
+      const isOffice = item.activity_type === "Office";
+      // Any "Office" item that day wins over a non-office item on the same date.
+      if (isOffice || !byDate.has(item.activity_date)) {
+        byDate.set(item.activity_date, isOffice);
+      }
+    }
+
+    if (byDate.size > 0) officeByEmployee.set(hrId, byDate);
+  }
+
+  return officeByEmployee;
+}
