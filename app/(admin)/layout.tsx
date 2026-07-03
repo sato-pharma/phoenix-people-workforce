@@ -10,8 +10,8 @@ import { resolveNavigationMode } from "@/lib/auth/permissions";
 // flash, scroll position preserved, and the access context / permission matrix
 // resolved once per shell rather than once per page. The `(admin)` group does NOT
 // affect URLs. Dual-mode / full-width / public routes (payslips, leave-management,
-// organogram, offers) intentionally stay outside this group and keep their own
-// per-page shell handling.
+// offers) intentionally stay outside this group and keep their own per-page shell
+// handling. The organogram lives INSIDE this group and uses the group AppShell.
 export default async function AdminGroupLayout({ children }: { children: ReactNode }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) {
