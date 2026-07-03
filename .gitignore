@@ -11,6 +11,8 @@ output/playwright-report/
 *.log
 .playwright-mcp/
 tests/e2e/.auth/
+tests/synthetic/.auth/
+tests/synthetic/report/
 .vercel/
 tsconfig.tsbuildinfo
 _junk/
