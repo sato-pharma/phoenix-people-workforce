@@ -193,8 +193,19 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "resignation_b-180_20260101000000",
     }),
   ]);
-  assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-000000");
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
+  // MD-6/LO-6 fix: the suffix is now a base-36 hash of the FULL raw code
+  // (never a truncated substring of just the timestamp), so two distinct
+  // resignation codes that happen to share a tail (e.g. same time-of-day on
+  // different dates) can no longer collapse to the same public label.
+  assert.equal(resignationVacancy[0]?.hrId, "VAC-RES-PH8AE7");
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-PIBHHX");
+  // Same clock time (12:34:56), different date -> the OLD slice(-6) truncation
+  // discarded the date and collided both to "123456"/"VAC-RES-123456". The new
+  // full-string hash must NOT collide.
+  assert.notEqual(
+    publicVacancyLabel("resignation_vac_20260517123456_B180"),
+    publicVacancyLabel("resignation_vac_20260610123456_B181"),
+  );
 
   const vacantDsmLaneKeepsPendingReports = buildOrganogramLanes([
     row({
