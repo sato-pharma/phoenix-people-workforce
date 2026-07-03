@@ -155,7 +155,7 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
-function isEmployeeVisibleInOrganogram(status: string | null | undefined) {
+export function isEmployeeVisibleInOrganogram(status: string | null | undefined) {
   const normalizedStatus = String(status ?? "active").trim().toLowerCase();
 
   return (
@@ -414,9 +414,12 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   const employeeOrganogramRows: OrganogramReportRow[] =
     employeeDirectory.employees
       .filter((employee) =>
+        // Organogram visibility is an org-structure concept, not a compensation
+        // one: an active, org-visible employee who is payroll-ineligible (e.g. an
+        // externally-paid secondee) still belongs on the chart so their reports
+        // don't orphan. Intentional hiding is expressed via `organogram_visible`.
         isEmployeeVisibleInOrganogram(employee.employmentStatus) &&
-        employee.organogramVisible !== false &&
-        employee.payrollEligible !== false,
+        employee.organogramVisible !== false,
       )
       .map((employee) => ({
         areaId: employee.areaId,

@@ -209,6 +209,7 @@ import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibili
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
+import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runProbationFeedbackSecurityTests } from "./probation-feedback-security.test.ts";
@@ -508,6 +509,7 @@ await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("title permission governance", runTitlePermissionGovernanceTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
+await runTest("organogram godmode", runOrganogramGodmodeTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("probation stabilization", runProbationStabilizationTests);
 await runTest("probation feedback security", runProbationFeedbackSecurityTests);

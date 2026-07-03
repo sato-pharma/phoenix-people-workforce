@@ -22,7 +22,11 @@ function normalizeCode(value: string | number | null | undefined) {
 }
 
 export function organogramTitleText(row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle">) {
-  return `${row.positionTitle ?? row.jobTitle ?? ""}`.trim().toLowerCase();
+  // Prefer a non-empty positionTitle; an empty-string positionTitle falls back to
+  // jobTitle so classification/KPIs don't blank out on "" (vs null).
+  return String((row.positionTitle?.trim() ? row.positionTitle : row.jobTitle) ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 export function classifyOrganogramStructureLevel(
@@ -30,7 +34,11 @@ export function classifyOrganogramStructureLevel(
 ): StructureKpiLevel | null {
   const title = organogramTitleText(row);
 
-  if (title.includes("medical representative") || title.includes("medical rep")) {
+  if (
+    title.includes("medical representative") ||
+    title.includes("medical rep") ||
+    title === "mr"
+  ) {
     return "medicalRep";
   }
 
@@ -69,11 +77,14 @@ export function calculateOrganogramStructureKpis(rows: OrganogramReportRow[]) {
   };
   const counted = new Set<string>();
 
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     const level = classifyOrganogramStructureLevel(row);
+    // Dedupe key intentionally excludes the array index so genuinely duplicated
+    // logical rows (same person / same vacancy slot) collapse to a single KPI
+    // count instead of being counted twice.
     const key = row.type === "vacancy"
-      ? `vacancy:${normalizeCode(row.vacancyCode ?? row.hrId)}:${row.sourceRowNumber ?? ""}:${index}`
-      : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}:${index}`;
+      ? `vacancy:${normalizeCode(row.vacancyCode ?? row.hrId)}:${row.sourceRowNumber ?? ""}`
+      : `${row.type}:${normalizeCode(row.hrId)}:${row.vacancyCode ?? ""}:${row.sourceRowNumber ?? ""}`;
 
     if (!level || counted.has(key)) {
       return;

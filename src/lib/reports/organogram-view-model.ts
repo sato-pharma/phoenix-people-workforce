@@ -1,9 +1,12 @@
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
+  classifyOrganogramStructureLevel,
   districtBucketMatches,
   isOrganogramSalesStructureRole,
   organogramPositionSlotKey,
 } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
+import { formatVacantSeatLabel } from "@/lib/workforce/hierarchy-resolver";
 
 export type OrganogramRow = VacancyReportData["organogramRows"][number];
 
@@ -34,7 +37,12 @@ function groupBy<T>(items: T[], keyFor: (item: T) => string) {
 
   for (const item of items) {
     const key = keyFor(item);
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const bucket = groups.get(key);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      groups.set(key, [item]);
+    }
   }
 
   return Array.from(groups.entries()).sort((left, right) =>
@@ -43,7 +51,11 @@ function groupBy<T>(items: T[], keyFor: (item: T) => string) {
 }
 
 export function titleText(row: OrganogramRow) {
-  return `${row.positionTitle ?? row.jobTitle ?? ""}`.toLowerCase();
+  // Prefer a non-empty positionTitle; fall back to jobTitle so an empty-string
+  // positionTitle ("" rather than null) does not blank out classification.
+  return String((row.positionTitle?.trim() ? row.positionTitle : row.jobTitle) ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 export function isOfficeLine(row: OrganogramRow) {
@@ -72,8 +84,11 @@ export function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
+// HR_ID key for grouping/comparison. Routes through the canonical alias table
+// (e.g. legacy AAA -> AA) so the organogram groups people exactly as the rest of
+// the app does; returns "" for empty so callers can treat it as "no key".
 export function normalizeHrIdKey(value: string | null | undefined) {
-  return value?.trim().toUpperCase() ?? "";
+  return canonicalHrIdKey(value)?.toUpperCase() ?? "";
 }
 
 export function normalizeSearchValue(value: string | null | undefined) {
@@ -115,46 +130,33 @@ export function rowKey(row: OrganogramRow) {
   return `${row.type}-${row.hrId}-${row.sourceRowNumber ?? ""}`;
 }
 
+// The four sales-structure predicates delegate to the single canonical classifier
+// in organogram-safety.ts so lane grouping and KPI counting can never disagree
+// (previously a bare "MR" title was a rep for lanes but not for KPIs).
 export function isNationalSalesManager(row: OrganogramRow) {
-  const title = titleText(row);
-
-  return title.includes("national sales manager") || title === "nsm";
+  return classifyOrganogramStructureLevel(row) === "nsm";
 }
 
 export function isRegionalSalesManager(row: OrganogramRow) {
-  const title = titleText(row);
-
-  return title.includes("regional sales manager") || title === "rsm";
+  return classifyOrganogramStructureLevel(row) === "rsm";
 }
 
 export function isChiefExecutive(row: OrganogramRow) {
   const title = titleText(row);
 
   return (
-    row.hrId.trim().toUpperCase() === "AA" ||
+    canonicalHrIdKey(row.hrId) === "aa" ||
     title === "ceo" ||
     title.includes("chief executive")
   );
 }
 
 export function isDistrictSalesManager(row: OrganogramRow) {
-  const title = titleText(row);
-
-  return (
-    title.includes("district sales manager") ||
-    title.includes("district manager") ||
-    title === "dsm"
-  );
+  return classifyOrganogramStructureLevel(row) === "dsm";
 }
 
 export function isMedicalRep(row: OrganogramRow) {
-  const title = titleText(row);
-
-  return (
-    title.includes("medical representative") ||
-    title.includes("medical rep") ||
-    title === "mr"
-  );
+  return classifyOrganogramStructureLevel(row) === "medicalRep";
 }
 
 export function isManagerLevel(row: OrganogramRow) {
@@ -469,6 +471,12 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       const key = rowKey(row);
       const managerNameKey = normalizeNameKey(row.managerName);
       const managerHrId = normalizeHrIdKey(row.managerHrId);
+      // A report whose manager seat resigned is reassigned UP to the line leader
+      // and stamped with a replacement marker. Without this, that report would be
+      // excluded here (reportsToLineLeader) yet has no DSM/vacancy lane to land
+      // in, and would vanish. Recognizing the marker rescues it under a vacant
+      // seat (mirrors resolveSeatGrouping's marker precedence).
+      const heldByVacantSeat = Boolean(normalizeHrIdKey(row.managerReplacementForHrId));
       const reportsToLineLeader =
         Boolean(lineLeader) &&
         (managerHrId === normalizeHrIdKey(lineLeader?.hrId) ||
@@ -476,13 +484,16 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
 
       return (
         !assignedToDsm.has(key) &&
-        !reportsToLineLeader &&
-        (managerHrId || row.managerName) &&
+        (!reportsToLineLeader || heldByVacantSeat) &&
+        (managerHrId || row.managerName || heldByVacantSeat) &&
         (!managerHrId || !dsmHrIds.has(managerHrId)) &&
         (!managerNameKey || !dsmNameKeys.has(managerNameKey))
       );
     }),
     (row) => {
+      const heldSeatKey = normalizeHrIdKey(row.managerReplacementForHrId);
+      if (heldSeatKey) return `held-seat:${heldSeatKey}`;
+
       const managerHrId = normalizeHrIdKey(row.managerHrId);
       const managerNameKey = normalizeNameKey(row.managerName);
 
@@ -499,15 +510,26 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
     },
   ).map(([managerKey, members]) => {
     const firstMember = members[0];
-    const name = managerKey === "ceo-direct-reports"
-      ? "CEO Direct Reports"
-      : firstMember?.managerName ?? `Manager ${firstMember?.managerHrId ?? "Unknown"}`;
+    const isHeldSeat = managerKey.startsWith("held-seat:");
+    const name =
+      managerKey === "ceo-direct-reports"
+        ? "CEO Direct Reports"
+        : isHeldSeat
+          ? formatVacantSeatLabel(
+              {
+                areaName: firstMember?.areaName,
+                teamName: firstMember?.teamName,
+                lineName: firstMember?.lineName,
+              },
+              "DSM seat",
+            )
+          : firstMember?.managerName ?? `Manager ${firstMember?.managerHrId ?? "Unknown"}`;
 
     return {
       dsm: null,
       members,
       name,
-      title: "Manager",
+      title: isHeldSeat ? "Vacant seat" : "Manager",
     };
   });
   const unassignedMembers = teamRows.filter((row) => {
@@ -530,12 +552,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
   const filledLaneCount = groups.filter(
     (group) => group.members.length > 0 || (group.childLanes ?? []).some((lane) => lane.members.length > 0),
   ).length;
-  const laneCount = Math.max(
-    groups.reduce((count, group) => count + Math.max(group.childLanes?.length ?? 1, 1), 0),
-    1,
-  );
-
-  return { chiefExecutive, filledLaneCount, groups, laneCount, lineLeader };
+  return { chiefExecutive, filledLaneCount, groups, lineLeader };
 }
 
 export function filterOrganogramRows(
@@ -598,7 +615,7 @@ export function filterOrganogramRows(
 
         while (managerHrId) {
           if (officeManagerHrIds.has(managerHrId)) {
-            officeDescendantHrIdsToKeep.add(row.hrId);
+            officeDescendantHrIdsToKeep.add(normalizeHrIdKey(row.hrId));
             break;
           }
 
@@ -616,11 +633,11 @@ export function filterOrganogramRows(
       Boolean(effectiveLineFilter) &&
       (isChiefExecutive(row) ||
         managerHrIdsToKeep.has(normalizeHrIdKey(row.hrId)) ||
-        officeDescendantHrIdsToKeep.has(row.hrId));
+        officeDescendantHrIdsToKeep.has(normalizeHrIdKey(row.hrId)));
     const matchesSelectedLine =
       !effectiveLineFilter ||
       (isOfficeSelected
-        ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || officeDescendantHrIdsToKeep.has(row.hrId)
+        ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || officeDescendantHrIdsToKeep.has(normalizeHrIdKey(row.hrId))
         : normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) &&
           isOrganogramVisibleRow(row));
 

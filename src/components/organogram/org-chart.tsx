@@ -29,7 +29,9 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { formatDateOnly } from "@/lib/date-only";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { calculateOrganogramStructureKpis } from "@/lib/reports/organogram-safety";
 import {
   type ManagerLane,
@@ -220,16 +222,23 @@ function MemberBranch({
   node,
   collapsedKeys,
   onToggle,
+  level = 1,
 }: {
   node: MemberNode;
   collapsedKeys: Set<string>;
   onToggle: (key: string) => void;
+  level?: number;
 }) {
   const hasChildren = node.children.length > 0;
   const isCollapsed = collapsedKeys.has(node.key);
 
   return (
-    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
+    <li
+      aria-expanded={hasChildren ? !isCollapsed : undefined}
+      aria-level={level}
+      className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80"
+      role="treeitem"
+    >
       <PersonNode
         collapsed={isCollapsed}
         hiddenCount={hasChildren ? countDescendants(node) : undefined}
@@ -237,11 +246,15 @@ function MemberBranch({
         row={node.row}
       />
       {hasChildren && !isCollapsed ? (
-        <ul className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4">
+        <ul
+          className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4"
+          role="group"
+        >
           {node.children.map((child) => (
             <MemberBranch
               collapsedKeys={collapsedKeys}
               key={child.key}
+              level={level + 1}
               node={child}
               onToggle={onToggle}
             />
@@ -380,7 +393,7 @@ function ManagerLane({
               No team rows under this manager.
             </div>
           ) : (
-            <ul className="space-y-2">
+            <ul aria-label="Team reporting tree" className="space-y-2" role="tree">
               {memberTree.map((node) => (
                 <MemberBranch
                   collapsedKeys={collapsedKeys}
@@ -654,6 +667,45 @@ export function OrgChartTree({
   const directDsms = groups.filter((group) => group.dsm && !group.rsm);
   const rsmGroups = groups.filter((group) => group.rsm);
   const otherGroups = groups.filter((group) => !group.dsm && !group.rsm);
+  const hasContent = rows.length > 0;
+
+  // Every collapsible top-level lane key — mirrors the keys the tiers below use —
+  // so "Collapse all" can fold every lane in one click.
+  const collapsibleLaneKeys = [
+    ...directDsms.map((group, index) =>
+      group.dsm ? `t1-${rowKey(group.dsm)}-${index}` : `t1-${group.name}-${index}`,
+    ),
+    ...rsmGroups.flatMap((group, index) => {
+      const laneKey = group.rsm ? `t2-${rowKey(group.rsm)}-${index}` : `t2-${group.name}-${index}`;
+      return (group.childLanes ?? []).map((_, laneIndex) => `${laneKey}-child-${laneIndex}`);
+    }),
+    ...otherGroups.map((group, index) => `other-${group.name}-${index}`),
+  ];
+
+  // Flat structure export — the same rows the chart renders (already server-scoped
+  // to the viewer), downloaded as a premium Phoenix-styled sheet.
+  const exportColumns: ExportColumn[] = [
+    { key: "hrId", label: "HR ID", width: 12 },
+    { key: "name", label: "Name", width: 26 },
+    { key: "title", label: "Title", width: 26 },
+    { key: "type", label: "Type", width: 12 },
+    { key: "line", label: "Line", width: 18 },
+    { key: "area", label: "Area", width: 18 },
+    { key: "region", label: "Region", width: 18 },
+    { key: "manager", label: "Reports To", width: 24 },
+    { key: "managerHrId", label: "Manager HR ID", width: 14 },
+  ];
+  const exportRows: ExportRow[] = rows.map((row) => ({
+    area: row.areaName ?? "",
+    hrId: row.hrId,
+    line: row.lineName ?? "",
+    manager: row.managerName ?? "",
+    managerHrId: row.managerHrId ?? "",
+    name: row.type === "vacancy" ? "Open Vacancy" : row.displayName ?? row.fullName,
+    region: row.regionName ?? "",
+    title: row.positionTitle ?? row.jobTitle ?? "",
+    type: row.type === "vacancy" ? "Vacancy" : "Employee",
+  }));
 
   const kpiCards: Array<{ actual: number; label: string; tone: KpiTone; total: number; vacant: number }> = [
     { actual: structureKpis.medicalRep.actual, label: kpiLabels.medicalRep, tone: "emerald", total: structureKpis.medicalRep.total, vacant: structureKpis.medicalRep.vacant },
@@ -665,6 +717,33 @@ export function OrgChartTree({
 
   return (
     <div className="space-y-5" dir="auto">
+      {/* Whole-tree controls + structure export */}
+      {hasContent ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            className="inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            onClick={() => setCollapsedKeys(new Set())}
+            type="button"
+          >
+            Expand all
+          </button>
+          <button
+            className="inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            onClick={() => setCollapsedKeys(new Set(collapsibleLaneKeys))}
+            type="button"
+          >
+            Collapse all
+          </button>
+          <ExportXlsxButton
+            columns={exportColumns}
+            rows={exportRows}
+            sheetName="Organogram"
+            subtitle={`${resolvedLineName} · ${employeeCount} employees`}
+            title={`Organogram — ${resolvedLineName}`}
+          />
+        </div>
+      ) : null}
+
       {/* KPI strip */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {kpiCards.map((card) => (
