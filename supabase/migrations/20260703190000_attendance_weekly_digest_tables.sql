@@ -98,7 +98,7 @@ create index if not exists attendance_digest_lines_digest_idx
 -- ---------------------------------------------------------------------------
 create table if not exists public.attendance_settlements (
   id                bigserial primary key,
-  digest_line_id    bigint      not null references public.attendance_digest_lines(id),
+  digest_line_id    bigint      not null unique references public.attendance_digest_lines(id),
   employee_hr_id    text        not null,
   work_date         date        not null,
   action            text        not null

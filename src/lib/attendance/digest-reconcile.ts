@@ -33,6 +33,14 @@ export type ReconcileInput = {
   planSaysOffice: boolean | null;
   /** Whether any punch was recorded that day. */
   hasPunch: boolean;
+  /**
+   * Company-wide fingerprint device/sync outage that day (zero punches
+   * ingested for ANYONE, despite it being an expected working day) — see
+   * getCompanyWideOutageDates in ingestion-health.ts. A missing punch caused
+   * by the device being down is not the employee's fault and must never
+   * become a missing-punch line or a false field-punch-anomaly flag.
+   */
+  deviceOutage: boolean;
 };
 
 export type ReconcileDecision =
@@ -46,6 +54,7 @@ export function reconcileDay(input: ReconcileInput): ReconcileDecision {
   if (input.isHoliday) return { action: "skip", reason: "Official holiday." };
   if (input.hasApprovedLeave) return { action: "skip", reason: "Approved leave." };
   if (input.hasApprovedExcuse) return { action: "skip", reason: "Approved excuse." };
+  if (input.deviceOutage) return { action: "skip", reason: "Fingerprint device was not syncing this day — cannot judge attendance." };
 
   if (input.tier === "office_days_only") {
     if (input.planSaysOffice === true) {

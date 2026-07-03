@@ -119,7 +119,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       shortMinutes,
       workedMinutes,
       deductionDays: 0,
-      hoursCompleted: true,
+      hoursCompleted,
       halved: false,
       reason: "On time and full hours.",
     };
@@ -136,7 +136,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       shortMinutes,
       workedMinutes,
       deductionDays: lateDeduction / 2,
-      hoursCompleted: true,
+      hoursCompleted,
       halved: true,
       reason: `Late ${lateMinutes} min but completed the required hours — penalty halved.`,
     };
@@ -151,7 +151,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
         shortMinutes,
         workedMinutes,
         deductionDays: shortDeduction,
-        hoursCompleted: false,
+        hoursCompleted,
         halved: false,
         reason: `Late ${lateMinutes} min and short ${shortMinutes} min — short-hours penalty applies (the worse of the two).`,
       };
@@ -162,7 +162,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       shortMinutes,
       workedMinutes,
       deductionDays: lateDeduction,
-      hoursCompleted: false,
+      hoursCompleted,
       halved: false,
       reason: `Late ${lateMinutes} min and short ${shortMinutes} min — lateness penalty applies (the worse of the two).`,
     };
@@ -175,7 +175,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
     shortMinutes,
     workedMinutes,
     deductionDays: shortDeduction,
-    hoursCompleted: false,
+    hoursCompleted,
     halved: false,
     reason: `Short ${shortMinutes} min of the required presence.`,
   };

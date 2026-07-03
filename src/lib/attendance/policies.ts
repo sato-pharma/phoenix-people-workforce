@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
+import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import { normalizeAttendanceHrId, summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 import {
   normalizeAttendanceWorkingWeekdays,
@@ -23,6 +23,8 @@ export type AttendancePolicyRule = {
   toMinutes: string;
 };
 
+export type AttendanceJudgmentMode = "every_working_day" | "office_days_only";
+
 export type AttendancePolicyGroup = {
   effectiveFrom: string;
   effectiveTo: string;
@@ -36,6 +38,11 @@ export type AttendancePolicyGroup = {
   targetType: AttendancePolicyTargetType;
   targetValue: string;
   workingWeekdays: AttendanceWorkingWeekday[];
+  /** Flexible-hours weekly-digest fields (migration 20260703180000). Null = not yet migrated. */
+  flexMinutes: number | null;
+  requiredMinutes: number | null;
+  halfDaySplitMinutes: number;
+  judgmentMode: AttendanceJudgmentMode;
 };
 
 export type AttendancePolicyDashboard = {
@@ -62,6 +69,10 @@ type PolicyDbRow = {
   scheduled_start: string;
   target_type: AttendancePolicyTargetType;
   target_value: string | null;
+  flex_minutes: number | null;
+  required_minutes: number | null;
+  half_day_split_minutes: number;
+  judgment_mode: AttendanceJudgmentMode;
   working_weekdays: AttendanceWorkingWeekday[] | null;
 };
 
@@ -176,7 +187,7 @@ function validatePolicyRules(rules: Array<{
 export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDashboard> {
   const supabase = getSupabaseAdmin();
   const [policyRows, ruleResult, employeeResult, deviceMappedHrIds] = await Promise.all([
-    loadAttendancePolicyGroups(),
+    loadAttendanceFlexPolicyGroups(),
     supabase
       .from("attendance_policy_rules")
       .select("id,policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
@@ -237,6 +248,10 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     targetType: policy.target_type,
     targetValue: policy.target_value ?? "",
     workingWeekdays: policy.working_weekdays ?? [],
+    flexMinutes: policy.flex_minutes,
+    requiredMinutes: policy.required_minutes,
+    halfDaySplitMinutes: policy.half_day_split_minutes,
+    judgmentMode: policy.judgment_mode,
   }));
 
   return {
@@ -260,6 +275,10 @@ export async function saveAttendancePolicy(input: {
   targetType: unknown;
   targetValue: unknown;
   workingWeekdays?: unknown;
+  flexMinutes?: unknown;
+  requiredMinutes?: unknown;
+  halfDaySplitMinutes?: unknown;
+  judgmentMode?: unknown;
 }) {
   const supabase = getSupabaseAdmin();
   const id = cleanNumber(input.id, "id", { allowNull: true, integer: true });
@@ -271,6 +290,18 @@ export async function saveAttendancePolicy(input: {
   const graceMinutes = cleanNumber(input.graceMinutes, "graceMinutes", { integer: true }) as number;
   const effectiveFrom = cleanDate(input.effectiveFrom, "effectiveFrom");
   const effectiveTo = cleanDate(input.effectiveTo, "effectiveTo", { allowNull: true });
+
+  // Flexible-hours weekly-digest fields — optional; a policy not yet migrated
+  // to the new model simply omits these and stays on the legacy engine.
+  const flexMinutes = cleanNumber(input.flexMinutes, "flexMinutes", { allowNull: true, integer: true });
+  const requiredMinutes = cleanNumber(input.requiredMinutes, "requiredMinutes", { allowNull: true, integer: true });
+  const halfDaySplitMinutesRaw = cleanNumber(input.halfDaySplitMinutes, "halfDaySplitMinutes", { allowNull: true, integer: true });
+  const halfDaySplitMinutes = halfDaySplitMinutesRaw ?? 780;
+  const judgmentModeText = cleanText(input.judgmentMode) || "every_working_day";
+  if (!["every_working_day", "office_days_only"].includes(judgmentModeText)) {
+    throw new Error("judgmentMode must be every_working_day or office_days_only.");
+  }
+  const judgmentMode = judgmentModeText as "every_working_day" | "office_days_only";
 
   if (!policyName) throw new Error("policyName is required.");
   if (typeof input.isActive !== "boolean") throw new Error("isActive must be true or false.");
@@ -315,7 +346,10 @@ export async function saveAttendancePolicy(input: {
   validatePolicyRules(ruleRows);
 
   // Single atomic RPC call — policy upsert + rule replacement in one transaction.
-  const { error } = await supabase.rpc("phx_save_attendance_policy", {
+  // (The flexible-hours columns below are NOT part of this RPC — it's a live,
+  // already-shipped SECURITY DEFINER function; rather than touch its SQL body,
+  // they're applied in one small follow-up update immediately after.)
+  const { data: savedId, error } = await supabase.rpc("phx_save_attendance_policy", {
     p_id:             id ?? null,
     p_policy_name:    policyName,
     p_target_type:    targetType,
@@ -331,6 +365,19 @@ export async function saveAttendancePolicy(input: {
     p_now:            now,
   });
   if (error) throw error;
+
+  const policyId = (id ?? savedId) as number;
+  const { error: flexError } = await supabase
+    .from("attendance_policy_groups")
+    .update({
+      flex_minutes: flexMinutes,
+      half_day_split_minutes: halfDaySplitMinutes,
+      judgment_mode: judgmentMode,
+      required_minutes: requiredMinutes,
+      updated_at: now,
+    })
+    .eq("id", policyId);
+  if (flexError) throw flexError;
 }
 
 export async function deleteAttendancePolicy(input: { id: unknown }) {

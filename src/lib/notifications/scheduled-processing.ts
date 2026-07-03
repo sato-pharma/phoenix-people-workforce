@@ -1,4 +1,5 @@
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
+import { runAttendanceDigestScheduledProcessing } from "@/lib/attendance/digest-scheduler";
 import { getInactiveUsers, purgeOldActivityEvents } from "@/lib/activity/service";
 import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
@@ -15,6 +16,9 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const probationReminders = await processDueProbationReminderEvents(limit);
   // Never throws; per-day idempotency key prevents duplicate alerts across runs.
   const attendanceAgent = await runAttendanceIngestionAlert();
+  // Never throws; draft/sent status guards + unique constraints make every
+  // step idempotent, so a missed day or a re-run always safely catches up.
+  const attendanceDigest = await runAttendanceDigestScheduledProcessing();
   // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
   const exitedDeductions = await supersedeExitedEmployeeDeductionCandidates();
   // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
@@ -30,5 +34,5 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   if (inactiveUsers.length) {
     console.info(`[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`);
   }
-  return { activityRetention, attendanceAgent, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, staleSosBatches, telegram };
+  return { activityRetention, attendanceAgent, attendanceDigest, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, staleSosBatches, telegram };
 }

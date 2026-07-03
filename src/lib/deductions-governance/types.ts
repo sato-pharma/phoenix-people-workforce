@@ -17,6 +17,7 @@ export const deductionTypes = [
   "absence",
   "late_arrival",
   "early_leave",
+  "short_hours",
   "missing_punch",
   "unpaid_leave",
   "leave_without_balance",
@@ -62,6 +63,9 @@ export const deductionDecisionStatuses = [
 export type DeductionDecisionStatus = (typeof deductionDecisionStatuses)[number];
 
 export const deductionDecisionReasons = [
+  "Employee confirmed",
+  "Employee did not respond (auto-confirmed)",
+  "Dispute reviewed and rejected",
   "System issue",
   "Manager approved exception",
   "Official training",

@@ -11,6 +11,7 @@ function base(overrides: Partial<ReconcileInput> = {}): ReconcileInput {
     hasApprovedExcuse: false,
     planSaysOffice: null,
     hasPunch: true,
+    deviceOutage: false,
     ...overrides,
   };
 }
@@ -58,5 +59,27 @@ export function runAttendanceDigestReconcileTests() {
     t2({ planSaysOffice: true, hasPunch: true, hasApprovedLeave: true }).action,
     "skip",
     "approved leave cancels even a tier-2 office+punch day",
+  );
+
+  // --- Device-outage fail-safe: applies to BOTH tiers, before any tier logic ---
+  assert.equal(
+    reconcileDay(base({ deviceOutage: true, hasPunch: false })).action,
+    "skip",
+    "tier-1 no-punch day is skipped, not judged, when the device was down",
+  );
+  assert.equal(
+    t2({ planSaysOffice: true, hasPunch: false, deviceOutage: true }).action,
+    "skip",
+    "an outage cancels a tier-2 office no-show flag — the missing punch isn't the employee's fault",
+  );
+  assert.equal(
+    t2({ planSaysOffice: false, hasPunch: true, deviceOutage: true }).action,
+    "skip",
+    "an outage cancels a tier-2 field-punch anomaly flag too (the punch signal itself is untrustworthy that day)",
+  );
+  assert.equal(
+    reconcileDay(base({ deviceOutage: true, hasPunch: true })).action,
+    "skip",
+    "an outage day is skipped even if this employee happens to have a punch (company-wide signal wins)",
   );
 }

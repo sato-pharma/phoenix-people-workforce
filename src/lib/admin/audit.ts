@@ -4,6 +4,8 @@ import { getOperationalAuditLogs } from "@/lib/operations/events";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
+  | "attendance_holiday_override"
+  | "attendance_settlement"
   | "auth_session"
   | "calendar_event"
   | "deduction_candidate"
