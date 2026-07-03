@@ -23,8 +23,10 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
+import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-command-center";
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -336,7 +338,7 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
 /* ── Private command center layouts ─────────────────────────────── */
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
@@ -487,6 +489,8 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       </div>
 
       <InsightPreviewPanel note="Campaign and ROI recommendations for your line are coming soon." />
+
+      <DoubleVisitFocusSection focus={dvFocus} />
 
       {/* ── STATUS ────────────────────────────────────────────────── */}
       {totalPending > 0 ? (
@@ -1009,6 +1013,8 @@ export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHome
       return <DsmCommandCenter snapshot={snapshot} />;
     case "National Sales Manager":
       return <NsmCommandCenter snapshot={snapshot} />;
+    case "Regional Manager":
+      return <RmCommandCenter snapshot={snapshot} />;
   }
   if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;
