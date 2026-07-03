@@ -247,9 +247,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"], ["customer", preview.unknownCustomers, "c"]] as const) {
         if (list.length === 0) continue;
         const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
-        const json = await res.json();
-        if (json.success) {
-          const sugg = (json.data.suggestions ?? []) as { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
+        // Guard the parse: a timed-out / crashed function returns a non-JSON platform page, so a
+        // bare res.json() would throw "Unexpected token 'A' … is not valid JSON". Surface the real status instead.
+        const json = await res.json().catch(() => null) as { success?: boolean; data?: { suggestions?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[] }; error?: string } | null;
+        if (!res.ok || !json?.success || !json.data) {
+          failed = true;
+          setError(json?.error ?? `AI suggest failed for ${kind}${res.status === 504 ? " — the analyzer timed out; try fewer rows at once" : ` (${res.status})`}.`);
+          continue;
+        }
+        {
+          const sugg = json.data.suggestions ?? [];
           if (sugg.length) {
             setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
             filled += sugg.length;
@@ -264,7 +271,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               if (Object.keys(newOrigin).length) setAiOrigin((prev) => ({ ...prev, ...newOrigin }));
             }
           }
-        } else { failed = true; if (json.error) setError(json.error); }
+        }
       }
       if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
       else if (!failed) setNotice("AI found no confident matches — map them by hand.");
