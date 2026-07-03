@@ -79,6 +79,13 @@ export default async function EmployeePortalOrganogramPage() {
     initialError = organogramPageError(error);
   }
 
+  // Surface the domain diagnostic (denied scope / unresolved line / Head Office)
+  // instead of silently rendering an empty "pick a line" chart. Unavailable data
+  // must explain itself, never look like a legitimate empty result.
+  if (!initialError && initialReport?.diagnostic) {
+    initialError = initialReport.diagnostic.message;
+  }
+
   if (initialError) {
     return (
       <EmployeePortalEmptyState

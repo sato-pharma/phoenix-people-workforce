@@ -123,7 +123,8 @@ function OrganogramView({
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-8 text-center text-sm text-[#64748B]">
-            No organogram rows match the current filters.
+            No rows match the current search or line filter. Clear the search or
+            choose another line to reveal the structure.
           </div>
         ) : (
           <OrgChartTree lineName={selectedLine} rows={rows} theme="admin" />
