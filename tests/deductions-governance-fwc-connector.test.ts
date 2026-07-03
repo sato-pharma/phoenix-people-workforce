@@ -278,6 +278,31 @@ export async function runDeductionsGovernanceFwcConnectorTests(): Promise<void> 
     assert.equal(result.warnings.length, 0);
   }
 
+  // 8b. Live (mirror-sourced) decisions have import_id: null — sourceRecordId must fall
+  // back to month_key, never collapse to the literal string "null:<key>".
+  {
+    const draft = toDeductionCandidateDraft(payrollRow({ import_id: null, month_key: "2026-06" }));
+    assert.equal(draft.sourceRecordId, "2026-06:rec-001");
+    assert.notEqual(draft.sourceRecordId, "null:rec-001");
+    const evidence = draft.evidence as Record<string, unknown>;
+    assert.equal(evidence.importId, null);
+  }
+
+  // 8c. listFieldWorkforceApprovedDecisions works with monthKey only (no importId) — this
+  // becomes load-bearing once live-mirror decisions rely on month_key-only filtering.
+  {
+    const recordedFilters = { decisionStatuses: [] as string[][], importIds: [] as string[], monthKeys: [] as string[] };
+    const fake = createFakeSupabase({
+      selectRows: [payrollRow({ import_id: null, month_key: "2026-06" }) as unknown as Record<string, unknown>],
+      recordedFilters,
+    });
+    const rows = await listFieldWorkforceApprovedDecisions({ monthKey: "2026-06", supabase: fake as never });
+    assert.equal(recordedFilters.importIds.length, 0);
+    assert.deepEqual(recordedFilters.monthKeys, ["2026-06"]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].import_id, null);
+  }
+
   // 9. Insert path invokes audit logger with entityType 'deduction_candidate'.
   {
     const row = payrollRow();
