@@ -20,6 +20,7 @@ type ExportColumn = {
 type ExportRow = {
   employeeId: string;
   fullName: string;
+  nickname: string | null;
   arabicName: string | null;
   nationalId: string | null;
   gender: string | null;
@@ -69,6 +70,7 @@ type ExportRow = {
 const columns: ExportColumn[] = [
   { header: "Employee ID", key: "employeeId", section: "Identity", width: 16 },
   { header: "Full Name", key: "fullName", section: "Identity", width: 28 },
+  { header: "Nickname", key: "nickname", section: "Identity", width: 20 },
   { header: "Arabic Name", key: "arabicName", section: "Identity", width: 24 },
   { header: "National ID", key: "nationalId", section: "Identity", width: 20 },
   { header: "Gender", key: "gender", section: "Identity", width: 14 },
@@ -155,6 +157,7 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
     extraCostOfLiving: employee.extraCostOfLiving,
     fuelAllowance: employee.fuelAllowance,
     fullName: employee.fullName,
+    nickname: employee.nickname,
     gender: employee.gender,
     grossSalary: exportSalary.grossSalary,
     hireDate: dateOnly(employee.hireDate),

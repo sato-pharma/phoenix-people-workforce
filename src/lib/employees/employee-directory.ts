@@ -11,6 +11,7 @@ import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy"
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
+import { resolveEmployeeDisplayName } from "./display-name";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -60,6 +61,11 @@ export type EmployeeDirectoryRow = {
   employmentStatus: string | null;
   extraCostOfLiving: number | null;
   fullName: string;
+  // Nickname-aware display name (nickname when set, else fullName). Use this
+  // for live UI/report rendering; use fullName for legal/payroll documents,
+  // persisted workflow audit snapshots, and identity-matching logic.
+  displayName: string;
+  nickname: string | null;
   gender: string | null;
   fuelAllowance: number | null;
   grossSalary: number | null;
@@ -165,6 +171,7 @@ export type EmployeeMutationInput = {
   employmentStatus?: string | null;
   fuelAllowance?: number | null;
   fullName?: string | null;
+  nickname?: string | null;
   grossSalary?: number | null;
   hasBankAccount?: string | null;
   hireDate?: string | null;
@@ -213,6 +220,7 @@ type EmployeeDbRow = {
   education: string | null;
   employment_status: string | null;
   full_name: string;
+  nickname?: string | null;
   gender?: string | null;
   has_bank_account?: string | null;
   extra_cost_of_living?: number | null;
@@ -258,6 +266,7 @@ type LookupRow = {
   id: number;
   line_id?: number | null;
   name?: string | null;
+  nickname?: string | null;
   title?: string | null;
 };
 
@@ -697,7 +706,7 @@ async function loadManagerNames(hrIds: string[]) {
   }
 
   const params = new URLSearchParams({
-    select: "hr_id,full_name",
+    select: "hr_id,full_name,nickname",
     hr_id: textInFilter(lookupHrIds),
   });
   const rows = await supabaseRest<LookupRow[]>(`employees?${params}`);
@@ -705,7 +714,7 @@ async function loadManagerNames(hrIds: string[]) {
   const names = new Map<string, string>();
   rows.forEach((row) => {
     const hrId = String(row.hr_id);
-    const name = String(row.full_name ?? "");
+    const name = resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname);
     names.set(hrId, name);
     const normalizedHrId = normalizeHrId(hrId);
     if (normalizedHrId) names.set(normalizedHrId, name);
@@ -862,7 +871,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
   const joinedSelect = `${baseEmployeeSelect},region_name,region_code,birth_date,
@@ -985,6 +994,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         employmentStatus: row.employment_status,
         extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
+        displayName: resolveEmployeeDisplayName(row.full_name, row.nickname),
+        nickname: row.nickname ?? null,
         gender: row.gender ?? null,
         fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
@@ -1042,7 +1053,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         managers: activeEmployees
           .map((employee) => ({
             departmentId: employee.departmentId,
-            label: employee.fullName,
+            label: employee.displayName,
             lineId: employee.lineId,
             positionId: employee.positionId,
             value: employee.hrId,
@@ -1142,6 +1153,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         employmentStatus: row.employment_status,
         extraCostOfLiving: row.extra_cost_of_living ?? comp?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
         fullName: row.full_name,
+        displayName: resolveEmployeeDisplayName(row.full_name, row.nickname),
+        nickname: row.nickname ?? null,
         gender: row.gender ?? null,
         fuelAllowance: row.fuel_allowance ?? comp?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
@@ -1199,7 +1212,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         managers: activeEmployees
           .map((employee) => ({
             departmentId: employee.departmentId,
-            label: employee.fullName,
+            label: employee.displayName,
             lineId: employee.lineId,
             positionId: employee.positionId,
             value: employee.hrId,
@@ -1258,6 +1271,8 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       employmentStatus: row.employment_status,
       extraCostOfLiving: row.extra_cost_of_living ?? compensation?.extra_cost_of_living ?? standardAllowances.extraCostOfLiving,
       fullName: row.full_name,
+      displayName: resolveEmployeeDisplayName(row.full_name, row.nickname),
+      nickname: row.nickname ?? null,
       gender: row.gender ?? null,
       fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
       grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
@@ -1314,7 +1329,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       managers: activeEmployees
         .map((employee) => ({
           departmentId: employee.departmentId,
-          label: employee.fullName,
+          label: employee.displayName,
           lineId: employee.lineId,
           positionId: employee.positionId,
           value: employee.hrId,
@@ -1356,7 +1371,7 @@ export async function getEmployeeDirectoryRows(
   options: { includeInactive?: boolean } = {},
 ): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,region_code,birth_date`,
     order: "full_name.asc,hr_id.asc",
@@ -1418,6 +1433,8 @@ export async function getEmployeeDirectoryRows(
       employmentStatus: row.employment_status,
       extraCostOfLiving: row.extra_cost_of_living ?? null,
       fullName: row.full_name,
+      displayName: resolveEmployeeDisplayName(row.full_name, row.nickname),
+      nickname: row.nickname ?? null,
       gender: row.gender ?? null,
       fuelAllowance: row.fuel_allowance ?? null,
       grossSalary: row.gross_salary ?? null,
@@ -1656,6 +1673,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     employment_status: employmentStatus,
     extra_cost_of_living: compensation.extraCostOfLiving,
     full_name: fullName,
+    nickname: compact(input.nickname),
     gender: compact(input.gender)?.toLowerCase(),
     fuel_allowance: compensation.fuelAllowance,
     gross_salary: compensation.grossSalary,

@@ -12,6 +12,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { daysBetweenDateOnly } from "@/lib/date-only";
@@ -778,11 +779,12 @@ async function resolveDirectManagerName(employeeHrId: string | null | undefined)
   if (!managerHrId) return null;
   const { data: manager } = await supabase
     .from("employees")
-    .select("full_name")
+    .select("full_name,nickname")
     .eq("hr_id", managerHrId)
     .maybeSingle();
-  const fullName = (manager as { full_name?: string | null } | null)?.full_name;
-  return fullName ? String(fullName) : null;
+  const managerRow = manager as { full_name?: string | null; nickname?: string | null } | null;
+  const fullName = managerRow?.full_name;
+  return fullName ? resolveEmployeeDisplayName(String(fullName), managerRow?.nickname) : null;
 }
 
 type SalesFilterQuery = {
@@ -1831,6 +1833,8 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     employmentStatus: "active",
     extraCostOfLiving: null,
     fullName: access.loginId ?? hrId,
+    displayName: access.loginId ?? hrId,
+    nickname: null,
     gender: null,
     fuelAllowance: null,
     grossSalary: null,
@@ -2351,7 +2355,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
     employee: {
       area: employee.areaName,
       department: employee.departmentName,
-      fullName: employee.fullName,
+      fullName: employee.displayName,
       hrId: employee.hrId,
       line: employee.lineName,
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
@@ -2541,7 +2545,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
     employee: {
       area: employee.areaName,
       department: employee.departmentName,
-      fullName: employee.fullName,
+      fullName: employee.displayName,
       hrId: employee.hrId,
       line: employee.lineName,
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
@@ -3883,7 +3887,7 @@ export async function getMedicalRepPortalData(
     employee: {
       area: employee.areaName,
       department: employee.departmentName,
-      fullName: employee.fullName,
+      fullName: employee.displayName,
       hrId: employee.hrId,
       line: employee.lineName,
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
@@ -5182,7 +5186,7 @@ export async function getNsmTeamExpenses(
 
     const dsms = buildPayrollExpenseDsmSummaries({
       dsms: scopedDsms.map((employee) => ({
-        fullName: employee.fullName,
+        fullName: employee.displayName,
         hrId: employee.hrId,
         lineName: employee.lineName ?? null,
       })),

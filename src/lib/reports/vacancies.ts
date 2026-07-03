@@ -74,6 +74,7 @@ export type OrganogramReportRow = {
   areaName: string | null;
   departmentId: number | null;
   departmentName: string | null;
+  displayName: string;
   fullName: string;
   hireDate: string | null;
   hrId: string;
@@ -422,6 +423,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
         areaName: employee.areaName,
         departmentId: employee.departmentId,
         departmentName: employee.departmentName,
+        displayName: employee.displayName,
         fullName: employee.fullName,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
@@ -447,6 +449,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     areaName: row.areaName,
     departmentId: row.departmentId,
     departmentName: row.departmentName,
+    displayName: "Vacant",
     fullName: "Vacant",
     hireDate: null,
     hrId: vacancyLabelForReport(row.vacancyCode),

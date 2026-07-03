@@ -29,7 +29,7 @@ export async function getHrCalendarData(): Promise<HrCalendarEmployee[]> {
   return rows.map((employee) => ({
     areaName: employee.areaName ?? "Unassigned",
     birthDate: employee.birthDate ?? "",
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hireDate: employee.hireDate ?? "",
     hrId: employee.hrId,
     jobTitle: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",

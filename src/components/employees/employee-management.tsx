@@ -114,6 +114,7 @@ type EmployeeFormState = {
   extraCostOfLiving: string;
   fuelAllowance: string;
   fullName: string;
+  nickname: string;
   gender: string;
   grossSalary: string;
   hasBankAccount: string;
@@ -165,6 +166,7 @@ const emptyForm: EmployeeFormState = {
   extraCostOfLiving: "",
   fuelAllowance: "",
   fullName: "",
+  nickname: "",
   gender: "",
   grossSalary: "",
   hasBankAccount: "",
@@ -478,6 +480,7 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     extraCostOfLiving: numberToText(employee.extraCostOfLiving),
     fuelAllowance: numberToText(employee.fuelAllowance),
     fullName: employee.fullName,
+    nickname: employee.nickname ?? "",
     gender: employee.gender ?? "",
     grossSalary: numberToText(employee.grossSalary),
     hasBankAccount: employee.hasBankAccount ?? (employee.bankAccount ? "yes" : ""),
@@ -540,6 +543,7 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     extraCostOfLiving: optionalNumber(form.extraCostOfLiving),
     fuelAllowance: optionalNumber(form.fuelAllowance),
     fullName: optionalText(form.fullName),
+    nickname: optionalText(form.nickname),
     gender: optionalText(form.gender),
     grossSalary: optionalNumber(form.grossSalary),
     hasBankAccount: optionalText(form.hasBankAccount),
@@ -819,6 +823,7 @@ export function EmployeeManagement({
       const searchable = [
         employee.hrId,
         employee.fullName,
+        employee.nickname,
         employee.nameAr,
         employee.workEmail,
         employee.mobileNumber,
@@ -1677,10 +1682,10 @@ export function EmployeeManagement({
                             onClick={() => startEdit(employee)}
                             type="button"
                           >
-                            <DirectoryAvatar fullName={employee.fullName} hrId={employee.hrId} />
+                            <DirectoryAvatar fullName={employee.displayName} hrId={employee.hrId} />
                             <div className="flex flex-col">
                             <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
-                              {employee.fullName}
+                              {employee.displayName}
                             </span>
                             <div className="mt-1.5 flex items-center gap-2">
                               <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-1.5 py-0.5 rounded uppercase">
@@ -1814,10 +1819,10 @@ export function EmployeeManagement({
             <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-5">
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#F97316] to-[#FB923C] text-white shadow-lg shadow-orange-200">
-                  <span className="text-lg font-bold">{masterDetailsEmployee.fullName.charAt(0).toUpperCase()}</span>
+                  <span className="text-lg font-bold">{masterDetailsEmployee.displayName.charAt(0).toUpperCase()}</span>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="master-details-title">{masterDetailsEmployee.fullName}</h2>
+                  <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="master-details-title">{masterDetailsEmployee.displayName}</h2>
                   <div className="mt-1 flex items-center gap-2">
                     <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
                     <span className="text-[10px] text-[#94A3B8]">·</span>
@@ -1836,7 +1841,7 @@ export function EmployeeManagement({
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <EmployeePhotoManager
-                fullName={masterDetailsEmployee.fullName}
+                fullName={masterDetailsEmployee.displayName}
                 hrId={masterDetailsEmployee.hrId}
                 key={masterDetailsEmployee.hrId}
               />
@@ -1847,6 +1852,7 @@ export function EmployeeManagement({
                   rows: [
                     ["Employee ID", masterDetailsEmployee.hrId],
                     ["Full Name", masterDetailsEmployee.fullName],
+                    ["Nickname", masterDetailsEmployee.nickname],
                     ["Arabic Name", masterDetailsEmployee.nameAr],
                     ["National ID", masterDetailsEmployee.nationalId],
                     ["Gender", masterDetailsEmployee.gender],
@@ -2036,6 +2042,12 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("fullName", value)}
                     placeholder="Enter full legal name"
                     value={form.fullName}
+                  />
+                  <TextField
+                    label="Nickname"
+                    onChange={(value) => updateForm("nickname", value)}
+                    placeholder="Shown system-wide instead of the full name (optional)"
+                    value={form.nickname}
                   />
                   <TextField
                     label="Full Name (Arabic)"
