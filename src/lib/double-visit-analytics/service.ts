@@ -6,6 +6,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import {
   iReports360GetVisits,
   iReports360Login,
+  type IReports360Visit,
 } from "@/lib/field-workforce-compliance/ireports360-client";
 import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports360-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -17,6 +18,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildDoubleVisitPreviewFromWorkbook,
   markManagerVisitedRows,
+  markResignedVisitedRows,
   normalizeIReports360DoubleVisits,
   recoverVisitedEmployeesByCrmUsername,
 } from "@/lib/double-visit-analytics/parser";
@@ -539,6 +541,137 @@ export async function buildAndSaveDoubleVisitIReports360Import(input: {
   return { import: saved, preview: { ...preview, importId: saved.id } };
 }
 
+// ── Automatic mirror-sync: builds and publishes an official Double Visit snapshot straight from
+// the continuously-synced iReports360 visit mirror (ireports360_visits — see
+// src/lib/visits-report/service.ts), on the SAME footing as the manual paths above so Excel
+// upload / the on-demand pull keep working as a human fallback/override. Called by the visits
+// mirror-sync cron right after it refreshes ireports360_visits (see
+// app/api/cron/ireports360-visits-sync/route.ts).
+
+const mirrorVisitsTable = "ireports360_visits";
+
+// Sentinel actor identifying imports the automatic job created, distinct from a real admin's
+// login id. No schema change — this is a marker value in the existing `uploaded_by` text column.
+// Used to (a) never let the auto-sync silently clobber a manual override, and (b) know which
+// superseded imports are safe to hard-delete afterward.
+const IREPORTS360_MIRROR_SYNC_ACTOR = "system:ireports360-mirror-sync";
+const IREPORTS360_MIRROR_SYNC_ACCESS: AccessContext = {
+  hrId: null,
+  loginId: IREPORTS360_MIRROR_SYNC_ACTOR,
+  role: "Super Admin",
+  scope: "system",
+  source: "system",
+};
+
+export function isAutoSyncImport(uploadedBy: string | null | undefined): boolean {
+  return uploadedBy === IREPORTS360_MIRROR_SYNC_ACTOR;
+}
+
+type MirrorDoubleVisitRow = {
+  id: string;
+  raw_payload: JsonRecord | null;
+};
+
+async function paginateMirrorDoubleVisitRows(): Promise<MirrorDoubleVisitRow[]> {
+  const pageSize = 1000;
+  const rows: MirrorDoubleVisitRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(mirrorVisitsTable)
+      .select("id, raw_payload")
+      .not("double_crm_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (schemaMissing(error)) break;
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
+    const page = (data ?? []) as MirrorDoubleVisitRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+export type DoubleVisitMirrorSyncResult =
+  | { skipped: true; reason: string }
+  | { published: true; importId: string; rowCount: number }
+  | { failed: true; message: string };
+
+export async function buildAndSaveDoubleVisitFromMirror(): Promise<DoubleVisitMirrorSyncResult> {
+  try {
+    if (!(await isDoubleVisitSchemaReady())) {
+      return { skipped: true, reason: "Double Visit Analytics tables are not provisioned." };
+    }
+
+    // Never clobber a human's manual override — only auto-publish over the auto-sync's OWN prior
+    // snapshot. A manually-published import stands until a human explicitly replaces it.
+    const current = await getLatestPublishedImport();
+    if (current && !isAutoSyncImport(current.uploadedBy)) {
+      return { skipped: true, reason: "A manually-published import is currently active; deferring to it." };
+    }
+
+    const [mirrorRows, employees] = await Promise.all([
+      paginateMirrorDoubleVisitRows(),
+      getEmployeeDirectoryRows({ includeInactive: true }),
+    ]);
+    if (mirrorRows.length === 0) {
+      return { skipped: true, reason: "No double-visit rows found in the iReports360 mirror yet." };
+    }
+
+    // raw_payload stores the exact IReports360Visit shape the mirror sync received — reconstruct
+    // it and reuse normalizeIReports360DoubleVisits() unchanged, rather than re-deriving row
+    // shaping here. This deliberately re-resolves crmId->hrId against the CURRENT employee
+    // directory (not whatever was cached in the mirror row at its own sync time), so an HR ID
+    // correction lands immediately at the next auto-sync rather than waiting for a mirror re-sync.
+    const visits = mirrorRows
+      .map((row) => row.raw_payload as unknown as IReports360Visit | null)
+      .filter((visit): visit is IReports360Visit => Boolean(visit));
+
+    const preview = normalizeIReports360DoubleVisits({
+      employees,
+      fileName: "iReports360 visit mirror (automatic sync)",
+      visits,
+    });
+
+    const managerHrIdKeys = new Set(
+      employees
+        .filter((e) => resolveDvRole(e) !== null)
+        .map((e) => canonicalHrIdKey(e.hrId))
+        .filter((k): k is string => Boolean(k)),
+    );
+    const withNonMrFlagged = markManagerVisitedRows(preview, managerHrIdKeys);
+    const withResignedFlagged = markResignedVisitedRows(withNonMrFlagged, employees);
+
+    const saved = await saveDoubleVisitPreview({
+      actorLoginId: IREPORTS360_MIRROR_SYNC_ACTOR,
+      preview: withResignedFlagged,
+    });
+    await publishDoubleVisitImport({ access: IREPORTS360_MIRROR_SYNC_ACCESS, importId: saved.id });
+
+    // Immediately prune the PREVIOUS auto-sync import (now superseded) — at steady state at most
+    // one auto-sync import's rows exist at a time. This bounds storage AND prevents readers that
+    // scan double_visit_rows history ungated by import status (getDoubleVisitPortalFocus, the
+    // portal doubleVisitPulse widget in employee-portal/home-snapshot.ts) from counting the same
+    // physical CRM visit multiple times across repeated full-history rebuilds. Manually-created
+    // imports are never touched — only rows carrying the auto-sync sentinel are eligible.
+    const { data: staleAutoSyncImports, error: staleLookupError } = await getSupabaseAdmin()
+      .from(importsTable)
+      .select("id")
+      .eq("status", "superseded")
+      .eq("uploaded_by", IREPORTS360_MIRROR_SYNC_ACTOR)
+      .neq("id", saved.id);
+    if (!staleLookupError && staleAutoSyncImports && staleAutoSyncImports.length > 0) {
+      const staleIds = staleAutoSyncImports.map((row) => row.id as string);
+      await getSupabaseAdmin().from(importsTable).delete().in("id", staleIds);
+    }
+
+    return { importId: saved.id, published: true, rowCount: withResignedFlagged.rows.length };
+  } catch (error) {
+    return { failed: true, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function listDoubleVisitImports(limit = 20) {
   const { data, error } = await getSupabaseAdmin()
     .from(importsTable)
@@ -873,22 +1006,26 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
 const DV_ROLE_CODES: Record<string, DoubleVisitRoleCode> = {
   "District Manager": "DSM",
   "Group Product Manager": "GPM",
+  "Marketing Manager": "MM",
   "National Sales Manager": "NSM",
   "Product Manager": "PM",
   "Regional Manager": "RM",
+  "SFE Manager": "SFE",
   "Training Manager": "TM",
 };
 
 const DV_ROLE_LABELS: Record<DoubleVisitRoleCode, string> = {
   DSM: "District Manager",
   GPM: "Group Product Manager",
+  MM: "Marketing Manager",
   NSM: "National Sales Manager",
   PM: "Product Manager",
   RM: "Regional Manager",
+  SFE: "SFE Manager",
   TM: "Training Manager",
 };
 
-const DV_ROLE_CODE_ORDER: DoubleVisitRoleCode[] = ["DSM", "RM", "NSM", "PM", "GPM", "TM"];
+const DV_ROLE_CODE_ORDER: DoubleVisitRoleCode[] = ["DSM", "RM", "NSM", "PM", "GPM", "MM", "SFE", "TM"];
 const HIERARCHY_ROLE_CODES = new Set<DoubleVisitRoleCode>(["DSM", "RM", "NSM"]);
 
 // Single source of truth for a double-visitor's role code. Mirrors isAllowedDoubleVisitor /

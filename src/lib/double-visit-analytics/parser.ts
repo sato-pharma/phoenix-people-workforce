@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import ExcelJS from "exceljs";
 
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type { IReports360Visit } from "@/lib/field-workforce-compliance/ireports360-client";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
@@ -383,6 +384,51 @@ export function markManagerVisitedRows(
     {
       code: "visited_employee_is_manager",
       message: `${flagged} row(s) had a visited employee who is a manager (DSM/RM/NSM/PM/GPM/TM), not a Medical Rep — these are CRM data errors and are excluded from DV counts.`,
+      rowNumber: null,
+      severity: "warning",
+    },
+  ];
+  return {
+    ...preview,
+    rows,
+    sampleRows: rows.slice(0, 25),
+    summary: summaryFromRows(rows, warnings),
+    warnings,
+  };
+}
+
+// Reclassifies a row as "resigned" when the visited employee's CURRENT employment_status is
+// terminal (resigned/terminated/inactive), rather than only firing on literal "resigned"/
+// "terminated" text typed into a manual source sheet (see classifyVisitedEmployeeStatus above —
+// that stays as-is for the Excel path). CRM-sourced data has no such manual annotation, so without
+// this live check a visit against someone who has since left the company would stay "active_mapped"
+// forever.
+export function markResignedVisitedRows(
+  preview: DoubleVisitPreview,
+  employees: EmployeeDirectoryRow[],
+): DoubleVisitPreview {
+  const employeeByHrId = new Map(
+    employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+
+  let flagged = 0;
+  const rows = preview.rows.map((row) => {
+    if (row.visitedEmployeeStatus !== "active_mapped" || !row.visitedEmployeeHrId) return row;
+    const key = canonicalHrIdKey(row.visitedEmployeeHrId);
+    const employee = key ? employeeByHrId.get(key) : undefined;
+    if (!employee || !isTerminalEmploymentStatus(employee.employmentStatus)) return row;
+    flagged++;
+    return { ...row, visitedEmployeeStatus: "resigned" as DoubleVisitVisitedEmployeeStatus };
+  });
+
+  if (flagged === 0) return preview;
+  const warnings: DoubleVisitValidationIssue[] = [
+    ...preview.warnings,
+    {
+      code: "visited_employee_resigned",
+      message: `${flagged} row(s) had a visited employee whose current employment status is resigned/terminated — excluded from active DV counts.`,
       rowNumber: null,
       severity: "warning",
     },

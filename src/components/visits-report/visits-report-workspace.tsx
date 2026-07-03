@@ -199,8 +199,8 @@ export function VisitsReportWorkspace({ data }: { data: VisitsReportData }) {
               Agent
               <select value={agent} onChange={(event) => setAgent(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
                 <option value="">All agents</option>
-                {data.filters.agents.map((name) => (
-                  <option key={name} value={name}>{name}</option>
+                {data.filters.agents.map((agentOption) => (
+                  <option key={agentOption.hrId} value={agentOption.hrId}>{agentOption.name}</option>
                 ))}
               </select>
             </label>
