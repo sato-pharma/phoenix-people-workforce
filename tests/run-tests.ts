@@ -142,6 +142,7 @@ import { runMarketingRoiReportHelpersTests } from "./marketing-roi-report-helper
 import { runMarketingRoiLabelingTests } from "./marketing-roi-labeling.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
+import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
 import { runMarketingRoiFacetsTests } from "./marketing-roi-facets.test.ts";
 import { runMarketingRoiExportWorkbookTests } from "./marketing-roi-export-workbook.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
@@ -421,6 +422,7 @@ await runTest("marketing ROI report helpers (date math + body parse)", runMarket
 await runTest("marketing ROI forecast-vs-actual labeling", runMarketingRoiLabelingTests);
 await runTest("marketing ROI explain (diagnostic classifier + read-only guards)", runMarketingRoiExplainTests);
 await runTest("marketing ROI business report (requester/customer + read-only guards)", runMarketingRoiBusinessReportTests);
+await runTest("pharmacy master matching (Phase 1 candidate classifier + read-only guards)", runPharmacyMatchingTests);
 await runTest("marketing ROI facets (smart cascading filters)", runMarketingRoiFacetsTests);
 await runTest("marketing ROI export workbook (xlsx builds)", runMarketingRoiExportWorkbookTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
