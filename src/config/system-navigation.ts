@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Fingerprint,
+  HeartPulse,
   Hourglass,
   IdCard,
   Inbox,
@@ -154,6 +155,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
+      { href: "/admin/synthetic-journeys", icon: HeartPulse, label: "Synthetic Journeys", permissions: [{ resource: "synthetic_journeys" }], roles: ["Super Admin"] },
       { href: "/admin/data-backup", icon: Download, label: "Data Backup", roles: ["Super Admin"] },
       { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
       { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
@@ -283,6 +285,7 @@ const adminNavigationSectionSeeds = [
       // entries (same href) for the admin-shell-employee Marketing Manager.
       { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], excludedRoles: ["Marketing Manager"] },
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/admin/visits-report", icon: FileSpreadsheet, label: "Visits Report", roles: ["Super Admin"] },
       { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
       { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
     ],

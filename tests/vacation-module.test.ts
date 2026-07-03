@@ -451,13 +451,16 @@ export function runVacationModuleTests() {
   assert.match(complianceMigrationSource, /create table if not exists public\.v2_vacation_retention_purge_runs/);
   assert.match(complianceMigrationSource, /enable row level security/);
   assert.doesNotMatch(complianceMigrationSource, /drop table|drop function|drop policy .*leave/i);
-  // Vercel Pro hosts both the daily dispatcher and the sub-daily outbox drain (the drain
-  // moved off GitHub Actions so it stops consuming Actions minutes). Both are CRON_SECRET
+  // Vercel Pro hosts the daily dispatcher, the sub-daily outbox drain (moved off GitHub Actions
+  // so it stops consuming Actions minutes), and the iReports360 visits sync. All are CRON_SECRET
   // protected. Any additional cron must be a deliberate, reviewed change.
   const crons = JSON.parse(vercelConfigSource).crons as Array<{ path: string; schedule: string }>;
   // Daily dispatcher runs at 06:30 UTC = 09:30 Africa/Cairo (EEST, UTC+3 in summer).
+  // iReports360 visits sync runs 09:00/12:00/19:00 UTC = 12pm/3pm/10pm Africa/Cairo (same EEST
+  // calibration) — owner-requested cadence so Phoenix stays synced with the CRM without a manual pull.
   assert.deepEqual(crons, [
     { path: "/api/notifications/daily", schedule: "30 6 * * *" },
     { path: "/api/notifications/process?limit=50", schedule: "*/30 * * * *" },
+    { path: "/api/cron/ireports360-visits-sync", schedule: "0 9,12,19 * * *" },
   ]);
 }
