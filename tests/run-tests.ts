@@ -213,6 +213,7 @@ import { runResignationScopeCheckTests } from "./resignation-scope-check.test.ts
 import { runResignationWorkflowScopeCheckTests } from "./resignation-workflow-scope-check.test.ts";
 import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-workflow-scope-check.test.ts";
 import { runCustomerPharmacyMappingReadinessTests } from "./customer-pharmacy-mapping-readiness.test.ts";
+import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapping-actions.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
@@ -501,6 +502,7 @@ await runTest("resignation employee scope check", runResignationScopeCheckTests)
 await runTest("resignation workflow scope check", runResignationWorkflowScopeCheckTests);
 await runTest("contract renewal workflow scope check", runContractRenewalWorkflowScopeCheckTests);
 await runTest("customer pharmacy mapping readiness", runCustomerPharmacyMappingReadinessTests);
+await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerPharmacyMappingActionsTests);
 await runTest("cv database", runCvDatabaseTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
