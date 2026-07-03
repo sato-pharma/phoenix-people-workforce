@@ -7,6 +7,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import {
@@ -145,27 +146,23 @@ export function OrganogramReport({
   );
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [lineFilter, setLineFilter] = React.useState("");
-  const [organogramSearch, setOrganogramSearch] = React.useState("");
+  const searchParams = useSearchParams();
+  // Deep-link bootstrap: read once at mount via a lazy initializer, matching
+  // how initialReport/initialError are seeded from props. The previous
+  // implementation deferred this into a useEffect + setTimeout(0), which
+  // both violates the "don't setState synchronously in an effect" rule
+  // (effects should sync with external systems, not derive initial state)
+  // and doesn't track later URL changes either way — the effect's
+  // dependency array never included anything that changes after mount, so
+  // this has identical mount-once semantics, just without the anti-pattern.
+  const [lineFilter, setLineFilter] = React.useState(() =>
+    !fixedLine ? searchParams.get("line")?.trim() ?? "" : "",
+  );
+  const [organogramSearch, setOrganogramSearch] = React.useState(
+    () => searchParams.get("search")?.trim() ?? "",
+  );
   const effectiveLineFilter = fixedLine ?? lineFilter;
   const normalizedOrganogramSearch = normalizeSearchValue(organogramSearch);
-
-  React.useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      const requestedLine = params.get("line")?.trim();
-      const requestedSearch = params.get("search")?.trim();
-
-      if (!fixedLine && requestedLine) {
-        setLineFilter(requestedLine);
-      }
-      if (requestedSearch) {
-        setOrganogramSearch(requestedSearch);
-      }
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [fixedLine]);
 
   const loadReport = React.useCallback(async () => {
     setIsLoading(true);
