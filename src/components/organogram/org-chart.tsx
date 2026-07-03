@@ -21,9 +21,14 @@ import {
   ChevronDown,
   ChevronRight,
   Crown,
+  ImageDown,
   Layers,
+  Loader2,
   MapPin,
+  Minus,
   Network,
+  Plus,
+  Printer,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -656,6 +661,10 @@ export function OrgChartTree({
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
 }: OrgChartTreeProps) {
   const [collapsedKeys, setCollapsedKeys] = React.useState<Set<string>>(new Set());
+  const collapsedKeysRef = React.useRef(collapsedKeys);
+  React.useEffect(() => {
+    collapsedKeysRef.current = collapsedKeys;
+  }, [collapsedKeys]);
   const toggle = React.useCallback((key: string) => {
     setCollapsedKeys((previous) => {
       const next = new Set(previous);
@@ -667,6 +676,67 @@ export function OrgChartTree({
       return next;
     });
   }, []);
+
+  // Zoom: scales only the chart canvas (spine + lanes), not the KPI summary
+  // above it. Ctrl/Cmd+wheel matches the conventional "don't hijack normal
+  // page scroll" pattern; panning stays on the existing native overflow-x
+  // scroll rather than a custom drag handler, so it can't interfere with the
+  // per-node collapse click targets.
+  const MIN_ZOOM = 0.5;
+  const MAX_ZOOM = 1.75;
+  const clampZoom = React.useCallback(
+    (value: number) => Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value)) * 100) / 100,
+    [],
+  );
+  const [zoom, setZoom] = React.useState(1);
+  const zoomIn = React.useCallback(() => setZoom((z) => clampZoom(z + 0.1)), [clampZoom]);
+  const zoomOut = React.useCallback(() => setZoom((z) => clampZoom(z - 0.1)), [clampZoom]);
+  const resetZoom = React.useCallback(() => setZoom(1), []);
+  const handleCanvasWheel = React.useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      setZoom((z) => clampZoom(z + (event.deltaY < 0 ? 0.1 : -0.1)));
+    },
+    [clampZoom],
+  );
+
+  // Print: unroll every collapsed lane for the duration of printing (a
+  // collapsed lane's members aren't in the DOM at all when collapsed, so no
+  // print-only CSS override could resurrect them — this has to happen in
+  // JS), then restore whatever was collapsed before. Listens for the actual
+  // beforeprint/afterprint events rather than only the toolbar button's
+  // onClick, so it also covers the browser's native Ctrl+P / File > Print.
+  const [isPrinting, setIsPrinting] = React.useState(false);
+  const collapsedKeysBeforePrintRef = React.useRef<Set<string> | null>(null);
+  React.useEffect(() => {
+    const handleBeforePrint = () => {
+      collapsedKeysBeforePrintRef.current = collapsedKeysRef.current;
+      setCollapsedKeys(new Set());
+      setIsPrinting(true);
+    };
+    const handleAfterPrint = () => {
+      if (collapsedKeysBeforePrintRef.current) {
+        setCollapsedKeys(collapsedKeysBeforePrintRef.current);
+        collapsedKeysBeforePrintRef.current = null;
+      }
+      setIsPrinting(false);
+    };
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, []);
+  const handlePrint = React.useCallback(() => window.print(), []);
+
+  // PNG export target — deliberately the chart canvas only (spine + lanes),
+  // excluding the toolbar/KPI cards above it, which live in sibling elements
+  // outside this ref.
+  const chartCanvasRef = React.useRef<HTMLDivElement>(null);
+  const [isExportingPng, setIsExportingPng] = React.useState(false);
 
   const structureKpis = React.useMemo(() => calculateOrganogramStructureKpis(rows), [rows]);
   const { chiefExecutive, filledLaneCount, groups, laneLeaderName, lineLeader } = React.useMemo(() => {
@@ -686,6 +756,39 @@ export function OrgChartTree({
   const rsmGroups = groups.filter((group) => group.rsm);
   const otherGroups = groups.filter((group) => !group.dsm && !group.rsm);
   const hasContent = rows.length > 0;
+
+  const handleExportPng = React.useCallback(async () => {
+    if (!chartCanvasRef.current || isExportingPng) return;
+    setIsExportingPng(true);
+    const previousCollapsedKeys = collapsedKeysRef.current;
+    try {
+      // Unroll every lane so the exported image shows the full structure,
+      // not whatever happens to be collapsed on screen — then wait two
+      // animation frames for React to actually commit that DOM before
+      // capturing it (a single setState doesn't paint synchronously).
+      setCollapsedKeys(new Set());
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+
+      const { toPng } = await import("html-to-image");
+      const dataUrl = await toPng(chartCanvasRef.current, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+      });
+
+      const link = document.createElement("a");
+      const safeLineName = resolvedLineName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      link.download = `organogram-${safeLineName || "structure"}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error("Organogram PNG export failed:", error);
+    } finally {
+      setCollapsedKeys(previousCollapsedKeys);
+      setIsExportingPng(false);
+    }
+  }, [isExportingPng, resolvedLineName]);
 
   // Every collapsible top-level lane key — mirrors the keys the tiers below use —
   // so "Collapse all" can fold every lane in one click.
@@ -735,7 +838,35 @@ export function OrgChartTree({
     <div className="space-y-5" dir="auto">
       {/* Whole-tree controls + structure export */}
       {hasContent ? (
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+          <div className="inline-flex h-9 items-center gap-0.5 border border-[#D8E0EA] bg-white px-1 text-[#0F172A] shadow-sm">
+            <button
+              aria-label="Zoom out"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-30"
+              disabled={zoom <= MIN_ZOOM}
+              onClick={zoomOut}
+              type="button"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              aria-label="Reset zoom to 100%"
+              className="min-w-[3.5rem] px-1 text-center text-xs font-bold tabular-nums text-slate-500 transition hover:text-[#F97316]"
+              onClick={resetZoom}
+              type="button"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              aria-label="Zoom in"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-30"
+              disabled={zoom >= MAX_ZOOM}
+              onClick={zoomIn}
+              type="button"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <button
             className="inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
             onClick={() => setCollapsedKeys(new Set())}
@@ -749,6 +880,27 @@ export function OrgChartTree({
             type="button"
           >
             Collapse all
+          </button>
+          <button
+            className="inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            onClick={handlePrint}
+            type="button"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Print
+          </button>
+          <button
+            className="inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:opacity-50"
+            disabled={isExportingPng}
+            onClick={handleExportPng}
+            type="button"
+          >
+            {isExportingPng ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ImageDown className="h-3.5 w-3.5" />
+            )}
+            PNG
           </button>
           <ExportXlsxButton
             columns={exportColumns}
@@ -785,15 +937,24 @@ export function OrgChartTree({
       {/* Chart canvas */}
       <div
         className={cn(
-          "overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5",
-          theme === "admin" ? "shadow-[0_2px_16px_rgba(15,23,42,0.06)]" : "",
+          "overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5 print:overflow-visible print:rounded-none print:border-none print:bg-white print:p-0 print:shadow-none",
+          theme === "admin" ? "shadow-[0_2px_16px_rgba(15,23,42,0.06)] print:shadow-none" : "",
         )}
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(226,232,240,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(226,232,240,0.6) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
+        onWheel={handleCanvasWheel}
+        ref={chartCanvasRef}
+        style={
+          isPrinting
+            ? undefined
+            : {
+                backgroundImage:
+                  "linear-gradient(rgba(226,232,240,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(226,232,240,0.6) 1px, transparent 1px)",
+                backgroundSize: "48px 48px",
+              }
+        }
       >
+        {/* Zoom scales everything below; print always renders at 100% so the
+            full structure fits the page regardless of the on-screen zoom. */}
+        <div className="print:!scale-100" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
         {/* Executive spine */}
         <div className="flex flex-col items-center">
           <SpineNode
@@ -856,13 +1017,15 @@ export function OrgChartTree({
                   {directDsms.map((group, index) => {
                     const laneKey = tierLaneKey("t1", group, index);
                     return (
-                      <ManagerLane
-                        collapsedKeys={collapsedKeys}
-                        group={group}
-                        key={laneKey}
-                        laneKey={laneKey}
-                        onToggle={toggle}
-                      />
+                      <div className="flex flex-col" key={laneKey}>
+                        <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
+                        <ManagerLane
+                          collapsedKeys={collapsedKeys}
+                          group={group}
+                          laneKey={laneKey}
+                          onToggle={toggle}
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -925,13 +1088,15 @@ export function OrgChartTree({
                         childLanes.map((lane, laneIndex) => {
                           const childKey = childLaneKey(laneKey, lane, laneIndex);
                           return (
-                            <ManagerLane
-                              collapsedKeys={collapsedKeys}
-                              group={lane}
-                              key={childKey}
-                              laneKey={childKey}
-                              onToggle={toggle}
-                            />
+                            <div className="flex flex-col" key={childKey}>
+                              <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
+                              <ManagerLane
+                                collapsedKeys={collapsedKeys}
+                                group={lane}
+                                laneKey={childKey}
+                                onToggle={toggle}
+                              />
+                            </div>
                           );
                         })
                       ) : (
@@ -961,13 +1126,15 @@ export function OrgChartTree({
                   {otherGroups.map((group, index) => {
                     const laneKey = `other-${group.name}-${index}`;
                     return (
-                      <ManagerLane
-                        collapsedKeys={collapsedKeys}
-                        group={group}
-                        key={laneKey}
-                        laneKey={laneKey}
-                        onToggle={toggle}
-                      />
+                      <div className="flex flex-col" key={laneKey}>
+                        <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
+                        <ManagerLane
+                          collapsedKeys={collapsedKeys}
+                          group={group}
+                          laneKey={laneKey}
+                          onToggle={toggle}
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -979,6 +1146,7 @@ export function OrgChartTree({
             </p>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

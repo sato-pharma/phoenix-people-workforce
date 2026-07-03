@@ -96,6 +96,7 @@
     "countup.js": "^2.10.0",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.42.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "^1.21.0",
     "next": "16.2.6",
     "openai": "^6.45.0",
