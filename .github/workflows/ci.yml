@@ -127,13 +127,6 @@ jobs:
       - name: Generate Next.js route types
         run: npx next typegen
 
-      - name: Restore TypeScript incremental build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: tsconfig.tsbuildinfo
-          key: tsbuildinfo-${{ hashFiles('app/**', 'src/**', 'tests/**', 'tsconfig.json', 'package-lock.json') }}
-          restore-keys: tsbuildinfo-
-
       - name: Typecheck
         run: npm run typecheck
 
