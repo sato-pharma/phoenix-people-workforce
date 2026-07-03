@@ -59,6 +59,7 @@ import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrid
 import { runAttendancePassportTests } from "./attendance-passport.test.ts";
 import { runAttendanceDigestReadReceiptsTests } from "./attendance-digest-read-receipts.test.ts";
 import { runAttendanceHrPatternInsightsTests } from "./attendance-hr-pattern-insights.test.ts";
+import { runAttendanceDigestAdminReviewTests } from "./attendance-digest-admin-review.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
@@ -365,6 +366,7 @@ await runTest("attendance bulk holiday calendar", runAttendanceHolidayOverridesT
 await runTest("attendance passport", runAttendancePassportTests);
 await runTest("attendance digest read-receipts", runAttendanceDigestReadReceiptsTests);
 await runTest("attendance HR pattern insights", runAttendanceHrPatternInsightsTests);
+await runTest("attendance digest admin review gate", runAttendanceDigestAdminReviewTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("company holidays", runCompanyHolidaysTests);

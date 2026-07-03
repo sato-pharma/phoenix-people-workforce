@@ -21,7 +21,7 @@ export default async function AttendancePassportDetailPage({ params }: { params:
   let passport: Awaited<ReturnType<typeof getAttendancePassport>> | null = null;
   let error: string | null = null;
   try {
-    passport = await getAttendancePassport(hrId);
+    passport = await getAttendancePassport(hrId, { viewerIsSelf: isSelf });
   } catch (loadError) {
     error = loadError instanceof Error ? loadError.message : "Attendance passport failed to load.";
   }

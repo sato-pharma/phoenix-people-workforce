@@ -28,7 +28,7 @@ export function runAttendanceSettlementDashboardTests() {
   // 3. Best-effort fan-out: one failed reminder must never abort the rest.
   assert.match(
     service,
-    /try \{\s*await notifyDigestSent\(/,
+    /try \{[\s\S]*?await notifyDigestSent\(/,
     "each reminder send must be individually try/caught inside the Promise.all map",
   );
 
