@@ -222,15 +222,24 @@ export async function getVisitsReportData(input: {
 
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapVisitRow);
 
+  // The filter's <option value> must be the HR ID (what the query above actually matches on),
+  // not the display name — a raw name would never match agent_hr_id and the filter would
+  // silently return zero rows no matter what's selected.
   const { data: agentRows } = await supabase
     .from(visitsTable)
-    .select("agent_name")
+    .select("agent_hr_id, agent_name")
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo)
+    .not("agent_hr_id", "is", null)
     .limit(5000);
-  const agents = Array.from(
-    new Set(((agentRows ?? []) as Array<{ agent_name: string | null }>).map((row) => row.agent_name).filter((value): value is string => Boolean(value))),
-  ).sort();
+  const agentsByHrId = new Map<string, string>();
+  for (const row of (agentRows ?? []) as Array<{ agent_hr_id: string | null; agent_name: string | null }>) {
+    if (!row.agent_hr_id || agentsByHrId.has(row.agent_hr_id)) continue;
+    agentsByHrId.set(row.agent_hr_id, row.agent_name ?? row.agent_hr_id);
+  }
+  const agents = Array.from(agentsByHrId.entries())
+    .map(([hrId, name]) => ({ hrId, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     configured,
