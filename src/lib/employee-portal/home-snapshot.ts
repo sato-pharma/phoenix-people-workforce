@@ -10,6 +10,22 @@ import {
 } from "@/lib/employee-portal/service";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
+import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
+
+// Roles that get the double-visit "focus" landing widgets (trend, scope coverage, probation
+// watch) and the Double Visit Report page. Kept as its own gate (rather than folded into
+// getRoleSpecificExtras) since it applies uniformly across all six roles instead of following
+// the one-branch-per-role KPI pattern below. Exported so the report page's access check and the
+// snapshot builder share one definition instead of drifting.
+export const DV_FOCUS_ROLES = new Set([
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Training Manager",
+]);
 
 export type UpcomingMarketingActivity = { id: string; requestCode: string; payDate: string; estimatedCost: number };
 
@@ -47,6 +63,8 @@ export type PortalHomeSnapshot = {
     | { achievementPercent: number; dsmCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
     | null;
   plansAwaitingManagerApproval: number | null;
+  /** DM/RM/NSM/PM/GPM/TM only: personal DV trend, scope coverage, and probation DV watchlist. */
+  dvFocus: DoubleVisitPortalFocus | null;
 };
 
 type RoleSpecificExtras = Pick<PortalHomeSnapshot, "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational">;
@@ -277,6 +295,9 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         )
       : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
+  const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
+    ? getDoubleVisitPortalFocus(access).catch(() => null)
+    : Promise.resolve(null);
 
   // Last 4 months of per-row sales data; aggregated client-side into trend buckets.
   const trendPromise =
@@ -484,7 +505,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
 
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const roleExtras = await roleExtrasPromise;
+  const [roleExtras, dvFocus] = await Promise.all([roleExtrasPromise, dvFocusPromise]);
 
   return {
     shell,
@@ -500,5 +521,6 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     mrPendingExpenseCount,
     ...roleExtras,
     plansAwaitingManagerApproval,
+    dvFocus,
   };
 }

@@ -284,3 +284,81 @@ export type DoubleVisitDashboardData = {
   schemaReady: boolean;
   visitLog: DoubleVisitLogEntry[];
 };
+
+// ── Portal landing-page "focus" widgets (trend / scope coverage / probation) ────
+
+export type DoubleVisitFocusTrendPoint = {
+  count: number;
+  label: string;
+  month: string; // "YYYY-MM"
+};
+
+export type DoubleVisitFocusRosterEntry = {
+  areaName: string | null;
+  daysSinceHire: number | null;
+  flagged: boolean;
+  hireDate: string | null;
+  hrId: string;
+  name: string;
+  visited: boolean;
+};
+
+export type DoubleVisitFocusProbationEntry = {
+  daysRemaining: number;
+  dvCount: number;
+  dvDone: boolean | null; // null when the viewer's role has no dedicated probation DV checkbox (Regional Manager)
+  hireDate: string;
+  hrId: string;
+  name: string;
+  probationEndDate: string;
+};
+
+export type DoubleVisitScopeFocus = {
+  coveragePct: number | null;
+  coveredCount: number;
+  neglected: DoubleVisitFocusRosterEntry[];
+  neglectedCount: number;
+  neglectedTruncated: boolean;
+  rosterSize: number;
+  summarySentence: string;
+};
+
+export type DoubleVisitPortalFocus = {
+  probation: DoubleVisitFocusProbationEntry[];
+  probationTruncated: boolean;
+  reportHref: string;
+  scope: DoubleVisitScopeFocus | null;
+  trend: DoubleVisitFocusTrendPoint[];
+};
+
+// ── Double Visit Report page (flat, filterable, sortable, exportable table) ────
+
+export type DoubleVisitReportRow = {
+  activityDate: string;
+  areaName: string | null;
+  daysSinceVisitedHire: number | null;
+  doubleVisitorHrId: string | null;
+  doubleVisitorName: string | null;
+  lineName: string | null;
+  period: DoubleVisitPeriod;
+  visitCount: number;
+  visitedEmployeeHireDate: string | null;
+  visitedHrId: string | null;
+  visitedName: string | null;
+  visitedStatus: DoubleVisitVisitedEmployeeStatus;
+};
+
+export type DoubleVisitReportData = {
+  asOfDate: string;
+  dateFrom: string;
+  dateTo: string;
+  filters: {
+    areas: string[];
+    doubleVisitors: string[];
+    lines: string[];
+  };
+  neverVisited: DoubleVisitFocusRosterEntry[];
+  probation: DoubleVisitFocusProbationEntry[];
+  rows: DoubleVisitReportRow[];
+  schemaReady: boolean;
+};

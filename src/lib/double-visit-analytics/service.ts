@@ -10,6 +10,8 @@ import {
 import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports360-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { getProbationRows } from "@/lib/probation/service";
+import type { ProbationDvState } from "@/lib/probation/types";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -36,9 +38,16 @@ import type {
   DoubleVisitManagerSummary,
   DoubleVisitMrScore,
   DoubleVisitNormalizedRow,
+  DoubleVisitFocusProbationEntry,
+  DoubleVisitFocusRosterEntry,
+  DoubleVisitFocusTrendPoint,
+  DoubleVisitPortalFocus,
   DoubleVisitPreview,
+  DoubleVisitReportData,
+  DoubleVisitReportRow,
   DoubleVisitRoleCode,
   DoubleVisitRoleRollup,
+  DoubleVisitScopeFocus,
   DoubleVisitSourceType,
   DoubleVisitVisitedEmployeeStatus,
 } from "@/lib/double-visit-analytics/types";
@@ -1389,6 +1398,319 @@ export async function getDoubleVisitDashboardData(input: {
     salesComparisonAvailable: false,
     schemaReady: true,
     visitLog,
+  };
+}
+
+// ── Portal landing "focus" widgets: personal trend, scope coverage, probation watch ────
+//
+// Unlike getDoubleVisitDashboardData (gated to the single currently-"published" import, by
+// design, for governance/audit consistency), these widgets read double_visit_rows directly
+// across every uploaded snapshot — the same "raw history" pattern the MR-side doubleVisitPulse
+// widget already uses in employee-portal/home-snapshot.ts. A personal month-over-month trend
+// needs history the publish/supersede model does not retain as "published" at any one time.
+
+const NEVER_VISITED_FLAG_DAYS = 45;
+const FOCUS_TREND_MONTHS = 3;
+const FOCUS_NEGLECTED_DISPLAY_LIMIT = 8;
+const FOCUS_PROBATION_DISPLAY_LIMIT = 8;
+
+const PROBATION_DV_FIELD_BY_ROLE: Partial<Record<string, keyof ProbationDvState>> = {
+  "District Manager": "dm_dv_done",
+  "Group Product Manager": "pm_gpm_dv_done",
+  "National Sales Manager": "nsm_dv_done",
+  "Product Manager": "pm_gpm_dv_done",
+  "Training Manager": "tm_dv_done",
+};
+
+function focusMonthBuckets(count: number, asOf = new Date()) {
+  const buckets: { month: string; label: string }[] = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const d = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - i, 1));
+    buckets.push({
+      label: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
+      month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+    });
+  }
+  return buckets;
+}
+
+function buildScopeSummarySentence(total: number, covered: number, neglected: DoubleVisitFocusRosterEntry[]) {
+  if (total === 0) return "No medical reps are currently mapped to your scope.";
+  const neglectedCount = neglected.length;
+  if (neglectedCount === 0) return `All ${total} of your ${total === 1 ? "rep has" : "reps have"} been double-visited by you.`;
+  const overdue = neglected.filter((entry) => entry.flagged).length;
+  const base = `${neglectedCount} of ${total} team member${total === 1 ? "" : "s"} haven't been double-visited by you yet`;
+  return overdue === 0
+    ? `${base}.`
+    : `${base} — ${overdue} ${overdue === 1 ? "is" : "are"} overdue (hired ${NEVER_VISITED_FLAG_DAYS}+ days ago).`;
+}
+
+export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<DoubleVisitPortalFocus | null> {
+  const role = access.role ?? "";
+  if (!DV_ROLE_CODES[role]) return null;
+  if (!(await isDoubleVisitSchemaReady())) return null;
+
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const viewerKey = normalizedHrKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId);
+  const viewer = viewerKey ? employees.find((employee) => normalizedHrKey(employee.hrId) === viewerKey) ?? null : null;
+  const viewerHrIdUpper = (viewer?.hrId ?? access.hrId ?? "").toUpperCase();
+
+  const buckets = focusMonthBuckets(FOCUS_TREND_MONTHS);
+  const trendStart = `${buckets[0].month}-01`;
+
+  const [trendRowsResult, everVisitedResult, probationRows] = await Promise.all([
+    viewerHrIdUpper
+      ? getSupabaseAdmin()
+          .from(rowsTable)
+          .select("activity_date, visit_count")
+          .eq("double_visitor_hr_id", viewerHrIdUpper)
+          .gte("activity_date", trendStart)
+          .limit(5000)
+      : Promise.resolve({ data: [], error: null }),
+    viewerHrIdUpper
+      ? getSupabaseAdmin().from(rowsTable).select("visited_employee_hr_id").eq("double_visitor_hr_id", viewerHrIdUpper).limit(10000)
+      : Promise.resolve({ data: [], error: null }),
+    getProbationRows(access).catch(() => []),
+  ]);
+
+  // Block 1 — viewer's own monthly DV trend (own performed visits only, per owner decision).
+  const countByMonth = new Map<string, number>();
+  for (const row of (trendRowsResult.data ?? []) as Array<{ activity_date: string; visit_count: number | null }>) {
+    const month = row.activity_date.slice(0, 7);
+    countByMonth.set(month, (countByMonth.get(month) ?? 0) + asNumber(row.visit_count));
+  }
+  const trend: DoubleVisitFocusTrendPoint[] = buckets.map((bucket) => ({
+    count: countByMonth.get(bucket.month) ?? 0,
+    label: bucket.label,
+    month: bucket.month,
+  }));
+
+  // Block 2 — scope coverage: which in-scope MRs has the viewer EVER personally double-visited.
+  const visitedKeys = new Set(
+    ((everVisitedResult.data ?? []) as Array<{ visited_employee_hr_id: string | null }>)
+      .map((row) => canonicalHrIdKey(row.visited_employee_hr_id))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
+  const roster = scopedEmployees.filter((employee) => {
+    if (!isActiveEmployee(employee) || !isMedicalRep(employee)) return false;
+    return normalizedHrKey(employee.hrId) !== viewerKey;
+  });
+
+  let scope: DoubleVisitScopeFocus | null = null;
+  if (roster.length > 0) {
+    const entries: DoubleVisitFocusRosterEntry[] = roster.map((employee) => {
+      const key = canonicalHrIdKey(employee.hrId);
+      const visited = key ? visitedKeys.has(key) : false;
+      const daysSinceHire = daysBetween(employee.hireDate);
+      return {
+        areaName: employee.areaName,
+        daysSinceHire,
+        flagged: !visited && daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        name: employee.fullName,
+        visited,
+      };
+    });
+    const neglectedAll = entries.filter((entry) => !entry.visited).sort((a, b) => (b.daysSinceHire ?? -1) - (a.daysSinceHire ?? -1));
+    const coveredCount = entries.length - neglectedAll.length;
+    scope = {
+      coveragePct: round((coveredCount / entries.length) * 100, 1),
+      coveredCount,
+      neglected: neglectedAll.slice(0, FOCUS_NEGLECTED_DISPLAY_LIMIT),
+      neglectedCount: neglectedAll.length,
+      neglectedTruncated: neglectedAll.length > FOCUS_NEGLECTED_DISPLAY_LIMIT,
+      rosterSize: entries.length,
+      summarySentence: buildScopeSummarySentence(entries.length, coveredCount, neglectedAll),
+    };
+  }
+
+  // Block 3 — probation watchlist. dv_state reflects the viewer's own tier (dm/nsm/pm_gpm/tm);
+  // Regional Manager has no dedicated probation DV checkbox, so it falls back to a raw DV count.
+  const dvField = PROBATION_DV_FIELD_BY_ROLE[role];
+  const dvCountByHrId = new Map<string, number>();
+  if (probationRows.length > 0) {
+    const probationHrIdsUpper = Array.from(new Set(probationRows.map((row) => row.hr_id.toUpperCase())));
+    const { data } = await getSupabaseAdmin()
+      .from(rowsTable)
+      .select("visited_employee_hr_id, visit_count")
+      .in("visited_employee_hr_id", probationHrIdsUpper);
+    for (const row of (data ?? []) as Array<{ visited_employee_hr_id: string | null; visit_count: number | null }>) {
+      const key = canonicalHrIdKey(row.visited_employee_hr_id);
+      if (!key) continue;
+      dvCountByHrId.set(key, (dvCountByHrId.get(key) ?? 0) + asNumber(row.visit_count));
+    }
+  }
+  const probationAll: DoubleVisitFocusProbationEntry[] = probationRows
+    .map((row) => {
+      const key = canonicalHrIdKey(row.hr_id);
+      return {
+        daysRemaining: row.days_remaining,
+        dvCount: key ? dvCountByHrId.get(key) ?? 0 : 0,
+        dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
+        hireDate: row.hire_date,
+        hrId: row.hr_id,
+        name: row.full_name,
+        probationEndDate: row.probation_end_date,
+      } satisfies DoubleVisitFocusProbationEntry;
+    })
+    .sort((a, b) => a.daysRemaining - b.daysRemaining);
+
+  return {
+    probation: probationAll.slice(0, FOCUS_PROBATION_DISPLAY_LIMIT),
+    probationTruncated: probationAll.length > FOCUS_PROBATION_DISPLAY_LIMIT,
+    reportHref: "/employee-portals/double-visit-report",
+    scope,
+    trend,
+  };
+}
+
+// ── Double Visit Report page: flat, filterable, sortable, exportable drill-down ────
+
+export async function getDoubleVisitReportData(input: {
+  access: AccessContext;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): Promise<DoubleVisitReportData> {
+  const today = todayIso();
+  const dateFrom = input.dateFrom || addDaysIso(today, -90);
+  const dateTo = input.dateTo || today;
+
+  if (!(await isDoubleVisitSchemaReady())) {
+    return {
+      asOfDate: today,
+      dateFrom,
+      dateTo,
+      filters: { areas: [], doubleVisitors: [], lines: [] },
+      neverVisited: [],
+      probation: [],
+      rows: [],
+      schemaReady: false,
+    };
+  }
+
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access);
+  const hireDateByKey = new Map(
+    employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee.hireDate] as const)
+      .filter((entry): entry is [string, string | null] => Boolean(entry[0])),
+  );
+  const managerHrIdKeys = new Set(
+    scopedEmployees
+      .filter((employee) => resolveDvRole(employee) !== null)
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+
+  // Spans every uploaded snapshot in range (not just the currently-published one) — see the
+  // block comment above getDoubleVisitPortalFocus for why this differs from the Analytics page.
+  const pageSize = 1000;
+  const rawRows: DoubleVisitDbRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(rowsTable)
+      .select("*")
+      .gte("activity_date", dateFrom)
+      .lte("activity_date", dateTo)
+      .order("activity_date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (schemaMissing(error)) break;
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as DoubleVisitDbRow[];
+    rawRows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  const scopedRows = filterRowsForAccess(rawRows, input.access, employees).filter((row) => {
+    if (!row.visited_employee_hr_id) return true;
+    return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
+  });
+
+  const rows: DoubleVisitReportRow[] = scopedRows
+    .map((row) => {
+      const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
+      const visitedHireDate = visitedKey ? hireDateByKey.get(visitedKey) ?? null : null;
+      return {
+        activityDate: row.activity_date,
+        areaName: nullableText(row.area_name),
+        daysSinceVisitedHire: daysBetween(visitedHireDate, dateTo),
+        doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
+        doubleVisitorName: nullableText(row.double_visitor_name),
+        lineName: nullableText(row.line_name),
+        period: row.period,
+        visitCount: asNumber(row.visit_count),
+        visitedEmployeeHireDate: visitedHireDate,
+        visitedHrId: nullableText(row.visited_employee_hr_id),
+        visitedName: nullableText(row.visited_employee_name),
+        visitedStatus: row.visited_employee_status as DoubleVisitVisitedEmployeeStatus,
+      } satisfies DoubleVisitReportRow;
+    })
+    .sort((a, b) => b.activityDate.localeCompare(a.activityDate));
+
+  const visitedKeysInRange = new Set(
+    rows.map((row) => (row.visitedHrId ? canonicalHrIdKey(row.visitedHrId) : null)).filter((key): key is string => Boolean(key)),
+  );
+  const neverVisited: DoubleVisitFocusRosterEntry[] = scopedEmployees
+    .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
+    .filter((employee) => {
+      const key = canonicalHrIdKey(employee.hrId);
+      return key ? !visitedKeysInRange.has(key) : true;
+    })
+    .map((employee) => {
+      const daysSinceHire = daysBetween(employee.hireDate, dateTo);
+      return {
+        areaName: employee.areaName,
+        daysSinceHire,
+        flagged: daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        name: employee.fullName,
+        visited: false,
+      } satisfies DoubleVisitFocusRosterEntry;
+    })
+    .sort((a, b) => (b.daysSinceHire ?? -1) - (a.daysSinceHire ?? -1));
+
+  const probationRowsRaw = await getProbationRows(input.access).catch(() => []);
+  const dvField = PROBATION_DV_FIELD_BY_ROLE[input.access.role ?? ""];
+  const probationDvCountByKey = new Map<string, number>();
+  for (const row of scopedRows) {
+    const key = canonicalHrIdKey(row.visited_employee_hr_id);
+    if (!key) continue;
+    probationDvCountByKey.set(key, (probationDvCountByKey.get(key) ?? 0) + asNumber(row.visit_count));
+  }
+  const probation: DoubleVisitFocusProbationEntry[] = probationRowsRaw.map((row) => {
+    const key = canonicalHrIdKey(row.hr_id);
+    return {
+      daysRemaining: row.days_remaining,
+      dvCount: key ? probationDvCountByKey.get(key) ?? 0 : 0,
+      dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
+      hireDate: row.hire_date,
+      hrId: row.hr_id,
+      name: row.full_name,
+      probationEndDate: row.probation_end_date,
+    } satisfies DoubleVisitFocusProbationEntry;
+  });
+
+  const areas = Array.from(new Set(rows.map((row) => row.areaName).filter((value): value is string => Boolean(value)))).sort();
+  const lines = Array.from(new Set(rows.map((row) => row.lineName).filter((value): value is string => Boolean(value)))).sort();
+  const doubleVisitors = Array.from(
+    new Set(rows.map((row) => row.doubleVisitorName ?? row.doubleVisitorHrId).filter((value): value is string => Boolean(value))),
+  ).sort();
+
+  return {
+    asOfDate: today,
+    dateFrom,
+    dateTo,
+    filters: { areas, doubleVisitors, lines },
+    neverVisited,
+    probation,
+    rows,
+    schemaReady: true,
   };
 }
 
