@@ -1266,6 +1266,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
     if (sickDocument) {
       if (storagePaths.sick) {
         formData.append("sickAttachmentStoragePath", storagePaths.sick);
+        // Carry the original type/name so server-side validation uses the same source as the direct
+        // path (browser File.type/name), independent of what Storage reports on download.
+        formData.append("sickAttachmentContentType", sickDocument.type);
+        formData.append("sickAttachmentFileName", sickDocument.name);
       } else {
         formData.append("sickDocument", sickDocument);
       }
@@ -1279,6 +1283,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
       if (compensatoryPhoto) {
         if (storagePaths.compensatory) {
           formData.append("compensatoryAttachmentStoragePath", storagePaths.compensatory);
+          // Carry the original type/name so server-side validation uses the same source as the direct
+          // path (browser File.type/name), independent of what Storage reports on download.
+          formData.append("compensatoryAttachmentContentType", compensatoryPhoto.type);
+          formData.append("compensatoryAttachmentFileName", compensatoryPhoto.name);
         } else {
           formData.append("compensatoryPhoto", compensatoryPhoto);
         }
