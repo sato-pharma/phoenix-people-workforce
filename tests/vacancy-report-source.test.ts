@@ -157,6 +157,8 @@ export function runVacancyReportSourceTests() {
       teamCode: null,
     }),
   );
-  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-123456");
-  assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-RES-000000");
+  // Suffix is a base-36 hash of the full raw code (MD-6/LO-6 fix), not a
+  // truncated substring of the timestamp — see organogram-safety.ts.
+  assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-PIBHHX");
+  assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-RES-PH8AE7");
 }

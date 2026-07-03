@@ -6,7 +6,11 @@ import {
   organogramPositionSlotKey,
 } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
-import { formatVacantSeatLabel } from "@/lib/workforce/hierarchy-resolver";
+import {
+  formatVacantSeatLabel,
+  isWithinManagerHierarchy,
+  type SeatContinuitySubject,
+} from "@/lib/workforce/hierarchy-resolver";
 
 export type OrganogramRow = VacancyReportData["organogramRows"][number];
 
@@ -208,38 +212,56 @@ function reportsToVacantReplacementOwner(row: OrganogramRow, managerSlot: Organo
   );
 }
 
+function toSeatSubject(row: OrganogramRow): SeatContinuitySubject {
+  return {
+    managerHrId: row.managerHrId,
+    pendingManagerReplacementForHrId: row.managerReplacementForHrId,
+  };
+}
+
+// Canonical HR_ID -> seat-continuity subject for every row, built once per
+// buildOrganogramLanes call so the hierarchy climb below is a Map lookup per
+// step instead of an O(rows) linear scan.
+function buildCanonicalHrIdIndex(rows: OrganogramRow[]): Map<string, SeatContinuitySubject> {
+  const index = new Map<string, SeatContinuitySubject>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hrId);
+    if (key && !index.has(key)) index.set(key, toSeatSubject(row));
+  }
+  return index;
+}
+
+// Climbs manager_hr_id toward `manager`, seat-continuity aware at EVERY level
+// (not just the immediate parent) via the same hierarchy-resolver.ts helper
+// Sales/Medical Reps Performance and the Vacation Report use — the single
+// source of truth this module's own docstring calls for, so a fix to
+// seat-continuity there (e.g. the orphan-to-NSM vacancy fallback) now flows
+// into the organogram automatically instead of silently drifting.
 export function reportsUpTo(
   row: OrganogramRow,
   manager: OrganogramRow,
-  rows: OrganogramRow[],
+  byCanonicalHrId: ReadonlyMap<string, SeatContinuitySubject>,
 ) {
-  const visited = new Set<string>();
-  const managerHrIdKey = normalizeHrIdKey(manager.hrId);
-  let managerHrId = normalizeHrIdKey(row.managerHrId);
+  const viewerCanonicalHrId = canonicalHrIdKey(manager.hrId);
+  if (!viewerCanonicalHrId) return false;
 
-  while (managerHrId) {
-    if (managerHrId === managerHrIdKey) {
-      return true;
-    }
-
-    if (visited.has(managerHrId)) {
-      return false;
-    }
-
-    visited.add(managerHrId);
-    managerHrId = normalizeHrIdKey(
-      rows.find((candidate) => normalizeHrIdKey(candidate.hrId) === managerHrId)?.managerHrId,
-    );
-  }
-
-  return false;
+  return isWithinManagerHierarchy({
+    byCanonicalHrId,
+    canonicalize: canonicalHrIdKey,
+    employee: toSeatSubject(row),
+    viewerCanonicalHrId,
+  });
 }
 
-function reportsToKnownManager(row: OrganogramRow, manager: OrganogramRow, rows: OrganogramRow[]) {
+function reportsToKnownManager(
+  row: OrganogramRow,
+  manager: OrganogramRow,
+  byCanonicalHrId: ReadonlyMap<string, SeatContinuitySubject>,
+) {
   return (
     isSamePersonOrSlot(row, manager) ||
     reportsToVacantReplacementOwner(row, manager) ||
-    reportsUpTo(row, manager, rows)
+    reportsUpTo(row, manager, byCanonicalHrId)
   );
 }
 
@@ -322,6 +344,7 @@ export function buildMemberTree(members: OrganogramRow[]) {
 }
 
 export function buildOrganogramLanes(rows: OrganogramRow[]) {
+  const byCanonicalHrId = buildCanonicalHrIdIndex(rows);
   const chiefExecutive = rows.find((row) => isChiefExecutive(row)) ?? null;
   const lineLeader = rows.find((row) => isNationalSalesManager(row)) ?? null;
   const rsmRows = rows
@@ -377,6 +400,27 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       !isDistrictSalesManager(row) &&
       !(row.type === "employee" && actingDsmHrIds.has(normalizeHrIdKey(row.hrId))),
   );
+  // A team row can broad-match MULTIPLE vacant DSM slots via the geographic
+  // Cairo fallback (e.g. two open Cairo DSM seats in one line). dsmGroups is
+  // built by iterating a SORTED list of slot keys, so without this guard
+  // whichever slot's key happens to sort first — an arbitrary artifact of
+  // organogramPositionSlotKey's plain string concatenation, not a meaningful
+  // signal — would deterministically claim the row every time, silently
+  // starving the other slot. Mirrors hierarchy-resolver.ts's own
+  // selectVacantManagerSeat: when a geographic fallback is ambiguous, refuse
+  // to guess rather than pick an arbitrary winner. Exact matches
+  // (reportsToKnownManager: direct report, or held via a seat-continuity
+  // marker) are unaffected — only the broad-bucket guess is withheld.
+  const vacantDsmSlots = dsmRows.filter(
+    (row) => row.type === "vacancy" && isDistrictSalesManager(row),
+  );
+  const ambiguousBroadCairoRowKeys = new Set(
+    teamRows
+      .filter(
+        (row) => vacantDsmSlots.filter((slot) => reportsToVacantManagerSlot(row, slot)).length > 1,
+      )
+      .map(rowKey),
+  );
   const assignedToDsm = new Set<string>();
   const dsmGroups: ManagerLane[] = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
     const primaryDsm = [...dsms].sort((left, right) =>
@@ -395,8 +439,8 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
 
         return dsms.some(
           (dsm) =>
-            reportsToKnownManager(row, dsm, rows) ||
-            reportsToVacantManagerSlot(row, dsm),
+            reportsToKnownManager(row, dsm, byCanonicalHrId) ||
+            (!ambiguousBroadCairoRowKeys.has(key) && reportsToVacantManagerSlot(row, dsm)),
         );
       })
       .sort((left, right) =>
@@ -424,7 +468,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
   const rsmGroups: TopManagerLane[] = rsmRows.map((rsm) => {
     const childLanes = dsmGroups.filter((lane) => {
       if (!lane.dsm) return false;
-      return reportsToKnownManager(lane.dsm, rsm, rows);
+      return reportsToKnownManager(lane.dsm, rsm, byCanonicalHrId);
     });
 
     childLanes.forEach((lane) => childDsmLaneKeys.add(dsmLaneKey(lane)));
@@ -451,7 +495,7 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
     const members = teamRows
       .filter((row) =>
         !managerHrIds.has(normalizeHrIdKey(row.hrId)) &&
-        managers.some((manager) => reportsUpTo(row, manager, rows)),
+        managers.some((manager) => reportsUpTo(row, manager, byCanonicalHrId)),
       )
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
 
@@ -556,7 +600,22 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
   const filledLaneCount = groups.filter(
     (group) => group.members.length > 0 || (group.childLanes ?? []).some((lane) => lane.members.length > 0),
   ).length;
-  return { chiefExecutive, filledLaneCount, groups, lineLeader };
+
+  // Diagnostic only (not used for grouping): count of team rows whose
+  // managerHrId is set but doesn't match any row actually present in this
+  // scoped set — a genuinely dangling reference (bad data, or the manager
+  // sits outside the current scope), distinct from the normal, fine case of
+  // reporting to a real but non-sales-structure manager (fallbackManagerGroups
+  // handles that silently and correctly). Lets a consumer surface "N rows
+  // have an unresolved manager" instead of the mismatch being absorbed
+  // invisibly into the Unassigned/fallback buckets.
+  const allHrIdKeys = new Set(rows.map((r) => normalizeHrIdKey(r.hrId)).filter(Boolean));
+  const unresolvedManagerCount = teamRows.filter((row) => {
+    const managerHrId = normalizeHrIdKey(row.managerHrId);
+    return Boolean(managerHrId) && !allHrIdKeys.has(managerHrId);
+  }).length;
+
+  return { chiefExecutive, filledLaneCount, groups, lineLeader, unresolvedManagerCount };
 }
 
 export function filterOrganogramRows(
