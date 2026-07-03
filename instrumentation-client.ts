@@ -14,7 +14,16 @@ import {
 } from "@/lib/observability/sentry";
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
-const replayEnabled = Boolean(dsn) && process.env.NEXT_PUBLIC_SENTRY_REPLAY_ENABLED === "true";
+const environment = resolveSentryEnvironment(process.env.NEXT_PUBLIC_VERCEL_ENV);
+// Opt-in escape hatch for local dev only: a real DSN in .env.local means Sentry
+// normally initializes on every `npm run dev` session. Set
+// NEXT_PUBLIC_DISABLE_SENTRY_DEV=true in .env.local to skip that. Never applies
+// outside "development" — preview/staging/production always keep Sentry on
+// regardless of this flag. Default (unset) behavior is unchanged.
+const disabledForLocalDev =
+  environment === "development" && process.env.NEXT_PUBLIC_DISABLE_SENTRY_DEV === "true";
+const replayEnabled =
+  Boolean(dsn) && !disabledForLocalDev && process.env.NEXT_PUBLIC_SENTRY_REPLAY_ENABLED === "true";
 
 Sentry.init({
   dsn,
@@ -22,8 +31,8 @@ Sentry.init({
   beforeSend: scrubSentryErrorEvent,
   beforeSendTransaction: scrubSentryTransactionEvent,
   denyUrls: [/extensions\//i, /^chrome:\/\//i, /^moz-extension:\/\//i],
-  enabled: Boolean(dsn),
-  environment: resolveSentryEnvironment(process.env.NEXT_PUBLIC_VERCEL_ENV),
+  enabled: Boolean(dsn) && !disabledForLocalDev,
+  environment,
   ignoreErrors: sentryIgnoredErrors,
   integrations: replayEnabled
     ? [
