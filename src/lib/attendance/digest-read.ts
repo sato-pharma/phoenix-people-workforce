@@ -9,6 +9,10 @@ export type DigestLineView = {
   id: number;
   workDate: string;
   status: "late" | "short_hours" | "missing_punch";
+  /** First punch, minutes since local midnight. Null if no punch. */
+  checkInMinutes: number | null;
+  /** Last punch, minutes since local midnight. Null if only one punch (no real checkout) or no punch. */
+  checkOutMinutes: number | null;
   lateMinutes: number;
   shortMinutes: number;
   workedMinutes: number;
@@ -42,6 +46,8 @@ function mapLine(row: Record<string, unknown>, missingPunchStatusByLineId?: Map<
   const id = Number(row.id);
   return {
     action: row.action as DigestLineView["action"],
+    checkInMinutes: row.check_in_minutes === null || row.check_in_minutes === undefined ? null : Number(row.check_in_minutes),
+    checkOutMinutes: row.check_out_minutes === null || row.check_out_minutes === undefined ? null : Number(row.check_out_minutes),
     deductionDays: Number(row.deduction_days),
     deductionValue: Number(row.deduction_value),
     disputeAttachmentUrl: (row.dispute_attachment_url as string | null) ?? null,
@@ -134,7 +140,7 @@ export async function getDigestDetailForEmployee(
 
   const { data: lineRows, error: linesError } = await supabase
     .from("attendance_digest_lines")
-    .select("id,work_date,status,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
+    .select("id,work_date,status,check_in_minutes,check_out_minutes,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
     .eq("digest_id", digestId)
     .order("work_date", { ascending: true });
   if (linesError) throw linesError;
@@ -166,7 +172,7 @@ export async function listOpenDisputes(): Promise<OpenDisputeView[]> {
   const supabase = getSupabaseAdmin();
   const { data: lineRows, error: linesError } = await supabase
     .from("attendance_digest_lines")
-    .select("id,digest_id,work_date,status,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
+    .select("id,digest_id,work_date,status,check_in_minutes,check_out_minutes,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
     .eq("action", "disputed")
     .order("work_date", { ascending: true });
   if (linesError) throw linesError;
@@ -242,7 +248,7 @@ export async function listPendingDigestReviews(): Promise<PendingDigestReviewVie
   const digestIds = digests.map((row) => Number(row.id));
   const { data: lineRows, error: linesError } = await supabase
     .from("attendance_digest_lines")
-    .select("id,digest_id,work_date,status,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
+    .select("id,digest_id,work_date,status,check_in_minutes,check_out_minutes,late_minutes,short_minutes,worked_minutes,deduction_days,deduction_value,reason,action,dispute_reason,dispute_attachment_url")
     .in("digest_id", digestIds)
     .order("work_date", { ascending: true });
   if (linesError) throw linesError;

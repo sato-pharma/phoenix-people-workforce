@@ -312,6 +312,8 @@ export async function persistSettlementWeekDigests(input: {
           digest_id: digestId,
           work_date: line.dateIso,
           status: line.status,
+          check_in_minutes: line.checkInMinutes,
+          check_out_minutes: line.checkOutMinutes,
           late_minutes: line.lateMinutes,
           short_minutes: line.shortMinutes,
           worked_minutes: line.workedMinutes,
