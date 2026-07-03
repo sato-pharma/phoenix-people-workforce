@@ -384,6 +384,10 @@ export function runOrganogramHardeningTests() {
 
   const componentSource = readFileSync("src/components/reports/organogram-report.tsx", "utf8");
   const portalSource = readFileSync("src/components/employee-portal/employee-organogram-dashboard.tsx", "utf8");
+  // The bold org-chart rendering (lane labels, vacant-seat display, childLanes iteration)
+  // is shared by both the admin and portal surfaces via this module, so the presentation
+  // guards below read it instead of the per-surface wrappers.
+  const orgChartSource = readFileSync("src/components/organogram/org-chart.tsx", "utf8");
   const organogramApiSource = readFileSync("app/api/reports/organogram/route.ts", "utf8");
   const vacancyApiSource = readFileSync("app/api/reports/vacancies/route.ts", "utf8");
   const portalPageSource = readFileSync("app/employee-portals/organogram/page.tsx", "utf8");
@@ -426,9 +430,9 @@ export function runOrganogramHardeningTests() {
     /for r in[\s\S]*public\.employees[\s\S]*perform public\.phx_ensure_terminal_employee_vacancy/,
     "Terminal vacancy guard must not backfill every historical terminal employee automatically.",
   );
-  assert.match(componentSource, /Reports to NSM/);
-  assert.match(componentSource, /childLanes/);
-  assert.match(componentSource, /Medical Sales Representatives/);
+  assert.match(orgChartSource, /Reports to NSM/);
+  assert.match(orgChartSource, /childLanes/);
+  assert.match(orgChartSource, /Medical Sales Representatives/);
   assert.match(
     sharedViewModelSource,
     /if \(assignedToDsm\.has\(key\)\) \{\s*return false;\s*\}/,
@@ -445,7 +449,7 @@ export function runOrganogramHardeningTests() {
     "Organogram must render vacant DSM seats as visible manager lanes even when their reports are inferred later or temporarily missing.",
   );
   assert.match(
-    componentSource,
+    orgChartSource,
     /isVacantManagerSeat \? "Vacant" : group\.members\.length/,
     "Vacant manager seats must be visually labeled as vacant boxes, not only counted in totals.",
   );
