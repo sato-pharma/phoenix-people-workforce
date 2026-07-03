@@ -1,10 +1,13 @@
 ﻿/**
  * iReports360 data source for Field Workforce Compliance.
  *
- * This module replaces the manual monthly Excel upload with a live pull from the
- * iReports360 CRM. It builds the SAME in-memory matrix the Excel parser consumes, so
- * the existing parser + classifier + archive + recommendations pipeline runs
- * unchanged on real visit data.
+ * The monthly compliance matrix is sourced from the `ireports360_visits` mirror table
+ * (kept in sync by visits-report's cron/backfill — see src/lib/visits-report/service.ts),
+ * not from a live CRM call. This module builds the SAME in-memory matrix the Excel parser
+ * consumes, so the existing parser + classifier + archive + recommendations pipeline runs
+ * unchanged regardless of which source produced the matrix. The one exception is the
+ * per-rep day drill-down (getIReports360RepDayVisits below), which still calls the CRM
+ * live because it needs GPS check-in data the mirror does not store.
  *
  * Day-cell mapping (owner-confirmed default; the parity test validates it):
  *   - Regular visit (visitType 0)        -> numeric count for that day (VISITS)
@@ -20,6 +23,7 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { googleRouteThroughStops } from "@/lib/google-maps/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
   daysInMonth,
@@ -259,17 +263,87 @@ async function loadHolidays(month: number, year: number): Promise<{
   }
 }
 
-/**
- * Live-data equivalent of buildFieldWorkforceCompliancePreviewFromWorkbook: fetches a
- * month of iReports360 visits, maps them onto the compliance matrix, and runs the
- * existing classifier to produce the same FieldWorkforcePreviewResult.
- */
-export async function buildFieldWorkforceCompliancePreviewFromIReports360(input: {
-  month: number;
-  todayIso?: string | null;
-  year: number;
-}): Promise<FieldWorkforcePreviewResult> {
-  const { month, year } = input;
+const VISITS_MIRROR_TABLE = "ireports360_visits";
+const VISITS_MIRROR_PAGE_SIZE = 1000;
+
+/** Same schema-missing detection as src/lib/visits-report/service.ts's schemaMissing(). */
+function isVisitsMirrorSchemaMissingError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : JSON.stringify(error);
+  return /ireports360_visits|schema cache|does not exist|PGRST205|42P01/i.test(message);
+}
+
+async function isVisitsReportSchemaReady(): Promise<boolean> {
+  const { error } = await getSupabaseAdmin()
+    .from(VISITS_MIRROR_TABLE)
+    .select("id", { count: "exact", head: true })
+    .limit(1);
+  return !isVisitsMirrorSchemaMissingError(error);
+}
+
+export type VisitsMirrorRow = {
+  agent_crm_id: number;
+  agent_name: string | null;
+  double_crm_id: number | null;
+  double_name: string | null;
+  visit_date: string;
+  visit_type: number | null;
+};
+
+/** Maps a mirror row (ireports360_visits) onto the IReports360Visit shape the matrix
+ * builder expects. Only the fields buildIReports360FieldWorkforceMatrix actually reads
+ * are populated (visitDate/agentID/agentName/doubleID/doubleName/visitType); the rest
+ * are unused by the matrix builder and left null. visit_type is never null in production
+ * today (verified), so a null here fails loudly rather than silently defaulting to a
+ * "regular visit" and miscounting compliance. Exported for the mirror-row-mapping parity
+ * test in tests/field-workforce-compliance-eligibility.test.ts. */
+export function visitFromMirrorRow(row: VisitsMirrorRow): IReports360Visit {
+  if (row.visit_type == null) {
+    throw new Error(`ireports360_visits row for agent ${row.agent_crm_id} on ${row.visit_date} has no visit_type.`);
+  }
+  return {
+    agentID: row.agent_crm_id,
+    agentName: row.agent_name,
+    ampm: null,
+    attendance: null,
+    callType: null,
+    comment: null,
+    contactID: null,
+    contactName: null,
+    customerName: null,
+    doubleID: row.double_crm_id,
+    doubleName: row.double_name,
+    id: 0,
+    saveDate: null,
+    visitDate: row.visit_date,
+    visitType: row.visit_type,
+    visitTypeDescription: null,
+  };
+}
+
+/** Pages through every ireports360_visits row in [startDate, endDate] — a full month must
+ * be in memory at once to build the matrix, unlike visits-report's UI which paginates for
+ * display only. */
+async function loadMirrorVisitsForRange(startDate: string, endDate: string): Promise<VisitsMirrorRow[]> {
+  const supabase = getSupabaseAdmin();
+  const rows: VisitsMirrorRow[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from(VISITS_MIRROR_TABLE)
+      .select("agent_crm_id, agent_name, double_crm_id, double_name, visit_date, visit_type")
+      .gte("visit_date", startDate)
+      .lte("visit_date", endDate)
+      .range(from, from + VISITS_MIRROR_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const chunk = (data ?? []) as VisitsMirrorRow[];
+    rows.push(...chunk);
+    if (chunk.length < VISITS_MIRROR_PAGE_SIZE) break;
+    from += VISITS_MIRROR_PAGE_SIZE;
+  }
+  return rows;
+}
+
+function validateMonthYear(month: number, year: number): void {
   if (!Number.isInteger(month) || month < 1 || month > 12) {
     throw new FieldWorkforcePreviewError({
       code: "invalid_month",
@@ -284,16 +358,40 @@ export async function buildFieldWorkforceCompliancePreviewFromIReports360(input:
       status: 400,
     });
   }
+}
 
-  const config = getIReports360Config();
-  const token = await iReports360Login(config);
+/**
+ * Live-view equivalent of buildFieldWorkforceCompliancePreviewFromWorkbook: reads a
+ * month of visits from the ireports360_visits mirror (visits-report's synced table,
+ * NOT a live CRM call), maps them onto the compliance matrix, and runs the existing
+ * classifier to produce the same FieldWorkforcePreviewResult. Any historical month back
+ * to the mirror's earliest synced data works the same way — there is no separate
+ * "import" step; the view always reflects whatever visits-report has synced so far.
+ */
+export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input: {
+  month: number;
+  todayIso?: string | null;
+  year: number;
+}): Promise<FieldWorkforcePreviewResult> {
+  const { month, year } = input;
+  validateMonthYear(month, year);
+
+  if (!(await isVisitsReportSchemaReady())) {
+    throw new FieldWorkforcePreviewError({
+      code: "visits_report_not_ready",
+      message: "The iReports360 visits mirror is not set up yet. Run the visits-report migration/backfill first.",
+      status: 503,
+    });
+  }
+
   const startDate = `${year}-${pad2(month)}-01`;
   const endDate = `${year}-${pad2(month)}-${pad2(daysInMonth(year, month))}`;
 
-  const [visits, directory] = await Promise.all([
-    iReports360GetVisits(config, token, startDate, endDate),
+  const [mirrorRows, directory] = await Promise.all([
+    loadMirrorVisitsForRange(startDate, endDate),
     getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
+  const visits = mirrorRows.map(visitFromMirrorRow);
 
   const { matrix } = buildIReports360FieldWorkforceMatrix({
     employees: directory,
@@ -304,9 +402,9 @@ export async function buildFieldWorkforceCompliancePreviewFromIReports360(input:
   });
 
   const parsed = parseFieldWorkforceComplianceMatrix({
-    fileName: `iReports360 ${MONTH_LABELS[month - 1]} ${year}`,
+    fileName: `iReports360 Visits Mirror ${MONTH_LABELS[month - 1]} ${year}`,
     matrix,
-    sheetName: "iReports360 Visits",
+    sheetName: "iReports360 Visits (mirror)",
   });
 
   const holidays = await loadHolidays(month, year);
