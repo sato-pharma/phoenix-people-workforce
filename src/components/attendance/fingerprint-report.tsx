@@ -143,7 +143,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         description="Live daily attendance built from raw fingerprint punches. Mark rows before sending to payroll — decisions are local until exported."
         eyebrow="Attendance"
         icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
-        title="My Attendance"
+        title="Fingerprint Attendance Report"
         actions={(
           <a
             className={`inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white ${!hasDateRange || rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}

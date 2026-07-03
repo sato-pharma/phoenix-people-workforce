@@ -89,6 +89,13 @@ const nextConfig: NextConfig = {
   // key), so only the redundant type-check needs disabling here. Do NOT remove this
   // without also confirming typecheck still gates merges/deploys some other way.
   typescript: { ignoreBuildErrors: true },
+  // Pin the workspace root to wherever this config file actually lives. Without
+  // this, Next.js's lockfile-based root inference gets confused by the many
+  // sibling worktree/package-lock.json copies nested under the repo root (see
+  // AGENTS.md § Parallel Session and Git Worktree Safety) and can end up
+  // watching/tracing a far larger — sometimes pathologically slow — file tree
+  // than the actual app needs.
+  outputFileTracingRoot: __dirname,
   experimental: {
     // Tree-shake large barrel imports so only the icons/charts a component
     // actually uses land in its client chunk (lucide-react alone is imported

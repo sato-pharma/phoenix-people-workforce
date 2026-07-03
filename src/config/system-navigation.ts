@@ -227,14 +227,24 @@ const adminNavigationSectionSeeds = [
   {
     id: "attendance-management",
     items: [
-      { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "My Attendance", permissions: [{ resource: "employees" }] },
+      { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
       { href: "/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
       { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
       { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
       { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/attendance/settlement-dashboard", icon: ChartColumnBig, label: "Settlement Dashboard", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/attendance/disputes", icon: ShieldCheck, label: "Dispute Review", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
+      // No role restriction: the standing verifier (e.g. an Office Coordinator)
+      // and the CEO are both real steps in this chain and neither is
+      // "Super Admin" — the page itself scopes safely (empty list for anyone
+      // not the current step's authorized actor), so broad visibility is fine.
+      { href: "/attendance/missing-punch", icon: ShieldCheck, label: "Missing-Punch Verification", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
+      { href: "/attendance/holiday-calendar", icon: CalendarClock, label: "Holiday Calendar", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/attendance/passport", icon: IdCard, label: "Attendance Passport", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
+      { href: "/attendance/hr-pattern-insights", icon: Sparkles, label: "HR Pattern Insights", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
     ],
     label: "Attendance Management",
   },
@@ -531,6 +541,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
+      { href: "/employee-portals/attendance/digests", icon: CalendarClock, label: "Weekly Digest", permissions: [{ resource: "attendance", action: "read" }] },
     ],
     label: "Leave Management",
   },

@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
+  AttendanceJudgmentMode,
   AttendancePolicyDashboard,
   AttendancePolicyEventType,
   AttendancePolicyGroup,
@@ -61,6 +62,11 @@ type PolicyForm = {
   targetType: AttendancePolicyTargetType;
   targetValue: string;
   workingWeekdays: string[];
+  /** Flexible-hours weekly-digest fields — empty flexMinutes/requiredMinutes = not enrolled. */
+  flexMinutes: string;
+  requiredMinutes: string;
+  halfDaySplitMinutes: string;
+  judgmentMode: AttendanceJudgmentMode;
 };
 
 const blankRule: RuleForm = {
@@ -97,6 +103,10 @@ function blankPolicy(): PolicyForm {
     targetType: "default",
     targetValue: "",
     workingWeekdays: [],
+    flexMinutes: "",
+    requiredMinutes: "",
+    halfDaySplitMinutes: "780",
+    judgmentMode: "every_working_day",
   };
 }
 
@@ -122,6 +132,10 @@ function formFromPolicy(policy: AttendancePolicyGroup): PolicyForm {
     targetType: policy.targetType,
     targetValue: policy.targetType === "default" ? "" : policy.targetValue,
     workingWeekdays: policy.workingWeekdays.map(String),
+    flexMinutes: policy.flexMinutes == null ? "" : String(policy.flexMinutes),
+    requiredMinutes: policy.requiredMinutes == null ? "" : String(policy.requiredMinutes),
+    halfDaySplitMinutes: String(policy.halfDaySplitMinutes),
+    judgmentMode: policy.judgmentMode,
   };
 }
 
@@ -626,6 +640,66 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   9-5 + 10 min grace
                 </Button>
                 <Button variant="secondary" type="button" onClick={applyShortSchedule}>10-4 special</Button>
+              </div>
+
+              <div className="space-y-4 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
+                <div>
+                  <p className={sectionTitleClassName}>Weekly-Digest Flexible Hours</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Optional. Set Required Minutes to enroll this policy&apos;s employees in the weekly attendance digest
+                    (confirm/dispute settlement). Leave both blank to keep this policy on the legacy fixed-schedule engine.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Flex Minutes</span>
+                    <input
+                      className={fieldClassName}
+                      min="0"
+                      placeholder="e.g. 30"
+                      type="number"
+                      value={form.flexMinutes}
+                      onChange={(event) => setForm({ ...form, flexMinutes: event.target.value })}
+                    />
+                    <p className="text-[11px] font-semibold text-slate-500">Arrival free past Scheduled Start (30 = free until 09:30).</p>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Required Minutes</span>
+                    <input
+                      className={fieldClassName}
+                      min="0"
+                      placeholder="e.g. 470"
+                      type="number"
+                      value={form.requiredMinutes}
+                      onChange={(event) => setForm({ ...form, requiredMinutes: event.target.value })}
+                    />
+                    <p className="text-[11px] font-semibold text-slate-500">Minimum required presence (470 = 7h50m).</p>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Half-Day Split</span>
+                    <input
+                      className={fieldClassName}
+                      min="0"
+                      placeholder="780"
+                      type="number"
+                      value={form.halfDaySplitMinutes}
+                      onChange={(event) => setForm({ ...form, halfDaySplitMinutes: event.target.value })}
+                    />
+                    <p className="text-[11px] font-semibold text-slate-500">Minute-of-day boundary for AM/PM half-day leave (780 = 13:00).</p>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Judged</span>
+                    <SearchableSelect
+                      className={fieldClassName}
+                      value={form.judgmentMode}
+                      onChange={(event) => setForm({ ...form, judgmentMode: event.target.value as AttendanceJudgmentMode })}
+                    >
+                      <option value="every_working_day">Every working day</option>
+                      <option value="office_days_only">Office days only (NSM/GPM/PM)</option>
+                    </SearchableSelect>
+                    <p className="text-[11px] font-semibold text-slate-500">Office-days-only requires the plan to say office AND a punch that day.</p>
+                  </label>
+                </div>
               </div>
             </div>
 

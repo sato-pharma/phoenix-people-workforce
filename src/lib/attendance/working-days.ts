@@ -2,6 +2,7 @@ import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
+import { applyHolidayOverrides, listHolidayOverridesOverlappingRange } from "@/lib/attendance/holiday-overrides";
 
 const workingDaysTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -120,6 +121,13 @@ export async function buildAttendanceCalendarContext(input: {
         }
       }
     }
+
+    // Admin-configured observed/postponed dates take precedence over the raw
+    // source date. Fails open to "no overrides" (the pre-existing behavior)
+    // if the table isn't reachable, so a config-table hiccup never breaks
+    // every attendance calendar consumer.
+    const overrides = await listHolidayOverridesOverlappingRange(input.dateFromIso, input.dateToIso).catch(() => []);
+    applyHolidayOverrides(holidaysByDate, overrides);
   }
 
   return { holidaysByDate, holidaySourceConnected, todayIso: cairoTodayIso() };
