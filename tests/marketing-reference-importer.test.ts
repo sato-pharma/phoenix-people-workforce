@@ -4,6 +4,8 @@ import path from "node:path";
 import {
   normalizeMarketingLookupKey,
   parseMarketingReferenceWorkbooks,
+  reconcileProductCodesWithSalesCatalog,
+  type MarketingProductSeed,
 } from "@/lib/marketing-requests/reference-importer";
 
 export async function runMarketingReferenceImporterTests() {
@@ -38,4 +40,46 @@ export async function runMarketingReferenceImporterTests() {
   assert.equal(firstReference.rawDistributorName, "EGD");
   assert.equal(firstReference.normalizedDistributorName, "egd");
   assert.equal(firstReference.rawPharmacyCode, "24417");
+
+  /* ---------------------------------------------------------------------- */
+  /* Product-code reconciliation: sales is the reference for product codes. */
+  /* ---------------------------------------------------------------------- */
+
+  const seed = (overrides: Partial<MarketingProductSeed>): MarketingProductSeed => ({
+    active: true,
+    factoryPrice: 10,
+    family: null,
+    line: "Anti infective",
+    normalizedName: "saginko",
+    productCode: "MKT_PRD0016",
+    productName: "Saginko",
+    sourceCompany: null,
+    sourceFile: "phoenix products.xlsx",
+    ...overrides,
+  });
+
+  const reconciled = reconcileProductCodesWithSalesCatalog(
+    [
+      seed({}), // exact name + line match
+      seed({
+        line: "CNS",
+        normalizedName: "tebofrtin drops",
+        productCode: "MKT_PRD0001",
+        productName: "Tebofrtin drops",
+      }), // known spelling-drift alias match
+      seed({
+        line: "Pedia",
+        normalizedName: "some future product",
+        productCode: "MKT_PRD0099",
+        productName: "Some Future Product",
+      }), // no sales match yet
+    ],
+    [
+      { line: "Anti infective", normalizedName: "saginko", productCode: "SA001" },
+      { line: "CNS", normalizedName: "tebofotin drops", productCode: "TE001" },
+    ],
+  );
+  assert.equal(reconciled[0].productCode, "SA001", "exact name+line match takes the sales product_code");
+  assert.equal(reconciled[1].productCode, "TE001", "a known name-drift alias still resolves to the sales product_code");
+  assert.equal(reconciled[2].productCode, "MKT_PRD0099", "a product with no sales match keeps its generated code");
 }
