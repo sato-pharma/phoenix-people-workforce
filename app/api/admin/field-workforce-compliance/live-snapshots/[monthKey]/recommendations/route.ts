@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { fieldWorkforceMonthKey } from "@/lib/field-workforce-compliance/archive";
-import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
+import { getFieldWorkforceComplianceLiveSnapshot } from "@/lib/field-workforce-compliance/live-snapshots";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import {
   FieldWorkforceConflictingDecisionError,
@@ -19,6 +18,14 @@ import type { FieldWorkforceDecisionStatus } from "@/lib/field-workforce-complia
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const monthKeyPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+type RouteContext = {
+  params: Promise<{
+    monthKey: string;
+  }>;
+};
+
 function actorFromAccess(access: Awaited<ReturnType<typeof resolveAccessContext>>) {
   return resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 }
@@ -27,32 +34,24 @@ function isDecisionStatus(value: unknown): value is FieldWorkforceDecisionStatus
   return typeof value === "string" && fieldWorkforceDecisionStatuses.includes(value as FieldWorkforceDecisionStatus);
 }
 
-function parseIntField(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^\d+$/.test(value.trim())) return Number(value.trim());
-  return null;
+function invalidMonthKeyResponse() {
+  return NextResponse.json({
+    error: "invalid_month_key",
+    message: "monthKey must be in YYYY-MM form.",
+    success: false,
+  }, { status: 400 });
 }
 
-export async function GET(request: Request) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "hr_calendar", "read");
 
-    const url = new URL(request.url);
-    const month = parseIntField(url.searchParams.get("month"));
-    const year = parseIntField(url.searchParams.get("year"));
-    if (month === null || year === null) {
-      return NextResponse.json({
-        error: "missing_month_year",
-        message: "Provide a month (1-12) and a year to view recommendations for.",
-        success: false,
-      }, { status: 400 });
-    }
+    const { monthKey } = await context.params;
+    if (!monthKeyPattern.test(monthKey)) return invalidMonthKeyResponse();
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
-    const monthKey = fieldWorkforceMonthKey(preview.metadata.year, preview.metadata.month);
-    const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview });
+    const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ monthKey });
+    const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview: snapshot.preview });
 
     return NextResponse.json({
       data: report,
@@ -85,18 +84,19 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "hr_calendar", "update");
+
+    const { monthKey } = await context.params;
+    if (!monthKeyPattern.test(monthKey)) return invalidMonthKeyResponse();
 
     const body = await request.json().catch(() => null) as {
       decisionReason?: unknown;
       decisionStatus?: unknown;
       hrNote?: unknown;
-      month?: unknown;
       recommendationKey?: unknown;
-      year?: unknown;
     } | null;
     if (!body || typeof body.recommendationKey !== "string" || !body.recommendationKey.trim()) {
       return NextResponse.json({
@@ -112,26 +112,15 @@ export async function PATCH(request: Request) {
         success: false,
       }, { status: 400 });
     }
-    const month = parseIntField(body.month);
-    const year = parseIntField(body.year);
-    if (month === null || year === null) {
-      return NextResponse.json({
-        error: "missing_month_year",
-        message: "Provide a month (1-12) and a year to save this decision for.",
-        success: false,
-      }, { status: 400 });
-    }
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
-    const monthKey = fieldWorkforceMonthKey(preview.metadata.year, preview.metadata.month);
+    const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ monthKey });
     const report = await saveFieldWorkforceRecommendationDecisionForLiveMonth({
       actorLoginId: actorFromAccess(access),
       decisionReason: typeof body.decisionReason === "string" ? body.decisionReason : "",
       decisionStatus: body.decisionStatus,
       hrNote: typeof body.hrNote === "string" ? body.hrNote : "",
       monthKey,
-      preview,
+      preview: snapshot.preview,
       recommendationKey: body.recommendationKey.trim(),
     });
 

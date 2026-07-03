@@ -18,7 +18,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
@@ -48,6 +48,7 @@ import type {
   FieldWorkforceSeverity,
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
+import type { FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem } from "@/lib/field-workforce-compliance/live-snapshots";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -57,9 +58,22 @@ type PreviewResponse = {
   errors?: FieldWorkforceValidationIssue[];
   error?: string;
   message?: string;
-  mirrorLastSyncedAt?: string | null;
   success: boolean;
   warnings?: FieldWorkforceValidationIssue[];
+};
+
+type LiveSnapshotListResponse = {
+  data?: FieldWorkforceLiveSnapshotListItem[];
+  error?: string;
+  message?: string;
+  success: boolean;
+};
+
+type LiveSnapshotDetailResponse = {
+  data?: FieldWorkforceLiveSnapshotDetail;
+  error?: string;
+  message?: string;
+  success: boolean;
 };
 
 /** Which path produced the currently-shown `result`: an ad-hoc Excel upload preview (not
@@ -1979,16 +1993,14 @@ export function FieldWorkforceComplianceWorkspace() {
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
   const [archiveActiveTab, setArchiveActiveTab] = useState<WorkspaceTab>("timeline");
-  const [crmMonth, setCrmMonth] = useState(() => new Date().getMonth() + 1);
-  const [crmYear, setCrmYear] = useState(() => new Date().getFullYear());
-  const [isImportingCrm, setIsImportingCrm] = useState(false);
   const [sourceMode, setSourceMode] = useState<SourceMode | null>(null);
-  const [liveMirrorMonth, setLiveMirrorMonth] = useState<{ month: number; year: number } | null>(null);
+  const [liveMirrorMonthKey, setLiveMirrorMonthKey] = useState<string | null>(null);
   const [mirrorLastSyncedAt, setMirrorLastSyncedAt] = useState<string | null>(null);
-  const crmYearOptions = useMemo(() => {
-    const current = new Date().getFullYear();
-    return [current + 1, current, current - 1, current - 2];
-  }, []);
+  const [liveSnapshots, setLiveSnapshots] = useState<FieldWorkforceLiveSnapshotListItem[]>([]);
+  const [isLoadingLiveSnapshots, setIsLoadingLiveSnapshots] = useState(false);
+  const [liveSnapshotsError, setLiveSnapshotsError] = useState<string | null>(null);
+  const [selectedMonthKey, setSelectedMonthKey] = useState("");
+  const [isLoadingSnapshotDetail, setIsLoadingSnapshotDetail] = useState(false);
 
   const loadArchives = useCallback(async () => {
     setIsLoadingArchives(true);
@@ -2041,11 +2053,11 @@ export function FieldWorkforceComplianceWorkspace() {
     if (
       tab === "recommendations" &&
       sourceMode === "live-mirror" &&
-      liveMirrorMonth &&
+      liveMirrorMonthKey &&
       !recommendationsReport &&
       !isLoadingRecommendations
     ) {
-      void loadLiveMirrorRecommendations(liveMirrorMonth.month, liveMirrorMonth.year);
+      void loadLiveMirrorRecommendations(liveMirrorMonthKey);
     }
   }
 
@@ -2069,12 +2081,12 @@ export function FieldWorkforceComplianceWorkspace() {
     }
   }
 
-  async function loadLiveMirrorRecommendations(month: number, year: number) {
+  async function loadLiveMirrorRecommendations(monthKey: string) {
     setIsLoadingRecommendations(true);
     setRecommendationsError(null);
     try {
       const response = await fetch(
-        `/api/admin/field-workforce-compliance/preview-from-visits-report/recommendations?month=${month}&year=${year}`,
+        `/api/admin/field-workforce-compliance/live-snapshots/${monthKey}/recommendations`,
         { method: "GET" },
       );
       const payload = await readJsonResponse<RecommendationsResponse>(response);
@@ -2090,6 +2102,59 @@ export function FieldWorkforceComplianceWorkspace() {
     }
   }
 
+  // Only safe to call from an event handler (e.g. the Refresh button) — invoking this
+  // directly from a useEffect body trips the "no synchronous setState in effect" lint rule,
+  // since its very first statement sets state. The mount-time initial load below has its
+  // own inline loader for that reason, matching the pattern used elsewhere in this codebase
+  // (e.g. action-center-hub.tsx's loadContext).
+  const loadLiveSnapshots = useCallback(async () => {
+    setIsLoadingLiveSnapshots(true);
+    setLiveSnapshotsError(null);
+    try {
+      const response = await fetch("/api/admin/field-workforce-compliance/live-snapshots", { method: "GET" });
+      const payload = await readJsonResponse<LiveSnapshotListResponse>(response);
+      if (payload.success && payload.data) {
+        setLiveSnapshots(payload.data);
+      } else {
+        setLiveSnapshotsError(payload.message ?? payload.error ?? "Saved compliance months could not be loaded.");
+      }
+    } catch (error) {
+      setLiveSnapshotsError(error instanceof Error ? error.message : "Saved compliance months could not be loaded.");
+    } finally {
+      setIsLoadingLiveSnapshots(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitialLiveSnapshots() {
+      setIsLoadingLiveSnapshots(true);
+      setLiveSnapshotsError(null);
+      try {
+        const response = await fetch("/api/admin/field-workforce-compliance/live-snapshots", { method: "GET" });
+        const payload = await readJsonResponse<LiveSnapshotListResponse>(response);
+        if (cancelled) return;
+        if (payload.success && payload.data) {
+          setLiveSnapshots(payload.data);
+          if (payload.data.length > 0) void handleSelectLiveMonth(payload.data[0].monthKey);
+        } else {
+          setLiveSnapshotsError(payload.message ?? payload.error ?? "Saved compliance months could not be loaded.");
+        }
+      } catch (error) {
+        if (!cancelled) setLiveSnapshotsError(error instanceof Error ? error.message : "Saved compliance months could not be loaded.");
+      } finally {
+        if (!cancelled) setIsLoadingLiveSnapshots(false);
+      }
+    }
+
+    void loadInitialLiveSnapshots();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handlePreview() {
     if (!selectedFile || isPreviewing) return;
     setIsPreviewing(true);
@@ -2100,7 +2165,7 @@ export function FieldWorkforceComplianceWorkspace() {
     setArchiveMessage(null);
     setArchiveError(null);
     setSourceMode("excel-preview");
-    setLiveMirrorMonth(null);
+    setLiveMirrorMonthKey(null);
     setRecommendationsReport(null);
     setRecommendationsMessage(null);
     setRecommendationsError(null);
@@ -2130,12 +2195,14 @@ export function FieldWorkforceComplianceWorkspace() {
     }
   }
 
-  /** Computes this month's compliance live from the iReports360 visits mirror
-   * (visits-report's synced table) — not a live CRM call. Nothing is archived; the view
-   * always reflects whatever visits-report has synced so far. */
-  async function handleLoadFromVisitsReport() {
-    if (isImportingCrm || isPreviewing) return;
-    setIsImportingCrm(true);
+  /** Shows a saved Field Workforce Compliance snapshot for the chosen month — a fast DB
+   * read, not a live recompute. Snapshots are kept current automatically: the visits-report
+   * sync (cron + manual backfill) recomputes whichever month(s) it touches, and a one-time
+   * historical backfill covers everything before that. `forceRefresh` recomputes the chosen
+   * month on the spot (e.g. the user's own "Refresh" action) rather than serving the cached copy. */
+  async function handleSelectLiveMonth(monthKey: string, forceRefresh = false) {
+    if (!monthKey || isLoadingSnapshotDetail) return;
+    setIsLoadingSnapshotDetail(true);
     setResult(null);
     setErrors([]);
     setWarnings([]);
@@ -2148,28 +2215,25 @@ export function FieldWorkforceComplianceWorkspace() {
     setRecommendationsError(null);
 
     try {
-      const response = await fetch("/api/admin/field-workforce-compliance/preview-from-visits-report", {
-        body: JSON.stringify({ month: crmMonth, year: crmYear }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await readJsonResponse<PreviewResponse>(response);
-      setErrors(payload.errors ?? []);
-      setWarnings(payload.warnings ?? payload.data?.warnings ?? []);
+      const url = `/api/admin/field-workforce-compliance/live-snapshots/${monthKey}${forceRefresh ? "?force=true" : ""}`;
+      const response = await fetch(url, { method: "GET" });
+      const payload = await readJsonResponse<LiveSnapshotDetailResponse>(response);
       if (payload.success && payload.data) {
-        setResult(payload.data);
+        setResult(payload.data.preview);
         setSourceMode("live-mirror");
-        setLiveMirrorMonth({ month: crmMonth, year: crmYear });
-        setMirrorLastSyncedAt(payload.mirrorLastSyncedAt ?? null);
+        setLiveMirrorMonthKey(payload.data.monthKey);
+        setMirrorLastSyncedAt(payload.data.computedAt);
+        setSelectedMonthKey(payload.data.monthKey);
         setActiveTab("timeline");
+        if (forceRefresh) void loadLiveSnapshots();
       } else {
         setActiveTab("overview");
-        setMessage(payload.message ?? payload.error ?? "Loading from the visits mirror failed.");
+        setMessage(payload.message ?? payload.error ?? "The saved compliance report could not be loaded.");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Loading from the visits mirror failed.");
+      setMessage(error instanceof Error ? error.message : "The saved compliance report could not be loaded.");
     } finally {
-      setIsImportingCrm(false);
+      setIsLoadingSnapshotDetail(false);
     }
   }
 
@@ -2252,27 +2316,17 @@ export function FieldWorkforceComplianceWorkspace() {
     setRecommendationsMessage(null);
     setRecommendationsError(null);
     try {
-      const isLiveMirror = sourceMode === "live-mirror" && liveMirrorMonth !== null;
+      const isLiveMirror = sourceMode === "live-mirror" && liveMirrorMonthKey !== null;
       const url = isLiveMirror
-        ? "/api/admin/field-workforce-compliance/preview-from-visits-report/recommendations"
+        ? `/api/admin/field-workforce-compliance/live-snapshots/${liveMirrorMonthKey}/recommendations`
         : `/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`;
-      const body = isLiveMirror
-        ? {
-            decisionReason,
-            decisionStatus,
-            hrNote,
-            month: liveMirrorMonth!.month,
-            recommendationKey: recommendation.recommendationKey,
-            year: liveMirrorMonth!.year,
-          }
-        : {
-            decisionReason,
-            decisionStatus,
-            hrNote,
-            recommendationKey: recommendation.recommendationKey,
-          };
       const response = await fetch(url, {
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          decisionReason,
+          decisionStatus,
+          hrNote,
+          recommendationKey: recommendation.recommendationKey,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
@@ -2388,49 +2442,58 @@ export function FieldWorkforceComplianceWorkspace() {
         </AdminTableShell>
 
         <AdminTableShell
-          description="Compute this month's field activity from the synced iReports360 visits mirror. Always reflects the latest sync; nothing is archived automatically. Recommendations for a mirror month can still be reviewed and decided under the Recommendations tab below."
+          description="Auto-updated whenever the iReports360 visits mirror syncs — every month self-refreshes in the background, so picking one here is instant. Nothing is archived automatically. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
           title="Live View (Visits Mirror)"
         >
           <div className="flex flex-wrap items-end gap-3 p-4">
-            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-              Month
-              <SearchableSelect
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                value={crmMonth}
-                onChange={(event) => setCrmMonth(Number(event.target.value))}
+            {liveSnapshots.length > 0 ? (
+              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                Month
+                <SearchableSelect
+                  className="h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+                  value={selectedMonthKey}
+                  onChange={(event) => void handleSelectLiveMonth(event.target.value)}
+                >
+                  {liveSnapshots.map((snapshot) => (
+                    <option key={snapshot.monthKey} value={snapshot.monthKey}>
+                      {snapshot.monthKey} · {snapshot.employeeCount} employees
+                    </option>
+                  ))}
+                </SearchableSelect>
+              </label>
+            ) : (
+              <p className="text-sm text-slate-500">
+                {isLoadingLiveSnapshots
+                  ? "Loading saved compliance months..."
+                  : "No saved compliance months yet — they appear automatically once the visits mirror syncs."}
+              </p>
+            )}
+            {selectedMonthKey ? (
+              <Button
+                className="gap-2 rounded-xl font-black"
+                disabled={isLoadingSnapshotDetail}
+                type="button"
+                variant="secondary"
+                onClick={() => void handleSelectLiveMonth(selectedMonthKey, true)}
               >
-                {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
-                  <option key={monthValue} value={monthValue}>{monthValue}</option>
-                ))}
-              </SearchableSelect>
-            </label>
-            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-              Year
-              <SearchableSelect
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-                value={crmYear}
-                onChange={(event) => setCrmYear(Number(event.target.value))}
-              >
-                {crmYearOptions.map((yearValue) => (
-                  <option key={yearValue} value={yearValue}>{yearValue}</option>
-                ))}
-              </SearchableSelect>
-            </label>
-            <Button
-              className="gap-2 rounded-xl font-black"
-              disabled={isImportingCrm || isPreviewing}
-              type="button"
-              onClick={() => void handleLoadFromVisitsReport()}
-            >
-              {isImportingCrm ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              Load from Visits Mirror
-            </Button>
+                {isLoadingSnapshotDetail ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </Button>
+            ) : null}
             {sourceMode === "live-mirror" && mirrorLastSyncedAt ? (
               <span className="text-xs font-semibold text-slate-500">
-                Visits mirror last synced {displayDateTime(mirrorLastSyncedAt)}
+                Report last computed {displayDateTime(mirrorLastSyncedAt)}
               </span>
             ) : null}
           </div>
+          {liveSnapshotsError ? (
+            <div className="border-t border-slate-100 p-4">
+              <AdminCallout tone="warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4" />
+                <p>{liveSnapshotsError}</p>
+              </AdminCallout>
+            </div>
+          ) : null}
         </AdminTableShell>
 
         {message ? (
@@ -2492,12 +2555,12 @@ export function FieldWorkforceComplianceWorkspace() {
             onRefresh={() => void loadComparison()}
           />
         ) : activeTab === "recommendations" ? (
-          sourceMode === "live-mirror" && liveMirrorMonth ? (
+          sourceMode === "live-mirror" && liveMirrorMonthKey ? (
             <RecommendationsPanel
               isLoading={isLoadingRecommendations}
               isSavingDecisionKey={isSavingDecisionKey}
               report={recommendationsReport}
-              onRefresh={() => void loadLiveMirrorRecommendations(liveMirrorMonth.month, liveMirrorMonth.year)}
+              onRefresh={() => void loadLiveMirrorRecommendations(liveMirrorMonthKey)}
               onSaveDecision={(recommendation, decisionStatus, hrNote, decisionReason) => void handleSaveDecision(recommendation, decisionStatus, hrNote, decisionReason)}
             />
           ) : (
