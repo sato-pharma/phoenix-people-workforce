@@ -386,7 +386,7 @@ type MarketingRequestFinanceRequirementDbRow = {
   updated_at?: string | null;
 };
 
-type MarketingRequesterLine = Pick<EmployeeDirectoryRow, "lineId"> & {
+type MarketingRequesterLine = Pick<EmployeeDirectoryRow, "hrId" | "lineId"> & {
   lineName?: string | null;
 };
 
@@ -879,6 +879,15 @@ function toProductCodeSet(raw: string[] | null): Set<string> | null {
   return raw === null ? null : new Set(raw.map((code) => code.trim().toUpperCase()));
 }
 
+// Named, owner-approved exception: B-155 is a Product Manager assigned to two SPECIFIC
+// cross-line products (Tigogrow/TG001 on Pedia, Osteosat/OS001 on Anti infective), not to a
+// product line. His marketing visibility/submission is hard-clamped to exactly his
+// product_scope_override codes, matching the sales-side clamp (applyProductCodeAllowlist),
+// instead of the general line + override union below. This is intentionally scoped to this one
+// HR_ID — every other requester (including other users with a product_scope_override, e.g.
+// A-8/A-10) keeps the union behaviour unchanged.
+const PRODUCT_SCOPE_EXCLUSIVE_HR_IDS = new Set(["B-155"].map((id) => normalizeHrId(id)));
+
 // A requester may use a product if it is on their assigned line OR its code is in their
 // product_scope_override. The override is additive (a UNION), so it only ever GRANTS extra
 // products (e.g. a Product Manager whose one Anti-infective product sits outside their Pedia
@@ -889,6 +898,9 @@ function marketingProductAllowedForRequester(
   requester: MarketingRequesterLine | null,
   allowedProductCodes: Set<string> | null,
 ): boolean {
+  if (requester && PRODUCT_SCOPE_EXCLUSIVE_HR_IDS.has(normalizeHrId(requester.hrId))) {
+    return productCodeInScope(product.product_code, allowedProductCodes);
+  }
   if (requester && marketingProductMatchesRequesterLine(product, requester)) return true;
   return productCodeInScope(product.product_code, allowedProductCodes);
 }
