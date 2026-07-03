@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { isStaleDeployChunkError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
 export default function GlobalError({
   error,
@@ -11,6 +12,11 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
+    if (isStaleDeployChunkError(error)) {
+      recoverFromStaleDeployOnce();
+      return;
+    }
+
     Sentry.captureException(error);
   }, [error]);
 

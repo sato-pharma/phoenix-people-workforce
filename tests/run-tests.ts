@@ -144,6 +144,7 @@ import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-rep
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
 import { runMarketingRoiFacetsTests } from "./marketing-roi-facets.test.ts";
 import { runMarketingRoiExportWorkbookTests } from "./marketing-roi-export-workbook.test.ts";
+import { runMarketingRoiAttributionConsistencyTests } from "./marketing-roi-attribution-consistency.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
@@ -212,6 +213,7 @@ import { runResignationScopeCheckTests } from "./resignation-scope-check.test.ts
 import { runResignationWorkflowScopeCheckTests } from "./resignation-workflow-scope-check.test.ts";
 import { runContractRenewalWorkflowScopeCheckTests } from "./contract-renewal-workflow-scope-check.test.ts";
 import { runCustomerPharmacyMappingReadinessTests } from "./customer-pharmacy-mapping-readiness.test.ts";
+import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapping-actions.test.ts";
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
@@ -268,11 +270,17 @@ import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independ
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
+import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
+
+const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
+  const startedAt = performance.now();
   try {
     await execute();
-    console.log(`PASS ${name}`);
+    const durationMs = performance.now() - startedAt;
+    testDurationsMs.push({ name, durationMs });
+    console.log(`PASS ${name} (${durationMs.toFixed(0)}ms)`);
   } catch (error) {
     console.error(`FAIL ${name}`);
     throw error;
@@ -422,6 +430,7 @@ await runTest("marketing ROI business report (requester/customer + read-only gua
 await runTest("pharmacy master matching (Phase 1 candidate classifier + read-only guards)", runPharmacyMatchingTests);
 await runTest("marketing ROI facets (smart cascading filters)", runMarketingRoiFacetsTests);
 await runTest("marketing ROI export workbook (xlsx builds)", runMarketingRoiExportWorkbookTests);
+await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
@@ -493,6 +502,7 @@ await runTest("resignation employee scope check", runResignationScopeCheckTests)
 await runTest("resignation workflow scope check", runResignationWorkflowScopeCheckTests);
 await runTest("contract renewal workflow scope check", runContractRenewalWorkflowScopeCheckTests);
 await runTest("customer pharmacy mapping readiness", runCustomerPharmacyMappingReadinessTests);
+await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerPharmacyMappingActionsTests);
 await runTest("cv database", runCvDatabaseTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
@@ -549,3 +559,11 @@ await runTest("analytics filter independence (no cross-dimension leakage)", runA
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
+await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
+
+const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
+const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
+console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
+for (const t of slowest) {
+  console.log(`  ${t.durationMs.toFixed(0)}ms  ${t.name}`);
+}

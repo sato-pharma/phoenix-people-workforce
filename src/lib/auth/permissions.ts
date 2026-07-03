@@ -94,7 +94,8 @@ export type PermissionResource =
   | "workflow_registry"
   | "report_it"
   | "attendance"
-  | "user_activity";
+  | "user_activity"
+  | "synthetic_journeys";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -135,6 +136,7 @@ export const permissionResources: PermissionResource[] = [
   "report_it",
   "attendance",
   "user_activity",
+  "synthetic_journeys",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -232,6 +234,8 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "system_cleanup":
     case "user_activity":
       return role === "Super Admin" ? allActions : [];
+    case "synthetic_journeys":
+      return role === "Super Admin" ? ["read"] : [];
     case "employees":
       return role === "Super Admin" ? allActions : [];
     case "module_control":
@@ -354,6 +358,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // omitted from every other role so the employee-monitoring surface stays
     // tightly held. Widen via role_permission_overrides if ever needed.
     user_activity: ["read", "export"],
+    synthetic_journeys: ["read"],
   },
   CEO: {
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
