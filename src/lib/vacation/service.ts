@@ -108,9 +108,9 @@ const vacationTokensTable = "v2_vacation_email_tokens";
 const vacationWeeklyOffPoliciesTable = "v2_vacation_weekly_off_policies";
 const vacationRetentionPoliciesTable = "v2_vacation_retention_policies";
 const vacationRetentionPurgeRunsTable = "v2_vacation_retention_purge_runs";
-const vacationAttachmentBucket = "leave-attachments";
+export const vacationAttachmentBucket = "leave-attachments";
 const vacationAuditExportMaxRows = 5000;
-const sickAttachmentMaxUploadBytes = 10 * 1024 * 1024;
+const sickAttachmentMaxUploadBytes = 20 * 1024 * 1024;
 const sickAttachmentAllowedContentTypes = new Set([
   "application/pdf",
   "application/msword",
@@ -2116,7 +2116,7 @@ async function calculatePaymentForRequest(input: {
   });
 }
 
-function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
+export function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
   const normalized = String(value ?? "")
     .trim()
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -2155,7 +2155,7 @@ function validateSickAttachment(attachment: VacationAttachmentUpload | null | un
     throw new Error("Sick vacation document is empty. Upload a valid file.");
   }
   if (attachment.bytes.length > sickAttachmentMaxUploadBytes) {
-    throw new Error("Sick vacation document is too large. Maximum size is 10MB.");
+    throw new Error("Sick vacation document is too large. Maximum size is 20MB.");
   }
   if (!sickAttachmentAllowedContentTypes.has(attachment.contentType)) {
     throw new Error("Sick vacation document must be a PDF, Word document, JPG, PNG, or WEBP file.");
@@ -2170,7 +2170,7 @@ function validateCompensatoryAttachment(attachment: VacationAttachmentUpload | n
     throw new Error("Compensatory Day event photo is empty. Upload a valid image.");
   }
   if (attachment.bytes.length > sickAttachmentMaxUploadBytes) {
-    throw new Error("Compensatory Day event photo is too large. Maximum size is 10MB.");
+    throw new Error("Compensatory Day event photo is too large. Maximum size is 20MB.");
   }
   if (!compensatoryAttachmentAllowedContentTypes.has(attachment.contentType)) {
     throw new Error("Compensatory Day event photo must be a JPG, PNG, or WEBP image.");
