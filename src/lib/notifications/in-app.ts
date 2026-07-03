@@ -325,11 +325,38 @@ export async function markInAppNotificationRead(access: AccessContext, notificat
   const identity = viewerIdentity(access);
   if (!identity.hrId && !identity.userId) return { skipped: true };
 
+  const cleanedId = cleanText(notificationId);
+  if (!cleanedId) return { skipped: true };
+
+  try {
+    const { data: eventRow, error: eventError } = await getSupabaseAdmin()
+      .from("notification_events")
+      .select("employee_hr_id,recipients")
+      .eq("id", cleanedId)
+      .maybeSingle();
+    if (eventError) throw eventError;
+    // Fail-closed: only let a viewer mark an event "read" for themselves if the
+    // event was actually addressed to them (subject or explicit recipient) —
+    // otherwise any authenticated user could stamp read-state on arbitrary ids.
+    if (
+      !eventRow ||
+      !canViewerSeeNotification(identity.hrId, {
+        employeeHrId: eventRow.employee_hr_id,
+        recipients: eventRow.recipients,
+      })
+    ) {
+      return { reason: "Notification is not addressed to this viewer.", skipped: true };
+    }
+  } catch (error) {
+    if (notificationSchemaMissing(error)) return { reason: "notification_events unavailable", skipped: true };
+    throw error;
+  }
+
   const now = new Date().toISOString();
   try {
     const payload = {
       hr_id: identity.hrId || null,
-      notification_event_id: notificationId,
+      notification_event_id: cleanedId,
       read_at: now,
       updated_at: now,
       user_id: identity.userId,
