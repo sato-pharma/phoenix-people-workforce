@@ -530,6 +530,7 @@ function employeeValues(
     ...(record.employmentStatus ? { employment_status: record.employmentStatus } : {}),
     ...(record.hireDate ? { hire_date: record.hireDate } : {}),
     ...(record.jobTitle ? { job_title: truncate(record.jobTitle, 160) } : {}),
+    ...(record.nickname ? { nickname: truncate(record.nickname, 160) } : {}),
     ...(record.mobileNumber ? { mobile_number: truncate(record.mobileNumber, 40) } : {}),
     ...(record.nameAr ? { name_ar: truncate(record.nameAr, 220) } : {}),
     ...(record.regionName ? { region_name: truncate(record.regionName, 160) } : {}),
@@ -633,6 +634,7 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
     message.includes("medical_insurance") ||
     message.includes("national_id") ||
     message.includes("net_salary") ||
+    message.includes("nickname") ||
     message.includes("organogram_visible") ||
     message.includes("payment_mode") ||
     message.includes("payroll_eligible") ||
@@ -666,6 +668,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     medical_insurance_number,
     national_id,
     net_salary,
+    nickname,
     organogram_visible,
     payment_mode,
     payroll_eligible,
@@ -696,6 +699,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void medical_insurance_number;
   void national_id;
   void net_salary;
+  void nickname;
   void organogram_visible;
   void payment_mode;
   void payroll_eligible;

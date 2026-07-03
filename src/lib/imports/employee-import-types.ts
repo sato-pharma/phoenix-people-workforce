@@ -3,6 +3,7 @@ export type EmployeeImportField =
   | "crmId"
   | "crmUsername"
   | "fullName"
+  | "nickname"
   | "nameAr"
   | "nationalId"
   | "gender"
@@ -75,6 +76,7 @@ export type EmployeeImportRecord = {
   crmId: string | null;
   crmUsername: string | null;
   fullName: string | null;
+  nickname: string | null;
   nameAr: string | null;
   nationalId: string | null;
   gender: string | null;

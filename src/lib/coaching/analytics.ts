@@ -237,7 +237,7 @@ export function buildTrainingManagerCoachingComparison({
         latestCoachingDate: latestReport?.coachingDate ?? null,
         lineId: employee.lineId,
         lineName: employee.lineName,
-        medicalRepName: employee.fullName || employee.hrId,
+        medicalRepName: employee.displayName || employee.hrId,
         status: orderedReports.length > 0 ? "coached" : "not_coached",
         teamId: employee.teamId,
         teamName: employee.teamName,

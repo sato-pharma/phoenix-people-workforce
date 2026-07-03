@@ -30,6 +30,12 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     aliases: ["Full Name", "Name", "Employee Name", "full_name"],
   },
   {
+    field: "nickname",
+    dbPath: "employees.nickname",
+    required: false,
+    aliases: ["Nickname", "Nick Name", "Display Name", "nickname"],
+  },
+  {
     field: "nameAr",
     dbPath: "employees.name_ar",
     required: false,

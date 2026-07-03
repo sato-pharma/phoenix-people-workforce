@@ -41,6 +41,7 @@ function organogramRow(overrides: Partial<OrganogramReportRow>): OrganogramRepor
     areaName: "Greater Cairo",
     departmentId: null,
     departmentName: "Commercial",
+    displayName: "Employee",
     fullName: "Employee",
     hireDate: "2022-01-01",
     hrId: "EMP-1",
