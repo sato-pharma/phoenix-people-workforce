@@ -13,9 +13,13 @@ type Props = {
   initialError: string | null;
 };
 
+// A digest never actually reaches the employee's own list while it's 'draft'
+// or 'pending_admin_review' (digest-read.ts filters both out server-side) —
+// these two entries exist only so the Record type stays exhaustive.
 const statusLabel: Record<DigestSummaryView["status"], string> = {
   auto_confirmed: "Auto-confirmed",
   draft: "Preparing",
+  pending_admin_review: "Preparing",
   sent: "Awaiting you",
   settled: "Settled",
   void: "Void",
@@ -24,6 +28,7 @@ const statusLabel: Record<DigestSummaryView["status"], string> = {
 const statusTone: Record<DigestSummaryView["status"], "neutral" | "warning" | "success" | "danger"> = {
   auto_confirmed: "warning",
   draft: "neutral",
+  pending_admin_review: "neutral",
   sent: "warning",
   settled: "success",
   void: "neutral",

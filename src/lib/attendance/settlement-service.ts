@@ -27,9 +27,11 @@ import {
 } from "@/lib/attendance/digest-recipients";
 import {
   notifyDigestAutoConfirmed,
+  notifyDigestPendingReview,
   notifyDigestSent,
   notifyDisputeResolved,
   notifyDisputeSubmitted,
+  type DigestTableLine,
 } from "@/lib/attendance/digest-notify";
 import { pushAttendanceSettlementToPayroll } from "@/lib/attendance/settlement-payroll";
 import { recordDigestNotificationEvent } from "@/lib/attendance/digest-read-receipts";
@@ -54,7 +56,9 @@ export type WeeklyDigestRow = {
   employee_hr_id: string;
   cycle_key: string;
   week_index: number;
-  status: "draft" | "sent" | "settled" | "auto_confirmed" | "void";
+  week_start: string;
+  week_end: string;
+  status: "draft" | "pending_admin_review" | "sent" | "settled" | "auto_confirmed" | "void";
   currency: string;
 };
 
@@ -62,12 +66,34 @@ async function loadDigest(digestId: number): Promise<WeeklyDigestRow> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
-    .select("id,employee_hr_id,cycle_key,week_index,status,currency")
+    .select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,currency")
     .eq("id", digestId)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw validationError("Digest was not found.");
   return data as WeeklyDigestRow;
+}
+
+async function loadEmployeeName(employeeHrId: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase.from("employees").select("full_name").eq("hr_id", employeeHrId).maybeSingle();
+  return (data as { full_name?: string | null } | null)?.full_name?.trim() || employeeHrId;
+}
+
+export async function loadDeductibleLines(digestId: number): Promise<DigestTableLine[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_digest_lines")
+    .select("work_date,deduction_days,deduction_value,reason")
+    .eq("digest_id", digestId)
+    .order("work_date", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ work_date: string; deduction_days: number; deduction_value: number; reason: string }>).map((row) => ({
+    deductionDays: Number(row.deduction_days),
+    deductionValue: Number(row.deduction_value),
+    reason: row.reason,
+    workDate: row.work_date,
+  }));
 }
 
 async function assertOwnsDigest(digest: WeeklyDigestRow, actorHrId: string) {
@@ -368,16 +394,31 @@ export async function reviewDigestDispute(input: {
 }
 
 /**
- * Transition a digest from draft to sent: stamps sent_at / auto_confirm_at
- * (per attendance_digest_settings.auto_confirm_hours) and notifies the
- * employee on every channel — even a clean (zero-deduction) week, per the
- * confirmed spec ("all 4 weekly digests always send, even if clean").
- * TOCTOU-safe: only a digest still in 'draft' can be sent, so a re-run of the
- * scheduler never re-sends (and re-starts the clock on) an already-sent digest.
+ * Transition a digest from draft onward. A CLEAN (zero-deduction) digest goes
+ * straight to the employee, same as before — nothing to review. A digest with
+ * a real deduction NEVER goes straight to the employee: it routes to the
+ * System Administrator / HR Manager approver list for review (and optional
+ * edit) first — see routeDigestForReview / approveDigestReview. Either path
+ * is TOCTOU-safe: only a digest still in 'draft' transitions, so a re-run of
+ * the scheduler never re-sends (or re-routes) an already-processed digest.
  */
 export async function sendDigest(input: { digestId: number; weekLabel: string; actionUrl: string }): Promise<boolean> {
-  const settings = await getDigestSettings();
   const supabase = getSupabaseAdmin();
+  const { data: draftRow, error: draftError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,total_deduction_value")
+    .eq("id", input.digestId)
+    .eq("status", "draft")
+    .maybeSingle();
+  if (draftError) throw draftError;
+  if (!draftRow) return false; // already processed — nothing to do
+
+  const hasDeduction = Number((draftRow as { total_deduction_value: number }).total_deduction_value) > 0;
+  if (hasDeduction) {
+    return routeDigestForReview({ actionUrl: input.actionUrl, digestId: input.digestId, weekLabel: input.weekLabel });
+  }
+
+  const settings = await getDigestSettings();
   const now = new Date();
   const autoConfirmAt = new Date(now.getTime() + settings.autoConfirmHours * 60 * 60 * 1000);
 
@@ -394,19 +435,210 @@ export async function sendDigest(input: { digestId: number; weekLabel: string; a
     .select("id,employee_hr_id,total_deduction_value,currency")
     .maybeSingle();
   if (error) throw error;
-  if (!updated) return false; // already sent (or not a draft) — nothing to do
+  if (!updated) return false; // acted on between the select and here
 
   const digest = updated as { id: number; employee_hr_id: string; total_deduction_value: number; currency: string };
+  const employeeName = await loadEmployeeName(digest.employee_hr_id);
   const { eventId } = await notifyDigestSent({
     actionUrl: input.actionUrl,
     autoConfirmHours: settings.autoConfirmHours,
     currency: digest.currency,
     employeeHrId: digest.employee_hr_id,
+    employeeName,
+    lines: [],
     totalDeductionValue: Number(digest.total_deduction_value),
     weekLabel: input.weekLabel,
   });
   await recordDigestNotificationEvent(input.digestId, eventId);
   return true;
+}
+
+/**
+ * Route a deduction-bearing digest to the System Administrator / HR Manager
+ * approver list for review before it ever reaches the employee. Only a
+ * digest still in 'draft' transitions (TOCTOU-safe).
+ */
+async function routeDigestForReview(input: { digestId: number; weekLabel: string; actionUrl: string }): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const { data: updated, error } = await supabase
+    .from("attendance_weekly_digests")
+    .update({ status: "pending_admin_review", updated_at: new Date().toISOString() })
+    .eq("id", input.digestId)
+    .eq("status", "draft")
+    .select("id,employee_hr_id,total_deduction_value,currency")
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) return false;
+
+  const digest = updated as { id: number; employee_hr_id: string; total_deduction_value: number; currency: string };
+  const settings = await getDigestSettings();
+  const [reviewers, employeeName] = await Promise.all([
+    resolveDisputeReviewers(digest.employee_hr_id, settings),
+    loadEmployeeName(digest.employee_hr_id),
+  ]);
+  await notifyDigestPendingReview({
+    actionUrl: "/attendance/digest-review",
+    currency: digest.currency,
+    employeeHrId: digest.employee_hr_id,
+    employeeName,
+    reviewers,
+    totalDeductionValue: Number(digest.total_deduction_value),
+    weekLabel: input.weekLabel,
+  });
+  return true;
+}
+
+export type DigestReviewLineEdit = {
+  lineId: number;
+  deductionDays?: number;
+  deductionValue?: number;
+  reason?: string;
+};
+
+/**
+ * System Administrator / HR Manager approves a pending-review digest,
+ * optionally editing any line first (the system-computed value is snapshotted
+ * into original_* the moment a line is actually changed). Approval transitions
+ * the digest straight to 'sent' with the (possibly edited) totals and finally
+ * notifies the employee — same self-exclusion + CEO-fallback reviewer pool as
+ * dispute review ("if the subject is an approver, the others handle it").
+ */
+export async function approveDigestReview(input: {
+  digestId: number;
+  actorHrId: string;
+  actionUrl: string;
+  lineEdits?: DigestReviewLineEdit[];
+}): Promise<void> {
+  const digest = await loadDigest(input.digestId);
+  if (digest.status !== "pending_admin_review") {
+    throw new Error(`Forbidden: digest is ${digest.status}, not awaiting review.`);
+  }
+
+  const settings = await getDigestSettings();
+  const reviewers = await resolveDisputeReviewers(digest.employee_hr_id, settings);
+  const actor = normalizeAttendanceHrId(input.actorHrId);
+  if (!actor || !reviewers.includes(actor)) {
+    throw new Error("Forbidden: you are not an authorized reviewer for this digest.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  for (const edit of input.lineEdits ?? []) {
+    const line = await loadLine(input.digestId, edit.lineId);
+    const nextDays = edit.deductionDays !== undefined ? Number(edit.deductionDays) : Number(line.deduction_days);
+    const nextValue = edit.deductionValue !== undefined ? Number(edit.deductionValue) : Number(line.deduction_value);
+    const nextReason = edit.reason !== undefined ? edit.reason : line.reason;
+    const wasEdited = nextDays !== Number(line.deduction_days) || nextValue !== Number(line.deduction_value) || nextReason !== line.reason;
+    if (!wasEdited) continue;
+    if (!Number.isFinite(nextDays) || nextDays < 0) throw validationError("Deduction days must be zero or a positive number.");
+    if (!Number.isFinite(nextValue) || nextValue < 0) throw validationError("Deduction value must be zero or a positive number.");
+
+    const { error: editError } = await supabase
+      .from("attendance_digest_lines")
+      .update({
+        deduction_days: nextDays,
+        deduction_value: nextValue,
+        original_deduction_days: line.deduction_days,
+        original_deduction_value: line.deduction_value,
+        original_reason: line.reason,
+        reason: nextReason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", edit.lineId)
+      .eq("digest_id", input.digestId);
+    if (editError) throw editError;
+
+    await writeAuditLog({
+      actorLoginId: input.actorHrId,
+      entityId: String(edit.lineId),
+      entityType: "attendance_settlement",
+      newValues: { deductionDays: nextDays, deductionValue: nextValue, reason: nextReason },
+      oldValues: { deductionDays: line.deduction_days, deductionValue: line.deduction_value, reason: line.reason },
+      summary: `Admin review edited digest line for ${digest.employee_hr_id} on ${line.work_date} before approval`,
+    });
+  }
+
+  const lines = await loadDeductibleLines(input.digestId);
+  const totalDeductionDays = lines.reduce((sum, line) => sum + line.deductionDays, 0);
+  const totalDeductionValue = lines.reduce((sum, line) => sum + line.deductionValue, 0);
+
+  const now = new Date();
+  const autoConfirmAt = new Date(now.getTime() + settings.autoConfirmHours * 60 * 60 * 1000);
+  const { data: updated, error } = await supabase
+    .from("attendance_weekly_digests")
+    .update({
+      auto_confirm_at: autoConfirmAt.toISOString(),
+      reviewed_at: now.toISOString(),
+      reviewed_by: input.actorHrId,
+      sent_at: now.toISOString(),
+      status: "sent",
+      total_deduction_days: totalDeductionDays,
+      total_deduction_value: totalDeductionValue,
+      updated_at: now.toISOString(),
+    })
+    .eq("id", input.digestId)
+    .eq("status", "pending_admin_review")
+    .select("id,employee_hr_id,currency")
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) throw conflictError("This digest has already been acted on.");
+
+  const updatedDigest = updated as { id: number; employee_hr_id: string; currency: string };
+  const employeeName = await loadEmployeeName(updatedDigest.employee_hr_id);
+  const weekLabel = `${digest.week_start} to ${digest.week_end}`;
+  const { eventId } = await notifyDigestSent({
+    actionUrl: input.actionUrl,
+    autoConfirmHours: settings.autoConfirmHours,
+    currency: updatedDigest.currency,
+    employeeHrId: updatedDigest.employee_hr_id,
+    employeeName,
+    lines,
+    totalDeductionValue,
+    weekLabel,
+  });
+  await recordDigestNotificationEvent(input.digestId, eventId);
+}
+
+/**
+ * System Administrator / HR Manager voids a pending-review digest instead of
+ * approving it (e.g. the underlying data looks wrong and needs a source fix
+ * before regenerating). The employee is never notified — they never knew it
+ * existed.
+ */
+export async function voidDigestReview(input: { digestId: number; actorHrId: string; reason: string }): Promise<void> {
+  const reason = input.reason.trim();
+  if (!reason) throw validationError("A reason is required to void a digest under review.");
+
+  const digest = await loadDigest(input.digestId);
+  if (digest.status !== "pending_admin_review") {
+    throw new Error(`Forbidden: digest is ${digest.status}, not awaiting review.`);
+  }
+
+  const settings = await getDigestSettings();
+  const reviewers = await resolveDisputeReviewers(digest.employee_hr_id, settings);
+  const actor = normalizeAttendanceHrId(input.actorHrId);
+  if (!actor || !reviewers.includes(actor)) {
+    throw new Error("Forbidden: you are not an authorized reviewer for this digest.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .from("attendance_weekly_digests")
+    .update({ reviewed_at: now, reviewed_by: input.actorHrId, status: "void", updated_at: now })
+    .eq("id", input.digestId)
+    .eq("status", "pending_admin_review")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) throw conflictError("This digest has already been acted on.");
+
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: String(input.digestId),
+    entityType: "attendance_settlement",
+    newValues: { reason, status: "void" },
+    summary: `Digest voided under admin review for ${digest.employee_hr_id}: ${reason}`,
+  });
 }
 
 /**

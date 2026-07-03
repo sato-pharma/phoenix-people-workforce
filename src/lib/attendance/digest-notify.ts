@@ -20,23 +20,99 @@ async function sendToMany(
   await Promise.all(recipients.map((hrId) => createSystemNotification(build(hrId))));
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatDisplayDate(dateIso: string): string {
+  return new Date(`${dateIso}T00:00:00`).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export type DigestTableLine = {
+  workDate: string;
+  deductionDays: number;
+  deductionValue: number;
+  reason: string;
+};
+
+/**
+ * The digest table: three columns (Day+date, Deduction Value, Quantity), with
+ * the reason for that day shown as a note under its row. Only deduction lines
+ * (deductionDays > 0) are shown — missing-punch lines carry zero EGP impact
+ * and are handled entirely by the separate verification chain.
+ */
+export function buildDigestTableHtml(lines: DigestTableLine[], currency: string): string {
+  const deductible = lines.filter((line) => line.deductionDays > 0);
+  if (deductible.length === 0) return "";
+  const rows = deductible
+    .map(
+      (line) => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #e2e8f0;">${escapeHtml(formatDisplayDate(line.workDate))}</td>
+        <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">${escapeHtml(line.deductionValue.toFixed(2))} ${escapeHtml(currency)}</td>
+        <td style="padding:8px 10px;border:1px solid #e2e8f0;text-align:right;">${escapeHtml(String(line.deductionDays))}</td>
+      </tr>
+      <tr>
+        <td colspan="3" style="padding:2px 10px 10px;border:1px solid #e2e8f0;border-top:none;color:#64748b;font-size:12px;">${escapeHtml(line.reason)}</td>
+      </tr>`,
+    )
+    .join("");
+  return `<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+      <thead>
+        <tr style="background:#0f172a;color:#ffffff;">
+          <th style="padding:8px 10px;text-align:left;">Day</th>
+          <th style="padding:8px 10px;text-align:right;">Deduction Value</th>
+          <th style="padding:8px 10px;text-align:right;">Quantity</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+export function buildDigestTableText(lines: DigestTableLine[], currency: string): string {
+  const deductible = lines.filter((line) => line.deductionDays > 0);
+  if (deductible.length === 0) return "";
+  return deductible
+    .map((line) => `- ${formatDisplayDate(line.workDate)}: ${line.deductionValue.toFixed(2)} ${currency}, ${line.deductionDays} day(s) — ${line.reason}`)
+    .join("\n");
+}
+
 export async function notifyDigestSent(input: {
   employeeHrId: string;
+  employeeName: string;
   weekLabel: string;
   totalDeductionValue: number;
   currency: string;
   autoConfirmHours: number;
   actionUrl: string;
+  lines: DigestTableLine[];
 }): Promise<{ eventId: string | null }> {
+  const summary =
+    input.totalDeductionValue > 0
+      ? `Your attendance digest for ${input.weekLabel} shows ${input.totalDeductionValue.toFixed(2)} ${input.currency} in deductions. Confirm or dispute within ${input.autoConfirmHours}h — no reply auto-confirms to salary.`
+      : `Your attendance digest for ${input.weekLabel} is clean — no deductions this week.`;
   const result = await createSystemNotification({
     actionUrl: input.actionUrl,
     actorId: "system",
     channels: ["email", "telegram", "in_app"],
+    email: {
+      recipientName: input.employeeName,
+      templateContext: {
+        digestTable: buildDigestTableHtml(input.lines, input.currency),
+        digestTableText: buildDigestTableText(input.lines, input.currency),
+        status: input.totalDeductionValue > 0 ? `Please confirm or dispute within ${input.autoConfirmHours} hours.` : "",
+        summary,
+        weekLabel: input.weekLabel,
+      },
+      templateKey: "attendance_digest",
+    },
     eventType: "attendance_digest_sent",
-    message:
-      input.totalDeductionValue > 0
-        ? `Your attendance digest for ${input.weekLabel} shows ${input.totalDeductionValue.toFixed(2)} ${input.currency} in deductions. Confirm or dispute within ${input.autoConfirmHours}h — no reply auto-confirms to salary.`
-        : `Your attendance digest for ${input.weekLabel} is clean — no deductions this week.`,
+    message: summary,
     metadata: { autoConfirmHours: input.autoConfirmHours, employeeHrId: input.employeeHrId },
     module: "attendance",
     priority: input.totalDeductionValue > 0 ? "high" : "normal",
@@ -45,6 +121,36 @@ export async function notifyDigestSent(input: {
     title: `Weekly attendance digest — ${input.weekLabel}`,
   });
   return { eventId: result.eventId };
+}
+
+/**
+ * A deduction-bearing digest never reaches the employee directly — this
+ * notifies the System Administrator / HR Manager approver list (same pool as
+ * dispute review) that it's waiting for them in the review queue.
+ */
+export async function notifyDigestPendingReview(input: {
+  employeeHrId: string;
+  employeeName: string;
+  weekLabel: string;
+  totalDeductionValue: number;
+  currency: string;
+  reviewers: string[];
+  actionUrl: string;
+}) {
+  const build = (recipientHrId: string) => ({
+    actionUrl: input.actionUrl,
+    actorId: "system",
+    channels: ["email" as const, "in_app" as const],
+    eventType: "attendance_digest_pending_review",
+    message: `${input.employeeName}'s attendance digest for ${input.weekLabel} shows ${input.totalDeductionValue.toFixed(2)} ${input.currency} in deductions and is waiting for your review before it sends.`,
+    metadata: { authorizedRecipient: true, employeeHrId: input.employeeHrId, sensitivity: "payroll" },
+    module: "attendance",
+    priority: "high" as const,
+    recipientHrId,
+    subjectHrId: input.employeeHrId,
+    title: `Digest review needed — ${input.employeeName} (${input.weekLabel})`,
+  });
+  await sendToMany(input.reviewers, build);
 }
 
 export async function notifyDigestAutoConfirmed(input: {

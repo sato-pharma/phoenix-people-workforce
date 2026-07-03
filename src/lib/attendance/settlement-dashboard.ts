@@ -9,9 +9,10 @@ import { resolveDigestCycle } from "@/lib/attendance/digest-cycle";
 import { getDigestSettings } from "@/lib/attendance/digest-recipients";
 import { notifyDigestSent } from "@/lib/attendance/digest-notify";
 import { getReadReceiptsForEvents } from "@/lib/attendance/digest-read-receipts";
+import { loadDeductibleLines } from "@/lib/attendance/settlement-service";
 
 export type DigestStatusCounts = Record<
-  "draft" | "sent" | "settled" | "auto_confirmed" | "void",
+  "draft" | "pending_admin_review" | "sent" | "settled" | "auto_confirmed" | "void",
   { count: number; totalDeductionValue: number }
 >;
 
@@ -41,6 +42,7 @@ export type SettlementDashboard = {
 const emptyStatusCounts = (): DigestStatusCounts => ({
   auto_confirmed: { count: 0, totalDeductionValue: 0 },
   draft: { count: 0, totalDeductionValue: 0 },
+  pending_admin_review: { count: 0, totalDeductionValue: 0 },
   sent: { count: 0, totalDeductionValue: 0 },
   settled: { count: 0, totalDeductionValue: 0 },
   void: { count: 0, totalDeductionValue: 0 },
@@ -147,11 +149,14 @@ export async function remindAllPendingDigests(cycleKey?: string): Promise<{ remi
   await Promise.all(
     dashboard.pendingDigests.map(async (digest) => {
       try {
+        const lines = await loadDeductibleLines(digest.id);
         await notifyDigestSent({
           actionUrl: "/employee-portals/attendance/digests",
           autoConfirmHours: settings.autoConfirmHours,
           currency: "EGP",
           employeeHrId: digest.employeeHrId,
+          employeeName: digest.employeeName,
+          lines,
           totalDeductionValue: digest.totalDeductionValue,
           weekLabel: `${digest.weekStart} to ${digest.weekEnd} (reminder)`,
         });

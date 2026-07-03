@@ -16,7 +16,7 @@ export type PassportDigestSummary = {
   weekIndex: number;
   weekStart: string;
   weekEnd: string;
-  status: "draft" | "sent" | "settled" | "auto_confirmed" | "void";
+  status: "draft" | "pending_admin_review" | "sent" | "settled" | "auto_confirmed" | "void";
   totalDeductionDays: number;
   totalDeductionValue: number;
   sentAt: string | null;
@@ -49,7 +49,14 @@ export type AttendancePassport = {
   };
 };
 
-export async function getAttendancePassport(employeeHrId: string): Promise<AttendancePassport> {
+// Same three statuses digest-read.ts hides from the employee's own portal —
+// the passport is admin-visible in full (including voided/pending-review
+// entries, for audit purposes) but must hide exactly the same stages when
+// the employee is viewing their OWN record (the passport route allows self
+// access). See digest-read.ts's EMPLOYEE_HIDDEN_STATUSES for the full reasoning.
+const EMPLOYEE_HIDDEN_DIGEST_STATUSES = ["draft", "pending_admin_review", "void"] as const;
+
+export async function getAttendancePassport(employeeHrId: string, options: { viewerIsSelf?: boolean } = {}): Promise<AttendancePassport> {
   const hrId = normalizeAttendanceHrId(employeeHrId);
   if (!hrId) throw validationError("A valid employee HR ID is required.");
 
@@ -63,11 +70,15 @@ export async function getAttendancePassport(employeeHrId: string): Promise<Atten
   const employeeRow = (employeeRows ?? [])[0];
   if (!employeeRow) throw validationError("Employee not found.");
 
-  const { data: digestRows, error: digestError } = await supabase
+  let digestQuery = supabase
     .from("attendance_weekly_digests")
     .select("id,cycle_key,week_index,week_start,week_end,status,total_deduction_days,total_deduction_value,sent_at")
     .eq("employee_hr_id", hrId)
     .order("week_start", { ascending: false });
+  if (options.viewerIsSelf) {
+    digestQuery = digestQuery.not("status", "in", `(${EMPLOYEE_HIDDEN_DIGEST_STATUSES.join(",")})`);
+  }
+  const { data: digestRows, error: digestError } = await digestQuery;
   if (digestError) throw new Error(`Digest history lookup failed: ${digestError.message}`);
 
   const digests: PassportDigestSummary[] = ((digestRows ?? []) as Array<{

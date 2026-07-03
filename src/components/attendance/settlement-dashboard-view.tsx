@@ -36,6 +36,7 @@ type Props = {
 const STATUS_LABELS: Record<keyof SettlementDashboard["byStatus"], string> = {
   auto_confirmed: "Auto-confirmed",
   draft: "Draft",
+  pending_admin_review: "Awaiting admin review",
   sent: "Awaiting response",
   settled: "Settled",
   void: "Void",

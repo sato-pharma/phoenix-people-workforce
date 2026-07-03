@@ -17,6 +17,7 @@ type Props = {
 const DIGEST_STATUS_LABELS: Record<AttendancePassport["digests"][number]["status"], string> = {
   auto_confirmed: "Auto-confirmed",
   draft: "Draft",
+  pending_admin_review: "Awaiting admin review",
   sent: "Awaiting response",
   settled: "Settled",
   void: "Void",
