@@ -211,6 +211,7 @@ export const accessRegistry = [
   // Customer Pharmacy Mapping — standalone read-only master-data governance. Role gate lives in the
   // domain helper (assertCustomerPharmacyMappingAccess); Phase 1 is Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/customer-pharmacy-mapping", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/customer-pharmacy-mapping/:id/decision", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Pharmacy Master / Distributor Matching — standalone read-only candidate-review report
   // (Phase 1, no write actions). Role gate lives in the domain helper
   // (assertPharmacyMasterAccess); Super Admin + CEO only.
