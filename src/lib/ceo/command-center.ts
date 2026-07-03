@@ -282,7 +282,7 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
 
   const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR] =
     await Promise.allSettled([
-      getResignationsDashboardData(),
+      getResignationsDashboardData(access),
       getVacationReportData(access, { status: "all" }),
       getContractRenewalDashboardData(access),
       getCeoProbationCounts(access),

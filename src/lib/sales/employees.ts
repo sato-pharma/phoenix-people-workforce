@@ -1,5 +1,6 @@
 ﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import { canonicalSalesLine, isSalesOthersBucket } from "@/lib/sales/others";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import { isSalesVacancyAreaCode } from "@/lib/workforce-classification";
@@ -29,6 +30,12 @@ function normalize(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+// HR_ID-specific key: routes through the legacy alias table (e.g. aaa -> aa),
+// unlike the generic text `normalize()` above used for job titles/status/etc.
+function hrIdKey(value: string | null | undefined) {
+  return canonicalHrIdKey(value) ?? "";
+}
+
 function compact(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -53,18 +60,18 @@ function sourceLabel(hrId: string, fallbackName?: string | null) {
 }
 
 export async function getSalesPeopleLabels(hrIds: Array<string | null | undefined>) {
-  const wanted = new Set(hrIds.map((hrId) => normalize(hrId)).filter(Boolean));
+  const wanted = new Set(hrIds.map((hrId) => hrIdKey(hrId)).filter(Boolean));
   if (wanted.size === 0) return new Map<string, string>();
 
   const directory = await loadDirectory();
   const labels = new Map<string, string>();
   directory.forEach((employee) => {
-    const hrId = normalize(employee.hr_id);
+    const hrId = hrIdKey(employee.hr_id);
     if (wanted.has(hrId)) labels.set(hrId, employeeLabel(employee));
   });
 
   hrIds.forEach((hrId) => {
-    const normalized = normalize(hrId);
+    const normalized = hrIdKey(hrId);
     if (normalized && !labels.has(normalized)) labels.set(normalized, `HR ${compact(hrId)}`);
   });
 
@@ -135,7 +142,7 @@ function resolvePersistableManagerHrId(
     return null;
   }
 
-  const match = directory.find((employee) => normalize(employee.hr_id) === normalize(managerHrId));
+  const match = directory.find((employee) => hrIdsMatch(employee.hr_id, managerHrId));
   if (!match) {
     diagnostics.push(`Manager HR ID "${managerHrId}" was not found in the employee directory, so it was not stored.`);
     return null;
@@ -333,7 +340,7 @@ export function linkSalesRecordAgainstDirectory(
   directory: EmployeeDirectoryRow[],
   vacancies: VacancyDirectoryRow[] = [],
 ): LinkResult {
-  const hrId = normalize(source.employeeHrId);
+  const hrId = hrIdKey(source.employeeHrId);
   const crmId = normalize(source.employeeCrmId);
   const lookup = normalize(source.employeeLookupKey);
   const rawHrId = compact(source.employeeHrId);
@@ -389,7 +396,7 @@ export function linkSalesRecordAgainstDirectory(
   }
 
   if (hrId) {
-    const match = directory.find((employee) => normalize(employee.hr_id) === hrId);
+    const match = directory.find((employee) => hrIdKey(employee.hr_id) === hrId);
     if (match) return withMatchedEmployee(match, 1);
     if (isVacantAreaCode(rawHrId)) {
       const vacancy = matchVacancyForSource(source, vacancies);
@@ -503,12 +510,12 @@ export async function linkSalesRecords(records: SalesRecordInput[]) {
 
 export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
   const directory = await loadDirectory();
-  const directoryByHrId = new Map(directory.map((employee) => [normalize(employee.hr_id), employee]));
+  const directoryByHrId = new Map(directory.map((employee) => [hrIdKey(employee.hr_id), employee]));
   const importableRecords = records.filter((record) => record.validationState !== "failed");
   const mrCandidates = new Map<string, { label: string; line: string | null | undefined }>();
   const dsmCandidates = new Map<string, { label: string; line: string | null | undefined }>();
   const labelByHrId = (hrId: string, fallbackName?: string | null) => {
-    const employee = directoryByHrId.get(normalize(hrId));
+    const employee = directoryByHrId.get(hrIdKey(hrId));
     if (employee) return employeeLabel(employee);
     return sourceLabel(hrId, fallbackName);
   };
@@ -520,7 +527,7 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
     }
 
     const dsmId = compact(record.managerHrId);
-    const dsmCandidate = directoryByHrId.get(normalize(dsmId));
+    const dsmCandidate = directoryByHrId.get(hrIdKey(dsmId));
     if (
       dsmId &&
       !hasNsmRole(dsmCandidate) &&
@@ -533,24 +540,24 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
   const mrEntries = [...mrCandidates.entries()].sort((left, right) => left[1].label.localeCompare(right[1].label));
   const dsmEntries = [...dsmCandidates.entries()].sort((left, right) => left[1].label.localeCompare(right[1].label));
   const isValidMr = (hrId: string, line: string | null | undefined) => {
-    const employee = directoryByHrId.get(normalize(hrId));
+    const employee = directoryByHrId.get(hrIdKey(hrId));
     return hasMrRole(employee) && hasLineMatch(employee, line);
   };
   const isValidDsm = (hrId: string, line: string | null | undefined) => {
-    const employee = directoryByHrId.get(normalize(hrId));
+    const employee = directoryByHrId.get(hrIdKey(hrId));
     return hasDsmRole(employee) && hasLineMatch(employee, line);
   };
   const linkedDsmIds = dsmEntries.map(([hrId, meta]) => ({ hrId, line: meta.line })).filter(({ hrId, line }) => isValidDsm(hrId, line));
   const nsmIds = new Set(
     linkedDsmIds
-      .map(({ hrId }) => compact(directoryByHrId.get(normalize(hrId))?.manager_hr_id))
+      .map(({ hrId }) => compact(directoryByHrId.get(hrIdKey(hrId))?.manager_hr_id))
       .filter(Boolean)
   );
   const nsmMissingNames = linkedDsmIds
-    .filter(({ hrId }) => !compact(directoryByHrId.get(normalize(hrId))?.manager_hr_id))
-    .map(({ hrId }) => `Missing NSM manager for ${employeeLabel(directoryByHrId.get(normalize(hrId))!)}`);
+    .filter(({ hrId }) => !compact(directoryByHrId.get(hrIdKey(hrId))?.manager_hr_id))
+    .map(({ hrId }) => `Missing NSM manager for ${employeeLabel(directoryByHrId.get(hrIdKey(hrId))!)}`);
   const nsmEntries = [...nsmIds]
-    .map((hrId) => [hrId, sourceLabel(hrId, directoryByHrId.get(normalize(hrId))?.full_name)] as const)
+    .map((hrId) => [hrId, sourceLabel(hrId, directoryByHrId.get(hrIdKey(hrId))?.full_name)] as const)
     .sort((left, right) => left[1].localeCompare(right[1]));
 
   return {
@@ -558,20 +565,20 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
     dsmLinkedNames: dsmEntries.filter(([hrId, meta]) => isValidDsm(hrId, meta.line)).map(([, meta]) => meta.label),
     dsmNotLinkedNames: dsmEntries
       .filter(([hrId, meta]) => !isValidDsm(hrId, meta.line))
-      .map(([hrId, meta]) => roleMismatchLabel(`HR ${hrId} from manager hr id column`, directoryByHrId.get(normalize(hrId)), "DSM", meta.line)),
+      .map(([hrId, meta]) => roleMismatchLabel(`HR ${hrId} from manager hr id column`, directoryByHrId.get(hrIdKey(hrId)), "DSM", meta.line)),
     dsmTotal: dsmEntries.length,
     mrLinked: mrEntries.filter(([hrId, meta]) => isValidMr(hrId, meta.line)).length,
     mrLinkedNames: mrEntries.filter(([hrId, meta]) => isValidMr(hrId, meta.line)).map(([, meta]) => meta.label),
     mrNotLinkedNames: mrEntries
       .filter(([hrId, meta]) => !isValidMr(hrId, meta.line))
-      .map(([hrId, meta]) => roleMismatchLabel(`HR ${hrId} from hr id column`, directoryByHrId.get(normalize(hrId)), "MR", meta.line)),
+      .map(([hrId, meta]) => roleMismatchLabel(`HR ${hrId} from hr id column`, directoryByHrId.get(hrIdKey(hrId)), "MR", meta.line)),
     mrTotal: mrEntries.length,
-    nsmLinked: nsmEntries.filter(([hrId]) => hasNsmRole(directoryByHrId.get(normalize(hrId)))).length,
-    nsmLinkedNames: nsmEntries.filter(([hrId]) => hasNsmRole(directoryByHrId.get(normalize(hrId)))).map(([, label]) => label),
+    nsmLinked: nsmEntries.filter(([hrId]) => hasNsmRole(directoryByHrId.get(hrIdKey(hrId)))).length,
+    nsmLinkedNames: nsmEntries.filter(([hrId]) => hasNsmRole(directoryByHrId.get(hrIdKey(hrId)))).map(([, label]) => label),
     nsmNotLinkedNames: [
       ...nsmEntries
-        .filter(([hrId]) => !hasNsmRole(directoryByHrId.get(normalize(hrId))))
-        .map(([hrId, label]) => roleMismatchLabel(label, directoryByHrId.get(normalize(hrId)), "NSM")),
+        .filter(([hrId]) => !hasNsmRole(directoryByHrId.get(hrIdKey(hrId))))
+        .map(([hrId, label]) => roleMismatchLabel(label, directoryByHrId.get(hrIdKey(hrId)), "NSM")),
       ...nsmMissingNames,
     ],
     nsmTotal: nsmEntries.length + nsmMissingNames.length,
@@ -580,19 +587,19 @@ export async function summarizeSalesLinkage(records: SalesRecordInput[]) {
 
 export async function filterClosingSheetRollupRecords(records: SalesRecordInput[]) {
   const directory = await loadDirectory();
-  const directoryByHrId = new Map(directory.map((employee) => [normalize(employee.hr_id), employee]));
+  const directoryByHrId = new Map(directory.map((employee) => [hrIdKey(employee.hr_id), employee]));
 
   return records.filter((record) => {
     const employeeHrId = compact(record.employeeHrId);
     if (!employeeHrId) return true;
 
-    const employee = directoryByHrId.get(normalize(employeeHrId));
+    const employee = directoryByHrId.get(hrIdKey(employeeHrId));
     if (!employee) return true;
 
     const managerHrId = compact(record.managerHrId);
-    const manager = directoryByHrId.get(normalize(managerHrId));
+    const manager = directoryByHrId.get(hrIdKey(managerHrId));
     const override = salesRoleOverrideForHrId(employeeHrId);
-    if (override === "MR_DSM" && normalize(employeeHrId) === normalize(managerHrId)) return true;
+    if (override === "MR_DSM" && hrIdsMatch(employeeHrId, managerHrId)) return true;
 
     if (hasNsmRole(employee)) return false;
     if (hasDsmRole(employee) && (!managerHrId || hasNsmRole(manager))) return false;

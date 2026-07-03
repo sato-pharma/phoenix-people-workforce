@@ -3,10 +3,9 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { isLineScopedOrganogramRole, resolveOrganogramLineForEmployee, scopeOrganogramReportData } from "@/lib/reports/organogram";
+import { getScopedVacancyReport } from "@/lib/reports/organogram";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -43,13 +42,7 @@ export default async function VacanciesPage() {
   let initialReport = null;
 
   try {
-    const full = await getVacancyReport();
-    if (isLineScopedOrganogramRole(access)) {
-      const lineName = await resolveOrganogramLineForEmployee(access);
-      initialReport = scopeOrganogramReportData(full, { mode: "line", lineName });
-    } else {
-      initialReport = full;
-    }
+    initialReport = await getScopedVacancyReport(access);
   } catch (error) {
     initialError = vacanciesPageError(error);
   }

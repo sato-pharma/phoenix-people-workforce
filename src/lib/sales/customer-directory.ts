@@ -1,8 +1,18 @@
+import type { PhoenixRole } from "@/lib/auth/permissions";
+import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   listMonthlyClosingPeriods,
   loadSalesReferenceData,
 } from "@/lib/sales/monthly-distributor-import";
+
+// Confidential products (LA003/LA004/SS001) are stripped server-side inside the RPC for any
+// caller who is not CEO / Super Admin (src/lib/sales/access-scope.ts). Every route calling into
+// this module already gates the whole Customer Directory to Super Admin, so this is
+// defense-in-depth: a future looser route gate still cannot leak the restricted products.
+function excludeCodesFor(role: PhoenixRole): string[] {
+  return canViewRestrictedProducts(role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+}
 
 // Customer Directory — customers derived from the uploaded distributor sales rows.
 // One entry per (customer code + distributor): same customer+distributor merges; the same
@@ -275,7 +285,11 @@ function nonEmptyArray(values: string[] | undefined): string[] | null {
 
 // Run the directory RPC and shape the rows using pre-loaded name maps. Kept separate so
 // callers that already built the maps (e.g. the initial page load) don't rebuild them.
-async function queryDirectoryRows(filters: CustomerDirectoryFilters, maps: NameMaps): Promise<CustomerDirectoryRow[]> {
+async function queryDirectoryRows(
+  filters: CustomerDirectoryFilters,
+  maps: NameMaps,
+  role: PhoenixRole,
+): Promise<CustomerDirectoryRow[]> {
   const supabase = getSupabaseAdmin();
   // Single execution: phx_customer_directory_json returns the whole result set as one
   // jsonb value, so the aggregation runs ONCE instead of being re-run per 1000-row page
@@ -284,6 +298,7 @@ async function queryDirectoryRows(filters: CustomerDirectoryFilters, maps: NameM
     p_area_codes: nonEmptyArray(filters.areaCodes),
     p_brick_codes: nonEmptyArray(filters.brickCodes),
     p_distributor_codes: nonEmptyArray(filters.distributorCodes),
+    p_exclude_codes: excludeCodesFor(role),
     p_from_period: filters.fromPeriod || null,
     p_region_codes: nonEmptyArray(filters.regionCodes),
     p_to_period: filters.toPeriod || null,
@@ -304,13 +319,19 @@ async function queryDirectoryRows(filters: CustomerDirectoryFilters, maps: NameM
 
 // All filtered customers (uncapped) — sorted, searched. Used by the list (which then
 // caps for display) and by the XLSX export (which keeps the full filtered set).
-export async function loadCustomerDirectoryRows(filters: CustomerDirectoryFilters): Promise<CustomerDirectoryRow[]> {
+export async function loadCustomerDirectoryRows(
+  filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
+): Promise<CustomerDirectoryRow[]> {
   const { maps } = await loadNameMaps();
-  return queryDirectoryRows(filters, maps);
+  return queryDirectoryRows(filters, maps, role);
 }
 
-export async function listCustomerDirectory(filters: CustomerDirectoryFilters): Promise<CustomerDirectoryListResult> {
-  const rows = await loadCustomerDirectoryRows(filters);
+export async function listCustomerDirectory(
+  filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
+): Promise<CustomerDirectoryListResult> {
+  const rows = await loadCustomerDirectoryRows(filters, role);
   return {
     customers: rows.slice(0, DIRECTORY_RESULT_LIMIT),
     truncated: rows.length > DIRECTORY_RESULT_LIMIT,
@@ -322,9 +343,10 @@ export async function listCustomerDirectory(filters: CustomerDirectoryFilters): 
 // doubling the reference-data round-trips on every render).
 export async function loadCustomerDirectoryInitialData(
   filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
 ): Promise<{ options: CustomerDirectoryFilterOptions; result: CustomerDirectoryListResult }> {
   const { maps, options } = await loadNameMaps();
-  const rows = await queryDirectoryRows(filters, maps);
+  const rows = await queryDirectoryRows(filters, maps, role);
   return {
     options,
     result: {
@@ -334,17 +356,21 @@ export async function loadCustomerDirectoryInitialData(
   };
 }
 
-export async function loadCustomerSales(input: {
-  clientCode: string;
-  distributorCode: string;
-  fromPeriod?: string | null;
-  toPeriod?: string | null;
-}): Promise<CustomerSalesDetail | null> {
+export async function loadCustomerSales(
+  input: {
+    clientCode: string;
+    distributorCode: string;
+    fromPeriod?: string | null;
+    toPeriod?: string | null;
+  },
+  role: PhoenixRole,
+): Promise<CustomerSalesDetail | null> {
   const { maps } = await loadNameMaps();
   const supabase = getSupabaseAdmin();
   const result = await supabase.rpc("phx_customer_sales", {
     p_client_code: input.clientCode,
     p_distributor_code: input.distributorCode,
+    p_exclude_codes: excludeCodesFor(role),
     p_from_period: input.fromPeriod || null,
     p_to_period: input.toPeriod || null,
   });

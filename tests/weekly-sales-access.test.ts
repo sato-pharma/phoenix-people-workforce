@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { applyWeeklyAccessScope, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
+
+function readSource(rel: string): string {
+  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+}
 
 type Row = { productCode: string; officialLine?: string | null; regionCode?: string | null };
 
@@ -72,5 +78,30 @@ export async function runWeeklySalesAccessTests() {
     codesOf(applyWeeklyAccessScope(hoRows, { tier: "full", canViewRestricted: true, canViewHeadOffice: true })),
     ["HO001", "HO002", "PD001"],
     "Head Office kept for CEO / Super Admin",
+  );
+
+  // ── distributors/sources metadata scope (loadWeeklyDashboard is DB-backed and not mockable in
+  // this harness, so pin the exact scoping logic at the source level — same approach already used
+  // for the sibling Source-of-Sales module in tests/portal-sos-scope.test.ts). ────────────────────
+  const service = readSource("../src/lib/sales/weekly/service.ts");
+  assert.ok(
+    service.includes(
+      'const scopeVisibleDistributorCodes =\n    accessScope.tier === "full" ? null : new Set(visibleRows.map((row) => normalizeCode(row.distributorCode)));',
+    ),
+    "service must derive scopeVisibleDistributorCodes from visibleRows (null only for full tier)",
+  );
+  assert.ok(
+    service.includes("scopeVisibleDistributorCodes &&\n        !scopeVisibleDistributorCodes.has(normalizeCode(String(batch.distributor_code ?? \"\")))"),
+    "the `sources` (Report Sources) list must be gated by scopeVisibleDistributorCodes",
+  );
+  assert.ok(
+    service.includes(
+      "distributors: scopeVisibleDistributorCodes\n      ? distributors.filter((d) => scopeVisibleDistributorCodes.has(normalizeCode(d.code)))\n      : distributors,",
+    ),
+    "the returned `distributors` dropdown list must be gated by scopeVisibleDistributorCodes",
+  );
+  assert.ok(
+    service.includes('const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];'),
+    "the empty-dashboard shortcut must not leak the full distributor catalog to a restricted tier",
   );
 }

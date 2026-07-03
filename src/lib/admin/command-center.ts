@@ -607,7 +607,7 @@ async function fetchExecutiveSignals(
     leaveResult,
     deductionsResult,
   ] = await Promise.allSettled([
-    getResignationsDashboardData(),
+    getResignationsDashboardData(accessContext),
     getProbationRows(accessContext),
     getContractRenewalDashboardData(accessContext),
     options.showFinancial ? getSalaryFlags() : Promise.resolve(null),

@@ -412,6 +412,15 @@ export function runNotificationRecipientIsolationTests() {
   assert.match(inAppSource, /employee_hr_id/, "in-app query must select employee_hr_id");
   assert.match(inAppSource, /canViewerSeeNotification\(employeeHrId/, "in-app must fail-closed filter after the DB query");
 
+  // Write-path guard: marking a notification "read" must verify the event was
+  // actually addressed to the caller before upserting read-state (no marking
+  // arbitrary notification ids read via crafted PATCH bodies).
+  assert.match(
+    inAppSource,
+    /export async function markInAppNotificationRead[\s\S]*?canViewerSeeNotification\(identity\.hrId/,
+    "markInAppNotificationRead must verify recipient ownership before upserting read-state",
+  );
+
   const metricsSource = readFileSync(new URL("../src/lib/communication/metrics.ts", import.meta.url), "utf8");
   assert.match(metricsSource, /canViewerSeeNotification\(employeeHrId/, "mapper must use the canonical recipient rule");
   assert.match(metricsSource, /isSensitiveMetadataKey/, "mapper must screen sensitive metadata keys");

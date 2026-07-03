@@ -8,6 +8,7 @@ import {
   updateMarketingControlSetting,
   updateMarketingControlWorkflowStep,
 } from "@/lib/marketing-requests/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +63,9 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     const body = await request.json();
     const entity = String(body?.entity ?? "");

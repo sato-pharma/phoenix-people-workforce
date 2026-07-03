@@ -1,3 +1,5 @@
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
+
 export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
 export type AttendanceDeviceMappingStatus = "active" | "inactive" | "unmapped";
@@ -178,7 +180,8 @@ function deductionAmountText(baseSalary: number | null | undefined, deductionDay
   const days = Number(deductionDays);
   if (!Number.isFinite(days) || days <= 0) return days === 0 ? "0" : "";
   if (!Number.isFinite(salary) || salary <= 0) return "Base salary missing";
-  return ((salary / 30) * days).toFixed(2);
+  const amount = calculateDeductionAmountFromBaseSalary({ baseSalary: salary, deductionDays: days });
+  return amount != null ? amount.toFixed(2) : "Base salary missing";
 }
 
 function ruleStatusResult(input: {

@@ -80,6 +80,6 @@ Automated tooling may be used during development. All changes -- whether manuall
 - Do not apply migrations to production without approval.
 - Do not hardcode secrets or credentials. Use environment variables.
 - Do not bypass RLS with the service-role client for user-scoped data access.
-- Do not add Vercel crons. The Hobby plan limit is 2 and both slots are in use.
+- Do not add Vercel crons without approval. Two are already in use; see [docs/deployment.md](docs/deployment.md).
 - Do not skip `npm run check:harden` before pushing or opening a PR.
 - Do not re-implement domain business logic inside components or pages.

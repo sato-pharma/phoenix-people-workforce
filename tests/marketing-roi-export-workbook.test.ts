@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import ExcelJS from "exceljs";
+
 import {
   buildMarketingRoiReportWorkbook,
   buildMarketingRoiViewSalesWorkbook,
@@ -48,6 +50,8 @@ function sampleReport(): MarketingRoiReport {
         actualSalesValue: 12000,
         actualSalesUnits: 40,
         actualCoverageRatio: 1.2,
+        forecastCoverageRatio: 0.9,
+        dataCoverage: "complete",
         resultStatus: "on_track",
         attributionQuality: "exact_customer",
         hasSalesData: true,
@@ -148,4 +152,15 @@ export async function runMarketingRoiExportWorkbookTests() {
   // view-sales workbook builds a valid xlsx
   const viewBuffer = await buildMarketingRoiViewSalesWorkbook({ data: sampleViewSales(), meta: META });
   assert.ok(isXlsx(viewBuffer), "view-sales workbook must be a valid .xlsx (zip) buffer");
+
+  // Products must always export by NAME — the "Matched Sales" sheet must never carry a raw
+  // product-code column (the in-app table already only shows the name).
+  const readBack = new ExcelJS.Workbook();
+  await readBack.xlsx.load(viewBuffer);
+  const matchedSheet = readBack.getWorksheet("Matched Sales");
+  assert.ok(matchedSheet, "workbook must contain a Matched Sales sheet");
+  const headerRow = matchedSheet!.getRow(2).values as unknown[]; // row 1 is the title banner, row 2 is headers
+  const headerLabels = headerRow.filter((value): value is string => typeof value === "string");
+  assert.ok(headerLabels.includes("Product"), "Matched Sales sheet must have a Product (name) column");
+  assert.ok(!headerLabels.includes("Product code"), "Matched Sales sheet must never expose a raw product-code column");
 }

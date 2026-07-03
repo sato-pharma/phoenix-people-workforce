@@ -71,13 +71,11 @@ import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
-  isLineScopedOrganogramRole,
+  getScopedVacancyReport,
   resolveOrganogramLineForEmployee,
-  scopeOrganogramReportData,
 } from "@/lib/reports/organogram";
 import {
   errorMessage,
-  getVacancyReport,
   isDatabaseSchemaMissing,
   isSupabaseEnvMissing,
   isSupabaseTimeout,
@@ -621,13 +619,7 @@ export async function WorkspaceVacanciesPage() {
   let initialError: string | null = null;
   let initialReport = null;
   try {
-    const full = await getVacancyReport();
-    if (isLineScopedOrganogramRole(access)) {
-      const lineName = await resolveOrganogramLineForEmployee(access);
-      initialReport = scopeOrganogramReportData(full, { lineName, mode: "line" });
-    } else {
-      initialReport = full;
-    }
+    initialReport = await getScopedVacancyReport(access);
   } catch (error) {
     initialError = reportPageError(error);
   }

@@ -8,6 +8,7 @@ import {
   generateBulkUploadTemplate,
   parseBulkUploadFile,
 } from "@/lib/marketing-requests/bulk-import";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,9 @@ export async function GET(request: Request) {
 //   mode: "preview" (default) | "execute"
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     const formData = await request.formData();
     const file = formData.get("file");

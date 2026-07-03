@@ -8,6 +8,7 @@ import {
   parseRoiFilterState,
   saveMarketingRoiPreset,
 } from "@/lib/marketing-requests/roi-report-service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => ({}))) as { name?: unknown; filters?: unknown; isDefault?: unknown };
     const preset = await saveMarketingRoiPreset(access, {
@@ -58,6 +62,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     const id = new URL(request.url).searchParams.get("id") ?? "";
     await deleteMarketingRoiPreset(access, id);

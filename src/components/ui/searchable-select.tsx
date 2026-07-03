@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search } from "lucide-react";
+import { Check, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -285,7 +285,7 @@ export function SearchableSelect({
           ref={dropdownRef}
           role="listbox"
           aria-label={placeholder ?? "Options"}
-          className="absolute left-0 right-0 top-full z-[1000] mt-1 max-h-64 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          className="absolute left-0 right-0 top-full z-[1000] mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
           id={`${id ?? "searchable-select"}-options`}
         >
         {filteredOptions.length === 0 ? (
@@ -301,7 +301,7 @@ export function SearchableSelect({
                     aria-disabled="true"
                     aria-selected={false}
                     className={cn(
-                      "w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm text-[#94A3B8]",
+                      "w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
                       "last:border-b-0"
                     )}
                   >
@@ -315,9 +315,8 @@ export function SearchableSelect({
                   role="option"
                   aria-selected={isActive}
                   className={cn(
-                    "w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm transition last:border-b-0",
-                    isActive && "bg-[#FFF7ED] text-[#F97316]",
-                    "hover:bg-[#F8FAFC]",
+                    "flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left text-sm transition last:border-b-0",
+                    isActive ? "bg-orange-50 font-semibold text-orange-700" : "text-slate-700 hover:bg-orange-50 hover:text-orange-700",
                   )}
                   type="button"
                   onMouseDown={(event) => {
@@ -326,7 +325,8 @@ export function SearchableSelect({
                     selectOption(option.value);
                   }}
                 >
-                  {option.label}
+                  <span className="truncate">{option.label}</span>
+                  {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
                 </button>
               );
             })

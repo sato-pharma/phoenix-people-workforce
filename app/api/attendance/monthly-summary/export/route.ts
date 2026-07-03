@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateMonthlyAttendanceSummaryWorkbook } from "@/lib/attendance/monthly-summary-export";
 import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendance/monthly-summary";
+import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
@@ -28,10 +29,11 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "read");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:attendance:monthly-summary" });
+    const scopeHrIds = await resolveAttendanceScopeHrIds(access);
 
     const url = new URL(request.url);
     const month = resolveSummaryMonth(url.searchParams.get("month") ?? undefined);
-    const data = await getMonthlyAttendanceSummary({ month });
+    const data = await getMonthlyAttendanceSummary({ month, employeeHrIds: scopeHrIds ?? undefined });
     const workbook = await generateMonthlyAttendanceSummaryWorkbook(data);
     const buffer = await workbook.xlsx.writeBuffer();
 

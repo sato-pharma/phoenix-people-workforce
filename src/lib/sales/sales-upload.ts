@@ -521,7 +521,7 @@ function officeBreakdowns(result: DistributorSalesValidationResult, excludeProdu
 function emptyOfficePreview(distributorCode: string): NormalizePreview {
   return {
     distributorCode,
-    distributorName: "Office",
+    distributorName: "Marcyrl",
     period: null,
     periods: [],
     sampleCoded: [],

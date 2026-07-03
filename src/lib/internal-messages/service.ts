@@ -1,6 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type AuthUserRow = {
@@ -428,7 +428,7 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
       recipientHrId: recipient.hrId,
       recipientUserId: recipient.loginId,
       title: subject,
-    }).catch(() => undefined);
+    }).catch((error) => logNotificationSendFailure("internalMessages.sendInternalMessage", error));
   }
 
   let emailStatus: InternalEmailStatus = row.email_status;

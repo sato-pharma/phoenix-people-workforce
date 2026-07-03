@@ -34,6 +34,8 @@ export type AuditEntityType =
   | "source_of_sales_product"
   | "source_of_sales_region"
   | "system_cleanup"
+  | "territory_line_area_region_map"
+  | "territory_line_zone"
   | "user"
   | "user_activity_access"
   | "vacation_request"

@@ -69,6 +69,7 @@ export function runEmailNotificationTests() {
     "src/lib/email/send-phoenix-email.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
+    "src/lib/sales/sos-report-delivery.ts",
     "src/lib/vacation/email.ts",
   ]);
   assert.match(emailTemplateServiceSource, /renderPhoenixEmailHtml/);

@@ -1234,6 +1234,13 @@ type TelegramRetryPayload = {
   title: string;
 };
 
+// Shared logger for best-effort/fire-and-forget notification sends that must never
+// throw into their caller. Console + Sentry so a swallowed failure still leaves a trace.
+export function logNotificationSendFailure(context: string, error: unknown) {
+  console.error(`[notifications] ${context} failed`, error);
+  Sentry.captureException(error, { tags: { component: "notifications", context } });
+}
+
 // Email/in-app fallback for a Telegram delivery that has exhausted its retries (cron
 // worker or manual retry). Only fires when email wasn't already attempted in the
 // original send, so a recipient is never double-emailed. Best-effort.
@@ -1257,8 +1264,8 @@ async function triggerTelegramRetryExhaustionFallback(input: {
       recipientUserId: input.recipientUserId,
       title: String(input.telegram.title ?? "Phoenix notification"),
     });
-  } catch {
-    // Fallback is best-effort; never throw from a retry worker.
+  } catch (error) {
+    logNotificationSendFailure("system.telegramRetryExhaustionFallback", error);
   }
 }
 

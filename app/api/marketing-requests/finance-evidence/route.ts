@@ -6,6 +6,7 @@ import {
   uploadMarketingFinanceEvidence,
   type MarketingFinanceEvidenceType,
 } from "@/lib/marketing-requests/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,9 @@ function marketingFinanceEvidenceApiError(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     const formData = await request.formData();
     const file = formData.get("file");

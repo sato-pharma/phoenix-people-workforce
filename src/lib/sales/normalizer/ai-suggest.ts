@@ -63,6 +63,13 @@ Reply with JSON only.`;
 
 export type AiReferenceAlias = { raw: string; code: string };
 
+// How many historical alias lines we paste into EACH batch prompt. Was 800 — but for CUSTOMER matching
+// those are long (often Arabic) name+address strings, so 800 pushed a single request past ~45k tokens,
+// over OpenAI's per-minute token budget on lower gpt-4o tiers. That surfaced to users as a permanent
+// "AI is rate-limited" error that waiting never cleared. 120 keeps the strongest historical signal while
+// dropping each request to ~15-20k tokens. Raise via AI_SUGGEST_MAX_REFERENCE_ALIASES only on a higher tier.
+const MAX_REFERENCE_ALIASES = Math.max(1, Number(process.env.AI_SUGGEST_MAX_REFERENCE_ALIASES) || 120);
+
 // Build one item line. For customers we fold name + address + governorate into the text so the AI
 // has the full geographic signal; product/territory just use the single raw name.
 function itemText(u: AiUnknown, kind: AiKind): string {
@@ -79,7 +86,7 @@ function userPrompt(unknowns: AiUnknown[], candidates: AiCandidate[], kind: AiKi
     ? "Historical customer → brick placements already learned (customer name/address → brick code). Use these as strong reference for similar pharmacies/addresses:"
     : "Historical mappings already learned (raw text → official code). Use these as strong reference — if you see the same or very similar text, reuse the same code:";
   const refSection = referenceAliases && referenceAliases.length > 0
-    ? `\n${refLabel}\n${referenceAliases.slice(0, 800).map((a) => `${a.raw} → ${a.code}`).join("\n")}\n`
+    ? `\n${refLabel}\n${referenceAliases.slice(0, MAX_REFERENCE_ALIASES).map((a) => `${a.raw} → ${a.code}`).join("\n")}\n`
     : "";
   return `Official list (code | name):
 ${cands}
@@ -95,6 +102,21 @@ Return ONLY JSON of this exact shape: ${kind === "customer"
 function shortReason(raw: string): string {
   try { const j = JSON.parse(raw) as { error?: { message?: string } }; return String(j?.error?.message ?? raw).split("\n")[0].slice(0, 200); }
   catch { return raw.slice(0, 200); }
+}
+
+// OpenAI (and compatible providers) return HTTP 429 for TWO very different problems: a transient
+// per-minute rate limit (waiting/retrying helps) OR a permanently exhausted quota — out of credit /
+// billing not set up (waiting never helps). Detect the quota case from the error body so the UI can
+// tell the user to fix billing instead of endlessly "waiting a moment".
+function isQuotaExhausted(rawBody: string): boolean {
+  if (rawBody.toLowerCase().includes("insufficient_quota")) return true;
+  try {
+    const j = JSON.parse(rawBody) as { error?: { code?: string; type?: string; message?: string } };
+    const tag = `${j?.error?.code ?? ""} ${j?.error?.type ?? ""}`.toLowerCase();
+    if (tag.includes("insufficient_quota") || tag.includes("billing")) return true;
+    const msg = String(j?.error?.message ?? "").toLowerCase();
+    return msg.includes("quota") || msg.includes("billing");
+  } catch { return false; }
 }
 
 // One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
@@ -118,7 +140,12 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
     return json.choices?.[0]?.message?.content ?? "{}";
   }
   const body = await res.text().catch(() => "");
-  if (res.status === 429) throw new Error("AI is rate-limited right now — wait a moment and click AI suggest again.");
+  if (res.status === 429) {
+    if (isQuotaExhausted(body)) {
+      throw new Error("AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.");
+    }
+    throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+  }
   if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
   throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(body)}`);
 }

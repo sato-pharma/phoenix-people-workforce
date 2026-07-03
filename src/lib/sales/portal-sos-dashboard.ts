@@ -41,6 +41,7 @@ import {
   type SosScopeOverrides,
 } from "@/lib/sales/sos-dashboard";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
   type SeatContinuitySubject,
@@ -128,6 +129,12 @@ export type PortalSosScope = {
   regionCodes: Set<string> | null;
   /** Normalized line keys in scope (null = all) — trims options. */
   lineKeys: Set<string> | null;
+  /**
+   * Distributor codes that have any sales within this viewer's line/region scope, all-time
+   * (independent of the selected period) — trims the distributor dropdown. null = unrestricted
+   * (no line/region scope at all); empty Set = the scope lookup found nothing (fail closed).
+   */
+  allowedDistributorCodes: Set<string> | null;
   visibility: PortalSosFilterVisibility;
   /** Locked to exactly one region (DSM) — see PortalSosScopeView.isSingleRegion. */
   isSingleRegion: boolean;
@@ -179,10 +186,18 @@ async function resolveRegionalManagerRegionCodes(
     ? new Set([...salesScope.allowedLineNames].map(normalizeLineKey))
     : null;
 
+  // employees.region_code (resolved per-line from line_area_region_map) is the reliable source
+  // for a subordinate's region; fall back to the legacy free-text region_name for anyone not yet
+  // backfilled. Resolve via the already-loaded region reference data rather than a fresh query.
+  const regionNameByCode = new Map(references.regions.map((region) => [region.regionCode, region.regionName]));
+  const resolveRegionName = (employee: { regionCode?: string | null; regionName?: string | null }) =>
+    (employee.regionCode ? regionNameByCode.get(employee.regionCode) : undefined) ?? employee.regionName ?? null;
+
   const regionNames = new Set<string>();
   // Include the RM's own region.
   const self = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === viewerKey);
-  if (self?.regionName) regionNames.add(canonicalizeRegionName(self.regionName));
+  const selfRegionName = self ? resolveRegionName(self) : null;
+  if (selfRegionName) regionNames.add(canonicalizeRegionName(selfRegionName));
 
   for (const employee of directory.employees) {
     const inHierarchy = isWithinManagerHierarchy({
@@ -199,10 +214,33 @@ async function resolveRegionalManagerRegionCodes(
       const officialKey = normalizeLineKey(bridgeEmployeeLineToOfficial(employee.lineName) ?? employee.lineName ?? "");
       if (!allowedLineKeys.has(officialKey)) continue;
     }
-    if (employee.regionName) regionNames.add(canonicalizeRegionName(employee.regionName));
+    const regionName = resolveRegionName(employee);
+    if (regionName) regionNames.add(canonicalizeRegionName(regionName));
   }
 
   return regionCodesForNames(regionNames, references);
+}
+
+/**
+ * Distributor codes with any sales within the given line/region scope, all-time — used to trim
+ * the distributor dropdown to the viewer's authorized universe without it shrinking/shifting as
+ * the viewer changes the period filter (unlike a period-scoped byDistributor breakdown would).
+ * null = no line/region restriction at all (unrestricted). Fails CLOSED on an RPC error (empty
+ * Set, not null) so a lookup failure never falls back to showing the full company list.
+ */
+async function resolveAllowedDistributorCodes(
+  lineKeys: Set<string> | null,
+  regionCodes: Set<string> | null,
+  salesScope: SalesAccessScope,
+): Promise<Set<string> | null> {
+  if (lineKeys === null && regionCodes === null) return null;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sos_distinct_distributors", {
+    p_lines: salesScope.allowedLineNames ? [...salesScope.allowedLineNames] : [],
+    p_regions: regionCodes ? [...regionCodes] : [],
+  });
+  if (error) return new Set();
+  return new Set((data ?? []).map((row: { distributor_code: string }) => String(row.distributor_code ?? "").toUpperCase()));
 }
 
 function buildScopeSummary(input: {
@@ -275,6 +313,8 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     ? new Set([...salesScope.allowedLineNames].map(normalizeLineKey))
     : null;
 
+  const allowedDistributorCodes = await resolveAllowedDistributorCodes(lineKeys, regionCodes, salesScope);
+
   const visibility = computePortalSosVisibility(lineKeys, regionCodes);
   const isSingleRegion = regionCodes !== null && regionCodes.size === 1;
 
@@ -284,6 +324,7 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     regionOverride,
     regionCodes,
     lineKeys,
+    allowedDistributorCodes,
     visibility,
     isSingleRegion,
     scopeSummary: buildScopeSummary({ salesScope, regionCodes, allowedProductCodes, references }),
@@ -292,7 +333,7 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
 
 /** Trim the engine's master-derived filter option lists to the viewer's in-scope universe. */
 function trimFilterOptions(filters: SosFilterOptions, scope: PortalSosScope): SosFilterOptions {
-  const { lineKeys, regionCodes, allowedProductCodes } = scope;
+  const { lineKeys, regionCodes, allowedProductCodes, allowedDistributorCodes } = scope;
 
   const lines = lineKeys ? filters.lines.filter((line) => lineKeys.has(normalizeLineKey(line))) : filters.lines;
   const regions = regionCodes
@@ -306,8 +347,11 @@ function trimFilterOptions(filters: SosFilterOptions, scope: PortalSosScope): So
     if (allowedProductCodes && !allowedProductCodes.has(product.code.toUpperCase())) return false;
     return true;
   });
+  const distributors = allowedDistributorCodes
+    ? filters.distributors.filter((distributor) => allowedDistributorCodes.has(distributor.code.toUpperCase()))
+    : filters.distributors;
 
-  return { ...filters, lines, regions, areas, products };
+  return { ...filters, lines, regions, areas, products, distributors };
 }
 
 type DetailDim = "product" | "region" | "area" | "distributor";

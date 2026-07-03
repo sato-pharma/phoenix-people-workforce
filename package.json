@@ -6,9 +6,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "node -e \"const args=['dev'];if(process.platform!=='win32')args.push('--turbopack');const r=require('child_process').spawnSync('next',args,{stdio:'inherit',shell:true});process.exit(r.status??1)\"",
+    "dev": "node -e \"const args=['dev',process.platform==='win32'?'--webpack':'--turbopack'];const r=require('child_process').spawnSync('next',args,{stdio:'inherit',shell:true});process.exit(r.status??1)\"",
     "dev:turbopack": "next dev --turbopack",
-    "dev:no-turbopack": "next dev",
+    "dev:no-turbopack": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --cache",
@@ -74,7 +74,6 @@
     "check:routes": "node scripts/check-routes.mjs",
     "sync:main": "node scripts/sync-main.mjs",
     "worktree:sync-env": "node scripts/sync-worktree-env.mjs",
-    "launch-desk:verify": "node scripts/verify-launch-desk-stream.mjs",
     "coverage": "c8 --reporter=text --reporter=html --reporter=json node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
     "ci": "npm run check:routes && npm run check:migrations && npm run lint && npx next typegen && npm run typecheck && npm run test && npm run build"
   },
@@ -83,7 +82,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@node-projects/excelforge": "3.6.0",
-    "@openai/agents": "^0.11.8",
     "@sentry/nextjs": "^10.60.0",
     "@supabase/supabase-js": "^2.105.1",
     "@tanstack/react-virtual": "^3.14.4",

@@ -346,6 +346,10 @@ export async function getFingerprintAttendanceReport(input: {
   deviceUserId?: string;
   employeeHrId?: string;
   exactEmployeeHrId?: string;
+  // Allow-list of hrIds a scoped caller (e.g. a team-scoped manager export) may see.
+  // Undefined/omitted = no restriction. Never use the substring `employeeHrId` filter
+  // for scoping — only this and `exactEmployeeHrId` are hard boundaries.
+  employeeHrIds?: string[];
   employeeName?: string;
   jobTitle?: string;
   search?: string;
@@ -367,6 +371,9 @@ export async function getFingerprintAttendanceReport(input: {
     search: String(input.search ?? "").trim(),
     status: String(input.status ?? "").trim(),
   };
+  const scopeHrIds = input.employeeHrIds
+    ? new Set(input.employeeHrIds.map((id) => normalizeHrId(id)).filter((value): value is string => Boolean(value)))
+    : null;
   const supabase = getSupabaseAdmin();
   const effectiveDateFrom = hasDateRange ? dateFrom : todayKey();
   const effectiveDateTo = hasDateRange ? dateTo : todayKey();
@@ -392,12 +399,14 @@ export async function getFingerprintAttendanceReport(input: {
   // An employee is attendance-tracked when actively enrolled on a fingerprint
   // device (authoritative — covers office/HQ staff who punch the office device)
   // OR is a field role by title (Medical Rep / DM / RSM). See isAttendanceTracked.
-  const eligibleEmployees = allEmployees.filter((emp) =>
-    isAttendanceTracked({
-      hasDeviceMapping: deviceMappedHrIds.has(normalizeHrId(emp.hr_id) ?? ""),
-      jobTitle: emp.job_title,
-    }),
-  );
+  const eligibleEmployees = allEmployees
+    .filter((emp) =>
+      isAttendanceTracked({
+        hasDeviceMapping: deviceMappedHrIds.has(normalizeHrId(emp.hr_id) ?? ""),
+        jobTitle: emp.job_title,
+      }),
+    )
+    .filter((emp) => !scopeHrIds || scopeHrIds.has(normalizeHrId(emp.hr_id) ?? ""));
   const allDepartmentIds = new Set<number>();
   for (const employee of eligibleEmployees) {
     if (typeof employee.department_id === "number") allDepartmentIds.add(employee.department_id);

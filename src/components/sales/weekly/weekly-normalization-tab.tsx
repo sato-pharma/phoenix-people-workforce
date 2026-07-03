@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Save, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
-import { Button } from "@/components/ui/button";
 
 type MissingProduct = { distributorCode: string; distributorName: string; itemCode: string; itemName: string; rowCount: number };
 const keyOf = (r: { distributorCode: string; itemCode: string }) => `${r.distributorCode}||${r.itemCode}`;
@@ -89,13 +88,15 @@ export function WeeklyNormalizationTab({ products, aiEnabled }: { products: { co
         <span>Weekly items that don&apos;t resolve to a Phoenix product. Let AI suggest matches (or pick manually), then save — they&apos;re remembered for every future weekly upload.</span>
       </AdminCallout>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button className="h-9 gap-2" disabled={loading} onClick={() => void load()} type="button" variant="secondary">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Refresh</Button>
-        {aiEnabled ? (
-          <Button className="h-9 gap-2" disabled={busyAi || rows.length === 0} onClick={() => void aiSuggestAll()} type="button" variant="secondary">{busyAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}AI suggest all</Button>
-        ) : null}
-        <Button className="h-9 gap-2 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={saving || filled === 0} onClick={() => void save()} type="button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save {filled || ""} mapping{filled === 1 ? "" : "s"}</Button>
-        <span className="text-xs text-[#64748B]">{rows.length} unmapped</span>
+      <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-slate-50 p-4 shadow-sm">
+        <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold tabular-nums text-slate-700"><span aria-hidden="true" className="h-1.5 w-1.5 bg-orange-500" />{rows.length.toLocaleString()} unmapped</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={loading} onClick={() => void load()} type="button">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh</button>
+          {aiEnabled ? (
+            <button className="inline-flex h-10 items-center gap-2 border border-violet-600 bg-violet-600 px-4 text-sm font-bold text-white transition hover:bg-violet-700 disabled:opacity-50" disabled={busyAi || rows.length === 0} onClick={() => void aiSuggestAll()} title="Let AI pre-fill the matches" type="button">{busyAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}AI suggest all</button>
+          ) : null}
+          <button className="inline-flex h-10 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={saving || filled === 0} onClick={() => void save()} type="button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save {filled || ""} mapping{filled === 1 ? "" : "s"}</button>
+        </div>
       </div>
 
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
@@ -104,20 +105,23 @@ export function WeeklyNormalizationTab({ products, aiEnabled }: { products: { co
       {rows.length === 0 && !loading ? (
         <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>No unmapped weekly products — everything resolves to a master product.</span></AdminCallout>
       ) : (
-        <div className="overflow-auto rounded-2xl border border-[#E2E8F0]">
-          <table className="w-full text-sm">
-            <thead className={headRow}><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2">Distributor</th><th className="px-4 py-2 text-right">Rows</th><th className="px-4 py-2">Phoenix Product</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr className="border-b border-[#FFE8D6]" key={keyOf(r)}>
-                  <td className="px-4 py-2"><span className="block font-semibold text-[#0F172A]">{r.itemName || r.itemCode}</span><span className="block font-mono text-xs text-[#64748B]">{r.itemCode}</span></td>
-                  <td className="px-4 py-2 text-[#64748B]">{r.distributorName} ({r.distributorCode})</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-[#64748B]">{r.rowCount}</td>
-                  <td className="px-4 py-2"><div className="w-64"><MappingCombobox onChange={(c) => setCodes((p) => ({ ...p, [keyOf(r)]: c }))} options={products.map((p) => ({ code: p.code, name: p.name }))} placeholder="e.g. TE001" value={codes[keyOf(r)] ?? ""} /></div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-[#E2E8F0]">
+          <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-orange-500" />Unmapped weekly items ({rows.length.toLocaleString()})</p>
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className={headRow}><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2">Distributor</th><th className="px-4 py-2 text-right">Rows</th><th className="px-4 py-2">Phoenix Product</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr className="border-b border-[#FFE8D6] transition-colors hover:bg-orange-50/40" key={keyOf(r)}>
+                    <td className="px-4 py-2"><span className="block font-semibold text-[#0F172A]">{r.itemName || r.itemCode}</span><span className="block font-mono text-xs text-[#64748B]">{r.itemCode}</span></td>
+                    <td className="px-4 py-2 text-[#64748B]">{r.distributorName} ({r.distributorCode})</td>
+                    <td className="px-4 py-2 text-right font-semibold tabular-nums text-slate-700">{r.rowCount.toLocaleString()}</td>
+                    <td className="px-4 py-2"><div className="w-64"><MappingCombobox onChange={(c) => setCodes((p) => ({ ...p, [keyOf(r)]: c }))} options={products.map((p) => ({ code: p.code, name: p.name }))} placeholder="e.g. TE001" value={codes[keyOf(r)] ?? ""} /></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

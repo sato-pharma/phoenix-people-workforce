@@ -14,7 +14,7 @@ import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixt
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -963,7 +963,7 @@ async function notifyExpensesAddedToPayroll(input: { batchId: string; hrIds: str
       ),
     );
   } catch (error) {
-    console.error("[outstation] add-to-payroll notification dispatch failed (non-blocking)", error);
+    logNotificationSendFailure("payroll.notifyExpensesAddedToPayroll", error);
   }
 }
 

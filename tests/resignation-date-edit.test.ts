@@ -15,7 +15,7 @@ export function runResignationDateEditTests() {
   assert.match(routeSource, /export async function PATCH/);
   assert.match(routeSource, /assertPermission\(access, "resignations", "update"\)/);
   assert.match(routeSource, /updateResignationDates\(id, dates, actor\)/);
-  assert.match(routeSource, /getResignationsDashboardData\(\)/);
+  assert.match(routeSource, /getResignationsDashboardData\(access\)/);
 
   const reportSource = readFileSync("src/components/reports/resignations-report.tsx", "utf8");
   assert.match(reportSource, /encodeURIComponent\(record\.id\)}\/dates/);

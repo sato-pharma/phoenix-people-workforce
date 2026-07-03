@@ -19,13 +19,44 @@ import {
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { shiftPeriod } from "@/lib/sales/periods";
+import {
+  computeContribution,
+  computeDelta,
+  computeMovers,
+  computeNewAndLost,
+  computePareto,
+  resolvePriorPeriod,
+  type SosContributionRow,
+  type SosDelta,
+  type SosMovers,
+  type SosNewLostRow,
+  type SosParetoRow,
+} from "@/lib/sales/sos-analytics";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+
+export type {
+  SosContributionRow,
+  SosDelta,
+  SosMoverRow,
+  SosMovers,
+  SosNewLostRow,
+  SosOutlierRow,
+  SosParetoRow,
+} from "@/lib/sales/sos-analytics";
 
 const TREND_WINDOW = 6; // most-recent months shown in the trend
 const RESTRICTED_SET = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase()));
 
+/** Hard cap on how many months a single dashboard load may aggregate (each month is one extra
+ *  pushed-down detail RPC). Keeps a "select everything" click bounded; newest months win. */
+export const MAX_SELECTED_PERIODS = 12;
+
 export type SosDashboardFilters = Partial<{
+  /** Single-period filter (legacy). Prefer `periods` for multi-select. */
   period: string;
+  /** Multi-period filter — the dashboard sums leaf rows across every selected month. Empty = latest. */
+  periods: string[];
   /** Single-line filter (legacy/admin). Prefer `lines` for multi-select. */
   line: string;
   /** Multi-line filter — keeps a row when its official line is in this set. */
@@ -54,9 +85,19 @@ export type SosCustomerRow = { code: string; name: string; distributor: string; 
 export type SosWhiteSpaceRow = { code: string; label: string; region: string | null };
 
 export type SosDashboardData = {
+  /** The primary (newest) month in scope. Kept for back-compat / single-month labels. */
   period: string | null;
+  /** Every month currently aggregated (newest-first). Length > 1 = a multi-month view. */
+  selectedPeriods: string[];
   availablePeriods: string[];
   filters: SosFilterOptions;
+  /**
+   * True only when this response actually includes the confidential products (LA003/LA004/SS001)
+   * — i.e. the caller both requested `revealRestrictedProducts` AND holds a CEO/Super-Admin role.
+   * Reflects the engine's own decision, not the client's toggle state, so the UI/export footer can
+   * never mis-state what a payload contains.
+   */
+  restrictedRevealed: boolean;
   summary: {
     totalValue: number;
     totalUnits: number;
@@ -85,6 +126,63 @@ export type SosDashboardData = {
   customerTop10Share: number;
   whiteSpaceAreas: SosWhiteSpaceRow[];
   insights: { tone: "neutral" | "success" | "warning" | "danger"; text: string }[];
+  /**
+   * Month-over-month intelligence vs the prior validated period. Present only when the caller
+   * passes `options.includeMomComparison` (admin dashboard + BI export); `null` means it was
+   * requested but no prior validated period exists. The portal never requests it, so the portal
+   * payload is byte-identical to before this field existed.
+   */
+  momComparison?: SosMomComparison | null;
+  /**
+   * Year-over-year intelligence vs the same month last year. Present only when the caller
+   * passes `options.includeYoY`; `null` means it was requested but no same-month-last-year
+   * period exists yet (or the selection spans more than one month). Same shape as
+   * `momComparison` — the type is agnostic to "prior = last month" vs "prior = last year".
+   */
+  yoyComparison?: SosMomComparison | null;
+  /** Pareto / ABC classification of byProduct. Computed only with `includeMomComparison`. */
+  paretoProducts?: SosParetoRow[];
+  /** Scoped leaf rows for the BI export's hidden Data sheet. Only with `includeDetailRows`. */
+  detailRows?: SosDetailLeafRow[];
+};
+
+export type SosSummaryDeltas = {
+  totalValue: SosDelta;
+  totalUnits: SosDelta;
+  avgPricePerUnit: SosDelta;
+  distributorCount: SosDelta;
+  productCount: SosDelta;
+  directShare: SosDelta;
+  areasReached: SosDelta;
+};
+
+export type SosMomComparison = {
+  priorPeriod: string;
+  summaryDeltas: SosSummaryDeltas;
+  movers: { products: SosMovers; regions: SosMovers; distributors: SosMovers };
+  /** Growth-contribution decomposition — each member's share of the total absolute movement. */
+  contribution: { products: SosContributionRow[]; regions: SosContributionRow[] };
+  newProducts: SosNewLostRow[];
+  lostProducts: SosNewLostRow[];
+  newAreas: SosNewLostRow[];
+  lostAreas: SosNewLostRow[];
+};
+
+/** Labeled leaf grain (one row per month × distributor × line × region × area × product). */
+export type SosDetailLeafRow = {
+  period: string;
+  distributorCode: string;
+  distributorName: string;
+  officialLine: string;
+  regionCode: string;
+  regionName: string;
+  areaCode: string;
+  areaName: string;
+  productCode: string;
+  productName: string;
+  channel: "Direct" | "Distributor";
+  units: number;
+  value: number;
 };
 
 type ExecRow = {
@@ -96,6 +194,9 @@ type ExecRow = {
   productName: string;
   units: number;
   value: number;
+  /** The month this leaf row belongs to — tagged at fetch time so the trend can reconcile each
+   *  selected month's point to its own detail total. Empty for the prior-period MoM fetch. */
+  period: string;
 };
 type BrickRow = { distributorCode: string; regionCode: string; areaCode: string; brickId: string; units: number; value: number };
 type CustomerRow = { clientCode: string; clientName: string; distributorCode: string; regionCode: string; areaCode: string; units: number; value: number };
@@ -141,13 +242,44 @@ export type SosScopeOverrides = {
   allowedRegionCodes?: Set<string> | null;
 };
 
+/**
+ * Scope overrides plus the additive admin/export feature flags. Both flags default to off, so
+ * every existing caller (portal wrapper, portal export) gets a byte-identical payload.
+ */
+export type SosDashboardOptions = SosScopeOverrides & {
+  /** Compute momComparison + paretoProducts (one extra pushed-down prior-period detail RPC). */
+  includeMomComparison?: boolean;
+  /**
+   * Compute yoyComparison vs the same month last year (one extra pushed-down detail RPC).
+   * Structurally identical to momComparison — same delta/movers/contribution/new-lost math,
+   * just against `shiftPeriod(selectedPeriod, 12)` instead of the prior month. Only meaningful
+   * for a single-month selection with that prior-year month present in availablePeriods;
+   * otherwise yoyComparison is null (never a fabricated/partial comparison).
+   */
+  includeYoY?: boolean;
+  /** Attach the keepExec-filtered leaf rows (detailRows) for the BI export's Data sheet. */
+  includeDetailRows?: boolean;
+  /**
+   * Explicit CEO/Super-Admin opt-in to reveal the confidential products (LA003/LA004/SS001) in
+   * this response. Confidential-by-default: omitting this (or a non-CEO/SA role requesting it)
+   * keeps them excluded — the same fail-closed AND as every other restricted-data gate in this
+   * file. Mirrors the marketing-ROI report's `includeRestricted` toggle (src/lib/marketing-requests
+   * /roi-report-service.ts) — same UX, same server-side re-validation against the caller's role.
+   */
+  revealRestrictedProducts?: boolean;
+};
+
 export async function getSosDashboard(
   filters: SosDashboardFilters,
   accessContext: AccessContext,
-  options?: SosScopeOverrides,
+  options?: SosDashboardOptions,
 ): Promise<SosDashboardData> {
   const supabase = getSupabaseAdmin();
-  const canSeeRestricted = canViewRestrictedProducts(accessContext.role);
+  // Confidential products are excluded by default even for CEO/Super Admin — revealing them
+  // requires an explicit per-request opt-in (the UI toggle), re-validated here against the
+  // caller's role so a tampered request can never widen visibility past what the role allows.
+  const canRevealRestricted = canViewRestrictedProducts(accessContext.role);
+  const canSeeRestricted = options?.revealRestrictedProducts === true && canRevealRestricted;
   // Head Office line + its products are confidential — CEO / Super Admin only. Stripped below
   // from rows, filter options and the trend for every other role (incl. company-scope SFE).
   const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
@@ -216,8 +348,21 @@ export async function getSosDashboard(
     .filter((a) => !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()));
   const totalAreas = masterAreas.length;
 
-  const selectedPeriod =
-    filters.period && availablePeriods.includes(filters.period) ? filters.period : availablePeriods[0] ?? null;
+  // Multi-month selection: the dashboard sums leaf rows across every selected month. `periods`
+  // (multi) takes precedence over the legacy single `period`; when neither is supplied it defaults
+  // to the latest available month. Ordered newest-first and capped so a broad selection stays
+  // bounded. `selectedPeriod` (the newest in scope) remains the anchor for the trend + single-month
+  // month-over-month comparison.
+  const availableSet = new Set(availablePeriods);
+  const requestedPeriods = (filters.periods ?? []).filter((p) => availableSet.has(p));
+  const legacySingle = filters.period && availableSet.has(filters.period) ? [filters.period] : [];
+  const selectedPeriods = [...new Set(requestedPeriods.length > 0 ? requestedPeriods : legacySingle)]
+    .sort((left, right) => right.localeCompare(left))
+    .slice(0, MAX_SELECTED_PERIODS);
+  if (selectedPeriods.length === 0 && availablePeriods[0]) selectedPeriods.push(availablePeriods[0]);
+  const selectedPeriodSet = new Set(selectedPeriods);
+  const selectedPeriod = selectedPeriods[0] ?? null;
+  const isSingleMonth = selectedPeriods.length === 1;
 
   // Filter option lists (stable, from masters — products stripped of confidential codes for non-CEO).
   const filterOptions: SosFilterOptions = {
@@ -237,11 +382,12 @@ export async function getSosDashboard(
   };
 
   if (!selectedPeriod) {
-    return emptyDashboard(filterOptions, totalAreas);
+    return emptyDashboard(filterOptions, totalAreas, canSeeRestricted);
   }
 
-  // Trend window = the most-recent N months, always including the selected period.
-  const windowPeriods = [...new Set([...availablePeriods.slice(0, TREND_WINDOW), selectedPeriod])].sort();
+  // Trend window = the most-recent N months, always including every selected period (so a selection
+  // reaching outside the recent window still charts its own points).
+  const windowPeriods = [...new Set([...availablePeriods.slice(0, TREND_WINDOW), ...selectedPeriods])].sort();
 
   // Detail leaf rows for the SELECTED period only — drives every breakdown table below. The 6-month
   // trend is fetched separately as lightweight per-period totals (phx_exec_sos_trend) instead of
@@ -325,38 +471,94 @@ export async function getSosDashboard(
   // anyway (Head Office stripping intentionally stays in keepExec, not pushed here). When
   // the intersection is disjoint (trendForcedEmpty) the detail is empty too, so skip the
   // call entirely rather than fetch the full company only to discard every row.
-  const detailRowsPromise = trendForcedEmpty
-    ? emptyRpcRows
-    : rpcAll(
-        supabase,
-        "phx_exec_distributor_product",
-        {
-          p_period: selectedPeriod,
-          p_lines: trendLineNames ?? [],
-          p_distributors: filters.distributors ?? [],
-          p_regions: trendRegionCodes ?? [],
-          p_areas: filters.areas ?? [],
-          p_products: trendProductCodes ?? [],
-          p_exclude_codes: excludeCodes,
-        },
-        ["distributor_code", "region_code", "area_code", "product_code"],
-      );
+  // Detail is fetched ONCE PER SELECTED MONTH and concatenated — each call is the same pushed-down,
+  // scope-and-filter-narrowed aggregate the single-month path used, so multi-month is just the union
+  // of those leaf rows (the downstream grouping already sums them). Each row is tagged with its own
+  // period so the trend can reconcile every selected point to its month's exact total. Bounded by
+  // MAX_SELECTED_PERIODS, so this is a handful of ~20k-row-rollup reads, not a full-history scan.
+  const detailArgsFor = (period: string) => ({
+    p_period: period,
+    p_lines: trendLineNames ?? [],
+    p_distributors: filters.distributors ?? [],
+    p_regions: trendRegionCodes ?? [],
+    p_areas: filters.areas ?? [],
+    p_products: trendProductCodes ?? [],
+    p_exclude_codes: excludeCodes,
+  });
+  const fetchDetail = (periods: string[]) =>
+    Promise.all(
+      periods.map((period) =>
+        rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(period), [
+          "distributor_code",
+          "region_code",
+          "area_code",
+          "product_code",
+        ]).then((rows) => rows.map((row) => ({ ...row, __period: period }))),
+      ),
+    ).then((arrays) => arrays.flat());
+  const detailRowsPromise = trendForcedEmpty ? emptyRpcRows : fetchDetail(selectedPeriods);
 
-  const [detailRows, trendRowsRaw, brickRaw, customerRaw] = await Promise.all([
+  // Month-over-month: the next-older validated period, fetched through the SAME pushed-down detail
+  // RPC + keepExec backstop as the selected month. Only meaningful when EXACTLY ONE month is in
+  // scope — comparing a multi-month total against a single prior month would mislead — so it is
+  // suppressed for a multi-month selection (mirrors the weekly dashboard's prior-week rule).
+  const priorPeriod =
+    options?.includeMomComparison && isSingleMonth ? resolvePriorPeriod(availablePeriods, selectedPeriod) : null;
+  const priorDetailRowsPromise =
+    !priorPeriod || trendForcedEmpty
+      ? emptyRpcRows
+      : safeRpcAll("phx_exec_distributor_product (prior period)", () =>
+          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), [
+            "distributor_code",
+            "region_code",
+            "area_code",
+            "product_code",
+          ]),
+        );
+
+  // Year-over-year: the same month last year, fetched through the SAME pushed-down detail RPC —
+  // structurally identical to the MoM prior-period fetch above, just shifted 12 months instead of
+  // 1. Same single-month guard (a multi-month YoY comparison would be as misleading as MoM's).
+  const yoyPeriodCandidate = options?.includeYoY && isSingleMonth ? shiftPeriod(selectedPeriod, 12) : null;
+  const yoyPeriod = yoyPeriodCandidate && availableSet.has(yoyPeriodCandidate) ? yoyPeriodCandidate : null;
+  const yoyDetailRowsPromise =
+    !yoyPeriod || trendForcedEmpty
+      ? emptyRpcRows
+      : safeRpcAll("phx_exec_distributor_product (YoY period)", () =>
+          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), [
+            "distributor_code",
+            "region_code",
+            "area_code",
+            "product_code",
+          ]),
+        );
+
+  // Head-Office confidentiality for the geography aggregates: brick/customer rows carry no
+  // product/line dimension, so the Head-Office contribution can only be stripped INSIDE the RPC
+  // (LA003/LA004/SS001 are already hard-excluded in the SQL bodies since 20260702130000). Pass
+  // the same dynamic exclusion set the trend uses — but ONLY when non-empty, so CEO/Super-Admin
+  // calls stay single-arg (byte-identical, and still valid against a pre-migration database).
+  // For a restricted viewer against a pre-migration database the RPC rejects the unknown
+  // parameter and safeRpcAll fails CLOSED (empty sections) — never leaks.
+  const geoArgsFor = (period: string): Record<string, unknown> =>
+    trendExcludeCodes.length > 0 ? { p_period: period, p_exclude_codes: trendExcludeCodes } : { p_period: period };
+  // Brick/customer aggregates are also fetched per selected month and concatenated — the downstream
+  // grouping sums them by brick / customer across the months, so the geography totals span the whole
+  // selection. A failure for any single month fails closed to [] for that month (safeRpcAll).
+  const fetchGeo = (fn: "phx_exec_brick" | "phx_exec_customers", orderBy: string[]) =>
+    canSeeCrossLineGeography
+      ? Promise.all(
+          selectedPeriods.map((period) => safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy))),
+        ).then((arrays) => arrays.flat())
+      : emptyRpcRows;
+
+  const [detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw] = await Promise.all([
     detailRowsPromise,
     trendResultPromise,
-    canSeeCrossLineGeography
-      ? safeRpcAll(
-          "phx_exec_brick",
-          () => rpcAll(supabase, "phx_exec_brick", { p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "brick_id"]),
-        )
-      : emptyRpcRows,
-    canSeeCrossLineGeography
-      ? safeRpcAll(
-          "phx_exec_customers",
-          () => rpcAll(supabase, "phx_exec_customers", { p_period: selectedPeriod }, ["client_code", "distributor_code"]),
-        )
-      : emptyRpcRows,
+    fetchGeo("phx_exec_brick", ["distributor_code", "region_code", "area_code", "brick_id"]),
+    fetchGeo("phx_exec_customers", ["client_code", "distributor_code"]),
+    priorDetailRowsPromise,
+    yoyDetailRowsPromise,
   ]);
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
@@ -389,45 +591,60 @@ export async function getSosDashboard(
     return true;
   };
 
-  // Detail = selected period (the only month we pull full leaf rows for).
-  const detail = (detailRows as Array<Record<string, unknown>>)
-    .map((row) => ({
-      distributorCode: norm(row.distributor_code as string),
-      officialLine: norm(row.official_line as string),
-      regionCode: norm(row.region_code as string),
-      areaCode: norm(row.area_code as string),
-      productCode: norm(row.product_code as string),
-      productName: norm(row.product_name as string),
-      units: Number(row.units ?? 0),
-      value: Number(row.value ?? 0),
-    }))
-    .filter(keepExec);
+  const mapExecRow = (row: Record<string, unknown>): ExecRow => ({
+    distributorCode: norm(row.distributor_code as string),
+    officialLine: norm(row.official_line as string),
+    regionCode: norm(row.region_code as string),
+    areaCode: norm(row.area_code as string),
+    productCode: norm(row.product_code as string),
+    productName: norm(row.product_name as string),
+    units: Number(row.units ?? 0),
+    value: Number(row.value ?? 0),
+    period: norm(row.__period as string),
+  });
+
+  // Detail = the union of leaf rows across every selected month (each already tagged with its period).
+  const detail = (detailRows as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  // Prior-period leaf rows for the MoM layer — same mapping, same keepExec (period-agnostic).
+  const priorDetail = (priorDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  // Same-month-last-year leaf rows for the YoY layer — same mapping, same keepExec.
+  const yoyDetail = (yoyDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
 
   const totalValue = detail.reduce((sum, row) => sum + row.value, 0);
   const totalUnits = detail.reduce((sum, row) => sum + row.units, 0);
 
   // Trend across the window: lightweight per-period totals from phx_exec_sos_trend (filter-aware,
-  // restricted-stripped in SQL). The SELECTED period reuses the detail totals so the last point
-  // always matches the KPI summary exactly. Non-fatal: a trend failure never blocks the dashboard.
+  // restricted-stripped in SQL). Every SELECTED month reuses its own detail total so each selected
+  // point matches the KPIs exactly (their sum is the headline total). Non-selected points come from
+  // the trend RPC. Non-fatal: a trend failure never blocks the dashboard.
+  const detailTotalsByPeriod = new Map<string, { units: number; value: number }>();
+  for (const row of detail) {
+    const current = detailTotalsByPeriod.get(row.period) ?? { units: 0, value: 0 };
+    current.units += row.units;
+    current.value += row.value;
+    detailTotalsByPeriod.set(row.period, current);
+  }
   const trendByPeriod = new Map<string, { units: number; value: number }>();
   const trendRows = trendRowsRaw as Array<Record<string, unknown>>;
   for (const row of trendRows) {
     trendByPeriod.set(String(row.period ?? ""), { units: Number(row.units ?? 0), value: Number(row.value ?? 0) });
   }
   const trend: SosTrendPoint[] = windowPeriods.map((period) =>
-    period === selectedPeriod
-      ? { period, units: totalUnits, value: totalValue }
+    selectedPeriodSet.has(period)
+      ? { period, units: detailTotalsByPeriod.get(period)?.units ?? 0, value: detailTotalsByPeriod.get(period)?.value ?? 0 }
       : { period, units: trendByPeriod.get(period)?.units ?? 0, value: trendByPeriod.get(period)?.value ?? 0 },
   );
   const directValue = detail.filter((row) => isDirect(row.distributorCode)).reduce((sum, row) => sum + row.value, 0);
   const distributorValue = totalValue - directValue;
 
-  // Generic grouper.
+  // Generic grouper. `total` is passed explicitly so the same helper can compute shares for the
+  // selected period (totalValue) and the prior period (its own total) without ambiguity.
   const group = (
     rows: ExecRow[],
     keyOf: (row: ExecRow) => string,
     labelOf: (code: string, row: ExecRow) => string,
     lineOf: (code: string, row: ExecRow) => string | null,
+    total: number,
   ): SosGroupRow[] => {
     const map = new Map<string, { value: number; units: number; line: string | null; label: string }>();
     for (const row of rows) {
@@ -439,33 +656,38 @@ export async function getSosDashboard(
       map.set(code, current);
     }
     return [...map.entries()]
-      .map(([code, v]) => ({ code, label: v.label, line: v.line, value: v.value, units: v.units, share: share(v.value, totalValue) }))
+      .map(([code, v]) => ({ code, label: v.label, line: v.line, value: v.value, units: v.units, share: share(v.value, total) }))
       .sort((a, b) => b.value - a.value);
   };
 
-  const byRegion = group(
-    detail,
-    (row) => row.regionCode,
-    (code) => regionLabel.get(code) ?? code,
-    () => null,
-  );
-  const byArea = group(
-    detail,
-    (row) => row.areaCode,
-    (code) => (code === "DIRECT" ? "Direct (National)" : areaLabel.get(code) ?? code),
-    (code) => regionLabel.get(areaRegion.get(code) ?? "") ?? null,
-  );
-  const byProduct = group(
-    detail,
-    (row) => row.productCode,
-    (code, row) => productLabel.get(code) ?? row.productName ?? code,
-    (code, row) => productLine.get(code) ?? row.officialLine ?? null,
-  );
+  const groupByRegion = (rows: ExecRow[], total: number) =>
+    group(rows, (row) => row.regionCode, (code) => regionLabel.get(code) ?? code, () => null, total);
+  const groupByArea = (rows: ExecRow[], total: number) =>
+    group(
+      rows,
+      (row) => row.areaCode,
+      (code) => (code === "DIRECT" ? "Direct (National)" : areaLabel.get(code) ?? code),
+      (code) => regionLabel.get(areaRegion.get(code) ?? "") ?? null,
+      total,
+    );
+  const groupByProduct = (rows: ExecRow[], total: number) =>
+    group(
+      rows,
+      (row) => row.productCode,
+      (code, row) => productLabel.get(code) ?? row.productName ?? code,
+      (code, row) => productLine.get(code) ?? row.officialLine ?? null,
+      total,
+    );
+
+  const byRegion = groupByRegion(detail, totalValue);
+  const byArea = groupByArea(detail, totalValue);
+  const byProduct = groupByProduct(detail, totalValue);
   const byLine = group(
     detail,
     (row) => row.officialLine,
     (code) => code,
     (code) => code,
+    totalValue,
   );
 
   // Distributors carry reach counts (distinct regions / real areas / products).
@@ -588,8 +810,154 @@ export async function getSosDashboard(
     { name: "Direct (Company)", value: directValue },
   ].filter((slice) => slice.value > 0);
 
+  // ── Month-over-month layer (admin dashboard + BI export only) ────────────────────────────
+  // Pure presentation math over the two keepExec-filtered leaf sets — no new value semantics.
+  let momComparison: SosMomComparison | null | undefined = undefined;
+  let paretoProducts: SosParetoRow[] | undefined = undefined;
+  if (options?.includeMomComparison) {
+    paretoProducts = computePareto(byProduct);
+    if (!priorPeriod) {
+      momComparison = null;
+    } else {
+      const priorTotalValue = priorDetail.reduce((sum, row) => sum + row.value, 0);
+      const priorTotalUnits = priorDetail.reduce((sum, row) => sum + row.units, 0);
+      const priorByProduct = groupByProduct(priorDetail, priorTotalValue);
+      const priorByRegion = groupByRegion(priorDetail, priorTotalValue);
+      const priorByArea = groupByArea(priorDetail, priorTotalValue);
+      const priorByDistributor = group(
+        priorDetail,
+        (row) => row.distributorCode,
+        (code) => distributorLabel.get(code) ?? code,
+        () => null,
+        priorTotalValue,
+      );
+      const priorDirectValue = priorDetail
+        .filter((row) => isDirect(row.distributorCode))
+        .reduce((sum, row) => sum + row.value, 0);
+      const priorAreasReached = new Set(
+        priorDetail.map((row) => row.areaCode).filter((code) => code && code !== "DIRECT"),
+      ).size;
+      const priorDistributorCount = new Set(priorDetail.map((row) => row.distributorCode).filter(Boolean)).size;
+      const priorProductCount = new Set(priorDetail.map((row) => row.productCode).filter(Boolean)).size;
+      const isRealArea = (row: { code: string }) => row.code !== "DIRECT";
+      const newLostProducts = computeNewAndLost(byProduct, priorByProduct);
+      const newLostAreas = computeNewAndLost(byArea.filter(isRealArea), priorByArea.filter(isRealArea));
+      momComparison = {
+        priorPeriod,
+        summaryDeltas: {
+          totalValue: computeDelta(totalValue, priorTotalValue),
+          totalUnits: computeDelta(totalUnits, priorTotalUnits),
+          avgPricePerUnit: computeDelta(
+            summary.avgPricePerUnit,
+            priorTotalUnits > 0 ? priorTotalValue / priorTotalUnits : 0,
+          ),
+          distributorCount: computeDelta(summary.distributorCount, priorDistributorCount),
+          productCount: computeDelta(summary.productCount, priorProductCount),
+          directShare: computeDelta(summary.directShare, share(priorDirectValue, priorTotalValue)),
+          areasReached: computeDelta(summary.areasReached, priorAreasReached),
+        },
+        movers: {
+          products: computeMovers(byProduct, priorByProduct),
+          regions: computeMovers(byRegion, priorByRegion),
+          distributors: computeMovers(byDistributor, priorByDistributor),
+        },
+        contribution: {
+          products: computeContribution(byProduct, priorByProduct),
+          regions: computeContribution(byRegion, priorByRegion),
+        },
+        newProducts: newLostProducts.added,
+        lostProducts: newLostProducts.removed,
+        newAreas: newLostAreas.added,
+        lostAreas: newLostAreas.removed,
+      };
+    }
+  }
+
+  // ── Year-over-year layer (admin dashboard + BI export only) ──────────────────────────────
+  // Structurally identical to the MoM block above — same pure presentation math, just comparing
+  // against the same month last year (yoyDetail/yoyPeriod) instead of the prior month.
+  let yoyComparison: SosMomComparison | null | undefined = undefined;
+  if (options?.includeYoY) {
+    if (!yoyPeriod) {
+      yoyComparison = null;
+    } else {
+      const yoyTotalValue = yoyDetail.reduce((sum, row) => sum + row.value, 0);
+      const yoyTotalUnits = yoyDetail.reduce((sum, row) => sum + row.units, 0);
+      const yoyByProduct = groupByProduct(yoyDetail, yoyTotalValue);
+      const yoyByRegion = groupByRegion(yoyDetail, yoyTotalValue);
+      const yoyByArea = groupByArea(yoyDetail, yoyTotalValue);
+      const yoyByDistributor = group(
+        yoyDetail,
+        (row) => row.distributorCode,
+        (code) => distributorLabel.get(code) ?? code,
+        () => null,
+        yoyTotalValue,
+      );
+      const yoyDirectValue = yoyDetail
+        .filter((row) => isDirect(row.distributorCode))
+        .reduce((sum, row) => sum + row.value, 0);
+      const yoyAreasReached = new Set(
+        yoyDetail.map((row) => row.areaCode).filter((code) => code && code !== "DIRECT"),
+      ).size;
+      const yoyDistributorCount = new Set(yoyDetail.map((row) => row.distributorCode).filter(Boolean)).size;
+      const yoyProductCount = new Set(yoyDetail.map((row) => row.productCode).filter(Boolean)).size;
+      const isRealArea = (row: { code: string }) => row.code !== "DIRECT";
+      const newLostProductsYoy = computeNewAndLost(byProduct, yoyByProduct);
+      const newLostAreasYoy = computeNewAndLost(byArea.filter(isRealArea), yoyByArea.filter(isRealArea));
+      yoyComparison = {
+        priorPeriod: yoyPeriod,
+        summaryDeltas: {
+          totalValue: computeDelta(totalValue, yoyTotalValue),
+          totalUnits: computeDelta(totalUnits, yoyTotalUnits),
+          avgPricePerUnit: computeDelta(
+            summary.avgPricePerUnit,
+            yoyTotalUnits > 0 ? yoyTotalValue / yoyTotalUnits : 0,
+          ),
+          distributorCount: computeDelta(summary.distributorCount, yoyDistributorCount),
+          productCount: computeDelta(summary.productCount, yoyProductCount),
+          directShare: computeDelta(summary.directShare, share(yoyDirectValue, yoyTotalValue)),
+          areasReached: computeDelta(summary.areasReached, yoyAreasReached),
+        },
+        movers: {
+          products: computeMovers(byProduct, yoyByProduct),
+          regions: computeMovers(byRegion, yoyByRegion),
+          distributors: computeMovers(byDistributor, yoyByDistributor),
+        },
+        contribution: {
+          products: computeContribution(byProduct, yoyByProduct),
+          regions: computeContribution(byRegion, yoyByRegion),
+        },
+        newProducts: newLostProductsYoy.added,
+        lostProducts: newLostProductsYoy.removed,
+        newAreas: newLostAreasYoy.added,
+        lostAreas: newLostAreasYoy.removed,
+      };
+    }
+  }
+
+  // Leaf rows for the BI export's hidden Data sheet — the exact rows behind every on-screen
+  // aggregate (already scoped + confidential-stripped by keepExec), labeled via the masters.
+  const detailLeafRows: SosDetailLeafRow[] | undefined = options?.includeDetailRows
+    ? detail.map((row) => ({
+        period: row.period,
+        distributorCode: row.distributorCode,
+        distributorName: distributorLabel.get(row.distributorCode) ?? row.distributorCode,
+        officialLine: row.officialLine,
+        regionCode: row.regionCode,
+        regionName: regionLabel.get(row.regionCode) ?? row.regionCode,
+        areaCode: row.areaCode,
+        areaName: row.areaCode === "DIRECT" ? "Direct (National)" : areaLabel.get(row.areaCode) ?? row.areaCode,
+        productCode: row.productCode,
+        productName: productLabel.get(row.productCode) ?? row.productName ?? row.productCode,
+        channel: isDirect(row.distributorCode) ? ("Direct" as const) : ("Distributor" as const),
+        units: row.units,
+        value: row.value,
+      }))
+    : undefined;
+
   return {
     period: selectedPeriod,
+    selectedPeriods,
     availablePeriods,
     filters: filterOptions,
     summary,
@@ -617,7 +985,13 @@ export async function getSosDashboard(
       // it for a "top area" insight. Derived from the engine's own region lockdown so it holds for
       // any caller, not just the portal wrapper.
       singleRegion: scopeRegionCodes !== null && scopeRegionCodes.size === 1,
+      mom: momComparison ?? null,
     }),
+    momComparison,
+    yoyComparison,
+    paretoProducts,
+    detailRows: detailLeafRows,
+    restrictedRevealed: canSeeRestricted,
   };
 }
 
@@ -630,9 +1004,18 @@ function buildInsights(input: {
   customerTop10Share: number;
   whiteSpaceAreas: SosWhiteSpaceRow[];
   singleRegion: boolean;
+  /** Month-over-month comparison — only supplied by admin/export callers; null/absent for the portal. */
+  mom?: SosMomComparison | null;
 }): SosDashboardData["insights"] {
   const out: SosDashboardData["insights"] = [];
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const momValue = input.mom?.summaryDeltas.totalValue;
+  if (momValue && momValue.deltaPct != null) {
+    out.push({
+      tone: momValue.deltaPct >= 0 ? "success" : "danger",
+      text: `Total value is ${momValue.deltaPct >= 0 ? "up" : "down"} ${pct(Math.abs(momValue.deltaPct))} vs ${input.mom!.priorPeriod}.`,
+    });
+  }
   const lead = input.byDistributor[0];
   if (lead) out.push({ tone: "neutral", text: `${lead.label} leads distribution with ${pct(lead.share)} of value across ${lead.regions} region(s).` });
   if (input.singleRegion) {
@@ -655,11 +1038,13 @@ function buildInsights(input: {
   return out;
 }
 
-function emptyDashboard(filters: SosFilterOptions, totalAreas: number): SosDashboardData {
+function emptyDashboard(filters: SosFilterOptions, totalAreas: number, restrictedRevealed: boolean): SosDashboardData {
   return {
     period: null,
+    selectedPeriods: [],
     availablePeriods: filters.periods,
     filters,
+    restrictedRevealed,
     summary: {
       totalValue: 0,
       totalUnits: 0,

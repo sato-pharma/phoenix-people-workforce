@@ -198,6 +198,11 @@ export async function checkFeedbackEligibility(
     resolveSubmitterRole(access, employeeHrId),
   ]);
 
+  const canSeeAll = access.role === "Super Admin" || access.role === "CEO";
+  if (!canSeeAll && !roleResult.role) {
+    throw new Error("Forbidden: you are not authorized to view probation feedback for this employee.");
+  }
+
   if (!probationRecord || !roleResult.role) {
     return {
       eligible: false,

@@ -306,7 +306,28 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   return { lat: Number(location.lat), lng: Number(location.lng) };
 }
 
-export async function googleGeocodeGovernorate(searchText: string): Promise<string | null> {
+function extractAddressComponent(
+  components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
+  targetTypes: string[],
+) {
+  const component = components?.find((entry) =>
+    Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
+  );
+  return component?.long_name ?? component?.short_name ?? null;
+}
+
+export type GeocodeComponents = {
+  lat: number;
+  lng: number;
+  // administrative_area_level_1, English, " Governorate" suffix stripped (e.g. "Dakahlia").
+  governorate: string | null;
+  // administrative_area_level_2 — the markaz / city level (e.g. "Mansoura").
+  markaz: string | null;
+};
+
+// One Geocoding call returning coordinates + admin level 1/2 together (the older helpers each
+// discard part of the payload, forcing double billing when both are needed).
+export async function googleGeocodeComponents(searchText: string): Promise<GeocodeComponents | null> {
   const key = getServerKey();
   if (!key || !searchText.trim()) return null;
 
@@ -320,25 +341,25 @@ export async function googleGeocodeGovernorate(searchText: string): Promise<stri
 
   const payload = (await response.json()) as {
     results?: Array<{
-      address_components?: Array<{ long_name?: string; types?: string[] }>;
+      address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>;
+      geometry?: { location?: { lat?: number; lng?: number } };
     }>;
   };
 
-  const components = payload.results?.[0]?.address_components ?? [];
-  const gov = components.find(
-    (c) => Array.isArray(c.types) && c.types.includes("administrative_area_level_1"),
-  );
-  return gov?.long_name?.replace(/\s*Governorate$/i, "").trim() ?? null;
-}
+  const result = payload.results?.[0];
+  const location = result?.geometry?.location;
+  if (!result || !location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+    return null;
+  }
 
-function extractAddressComponent(
-  components: Array<{ long_name?: string; short_name?: string; types?: string[] }> | undefined,
-  targetTypes: string[],
-) {
-  const component = components?.find((entry) =>
-    Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
-  );
-  return component?.long_name ?? component?.short_name ?? null;
+  const governorate = extractAddressComponent(result.address_components, ["administrative_area_level_1"]);
+  const markaz = extractAddressComponent(result.address_components, ["administrative_area_level_2"]);
+  return {
+    governorate: governorate ? governorate.replace(/\s*Governorate$/i, "").trim() : null,
+    lat: Number(location.lat),
+    lng: Number(location.lng),
+    markaz: markaz ? markaz.trim() : null,
+  };
 }
 
 export async function googleReverseGeocode(

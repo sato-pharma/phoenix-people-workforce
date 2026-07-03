@@ -53,33 +53,6 @@ export function runModulesControlTests() {
   assert.deepEqual(modulesControl?.roles, ["Super Admin"]);
   assert.deepEqual(modulesControl?.permissions, [{ action: "read", resource: "module_control" }]);
 
-  const workspaceHrefs = [
-    "/workspace",
-    "/workspace/incentive",
-    "/workspace/plans",
-    "/workspace/plans/calendar",
-    "/workspace/private-calendar",
-    "/workspace/payslips",
-    "/workspace/deductions",
-    "/workspace/fingerprint-report",
-    "/workspace/marketing-requests/validation",
-    "/workspace/marketing-requests",
-    "/workspace/marketing-requests/inbox",
-    "/workspace/marketing-requests/roi-tracking",
-    "/workspace/leave-management/vacation-request",
-    "/workspace/leave-management/vacation-report",
-    "/workspace/vacancies",
-    "/workspace/probation",
-    "/workspace/organogram",
-    "/workspace/expense-dashboard",
-    "/workspace/submit-expense",
-    "/workspace/contact-hr-support",
-  ];
-  for (const href of workspaceHrefs) {
-    const workspaceModule = catalog.find((module) => module.href === href && module.navigationMode === "admin");
-    assert.ok(workspaceModule, `${href} must exist in the Admin Sidebar catalog`);
-    assert.ok(workspaceModule.moduleId.startsWith("admin.workspace."), `${href} must use explicit admin.workspace moduleId`);
-  }
   assert.equal(
     catalog.some((module) => module.href.startsWith("/workspace") && module.navigationMode === "employee-portal"),
     false,

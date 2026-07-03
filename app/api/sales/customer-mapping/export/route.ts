@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       toPeriod: typeof body.toPeriod === "string" ? body.toPeriod : null,
     };
 
-    const { consolidated, rows } = await loadCustomerMapping(filters);
+    const { consolidated, rows } = await loadCustomerMapping(filters, access.role);
     const buffer = await buildCustomerMappingWorkbook({ consolidated, rows });
 
     return new Response(new Uint8Array(buffer), {

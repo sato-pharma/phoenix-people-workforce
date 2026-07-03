@@ -1661,8 +1661,16 @@ async function notifyRecipients(input: {
   title: string;
   type: string;
 }) {
+  // Dedup by canonicalHrId (strips hyphens), not raw toUpperCase(), so hyphenated
+  // HR_ID aliases (e.g. "A-7" vs "A7") collapse to a single recipient instead of
+  // producing duplicate/missed notifications.
   const recipientHrIds = Array.from(
-    new Set(input.recipients.map((recipient) => text(recipient).toUpperCase()).filter(Boolean)),
+    new Map(
+      input.recipients
+        .map((recipient) => text(recipient).toUpperCase())
+        .filter(Boolean)
+        .map((hrId) => [canonicalHrId(hrId) ?? hrId, hrId] as const),
+    ).values(),
   );
 
   await Promise.allSettled(
@@ -1973,7 +1981,14 @@ async function dispatchVacationNextManagerStep(input: {
       managerName: nextApprover.fullName,
       request: input.request,
       reviewUrl: toAbsoluteAppUrl(actionHref),
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actingManagerHrId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: input.request.id,
+      }).catch(() => undefined);
+    });
   }
 }
 
@@ -3152,6 +3167,9 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
 async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   if (input.request.status !== "pending_manager") {
     throw new Error("This vacation request already has a final decision.");
+  }
+  if ((input.decision === "reject" || input.decision === "return") && !text(input.decisionComment)) {
+    throw new Error(input.decision === "return" ? "A return reason is required." : "A rejection reason is required.");
   }
 
   const directory = await getEmployeeDirectory();

@@ -258,7 +258,6 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
     columns: [
       { label: "Period", width: 10 },
       { label: "Distributor", width: 16 },
-      { label: "Product code", width: 14 },
       { label: "Product", width: 28 },
       { label: "Customer code", width: 18 },
       { label: "Pharmacy", width: 28 },
@@ -266,8 +265,8 @@ export async function buildMarketingRoiViewSalesWorkbook(input: {
       { label: "Units", numFmt: UNITS_FMT, right: true, width: 10 },
       { label: "Value", numFmt: VALUE_FMT, right: true, width: 14, dataBar: true },
     ],
-    rows: data.rows.map((r) => [r.invoicePeriod, r.distributorName, r.productCode, r.productName, r.customerCode, r.customerName ?? "—", r.regionName ?? "—", r.qty, r.value]),
-    totals: ["TOTAL", null, null, null, null, null, null, data.totals.units, data.totals.value],
+    rows: data.rows.map((r) => [r.invoicePeriod, r.distributorName, r.productName, r.customerCode, r.customerName ?? "—", r.regionName ?? "—", r.qty, r.value]),
+    totals: ["TOTAL", null, null, null, null, null, data.totals.units, data.totals.value],
     note: `${data.rows.length} matched row(s).`,
   });
 
