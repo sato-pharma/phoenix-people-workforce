@@ -242,7 +242,10 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     showVacanciesTab:
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
-    showFingerprintReportTab: hasDeviceMapping === true,
+    // Personally device-tracked employees see their own punch history; a head-of-department
+    // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
+    // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
+    showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager,
     showRoiIntelligenceTab: showSalesIntelligence,
     showSourceOfSalesTab:
       resolvedRole === "District Manager" ||

@@ -88,6 +88,7 @@ export function proxy(request: NextRequest) {
     request.method.toUpperCase() === "POST" &&
     (
       request.nextUrl.pathname === "/api/attendance/raw-punches" ||
+      request.nextUrl.pathname === "/api/admin/synthetic-journeys/ingest" ||
       request.nextUrl.pathname === "/api/integrations/telegram/webhook" ||
       request.nextUrl.pathname === "/api/webhooks/resend" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
