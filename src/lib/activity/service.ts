@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import {
@@ -529,7 +530,15 @@ function summarize(agg: Agg): UserActivitySummary {
   };
 }
 
-export async function getActivityOverview(range: ActivityRange): Promise<ActivityOverview> {
+async function getActivityOverviewUncached(days: number): Promise<ActivityOverview> {
+  // range (via buildActivityRange) is computed INSIDE the cached function, keyed only
+  // on `days`, rather than passed in as a pre-built range object. buildActivityRange
+  // stamps toIso as new Date().toISOString() on every call, so a range object is
+  // never identical between two calls even a millisecond apart — caching keyed on the
+  // full range would defeat itself (every call gets a technically-unique key, so it
+  // would never actually hit). Keying on `days` (one of 1/7/30/90) gives a real,
+  // effective cache instead.
+  const range = buildActivityRange(days);
   const nowIso = new Date().toISOString();
   const adoptionFromIso = new Date(Date.now() - ADOPTION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
@@ -749,6 +758,24 @@ export async function getActivityOverview(range: ActivityRange): Promise<Activit
     hourlyHeatmap: buildHourlyHeatmap(logicalSessions),
     roleBenchmarks: buildRoleBenchmarks(aggByKey),
   };
+}
+
+// This diagnostic loads up to EVENT_FETCH_CAP (120k) events / SESSION_FETCH_CAP
+// (60k) sessions into Node per call and aggregates them there — a real cost on
+// every page load with no caching previously. Company-wide (no per-viewer
+// scoping, page-level access-gated), so caching by `days` alone is scope-safe:
+// every admin who can reach this page sees the same aggregate for the same
+// window. Short TTL keeps the "online now" section reasonably live.
+const ACTIVITY_OVERVIEW_CACHE_TTL_SECONDS = 60;
+
+const getActivityOverviewCached = unstable_cache(
+  getActivityOverviewUncached,
+  ["activity-overview"],
+  { revalidate: ACTIVITY_OVERVIEW_CACHE_TTL_SECONDS },
+);
+
+export async function getActivityOverview(range: ActivityRange): Promise<ActivityOverview> {
+  return getActivityOverviewCached(range.days);
 }
 
 // ── Per-person timeline: who may view whose activity ─────────────────────────

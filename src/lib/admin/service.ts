@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -257,8 +258,10 @@ const dataHealthAccessContext: AccessContext = {
 // breakdown, so it is intentionally heavy (it only runs on /admin/data-health now that
 // the Command Center derives its summary cheaply). A longer cache keeps repeat visits
 // instant without staling the audit meaningfully — it is a read-only review surface.
-const DATA_HEALTH_STATS_CACHE_TTL_MS = 120_000;
-let dataHealthStatsCache: { data: DataHealthStats; timestamp: number } | null = null;
+// unstable_cache (not a plain module-level variable) so the cache actually survives
+// across serverless invocations on separate Lambda instances — a module-level `let`
+// only helps repeat requests lucky enough to land on the same still-warm instance.
+const DATA_HEALTH_STATS_CACHE_TTL_SECONDS = 120;
 
 function normalizeHealthKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -344,12 +347,7 @@ function salesOwnershipRecordFromRow(row: Record<string, unknown>): SalesOwnersh
   };
 }
 
-export async function getDataHealthStats(): Promise<DataHealthStats> {
-  const now = Date.now();
-  if (dataHealthStatsCache && now - dataHealthStatsCache.timestamp < DATA_HEALTH_STATS_CACHE_TTL_MS) {
-    return dataHealthStatsCache.data;
-  }
-
+async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
   const supabase = getSupabaseAdmin();
 
   const [
@@ -621,6 +619,11 @@ export async function getDataHealthStats(): Promise<DataHealthStats> {
     orphanAudit: orphans,
     vacancyAudit,
   };
-  dataHealthStatsCache = { data: result, timestamp: now };
   return result;
 }
+
+export const getDataHealthStats = unstable_cache(
+  getDataHealthStatsUncached,
+  ["data-health-stats"],
+  { revalidate: DATA_HEALTH_STATS_CACHE_TTL_SECONDS },
+);
