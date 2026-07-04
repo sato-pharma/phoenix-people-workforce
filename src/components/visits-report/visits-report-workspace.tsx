@@ -48,6 +48,7 @@ function formatTime(value: string | null) {
 
 const exportColumns: ExportColumn[] = [
   { key: "date", label: "Date" },
+  { key: "crmSaveDate", label: "CRM Save Date" },
   { key: "agent", label: "Agent" },
   { key: "agentHrId", label: "Agent HR ID" },
   { key: "double", label: "Double Visitor" },
@@ -55,6 +56,7 @@ const exportColumns: ExportColumn[] = [
   { key: "contact", label: "Contact" },
   { key: "type", label: "Visit Type" },
   { key: "ampm", label: "AM/PM" },
+  { key: "attendance", label: "Attendance" },
   { key: "checkinTime", label: "Nearest Check-in Time" },
   { key: "checkinAddress", label: "Nearest Check-in Location" },
   { key: "comment", label: "Comment" },
@@ -63,6 +65,7 @@ const exportColumns: ExportColumn[] = [
 function toExportRow(row: VisitsReportRow): ExportRow {
   return {
     date: row.visitDate,
+    crmSaveDate: row.crmSaveDate ? formatDateTime(row.crmSaveDate) : "—",
     agent: row.agentName ?? "—",
     agentHrId: row.agentHrId ?? "unmapped",
     double: row.doubleName ?? "—",
@@ -70,6 +73,7 @@ function toExportRow(row: VisitsReportRow): ExportRow {
     contact: row.contactName ?? row.customerName ?? "—",
     type: row.visitTypeDescription ?? String(row.visitType ?? "—"),
     ampm: row.ampm ?? "—",
+    attendance: row.attendance ?? "—",
     checkinTime: row.nearestCheckinTime ? formatDateTime(row.nearestCheckinTime) : "No check-in that day",
     checkinAddress: row.nearestCheckinAddress ?? "—",
     comment: row.comment ?? "",
@@ -152,8 +156,11 @@ function SyncStatusPanel({ data }: { data: VisitsReportData }) {
                 </div>
               </div>
               {run.status === "success" && (
-                <span className="shrink-0 text-xs font-bold text-slate-700">
+                <span className="shrink-0 text-right text-xs font-bold text-slate-700">
                   {run.rowsFetched} fetched · {run.rowsUpserted} upserted
+                  {run.rowsDeleted > 0 && <><br /><span className="text-amber-700">{run.rowsDeleted} deleted (CRM-removed)</span></>}
+                  {run.rowsSkippedInvalidDate > 0 && <><br /><span className="text-rose-600">{run.rowsSkippedInvalidDate} skipped (invalid date)</span></>}
+                  {run.rowsSkippedReconcile > 0 && <><br /><span className="text-rose-600">{run.rowsSkippedReconcile} stale rows NOT deleted (sanity cap — check for a partial fetch)</span></>}
                 </span>
               )}
             </div>
@@ -601,10 +608,11 @@ export function VisitsReportWorkspace({
           </div>
 
           <div className="overflow-x-auto border border-slate-200 bg-white">
-            <table className="w-full min-w-[1500px] text-left text-sm">
+            <table className="w-full min-w-[1720px] text-left text-sm">
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Save Date</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent HR ID</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Double Visitor</th>
@@ -612,17 +620,19 @@ export function VisitsReportWorkspace({
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Contact</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Type</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">AM/PM</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Attendance</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Check-in</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Comment</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">
                 {data.rows.length === 0 ? (
-                  <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
+                  <tr><td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
                 ) : (
                   data.rows.map((row, index) => (
                     <tr key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                       <td className="whitespace-nowrap px-3 py-2.5">{formatDate(row.visitDate)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.crmSaveDate ? formatDateTime(row.crmSaveDate) : "—"}</td>
                       <td className="px-3 py-2.5 font-medium text-slate-900">{row.agentName ?? "—"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <span className={cn("font-semibold", row.agentHrId ? "text-slate-700" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</span>
@@ -638,6 +648,7 @@ export function VisitsReportWorkspace({
                       <td className="px-3 py-2.5">{row.contactName ?? row.customerName ?? "—"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{row.visitTypeDescription ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.ampm ?? "—"}</td>
+                      <td className="px-3 py-2.5">{row.attendance ?? "—"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {row.nearestCheckinTime ? (
                           <>
