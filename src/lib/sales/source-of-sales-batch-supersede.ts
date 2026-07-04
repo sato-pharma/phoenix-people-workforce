@@ -1,4 +1,5 @@
 import { writeAuditLog } from "@/lib/admin/audit";
+import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupersededBatch = {
@@ -47,6 +48,10 @@ export async function finalizeSosBatchAndAuditSupersede(input: {
       summary: "Source of Sales uploaded sheet superseded by a new upload for the same period.",
     });
   }
+
+  // The finalize RPC just refreshed every SoS + marketing rollup for this distributor + period;
+  // bust the cached dashboards so the new numbers show immediately (not after the 300s TTL).
+  invalidateSalesDashboardCache("source of sales batch finalized");
 
   return { supersededCount: superseded.length, rowCount: Number(data.rowCount ?? 0) };
 }
