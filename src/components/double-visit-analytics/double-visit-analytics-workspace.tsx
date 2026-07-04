@@ -8,28 +8,25 @@ import {
   ChevronRight,
   ChevronUp,
   Download,
-  FileSpreadsheet,
   Flame,
   Gauge,
   MapPinned,
   RefreshCcw,
   Sparkles,
+  TrendingDown,
   TrendingUp,
-  Upload,
   User,
   Users,
   UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   DoubleVisitDashboardData,
-  DoubleVisitImportListItem,
   DoubleVisitInsight,
   DoubleVisitLogEntry,
   DoubleVisitManagerSummary,
@@ -38,7 +35,7 @@ import type {
   DoubleVisitRoleRollup,
 } from "@/lib/double-visit-analytics/types";
 
-type Tab = "summary" | "managers" | "mr-status" | "imports";
+type Tab = "summary" | "managers" | "mr-status" | "trends";
 type PeriodFilter = "ALL" | "AM" | "PM";
 type RoleFilter = "ALL" | DoubleVisitRoleCode;
 type SortKey =
@@ -220,35 +217,6 @@ function SortHeader({
         {active ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
       </button>
     </th>
-  );
-}
-
-function ImportRow({
-  item,
-  onPublish,
-  publishingId,
-}: {
-  item: DoubleVisitImportListItem;
-  onPublish: (id: string) => void;
-  publishingId: string | null;
-}) {
-  return (
-    <tr className="border-t border-slate-100">
-      <td className="px-3 py-3 text-sm font-semibold text-slate-800">{item.sourceFilename}</td>
-      <td className="px-3 py-3 text-sm text-slate-600">{item.sourceType}</td>
-      <td className="px-3 py-3 text-sm text-slate-600">{fmtDate(item.dateFrom)} – {fmtDate(item.dateTo)}</td>
-      <td className="px-3 py-3 text-sm font-semibold text-slate-800">{fmt(item.totalVisits)}</td>
-      <td className="px-3 py-3">
-        <span className={["rounded px-2 py-1 text-xs font-black uppercase", item.status === "published" ? "bg-emerald-50 text-emerald-700" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700"].join(" ")}>
-          {item.status}
-        </span>
-      </td>
-      <td className="px-3 py-3 text-right">
-        <Button className="min-h-9 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" disabled={item.status === "published" || publishingId === item.id} onClick={() => onPublish(item.id)} type="button">
-          {publishingId === item.id ? "Publishing…" : "Publish"}
-        </Button>
-      </td>
-    </tr>
   );
 }
 
@@ -495,30 +463,19 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
 // ─── Main workspace ───────────────────────────────────────────────────────────
 
 export function DoubleVisitAnalyticsWorkspace({
-  canImport,
-  canPublish,
   dashboard,
   embedded = false,
-  ireports360Configured,
   ownDoubleVisits,
 }: {
-  canImport: boolean;
-  canPublish: boolean;
   dashboard: DoubleVisitDashboardData;
   /**
    * Portal (read-only) embedding. The host page already renders a title banner, so the
-   * component suppresses its own header, hides the Imports tab, and exposes a slim
-   * date-range + export toolbar instead.
+   * component suppresses its own header and exposes a slim date-range + export toolbar instead.
    */
   embedded?: boolean;
-  ireports360Configured: boolean;
   /** When set (portal PM/GPM view), renders a "Your double visits" KPI = the viewer's personal DV count. */
   ownDoubleVisits?: number | null;
 }) {
-  // Import/publish is admin-only. When neither is granted (the portal view), the entire
-  // Imports tab is hidden — a read-only viewer should never see upload/publish controls or
-  // the admin import-history metadata.
-  const canManageImports = canImport || canPublish;
   const [activeTab, setActiveTab] = useState<Tab>("summary");
   const [selectedManagerKey, setSelectedManagerKey] = useState<string>("");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("ALL");
@@ -530,10 +487,6 @@ export function DoubleVisitAnalyticsWorkspace({
 
   const [dateFrom, setDateFrom] = useState(dashboard.dateFrom);
   const [dateTo, setDateTo] = useState(dashboard.dateTo);
-  const [file, setFile] = useState<File | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const visitLog = useMemo(() => dashboard.visitLog ?? [], [dashboard.visitLog]);
   const managerSummaries = useMemo(() => dashboard.managerSummaries ?? [], [dashboard.managerSummaries]);
@@ -672,45 +625,6 @@ export function DoubleVisitAnalyticsWorkspace({
     });
   }
 
-  async function uploadExcel() {
-    if (!file) { setMessage("Select a Double Visit Excel file first."); return; }
-    setBusy(true); setMessage(null);
-    try {
-      const formData = new FormData();
-      formData.set("file", file);
-      const res = await fetch("/api/admin/double-visit-analytics/imports/excel", { body: formData, method: "POST" });
-      const payload = await res.json();
-      if (!res.ok) { setMessage(payload.message ?? "Excel import failed."); return; }
-      setMessage(`Preview saved: ${fmt(payload.data.preview.summary.totalVisits)} visits.`);
-      window.location.reload();
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Excel import failed."); }
-    finally { setBusy(false); }
-  }
-
-  async function importLive() {
-    setBusy(true); setMessage(null);
-    try {
-      const res = await fetch("/api/admin/double-visit-analytics/imports/ireports360", { body: JSON.stringify({ dateFrom, dateTo }), headers: { "Content-Type": "application/json" }, method: "POST" });
-      const payload = await res.json();
-      if (!res.ok) { setMessage(payload.message ?? "iReports360 import failed."); return; }
-      setMessage(`Live preview saved: ${fmt(payload.data.preview.summary.totalVisits)} double visits.`);
-      window.location.reload();
-    } catch (e) { setMessage(e instanceof Error ? e.message : "iReports360 import failed."); }
-    finally { setBusy(false); }
-  }
-
-  async function publish(id: string) {
-    setPublishingId(id); setMessage(null);
-    try {
-      const res = await fetch(`/api/admin/double-visit-analytics/imports/${id}/publish`, { method: "POST" });
-      const payload = await res.json();
-      if (!res.ok) { setMessage(payload.message ?? "Publish failed."); return; }
-      setMessage("Published as official Double Visit snapshot.");
-      window.location.reload();
-    } catch (e) { setMessage(e instanceof Error ? e.message : "Publish failed."); }
-    finally { setPublishingId(null); }
-  }
-
   const exportHref = `/api/admin/double-visit-analytics/export?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
   const periodLabel = periodFilter === "ALL" ? "" : periodFilter;
   const activeManagerCount = managerSummaries.length;
@@ -720,8 +634,7 @@ export function DoubleVisitAnalyticsWorkspace({
     { id: "summary", icon: Sparkles, label: "Summary" },
     { id: "managers", icon: Users, label: "By Manager" },
     { id: "mr-status", icon: User, label: "By MR" },
-    // Imports/publish is admin-only; the read-only portal view never shows this tab.
-    ...(canManageImports ? [{ id: "imports" as Tab, icon: FileSpreadsheet, label: "Imports" }] : []),
+    { id: "trends", icon: TrendingUp, label: "Trends" },
   ];
 
   return (
@@ -732,9 +645,7 @@ export function DoubleVisitAnalyticsWorkspace({
         // show only a slim snapshot + date-range + export toolbar (no duplicate <h1>).
         <div className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm font-medium text-slate-600">
-            {dashboard.publishedImport
-              ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.dateFrom)} – ${fmtDate(dashboard.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
-              : "No published snapshot yet."}
+            Live iReports360 mirror · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
@@ -761,9 +672,7 @@ export function DoubleVisitAnalyticsWorkspace({
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Field performance evidence</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
             <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-              {dashboard.publishedImport
-                ? `${dashboard.publishedImport.sourceFilename} · ${fmtDate(dashboard.dateFrom)} – ${fmtDate(dashboard.dateTo)} · ${fmt(dashboard.kpis.totalVisits)} visits`
-                : "No published snapshot — go to Imports to upload and publish a DV file."}
+              Live iReports360 mirror (auto-synced 3x daily) · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
             </p>
           </div>
           <a href={exportHref}>
@@ -773,8 +682,6 @@ export function DoubleVisitAnalyticsWorkspace({
           </a>
         </div>
       )}
-
-      {message ? <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">{message}</div> : null}
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="flex gap-0 overflow-x-auto rounded border border-slate-200 bg-white shadow-sm">
@@ -831,20 +738,13 @@ export function DoubleVisitAnalyticsWorkspace({
           SUMMARY TAB
       ═══════════════════════════════════════════════════════════════════ */}
       {activeTab === "summary" && (
-        !dashboard.publishedImport ? (
+        !dashboard.schemaReady ? (
           <Card className="rounded border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <FileSpreadsheet className="mx-auto h-12 w-12 text-slate-300" />
-            <h2 className="mt-4 text-lg font-black text-slate-950">No published snapshot yet</h2>
+            <Activity className="mx-auto h-12 w-12 text-slate-300" />
+            <h2 className="mt-4 text-lg font-black text-slate-950">Visits Report not provisioned yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
-              {canManageImports
-                ? "Double Visit Analytics shows data from the one published snapshot. Import a DV Excel file (or pull live iReports360) and publish it to populate every tab."
-                : "Double Visit Analytics shows data from the official published snapshot. None is published yet — check back once the team publishes a Double Visit file."}
+              Double Visit Analytics reads live off the Visits Report (ireports360_visits) — that table isn&apos;t available in this environment yet.
             </p>
-            {canManageImports && (
-              <Button className="mt-5 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" onClick={() => setActiveTab("imports")} type="button">
-                <Upload className="h-4 w-4" /> Go to Imports
-              </Button>
-            )}
           </Card>
         ) : (
           <>
@@ -1087,7 +987,7 @@ export function DoubleVisitAnalyticsWorkspace({
               );
             })}
             {managerList.length === 0 && (
-              <p className="px-4 py-6 text-sm text-slate-400">No managers{roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in published snapshot.</p>
+              <p className="px-4 py-6 text-sm text-slate-400">No managers{roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in range.</p>
             )}
           </Card>
 
@@ -1333,77 +1233,85 @@ export function DoubleVisitAnalyticsWorkspace({
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          IMPORTS TAB
+          TRENDS TAB
       ═══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "imports" && canManageImports && (
+      {activeTab === "trends" && (
         <>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-black text-slate-950">Official snapshot</h2>
-                  <p className="text-sm font-medium text-slate-500">Dashboards and expense automation use the published snapshot only.</p>
-                </div>
-                <Badge variant={dashboard.publishedImport ? "success" : "warning"}>
-                  {dashboard.publishedImport ? "Published" : "No snapshot"}
-                </Badge>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">From</span>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">To</span>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-                </label>
-                <div className="flex items-end">
-                  <Button className="min-h-10 w-full gap-2 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
-                    <RefreshCcw className="h-4 w-4" /> Refresh
-                  </Button>
-                </div>
-              </div>
-              {!dashboard.schemaReady ? (
-                <p className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Tables not provisioned. Apply migration 20260612172427.</p>
-              ) : (
-                <p className="mt-4 text-sm font-semibold text-slate-600">
-                  {dashboard.publishedImport ? `${dashboard.publishedImport.sourceFilename} — ${fmtDate(dashboard.publishedImport.dateFrom)} to ${fmtDate(dashboard.publishedImport.dateTo)}` : "Import and publish a snapshot to populate the dashboard."}
-                </p>
-              )}
-            </Card>
-            <Card className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-black text-slate-950">Import evidence</h2>
-              <p className="mt-1 text-sm font-medium text-slate-500">Excel and live iReports360 imports saved as previews first.</p>
-              <div className="mt-4 grid gap-3">
-                <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700">
-                  <Upload className="h-4 w-4" /> {file ? file.name : "Select Excel DV file"}
-                  <input className="hidden" type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                </label>
-                <Button className="min-h-11 gap-2 rounded bg-[#F97316] px-4 text-white hover:bg-orange-600" disabled={!canImport || busy || !dashboard.schemaReady} onClick={() => void uploadExcel()} type="button">
-                  <FileSpreadsheet className="h-4 w-4" /> Save Excel Preview
-                </Button>
-                <Button className="min-h-11 gap-2 rounded border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50" disabled={!canImport || !ireports360Configured || busy || !dashboard.schemaReady} onClick={() => void importLive()} type="button">
-                  <Activity className="h-4 w-4" /> Import Live iReports360
-                </Button>
-              </div>
-            </Card>
-          </div>
           <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
-            <div className="border-b border-slate-100 p-5">
-              <h2 className="text-lg font-black text-slate-950">Import history</h2>
-              <p className="text-sm font-medium text-slate-500">Publish exactly one official snapshot for dashboards and expense automation.</p>
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><TrendingUp className="h-5 w-5" /> Weekly double-visit trend</h2>
+              <p className="text-sm text-slate-500">Total DVs, AM/PM split, and MR coverage by ISO week within the selected range.</p>
             </div>
             <div className="overflow-auto">
-              <table className="w-full min-w-[860px] text-left">
+              <table className="w-full min-w-[680px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-3 py-3">File</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Range</th><th className="px-3 py-3">Visits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Action</th></tr>
+                  <tr>
+                    <th className="px-3 py-3">Week Of</th>
+                    <th className="px-3 py-3 text-right">Total DVs</th>
+                    <th className="px-3 py-3">AM / PM</th>
+                    <th className="px-3 py-3 text-right">MRs Covered</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {dashboard.imports.map((item) => (
-                    <ImportRow key={item.id} item={item} publishingId={publishingId} onPublish={canPublish && dashboard.schemaReady ? (id) => void publish(id) : () => undefined} />
+                  {dashboard.trend.map((week) => (
+                    <tr key={week.weekStart} className="border-t border-slate-100">
+                      <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtDate(week.weekStart)}</td>
+                      <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-950">{fmt(week.totalDvs)}</td>
+                      <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div></td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{week.distinctMrs}</td>
+                    </tr>
                   ))}
-                  {dashboard.imports.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No imports yet.</td></tr>
+                  {dashboard.trend.length === 0 && (
+                    <tr><td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-400">No double visits in this range.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><Flame className="h-5 w-5 text-rose-500" /> Neglected MRs ({dashboard.neglectedMrs.length})</h2>
+              <p className="text-sm text-slate-500">Warning/critical band — click a row to open the MR&apos;s full history. Trend compares the current vs prior 90-day window.</p>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-3 py-3">MR</th>
+                    <th className="px-3 py-3">Manager</th>
+                    <th className="px-3 py-3 text-right">Last 90d</th>
+                    <th className="px-3 py-3 text-right">Prev 90d</th>
+                    <th className="px-3 py-3">Trend</th>
+                    <th className="px-3 py-3">Band</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.neglectedMrs.map((score) => (
+                    <tr key={score.hrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => focusMr(score)}>
+                      <td className="px-3 py-2.5">
+                        <p className="font-semibold text-slate-800">{score.mrName}</p>
+                        <p className="text-xs text-slate-400">{score.hrId}</p>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600">{score.managerName ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-800">{score.dvsLast90Days}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{score.dvsPrev90Days}</td>
+                      <td className="px-3 py-2.5">
+                        {score.trendDirection === "improving" ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><TrendingUp className="h-3.5 w-3.5" /> Improving</span>
+                        ) : score.trendDirection === "declining" ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><TrendingDown className="h-3.5 w-3.5" /> Declining</span>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">Flat</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {dashboard.neglectedMrs.length === 0 && (
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No neglected MRs in this range.</td></tr>
                   )}
                 </tbody>
               </table>

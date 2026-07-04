@@ -313,15 +313,21 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         )
       : Promise.resolve(null);
 
-  // Double-visit rows for this MR — most recent first so [0] is the latest visit.
+  // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads the
+  // live iReports360 mirror directly (see double-visit-analytics/service.ts for the same
+  // double_crm_id + visit_type filter this module uses everywhere else): Regular/Campaign
+  // visits with a double-visit partner.
   const dvPromise =
     isMr && hrId
       ? wrapPromise(
           supabase
-            .from("double_visit_rows")
-            .select("activity_date")
-            .eq("visited_employee_hr_id", hrId.toUpperCase())
-            .order("activity_date", { ascending: false })
+            .from("ireports360_visits")
+            .select("visit_date")
+            .eq("agent_hr_id", hrId.toUpperCase())
+            .not("double_crm_id", "is", null)
+            .neq("double_crm_id", 0)
+            .in("visit_type", [0, -8])
+            .order("visit_date", { ascending: false })
             .limit(500),
         )
       : Promise.resolve(null);
@@ -465,15 +471,15 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   try {
     const dvData = dvResult.status === "fulfilled" ? dvResult.value : null;
     if (dvData && "data" in dvData && Array.isArray(dvData.data)) {
-      const rows = dvData.data as Array<{ activity_date: string }>;
+      const rows = dvData.data as Array<{ visit_date: string }>;
       const thisMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
       if (rows.length === 0) {
         doubleVisitPulse = { daysSinceLastDv: null, dvsThisMonth: 0, dvsLast90Days: 0 };
       } else {
-        const lastDate = new Date(rows[0].activity_date);
+        const lastDate = new Date(rows[0].visit_date);
         const daysSinceLastDv = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-        const dvsThisMonth = rows.filter((r) => r.activity_date.startsWith(thisMonthPrefix)).length;
-        const dvsLast90Days = rows.filter((r) => r.activity_date >= ninetyDaysAgo).length;
+        const dvsThisMonth = rows.filter((r) => r.visit_date.startsWith(thisMonthPrefix)).length;
+        const dvsLast90Days = rows.filter((r) => r.visit_date >= ninetyDaysAgo).length;
         doubleVisitPulse = { daysSinceLastDv, dvsThisMonth, dvsLast90Days };
       }
     }

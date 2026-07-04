@@ -1,27 +1,14 @@
 import ExcelJS from "exceljs";
 
-import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { type AccessContext, normalizeHrIdForAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import {
-  iReports360GetVisits,
-  iReports360Login,
-  type IReports360Visit,
-} from "@/lib/field-workforce-compliance/ireports360-client";
-import { getIReports360Config } from "@/lib/field-workforce-compliance/ireports360-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
 import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  buildDoubleVisitPreviewFromWorkbook,
-  markManagerVisitedRows,
-  markResignedVisitedRows,
-  normalizeIReports360DoubleVisits,
-  recoverVisitedEmployeesByCrmUsername,
-} from "@/lib/double-visit-analytics/parser";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import type {
   DoubleVisitBreakdownRow,
@@ -30,8 +17,6 @@ import type {
   DoubleVisitExecutiveSummary,
   DoubleVisitExpenseWorkloadEvidence,
   DoubleVisitIdleManager,
-  DoubleVisitImportListItem,
-  DoubleVisitImportStatus,
   DoubleVisitInsight,
   DoubleVisitInsightSeverity,
   DoubleVisitKpis,
@@ -39,57 +24,45 @@ import type {
   DoubleVisitManagerMrPair,
   DoubleVisitManagerSummary,
   DoubleVisitMrScore,
-  DoubleVisitNormalizedRow,
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusRosterEntry,
   DoubleVisitFocusTrendPoint,
-  DoubleVisitIntegrityImportSummary,
   DoubleVisitIntegrityIssue,
   DoubleVisitIntegrityIssueType,
   DoubleVisitIntegrityReport,
   DoubleVisitPortalFocus,
-  DoubleVisitPreview,
   DoubleVisitReportData,
   DoubleVisitReportRow,
   DoubleVisitRoleCode,
   DoubleVisitRoleRollup,
   DoubleVisitScopeFocus,
   DoubleVisitSourceType,
+  DoubleVisitTrendPoint,
   DoubleVisitVisitedEmployeeStatus,
 } from "@/lib/double-visit-analytics/types";
 
-const importsTable = "double_visit_imports";
-const rowsTable = "double_visit_rows";
-const archiveBatchSize = 500;
+// ── Double Visit Analytics: LIVE, directly off ireports360_visits ───────────────────
+//
+// Rebuilt 2026-07-04 (owner decision): the module used to maintain its own mirror
+// (double_visit_rows/double_visit_imports), populated by a manual Excel upload, an
+// on-demand iReports360 pull, or an automatic "publish a snapshot" cron step — a SECOND,
+// separately-scheduled copy of the same CRM data already held by the Visits Report
+// (ireports360_visits, synced 3x daily — see src/lib/visits-report/service.ts). That
+// import/publish/Excel machinery, and both tables, are gone. There is no snapshot to
+// publish and nothing to import: every read below queries ireports360_visits directly,
+// so Double Visit Analytics can never drift from the Visits Report's own numbers.
+//
+// A "double visit" = a visit whose double_crm_id names a second participant AND whose
+// visit_type is 0 (Regular) or -8 (Campaign/Prospection) — owner decision, since a shared
+// double_crm_id on a Meeting/Training/Conference/Vacation row is joint-attendance
+// bookkeeping in the CRM, not fieldwork. agent_hr_id/double_hr_id on ireports360_visits
+// are already resolved (manual override -> crm_id -> crm_username; see
+// resolveEmployeeHrId in visits-report/service.ts and the Visits Report's own "Unmapped
+// Agents" tab), so this module does no CRM-identity resolution of its own.
+const visitsTable = "ireports360_visits";
+const DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
 type JsonRecord = Record<string, unknown>;
-
-type DoubleVisitImportRow = {
-  active_mapped_visit_count: number | null;
-  am_visit_count: number | null;
-  area_count: number | null;
-  date_from: string;
-  date_to: string;
-  double_visitor_count: number | null;
-  duplicate_warning_count: number | null;
-  id: string;
-  line_count: number | null;
-  missing_visited_hr_id_count: number | null;
-  mr_coverage_count: number | null;
-  pm_visit_count: number | null;
-  published_at: string | null;
-  published_by: string | null;
-  sheet_name: string | null;
-  source_filename: string;
-  source_type: DoubleVisitSourceType;
-  status: DoubleVisitImportStatus;
-  total_rows: number | null;
-  total_visits: number | null;
-  uploaded_at: string;
-  uploaded_by: string | null;
-  vacant_or_unmapped_visit_count: number | null;
-  warning_count: number | null;
-};
 
 type DoubleVisitDbRow = {
   activity_date: string;
@@ -97,12 +70,10 @@ type DoubleVisitDbRow = {
   double_visitor_hr_id: string | null;
   double_visitor_name: string | null;
   id: string;
-  import_id: string;
   line_name: string | null;
   period: "AM" | "PM" | "UNKNOWN";
   raw_payload: JsonRecord | null;
   source_record_id: string | null;
-  source_row_number: number | null;
   source_type: DoubleVisitSourceType;
   visit_count: number | null;
   visited_employee_hr_id: string | null;
@@ -129,19 +100,18 @@ function round(value: number, digits = 2) {
   return Math.round(value * factor) / factor;
 }
 
+// Only the precise "table not provisioned" signals — NOT the bare table name or a generic
+// "does not exist", which would also match permission-denied/column-drift errors and mask a
+// real outage as a benign empty state (a known gap in the sibling Visits Report, not repeated
+// here).
 function schemaMissing(error: unknown) {
   const message = error instanceof Error ? error.message : JSON.stringify(error);
-  return /double_visit_|schema cache|does not exist|PGRST205|42P01/i.test(message);
+  return /schema cache|PGRST205|42P01|relation ".*" does not exist/i.test(message);
 }
 
-function throwSchemaMissingError() {
-  throw new Error("Double Visit Analytics tables are not provisioned in the connected database. Please apply migration 20260612172427_double_visit_analytics.sql.");
-}
-
-function ensureNoSchemaError(error: unknown) {
-  if (!error) return;
-  if (schemaMissing(error)) throwSchemaMissingError();
-  throw new Error(error instanceof Error ? error.message : "Unknown error");
+async function isDoubleVisitSchemaReady() {
+  const { error } = await getSupabaseAdmin().from(visitsTable).select("id", { count: "exact", head: true }).limit(1);
+  return !schemaMissing(error);
 }
 
 function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardData {
@@ -153,7 +123,6 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
     executiveSummary: { idleManagers: [], insights: [], roleRollups: [] },
     filters: { areas: [], doubleVisitors: [], lines: [] },
     heatmap: { byArea: [], byLine: [] },
-    imports: [],
     kpis: {
       activeCalendarDays: 0,
       activeDoubleVisitDays: 0,
@@ -171,25 +140,12 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
     },
     managerSummaries: [],
     mrScores: [],
-    publishedImport: null,
+    neglectedMrs: [],
     salesComparisonAvailable: false,
     schemaReady: false,
+    trend: [],
     visitLog: [],
   };
-}
-
-async function isDoubleVisitSchemaReady() {
-  const supabase = getSupabaseAdmin();
-  const [importCheck, rowsCheck] = await Promise.all([
-    supabase.from(importsTable).select("id", { count: "exact", head: true }).limit(1),
-    supabase.from(rowsTable).select("id", { count: "exact", head: true }).limit(1),
-  ]);
-  if (schemaMissing(importCheck.error) || schemaMissing(rowsCheck.error)) return false;
-  return true;
-}
-
-function actorFromAccess(access: AccessContext) {
-  return resolveEmployeeIdentityId(access) ?? access.loginId ?? access.hrId ?? "system";
 }
 
 function todayIso() {
@@ -284,7 +240,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
 
   // GPM and PM oversee their entire product LINE, not just their reporting chain. In
   // production the employee directory keys lines by numeric line_id (line_name is null on
-  // the manager records), and the DV import labels lines with an unrelated text code — so
+  // the manager records), and the DV feed labels lines with an unrelated text code — so
   // matching on line_name alone never fires. Resolve the full line with the canonical
   // sameWorkforceLine (line_id preferred, line-name fallback) and add every line member to
   // allowedHrIds, so a DV is in scope whenever the double-visitor OR the visited MR sits on
@@ -349,462 +305,165 @@ function currentMonthBounds(referenceDate = todayIso()) {
   return { end, start };
 }
 
-function mapImportRow(row: DoubleVisitImportRow): DoubleVisitImportListItem {
-  return {
-    activeMappedVisitCount: asNumber(row.active_mapped_visit_count),
-    amVisitCount: asNumber(row.am_visit_count),
-    areaCount: asNumber(row.area_count),
-    dateFrom: row.date_from,
-    dateTo: row.date_to,
-    doubleVisitorCount: asNumber(row.double_visitor_count),
-    duplicateWarningCount: asNumber(row.duplicate_warning_count),
-    id: row.id,
-    lineCount: asNumber(row.line_count),
-    missingVisitedHrIdCount: asNumber(row.missing_visited_hr_id_count),
-    mrCoverageCount: asNumber(row.mr_coverage_count),
-    pmVisitCount: asNumber(row.pm_visit_count),
-    publishedAt: row.published_at,
-    publishedBy: row.published_by,
-    sheetName: row.sheet_name,
-    sourceFilename: row.source_filename,
-    sourceType: row.source_type,
-    status: row.status,
-    totalRows: asNumber(row.total_rows),
-    totalVisits: asNumber(row.total_visits),
-    uploadedAt: row.uploaded_at,
-    uploadedBy: row.uploaded_by ?? "system",
-    vacantOrUnmappedVisitCount: asNumber(row.vacant_or_unmapped_visit_count),
-    warningCount: asNumber(row.warning_count),
-  };
-}
+// ── Live loader: ireports360_visits -> DoubleVisitDbRow ─────────────────────────────
 
-function rowInsert(importId: string, row: DoubleVisitNormalizedRow) {
-  return {
-    activity_date: row.activityDate,
-    area_name: row.areaName,
-    double_visitor_hr_id: row.doubleVisitorHrId,
-    double_visitor_name: row.doubleVisitorName,
-    import_id: importId,
-    line_name: row.lineName,
-    period: row.period,
-    raw_payload: row.rawPayload,
-    source_hash: row.sourceHash,
-    source_record_id: row.sourceRecordId,
-    source_row_number: row.sourceRowNumber,
-    source_type: row.sourceType,
-    visit_count: row.visitCount,
-    visited_employee_hr_id: row.visitedEmployeeHrId,
-    visited_employee_name: row.visitedEmployeeName,
-    visited_employee_status: row.visitedEmployeeStatus,
-  };
-}
-
-export async function saveDoubleVisitPreview(input: {
-  actorLoginId: string;
-  preview: DoubleVisitPreview;
-}) {
-  const supabase = getSupabaseAdmin();
-  if (!(await isDoubleVisitSchemaReady())) {
-    throwSchemaMissingError();
-  }
-
-  // Abort an import that parsed rows but zero visits — a strong signal the Count column
-  // is missing/empty or misread. Better to fail than to publish an all-zeros snapshot.
-  if (input.preview.rows.length > 0 && input.preview.summary.totalVisits <= 0) {
-    throw new Error(
-      "Parsed rows but zero total visits — the Count column may be missing, empty, or misread. Import aborted; check the file and re-upload.",
-    );
-  }
-
-  const importPayload = {
-    active_mapped_visit_count: input.preview.summary.activeMappedVisitCount,
-    am_visit_count: input.preview.summary.amVisitCount,
-    area_count: input.preview.summary.areaCount,
-    date_from: input.preview.summary.dateFrom,
-    date_to: input.preview.summary.dateTo,
-    double_visitor_count: input.preview.summary.doubleVisitorCount,
-    duplicate_warning_count: input.preview.summary.duplicateWarningCount,
-    line_count: input.preview.summary.lineCount,
-    missing_visited_hr_id_count: input.preview.summary.missingVisitedHrIdCount,
-    mr_coverage_count: input.preview.summary.mrCoverageCount,
-    pm_visit_count: input.preview.summary.pmVisitCount,
-    sheet_name: input.preview.metadata.sheetName,
-    source_filename: input.preview.metadata.fileName,
-    source_type: input.preview.metadata.sourceType,
-    status: "preview",
-    total_rows: input.preview.summary.totalRows,
-    total_visits: input.preview.summary.totalVisits,
-    uploaded_by: input.actorLoginId,
-    vacant_or_unmapped_visit_count: input.preview.summary.vacantOrUnmappedVisitCount,
-    validation_summary: {
-      generatedAt: input.preview.metadata.generatedAt,
-      warnings: input.preview.warnings,
-    },
-    warning_count: input.preview.summary.warningCount,
-  };
-  const { data, error } = await supabase
-    .from(importsTable)
-    .insert(importPayload)
-    .select("*")
-    .single();
-  if (error) ensureNoSchemaError(error);
-
-  const importId = String(data.id);
-  const inserts = input.preview.rows.map((row) => rowInsert(importId, row));
-  for (let index = 0; index < inserts.length; index += archiveBatchSize) {
-    const chunk = inserts.slice(index, index + archiveBatchSize);
-    const { error: rowsError } = await supabase.from(rowsTable).insert(chunk);
-    if (rowsError) ensureNoSchemaError(rowsError);
-  }
-
-  // Post-insert reconciliation: the header row already records total_rows/total_visits,
-  // and chunked inserts are NOT transactional. If any row failed to persist, the snapshot
-  // would be publishable while under-counting every metric (the failure class we are
-  // hardening against). Verify the stored count and roll the import back on mismatch.
-  const { count: storedRowCount, error: countError } = await supabase
-    .from(rowsTable)
-    .select("id", { count: "exact", head: true })
-    .eq("import_id", importId);
-  if (countError) ensureNoSchemaError(countError);
-  if ((storedRowCount ?? 0) !== inserts.length) {
-    await supabase.from(rowsTable).delete().eq("import_id", importId);
-    await supabase.from(importsTable).delete().eq("id", importId);
-    throw new Error(
-      `Double Visit import row mismatch: expected ${inserts.length} rows but ${storedRowCount ?? 0} persisted. The import was rolled back; please retry.`,
-    );
-  }
-
-  await writeRequiredAuditLog({
-    actorLoginId: input.actorLoginId,
-    entityId: importId,
-    entityType: "double_visit_import",
-    newValues: {
-      dateFrom: input.preview.summary.dateFrom,
-      dateTo: input.preview.summary.dateTo,
-      sourceFilename: input.preview.metadata.fileName,
-      sourceType: input.preview.metadata.sourceType,
-      totalRows: input.preview.summary.totalRows,
-      totalVisits: input.preview.summary.totalVisits,
-      vacantOrUnmappedVisitCount: input.preview.summary.vacantOrUnmappedVisitCount,
-    },
-    summary: "Double Visit Analytics import preview saved.",
-  });
-
-  return mapImportRow(data as DoubleVisitImportRow);
-}
-
-export async function buildAndSaveDoubleVisitExcelImport(input: {
-  actorLoginId: string;
-  arrayBuffer: ArrayBuffer;
-  fileName: string;
-}) {
-  const [preview, employees] = await Promise.all([
-    buildDoubleVisitPreviewFromWorkbook({
-      arrayBuffer: input.arrayBuffer,
-      fileName: input.fileName,
-    }),
-    getEmployeeDirectoryRows({ includeInactive: true }),
-  ]);
-  // Recover visited MRs whose seat was logged as "Vacant"/blank but whose name matches an
-  // active employee, so their received double visits are credited to the real MR.
-  const recovered = recoverVisitedEmployeesByCrmUsername(preview, employees);
-  // Flag rows where the visited "employee" is actually a manager (DSM/RM/NSM/PM/GPM/TM).
-  // These are CRM data errors (a DV is always manager→MR) and must not count as valid DVs.
-  const managerHrIdKeys = new Set(
-    employees
-      .filter((e) => resolveDvRole(e) !== null)
-      .map((e) => canonicalHrIdKey(e.hrId))
-      .filter((k): k is string => Boolean(k)),
-  );
-  const withNonMrFlagged = markManagerVisitedRows(recovered, managerHrIdKeys);
-  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview: withNonMrFlagged });
-  return { import: saved, preview: { ...withNonMrFlagged, importId: saved.id } };
-}
-
-export async function buildAndSaveDoubleVisitIReports360Import(input: {
-  actorLoginId: string;
-  dateFrom: string;
-  dateTo: string;
-}) {
-  const config = getIReports360Config();
-  const token = await iReports360Login(config);
-  const [visits, employees] = await Promise.all([
-    iReports360GetVisits(config, token, input.dateFrom, input.dateTo),
-    getEmployeeDirectoryRows({ includeInactive: true }),
-  ]);
-  const preview = normalizeIReports360DoubleVisits({
-    employees,
-    fileName: `iReports360 Double Visits ${input.dateFrom} to ${input.dateTo}`,
-    visits,
-  });
-  const saved = await saveDoubleVisitPreview({ actorLoginId: input.actorLoginId, preview });
-  return { import: saved, preview: { ...preview, importId: saved.id } };
-}
-
-// ── Automatic mirror-sync: builds and publishes an official Double Visit snapshot straight from
-// the continuously-synced iReports360 visit mirror (ireports360_visits — see
-// src/lib/visits-report/service.ts), on the SAME footing as the manual paths above so Excel
-// upload / the on-demand pull keep working as a human fallback/override. Called by the visits
-// mirror-sync cron right after it refreshes ireports360_visits (see
-// app/api/cron/ireports360-visits-sync/route.ts).
-
-const mirrorVisitsTable = "ireports360_visits";
-
-// Sentinel actor identifying imports the automatic job created, distinct from a real admin's
-// login id. No schema change — this is a marker value in the existing `uploaded_by` text column.
-// Used to (a) never let the auto-sync silently clobber a manual override, and (b) know which
-// superseded imports are safe to hard-delete afterward.
-const IREPORTS360_MIRROR_SYNC_ACTOR = "system:ireports360-mirror-sync";
-const IREPORTS360_MIRROR_SYNC_ACCESS: AccessContext = {
-  hrId: null,
-  loginId: IREPORTS360_MIRROR_SYNC_ACTOR,
-  role: "Super Admin",
-  scope: "system",
-  source: "system",
-};
-
-export function isAutoSyncImport(uploadedBy: string | null | undefined): boolean {
-  return uploadedBy === IREPORTS360_MIRROR_SYNC_ACTOR;
-}
-
-type MirrorDoubleVisitRow = {
+type MirrorVisitRow = {
+  agent_hr_id: string | null;
+  agent_name: string | null;
+  ampm: string | null;
+  contact_name: string | null;
+  crm_visit_id: number;
+  customer_name: string | null;
+  double_crm_id: number | null;
+  double_hr_id: string | null;
+  double_name: string | null;
   id: string;
   raw_payload: JsonRecord | null;
+  visit_date: string;
 };
 
-async function paginateMirrorDoubleVisitRows(): Promise<MirrorDoubleVisitRow[]> {
+function periodFromAmpm(value: string | null): "AM" | "PM" | "UNKNOWN" {
+  const normalized = text(value).toUpperCase();
+  if (normalized === "AM") return "AM";
+  if (normalized === "PM") return "PM";
+  return "UNKNOWN";
+}
+
+// The CRM's own display-name text encodes "Name ( Area / Line )" — used only as a fallback
+// label when the visited agent has no employee-directory match, so an unmapped visit still
+// shows a readable area/line instead of blank.
+function extractNameAreaLine(value: string | null | undefined) {
+  const raw = text(value);
+  if (!raw) return { areaName: null as string | null, lineName: null as string | null, name: null as string | null };
+  const match = raw.match(/^(.*?)\s*\((.*?)\)\s*$/);
+  if (!match) return { areaName: null, lineName: null, name: raw };
+  const name = text(match[1]) || null;
+  const parts = text(match[2]).split(/[/|]/).map((part) => text(part)).filter(Boolean);
+  const lineName = parts.length > 1 ? parts[parts.length - 1] : null;
+  const areaName = parts.length > 1 ? parts.slice(0, -1).join(" / ") : parts[0] ?? null;
+  return { areaName, lineName, name: name || raw };
+}
+
+async function paginateLiveMirrorVisits(dateFrom: string, dateTo: string): Promise<MirrorVisitRow[]> {
   const pageSize = 1000;
-  const rows: MirrorDoubleVisitRow[] = [];
+  const rows: MirrorVisitRow[] = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await getSupabaseAdmin()
-      .from(mirrorVisitsTable)
-      .select("id, raw_payload")
+      .from(visitsTable)
+      .select("id, crm_visit_id, visit_date, agent_hr_id, agent_name, contact_name, customer_name, double_crm_id, double_hr_id, double_name, ampm, raw_payload")
       .not("double_crm_id", "is", null)
+      .neq("double_crm_id", 0)
+      .in("visit_type", [...DOUBLE_VISIT_TYPE_CODES])
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       if (schemaMissing(error)) break;
-      throw new Error(error instanceof Error ? error.message : String(error));
+      throw new Error(error.message);
     }
-    const page = (data ?? []) as MirrorDoubleVisitRow[];
+    const page = (data ?? []) as MirrorVisitRow[];
     rows.push(...page);
     if (page.length < pageSize) break;
   }
   return rows;
 }
 
-export type DoubleVisitMirrorSyncResult =
-  | { skipped: true; reason: string }
-  | { published: true; importId: string; rowCount: number }
-  | { failed: true; message: string };
+function dbRowFromMirrorVisit(
+  visit: MirrorVisitRow,
+  employeeByHrKey: Map<string, EmployeeDirectoryRow>,
+  managerHrIdKeys: Set<string>,
+): DoubleVisitDbRow {
+  const visitedKey = canonicalHrIdKey(visit.agent_hr_id);
+  const visitedEmployee = visitedKey ? employeeByHrKey.get(visitedKey) ?? null : null;
+  const doubleKey = canonicalHrIdKey(visit.double_hr_id);
+  const doubleEmployee = doubleKey ? employeeByHrKey.get(doubleKey) ?? null : null;
+  const label = extractNameAreaLine(visit.agent_name ?? visit.contact_name ?? visit.customer_name);
 
-export async function buildAndSaveDoubleVisitFromMirror(): Promise<DoubleVisitMirrorSyncResult> {
-  try {
-    if (!(await isDoubleVisitSchemaReady())) {
-      return { skipped: true, reason: "Double Visit Analytics tables are not provisioned." };
-    }
-
-    // Never clobber a human's manual override — only auto-publish over the auto-sync's OWN prior
-    // snapshot. A manually-published import stands until a human explicitly replaces it.
-    const current = await getLatestPublishedImport();
-    if (current && !isAutoSyncImport(current.uploadedBy)) {
-      return { skipped: true, reason: "A manually-published import is currently active; deferring to it." };
-    }
-
-    const [mirrorRows, employees] = await Promise.all([
-      paginateMirrorDoubleVisitRows(),
-      getEmployeeDirectoryRows({ includeInactive: true }),
-    ]);
-    if (mirrorRows.length === 0) {
-      return { skipped: true, reason: "No double-visit rows found in the iReports360 mirror yet." };
-    }
-
-    // raw_payload stores the exact IReports360Visit shape the mirror sync received — reconstruct
-    // it and reuse normalizeIReports360DoubleVisits() unchanged, rather than re-deriving row
-    // shaping here. This deliberately re-resolves crmId->hrId against the CURRENT employee
-    // directory (not whatever was cached in the mirror row at its own sync time), so an HR ID
-    // correction lands immediately at the next auto-sync rather than waiting for a mirror re-sync.
-    const visits = mirrorRows
-      .map((row) => row.raw_payload as unknown as IReports360Visit | null)
-      .filter((visit): visit is IReports360Visit => Boolean(visit));
-
-    const preview = normalizeIReports360DoubleVisits({
-      employees,
-      fileName: "iReports360 visit mirror (automatic sync)",
-      visits,
-    });
-
-    const managerHrIdKeys = new Set(
-      employees
-        .filter((e) => resolveDvRole(e) !== null)
-        .map((e) => canonicalHrIdKey(e.hrId))
-        .filter((k): k is string => Boolean(k)),
-    );
-    const withNonMrFlagged = markManagerVisitedRows(preview, managerHrIdKeys);
-    const withResignedFlagged = markResignedVisitedRows(withNonMrFlagged, employees);
-
-    const saved = await saveDoubleVisitPreview({
-      actorLoginId: IREPORTS360_MIRROR_SYNC_ACTOR,
-      preview: withResignedFlagged,
-    });
-    await publishDoubleVisitImport({ access: IREPORTS360_MIRROR_SYNC_ACCESS, importId: saved.id });
-
-    // Immediately prune the PREVIOUS auto-sync import (now superseded) — at steady state at most
-    // one auto-sync import's rows exist at a time. This bounds storage AND prevents readers that
-    // scan double_visit_rows history ungated by import status (getDoubleVisitPortalFocus, the
-    // portal doubleVisitPulse widget in employee-portal/home-snapshot.ts) from counting the same
-    // physical CRM visit multiple times across repeated full-history rebuilds. Manually-created
-    // imports are never touched — only rows carrying the auto-sync sentinel are eligible.
-    const { data: staleAutoSyncImports, error: staleLookupError } = await getSupabaseAdmin()
-      .from(importsTable)
-      .select("id")
-      .eq("status", "superseded")
-      .eq("uploaded_by", IREPORTS360_MIRROR_SYNC_ACTOR)
-      .neq("id", saved.id);
-    if (!staleLookupError && staleAutoSyncImports && staleAutoSyncImports.length > 0) {
-      const staleIds = staleAutoSyncImports.map((row) => row.id as string);
-      await getSupabaseAdmin().from(importsTable).delete().in("id", staleIds);
-    }
-
-    return { importId: saved.id, published: true, rowCount: withResignedFlagged.rows.length };
-  } catch (error) {
-    return { failed: true, message: error instanceof Error ? error.message : String(error) };
+  // Manager-to-manager and resigned reclassification mirrors the deleted parser.ts's
+  // markManagerVisitedRows/markResignedVisitedRows: a double visit is always manager -> MR,
+  // never manager -> manager, and a visited employee's CURRENT employment status (not a
+  // point-in-time annotation) decides "resigned".
+  let visitedStatus: DoubleVisitVisitedEmployeeStatus = visitedEmployee ? "active_mapped" : "unmapped";
+  if (visitedStatus === "active_mapped" && visitedKey && managerHrIdKeys.has(visitedKey)) {
+    visitedStatus = "non_mr";
+  } else if (visitedStatus === "active_mapped" && visitedEmployee && isTerminalEmploymentStatus(visitedEmployee.employmentStatus)) {
+    visitedStatus = "resigned";
   }
+
+  return {
+    activity_date: visit.visit_date,
+    area_name: visitedEmployee?.areaName ?? label.areaName,
+    double_visitor_hr_id: visit.double_hr_id ?? (visit.double_crm_id ? `CRM:${visit.double_crm_id}` : null),
+    double_visitor_name: doubleEmployee?.fullName ?? visit.double_name ?? null,
+    id: visit.id,
+    line_name: visitedEmployee?.lineName ?? label.lineName,
+    period: periodFromAmpm(visit.ampm),
+    raw_payload: visit.raw_payload,
+    source_record_id: String(visit.crm_visit_id),
+    source_type: "ireports360",
+    visit_count: 1,
+    visited_employee_hr_id: visit.agent_hr_id,
+    visited_employee_name: visitedEmployee?.fullName ?? label.name ?? visit.agent_name,
+    visited_employee_status: visitedStatus,
+  };
 }
 
-export async function listDoubleVisitImports(limit = 20) {
-  const { data, error } = await getSupabaseAdmin()
-    .from(importsTable)
-    .select("*")
-    .order("uploaded_at", { ascending: false })
-    .limit(limit);
-  if (error) {
-    if (schemaMissing(error)) return [];
-    throw new Error(error.message);
-  }
-  return ((data ?? []) as DoubleVisitImportRow[]).map(mapImportRow);
+/** The single source loader every function in this module reads through: every double visit
+ * (see the module header for the exact definition) in [dateFrom, dateTo], read straight off
+ * ireports360_visits and enriched with area/line/status from the employee directory. */
+export async function getLiveDoubleVisitRows(
+  dateFrom: string,
+  dateTo: string,
+  employees: EmployeeDirectoryRow[],
+): Promise<DoubleVisitDbRow[]> {
+  const mirrorRows = await paginateLiveMirrorVisits(dateFrom, dateTo);
+  if (mirrorRows.length === 0) return [];
+  const employeeByHrKey = new Map(
+    employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+  const managerHrIdKeys = new Set(
+    employees
+      .filter((employee) => resolveDvRole(employee) !== null)
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+  return mirrorRows.map((visit) => dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys));
 }
 
-export async function publishDoubleVisitImport(input: {
-  access: AccessContext;
-  importId: string;
-}) {
-  const actor = actorFromAccess(input.access);
-  const supabase = getSupabaseAdmin();
-  if (!(await isDoubleVisitSchemaReady())) {
-    throwSchemaMissingError();
-  }
-
-  const { data: target, error: loadError } = await supabase
-    .from(importsTable)
-    .select("*")
-    .eq("id", input.importId)
-    .maybeSingle();
-  if (loadError) ensureNoSchemaError(loadError);
-  if (!target) throw new Error("Double Visit import was not found.");
-  const targetRow = target as DoubleVisitImportRow;
-
-  const { error: supersedeError } = await supabase
-    .from(importsTable)
-    .update({ status: "superseded", updated_at: new Date().toISOString() })
-    .eq("status", "published")
-    .neq("id", input.importId);
-  if (supersedeError) ensureNoSchemaError(supersedeError);
-
-  const { data, error } = await supabase
-    .from(importsTable)
-    .update({
-      published_at: new Date().toISOString(),
-      published_by: actor,
-      status: "published",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", input.importId)
-    .select("*")
-    .single();
-  if (error) ensureNoSchemaError(error);
-
-  await writeRequiredAuditLog({
-    actorLoginId: actor,
-    entityId: input.importId,
-    entityType: "double_visit_import",
-    newValues: {
-      dateFrom: targetRow.date_from,
-      dateTo: targetRow.date_to,
-      sourceFilename: targetRow.source_filename,
-      status: "published",
-    },
-    oldValues: { status: targetRow.status },
-    summary: "Double Visit Analytics import published as the official snapshot.",
-  });
-
-  // Auto-tick DV checkboxes on active probation records (fire-and-forget, non-blocking)
-  import("@/lib/probation/feedback-service")
-    .then(m => m.tickDvCheckboxesFromPublish(input.importId))
-    .catch(() => undefined);
-
-  return mapImportRow(data as DoubleVisitImportRow);
+function isoWeekStart(dateIso: string): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  const day = date.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setUTCDate(date.getUTCDate() + diffToMonday);
+  return monday.toISOString().slice(0, 10);
 }
 
-async function getPublishedImportForRange(dateFrom: string, dateTo: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from(importsTable)
-    .select("*")
-    .eq("status", "published")
-    .lte("date_from", dateTo)
-    .gte("date_to", dateFrom)
-    .order("published_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    if (schemaMissing(error)) return null;
-    throw new Error(error.message);
+function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
+  const byWeek = new Map<string, { am: number; mrs: Set<string>; pm: number; total: number }>();
+  for (const row of rows) {
+    const week = isoWeekStart(row.activity_date);
+    const bucket = byWeek.get(week) ?? { am: 0, mrs: new Set<string>(), pm: 0, total: 0 };
+    const count = asNumber(row.visit_count);
+    bucket.total += count;
+    if (row.period === "AM") bucket.am += count;
+    if (row.period === "PM") bucket.pm += count;
+    const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
+    if (visitedKey) bucket.mrs.add(visitedKey);
+    byWeek.set(week, bucket);
   }
-  return data ? mapImportRow(data as DoubleVisitImportRow) : null;
-}
-
-async function getLatestPublishedImport() {
-  const { data, error } = await getSupabaseAdmin()
-    .from(importsTable)
-    .select("*")
-    .eq("status", "published")
-    .order("published_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    if (schemaMissing(error)) return null;
-    throw new Error(error.message);
-  }
-  return data ? mapImportRow(data as DoubleVisitImportRow) : null;
-}
-
-async function getPublishedRows(dateFrom: string, dateTo: string) {
-  const importRow = await getPublishedImportForRange(dateFrom, dateTo);
-  if (!importRow) return { importRow: null, rows: [] as DoubleVisitDbRow[] };
-  // PostgREST caps a single response (db-max-rows, ~1000), and `.limit()` cannot exceed
-  // that cap — so page through EVERY row. A published snapshot routinely exceeds 1000 rows
-  // and must never be silently truncated (that under-counts every KPI, score, and summary).
-  const pageSize = 1000;
-  const rows: DoubleVisitDbRow[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await getSupabaseAdmin()
-      .from(rowsTable)
-      .select("*")
-      .eq("import_id", importRow.id)
-      .gte("activity_date", dateFrom)
-      .lte("activity_date", dateTo)
-      .order("activity_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (schemaMissing(error)) return { importRow: null, rows: [] as DoubleVisitDbRow[] };
-      throw new Error(error.message);
-    }
-    const page = (data ?? []) as DoubleVisitDbRow[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return { importRow, rows };
+  return Array.from(byWeek.entries())
+    .map(([weekStart, bucket]) => ({
+      amVisits: bucket.am,
+      distinctMrs: bucket.mrs.size,
+      pmVisits: bucket.pm,
+      totalDvs: bucket.total,
+      weekStart,
+    }))
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
 function isActiveEmployee(employee: EmployeeDirectoryRow) {
@@ -864,6 +523,8 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
     rowsByMr.set(key, [...(rowsByMr.get(key) ?? []), row]);
   }
   const last90Start = addDaysIso(asOfDate, -90);
+  const prev90Start = addDaysIso(asOfDate, -180);
+  const prev90End = addDaysIso(asOfDate, -91);
   return activeMrs.map((employee) => {
     const key = canonicalHrIdKey(employee.hrId) ?? "";
     const mrRows = rowsByMr.get(key) ?? [];
@@ -874,6 +535,14 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
     const dvsLast90Days = mrRows
       .filter((row) => row.activity_date >= last90Start && row.activity_date <= asOfDate)
       .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    // Best-effort delta: only as accurate as the caller's own [dateFrom,dateTo] range allows —
+    // same limitation dvsLast90Days already has. A range narrower than 180 days simply yields
+    // fewer/zero prior-period visits rather than a true rolling comparison.
+    const dvsPrev90Days = mrRows
+      .filter((row) => row.activity_date >= prev90Start && row.activity_date <= prev90End)
+      .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    const trendDirection: DoubleVisitMrScore["trendDirection"] =
+      dvsLast90Days > dvsPrev90Days ? "improving" : dvsLast90Days < dvsPrev90Days ? "declining" : "flat";
     const distinctVisitors = new Set(mrRows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean));
     const band = days == null || days > 60 || dvsLast90Days === 0
       ? "critical"
@@ -886,6 +555,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       daysSinceLastDv: days,
       distinctDoubleVisitors: distinctVisitors.size,
       dvsLast90Days,
+      dvsPrev90Days,
       employeeStatus: employee.employmentStatus,
       hireDate: employee.hireDate,
       hrId: employee.hrId,
@@ -896,6 +566,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       managerName: employee.managerName,
       mrName: employee.fullName,
       totalDvs: mrRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0),
+      trendDirection,
     } satisfies DoubleVisitMrScore;
   }).sort((left, right) => {
     const bandRank = { critical: 0, warning: 1, healthy: 2 };
@@ -1117,6 +788,12 @@ export function buildManagerSummariesDetailed(
     const firstDvDate = sortedDates.at(0) ?? null;
     const lastDvDate = sortedDates.at(-1) ?? null;
 
+    // Simple composite quality signal (0-100, not a scientific score): coverage of the team,
+    // penalized when effort concentrates on a handful of MRs instead of being spread around.
+    const effectivenessScore = coveragePct == null
+      ? null
+      : round(Math.max(0, Math.min(100, coveragePct - (concentrationPct ?? 0) * 0.3)), 1);
+
     summaries.push({
       activeDvDays,
       amVisits,
@@ -1126,6 +803,7 @@ export function buildManagerSummariesDetailed(
       coveragePct,
       daysSinceLastDv: daysBetween(lastDvDate, asOfDate),
       distinctMrs,
+      effectivenessScore,
       firstDvDate,
       inDirectory: Boolean(employee),
       lastDvDate,
@@ -1465,15 +1143,11 @@ export async function getDoubleVisitDashboardData(input: {
   if (!schemaReady) {
     return emptyDashboard(input.dateFrom || month.start, input.dateTo || month.end);
   }
-  // Default to the published snapshot's FULL span (not the current calendar month) so the
-  // dashboard reflects the entire official file unless the user explicitly narrows the range.
-  const latestPublished = await getLatestPublishedImport();
-  const dateFrom = input.dateFrom || latestPublished?.dateFrom || month.start;
-  const dateTo = input.dateTo || latestPublished?.dateTo || month.end;
+  const dateFrom = input.dateFrom || month.start;
+  const dateTo = input.dateTo || month.end;
 
-  const imports = await listDoubleVisitImports();
-  const { importRow, rows } = await getPublishedRows(dateFrom, dateTo);
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const rows = await getLiveDoubleVisitRows(dateFrom, dateTo, employees);
   const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access);
   const scopedRows = filterRowsForAccess(rows, input.access, employees);
   const scopedEmployeesByHrId = new Map(
@@ -1482,8 +1156,7 @@ export async function getDoubleVisitDashboardData(input: {
       .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
   );
   // Build a set of manager HR ID keys (DSM/RM/NSM/PM/GPM/TM) to exclude manager-to-manager
-  // rows. The runtime filter covers rows already in the DB as 'active_mapped' before this
-  // validation was added, as well as newly-imported 'non_mr' rows.
+  // rows — defense-in-depth alongside the row-level classification in dbRowFromMirrorVisit.
   const managerHrIdKeys = new Set(
     scopedEmployees
       .filter((e) => resolveDvRole(e) !== null)
@@ -1531,30 +1204,21 @@ export async function getDoubleVisitDashboardData(input: {
       byArea: buildHeatmapRows(mrScores, "areaName", areaBuckets),
       byLine: buildHeatmapRows(mrScores, "lineName", lineBuckets),
     },
-    imports,
     kpis: kpisValue,
     managerSummaries,
     mrScores,
-    publishedImport: importRow,
+    neglectedMrs: mrScores.filter((score) => score.band !== "healthy"),
     salesComparisonAvailable: false,
     schemaReady: true,
+    trend: buildWeeklyTrend(filteredRows),
     visitLog,
   };
 }
 
 // ── Portal landing "focus" widgets: personal trend, scope coverage, probation watch ────
-//
-// Unlike getDoubleVisitDashboardData (gated to the single currently-"published" import, by
-// design, for governance/audit consistency), these widgets read double_visit_rows directly
-// across every uploaded snapshot — the same "raw history" pattern the MR-side doubleVisitPulse
-// widget already uses in employee-portal/home-snapshot.ts. A personal month-over-month trend
-// needs history the publish/supersede model does not retain as "published" at any one time.
 
-const NEVER_VISITED_FLAG_DAYS = 45;
-// Double-visit tracking in this system starts January 2026 (earliest activity_date in
-// double_visit_rows) — the trend is anchored there rather than a rolling window so a manager's
-// full history is visible, not just an arbitrary recent slice.
 const FOCUS_TREND_START_MONTH = "2026-01";
+const NEVER_VISITED_FLAG_DAYS = 45;
 const FOCUS_NEGLECTED_DISPLAY_LIMIT = 8;
 const FOCUS_PROBATION_DISPLAY_LIMIT = 8;
 
@@ -1581,52 +1245,12 @@ function focusMonthBuckets(startMonth: string, asOf = new Date()) {
   return buckets;
 }
 
-// iReports360 visits carry a visitType (0 = regular field coverage; other codes are Campaign,
-// Conference, etc. — see field-workforce-compliance/ireports360-source.ts). That distinction is
-// preserved verbatim in raw_payload on import but was never surfaced here. Owner decision: keep
-// counting every visit kind toward totals, but make the split visible rather than hiding it.
-// Excel-sourced rows have no such concept — that manual workflow only ever records regular
-// field double-visits, so they're always "Regular".
-function deriveVisitKind(row: Pick<DoubleVisitDbRow, "source_type" | "raw_payload">): string {
-  if (row.source_type !== "ireports360") return "Regular";
+/** "Regular" for visitType 0, else the CRM's own label — matches the module's own double-visit
+ * filter (visit_type IN (0,-8)), so this only ever distinguishes Regular from Campaign now. */
+function deriveVisitKind(row: Pick<DoubleVisitDbRow, "raw_payload">): string {
   const payload = row.raw_payload as { visitType?: number; visitTypeDescription?: string | null } | null;
   if (payload?.visitType === 0) return "Regular";
   return nullableText(payload?.visitTypeDescription ?? null) ?? "Non-Regular";
-}
-
-type DoubleVisitFocusRawRow = {
-  activity_date: string;
-  double_visitor_hr_id: string | null;
-  visit_count: number | null;
-  visited_employee_hr_id: string | null;
-};
-
-// Paginated fetch across the WHOLE table (no import-status gate, no HR_ID equality filter in
-// SQL) — HR_ID matching happens client-side via canonicalHrIdKey so alias/format drift can't
-// silently drop rows the way a raw .eq()/.in() would. PostgREST caps a single response at
-// db-max-rows (~1000), so this must page through rather than trust one large .limit().
-async function paginateDoubleVisitRows<T>(select: string): Promise<T[]> {
-  const pageSize = 1000;
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await getSupabaseAdmin()
-      .from(rowsTable)
-      .select(select)
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (schemaMissing(error)) break;
-      throw new Error(error instanceof Error ? error.message : String(error));
-    }
-    const page = (data ?? []) as unknown as T[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows;
-}
-
-async function fetchAllDoubleVisitRows(select: string): Promise<DoubleVisitFocusRawRow[]> {
-  return paginateDoubleVisitRows<DoubleVisitFocusRawRow>(select);
 }
 
 // A double visit is always manager -> Medical Rep — a manager's own probation record (e.g. a
@@ -1659,19 +1283,15 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
   const viewerKey = normalizedHrKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId);
   const viewer = viewerKey ? employees.find((employee) => normalizedHrKey(employee.hrId) === viewerKey) ?? null : null;
-  // Canonical (alias-table + symbol-stripped) key — NOT a raw .toUpperCase() equality check.
-  // double_visit_rows is populated from external imports (Excel / iReports360) whose HR_ID
-  // formatting can drift from the directory's current canonical form (old aliases, missing
-  // hyphens, casing). A raw exact-match query silently dropped those rows and undercounted —
-  // every other reader in this file (filterRowsForAccess, buildManagerSummariesDetailed) already
-  // avoids that by matching on canonicalHrIdKey/normalizedHrKey; this now does the same.
+  // Canonical (alias-table + symbol-stripped) key — NOT a raw .toUpperCase() equality check,
+  // matching every other reader in this file (filterRowsForAccess, buildManagerSummariesDetailed).
   const viewerCanonicalKey = canonicalHrIdKey(viewer?.hrId ?? access.hrId ?? null);
 
   const buckets = focusMonthBuckets(FOCUS_TREND_START_MONTH);
   const trendStart = `${buckets[0].month}-01`;
 
   const [allDvRows, probationRows] = await Promise.all([
-    fetchAllDoubleVisitRows("double_visitor_hr_id, visited_employee_hr_id, activity_date, visit_count"),
+    getLiveDoubleVisitRows(trendStart, todayIso(), employees),
     getProbationRows(access).catch(() => []),
   ]);
   const medicalRepProbationRows = probationRows.filter((row) => isMedicalRepProbationRow(row, employees));
@@ -1803,28 +1423,7 @@ export async function getDoubleVisitReportData(input: {
       .filter((key): key is string => Boolean(key)),
   );
 
-  // Spans every uploaded snapshot in range (not just the currently-published one) — see the
-  // block comment above getDoubleVisitPortalFocus for why this differs from the Analytics page.
-  const pageSize = 1000;
-  const rawRows: DoubleVisitDbRow[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await getSupabaseAdmin()
-      .from(rowsTable)
-      .select("*")
-      .gte("activity_date", dateFrom)
-      .lte("activity_date", dateTo)
-      .order("activity_date", { ascending: false })
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (schemaMissing(error)) break;
-      throw new Error(error.message);
-    }
-    const page = (data ?? []) as DoubleVisitDbRow[];
-    rawRows.push(...page);
-    if (page.length < pageSize) break;
-  }
-
+  const rawRows = await getLiveDoubleVisitRows(dateFrom, dateTo, employees);
   const scopedRows = filterRowsForAccess(rawRows, input.access, employees).filter((row) => {
     if (!row.visited_employee_hr_id) return true;
     return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
@@ -1958,10 +1557,10 @@ function privateCalendarItem(input: {
     managerName: null,
     severity: "success",
     source: "double_visit",
-    sourceLabel: "Published Double Visit snapshot",
+    sourceLabel: "Live iReports360 double-visit mirror",
     sourceRecordId: input.id,
     sourceSystem: "Double Visit Analytics",
-    sourceTable: rowsTable,
+    sourceTable: visitsTable,
     startDate: input.date,
     status: input.status,
     time: input.time,
@@ -1983,7 +1582,8 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
   try {
     const selected = new Set(employeeHrIds.map(normalizedHrKey).filter((value): value is string => Boolean(value)));
     if (selected.size === 0) return { items: [] as PrivateCalendarItem[], ready: true };
-    const { rows } = await getPublishedRows(start, end);
+    const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+    const rows = await getLiveDoubleVisitRows(start, end, employees);
     const items: PrivateCalendarItem[] = [];
 
     const performed = groupCalendarRows(
@@ -2000,7 +1600,7 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
       const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
       items.push(privateCalendarItem({
         date: first.activity_date,
-        description: `${total} Double Visit activity count from the official published snapshot.`,
+        description: `${total} Double Visit activity count from the live iReports360 visit mirror.`,
         detailLines: [
           `AM/PM: ${workloadTime(group)}`,
           `Area: ${joinedDistinct(group.map((row) => row.area_name), "Unmapped")}`,
@@ -2030,7 +1630,7 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
       const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
       items.push(privateCalendarItem({
         date: first.activity_date,
-        description: `${total} Double Visit received from the official published snapshot.`,
+        description: `${total} Double Visit received from the live iReports360 visit mirror.`,
         detailLines: [
           `AM/PM: ${workloadTime(group)}`,
           `Double visitor: ${joinedDistinct(group.map((row) => row.double_visitor_name), "Unmapped")}`,
@@ -2076,21 +1676,8 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     };
   }
 
-  const { importRow, rows } = await getPublishedRows(start, end);
-  if (!importRow) {
-    return {
-      amWorkload: 0,
-      dateBreakdown: dates.map((date) => ({ am: 0, date, evidenceRows: 0, pm: 0, total: 0 })),
-      importId: null,
-      matchedDates: [],
-      matchStatus: "stale_import",
-      missingDates: dates,
-      pmWorkload: 0,
-      source: "manual",
-      sourceLabel: "No published Double Visit snapshot covers this expense date range.",
-    };
-  }
-
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const rows = await getLiveDoubleVisitRows(start, end, employees);
   const ownRows = rows.filter((row) => normalizeHrIdForAccess(row.double_visitor_hr_id) === employeeKey);
   const dateBreakdown = dates.map((date) => {
     const dayRows = ownRows.filter((row) => row.activity_date === date);
@@ -2114,13 +1701,13 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
   return {
     amWorkload: dateBreakdown.reduce((sum, row) => sum + row.am, 0),
     dateBreakdown,
-    importId: importRow.id,
+    importId: null,
     matchedDates,
     matchStatus,
     missingDates,
     pmWorkload: dateBreakdown.reduce((sum, row) => sum + row.pm, 0),
     source: "double_visit_import",
-    sourceLabel: `Published Double Visit snapshot: ${importRow.sourceFilename}`,
+    sourceLabel: "Live iReports360 Visits Report (double-visit mirror).",
   };
 }
 
@@ -2137,14 +1724,14 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
   summary.addRows([
     { metric: "Date From", value: data.dateFrom },
     { metric: "Date To", value: data.dateTo },
-    { metric: "Published Import", value: data.publishedImport?.sourceFilename ?? "No published import" },
+    { metric: "Data Source", value: "Live iReports360 Visits Report (auto-synced)" },
     { metric: "Double Visits", value: data.kpis.totalVisits },
     { metric: "Active Double Visit Days", value: data.kpis.activeDoubleVisitDays },
     { metric: "AM Activity", value: data.kpis.amVisitCount },
     { metric: "PM Activity", value: data.kpis.pmVisitCount },
     { metric: "Average Visits per DV Day", value: data.kpis.averageVisitsPerDoubleVisitDay },
     { metric: "Resigned / Vacant Territory Share", value: `${data.kpis.vacantOrUnmappedShare}%` },
-    { metric: "Neglected MRs", value: data.mrScores.filter((score) => score.band !== "healthy").length },
+    { metric: "Neglected MRs", value: data.neglectedMrs.length },
   ]);
 
   const mrSheet = workbook.addWorksheet("MR Support Score");
@@ -2158,6 +1745,8 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Last DV", key: "lastDvDate", width: 14 },
     { header: "Days Since Last DV", key: "daysSinceLastDv", width: 18 },
     { header: "DVs Last 90 Days", key: "dvsLast90Days", width: 18 },
+    { header: "DVs Prev 90 Days", key: "dvsPrev90Days", width: 18 },
+    { header: "Trend", key: "trendDirection", width: 12 },
     { header: "Distinct Visitors", key: "distinctDoubleVisitors", width: 18 },
     { header: "Band", key: "band", width: 12 },
   ];
@@ -2196,6 +1785,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Coverage %", key: "coveragePct", width: 12 },
     { header: "Neglected MRs", key: "neglectedMrCount", width: 15 },
     { header: "Concentration %", key: "concentrationPct", width: 16 },
+    { header: "Effectiveness", key: "effectivenessScore", width: 14 },
     { header: "Over-Focused MRs", key: "overFocusedMrCount", width: 18 },
     { header: "First DV", key: "firstDvDate", width: 14 },
     { header: "Last DV", key: "lastDvDate", width: 14 },
@@ -2230,6 +1820,16 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
   ];
   insights.addRows(data.executiveSummary.insights);
 
+  const trend = workbook.addWorksheet("Weekly Trend");
+  trend.columns = [
+    { header: "Week Start", key: "weekStart", width: 14 },
+    { header: "Total DVs", key: "totalDvs", width: 12 },
+    { header: "AM Visits", key: "amVisits", width: 12 },
+    { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "MRs Covered", key: "distinctMrs", width: 14 },
+  ];
+  trend.addRows(data.trend);
+
   const pairs = workbook.addWorksheet("Manager × MR Pairs");
   pairs.columns = [
     { header: "Manager", key: "managerName", width: 26 },
@@ -2259,23 +1859,11 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
 // Every double-visit row that could NOT be confidently counted or attributed — so an admin
 // can see and decide on each one, instead of it silently vanishing from every manager-facing
 // number. Company-wide and unscoped by design (a data-quality audit, not a personal/team view),
-// so it is gated to Super Admin only — the one role with full (not just read/export) authority
-// over this data in the permission matrix.
+// so it is gated to Super Admin only. Since the source is now a single live mirror (not a
+// history of discrete imports), importSummaries is always empty — the workspace already hides
+// that panel when empty.
 
-type DoubleVisitIntegrityRawRow = {
-  activity_date: string;
-  area_name: string | null;
-  double_visitor_hr_id: string | null;
-  double_visitor_name: string | null;
-  id: string;
-  import_id: string;
-  line_name: string | null;
-  source_type: DoubleVisitSourceType;
-  visit_count: number | null;
-  visited_employee_hr_id: string | null;
-  visited_employee_name: string | null;
-  visited_employee_status: string;
-};
+const EARLIEST_MIRROR_DATE = "2020-01-01"; // safely before any real iReports360 data.
 
 const INTEGRITY_ISSUE_LABELS: Record<DoubleVisitIntegrityIssueType, string> = {
   double_visitor_unmapped: "Double visitor could not be matched to an employee — who performed this visit is unknown.",
@@ -2310,13 +1898,8 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
     };
   }
 
-  const [rawRows, employees, imports] = await Promise.all([
-    paginateDoubleVisitRows<DoubleVisitIntegrityRawRow>(
-      "id, activity_date, area_name, double_visitor_hr_id, double_visitor_name, import_id, line_name, source_type, visit_count, visited_employee_hr_id, visited_employee_name, visited_employee_status",
-    ),
-    getEmployeeDirectoryRows({ includeInactive: true }),
-    listDoubleVisitImports(500),
-  ]);
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const rawRows = await getLiveDoubleVisitRows(EARLIEST_MIRROR_DATE, todayIso(), employees);
 
   const managerHrIdKeys = new Set(
     employees
@@ -2324,7 +1907,6 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
       .map((employee) => canonicalHrIdKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),
   );
-  const importByIdMap = new Map(imports.map((importRow) => [importRow.id, importRow]));
 
   const issues: DoubleVisitIntegrityIssue[] = [];
   const countsByType = emptyIntegrityCounts();
@@ -2342,8 +1924,7 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
     } else if (row.visited_employee_status === "resigned") {
       issueType = "visited_resigned";
     } else {
-      // Re-derived regardless of stored status: the non_mr guard was added after some rows were
-      // already imported as 'active_mapped', so trusting the stored status alone would miss them.
+      // Re-derived regardless of stored status so a directory change since sync still shows up.
       const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
       if (row.visited_employee_status === "non_mr" || (visitedKey && managerHrIdKeys.has(visitedKey))) {
         issueType = "visited_is_manager";
@@ -2352,7 +1933,6 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
 
     if (!issueType) continue;
     countsByType[issueType] += 1;
-    const importInfo = importByIdMap.get(row.import_id);
     issues.push({
       activityDate: row.activity_date,
       areaName: nullableText(row.area_name),
@@ -2362,7 +1942,7 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
       issueLabel: INTEGRITY_ISSUE_LABELS[issueType],
       issueType,
       lineName: nullableText(row.line_name),
-      sourceFilename: importInfo?.sourceFilename ?? null,
+      sourceFilename: "Live iReports360 Visits Report",
       sourceType: row.source_type,
       visitCount: asNumber(row.visit_count),
       visitedHrIdRaw: nullableText(row.visited_employee_hr_id),
@@ -2372,29 +1952,10 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
   }
   issues.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
 
-  const importSummaries: DoubleVisitIntegrityImportSummary[] = imports
-    .filter(
-      (importRow) =>
-        importRow.duplicateWarningCount > 0 || importRow.vacantOrUnmappedVisitCount > 0 || importRow.missingVisitedHrIdCount > 0,
-    )
-    .map((importRow) => ({
-      dateFrom: importRow.dateFrom,
-      dateTo: importRow.dateTo,
-      duplicateWarningCount: importRow.duplicateWarningCount,
-      id: importRow.id,
-      missingVisitedHrIdCount: importRow.missingVisitedHrIdCount,
-      sourceFilename: importRow.sourceFilename,
-      sourceType: importRow.sourceType,
-      status: importRow.status,
-      totalRows: importRow.totalRows,
-      uploadedAt: importRow.uploadedAt,
-      vacantOrUnmappedVisitCount: importRow.vacantOrUnmappedVisitCount,
-    }));
-
   return {
     asOfDate: todayIso(),
     countsByType,
-    importSummaries,
+    importSummaries: [],
     issues,
     schemaReady: true,
     totalRowsScanned: rawRows.length,
