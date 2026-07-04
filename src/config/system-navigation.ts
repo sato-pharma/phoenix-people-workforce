@@ -521,23 +521,6 @@ const employeePortalNavigationSectionSeeds = [
         roles: ["Super Admin"],
       },
       {
-        href: "/employee-portals/marketing-requests/roi-tracking",
-        icon: ChartColumnBig,
-        label: "ROI Tracking",
-        roles: [
-          "Medical Rep",
-          "District Manager",
-          "Regional Manager",
-          "National Sales Manager",
-          "Product Manager",
-          "Group Product Manager",
-          "Marketing Manager",
-          "SFE Manager",
-          "CEO",
-          "Super Admin",
-        ],
-      },
-      {
         href: "/employee-portals/marketing-requests/coverage-report",
         icon: MapPinned,
         label: "Marketing Coverage Report",

@@ -49,6 +49,16 @@ export function runEmployeePortalNavigationTests() {
   assert.match(layoutSource, /navigateToSearchResult/);
   assert.match(layoutSource, /Search portal pages\.\.\./);
   assert.match(layoutSource, /timeZone: "Africa\/Cairo"/);
+  assert.doesNotMatch(
+    layoutSource,
+    /marketing-requests\/roi-tracking/,
+    "ROI Tracking must no longer be a sidebar tab for any role now that Coverage Report replaces it (the page/permission stay live for direct-URL access).",
+  );
+  assert.match(
+    layoutSource,
+    /marketing-requests\/coverage-report/,
+    "Coverage Report must remain the Marketing & ROI sidebar tab",
+  );
   assert.doesNotMatch(marketingDraftsSource, /â€¦/, "Marketing request drafts should not render mojibake ellipsis text.");
   assert.match(marketingDraftsSource, /Math\.max\(0, maxLen - 3\)\)\}\.\.\./);
   assert.match(adminPageSource, /canReadAdmin/);
@@ -172,7 +182,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(productManagerDefault.showExpenseActionTab, true, "Product Manager should see Submit Expense in nav");
   assert.equal(productManagerDefault.showMarketingRequestsTab, true, "Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(productManagerDefault.showMarketingInboxTab, true, "Product Manager should see the Marketing Approval Inbox in nav");
-  assert.equal(productManagerDefault.showMarketingRoiTrackingTab, true, "Product Manager should see Marketing ROI Tracking in nav");
+  assert.equal(productManagerDefault.showMarketingRoiTrackingTab, true, "Product Manager should stay authorized for ROI Tracking (permission-only; the tab itself is retired from the sidebar)");
   assert.equal(productManagerDefault.showVacanciesTab, true, "Product Manager should see the line-scoped Vacancies tab in nav");
   assert.equal(productManagerDefault.showProbationTab, true, "Product Manager should see the line-scoped Probation tab in nav");
   assert.equal(productManagerDefault.showOrganogramTab, true, "Product Manager should see the line-scoped Organogram tab in nav");
@@ -182,7 +192,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showExpenseActionTab, true, "Group Product Manager should see Submit Expense in nav");
   assert.equal(groupProductManagerDefault.showMarketingRequestsTab, true, "Group Product Manager should see Marketing Requests in nav (full module)");
   assert.equal(groupProductManagerDefault.showMarketingInboxTab, true, "Group Product Manager should see the Marketing Approval Inbox in nav");
-  assert.equal(groupProductManagerDefault.showMarketingRoiTrackingTab, true, "Group Product Manager should see Marketing ROI Tracking in nav");
+  assert.equal(groupProductManagerDefault.showMarketingRoiTrackingTab, true, "Group Product Manager should stay authorized for ROI Tracking (permission-only; the tab itself is retired from the sidebar)");
   assert.equal(groupProductManagerDefault.showVacanciesTab, true, "Group Product Manager should see the line-scoped Vacancies tab in nav");
   assert.equal(groupProductManagerDefault.showProbationTab, true, "Group Product Manager should see the line-scoped Probation tab in nav");
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
@@ -220,7 +230,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(marketingManagerDefault.showExpenseActionTab, true, "Marketing Manager should see Submit Expense like PM/GPM");
   assert.equal(marketingManagerDefault.showMarketingRequestsTab, true, "Marketing Manager should see Marketing Requests in nav");
   assert.equal(marketingManagerDefault.showMarketingInboxTab, true, "Marketing Manager should see the Marketing Approval Inbox in nav");
-  assert.equal(marketingManagerDefault.showMarketingRoiTrackingTab, true, "Marketing Manager should see Marketing ROI Tracking in nav");
+  assert.equal(marketingManagerDefault.showMarketingRoiTrackingTab, true, "Marketing Manager should stay authorized for ROI Tracking (permission-only; the tab itself is retired from the sidebar)");
 
   const sfeDefault = resolveEmployeePortalNavVisibility("SFE Manager");
   assert.equal(sfeDefault.showMarketingControlTab, true, "SFE Manager should see Marketing Control in nav (full module)");
