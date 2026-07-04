@@ -594,6 +594,25 @@ export async function listOutstationRequestExpenses(
     .map(mapOutstationRequestRowToPayrollApproval);
 }
 
+/**
+ * Live/system-entered (or request-derived) outstation expenses are authoritative over
+ * historical Excel-imported rows for the same trip: when a trip appears in both lists the
+ * historical duplicate is dropped so a single trip is never double-counted. Returns the
+ * historical rows with those duplicates removed; callers concatenate the two lists in
+ * whatever order they render (live-first, historical-first, sorted, …).
+ *
+ * `tripId` is always a string here (empty string when a row has no trip), so a shared
+ * empty-string key is treated as a single "no trip" bucket — matching the prior inline
+ * behaviour at every call site exactly.
+ */
+export function dedupeHistoricalExpensesByTrip<T extends { tripId: string }>(
+  historical: T[],
+  live: ReadonlyArray<{ tripId: string }>,
+): T[] {
+  const liveTripIds = new Set(live.map((expense) => expense.tripId));
+  return historical.filter((expense) => !liveTripIds.has(expense.tripId));
+}
+
 export async function listUnifiedOutstationExpenses(
   month: number | undefined,
   year: number | undefined,
@@ -609,9 +628,9 @@ export async function listUnifiedOutstationExpenses(
     : month && year
     ? requestExpenses.filter((expense) => expense.payoutMonth === month && expense.payoutYear === year)
     : requestExpenses;
-  const requestTripIds = new Set(filteredRequestExpenses.map((expense) => expense.tripId));
-  const dedupedHistoricalExpenses = historicalExpenses.filter(
-    (expense) => !requestTripIds.has(expense.tripId),
+  const dedupedHistoricalExpenses = dedupeHistoricalExpensesByTrip(
+    historicalExpenses,
+    filteredRequestExpenses,
   );
 
   return [...filteredRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {

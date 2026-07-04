@@ -48,6 +48,7 @@ import {
 } from "@/lib/payroll/expense-metrics";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
+  dedupeHistoricalExpensesByTrip,
   listOutstationRequestExpenses,
   listPayrollExpenseReports,
   listPayrollExpenses,
@@ -3515,9 +3516,8 @@ export async function getMedicalRepPortalData(
       () => includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }) : Promise.resolve([]),
       () => listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
-    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
     const expenses = [
-      ...historicalExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...dedupeHistoricalExpensesByTrip(historicalExpenses, liveOutstationExpenses),
       ...liveOutstationExpenses,
     ];
 
@@ -5133,9 +5133,8 @@ export async function getNsmTeamExpenses(
       scopedDsms.map((employee) => employee.hrId),
     );
 
-    const liveOutstationTripIds = new Set(liveOutstationExpenses.map((expense) => expense.tripId));
     const combinedExpenses = [
-      ...reportExpenses.filter((expense) => !liveOutstationTripIds.has(expense.tripId)),
+      ...dedupeHistoricalExpensesByTrip(reportExpenses, liveOutstationExpenses),
       ...liveOutstationExpenses,
     ];
 

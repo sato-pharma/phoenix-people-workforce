@@ -49,6 +49,7 @@ type EmailPolicyView = {
 };
 
 type EmailOutboxStats = {
+  available: boolean;
   failed: number;
   lastSentAt: string | null;
   pending: number;
@@ -246,30 +247,36 @@ export function EmailNotificationCenter({
         </Link>
       </Card>
 
+      {!outboxStats.available ? (
+        <div className="rounded-[16px] border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3 text-sm font-bold text-[#9A3412]">
+          Outbox statistics are unavailable — the notification outbox table is not deployed yet. Run the latest Supabase migration to see live counts.
+        </div>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-4">
         <AdminStatCard
           description="Typed workflow emails in the latest outbox sample."
           icon={<ShieldCheck className="h-5 w-5" />}
           label="Allowed"
-          value={outboxStats.recentAllowed}
+          value={outboxStats.available ? outboxStats.recentAllowed : "—"}
         />
         <AdminStatCard
           description="Queued emails waiting for retry or processing."
           icon={<BellRing className="h-5 w-5" />}
           label="Pending"
-          value={outboxStats.pending}
+          value={outboxStats.available ? outboxStats.pending : "—"}
         />
         <AdminStatCard
           description="Successfully accepted by the provider."
           icon={<Check className="h-5 w-5" />}
           label="Sent"
-          value={outboxStats.sent}
+          value={outboxStats.available ? outboxStats.sent : "—"}
         />
         <AdminStatCard
-          description={formatDateTime(outboxStats.lastSentAt)}
+          description={outboxStats.available ? formatDateTime(outboxStats.lastSentAt) : "Unavailable"}
           icon={<Route className="h-5 w-5" />}
           label="Last Send"
-          value={outboxStats.recentTotal}
+          value={outboxStats.available ? outboxStats.recentTotal : "—"}
         />
       </div>
 

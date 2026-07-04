@@ -938,10 +938,15 @@ export async function getEmailNotificationOutboxStats() {
       (row) => row.status === "failed" && row.attempts >= row.max_attempts,
     ).length;
 
-    return { ...summary, terminalFailed };
+    return { ...summary, terminalFailed, available: true as const };
   } catch (error) {
     if (notificationSchemaMissing(error)) {
+      // Outbox table/schema is not deployed. Return a discriminated "unavailable"
+      // result so callers can render "—"/"Unavailable" instead of a misleading 0
+      // (which reads as "a healthy, empty outbox"). The zeroed numeric fields keep
+      // count-only consumers working; UI surfaces should key off `available`.
       return {
+        available: false as const,
         failed: 0,
         lastSentAt: null,
         pending: 0,
