@@ -710,6 +710,21 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
           </div>
         ) : null}
 
+        {/* ── Degraded-actuals banner ──────────────────────────────────────── */}
+        {/* Only ever shown when at least one visible request had no marketing_roi_request_facts
+            row yet (e.g. never refreshed since creation) and had to fall back to the slower
+            live-RPC path — honest-zero convention: absent entirely otherwise, never a fabricated
+            "everything's fine" line and never silent about a real degradation. */}
+        {kpi && kpi.actualsDegraded.count > 0 ? (
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-[13px] font-semibold text-amber-900">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+            <span>
+              {kpi.actualsDegraded.count} request{kpi.actualsDegraded.count === 1 ? "" : "s"} used a slower
+              recalculation path — actuals may lag by a few minutes.
+            </span>
+          </div>
+        ) : null}
+
         {/* ── Worst zero-sales outlier ─────────────────────────────────────── */}
         {outlier ? (
           <button

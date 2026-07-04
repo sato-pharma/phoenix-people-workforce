@@ -509,6 +509,11 @@ export type MarketingCoverageReportRow = MarketingRoiReportRow & {
 export type MarketingCoverageKpiBand = MarketingRoiKpiBand & {
   distinctPharmacyCount: number;
   distinctCustomerCount: number;
+  /** Requests whose actuals had to fall back to the slow live-RPC path (no
+   *  marketing_roi_request_facts row yet — e.g. never refreshed). Always present,
+   *  zero-count when everything hit the fast path — never fabricated, never silent
+   *  about a real degradation. */
+  actualsDegraded: { count: number; requestIds: string[] };
 };
 
 /** One distributor's slice of the currently filtered request set, weighted by
