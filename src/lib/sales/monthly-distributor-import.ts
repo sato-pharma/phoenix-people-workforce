@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
+import { unstable_cache } from "next/cache.js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
@@ -1959,16 +1961,29 @@ function throwProductMutationError(error: { code?: string; message?: string } | 
   throw new SalesWorkflowError("product_reference_mutation_failed", error?.message ?? fallback, 500);
 }
 
-export async function listSourceOfSalesProducts(): Promise<SourceOfSalesProduct[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_products")
-    .select("*")
-    .order("line", { ascending: true })
-    .order("product_name", { ascending: true });
+// The SoS product master is identical for every viewer (the route applies the per-role confidential
+// filter AFTER this returns), so cache the whole catalog and reuse it across requests. Tag
+// "sos-reference" is busted on any validated import (invalidateSalesDashboardCache) and on product
+// create below, so the 600s TTL is only a backstop. Keeps the product dropdown / reference lookups
+// off a per-request `select *` on source_of_sales_products.
+const loadSourceOfSalesProductsCached = unstable_cache(
+  async (): Promise<SourceOfSalesProduct[]> => {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("source_of_sales_products")
+      .select("*")
+      .order("line", { ascending: true })
+      .order("product_name", { ascending: true });
 
-  if (error) throw error;
-  return (data ?? []).map((row) => mapSourceOfSalesProduct(row as Record<string, unknown>));
+    if (error) throw error;
+    return (data ?? []).map((row) => mapSourceOfSalesProduct(row as Record<string, unknown>));
+  },
+  ["sos-products"],
+  { revalidate: 600, tags: ["sos-reference"] },
+);
+
+export async function listSourceOfSalesProducts(): Promise<SourceOfSalesProduct[]> {
+  return loadSourceOfSalesProductsCached();
 }
 
 export async function createSourceOfSalesProduct(input: {
@@ -1996,6 +2011,7 @@ export async function createSourceOfSalesProduct(input: {
     summary: "Source of Sales product added.",
   });
 
+  invalidateSalesDashboardCache("source of sales product created");
   return product;
 }
 
@@ -2046,6 +2062,7 @@ export async function updateSourceOfSalesProduct(input: {
     summary: "Source of Sales product updated.",
   });
 
+  invalidateSalesDashboardCache("source of sales product updated");
   return product;
 }
 
@@ -2085,6 +2102,7 @@ export async function deleteSourceOfSalesProduct(input: {
     summary: "Source of Sales product deleted.",
   });
 
+  invalidateSalesDashboardCache("source of sales product deleted");
   return true;
 }
 
@@ -2690,6 +2708,7 @@ export async function persistDistributorSalesUpload(
     if (customerRollupRefresh.error) throw customerRollupRefresh.error;
     const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
     if (roiRefresh.error) throw roiRefresh.error;
+    invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
 
   return {
