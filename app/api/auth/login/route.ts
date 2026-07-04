@@ -348,7 +348,7 @@ export async function POST(request: Request) {
             name: user.name ?? user.loginId,
             password,
             role: user.role,
-          });
+          }, { hotPath: true });
           await persistSupabaseAuthIdentityLink({
             authEmail: repairedIdentity.authEmail,
             authUserId: repairedIdentity.authUserId,

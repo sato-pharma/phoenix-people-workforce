@@ -113,11 +113,16 @@ function appMetadata(input: SupabaseAuthProvisionInput) {
   };
 }
 
+// The whole auth-user set is small (low hundreds) and the loop early-exits on the
+// first non-full page, so a couple of pages always cover everyone. Capping the
+// worst case keeps a bridge hiccup from turning into a long paginated scan.
+const authUserListMaxPages = 3;
+
 async function findAuthUserIdByEmail(authEmail: string) {
   const normalizedEmail = authEmail.trim().toLowerCase();
   const supabaseAdmin = getSupabaseAdmin();
 
-  for (let page = 1; page <= 10; page += 1) {
+  for (let page = 1; page <= authUserListMaxPages; page += 1) {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({
       page,
       perPage: authUserListPageSize,
@@ -172,6 +177,12 @@ async function updateSupabaseAuthUser(input: SupabaseAuthProvisionInput, authUse
 
 export async function provisionSupabaseAuthIdentity(
   input: SupabaseAuthProvisionInput,
+  // hotPath = called from the login request. The linked authUserId is
+  // authoritative there, so we do a single direct update and never fall back to
+  // the paginated email scan or admin.createUser. Those fallbacks are what turned
+  // a transient bridge hiccup into a ~10s login; on the hot path we fail fast and
+  // let login continue on the Phoenix session instead.
+  options?: { hotPath?: boolean },
 ): Promise<SupabaseAuthIdentity> {
   const authEmail = buildPhoenixAuthEmail(input.loginId);
   const supabaseAdmin = getSupabaseAdmin();
@@ -180,12 +191,17 @@ export async function provisionSupabaseAuthIdentity(
   if (input.authUserId) {
     try {
       return await updateSupabaseAuthUser(input, input.authUserId);
-    } catch {
+    } catch (error) {
+      if (options?.hotPath) throw error;
       const recoveredAuthUserId = await findAuthUserIdByEmail(authEmail);
       if (recoveredAuthUserId) {
         return updateSupabaseAuthUser(input, recoveredAuthUserId);
       }
     }
+  }
+
+  if (options?.hotPath) {
+    throw new Error("Supabase auth identity update failed on the login hot path.");
   }
 
   if (!input.password) {
