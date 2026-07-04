@@ -125,10 +125,39 @@ export type FieldWorkforceNoActivityPattern = {
   summary: string;
 };
 
+/**
+ * How confidently this employee was tied to an iReports360 CRM identity — the join that
+ * decides whether their "N" (no-activity) days are trustworthy. A day is only credible
+ * evidence of absence if we could actually have SEEN the rep's visits; if we never resolved
+ * their CRM identity, a blank month is a data-mapping gap, not absence.
+ *  - crm_id       : directory has a CRM id for this employee (deterministic, strongest).
+ *  - crm_username : no CRM id, but a CRM username is on file to resolve them.
+ *  - override     : resolved only because the visits-report sync mapped their hr_id
+ *                   (manual override / username) — no directory crm_id/username of our own.
+ *  - unresolved   : no way to tie this employee to CRM activity. Their N days are NOT
+ *                   trustworthy and MUST be excluded from deduction candidates.
+ */
+export type FieldWorkforceCrmIdentityConfidence =
+  | "crm_id"
+  | "crm_username"
+  | "override"
+  | "unresolved";
+
+export type FieldWorkforceCrmIdentity = {
+  attributedVisitRows: number;
+  confidence: FieldWorkforceCrmIdentityConfidence;
+  crmId: string | null;
+};
+
 export type FieldWorkforceEmployeeSummary = {
   areaName: string | null;
   campaignDays: number;
   compliancePercent: number;
+  /**
+   * CRM-identity resolution for the live (visits-mirror) path. Null on the Excel-upload
+   * path, where the workbook itself is the trusted source and no CRM join happens.
+   */
+  crmIdentity?: FieldWorkforceCrmIdentity | null;
   employeeName: string;
   employmentStatus: string | null;
   eligibleWorkingDays: number;

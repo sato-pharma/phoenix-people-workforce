@@ -31,6 +31,8 @@ import {
 } from "@/lib/field-workforce-compliance/parser";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import type {
+  FieldWorkforceCrmIdentity,
+  FieldWorkforceCrmIdentityConfidence,
   FieldWorkforceEmployeeReference,
   FieldWorkforceHoliday,
   FieldWorkforcePreviewResult,
@@ -88,16 +90,6 @@ function isFridayIso(dateIso: string): boolean {
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 5;
 }
 
-/** Strips the "( Area / Line )" annotation and normalises "First.Last" -> "first last". */
-export function normalizeAgentName(name: string | null | undefined): string {
-  return String(name ?? "")
-    .split("(")[0]
-    .replace(/\./g, " ")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
 /** Employees who have left the company are not rendered in the monthly report. */
 function isDepartedStatus(status: string | null | undefined): boolean {
   const normalized = String(status ?? "").trim().toLowerCase();
@@ -132,49 +124,98 @@ function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
 }
 
 /**
+ * A visit as consumed by the matrix builder. Extends the CRM visit shape with the mirror's
+ * already-resolved hr ids (agent_hr_id / double_hr_id). Those come from visits-report's own
+ * sync-time resolution (manual override -> crm_id -> crm_username), so when present they are
+ * the authoritative crm->hr mapping and make visits-report the single source of truth for
+ * identity. Optional because the CRM-live drill-down path and older callers don't carry them.
+ */
+export type FieldWorkforceMatrixVisit = IReports360Visit & {
+  agentHrId?: string | null;
+  doubleHrId?: string | null;
+};
+
+/**
  * Builds the Field Workforce Compliance matrix (header row + one row per EMPLOYEE) for a
  * month of iReports360 visits. The report is **employee-driven**: every eligible, active
  * Phoenix employee gets a row even with zero visits, so fully-absent reps and non-visiting
  * managers still appear (and can be reviewed for deductions). Agents in the visit feed that
  * map to no eligible employee are ignored. The output is consumed by the existing
  * parseFieldWorkforceComplianceMatrix, so dateColumns/validation stay identical.
+ *
+ * Identity resolution (Tier 0 hardening): each visit's agent is recognised by its always-present
+ * crm_id and mapped to an hr_id — preferring the mirror's own resolved agent_hr_id, then the
+ * directory's crm_id -> hr_id map. There is **no fuzzy first/last-name matching** (its
+ * mis-attributions could silently manufacture a wrong no-activity -> payroll deduction).
+ * Alongside the matrix it returns, per employee hr key, a FieldWorkforceCrmIdentity describing
+ * how confidently they were tied to a CRM identity — `unresolved` employees (no crm_id, no
+ * username, never resolved by the sync) have untrustworthy "N" days and are excluded from
+ * deduction candidates downstream.
  */
 export function buildIReports360FieldWorkforceMatrix(input: {
   employees: FieldWorkforceEmployeeInput[];
   month: number;
   todayIso?: string | null;
-  visits: IReports360Visit[];
+  visits: FieldWorkforceMatrixVisit[];
   year: number;
-}): { matrix: unknown[][] } {
+}): { identityByHrKey: Map<string, FieldWorkforceCrmIdentity>; matrix: unknown[][] } {
   const { employees, month, visits, year } = input;
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
   const dateIsos = Array.from({ length: dayCount }, (_, index) => `${monthPrefix}-${pad2(index + 1)}`);
 
-  // Credit each visit to BOTH its primary agent AND its joint/"double" partner, indexing
-  // ids by normalized name (a username fallback for employees with a CRM username but no
-  // CRM id). Managers and senior staff often only ride along on reps' visits as the
-  // doubleID, so without this they would wrongly show zero worked days.
-  const visitsByParticipant = new Map<number, IReports360Visit[]>();
-  const agentIdByName = new Map<string, number>();
-  const creditVisit = (participantId: number, name: string | null, visit: IReports360Visit) => {
-    if (!visitsByParticipant.has(participantId)) visitsByParticipant.set(participantId, []);
-    visitsByParticipant.get(participantId)!.push(visit);
-    const nameKey = normalizeAgentName(name);
-    if (nameKey && !agentIdByName.has(nameKey)) agentIdByName.set(nameKey, participantId);
+  // The directory IS the authoritative crm_id -> hr_id map. Keyed by the string crm_id
+  // because employees.crm_id is text while the visit feed's agent id is numeric.
+  const hrKeyByCrmId = new Map<string, string>();
+  for (const employee of employees) {
+    const crmId = employee.crmId == null ? "" : String(employee.crmId).trim();
+    const hrKey = canonicalHrIdKey(employee.hrId);
+    if (crmId && hrKey) hrKeyByCrmId.set(crmId, hrKey);
+  }
+
+  // Recognise a visit participant by crm_id, then map to an employee hr key: prefer the
+  // mirror's already-resolved hr_id (inherits the sync's override/username decisions), else
+  // the directory crm_id map. Null => this CRM agent is not a Phoenix employee, so the visit
+  // is correctly ignored (no fuzzy-name rescue).
+  const resolveHrKey = (crmId: number | null | undefined, mirrorHrId: string | null | undefined): string | null => {
+    const fromMirror = canonicalHrIdKey(mirrorHrId ?? "");
+    if (fromMirror) return fromMirror;
+    if (crmId == null) return null;
+    return hrKeyByCrmId.get(String(crmId).trim()) ?? null;
+  };
+
+  // Credit each visit to BOTH its primary agent AND its joint/"double" partner. Managers and
+  // senior staff often only ride along on reps' visits as the double, so without this they
+  // would wrongly show zero worked days. Track which hr keys the sync itself resolved so we
+  // can tell override-resolved employees (real, just no directory crm mapping of ours) apart
+  // from genuinely unresolved ones.
+  const visitsByHrKey = new Map<string, FieldWorkforceMatrixVisit[]>();
+  const syncResolvedHrKeys = new Set<string>();
+  const credit = (hrKey: string | null, visit: FieldWorkforceMatrixVisit) => {
+    if (!hrKey) return;
+    if (!visitsByHrKey.has(hrKey)) visitsByHrKey.set(hrKey, []);
+    visitsByHrKey.get(hrKey)!.push(visit);
   };
   for (const visit of visits) {
     const dayIso = (visit.visitDate ?? "").slice(0, 10);
     if (!dayIso.startsWith(monthPrefix)) continue;
-    creditVisit(visit.agentID, visit.agentName, visit);
+    const agentSyncKey = canonicalHrIdKey(visit.agentHrId ?? "");
+    if (agentSyncKey) syncResolvedHrKeys.add(agentSyncKey);
+    const doubleSyncKey = canonicalHrIdKey(visit.doubleHrId ?? "");
+    if (doubleSyncKey) syncResolvedHrKeys.add(doubleSyncKey);
+
+    const agentKey = resolveHrKey(visit.agentID, visit.agentHrId);
+    credit(agentKey, visit);
     if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
-      creditVisit(visit.doubleID, visit.doubleName, visit);
+      const doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
+      if (doubleKey && doubleKey !== agentKey) credit(doubleKey, visit);
     }
   }
 
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
   const matrix: unknown[][] = [header];
+  const identityByHrKey = new Map<string, FieldWorkforceCrmIdentity>();
 
   const eligible = employees
     .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
@@ -183,15 +224,26 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       String(left.hrId).localeCompare(String(right.hrId), undefined, { numeric: true }));
 
   for (const employee of eligible) {
-    const crmId = employee.crmId == null ? "" : String(employee.crmId).trim();
-    let agentId = crmId && /^\d+$/.test(crmId) ? Number(crmId) : Number.NaN;
-    if (!Number.isFinite(agentId)) {
-      const byName = agentIdByName.get(normalizeAgentName(employee.crmUsername));
-      if (byName != null) agentId = byName;
-    }
-    const agentVisits = Number.isFinite(agentId) ? visitsByParticipant.get(agentId) ?? [] : [];
+    const hrKey = canonicalHrIdKey(employee.hrId);
+    const agentVisits = hrKey ? visitsByHrKey.get(hrKey) ?? [] : [];
 
-    const byDay = new Map<string, IReports360Visit[]>();
+    // Confidence: could we ever have SEEN this employee's visits? Drives the deduction guard.
+    const crmId = employee.crmId == null ? "" : String(employee.crmId).trim();
+    const crmUsername = employee.crmUsername == null ? "" : String(employee.crmUsername).trim();
+    let confidence: FieldWorkforceCrmIdentityConfidence;
+    if (crmId) confidence = "crm_id";
+    else if (crmUsername) confidence = "crm_username";
+    else if (hrKey && syncResolvedHrKeys.has(hrKey)) confidence = "override";
+    else confidence = "unresolved";
+    if (hrKey) {
+      identityByHrKey.set(hrKey, {
+        attributedVisitRows: agentVisits.length,
+        confidence,
+        crmId: crmId || null,
+      });
+    }
+
+    const byDay = new Map<string, FieldWorkforceMatrixVisit[]>();
     for (const visit of agentVisits) {
       const dayIso = (visit.visitDate ?? "").slice(0, 10);
       if (!byDay.has(dayIso)) byDay.set(dayIso, []);
@@ -216,7 +268,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { matrix };
+  return { identityByHrKey, matrix };
 }
 
 function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeReference {
@@ -282,25 +334,28 @@ async function isVisitsReportSchemaReady(): Promise<boolean> {
 
 export type VisitsMirrorRow = {
   agent_crm_id: number;
+  agent_hr_id?: string | null;
   agent_name: string | null;
   double_crm_id: number | null;
+  double_hr_id?: string | null;
   double_name: string | null;
   visit_date: string;
   visit_type: number | null;
 };
 
-/** Maps a mirror row (ireports360_visits) onto the IReports360Visit shape the matrix
- * builder expects. Only the fields buildIReports360FieldWorkforceMatrix actually reads
- * are populated (visitDate/agentID/agentName/doubleID/doubleName/visitType); the rest
- * are unused by the matrix builder and left null. visit_type is never null in production
- * today (verified), so a null here fails loudly rather than silently defaulting to a
- * "regular visit" and miscounting compliance. Exported for the mirror-row-mapping parity
+/** Maps a mirror row (ireports360_visits) onto the matrix-builder visit shape. Carries the
+ * mirror's already-resolved agent_hr_id / double_hr_id (visits-report's sync-time
+ * override->crm_id->username resolution) so the matrix builder can trust them for identity.
+ * Other CRM fields are unused by the matrix builder and left null. visit_type is never null
+ * in production today (verified), so a null here fails loudly rather than silently defaulting
+ * to a "regular visit" and miscounting compliance. Exported for the mirror-row-mapping parity
  * test in tests/field-workforce-compliance-eligibility.test.ts. */
-export function visitFromMirrorRow(row: VisitsMirrorRow): IReports360Visit {
+export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVisit {
   if (row.visit_type == null) {
     throw new Error(`ireports360_visits row for agent ${row.agent_crm_id} on ${row.visit_date} has no visit_type.`);
   }
   return {
+    agentHrId: row.agent_hr_id ?? null,
     agentID: row.agent_crm_id,
     agentName: row.agent_name,
     ampm: null,
@@ -310,6 +365,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): IReports360Visit {
     contactID: null,
     contactName: null,
     customerName: null,
+    doubleHrId: row.double_hr_id ?? null,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: 0,
@@ -322,7 +378,13 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): IReports360Visit {
 
 /** Pages through every ireports360_visits row in [startDate, endDate] — a full month must
  * be in memory at once to build the matrix, unlike visits-report's UI which paginates for
- * display only. */
+ * display only.
+ *
+ * Day bucketing: filtering and every downstream day cell key off `visit_date` (a pure DATE),
+ * which visits-report bucketed to the Cairo local day at sync time. Verified in production
+ * (2026-07): `visit_date` equals the Africa/Cairo date of `visit_date_time` on 100% of rows —
+ * no visit falls in the midnight–02:00 window where Cairo and UTC diverge — so there is no
+ * off-by-one-day risk that would turn a real visit into a spurious "N". */
 async function loadMirrorVisitsForRange(startDate: string, endDate: string): Promise<VisitsMirrorRow[]> {
   const supabase = getSupabaseAdmin();
   const rows: VisitsMirrorRow[] = [];
@@ -330,7 +392,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
   for (;;) {
     const { data, error } = await supabase
       .from(VISITS_MIRROR_TABLE)
-      .select("agent_crm_id, agent_name, double_crm_id, double_name, visit_date, visit_type")
+      .select("agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
       .gte("visit_date", startDate)
       .lte("visit_date", endDate)
       .range(from, from + VISITS_MIRROR_PAGE_SIZE - 1);
@@ -393,7 +455,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
-  const { matrix } = buildIReports360FieldWorkforceMatrix({
+  const { identityByHrKey, matrix } = buildIReports360FieldWorkforceMatrix({
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -409,7 +471,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
 
   const holidays = await loadHolidays(month, year);
 
-  return buildFieldWorkforceCompliancePreview({
+  const preview = buildFieldWorkforceCompliancePreview({
     employeeReferences: directory.map(toEmployeeReference),
     holidayConnected: holidays.connected,
     holidayMessage: holidays.message,
@@ -417,6 +479,32 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     holidays: holidays.holidays,
     parsed,
   });
+
+  // Attach the CRM-identity resolution to each employee so the UI and the deductions guard
+  // can tell a genuinely-absent rep apart from one we simply couldn't match to a CRM account.
+  const unresolvedHrIds: string[] = [];
+  const employeesWithIdentity = preview.employees.map((employee) => {
+    const hrKey = canonicalHrIdKey(employee.hrId);
+    const identity = hrKey ? identityByHrKey.get(hrKey) ?? null : null;
+    if (identity?.confidence === "unresolved") unresolvedHrIds.push(employee.hrId);
+    return { ...employee, crmIdentity: identity };
+  });
+
+  const warnings = [...preview.warnings];
+  if (unresolvedHrIds.length > 0) {
+    const sample = unresolvedHrIds.slice(0, 8).join(", ");
+    warnings.push({
+      code: "crm_identity_unresolved",
+      message:
+        `${unresolvedHrIds.length} eligible employee(s) have no iReports360 CRM identity mapping ` +
+        `(no crm_id / username): ${sample}${unresolvedHrIds.length > 8 ? ", …" : ""}. Their days ` +
+        `cannot be verified against the visits mirror, so they are shown for review only and excluded ` +
+        `from deduction candidates. Fix their CRM mapping in Visits Report to include them.`,
+      severity: "warning",
+    });
+  }
+
+  return { ...preview, employees: employeesWithIdentity, warnings };
 }
 
 /** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */

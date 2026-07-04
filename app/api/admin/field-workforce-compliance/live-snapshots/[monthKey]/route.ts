@@ -3,8 +3,12 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { getFieldWorkforceComplianceLiveSnapshot } from "@/lib/field-workforce-compliance/live-snapshots";
+import {
+  getFieldWorkforceComplianceLiveSnapshot,
+  summarizeFieldWorkforceMirrorFreshness,
+} from "@/lib/field-workforce-compliance/live-snapshots";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
+import { getLatestVisitsSyncRuns } from "@/lib/visits-report/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +40,19 @@ export async function GET(request: Request, context: RouteContext) {
 
     const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ forceRefresh, monthKey });
 
+    // Mirror freshness so the UI can warn when this month's data may be incomplete (a stale
+    // sync or the still-open current month) before HR acts on any "N" day.
+    const syncRuns = await getLatestVisitsSyncRuns(10);
+    const mirrorFreshness = summarizeFieldWorkforceMirrorFreshness({
+      monthKey,
+      nowIso: new Date().toISOString(),
+      runs: syncRuns.map((run) => ({
+        completedAt: run.completedAt,
+        startedAt: run.startedAt,
+        status: run.status,
+      })),
+    });
+
     await writeAuditLog({
       actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
       entityId: monthKey,
@@ -55,6 +72,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       data: snapshot,
+      mirrorFreshness,
       success: true,
     });
   } catch (error) {
