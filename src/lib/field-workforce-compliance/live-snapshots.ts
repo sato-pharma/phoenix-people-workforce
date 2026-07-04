@@ -16,6 +16,7 @@
 import { fieldWorkforceMonthKey } from "@/lib/field-workforce-compliance/archive";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 import type { FieldWorkforcePreviewResult } from "@/lib/field-workforce-compliance/types";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const snapshotsTable = "field_workforce_compliance_live_snapshots";
@@ -72,6 +73,7 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
 type SnapshotRow = {
   computed_at: string;
   employee_count: number;
+  employee_rollup?: FieldWorkforceEmployeeMonthRollup[] | null;
   high_severity_count: number;
   month: number;
   month_key: string;
@@ -79,6 +81,32 @@ type SnapshotRow = {
   review_candidate_count: number;
   year: number;
 };
+
+/**
+ * Compact per-employee-per-month rollup, persisted alongside (not instead of) the full
+ * `preview` JSONB — a trend read across N months projects only this column, never the full
+ * preview, so it stays cheap regardless of how many months are considered.
+ */
+export type FieldWorkforceEmployeeMonthRollup = {
+  compliancePercent: number;
+  employeeName: string;
+  highSeverityCount: number;
+  hrId: string;
+  matchStatus: "matched" | "unmatched";
+  noActivityCandidates: number;
+};
+
+/** Pure — exported for direct unit testing. */
+export function buildEmployeeRollup(preview: FieldWorkforcePreviewResult): FieldWorkforceEmployeeMonthRollup[] {
+  return preview.employees.map((employee) => ({
+    compliancePercent: employee.compliancePercent,
+    employeeName: employee.employeeName,
+    highSeverityCount: employee.severityCounts.High,
+    hrId: employee.hrId,
+    matchStatus: employee.matchStatus,
+    noActivityCandidates: employee.noActivityCandidates,
+  }));
+}
 
 function toListItem(row: SnapshotRow): FieldWorkforceLiveSnapshotListItem {
   return {
@@ -124,6 +152,7 @@ export async function saveFieldWorkforceComplianceLiveSnapshot(input: {
   const payload = {
     computed_at: now,
     employee_count: preview.metadata.employeeCount,
+    employee_rollup: buildEmployeeRollup(preview),
     high_severity_count: preview.severityCounts.High,
     month: preview.metadata.month,
     month_key: monthKey,
@@ -221,4 +250,75 @@ export async function getFieldWorkforceComplianceLiveSnapshot(input: {
   if (error) throw error;
   const row = data as SnapshotRow;
   return { ...listItem, preview: row.preview as FieldWorkforcePreviewResult };
+}
+
+export type FieldWorkforceEmployeeTrendPoint = {
+  compliancePercent: number;
+  highSeverityCount: number;
+  matchStatus: "matched" | "unmatched";
+  monthKey: string;
+  noActivityCandidates: number;
+};
+
+export type FieldWorkforceEmployeeTrend = {
+  /** Count of months (within the ones considered) where this employee had a High-severity day
+   * — a displayed fact only, never an automatic severity escalation. */
+  highSeverityMonthCount: number;
+  monthsConsidered: number;
+  points: FieldWorkforceEmployeeTrendPoint[];
+};
+
+/**
+ * Pure — exported for direct unit testing. Extracts one employee's points from a set of
+ * already-fetched snapshot rows (newest-first, as returned by the DB query) and reverses to
+ * oldest -> newest (natural chart/reading order). A month whose employee_rollup has no entry
+ * for this employee (not yet backfilled, or the employee didn't exist that month) is silently
+ * skipped, not treated as a zero/absent month.
+ */
+export function computeEmployeeTrendFromRows(
+  rows: Array<{ employee_rollup: FieldWorkforceEmployeeMonthRollup[] | null; month_key: string }>,
+  hrId: string,
+): FieldWorkforceEmployeeTrend {
+  const hrKey = canonicalHrIdKey(hrId);
+  const points: FieldWorkforceEmployeeTrendPoint[] = [];
+  for (const row of rows) {
+    const entry = (row.employee_rollup ?? []).find((item) => canonicalHrIdKey(item.hrId) === hrKey);
+    if (!entry) continue;
+    points.push({
+      compliancePercent: entry.compliancePercent,
+      highSeverityCount: entry.highSeverityCount,
+      matchStatus: entry.matchStatus,
+      monthKey: row.month_key,
+      noActivityCandidates: entry.noActivityCandidates,
+    });
+  }
+  points.reverse();
+
+  return {
+    highSeverityMonthCount: points.filter((point) => point.highSeverityCount > 0).length,
+    monthsConsidered: points.length,
+    points,
+  };
+}
+
+/**
+ * One employee's compliance history across the trailing N saved months — a cheap projection
+ * of `employee_rollup` only, never the full `preview` JSONB.
+ */
+export async function getFieldWorkforceComplianceEmployeeTrend(input: {
+  hrId: string;
+  monthsBack?: number;
+}): Promise<FieldWorkforceEmployeeTrend> {
+  const monthsBack = input.monthsBack ?? 6;
+  const { data, error } = await getSupabaseAdmin()
+    .from(snapshotsTable)
+    .select("month_key, employee_rollup")
+    .order("month_key", { ascending: false })
+    .limit(monthsBack);
+  if (error) throw error;
+
+  return computeEmployeeTrendFromRows(
+    (data ?? []) as Array<{ employee_rollup: FieldWorkforceEmployeeMonthRollup[] | null; month_key: string }>,
+    input.hrId,
+  );
 }

@@ -1,8 +1,11 @@
 import { strict as assert } from "node:assert";
 
 import {
+  buildEmployeeRollup,
+  computeEmployeeTrendFromRows,
   monthsInDateRange,
   summarizeFieldWorkforceMirrorFreshness,
+  type FieldWorkforceEmployeeMonthRollup,
 } from "../src/lib/field-workforce-compliance/live-snapshots.ts";
 
 export function runFieldWorkforceComplianceLiveSnapshotsTests() {
@@ -79,4 +82,53 @@ export function runFieldWorkforceComplianceLiveSnapshotsTests() {
   assert.equal(never.isStale, true, "no successful sync ever -> stale");
   assert.equal(never.ageHours, null);
   assert.equal(never.lastSyncedAt, null);
+
+  // --- 2.1 Cross-month trend view: employee rollup + trend extraction ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rollupEmployee = (overrides: Record<string, unknown>): any => ({
+    areaName: null, campaignDays: 0, compliancePercent: 80, employeeName: "Rollup Test",
+    employmentStatus: "active", eligibleWorkingDays: 20, fridays: 4, hiringDateIso: "2024-01-01",
+    hiringDateSource: "employee_directory", holidayWarnings: 0, hrId: "R-1", lineName: null,
+    managerHrId: null, managerName: null, matchedEmployeeName: "Rollup Test", matchedHrId: "R-1",
+    matchStatus: "matched", noActivityCandidates: 2,
+    noActivityPattern: { adjacentToFridayDates: [], adjacentToPublicHolidayDates: [], consecutiveSignalCount: 0, hasThreeDayStreak: false, hasTwoDayStreak: false, highMonthlyCount: false, longestStreak: 0, summary: "" },
+    preHireIgnoredValues: 0, roleName: null, severityCounts: { High: 0, Low: 0, Medium: 0, Review: 0 },
+    sourceRowNumber: 1, teamName: null, timeline: [], totalVisits: 5, unknownValues: 0,
+    vacationSignalDays: 0, workedDays: 12,
+    ...overrides,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rollupPreview: any = {
+    employees: [
+      rollupEmployee({ hrId: "R-1", employeeName: "Rollup One", compliancePercent: 80, noActivityCandidates: 2, severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 } }),
+      rollupEmployee({ hrId: "R-2", employeeName: "Rollup Two", compliancePercent: 40, noActivityCandidates: 8, matchStatus: "unmatched", severityCounts: { High: 1, Low: 0, Medium: 0, Review: 0 } }),
+    ],
+  };
+  const rollup = buildEmployeeRollup(rollupPreview);
+  assert.deepEqual(rollup, [
+    { compliancePercent: 80, employeeName: "Rollup One", highSeverityCount: 0, hrId: "R-1", matchStatus: "matched", noActivityCandidates: 2 },
+    { compliancePercent: 40, employeeName: "Rollup Two", highSeverityCount: 1, hrId: "R-2", matchStatus: "unmatched", noActivityCandidates: 8 },
+  ], "buildEmployeeRollup projects exactly the compact fields, pulling highSeverityCount from severityCounts.High");
+
+  const rollupFor = (hrId: string, compliancePercent: number, highSeverityCount: number): FieldWorkforceEmployeeMonthRollup => ({
+    compliancePercent, employeeName: "x", highSeverityCount, hrId, matchStatus: "matched", noActivityCandidates: 0,
+  });
+  // DB returns newest-first; May has no entry for R-1 at all (not yet backfilled) -> skipped, not zero-filled.
+  const trendRows = [
+    { month_key: "2026-07", employee_rollup: [rollupFor("R-1", 90, 0), rollupFor("R-2", 10, 1)] },
+    { month_key: "2026-06", employee_rollup: [rollupFor("r-1", 60, 1), rollupFor("R-2", 20, 1)] }, // lowercase hrId still matches via canonicalHrIdKey
+    { month_key: "2026-05", employee_rollup: [rollupFor("R-2", 30, 0)] },
+  ];
+  const trendR1 = computeEmployeeTrendFromRows(trendRows, "R-1");
+  assert.equal(trendR1.monthsConsidered, 2, "R-1 has an entry in 2 of the 3 rows (May's row lacks R-1 entirely)");
+  assert.deepEqual(trendR1.points.map((point) => point.monthKey), ["2026-06", "2026-07"], "points are reversed to oldest -> newest");
+  assert.equal(trendR1.points[0].compliancePercent, 60, "June point resolves despite the rollup's lowercase hrId");
+  assert.equal(trendR1.highSeverityMonthCount, 1, "only June had a High-severity day for R-1");
+
+  const trendR2 = computeEmployeeTrendFromRows(trendRows, "R-2");
+  assert.equal(trendR2.monthsConsidered, 3, "R-2 has an entry in all 3 rows");
+  assert.equal(trendR2.highSeverityMonthCount, 2, "July and June both had a High-severity day for R-2");
+
+  const trendMissing = computeEmployeeTrendFromRows(trendRows, "R-999");
+  assert.deepEqual(trendMissing, { highSeverityMonthCount: 0, monthsConsidered: 0, points: [] }, "an employee absent from every row's rollup gets the empty shape");
 }

@@ -47,7 +47,7 @@ import type {
   FieldWorkforceSeverity,
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
-import type { FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
+import type { FieldWorkforceEmployeeTrend, FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -874,8 +874,79 @@ function TimelinePanel({
       />
       <TimelineLegend />
       <EmployeeComplianceCard employee={selectedEmployee} />
+      <EmployeeTrendStrip hrId={selectedEmployee.hrId} key={selectedEmployee.hrId} />
       <SingleEmployeeTimeline employee={selectedEmployee} />
     </div>
+  );
+}
+
+/**
+ * Cross-month compliance history for the selected employee — a per-employee sparkline plus
+ * "flagged (High) in N of the last M months" as a displayed fact only. No auto-severity
+ * change; purely informational, matching every other Tier 1/2 signal this pass.
+ */
+function EmployeeTrendStrip({ hrId }: { hrId: string }) {
+  const [trend, setTrend] = useState<FieldWorkforceEmployeeTrend | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/field-workforce-compliance/employee-trend/${encodeURIComponent(hrId)}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled) return;
+        if (!payload.success) throw new Error(payload.message ?? "Trend unavailable.");
+        setTrend(payload.data as FieldWorkforceEmployeeTrend);
+      })
+      .catch((fetchError: unknown) => {
+        if (!cancelled) setError(fetchError instanceof Error ? fetchError.message : "Trend unavailable.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hrId]);
+
+  if (isLoading) {
+    return <Card className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">Loading compliance history…</Card>;
+  }
+  if (error || !trend) {
+    return <Card className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">Compliance history unavailable{error ? `: ${error}` : "."}</Card>;
+  }
+  if (trend.monthsConsidered === 0) {
+    return <Card className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">No saved months yet for this employee&apos;s compliance history.</Card>;
+  }
+
+  return (
+    <Card className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-black text-slate-950">Compliance History ({trend.monthsConsidered}-month trend)</p>
+        <span className={cn(
+          "rounded-full px-2.5 py-1 text-xs font-black uppercase tracking-wide",
+          trend.highSeverityMonthCount > 0 ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700",
+        )}>
+          Flagged (High) in {trend.highSeverityMonthCount} of {trend.monthsConsidered} months
+        </span>
+      </div>
+      <div className="mt-3 flex items-end gap-2">
+        {trend.points.map((point) => (
+          <div className="flex flex-col items-center gap-1" key={point.monthKey}>
+            <div
+              className={cn(
+                "w-7 rounded-t-md",
+                point.highSeverityCount > 0 ? "bg-rose-400" : point.compliancePercent >= 75 ? "bg-emerald-400" : point.compliancePercent >= 50 ? "bg-amber-400" : "bg-rose-300",
+              )}
+              style={{ height: `${Math.max(6, Math.round(point.compliancePercent))}px` }}
+              title={`${point.monthKey}: ${point.compliancePercent}% compliance, ${point.noActivityCandidates} no-activity day(s)${point.highSeverityCount > 0 ? ", High severity" : ""}`}
+            />
+            <span className="text-[10px] font-bold text-slate-500">{point.monthKey.slice(5)}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
