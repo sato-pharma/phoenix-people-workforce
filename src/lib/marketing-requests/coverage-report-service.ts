@@ -25,8 +25,10 @@ import {
   buildKpiBand,
   getMarketingRequestViewSales,
   roiWindowLabel,
+  toNum,
   type MappedRoiRequest,
   type RoiRequestRow,
+  type SupabaseAdmin,
 } from "@/lib/marketing-requests/roi-report-service";
 import {
   emptyMarketingCoverageFilterState,
@@ -120,6 +122,66 @@ function getCachedCoverageIndex(access: AccessContext, revealRestricted: boolean
   return promise;
 }
 
+// marketing_roi_distributor_rollup is small, slow-changing reference data, but was being
+// re-fetched from scratch on every buildCoverageIndex call AND every pharmacy drill-down
+// (getMarketingCoverageRequestPharmacies) — 2 redundant round-trips per typical request flow.
+// Cached the same way as coverageIndexCache above, just with a longer TTL since this data
+// changes far less often than a viewer's scoped request index.
+const DISTRIBUTOR_ROLLUP_CACHE_TTL_MS = 5 * 60_000;
+let distributorRollupCache: { expiresAt: number; promise: Promise<Map<string, string>> } | null = null;
+
+function getCachedDistributorRollup(supabase: SupabaseAdmin): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (distributorRollupCache && distributorRollupCache.expiresAt > now) return distributorRollupCache.promise;
+
+  const promise = (async () => {
+    const { data, error } = await supabase
+      .from("marketing_roi_distributor_rollup")
+      .select("marketing_normalized_name, parent_distributor_code");
+    if (error) throw error;
+    const map = new Map<string, string>();
+    for (const row of (data ?? []) as Array<{ marketing_normalized_name: string; parent_distributor_code: string }>) {
+      map.set(row.marketing_normalized_name.trim().toLowerCase(), row.parent_distributor_code);
+    }
+    return map;
+  })();
+
+  distributorRollupCache = { expiresAt: now + DISTRIBUTOR_ROLLUP_CACHE_TTL_MS, promise };
+  void promise.catch(() => {
+    if (distributorRollupCache?.promise === promise) distributorRollupCache = null;
+  });
+  return promise;
+}
+
+/**
+ * Narrows the per-request product/pharmacy/approval-step fan-out (the expensive
+ * `loadByRequestIds` calls in `buildCoverageIndex`) to just the visible subset for
+ * manager-chain-scoped viewers — a concrete, finite `visibleRequesterHrIds` Set (District/
+ * Regional/National Sales Manager and similar). Company-wide roles and Product Manager/Group
+ * Product Manager are returned unchanged: PM/GPM's own filter (in the entries loop, further
+ * down in `buildCoverageIndex`) depends on product data that hasn't been fetched yet at this
+ * point, so it can't be safely pre-narrowed here.
+ *
+ * This is the EXACT SAME comparison (`normalizeHrId` + `Set.has`) the entries-loop filter in
+ * `buildCoverageIndex` already performs — just run once earlier, purely to shrink what gets
+ * fetched for a narrowly-scoped viewer. The entries-loop filter itself is left unchanged, so it
+ * can never disagree with this pre-narrowing. Deliberately NOT a SQL-level filter: an earlier
+ * draft pushed `visibleRequesterHrIds` into a `.in("requester_hr_id", ...)` Supabase query, but
+ * that Set is normalized/alias-mapped (`normalizeHrId`) while the raw `requester_hr_id` column
+ * has known casing drift this codebase's own migrations work around via `upper(btrim(...))` —
+ * a raw-to-normalized SQL comparison would silently exclude exactly the rows that drift affects.
+ * Keeping this as a JS-level pre-filter (same function, same values, just called earlier)
+ * carries no such risk.
+ */
+export function narrowRequestsForFanOut(
+  requests: MappedRoiRequest[],
+  scope: MarketingRoiScope,
+): MappedRoiRequest[] {
+  if (scope.isCompanyWide || !scope.visibleRequesterHrIds) return requests;
+  const visible = scope.visibleRequesterHrIds;
+  return requests.filter((request) => visible.has(normalizeHrId(request.requesterHrId) ?? ""));
+}
+
 /**
  * Build the role-scoped per-request index for one viewer. Near-twin of
  * roi-report-service.ts's buildRoiIndex, scoped via resolveMarketingCoverageScope
@@ -154,9 +216,9 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
   if (requestsResult.error) throw requestsResult.error;
   const requests = ((requestsResult.data ?? []) as RoiRequestRow[]).map(mapRoiRequest);
   const requestById = new Map(requests.map((request) => [request.id, request] as const));
-  const allIds = requests.map((request) => request.id);
+  const allIds = narrowRequestsForFanOut(requests, scope).map((request) => request.id);
 
-  const [productLinks, pharmacyLinks, approvalSteps, rollupRows, customersResult, typesResult, salesDataAsOf, sosDistributorsResult] =
+  const [productLinks, pharmacyLinks, approvalSteps, parentByNormalized, customersResult, typesResult, salesDataAsOf, sosDistributorsResult] =
     await Promise.all([
       loadByRequestIds<{ request_id: string; product_id: number | string }>(
         supabase,
@@ -176,13 +238,12 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
         "request_id, assigned_role, is_cc, status",
         allIds,
       ),
-      supabase.from("marketing_roi_distributor_rollup").select("marketing_normalized_name, parent_distributor_code"),
+      getCachedDistributorRollup(supabase),
       supabase.from("marketing_customers").select("id, display_name"),
       supabase.from("marketing_request_types").select("id, name"),
       loadLatestValidatedPeriod(supabase),
       supabase.from("source_of_sales_distributors").select("distributor_code, distributor_name"),
     ]);
-  if (rollupRows.error) throw rollupRows.error;
   if (customersResult.error) throw customersResult.error;
   if (typesResult.error) throw typesResult.error;
   if (sosDistributorsResult.error) throw sosDistributorsResult.error;
@@ -246,10 +307,6 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
     for (const row of (data ?? []) as Array<{ id: number | string; normalized_name?: string | null }>) {
       distributorNormalizedById.set(Number(row.id), (row.normalized_name ?? "").trim().toLowerCase());
     }
-  }
-  const parentByNormalized = new Map<string, string>();
-  for (const row of (rollupRows.data ?? []) as Array<{ marketing_normalized_name: string; parent_distributor_code: string }>) {
-    parentByNormalized.set(row.marketing_normalized_name.trim().toLowerCase(), row.parent_distributor_code);
   }
 
   const pharmacyIds = Array.from(new Set(Array.from(codeById.values()).map((entry) => entry.pharmacyId).filter(Boolean)));
@@ -534,6 +591,76 @@ export function computeDistributorRollup(
   return result;
 }
 
+type CoverageActualsRow = {
+  request_id: string;
+  actual_sales_value: number | string | null;
+  actual_sales_units: number | string | null;
+  sales_rows: number | string | null;
+  attribution_quality?: string | null;
+};
+
+type CoverageActualsByRequest = Map<string, { value: number; units: number; salesRows: number; quality: string }>;
+
+/** Pure: given the full requested id list and what the fact-table read actually returned,
+ *  determine which ids need the slow RPC fallback. Every id in `requestIds` ends up covered —
+ *  from `factByRequest` when present, from the fallback otherwise. Extracted as a pure function
+ *  so this "which ids are missing" decision is independently testable without a live Supabase
+ *  call, matching this report's convention (e.g. mergePharmacyCoverage). */
+export function findCoverageActualsGaps(requestIds: string[], factByRequest: CoverageActualsByRequest): string[] {
+  return requestIds.filter((id) => !factByRequest.has(id));
+}
+
+/**
+ * Fact-first actuals read for the Coverage Report. `marketing_roi_request_facts` now covers
+ * every request status (not just approved) via the 2026-07-04 reliability migration, so it's a
+ * fast, indexed source for the common case — falling back to the existing live-RPC `loadActuals`
+ * only for requests genuinely missing a fact row (e.g. never refreshed since being created).
+ *
+ * The fast path is only safe when `excludeCodes` is empty: `marketing_roi_request_facts.
+ * actual_sales_value` is a flat per-request total that cannot distinguish confidential-product
+ * sales from the rest, so a masked/restricted viewer always uses the existing RPC path unchanged
+ * (which already handles per-product exclusion correctly) — this is the expected, correct path
+ * for that case, not a degradation.
+ */
+async function loadCoverageActuals(
+  supabase: SupabaseAdmin,
+  requestIds: string[],
+  excludeCodes: string[],
+): Promise<{ byRequest: CoverageActualsByRequest; masked: boolean; degradedRequestIds: string[] }> {
+  if (requestIds.length === 0) return { byRequest: new Map(), masked: false, degradedRequestIds: [] };
+
+  if (excludeCodes.length > 0) {
+    const { byRequest, masked } = await loadActuals(supabase, requestIds, excludeCodes);
+    return { byRequest, masked, degradedRequestIds: [] };
+  }
+
+  const factByRequest: CoverageActualsByRequest = new Map();
+  for (const part of chunk(requestIds)) {
+    const { data, error } = await supabase
+      .from("marketing_roi_request_facts")
+      .select("request_id, actual_sales_value, actual_sales_units, sales_rows, attribution_quality")
+      .in("request_id", part);
+    if (error) throw error;
+    for (const row of (data ?? []) as CoverageActualsRow[]) {
+      factByRequest.set(row.request_id, {
+        value: toNum(row.actual_sales_value),
+        units: toNum(row.actual_sales_units),
+        salesRows: toNum(row.sales_rows),
+        quality: row.attribution_quality ?? "no_sales",
+      });
+    }
+  }
+
+  const missingIds = findCoverageActualsGaps(requestIds, factByRequest);
+  if (missingIds.length === 0) {
+    return { byRequest: factByRequest, masked: false, degradedRequestIds: [] };
+  }
+
+  const fallback = await loadActuals(supabase, missingIds, []);
+  for (const [id, value] of fallback.byRequest) factByRequest.set(id, value);
+  return { byRequest: factByRequest, masked: false, degradedRequestIds: missingIds };
+}
+
 export async function getMarketingCoverageReport(
   access: AccessContext,
   filters: MarketingCoverageFilterState,
@@ -555,20 +682,22 @@ export async function getMarketingCoverageReport(
   const excludeCodes = includeRestricted ? [] : RESTRICTED_CODES_UPPER;
   let actualsByRequest: Map<string, { value: number; units: number; salesRows: number; quality: string }>;
   let masked: boolean;
+  let degradedRequestIds: string[];
   try {
-    ({ byRequest: actualsByRequest, masked } = await loadActuals(
+    ({ byRequest: actualsByRequest, masked, degradedRequestIds } = await loadCoverageActuals(
       supabase,
       candidates.map((entry) => entry.requestId),
       excludeCodes,
     ));
   } catch (error) {
-    logRoiServiceFailure("getMarketingCoverageReport:loadActuals", error, {
+    logRoiServiceFailure("getMarketingCoverageReport:loadCoverageActuals", error, {
       role: access.role,
       candidateCount: candidates.length,
       masking: excludeCodes.length > 0,
     });
     throw error;
   }
+  const degradedRequestIdSet = new Set(degradedRequestIds);
 
   const autoAppliedByDimension: MarketingCoverageReport["autoAppliedByDimension"] = {};
   const options = computeMarketingCoverageFilterOptions(ctx.scope, ctx.entries);
@@ -670,7 +799,15 @@ export async function getMarketingCoverageReport(
   );
   const baseKpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount);
   const { distinctPharmacyCount, distinctCustomerCount } = countDistinctCoverage(finalRows);
-  const kpi: MarketingCoverageKpiBand = { ...baseKpi, distinctPharmacyCount, distinctCustomerCount };
+  const degradedInFinalRows = finalRows
+    .map((row) => row.requestId)
+    .filter((requestId) => degradedRequestIdSet.has(requestId));
+  const kpi: MarketingCoverageKpiBand = {
+    ...baseKpi,
+    distinctPharmacyCount,
+    distinctCustomerCount,
+    actualsDegraded: { count: degradedInFinalRows.length, requestIds: degradedInFinalRows },
+  };
   const entryById = new Map(ctx.entries.map((entry) => [entry.requestId, entry] as const));
   const distributorRollup = computeDistributorRollup(finalRows, entryById, ctx.distributorNameByCode);
 
@@ -766,12 +903,7 @@ export async function getMarketingCoverageRequestPharmacies(
     }
   }
 
-  const rollupResult = await supabase.from("marketing_roi_distributor_rollup").select("marketing_normalized_name, parent_distributor_code");
-  if (rollupResult.error) throw rollupResult.error;
-  const parentByNormalized = new Map<string, string>();
-  for (const row of (rollupResult.data ?? []) as Array<{ marketing_normalized_name: string; parent_distributor_code: string }>) {
-    parentByNormalized.set(row.marketing_normalized_name.trim().toLowerCase(), row.parent_distributor_code);
-  }
+  const parentByNormalized = await getCachedDistributorRollup(supabase);
 
   const byPharmacy = new Map(viewSales.byPharmacy.map((aggregate) => [aggregate.key, aggregate] as const));
   const distributorNameByCode = new Map<string, string | null>();

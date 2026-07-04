@@ -78,6 +78,7 @@ function sampleReport(): MarketingCoverageReport {
       restrictedExcludedCount: 0,
       distinctPharmacyCount: 2,
       distinctCustomerCount: 1,
+      actualsDegraded: { count: 0, requestIds: [] },
     },
     appliedFilters: { ...emptyMarketingCoverageFilterState(), area: ["Cairo"] },
     autoAppliedByDimension: {},
