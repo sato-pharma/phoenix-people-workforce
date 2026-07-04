@@ -83,6 +83,7 @@ function sampleReport(): MarketingCoverageReport {
     autoAppliedByDimension: {},
     includedRestricted: false,
     generatedAtIso: META.generatedAtIso,
+    distributorRollup: [],
   };
 }
 

@@ -176,6 +176,9 @@ import { runMarketingCoveragePharmacyMergeTests } from "./marketing-coverage-pha
 import { runMarketingCoverageKpiExtensionTests } from "./marketing-coverage-kpi-extension.test.ts";
 import { runMarketingCoveragePresetMigrationReadinessTests } from "./marketing-coverage-preset-migration-readiness.test.ts";
 import { runMarketingCoverageExportWorkbookTests } from "./marketing-coverage-export-workbook.test.ts";
+import { runMarketingCoverageReportAnalyticsTests } from "./marketing-coverage-report-analytics.test.ts";
+import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage-distributor-rollup.test.ts";
+import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
@@ -492,6 +495,9 @@ await runTest("marketing coverage pharmacy merge (zero-sales never omitted)", ru
 await runTest("marketing coverage KPI extension (distinct pharmacy/customer counts)", runMarketingCoverageKpiExtensionTests);
 await runTest("marketing coverage preset migration readiness (report_kind column)", runMarketingCoveragePresetMigrationReadinessTests);
 await runTest("marketing coverage export workbook (xlsx builds)", runMarketingCoverageExportWorkbookTests);
+await runTest("marketing coverage report analytics (rollup/trend/outlier)", runMarketingCoverageReportAnalyticsTests);
+await runTest("marketing coverage distributor rollup (weighted cost/required-ROI split)", runMarketingCoverageDistributorRollupTests);
+await runTest("marketing coverage URL filter state (shareable link round-trip)", runMarketingCoverageUrlStateTests);
 await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
