@@ -316,7 +316,7 @@ function ManagerLane({
   const memberTree = React.useMemo(() => buildMemberTree(group.members), [group.members]);
 
   return (
-    <div className="min-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className="min-w-[240px] overflow-hidden border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow duration-300 hover:shadow-[0_10px_28px_rgba(15,23,42,0.1)]">
       {/* Manager header — filled seats are dark slate, vacant seats warm orange */}
       <div
         className={cn(
@@ -451,12 +451,12 @@ function SpineNode({
   return (
     <div
       className={cn(
-        "relative w-full max-w-md rounded-xl border px-4 py-3 text-center shadow-sm",
+        "relative w-full max-w-md border px-4 py-3 text-center transition-shadow duration-300",
         tone === "dark"
-          ? "border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 text-white"
+          ? "border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]"
           : tone === "leader"
-            ? "border-orange-300 bg-gradient-to-r from-orange-50 via-orange-50/70 to-orange-50"
-            : "border-slate-200 bg-white",
+            ? "border-orange-300 bg-gradient-to-r from-orange-50 via-orange-50/70 to-orange-50 shadow-[0_10px_26px_rgba(249,115,22,0.14)]"
+            : "border-slate-200 bg-white shadow-sm",
       )}
     >
       <div
@@ -498,14 +498,40 @@ const TONE_ACCENT: Record<KpiTone, string> = {
   slate: "bg-slate-400",
 };
 
+const TONE_ICON: Record<KpiTone, string> = {
+  amber: "bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 ring-amber-200",
+  emerald: "bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-emerald-200",
+  orange: "bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 ring-orange-200",
+  sky: "bg-gradient-to-br from-sky-50 to-sky-100 text-sky-600 ring-sky-200",
+  slate: "bg-gradient-to-br from-slate-50 to-slate-100 text-slate-600 ring-slate-200",
+};
+
+const TONE_GLOW: Record<KpiTone, string> = {
+  amber: "bg-amber-300/30",
+  emerald: "bg-emerald-300/30",
+  orange: "bg-orange-300/30",
+  sky: "bg-sky-300/30",
+  slate: "bg-slate-300/30",
+};
+
+const TONE_FILL: Record<KpiTone, string> = {
+  amber: "bg-amber-500",
+  emerald: "bg-emerald-500",
+  orange: "bg-orange-500",
+  sky: "bg-sky-500",
+  slate: "bg-slate-500",
+};
+
 function KpiCard({
   actual,
+  icon,
   label,
   tone,
   total,
   vacant,
 }: {
   actual: number;
+  icon: React.ReactNode;
   label: string;
   tone: KpiTone;
   total: number;
@@ -513,30 +539,48 @@ function KpiCard({
 }) {
   const pct = total > 0 ? Math.round((actual / total) * 100) : 0;
   return (
-    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.05)]">
+    <div className="group relative overflow-hidden border border-slate-200 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.05)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.1)]">
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1", TONE_ACCENT[tone])} />
-      <p className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-        {label}
-      </p>
-      <div className="mt-1.5 flex items-end gap-1.5">
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full blur-2xl transition-opacity duration-300 group-hover:opacity-90",
+          TONE_GLOW[tone],
+        )}
+      />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+          {label}
+        </p>
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center ring-1 transition-transform duration-300 group-hover:scale-110",
+            TONE_ICON[tone],
+          )}
+        >
+          {icon}
+        </span>
+      </div>
+      <div className="relative mt-1.5 flex items-end gap-1.5">
         <span className="text-2xl font-black leading-none text-slate-900">{actual}</span>
         <span className="pb-0.5 text-sm font-bold leading-none text-slate-400">/ {total}</span>
       </div>
-      <div className="mt-2.5 flex items-center gap-2">
+      <div className="relative mt-2.5 flex items-center gap-2">
         <div
           aria-label={`${label} completion ${pct}%`}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={pct}
-          className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"
+          className="h-1.5 flex-1 overflow-hidden bg-slate-100"
           role="progressbar"
         >
-          <div className="h-full rounded-full bg-orange-500" style={{ width: `${pct}%` }} />
+          <div className={cn("h-full transition-all duration-500", TONE_FILL[tone])} style={{ width: `${pct}%` }} />
         </div>
         <span className="text-[10px] font-black text-slate-400">{pct}%</span>
       </div>
       {vacant > 0 ? (
-        <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-orange-600">
+        <p className="relative mt-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-orange-600">
           {vacant} vacant
         </p>
       ) : null}
@@ -826,12 +870,13 @@ export function OrgChartTree({
     type: row.type === "vacancy" ? "Vacancy" : "Employee",
   }));
 
-  const kpiCards: Array<{ actual: number; label: string; tone: KpiTone; total: number; vacant: number }> = [
-    { actual: structureKpis.medicalRep.actual, label: kpiLabels.medicalRep, tone: "emerald", total: structureKpis.medicalRep.total, vacant: structureKpis.medicalRep.vacant },
-    { actual: structureKpis.dsm.actual, label: kpiLabels.dsm, tone: "sky", total: structureKpis.dsm.total, vacant: structureKpis.dsm.vacant },
-    { actual: structureKpis.rsm.actual, label: kpiLabels.rsm, tone: "amber", total: structureKpis.rsm.total, vacant: structureKpis.rsm.vacant },
-    { actual: structureKpis.nsm.actual, label: kpiLabels.nsm, tone: "orange", total: structureKpis.nsm.total, vacant: structureKpis.nsm.vacant },
-    { actual: structureKpis.total.actual, label: kpiLabels.total, tone: "slate", total: structureKpis.total.total, vacant: structureKpis.total.vacant },
+  const kpiIconClassName = "h-4 w-4";
+  const kpiCards: Array<{ actual: number; icon: React.ReactNode; label: string; tone: KpiTone; total: number; vacant: number }> = [
+    { actual: structureKpis.medicalRep.actual, icon: <UserRound className={kpiIconClassName} />, label: kpiLabels.medicalRep, tone: "emerald", total: structureKpis.medicalRep.total, vacant: structureKpis.medicalRep.vacant },
+    { actual: structureKpis.dsm.actual, icon: <MapPin className={kpiIconClassName} />, label: kpiLabels.dsm, tone: "sky", total: structureKpis.dsm.total, vacant: structureKpis.dsm.vacant },
+    { actual: structureKpis.rsm.actual, icon: <Layers className={kpiIconClassName} />, label: kpiLabels.rsm, tone: "amber", total: structureKpis.rsm.total, vacant: structureKpis.rsm.vacant },
+    { actual: structureKpis.nsm.actual, icon: <UsersRound className={kpiIconClassName} />, label: kpiLabels.nsm, tone: "orange", total: structureKpis.nsm.total, vacant: structureKpis.nsm.vacant },
+    { actual: structureKpis.total.actual, icon: <Network className={kpiIconClassName} />, label: kpiLabels.total, tone: "slate", total: structureKpis.total.total, vacant: structureKpis.total.vacant },
   ];
 
   return (
@@ -842,7 +887,7 @@ export function OrgChartTree({
           <div className="inline-flex h-9 items-center gap-0.5 border border-[#D8E0EA] bg-white px-1 text-[#0F172A] shadow-sm">
             <button
               aria-label="Zoom out"
-              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-30"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:cursor-not-allowed disabled:opacity-30"
               disabled={zoom <= MIN_ZOOM}
               onClick={zoomOut}
               type="button"
@@ -851,7 +896,7 @@ export function OrgChartTree({
             </button>
             <button
               aria-label="Reset zoom to 100%"
-              className="min-w-[3.5rem] px-1 text-center text-xs font-bold tabular-nums text-slate-500 transition hover:text-[#F97316]"
+              className="min-w-[3.5rem] px-1 text-center text-xs font-bold tabular-nums text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
               onClick={resetZoom}
               type="button"
             >
@@ -859,7 +904,7 @@ export function OrgChartTree({
             </button>
             <button
               aria-label="Zoom in"
-              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-30"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:cursor-not-allowed disabled:opacity-30"
               disabled={zoom >= MAX_ZOOM}
               onClick={zoomIn}
               type="button"
@@ -917,6 +962,7 @@ export function OrgChartTree({
         {kpiCards.map((card) => (
           <KpiCard
             actual={card.actual}
+            icon={card.icon}
             key={card.label}
             label={card.label}
             tone={card.tone}
