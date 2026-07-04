@@ -74,7 +74,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Inbox", fullLabel: "Approval Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },
-  { label: "ROI", fullLabel: "ROI Tracking", href: "/employee-portals/marketing-requests/roi-tracking", icon: ChartColumnBig, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Coverage", fullLabel: "Marketing Coverage Report", href: "/employee-portals/marketing-requests/coverage-report", icon: MapPinned, flags: ["showMarketingCoverageReportTab"] },
   // Leave Management
   { label: "Vacation", fullLabel: "Vacation Request", href: "/employee-portals/vacation-request", icon: CalendarDays },

@@ -126,7 +126,6 @@ export function runModulesControlTests() {
     "/employee-portals/probation",
     "/employee-portals/marketing-requests",
     "/employee-portals/marketing-requests/inbox",
-    "/employee-portals/marketing-requests/roi-tracking",
   ].map((href) => {
     const catalogModule = catalog.find((entry) => entry.href === href && entry.navigationMode === "employee-portal");
     assert.ok(catalogModule, `${href} employee-portal module exists`);

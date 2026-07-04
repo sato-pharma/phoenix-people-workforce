@@ -218,7 +218,6 @@ export function runNavigationActivePathTests() {
       "/employee-portals/probation",
       "/employee-portals/marketing-requests",
       "/employee-portals/marketing-requests/inbox",
-      "/employee-portals/marketing-requests/roi-tracking",
     ],
     "Marketing Manager reports and marketing requests live in the employee portal",
   );
@@ -232,6 +231,9 @@ export function runNavigationActivePathTests() {
       "/admin/marketing-requests",
       "/admin/marketing-requests/inbox",
       "/admin/marketing-requests/roi-tracking",
+      // Retired from the employee-portal sidebar/catalog now that Coverage Report covers the
+      // same ground; the underlying page/permission stay live for direct-URL access.
+      "/employee-portals/marketing-requests/roi-tracking",
       "/employee-portals/marketing-requests/control",
       "/workspace/incentive",
       ...sensitiveHrHrefs,
