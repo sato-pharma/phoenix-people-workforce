@@ -8,6 +8,8 @@
 // Direct rows = the stored sheet value; bonus qty is always excluded. Confidential products
 // (LA003/LA004/SS001) are stripped at leaf level for everyone except CEO / Super Admin.
 
+import { unstable_cache } from "next/cache.js";
+
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   RESTRICTED_PRODUCT_CODES,
@@ -209,6 +211,11 @@ function toFilterSet(values: string[] | undefined): Set<string> | null {
   return new Set(values.map((value) => norm(value).toUpperCase()));
 }
 
+// Sort a copy of a nullable string array (null = "no restriction" is preserved). Used only to build
+// a stable cache key for the SoS RPC fan-out — the phx_exec_* RPCs treat these arrays as sets, so
+// ordering never changes the result, only the cache-key bytes.
+const sortedOrNull = (values: string[] | null): string[] | null => (values === null ? null : [...values].sort());
+
 function share(value: number, total: number): number {
   return total > 0 ? value / total : 0;
 }
@@ -224,6 +231,133 @@ async function safeRpcAll<T>(
     return [];
   }
 }
+
+type SosRpcInputs = {
+  windowPeriods: string[];
+  selectedPeriods: string[];
+  priorPeriod: string | null;
+  yoyPeriod: string | null;
+  trendLineNames: string[] | null;
+  trendRegionCodes: string[] | null;
+  trendProductCodes: string[] | null;
+  filterAreas: string[];
+  filterDistributors: string[];
+  excludeCodes: string[];
+  trendExcludeCodes: string[];
+  trendForcedEmpty: boolean;
+  canSeeCrossLineGeography: boolean;
+};
+
+type SosRpcRows = {
+  detailRows: Array<Record<string, unknown>>;
+  trendRowsRaw: Array<Record<string, unknown>>;
+  brickRaw: Array<Record<string, unknown>>;
+  customerRaw: Array<Record<string, unknown>>;
+  priorDetailRaw: Array<Record<string, unknown>>;
+  yoyDetailRaw: Array<Record<string, unknown>>;
+};
+
+const DETAIL_ORDER_BY = ["distributor_code", "region_code", "area_code", "product_code"];
+
+// Cached phx_exec_* RPC fan-out — the heavy part of the SoS dashboard (each aggregate is 2–11s
+// against the rollup tables). unstable_cache keys on the fully scope-resolved `inputs`, so a second
+// identical load (same viewer scope ∩ filters) is served from cache instead of re-running the
+// aggregates. The inputs already fold in the caller's line/region/product scope (the trend*/exclude
+// arrays + the canSeeCrossLineGeography gate), so two callers share a cache entry ONLY when they are
+// entitled to identical rows; keepExec in getSosDashboard stays the authoritative per-request
+// authorization backstop. Invalidated on any validated SoS/marketing import via
+// invalidateSalesDashboardCache (tag "sos-dashboard").
+const fetchSosDashboardRpcRows = unstable_cache(
+  async (inputs: SosRpcInputs): Promise<SosRpcRows> => {
+    const {
+      windowPeriods,
+      selectedPeriods,
+      priorPeriod,
+      yoyPeriod,
+      trendLineNames,
+      trendRegionCodes,
+      trendProductCodes,
+      filterAreas,
+      filterDistributors,
+      excludeCodes,
+      trendExcludeCodes,
+      trendForcedEmpty,
+      canSeeCrossLineGeography,
+    } = inputs;
+    const supabase = getSupabaseAdmin();
+    const emptyRpcRows = Promise.resolve([] as Array<Record<string, unknown>>);
+
+    const trendResultPromise = trendForcedEmpty
+      ? emptyRpcRows
+      : safeRpcAll("phx_exec_sos_trend", async () => {
+          const response = await supabase.rpc("phx_exec_sos_trend", {
+            p_areas: filterAreas,
+            p_distributors: filterDistributors,
+            p_exclude_codes: trendExcludeCodes,
+            p_lines: trendLineNames ?? [],
+            p_periods: windowPeriods,
+            p_products: trendProductCodes ?? [],
+            p_regions: trendRegionCodes ?? [],
+          });
+          if (response.error) throw response.error;
+          return (response.data ?? []) as Array<Record<string, unknown>>;
+        });
+
+    const detailArgsFor = (period: string) => ({
+      p_period: period,
+      p_lines: trendLineNames ?? [],
+      p_distributors: filterDistributors,
+      p_regions: trendRegionCodes ?? [],
+      p_areas: filterAreas,
+      p_products: trendProductCodes ?? [],
+      p_exclude_codes: excludeCodes,
+    });
+    const fetchDetail = (periods: string[]) =>
+      Promise.all(
+        periods.map((period) =>
+          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(period), DETAIL_ORDER_BY).then((rows) =>
+            rows.map((row) => ({ ...row, __period: period })),
+          ),
+        ),
+      ).then((arrays) => arrays.flat());
+    const detailRowsPromise = trendForcedEmpty ? emptyRpcRows : fetchDetail(selectedPeriods);
+
+    const priorDetailRowsPromise =
+      !priorPeriod || trendForcedEmpty
+        ? emptyRpcRows
+        : safeRpcAll("phx_exec_distributor_product (prior period)", () =>
+            rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), DETAIL_ORDER_BY),
+          );
+
+    const yoyDetailRowsPromise =
+      !yoyPeriod || trendForcedEmpty
+        ? emptyRpcRows
+        : safeRpcAll("phx_exec_distributor_product (YoY period)", () =>
+            rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), DETAIL_ORDER_BY),
+          );
+
+    const geoArgsFor = (period: string): Record<string, unknown> =>
+      trendExcludeCodes.length > 0 ? { p_period: period, p_exclude_codes: trendExcludeCodes } : { p_period: period };
+    const fetchGeo = (fn: "phx_exec_brick" | "phx_exec_customers", orderBy: string[]) =>
+      canSeeCrossLineGeography
+        ? Promise.all(
+            selectedPeriods.map((period) => safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy))),
+          ).then((arrays) => arrays.flat())
+        : emptyRpcRows;
+
+    const [detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw] = await Promise.all([
+      detailRowsPromise,
+      trendResultPromise,
+      fetchGeo("phx_exec_brick", ["distributor_code", "region_code", "area_code", "brick_id"]),
+      fetchGeo("phx_exec_customers", ["client_code", "distributor_code"]),
+      priorDetailRowsPromise,
+      yoyDetailRowsPromise,
+    ]);
+    return { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw };
+  },
+  ["sos-dashboard"],
+  { revalidate: 300, tags: ["sos-dashboard"] },
+);
 
 /**
  * Optional server-resolved scope overrides. Used by the employee-portal Source-of-Sales
@@ -274,7 +408,6 @@ export async function getSosDashboard(
   accessContext: AccessContext,
   options?: SosDashboardOptions,
 ): Promise<SosDashboardData> {
-  const supabase = getSupabaseAdmin();
   // Confidential products are excluded by default even for CEO/Super Admin — revealing them
   // requires an explicit per-request opt-in (the UI toggle), re-validated here against the
   // caller's role so a tampered request can never widen visibility past what the role allows.
@@ -435,131 +568,40 @@ export async function getSosDashboard(
     (trendRegionCodes !== null && trendRegionCodes.length === 0) ||
     (trendProductCodes !== null && trendProductCodes.length === 0);
 
-  const trendResultPromise = trendForcedEmpty
-    ? Promise.resolve([] as Array<Record<string, unknown>>)
-    : safeRpcAll(
-        "phx_exec_sos_trend",
-        () =>
-          (async () => {
-            const response = await supabase.rpc("phx_exec_sos_trend", {
-              p_areas: filters.areas ?? [],
-              p_distributors: filters.distributors ?? [],
-              p_exclude_codes: trendExcludeCodes,
-              p_lines: trendLineNames ?? [],
-              p_periods: windowPeriods,
-              p_products: trendProductCodes ?? [],
-              p_regions: trendRegionCodes ?? [],
-            });
-            if (response.error) throw response.error;
-            return (response.data ?? []) as Array<Record<string, unknown>>;
-          })(),
-      );
-
-  // Brick + customer aggregates carry no LINE dimension, so they are only ever shown to
-  // company-scope callers (see canSeeCrossLineGeography below). Skip those two heavy RPCs
-  // entirely for every scoped caller (portal roles) — their results would be discarded anyway,
-  // so this is a pure latency win with no behavior change.
-  const canSeeCrossLineGeography = salesScope.canViewAllSales;
-  const emptyRpcRows = Promise.resolve([] as Array<Record<string, unknown>>);
-
-  // Push the viewer's scope ∩ user-filter selection INTO the detail RPC so the database
-  // only aggregates the rows this caller can see, instead of returning the whole company
-  // and letting keepExec drop the rest. The arrays reuse the exact intersections already
-  // computed for the trend (scope-derived line/region/product ∩ user filters), plus the
-  // raw distributor/area user filters and the restricted-code exclusion. keepExec below is
-  // KEPT as the authoritative backstop — these params can only remove rows it would remove
-  // anyway (Head Office stripping intentionally stays in keepExec, not pushed here). When
-  // the intersection is disjoint (trendForcedEmpty) the detail is empty too, so skip the
-  // call entirely rather than fetch the full company only to discard every row.
-  // Detail is fetched ONCE PER SELECTED MONTH and concatenated — each call is the same pushed-down,
-  // scope-and-filter-narrowed aggregate the single-month path used, so multi-month is just the union
-  // of those leaf rows (the downstream grouping already sums them). Each row is tagged with its own
-  // period so the trend can reconcile every selected point to its month's exact total. Bounded by
-  // MAX_SELECTED_PERIODS, so this is a handful of ~20k-row-rollup reads, not a full-history scan.
-  const detailArgsFor = (period: string) => ({
-    p_period: period,
-    p_lines: trendLineNames ?? [],
-    p_distributors: filters.distributors ?? [],
-    p_regions: trendRegionCodes ?? [],
-    p_areas: filters.areas ?? [],
-    p_products: trendProductCodes ?? [],
-    p_exclude_codes: excludeCodes,
-  });
-  const fetchDetail = (periods: string[]) =>
-    Promise.all(
-      periods.map((period) =>
-        rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(period), [
-          "distributor_code",
-          "region_code",
-          "area_code",
-          "product_code",
-        ]).then((rows) => rows.map((row) => ({ ...row, __period: period }))),
-      ),
-    ).then((arrays) => arrays.flat());
-  const detailRowsPromise = trendForcedEmpty ? emptyRpcRows : fetchDetail(selectedPeriods);
-
-  // Month-over-month: the next-older validated period, fetched through the SAME pushed-down detail
-  // RPC + keepExec backstop as the selected month. Only meaningful when EXACTLY ONE month is in
-  // scope — comparing a multi-month total against a single prior month would mislead — so it is
-  // suppressed for a multi-month selection (mirrors the weekly dashboard's prior-week rule).
+  // Month-over-month / year-over-year anchor months. Only meaningful for a SINGLE selected month —
+  // comparing a multi-month total against one prior month would mislead — so both are suppressed for
+  // a multi-month selection (mirrors the weekly dashboard's prior-week rule). Computed here so they
+  // feed both the cache key and the fetch below.
   const priorPeriod =
     options?.includeMomComparison && isSingleMonth ? resolvePriorPeriod(availablePeriods, selectedPeriod) : null;
-  const priorDetailRowsPromise =
-    !priorPeriod || trendForcedEmpty
-      ? emptyRpcRows
-      : safeRpcAll("phx_exec_distributor_product (prior period)", () =>
-          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), [
-            "distributor_code",
-            "region_code",
-            "area_code",
-            "product_code",
-          ]),
-        );
-
-  // Year-over-year: the same month last year, fetched through the SAME pushed-down detail RPC —
-  // structurally identical to the MoM prior-period fetch above, just shifted 12 months instead of
-  // 1. Same single-month guard (a multi-month YoY comparison would be as misleading as MoM's).
   const yoyPeriodCandidate = options?.includeYoY && isSingleMonth ? shiftPeriod(selectedPeriod, 12) : null;
   const yoyPeriod = yoyPeriodCandidate && availableSet.has(yoyPeriodCandidate) ? yoyPeriodCandidate : null;
-  const yoyDetailRowsPromise =
-    !yoyPeriod || trendForcedEmpty
-      ? emptyRpcRows
-      : safeRpcAll("phx_exec_distributor_product (YoY period)", () =>
-          rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), [
-            "distributor_code",
-            "region_code",
-            "area_code",
-            "product_code",
-          ]),
-        );
 
-  // Head-Office confidentiality for the geography aggregates: brick/customer rows carry no
-  // product/line dimension, so the Head-Office contribution can only be stripped INSIDE the RPC
-  // (LA003/LA004/SS001 are already hard-excluded in the SQL bodies since 20260702130000). Pass
-  // the same dynamic exclusion set the trend uses — but ONLY when non-empty, so CEO/Super-Admin
-  // calls stay single-arg (byte-identical, and still valid against a pre-migration database).
-  // For a restricted viewer against a pre-migration database the RPC rejects the unknown
-  // parameter and safeRpcAll fails CLOSED (empty sections) — never leaks.
-  const geoArgsFor = (period: string): Record<string, unknown> =>
-    trendExcludeCodes.length > 0 ? { p_period: period, p_exclude_codes: trendExcludeCodes } : { p_period: period };
-  // Brick/customer aggregates are also fetched per selected month and concatenated — the downstream
-  // grouping sums them by brick / customer across the months, so the geography totals span the whole
-  // selection. A failure for any single month fails closed to [] for that month (safeRpcAll).
-  const fetchGeo = (fn: "phx_exec_brick" | "phx_exec_customers", orderBy: string[]) =>
-    canSeeCrossLineGeography
-      ? Promise.all(
-          selectedPeriods.map((period) => safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy))),
-        ).then((arrays) => arrays.flat())
-      : emptyRpcRows;
+  // Brick + customer aggregates carry no LINE dimension, so they are only ever shown to company-scope
+  // callers. Skip those two heavy RPCs entirely for every scoped (portal) caller — their results
+  // would be discarded by keepExec anyway, so this is a pure latency win with no behavior change.
+  const canSeeCrossLineGeography = salesScope.canViewAllSales;
 
-  const [detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw] = await Promise.all([
-    detailRowsPromise,
-    trendResultPromise,
-    fetchGeo("phx_exec_brick", ["distributor_code", "region_code", "area_code", "brick_id"]),
-    fetchGeo("phx_exec_customers", ["client_code", "distributor_code"]),
-    priorDetailRowsPromise,
-    yoyDetailRowsPromise,
-  ]);
+  // Heavy phx_exec_* fan-out, cached (300s, tag "sos-dashboard"). The key is the fully scope-resolved
+  // input set below (scope ∩ user filters, exclude sets, geo gate) — arrays are sorted so the same
+  // logical query always maps to the same cache entry. Two callers share an entry ONLY when entitled
+  // to identical rows; keepExec below stays the authoritative per-request authorization backstop.
+  const { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw } =
+    await fetchSosDashboardRpcRows({
+      windowPeriods,
+      selectedPeriods: [...selectedPeriods].sort(),
+      priorPeriod,
+      yoyPeriod,
+      trendLineNames: sortedOrNull(trendLineNames),
+      trendRegionCodes: sortedOrNull(trendRegionCodes),
+      trendProductCodes: sortedOrNull(trendProductCodes),
+      filterAreas: [...(filters.areas ?? [])].sort(),
+      filterDistributors: [...(filters.distributors ?? [])].sort(),
+      excludeCodes: [...excludeCodes].sort(),
+      trendExcludeCodes: [...trendExcludeCodes].sort(),
+      trendForcedEmpty,
+      canSeeCrossLineGeography,
+    });
 
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
   const distSet = toFilterSet(filters.distributors);

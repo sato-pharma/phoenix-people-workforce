@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { pickBestSheet } from "@/lib/sales/normalizer/engine";
@@ -416,6 +417,7 @@ export async function persistNormalizedBatch(input: {
     if (customerRollupRefresh.error) throw customerRollupRefresh.error;
     const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
     if (roiRefresh.error) throw roiRefresh.error;
+    invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
 
   return { batchId, period, importedRows: rows.length };
