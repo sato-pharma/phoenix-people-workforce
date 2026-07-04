@@ -5,6 +5,7 @@ import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/rout
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
+import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
@@ -42,6 +43,7 @@ async function runDailyNotifications(request: Request) {
     outstationGeocodeWarmup,
     outstationHighRisk,
     fieldWorkforceComplianceDigest,
+    fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
     outstationSla,
     resignationSla,
@@ -57,6 +59,7 @@ async function runDailyNotifications(request: Request) {
     runOutstationGeocodeWarmup(),
     runOutstationHighRiskDigest(),
     runFieldWorkforceComplianceDigest(),
+    runFieldWorkforceComplianceDeductionsAutoSync().catch((e: unknown) => ({ ok: false as const, months: [] as const, error: String(e) })),
     runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
@@ -72,6 +75,7 @@ async function runDailyNotifications(request: Request) {
     birthdays,
     contractRenewals,
     excuseSla,
+    fieldWorkforceComplianceDeductionsAutoSync,
     fieldWorkforceComplianceDigest,
     marketingSla,
     outstationGeocodeWarmup,

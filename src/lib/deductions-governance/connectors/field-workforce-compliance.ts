@@ -3,7 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { listFieldWorkforceComplianceArchives } from "@/lib/field-workforce-compliance/archive";
+import { fieldWorkforceMonthKey, listFieldWorkforceComplianceArchives } from "@/lib/field-workforce-compliance/archive";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 import {
   buildFieldWorkforceRecommendationsReportForLiveMonth,
@@ -391,6 +391,48 @@ export async function syncFieldWorkforceApprovedDecisions(input: {
     skippedExisting,
     warnings,
   };
+}
+
+/** Pure — exported for direct unit testing. The current calendar month's key plus the prior
+ * month's, so a cron sweep also catches approvals landed after month-end for the closed month. */
+export function currentAndPreviousFieldWorkforceMonthKeys(nowIso: string): [string, string] {
+  const year = Number(nowIso.slice(0, 4));
+  const month = Number(nowIso.slice(5, 7));
+  const current = fieldWorkforceMonthKey(year, month);
+  const previous = month === 1 ? fieldWorkforceMonthKey(year - 1, 12) : fieldWorkforceMonthKey(year, month - 1);
+  return [current, previous];
+}
+
+export type FwcDeductionsAutoSyncMonthOutcome =
+  | { monthKey: string; ok: true; result: FwcSyncResult }
+  | { monthKey: string; ok: false; error: string };
+
+export type FwcDeductionsAutoSyncResult = {
+  ok: boolean;
+  months: FwcDeductionsAutoSyncMonthOutcome[];
+};
+
+/**
+ * Top-level entry — wired into the daily-cron Promise.all. Auto-runs the already-manual
+ * approved-decisions sync (`syncFieldWorkforceApprovedDecisions`) for the current and previous
+ * month_key so nothing depends on an admin remembering to click the manual sync button. Does
+ * not change what gets synced or when a decision counts as approved — insert-only, gated on
+ * `decision_status` already being one of `APPROVED_FWC_DECISION_STATUSES`, exactly as the
+ * manual route. Never throws into the shared cron `Promise.all` — each month is isolated.
+ */
+export async function runFieldWorkforceComplianceDeductionsAutoSync(): Promise<FwcDeductionsAutoSyncResult> {
+  const nowIso = new Date().toISOString();
+  const monthKeys = currentAndPreviousFieldWorkforceMonthKeys(nowIso);
+  const months: FwcDeductionsAutoSyncMonthOutcome[] = [];
+  for (const monthKey of monthKeys) {
+    try {
+      const result = await syncFieldWorkforceApprovedDecisions({ createdBy: "system", monthKey });
+      months.push({ monthKey, ok: true, result });
+    } catch (error) {
+      months.push({ monthKey, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { ok: months.every((entry) => entry.ok), months };
 }
 
 /**

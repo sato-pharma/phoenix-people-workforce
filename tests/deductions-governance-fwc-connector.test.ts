@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   APPROVED_FWC_DECISION_STATUSES,
   buildApprovedDecisionFilter,
+  currentAndPreviousFieldWorkforceMonthKeys,
   listFieldWorkforceApprovedDecisions,
   syncFieldWorkforceApprovedDecisions,
   toDeductionCandidateDraft,
@@ -330,5 +331,14 @@ export async function runDeductionsGovernanceFwcConnectorTests(): Promise<void> 
     assert.equal(auditCalls[0].entityType, "deduction_candidate");
     assert.equal(auditCalls[0].entityId, "candidate-xyz");
     assert.match(auditCalls[0].summary, /Field Workforce Compliance/);
+  }
+
+  // 10. currentAndPreviousFieldWorkforceMonthKeys (Tier 2.4 auto-sync month gate).
+  {
+    assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-07-04T06:30:00.000Z"), ["2026-07", "2026-06"]);
+    assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-07-31T23:59:00.000Z"), ["2026-07", "2026-06"]);
+    // January wraps to December of the prior year.
+    assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-01-15T06:30:00.000Z"), ["2026-01", "2025-12"]);
+    assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-12-01T06:30:00.000Z"), ["2026-12", "2026-11"]);
   }
 }
