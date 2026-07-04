@@ -1317,13 +1317,28 @@ function acceptedRequiredEvidenceReviewerHrIds(request: VacationRequestRecord) {
     .filter((value): value is string => Boolean(value));
 }
 
+// Per explicit owner confirmation (2026-07-04): B-10 (Omar Anwar Gawish) and PHX-1/admin-HR
+// (the shared system-administrator login) are operated by the same physical person. Requiring
+// a login switch between two accounts controlled by one human is not a real second reviewer, so
+// separation-of-duties must treat them as a single identity. Revisit if a second real HR/Super
+// Admin hire is ever added.
+const SHARED_HR_IDENTITY_GROUPS: string[][] = [["B-10", "PHX-1"]];
+
+function hrIdentityGroup(hrId: string | null): Set<string> {
+  const canonical = canonicalHrId(hrId);
+  if (!canonical) return new Set();
+  const group = SHARED_HR_IDENTITY_GROUPS.find((candidates) =>
+    candidates.some((id) => canonicalHrId(id) === canonical));
+  return new Set((group ?? [hrId ?? ""]).map((id) => canonicalHrId(id)).filter((id): id is string => Boolean(id)));
+}
+
 // The evidence-review/acknowledgement separation-of-duties guard requires a second HR/Super
 // Admin account to exist at all. Small orgs can have exactly one such account, which would make
 // sick/compensatory leave permanently unapprovable. Owner-approved exception (2026-07-04): only
 // enforce the guard when a real alternate account is available; fail closed (keep enforcing) if
 // the lookup errors, since that's safer than silently allowing self-acknowledgement.
 async function hasAlternateHrApprover(excludeHrId: string | null) {
-  const excluded = canonicalHrId(excludeHrId);
+  const excludedGroup = hrIdentityGroup(excludeHrId);
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
@@ -1333,7 +1348,7 @@ async function hasAlternateHrApprover(excludeHrId: string | null) {
     if (error) throw error;
     return (data ?? []).some((row) => {
       const hrId = canonicalHrId(text((row as Record<string, unknown>).hr_id));
-      return Boolean(hrId) && hrId !== excluded;
+      return hrId ? !excludedGroup.has(hrId) : false;
     });
   } catch (error) {
     console.error("[vacation] alternate HR approver lookup failed; enforcing separation of duties", error);
