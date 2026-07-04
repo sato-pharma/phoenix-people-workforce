@@ -136,19 +136,20 @@ type PayrollBatchLookupResult = {
   columnMissing: boolean;
 };
 
-async function collectPayrollBatchIdsForColumn(
+// One request per column covering every allowed HR_ID at once (via an ILIKE OR
+// clause), instead of a separate exact-match request per ID per column.
+async function collectPayrollBatchIdsForColumnBatch(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   column: "hr_id" | "employee_code",
-  targetHrId: string,
-  mode: "exact" | "contains",
+  targetHrIds: string[],
 ): Promise<PayrollBatchLookupResult> {
-  const filterValue = buildPayrollIdentityFilterValue(targetHrId, mode);
-  if (!filterValue) return { batchIds: new Set(), schemaMissing: false, columnMissing: false };
+  if (targetHrIds.length === 0) return { batchIds: new Set(), schemaMissing: false, columnMissing: false };
 
+  const orClause = targetHrIds.map((id) => `${column}.ilike.${id}`).join(",");
   const { data, error } = await supabase
     .from("salary_records")
     .select("batch_id")
-    .ilike(column, filterValue);
+    .or(orClause);
 
   const schemaMissing = Boolean(error && isPayrollSchemaMissing(error));
   const columnMissing = Boolean(error && isMissingColumnError(error, column));
@@ -491,58 +492,23 @@ async function getVisiblePayrollBatchIds(
   if (accessFilter.all) return null;
   if (accessFilter.allowedHrIds.size === 0) return new Set<string>();
 
+  const normalizedIds = Array.from(
+    new Set(
+      Array.from(accessFilter.allowedHrIds)
+        .map((rawId) => normalizeHrId(rawId))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  if (normalizedIds.length === 0) return new Set<string>();
+
+  const [hrIdResult, employeeCodeResult] = await Promise.all([
+    collectPayrollBatchIdsForColumnBatch(supabase, "hr_id", normalizedIds),
+    collectPayrollBatchIdsForColumnBatch(supabase, "employee_code", normalizedIds),
+  ]);
+
   const batchIds = new Set<string>();
-  const ids = Array.from(accessFilter.allowedHrIds);
-  const processed = new Set<string>();
-
-  for (const rawId of ids) {
-    const normalized = normalizeHrId(rawId);
-    if (!normalized || processed.has(normalized)) continue;
-    processed.add(normalized);
-
-    const hrIdResult = await collectPayrollBatchIdsForColumn(
-      supabase,
-      "hr_id",
-      normalized,
-      "exact",
-    );
-    const employeeCodeResult = await collectPayrollBatchIdsForColumn(
-      supabase,
-      "employee_code",
-      normalized,
-      "exact",
-    );
-
-    hrIdResult.batchIds.forEach((batchId) => batchIds.add(batchId));
-    employeeCodeResult.batchIds.forEach((batchId) => batchIds.add(batchId));
-
-    const schemaMissing = hrIdResult.schemaMissing && employeeCodeResult.schemaMissing;
-    if (!schemaMissing && batchIds.size === 0 && (employeeCodeResult.batchIds.size > 0 || hrIdResult.batchIds.size > 0)) {
-      if (!hrIdResult.columnMissing) {
-        const fallbackHrResult = await collectPayrollBatchIdsForColumn(
-          supabase,
-          "hr_id",
-          normalized,
-          "contains",
-        );
-        fallbackHrResult.batchIds.forEach((batchId) => batchIds.add(batchId));
-      }
-
-      if (!employeeCodeResult.columnMissing) {
-        const fallbackEmployeeCodeResult = await collectPayrollBatchIdsForColumn(
-          supabase,
-          "employee_code",
-          normalized,
-          "contains",
-        );
-        fallbackEmployeeCodeResult.batchIds.forEach((batchId) => batchIds.add(batchId));
-      }
-    }
-  }
-
-  if (batchIds.size === 0) {
-    return accessFilter.all ? null : new Set<string>();
-  }
+  hrIdResult.batchIds.forEach((batchId) => batchIds.add(batchId));
+  employeeCodeResult.batchIds.forEach((batchId) => batchIds.add(batchId));
 
   return batchIds;
 }

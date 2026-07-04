@@ -4098,7 +4098,9 @@ async function fetchHolidaysForRows(rows: VacationRequestRecord[]) {
   return holidays;
 }
 
-function buildVacationOverlapWarnings(input: {
+// Pure-core overlap rollup. Operates on already-fetched rows/holidays; testable
+// without DB (see tests/vacation-overlap-warnings.test.ts).
+export function buildVacationOverlapWarnings(input: {
   holidays: EgyptianNationalHoliday[];
   rows: VacationRequestRecord[];
 }): Map<string, VacationOverlapWarning[]> {
@@ -4107,6 +4109,28 @@ function buildVacationOverlapWarnings(input: {
   const push = (requestId: string, warning: VacationOverlapWarning) => {
     warnings.set(requestId, [...(warnings.get(requestId) ?? []), warning]);
   };
+
+  // Index active rows by canonical employeeHrId and canonical managerHrId so each
+  // row's overlap checks below only scan that employee's/manager's own small group
+  // instead of re-filtering every active row for every row (was O(n^2) on the full
+  // vacation report). Bucket membership is exactly equivalent to the hrIdsMatch()
+  // checks the previous per-row filters used, since both compare canonical HR_IDs.
+  const rowsByEmployeeCanonical = new Map<string, VacationRequestRecord[]>();
+  const rowsByManagerCanonical = new Map<string, VacationRequestRecord[]>();
+  for (const row of activeRows) {
+    const employeeCanonical = canonicalHrId(row.employeeHrId);
+    if (employeeCanonical) {
+      const bucket = rowsByEmployeeCanonical.get(employeeCanonical);
+      if (bucket) bucket.push(row);
+      else rowsByEmployeeCanonical.set(employeeCanonical, [row]);
+    }
+    const managerCanonical = canonicalHrId(row.managerHrId);
+    if (managerCanonical) {
+      const bucket = rowsByManagerCanonical.get(managerCanonical);
+      if (bucket) bucket.push(row);
+      else rowsByManagerCanonical.set(managerCanonical, [row]);
+    }
+  }
 
   for (const row of activeRows) {
     if ((row.vacationType === "sick" || row.vacationType === "compensatory") && !hasAcceptedRequiredEvidence(row)) {
@@ -4132,9 +4156,13 @@ function buildVacationOverlapWarnings(input: {
       });
     }
 
-    const relatedEmployeeRows = activeRows.filter((other) =>
+    const employeeCanonical = canonicalHrId(row.employeeHrId);
+    const managerCanonical = canonicalHrId(row.managerHrId);
+
+    const relatedEmployeeRows = (
+      (employeeCanonical ? rowsByEmployeeCanonical.get(employeeCanonical) : undefined) ?? []
+    ).filter((other) =>
       other.id !== row.id &&
-      hrIdsMatch(other.employeeHrId, row.employeeHrId) &&
       dateRangesOverlap(row.startDate, row.endDate, other.startDate, other.endDate)
     );
     if (relatedEmployeeRows.length > 0) {
@@ -4146,10 +4174,11 @@ function buildVacationOverlapWarnings(input: {
       });
     }
 
-    const relatedTeamRows = activeRows.filter((other) =>
+    const relatedTeamRows = (
+      (managerCanonical ? rowsByManagerCanonical.get(managerCanonical) : undefined) ?? []
+    ).filter((other) =>
       other.id !== row.id &&
       !hrIdsMatch(other.employeeHrId, row.employeeHrId) &&
-      hrIdsMatch(other.managerHrId, row.managerHrId) &&
       dateRangesOverlap(row.startDate, row.endDate, other.startDate, other.endDate)
     );
     if (relatedTeamRows.length > 0) {
@@ -4161,9 +4190,10 @@ function buildVacationOverlapWarnings(input: {
       });
     }
 
-    const managerAbsence = activeRows.filter((other) =>
+    const managerAbsence = (
+      (managerCanonical ? rowsByEmployeeCanonical.get(managerCanonical) : undefined) ?? []
+    ).filter((other) =>
       other.id !== row.id &&
-      hrIdsMatch(other.employeeHrId, row.managerHrId) &&
       dateRangesOverlap(row.startDate, row.endDate, other.startDate, other.endDate)
     );
     if (managerAbsence.length > 0) {
