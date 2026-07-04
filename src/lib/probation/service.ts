@@ -1,4 +1,8 @@
-import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import {
+  getEmployeeDirectory,
+  getEmployeeDirectoryRows,
+  invalidateEmployeeDirectoryCache,
+} from "@/lib/employees/employee-directory";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
@@ -1105,6 +1109,7 @@ export async function runProbationWorkflow(
     action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
     updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
   );
+  invalidateEmployeeDirectoryCache();
   invalidateExecutiveDashboardCache("probation workflow updated", ["probation", "employees", "vacancies", "payroll"]);
   return updated;
 }
