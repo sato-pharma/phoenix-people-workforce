@@ -258,4 +258,51 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   const guardCodes = [...guardReport.leaveRecommendations, ...guardReport.payrollRecommendations].map((rec) => rec.employeeCode);
   assert.ok(guardCodes.includes("C-1"), "resolved employee still generates recommendations");
   assert.ok(!guardCodes.includes("C-2"), "unresolved employee generates NO recommendations (deduction money-safety guard)");
+
+  // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
+  // Sourced from saveDate (crm_save_date) — NOT visitDate/visit_date_time, which is a fixed
+  // midnight placeholder on every production row (verified 2026-07: 100% of 93,742 rows) and
+  // carries no real time-of-day signal at all. saveDate genuinely varies (verified: 38,758
+  // distinct times across 62,953 regular-visit rows in production) and is the CRM record-save
+  // timestamp, a reasonable proxy for real-time field logging.
+  // Egypt reinstated seasonal DST in 2023 (summer = UTC+3, winter = UTC+2), so a May UTC
+  // timestamp is Cairo-local UTC+3 — computed via real Intl/IANA timezone data (not a fixed
+  // offset), which is exactly what makes this correct across the whole year including DST
+  // transitions. "T07:15:00Z" on 2026-05-06 (May -> summer time) is therefore 10:15 Cairo.
+  const timingEmployees: FieldWorkforceEmployeeInput[] = [
+    { crmId: "200", crmUsername: null, employmentStatus: "active", fullName: "Timing One", hireDate: "2024-01-01", hrId: "T-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "201", crmUsername: null, employmentStatus: "active", fullName: "Timing Two", hireDate: "2024-01-01", hrId: "T-2", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "202", crmUsername: null, employmentStatus: "active", fullName: "Timing Three", hireDate: "2024-01-01", hrId: "T-3", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "203", crmUsername: null, employmentStatus: "active", fullName: "Timing Four", hireDate: "2024-01-01", hrId: "T-4", jobTitle: "Medical Representative", positionTitle: null },
+  ];
+  const timingVisits: FieldWorkforceMatrixVisit[] = [
+    // T-1: two visits same day, logged 10:15 Cairo (AM-tagged, on-time) and 15:30 Cairo (PM-tagged).
+    { ...baseVisit(200, "x"), ampm: "AM", visitDate: "2026-05-06", saveDate: "2026-05-06T07:15:00Z" },
+    { ...baseVisit(200, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:30:00Z" },
+    // T-2: single AM-tagged visit logged at 13:15 Cairo — logged past 11:30 -> late start.
+    { ...baseVisit(201, "x"), ampm: "am", visitDate: "2026-05-06", saveDate: "2026-05-06T10:15:00Z" },
+    // T-3: only a PM-tagged visit that day -> no AM entry to judge -> isLateStart must be null, not false.
+    { ...baseVisit(202, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:00:00Z" },
+    // T-4: visit with no saveDate at all (e.g. a defensive/legacy shape) -> no timing entry.
+    { ...baseVisit(203, "x"), ampm: "AM", visitDate: "2026-05-06" },
+  ];
+  const { loggingTimingByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+    employees: timingEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: timingVisits,
+  });
+  const timingOf = (hr: string, dateIso: string) => {
+    const key = canonicalHrIdKey(hr);
+    return key ? loggingTimingByHrKeyAndDate.get(`${key}|${dateIso}`) : undefined;
+  };
+
+  const t1 = timingOf("T-1", "2026-05-06");
+  assert.equal(t1?.firstLoggedTime, "10:15", "T-1 first logged time is Cairo-local 10:15");
+  assert.equal(t1?.lastLoggedTime, "15:30", "T-1 last logged time is Cairo-local 15:30");
+  assert.equal(t1?.activeWindowMinutes, 315, "T-1 active window is 10:15-15:30 = 315 minutes");
+  assert.equal(t1?.isLateStart, false, "T-1's AM-tagged entry logged at 10:15 is before the 11:30 threshold");
+
+  assert.equal(timingOf("T-2", "2026-05-06")?.isLateStart, true, "T-2's AM-tagged entry logged at 13:15 (mixed-case 'am') is after 11:30 -> late start");
+
+  assert.equal(timingOf("T-3", "2026-05-06")?.isLateStart, null, "T-3 has no AM-tagged entry that day -> isLateStart is null, not guessed");
+
+  assert.equal(timingOf("T-4", "2026-05-06"), undefined, "a visit with no saveDate produces no timing entry for that day");
 }
