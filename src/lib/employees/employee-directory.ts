@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { getRequiredEnv } from "@/lib/env";
 import {
   normalizePayrollPaymentMode,
@@ -757,6 +758,12 @@ async function loadCompensationByHrId(hrIds: string[]) {
       message.includes("salary_details") ||
       message.includes("schema cache")
     ) {
+      Sentry.captureMessage("Employee compensation payment_mode/salary_details column missing, retrying without it (schema cache)", {
+        level: "warning",
+        tags: { component: "employee-directory", action: "loadCompensationByHrId" },
+        extra: { message: employeeDirectoryErrorMessage(error) },
+      });
+
       const fallbackParams = new URLSearchParams({
         select: compensationSelect(false).replace(",payment_mode", ""),
         employee_hr_id: textInFilter(hrIds),
@@ -873,14 +880,22 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
     "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
-  // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters
-  const joinedSelect = `${baseEmployeeSelect},region_name,region_code,birth_date,
-    employee_compensation(${compensationSelect()}),
-    departments(name),
-    lines(name),
-    areas(name),
-    positions(title),
-    teams(name)`;
+  // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters.
+  // Built as a flat array + join (not a multi-line template literal) so the encoded `select` param
+  // never contains embedded newline/indentation whitespace, and each embed carries an explicit
+  // `!constraint_name` FK hint so relationship resolution never depends on PostgREST's schema cache.
+  const joinedSelect = [
+    baseEmployeeSelect,
+    "region_name",
+    "region_code",
+    "birth_date",
+    `employee_compensation!employee_compensation_employee_hr_id_fkey(${compensationSelect()})`,
+    "departments!employees_department_id_fkey(name)",
+    "lines!employees_line_id_fkey(name)",
+    "areas!employees_area_id_fkey(name)",
+    "positions!employees_position_id_fkey(title)",
+    "teams!employees_team_id_fkey(name)",
+  ].join(",");
 
   const employeeParams = new URLSearchParams({
     select: joinedSelect,
@@ -891,7 +906,13 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
   try {
     employeeRows = await supabaseRest<JoinedEmployeeDbRow[]>(`employees?${employeeParams}`);
-  } catch {
+  } catch (error) {
+    Sentry.captureMessage("Employee directory joined select failed, using fallback (schema cache / PostgREST)", {
+      level: "warning",
+      tags: { component: "employee-directory", action: "fetchEmployeeDirectory" },
+      extra: { message: employeeDirectoryErrorMessage(error) },
+    });
+
     // Fallback if joined query fails due to schema/relationship issues
     const fallbackParams = new URLSearchParams({
       select: `${baseEmployeeSelect},region_name,region_code,birth_date`,
