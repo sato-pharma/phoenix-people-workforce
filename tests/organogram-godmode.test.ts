@@ -315,6 +315,68 @@ export function runOrganogramGodmodeTests() {
   const noEmployeesTwoVacancies = suppressFilledVacancyRows([coLocatedVacancyA, coLocatedVacancyB]);
   assert.equal(noEmployeesTwoVacancies.filter((r) => r.type === "vacancy").length, 1);
 
+  // Region-owner attachment — a rep vacancy can be missing BOTH managerHrId and
+  // a seat-continuity marker purely from an import gap (confirmed real case: a
+  // CNS Delta 2 rep vacancy with a typo'd, unlinked managerName "Sally Saeed"
+  // while its sibling vacancies for the same real DSM "Sally Saied" correctly
+  // link by ID). Recognize it by REGION instead: when the row's region exactly
+  // matches exactly ONE known DSM's own area, it belongs to that DSM's lane —
+  // not a fabricated fallback lane from the unverified name, and not dumped in
+  // Unassigned.
+  const dsmDelta2 = row({
+    areaName: "Delta (2)",
+    hrId: "DSM-DELTA2",
+    jobTitle: "District Sales Manager",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: "NSM-1",
+    positionId: 200,
+    positionTitle: "District Sales Manager",
+  });
+  const unlinkedRepVacancyInDsmRegion = row({
+    areaName: "Port said - Domiat",
+    hrId: "VAC-UNLINKED",
+    jobTitle: "Medical Representative",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: null,
+    managerName: "Sally Saeed", // typo/unlinked text — must not be trusted
+    positionTitle: "Medical Representative",
+    regionName: "Delta (2)", // matches dsmDelta2's OWN area, uniquely
+    status: "filled",
+    type: "vacancy",
+    vacancyCode: "VAC-UNLINKED",
+  });
+  const regionOwnerLanes = buildOrganogramLanes([dsmDelta2, unlinkedRepVacancyInDsmRegion]);
+  const delta2Lane = regionOwnerLanes.groups.find((g) => g.dsm?.hrId === "DSM-DELTA2");
+  assert.equal(delta2Lane?.members.some((m) => m.hrId === "VAC-UNLINKED"), true);
+  assert.equal(
+    regionOwnerLanes.groups.some((g) => g.name === "Sally Saeed"),
+    false,
+  );
+
+  // Ambiguity guard: when TWO DSMs share the same own-area, an unlinked rep
+  // vacancy in that region must NOT guess which one it belongs to.
+  const dsmDelta2Twin = row({
+    areaName: "Delta (2)",
+    hrId: "DSM-DELTA2-TWIN",
+    jobTitle: "District Sales Manager",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: "NSM-1",
+    positionId: 200,
+    positionTitle: "District Sales Manager",
+  });
+  const ambiguousRegionLanes = buildOrganogramLanes([
+    dsmDelta2,
+    dsmDelta2Twin,
+    unlinkedRepVacancyInDsmRegion,
+  ]);
+  const ambiguousDsmMembers = ambiguousRegionLanes.groups
+    .filter((g) => g.dsm?.hrId === "DSM-DELTA2" || g.dsm?.hrId === "DSM-DELTA2-TWIN")
+    .flatMap((g) => g.members);
+  assert.equal(ambiguousDsmMembers.some((m) => m.hrId === "VAC-UNLINKED"), false);
+
   // LO-9 — a dangling manager reference (managerHrId set, but no row with
   // that hrId exists in scope) is counted, not silently absorbed into the
   // Unassigned/fallback buckets with no signal that something is wrong. A
