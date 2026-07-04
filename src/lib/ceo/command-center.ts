@@ -13,7 +13,7 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import {
-  getSalesMarketingDashboardSnapshot,
+  getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -476,7 +476,7 @@ export async function getCeoLandingDeferred(
     getDoubleVisitDashboardData({ access }),
     getOutstationExpenseCommandData(access, { preset: "30d" }),
     getAttendanceAnalytics(),
-    getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
+    getSalesMarketingDashboard(access, parseSalesMarketingDashboardFilters({})),
     prefetchedAdminSignals ? Promise.resolve(prefetchedAdminSignals) : getCeoAdminSignals(access),
   ]);
 
