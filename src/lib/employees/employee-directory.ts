@@ -319,12 +319,21 @@ let inFlightDirectory: Promise<EmployeeDirectoryData> | null = null;
 
 const CACHE_TTL = 30000; // 30 seconds
 
+// Same TTL + in-flight-dedupe pattern as directoryCache/inFlightDirectory above, applied to
+// getEmployeeDirectoryRows(). Keyed by includeInactive since callers legitimately need two
+// different result sets (active-only vs. full history) that must never be served
+// interchangeably — see double-visit-analytics/service.ts for a callsite that depends on the
+// includeInactive:true set containing resigned/terminated employees.
+const directoryRowsCache = new Map<boolean, { data: EmployeeDirectoryRow[]; timestamp: number }>();
+const inFlightDirectoryRows = new Map<boolean, Promise<EmployeeDirectoryRow[]>>();
+
 function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
   return classifyEmployeeNode(employee).eligible_for_headcount;
 }
 
 export function invalidateEmployeeDirectoryCache() {
   directoryCache = null;
+  directoryRowsCache.clear();
 }
 
 function normalizeHrId(value: string | null | undefined) {
@@ -1388,9 +1397,7 @@ async function fetchAllEmployeeRows(params: URLSearchParams): Promise<EmployeeDb
   return all;
 }
 
-export async function getEmployeeDirectoryRows(
-  options: { includeInactive?: boolean } = {},
-): Promise<EmployeeDirectoryRow[]> {
+async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
     "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
@@ -1502,7 +1509,45 @@ export async function getEmployeeDirectoryRows(
       updatedAt: row.updated_at,
       workEmail: row.work_email,
     };
-  }).filter((employee) => options.includeInactive || isActiveDirectoryEmployee(employee));
+  }).filter((employee) => includeInactive || isActiveDirectoryEmployee(employee));
+}
+
+export async function getEmployeeDirectoryRows(
+  options: { includeInactive?: boolean } = {},
+): Promise<EmployeeDirectoryRow[]> {
+  const includeInactive = options.includeInactive ?? false;
+  const now = Date.now();
+  const cached = directoryRowsCache.get(includeInactive);
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Same de-dupe rationale as inFlightDirectory above: concurrent callers requesting the
+  // SAME includeInactive value share one in-flight fetch instead of each issuing their own
+  // full paginated directory query.
+  let inFlight = inFlightDirectoryRows.get(includeInactive);
+  if (!inFlight) {
+    inFlight = fetchEmployeeDirectoryRows(includeInactive)
+      .then((result) => {
+        directoryRowsCache.set(includeInactive, { data: result, timestamp: Date.now() });
+        return result;
+      })
+      .finally(() => {
+        inFlightDirectoryRows.delete(includeInactive);
+      });
+    inFlightDirectoryRows.set(includeInactive, inFlight);
+  }
+
+  try {
+    return await inFlight;
+  } catch (error) {
+    const staleCache = directoryRowsCache.get(includeInactive);
+    if (isEmployeeDirectoryTimeout(error) && staleCache) {
+      return staleCache.data;
+    }
+
+    throw error;
+  }
 }
 
 async function ensureManagerIsValid(managerHrId: string | null, employeeHrId: string) {
