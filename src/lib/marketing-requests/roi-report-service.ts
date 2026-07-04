@@ -1025,6 +1025,10 @@ export async function listMarketingRoiPresets(access: AccessContext): Promise<Ma
     .from("marketing_roi_filter_presets")
     .select("id, name, filter_json, is_default, updated_at")
     .eq("owner_hr_id", owner)
+    // This table is shared with the coverage report (report_kind = 'coverage_report');
+    // ROI Tracking presets are report_kind = 'roi_tracking'. Without this filter the ROI
+    // report would list the coverage report's presets too.
+    .eq("report_kind", "roi_tracking")
     .order("is_default", { ascending: false })
     .order("name", { ascending: true });
   if (error) throw error;
@@ -1040,12 +1044,14 @@ export async function saveMarketingRoiPreset(
   if (!name) throw new Error("A preset name is required.");
   const supabase = getSupabaseAdmin();
 
-  // one default per owner: clear the previous default first.
+  // one default per owner PER report_kind: clear only the ROI default, not the coverage one
+  // (the partial unique index is on (owner_hr_id, report_kind) WHERE is_default).
   if (input.isDefault) {
     const clear = await supabase
       .from("marketing_roi_filter_presets")
       .update({ is_default: false, updated_at: new Date().toISOString() })
       .eq("owner_hr_id", owner)
+      .eq("report_kind", "roi_tracking")
       .eq("is_default", true);
     if (clear.error) throw clear.error;
   }
@@ -1057,12 +1063,17 @@ export async function saveMarketingRoiPreset(
       {
         owner_hr_id: owner,
         name,
+        // Required: the live unique index is (owner_hr_id, report_kind, name) since the coverage
+        // report shipped (migration 20260704010000). Omitting report_kind + using the old
+        // (owner_hr_id, name) onConflict throws "no unique or exclusion constraint matching the
+        // ON CONFLICT specification" — i.e. every ROI preset save failed. Matches coverage-report-service.
+        report_kind: "roi_tracking",
         filter_json: input.filters as unknown as Record<string, unknown>,
         is_default: input.isDefault,
         scope_role: access.role,
         updated_at: nowIso,
       },
-      { onConflict: "owner_hr_id,name" },
+      { onConflict: "owner_hr_id,report_kind,name" },
     )
     .select("id, name, filter_json, is_default, updated_at")
     .single();
