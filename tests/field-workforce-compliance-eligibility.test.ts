@@ -9,6 +9,7 @@ import {
   type VisitsMirrorRow,
 } from "../src/lib/field-workforce-compliance/ireports360-source.ts";
 import { buildFieldWorkforceRecommendationsReportFromArchive } from "../src/lib/field-workforce-compliance/recommendations.ts";
+import { computeAttendanceCrossCheck } from "../src/lib/field-workforce-compliance/attendance-cross-check.ts";
 import type { IReports360Visit } from "../src/lib/field-workforce-compliance/ireports360-client.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
@@ -403,4 +404,46 @@ export function runFieldWorkforceComplianceEligibilityTests() {
 
   const ca6 = caOf("CA-6");
   assert.deepEqual(ca6, { distinctContacts: 0, flagged: false, flaggedRules: [], topContactName: null, topContactShare: null, totalCustomerVisits: 0 }, "CA-6 with zero customer visits is the empty shape, not flagged");
+
+  // --- 1.3 Attendance cross-check: fusing FWC's own classification with fingerprint punches ---
+  const crossCheckCell = (dateIso: string, overrides: Record<string, unknown>) => ({
+    context: [], countedAsNoActivityCandidate: false, countedAsVisitTotal: false, countedAsWorkedDay: false,
+    dateIso, dayNumber: Number(dateIso.slice(8, 10)), employeeName: "x", explanation: "", hrId: "x",
+    ignored: false, isFriday: false, isPreHire: false, isPublicHoliday: false, rawValue: null,
+    status: "N",
+    ...overrides,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const crossCheckEmployee = (hrId: string, timeline: unknown[]): any => ({ hrId, timeline });
+
+  const acEmployees = [
+    crossCheckEmployee("D-1", [
+      // Worked day (visits logged), no punch, no exception -> visits_no_punch.
+      crossCheckCell("2026-05-04", { countedAsWorkedDay: true, status: "VISITS" }),
+      // Worked day, but punched that day -> consistent, no signal.
+      crossCheckCell("2026-05-05", { countedAsWorkedDay: true, status: "VISITS" }),
+      // N day, punched -> punch_no_visits (corroborates a real no-activity day).
+      crossCheckCell("2026-05-06", { status: "N" }),
+      // N day, not punched -> genuinely absent both ways, no signal.
+      crossCheckCell("2026-05-07", { status: "N" }),
+      // Worked day, no punch, but an APPROVED exception that day -> carved out, no signal.
+      crossCheckCell("2026-05-08", { countedAsWorkedDay: true, status: "VISITS" }),
+      // Ignored day (e.g. holiday/weekly-off) with no punch -> skipped entirely regardless of punch state.
+      crossCheckCell("2026-05-09", { countedAsWorkedDay: true, ignored: true, status: "VISITS" }),
+      // AV (vacation signal) day, not punched -> neither branch applies (not "N", not counted as worked).
+      crossCheckCell("2026-05-10", { status: "AV" }),
+    ]),
+  ];
+  const punchedKeys = new Set(["d-1|2026-05-05", "d-1|2026-05-06"]);
+  const exceptionKeys = new Set(["d-1|2026-05-08"]);
+  const crossCheckResult = computeAttendanceCrossCheck({ employees: acEmployees, exceptionKeys, punchedKeys });
+
+  assert.equal(crossCheckResult.get("d-1|2026-05-04"), "visits_no_punch", "worked day with no punch and no exception -> visits_no_punch");
+  assert.equal(crossCheckResult.get("d-1|2026-05-05"), undefined, "worked day WITH a punch is consistent -> no signal");
+  assert.equal(crossCheckResult.get("d-1|2026-05-06"), "punch_no_visits", "N day with a punch -> punch_no_visits");
+  assert.equal(crossCheckResult.get("d-1|2026-05-07"), undefined, "N day with no punch is consistent (genuinely absent) -> no signal");
+  assert.equal(crossCheckResult.get("d-1|2026-05-08"), undefined, "an approved exception carves the day out even though visits+no-punch would otherwise flag it");
+  assert.equal(crossCheckResult.get("d-1|2026-05-09"), undefined, "an FWC-ignored day (holiday/weekly-off) is skipped entirely, regardless of punch state");
+  assert.equal(crossCheckResult.get("d-1|2026-05-10"), undefined, "an AV (vacation) day never fires either branch");
+  assert.equal(crossCheckResult.size, 2, "exactly the two real disagreements are recorded, nothing else");
 }

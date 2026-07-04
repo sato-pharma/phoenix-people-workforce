@@ -123,8 +123,22 @@ export type FieldWorkforceDayCell = {
    * on the Excel-upload path (the workbook has no per-visit timestamps).
    */
   loggingTiming?: FieldWorkforceLoggingTiming | null;
+  /**
+   * Cross-check against the physical fingerprint attendance system for this day, when the
+   * employee is device-mapped (so a missing punch is a real signal, not just "we don't track
+   * them"). Never set for a day with an approved attendance exception (already explained), or
+   * for an employee with no active device mapping. Informational only — never affects
+   * severity, status, or deduction candidates.
+   *  - visits_no_punch: FWC classified this a worked day (VISITS/CP), but no fingerprint punch
+   *    exists for the employee that day.
+   *  - punch_no_visits: the employee physically punched in that day, but FWC classified it "N"
+   *    (no CRM activity) — corroborates a genuine no-activity day rather than a CRM logging gap.
+   */
+  attendanceCrossCheck?: FieldWorkforceAttendanceCrossCheckResult | null;
   visitCount?: number;
 };
+
+export type FieldWorkforceAttendanceCrossCheckResult = "punch_no_visits" | "visits_no_punch";
 
 /**
  * CRM-logging-timing signal for one employee-day, computed from the visits mirror's

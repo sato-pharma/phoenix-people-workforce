@@ -52,6 +52,7 @@ import {
   type IReports360Visit,
 } from "@/lib/field-workforce-compliance/ireports360-client";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
+import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
@@ -751,7 +752,30 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     });
   }
 
-  return { ...preview, employees: employeesWithIdentity, warnings };
+  // Cross-check against the physical fingerprint attendance system (informational only —
+  // never affects severity/status/deductions). Best-effort: a failure here downgrades to a
+  // warning, it never breaks the FWC preview itself.
+  const attendanceCrossCheck = await buildFieldWorkforceAttendanceCrossCheck({
+    employees: employeesWithIdentity,
+    month,
+    year,
+  });
+  const employeesWithAttendanceCrossCheck = attendanceCrossCheck.crossCheckByHrKeyAndDate.size === 0
+    ? employeesWithIdentity
+    : employeesWithIdentity.map((employee) => {
+        const hrKey = canonicalHrIdKey(employee.hrId);
+        if (!hrKey) return employee;
+        const timeline = employee.timeline.map((cell) => {
+          const result = attendanceCrossCheck.crossCheckByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`);
+          return result ? { ...cell, attendanceCrossCheck: result } : cell;
+        });
+        return { ...employee, timeline };
+      });
+  if (attendanceCrossCheck.warning) {
+    warnings.push({ code: "attendance_cross_check_unavailable", message: attendanceCrossCheck.warning, severity: "warning" });
+  }
+
+  return { ...preview, employees: employeesWithAttendanceCrossCheck, warnings };
 }
 
 /** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */

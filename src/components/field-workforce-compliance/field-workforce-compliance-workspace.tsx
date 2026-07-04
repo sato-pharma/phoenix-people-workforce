@@ -479,12 +479,20 @@ function MetricCard({
  * Informational only — never changes the cell's status/color. */
 function withLoggingTimingTooltip(explanation: string, cell: FieldWorkforceDayCell): string {
   const timing = cell.loggingTiming;
-  if (!timing || !timing.firstLoggedTime) return explanation;
-  const windowText = timing.activeWindowMinutes != null
-    ? ` (logged over ${Math.floor(timing.activeWindowMinutes / 60)}h ${timing.activeWindowMinutes % 60}m)`
-    : "";
-  const lateText = timing.isLateStart ? " — late log (first AM-tagged entry logged after 11:30)" : "";
-  return `${explanation} Logged ${timing.firstLoggedTime}–${timing.lastLoggedTime ?? timing.firstLoggedTime}${windowText}${lateText}.`;
+  let result = explanation;
+  if (timing?.firstLoggedTime) {
+    const windowText = timing.activeWindowMinutes != null
+      ? ` (logged over ${Math.floor(timing.activeWindowMinutes / 60)}h ${timing.activeWindowMinutes % 60}m)`
+      : "";
+    const lateText = timing.isLateStart ? " — late log (first AM-tagged entry logged after 11:30)" : "";
+    result = `${result} Logged ${timing.firstLoggedTime}–${timing.lastLoggedTime ?? timing.firstLoggedTime}${windowText}${lateText}.`;
+  }
+  if (cell.attendanceCrossCheck === "visits_no_punch") {
+    result = `${result} Attendance cross-check: CRM shows activity, but no fingerprint punch this day.`;
+  } else if (cell.attendanceCrossCheck === "punch_no_visits") {
+    result = `${result} Attendance cross-check: fingerprint punch recorded, but no CRM activity this day.`;
+  }
+  return result;
 }
 
 function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
@@ -501,6 +509,11 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
       {cell.loggingTiming?.isLateStart ? (
         <span className="absolute -bottom-1 -left-1 h-2.5 w-2.5 rounded-full border border-white bg-violet-500" />
+      ) : null}
+      {cell.attendanceCrossCheck === "visits_no_punch" ? (
+        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-rose-500" />
+      ) : cell.attendanceCrossCheck === "punch_no_visits" ? (
+        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-sky-500" />
       ) : null}
     </>
   );
@@ -536,6 +549,8 @@ function TimelineLegend() {
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800 ring-2 ring-violet-300" label="Late log (AM-tagged entry logged after 11:30 — CRM log time, not a verified visit time)">•</LegendChip>
+      <LegendChip className="border-rose-300 bg-rose-50 text-rose-800 ring-2 ring-rose-300" label="CRM activity but no fingerprint punch that day">•</LegendChip>
+      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800 ring-2 ring-sky-300" label="Fingerprint punch but no CRM activity that day">•</LegendChip>
     </div>
   );
 }
