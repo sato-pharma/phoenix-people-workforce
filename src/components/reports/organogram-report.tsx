@@ -14,8 +14,8 @@ import {
   AdminCallout,
   AdminInsightChip,
   AdminPageHero,
-  AdminSectionHeader,
   AdminTableShell,
+  adminSoftPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { OrgChartTree } from "@/components/organogram/org-chart";
 import { Button } from "@/components/ui/button";
@@ -41,9 +41,6 @@ type OrganogramReportProps = {
   initialReport?: VacancyReportData | null;
   showHero?: boolean;
 };
-
-const panelClassName =
-  "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
 
 function OrganogramPageShell({ children }: { children: React.ReactNode }) {
   return (
@@ -76,10 +73,10 @@ function LineButtons({
               <button
                 aria-pressed={isActive}
                 className={cn(
-                  "rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+                  "border px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40",
                   isActive
                     ? "border-[#F97316] bg-[#F97316] text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)]"
-                    : "border-[#D7E0EA] bg-white/95 text-[#0F172A] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:border-[#FDBA74] hover:text-[#EA580C]",
+                    : "border-[#D7E0EA] bg-white/95 text-[#0F172A] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-[#FDBA74] hover:text-[#EA580C] hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]",
                 )}
                 key={option}
                 onClick={() => onChange(isActive ? "" : option)}
@@ -103,15 +100,14 @@ function OrganogramView({
   selectedLine: string | null;
 }) {
   return (
-    <Card className={cn(panelClassName, "overflow-hidden p-0")}>
-      <AdminSectionHeader
-        description="Executive leadership, manager lanes, active employees, and open vacancies in one operational view."
-        title={selectedLine ? `${selectedLine} structure` : "Select a line"}
-      />
+    <AdminTableShell
+      description="Executive leadership, manager lanes, active employees, and open vacancies in one operational view."
+      title={selectedLine ? `${selectedLine} structure` : "Select a line"}
+    >
       <div className="p-3 sm:p-4">
         {!selectedLine ? (
-          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#F97316]/10 text-[#F97316]">
+          <div className="border border-dashed border-[#CBD5E1] bg-gradient-to-b from-white to-orange-50/40 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-200">
               <Network className="h-5 w-5" />
             </div>
             <h2 className="text-base font-semibold text-text">
@@ -123,7 +119,7 @@ function OrganogramView({
             </p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-[#CBD5E1] bg-white/90 p-8 text-center text-sm text-[#64748B]">
+          <div className="border border-dashed border-[#CBD5E1] bg-white/90 p-8 text-center text-sm text-[#64748B]">
             No rows match the current search or line filter. Clear the search or
             choose another line to reveal the structure.
           </div>
@@ -131,7 +127,7 @@ function OrganogramView({
           <OrgChartTree lineName={selectedLine} rows={rows} theme="admin" />
         )}
       </div>
-    </Card>
+    </AdminTableShell>
   );
 }
 
@@ -293,7 +289,7 @@ export function OrganogramReport({
       ) : null}
 
       {isLoading && !report ? (
-        <Card className={`${panelClassName} p-4`}>
+        <Card className={cn(adminSoftPanelClassName, "p-4")}>
           <div className="flex items-center gap-3 text-sm text-[#64748B]">
             <LoadingSpinner />
             Loading organogram...
