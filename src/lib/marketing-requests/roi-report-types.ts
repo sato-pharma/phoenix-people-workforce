@@ -349,6 +349,24 @@ export type MarketingRoiExportDetail = {
   approvals: MarketingRoiExportApprovalRow[];
 };
 
+/** One matched sale (product + invoice month + pharmacy) for the Coverage Report export's
+ *  "Sales Detail" sheet — the bulk, many-request equivalent of MarketingRoiViewSalesRow.
+ *  Coverage-report-scoped only (see loadMarketingCoverageExportSalesDetail); NOT part of
+ *  MarketingRoiExportDetail, which is shared with the ROI Tracking export and must not pay
+ *  for this extra RPC when it doesn't need it. */
+export type MarketingCoverageExportSalesDetailRow = {
+  requestId: string;
+  requestCode: string;
+  customerCode: string;
+  distributorCode: string | null;
+  distributorName: string | null;
+  productCode: string;
+  productName: string;
+  invoicePeriod: string;
+  qty: number;
+  value: number;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // View Sales — per-request drill-down (opens in a new tab)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -554,9 +572,21 @@ export type MarketingCoveragePreset = {
   updatedAt: string;
 };
 
+/** One matched sale for a pharmacy, broken out by product and invoice month —
+ *  the second-level accordion detail under a target pharmacy. */
+export type MarketingCoveragePharmacySaleRow = {
+  productCode: string;
+  productName: string;
+  invoicePeriod: string;
+  qty: number;
+  value: number;
+};
+
 /** One target pharmacy row in a request's accordion detail. Always present for
  *  every pharmacy the request targets — `hasSalesRows: false` + zero value/units
- *  when nothing matched, never omitted. */
+ *  when nothing matched, never omitted. `salesDetail` is the same underlying
+ *  sales rows already fetched for `salesValue`/`salesUnits`, just broken out by
+ *  product + month instead of summed — never a second RPC call. */
 export type MarketingCoveragePharmacyRow = {
   pharmacyCode: string;
   pharmacyName: string;
@@ -565,4 +595,5 @@ export type MarketingCoveragePharmacyRow = {
   salesValue: number;
   salesUnits: number;
   hasSalesRows: boolean;
+  salesDetail: MarketingCoveragePharmacySaleRow[];
 };

@@ -35,13 +35,16 @@ import {
   type MarketingCoverageDistributorRollupRow,
   type MarketingCoverageFilterFacets,
   type MarketingCoverageFilterState,
+  type MarketingCoverageExportSalesDetailRow,
   type MarketingCoverageKpiBand,
   type MarketingCoveragePharmacyRow,
+  type MarketingCoveragePharmacySaleRow,
   type MarketingCoveragePreset,
   type MarketingCoverageReport,
   type MarketingCoverageReportRow,
   type MarketingCoverageRequestIndexEntry,
   type MarketingRoiScope,
+  type MarketingRoiViewSalesRow,
 } from "@/lib/marketing-requests/roi-report-types";
 import {
   RESTRICTED_PRODUCT_CODES,
@@ -839,6 +842,7 @@ export function mergePharmacyCoverage(
   byPharmacy: Map<string, { value: number; units: number }>,
   distributorNameByCode: Map<string, string | null>,
   parentDistributorCodeByCode: Map<string, string | null>,
+  salesDetailByPharmacy: Map<string, MarketingCoveragePharmacySaleRow[]> = new Map(),
 ): MarketingCoveragePharmacyRow[] {
   const rows: MarketingCoveragePharmacyRow[] = targetPharmacies.map((pharmacy) => {
     const sales = byPharmacy.get(pharmacy.code);
@@ -850,10 +854,35 @@ export function mergePharmacyCoverage(
       salesValue: sales ? roundMarketingMoney(sales.value) : 0,
       salesUnits: sales ? sales.units : 0,
       hasSalesRows: Boolean(sales),
+      salesDetail: salesDetailByPharmacy.get(pharmacy.code) ?? [],
     };
   });
   rows.sort((a, b) => b.salesValue - a.salesValue || a.pharmacyName.localeCompare(b.pharmacyName));
   return rows;
+}
+
+/**
+ * Groups a request's already-fetched View Sales rows by target pharmacy (customerCode),
+ * sorted oldest-period-first then by product name — the same rows behind salesValue/
+ * salesUnits, just broken out instead of summed. Never a second RPC call.
+ */
+export function groupSalesDetailByPharmacy(rows: MarketingRoiViewSalesRow[]): Map<string, MarketingCoveragePharmacySaleRow[]> {
+  const byPharmacy = new Map<string, MarketingCoveragePharmacySaleRow[]>();
+  for (const row of rows) {
+    const list = byPharmacy.get(row.customerCode) ?? [];
+    list.push({
+      productCode: row.productCode,
+      productName: row.productName,
+      invoicePeriod: row.invoicePeriod,
+      qty: row.qty,
+      value: roundMarketingMoney(row.value),
+    });
+    byPharmacy.set(row.customerCode, list);
+  }
+  for (const list of byPharmacy.values()) {
+    list.sort((a, b) => a.invoicePeriod.localeCompare(b.invoicePeriod) || a.productName.localeCompare(b.productName));
+  }
+  return byPharmacy;
 }
 
 /**
@@ -915,7 +944,73 @@ export async function getMarketingCoverageRequestPharmacies(
     parentDistributorCodeByCode.set(pharmacy.code, distributor ? parentByNormalized.get(distributor.normalizedName) ?? null : null);
   }
 
-  return mergePharmacyCoverage(pharmacies, byPharmacy, distributorNameByCode, parentDistributorCodeByCode);
+  const salesDetailByPharmacy = groupSalesDetailByPharmacy(viewSales.rows);
+  return mergePharmacyCoverage(pharmacies, byPharmacy, distributorNameByCode, parentDistributorCodeByCode, salesDetailByPharmacy);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Export "Sales Detail" sheet — bulk, many-requests-at-once (never a per-request RPC loop).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EXPORT_SALES_DETAIL_CHUNK_SIZE = 150;
+
+/**
+ * Bulk per-sale detail (product + invoice month + pharmacy) for the coverage-report export's
+ * "Sales Detail" sheet, across MANY requests in a few RPC calls — never one call per request
+ * (that's exactly the N+1 pattern loadMarketingRoiExportDetail's header comment documents as
+ * a timeout risk). Calls phx_marketing_coverage_export_sales_detail in bounded batches.
+ * Confidential products are excluded unless `reveal` (CEO/Super Admin opt-in only).
+ */
+export async function loadMarketingCoverageExportSalesDetail(
+  requests: Array<{ requestId: string; requestCode: string }>,
+  reveal: boolean,
+): Promise<MarketingCoverageExportSalesDetailRow[]> {
+  if (requests.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const codeByRequest = new Map(requests.map((row) => [row.requestId, row.requestCode] as const));
+  const excludeCodes = reveal ? [] : RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase());
+
+  const rows: MarketingCoverageExportSalesDetailRow[] = [];
+  for (const part of chunk(requests.map((row) => row.requestId), EXPORT_SALES_DETAIL_CHUNK_SIZE)) {
+    if (part.length === 0) continue;
+    const { data, error } = await supabase.rpc("phx_marketing_coverage_export_sales_detail", {
+      p_request_ids: part,
+      p_exclude_product_codes: excludeCodes,
+    });
+    if (error) throw error;
+    for (const dbRow of (data ?? []) as Array<{
+      request_id: string;
+      distributor_code: string | null;
+      distributor_name: string | null;
+      invoice_period: string;
+      product_code: string;
+      product_name: string | null;
+      customer_code: string;
+      qty: number | string | null;
+      value: number | string | null;
+    }>) {
+      rows.push({
+        requestId: dbRow.request_id,
+        requestCode: codeByRequest.get(dbRow.request_id) ?? dbRow.request_id,
+        customerCode: dbRow.customer_code,
+        distributorCode: dbRow.distributor_code,
+        distributorName: dbRow.distributor_name,
+        productCode: dbRow.product_code,
+        productName: (dbRow.product_name ?? "").trim() || dbRow.product_code,
+        invoicePeriod: dbRow.invoice_period,
+        qty: toNum(dbRow.qty),
+        value: roundMarketingMoney(toNum(dbRow.value)),
+      });
+    }
+  }
+
+  rows.sort(
+    (a, b) =>
+      a.requestCode.localeCompare(b.requestCode) ||
+      a.invoicePeriod.localeCompare(b.invoicePeriod) ||
+      a.productName.localeCompare(b.productName),
+  );
+  return rows;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -179,7 +179,7 @@ import { runMarketingCoverageReportScopeTests } from "./marketing-coverage-repor
 import { runMarketingCoverageActualsReliabilityTests } from "./marketing-coverage-actuals-reliability.test.ts";
 import { runMarketingCoverageReportRoleParityTests } from "./marketing-coverage-report-role-parity.test.ts";
 import { runMarketingCoverageFacetsTests } from "./marketing-coverage-facets.test.ts";
-import { runMarketingCoveragePharmacyMergeTests } from "./marketing-coverage-pharmacy-merge.test.ts";
+import { runMarketingCoveragePharmacyMergeTests, runMarketingCoverageGroupSalesDetailTests } from "./marketing-coverage-pharmacy-merge.test.ts";
 import { runMarketingCoverageKpiExtensionTests } from "./marketing-coverage-kpi-extension.test.ts";
 import { runMarketingCoveragePresetMigrationReadinessTests } from "./marketing-coverage-preset-migration-readiness.test.ts";
 import { runMarketingCoverageExportWorkbookTests } from "./marketing-coverage-export-workbook.test.ts";
@@ -506,6 +506,7 @@ await runTest("marketing coverage actuals reliability (fact-first gaps + scope-n
 await runTest("marketing coverage report role parity (page-guard wiring source-guard)", runMarketingCoverageReportRoleParityTests);
 await runTest("marketing coverage facets (area/requesterTier cascading filters)", runMarketingCoverageFacetsTests);
 await runTest("marketing coverage pharmacy merge (zero-sales never omitted)", runMarketingCoveragePharmacyMergeTests);
+await runTest("marketing coverage group sales detail by pharmacy (product+month drill-down)", runMarketingCoverageGroupSalesDetailTests);
 await runTest("marketing coverage KPI extension (distinct pharmacy/customer counts)", runMarketingCoverageKpiExtensionTests);
 await runTest("marketing coverage preset migration readiness (report_kind column)", runMarketingCoveragePresetMigrationReadinessTests);
 await runTest("marketing coverage export workbook (xlsx builds)", runMarketingCoverageExportWorkbookTests);

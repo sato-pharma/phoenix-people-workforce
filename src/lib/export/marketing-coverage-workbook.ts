@@ -10,6 +10,7 @@ import {
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
 import type {
+  MarketingCoverageExportSalesDetailRow,
   MarketingCoverageFilterState,
   MarketingCoverageReport,
   MarketingRoiExportDetail,
@@ -24,8 +25,12 @@ import type {
 // than re-running the per-request attribution RPC for every row in the export
 // — that RPC is designed for ONE request at a time (see getMarketingRequestView
 // Sales) and calling it once per exported request would risk a timeout on a
-// large filtered set. Per-pharmacy sales value (including zero) is shown live
-// in the on-screen accordion, which lazy-loads one request at a time.
+// large filtered set. The "Sales Detail" sheet below gets the finer product +
+// month + pharmacy breakdown from a SEPARATE bulk RPC
+// (phx_marketing_coverage_export_sales_detail, called via
+// loadMarketingCoverageExportSalesDetail) that takes an array of request ids
+// in a few batched calls, not one call per request — same reasoning, different
+// query shape.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
@@ -83,6 +88,36 @@ function bufferOf(workbook: ExcelJS.Workbook): Promise<ArrayBuffer> {
   return workbook.xlsx.writeBuffer() as unknown as Promise<ArrayBuffer>;
 }
 
+/**
+ * Real Excel conditional formatting (not a static fill) on the Status column: Approved =
+ * green, Rejected = red, any "Pending …" label = yellow — the same 3 colors as the on-screen
+ * badge in marketing-coverage-report-workspace.tsx. Uses Excel's own built-in Good/Bad/
+ * Neutral color triplet so it looks native to anyone opening the file. `containsText` (not
+ * `cellIs equal`) so "Pending validation" and "Pending approval" both match one rule.
+ */
+function applyStatusConditionalFormat(sheet: ExcelJS.Worksheet, ref: string, firstCellRef: string) {
+  try {
+    const rule = (text: string, priority: number, bgColor: string, fontColor: string) => ({
+      type: "containsText" as const,
+      operator: "containsText" as const,
+      text,
+      formulae: [`NOT(ISERROR(SEARCH("${text}",${firstCellRef})))`],
+      priority,
+      style: { fill: { type: "pattern" as const, pattern: "solid" as const, bgColor: { argb: bgColor } }, font: { color: { argb: fontColor } } },
+    });
+    sheet.addConditionalFormatting({
+      ref,
+      rules: [
+        rule("Approved", 1, "FFC6EFCE", "FF006100"),
+        rule("Rejected", 2, "FFFFC7CE", "FF9C0006"),
+        rule("Pending", 3, "FFFFEB9C", "FF9C6500"),
+      ],
+    });
+  } catch {
+    // conditional formatting is a cosmetic enhancement — never fail the export over it.
+  }
+}
+
 export type CoverageWorkbookMeta = {
   exportedByName: string;
   exportedByHrId: string;
@@ -94,9 +129,10 @@ export type CoverageWorkbookMeta = {
 export async function buildMarketingCoverageReportWorkbook(input: {
   report: MarketingCoverageReport;
   detail: MarketingRoiExportDetail;
+  salesDetail: MarketingCoverageExportSalesDetailRow[];
   meta: CoverageWorkbookMeta;
 }): Promise<ArrayBuffer> {
-  const { report, detail, meta } = input;
+  const { report, detail, salesDetail, meta } = input;
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
@@ -181,6 +217,18 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     note: `${report.rows.length} request(s). Sales data as of ${kpi.salesDataAsOf ?? "n/a"}.`,
   });
 
+  if (requestRows.length > 0) {
+    const statusColIndex = requestColumns.findIndex((c) => c.label === "Status") + 1; // 1-based for ExcelJS
+    const statusColLetter = requestSheet.getColumn(statusColIndex).letter;
+    const statusFirstRow = 3; // row 1 = title, row 2 = header, data starts row 3 (writeTable's layout)
+    const statusLastRow = 2 + requestRows.length;
+    applyStatusConditionalFormat(
+      requestSheet,
+      `${statusColLetter}${statusFirstRow}:${statusColLetter}${statusLastRow}`,
+      `${statusColLetter}${statusFirstRow}`,
+    );
+  }
+
   const pharmacySheet = workbook.addWorksheet(sanitizeSheetName("Target Pharmacies"));
   writeTable(pharmacySheet, 1, {
     title: "Target pharmacies (per request)",
@@ -193,6 +241,36 @@ export async function buildMarketingCoverageReportWorkbook(input: {
     ],
     rows: detail.pharmacies.map((p) => [p.requestCode, p.pharmacyName, p.customerCode, p.distributorCode ?? "—", p.trackingStatus ?? "—"]),
     note: `${detail.pharmacies.length} target pharmacy code(s). Open a request's Coverage Report accordion for its per-pharmacy sales value (shown even at zero).`,
+  });
+
+  // Resolves a display name for (requestId, customerCode) from the pharmacy-link list above —
+  // never a third lookup query, just reusing data already loaded for the Target Pharmacies sheet.
+  const pharmacyNameByRequestAndCode = new Map(detail.pharmacies.map((p) => [`${p.requestId}|${p.customerCode}`, p.pharmacyName] as const));
+
+  const salesDetailSheet = workbook.addWorksheet(sanitizeSheetName("Sales Detail"));
+  writeTable(salesDetailSheet, 1, {
+    title: "Matched sales — by pharmacy, product and month",
+    columns: [
+      { label: "Request", width: 14 },
+      { label: "Pharmacy", width: 32 },
+      { label: "Customer code", width: 18 },
+      { label: "Distributor", width: 14 },
+      { label: "Product", width: 26 },
+      { label: "Month", width: 12 },
+      { label: "Qty", right: true, width: 10 },
+      { label: "Value", numFmt: VALUE_FMT, right: true, width: 14, dataBar: true },
+    ],
+    rows: salesDetail.map((s) => [
+      s.requestCode,
+      pharmacyNameByRequestAndCode.get(`${s.requestId}|${s.customerCode}`) ?? s.customerCode,
+      s.customerCode,
+      s.distributorName ?? s.distributorCode ?? "—",
+      s.productName,
+      s.invoicePeriod,
+      s.qty,
+      s.value,
+    ]),
+    note: `${salesDetail.length} matched sale line(s), one row per product per month per pharmacy. Zero-sales pharmacies have no rows here — see Target Pharmacies for the full target list including zero.`,
   });
 
   return bufferOf(workbook);

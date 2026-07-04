@@ -7,7 +7,11 @@ import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMarketingCoverageReportWorkbook } from "@/lib/export/marketing-coverage-workbook";
-import { getMarketingCoverageReport, parseMarketingCoverageFilterState } from "@/lib/marketing-requests/coverage-report-service";
+import {
+  getMarketingCoverageReport,
+  loadMarketingCoverageExportSalesDetail,
+  parseMarketingCoverageFilterState,
+} from "@/lib/marketing-requests/coverage-report-service";
 import { loadMarketingRoiExportDetail, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
@@ -47,15 +51,17 @@ export async function POST(request: Request) {
     const filters = parseMarketingCoverageFilterState(body && typeof body === "object" ? (body as { filters?: unknown }).filters ?? body : {});
     const generatedAtIso = new Date().toISOString();
     const report = await getMarketingCoverageReport(access, filters, generatedAtIso);
-    const detail = await loadMarketingRoiExportDetail(
-      report.rows.map((row) => ({ requestId: row.requestId, requestCode: row.requestCode })),
-      report.includedRestricted,
-    );
+    const requestRefs = report.rows.map((row) => ({ requestId: row.requestId, requestCode: row.requestCode }));
+    const [detail, salesDetail] = await Promise.all([
+      loadMarketingRoiExportDetail(requestRefs, report.includedRestricted),
+      loadMarketingCoverageExportSalesDetail(requestRefs, report.includedRestricted),
+    ]);
     const exportId = randomUUID();
     const exportedBy = access.hrId ?? access.loginId ?? "system";
     const buffer = await buildMarketingCoverageReportWorkbook({
       report,
       detail,
+      salesDetail,
       meta: { exportedByName: exportedBy, exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
     });
 
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
       filterJson: filters as unknown as Record<string, unknown>,
       rowCount: report.rows.length,
       includedRestricted: report.includedRestricted,
-      sheets: ["Cover", "Requests", "Target Pharmacies"],
+      sheets: ["Cover", "Requests", "Target Pharmacies", "Sales Detail"],
       salesDataAsOf: report.kpi.salesDataAsOf,
     });
 
