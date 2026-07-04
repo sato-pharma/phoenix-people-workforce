@@ -5,6 +5,7 @@ import {
   BarChart3,
   CheckCircle2,
   Clock,
+  Download,
   FileSpreadsheet,
   FileText,
   Loader2,
@@ -484,7 +485,16 @@ export function SalesQueue({ initialData, initialError }: Props) {
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
               <label className="space-y-1.5">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Line</span>
+                <span className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
+                  Line
+                  <a
+                    className="inline-flex items-center gap-1 text-[11px] font-bold normal-case tracking-normal text-[#F97316] hover:underline"
+                    href="/api/sales/queue/template"
+                  >
+                    <Download className="h-3 w-3" />
+                    Download template
+                  </a>
+                </span>
                 <SearchableSelect
                   className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
                   onChange={(event) => setLine(event.target.value)}
