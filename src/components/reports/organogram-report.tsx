@@ -43,12 +43,7 @@ type OrganogramReportProps = {
 };
 
 function OrganogramPageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_12%_0%,rgba(249,115,22,0.12),transparent_32%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_42%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.10)] sm:p-5">
-      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
-      <div className="relative space-y-6">{children}</div>
-    </div>
-  );
+  return <div className="space-y-6">{children}</div>;
 }
 
 function LineButtons({
