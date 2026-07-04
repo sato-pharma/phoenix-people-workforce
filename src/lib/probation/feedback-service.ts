@@ -597,23 +597,37 @@ export async function setDvCheckboxManual(
   if (error) throw new Error(`Failed to update DV checkbox: ${error.message}`);
 }
 
-// ── DV auto-tick from publish event ─────────────────────────────────────────
+// ── DV auto-tick from Visits Report sync ─────────────────────────────────────
 
-export async function tickDvCheckboxesFromPublish(importId: string): Promise<void> {
+/**
+ * Called after each iReports360 Visits Report sync (see the cron route) instead of on a
+ * "publish" event — Double Visit Analytics is now a live read of ireports360_visits with no
+ * import/publish step. Scans the just-synced date window for double visits and auto-ticks the
+ * matching probation DV checkboxes.
+ */
+export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string): Promise<void> {
   const db = getSupabaseAdmin();
 
-  // Load all rows for this import
+  // Load every double visit (Regular/Campaign with a double-visit partner — same definition
+  // as double-visit-analytics/service.ts) in the just-synced window.
   const { data: dvRows } = await db
-    .from("double_visit_rows")
-    .select("double_visitor_hr_id,visited_employee_hr_id")
-    .eq("import_id", importId)
-    .not("visited_employee_hr_id", "is", null)
-    .not("double_visitor_hr_id", "is", null);
+    .from("ireports360_visits")
+    .select("double_hr_id,agent_hr_id")
+    .not("double_crm_id", "is", null)
+    .neq("double_crm_id", 0)
+    .in("visit_type", [0, -8])
+    .gte("visit_date", dateFrom)
+    .lte("visit_date", dateTo)
+    .not("agent_hr_id", "is", null)
+    .not("double_hr_id", "is", null);
 
   if (!dvRows || dvRows.length === 0) return;
 
-  type DvRow = { double_visitor_hr_id: string; visited_employee_hr_id: string };
-  const rows = dvRows as DvRow[];
+  type MirrorDvRow = { agent_hr_id: string; double_hr_id: string };
+  const rows = (dvRows as MirrorDvRow[]).map((row) => ({
+    double_visitor_hr_id: row.double_hr_id,
+    visited_employee_hr_id: row.agent_hr_id,
+  }));
 
   // Load all active probation employees
   const { data: activeProbation } = await db

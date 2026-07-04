@@ -5,7 +5,6 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
-import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,12 +33,5 @@ export default async function DoubleVisitAnalyticsPage({
     dateTo: dateParam(params.dateTo),
   });
 
-  return (
-    <DoubleVisitAnalyticsWorkspace
-      canImport={await canAccess(access, "double_visit_analytics", "import")}
-      canPublish={await canAccess(access, "double_visit_analytics", "update")}
-      dashboard={dashboard}
-      ireports360Configured={isIReports360Configured()}
-    />
-  );
+  return <DoubleVisitAnalyticsWorkspace dashboard={dashboard} />;
 }

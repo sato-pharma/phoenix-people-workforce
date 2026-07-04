@@ -1,5 +1,10 @@
+// Double Visit Analytics reads LIVE, directly off ireports360_visits (the Visits Report
+// mirror) — there is no import/preview/publish/Excel concept anymore (removed 2026-07-04).
+// A "double visit" = a visit with a double_crm_id partner AND visit_type in (0 Regular,
+// -8 Campaign/Prospection) — owner decision, since a shared double_crm_id on a Meeting/
+// Training/Conference/Vacation row is joint-attendance bookkeeping, not fieldwork.
+
 export type DoubleVisitSourceType = "excel" | "ireports360";
-export type DoubleVisitImportStatus = "archived" | "preview" | "published" | "superseded";
 export type DoubleVisitPeriod = "AM" | "PM" | "UNKNOWN";
 export type DoubleVisitVisitedEmployeeStatus =
   | "active_mapped"
@@ -8,75 +13,6 @@ export type DoubleVisitVisitedEmployeeStatus =
   | "resigned"
   | "unmapped"
   | "vacant";
-
-export type DoubleVisitValidationIssue = {
-  code: string;
-  message: string;
-  rowNumber?: number | null;
-  severity: "error" | "warning";
-};
-
-export type DoubleVisitNormalizedRow = {
-  activityDate: string;
-  areaName: string | null;
-  doubleVisitorHrId: string | null;
-  doubleVisitorName: string | null;
-  lineName: string | null;
-  period: DoubleVisitPeriod;
-  rawPayload: Record<string, unknown>;
-  sourceHash: string;
-  sourceRecordId: string | null;
-  sourceRowNumber: number | null;
-  sourceType: DoubleVisitSourceType;
-  visitCount: number;
-  visitedEmployeeHrId: string | null;
-  visitedEmployeeName: string | null;
-  visitedEmployeeStatus: DoubleVisitVisitedEmployeeStatus;
-};
-
-export type DoubleVisitImportSummary = {
-  activeMappedVisitCount: number;
-  amVisitCount: number;
-  areaCount: number;
-  dateFrom: string;
-  dateTo: string;
-  doubleVisitorCount: number;
-  duplicateWarningCount: number;
-  lineCount: number;
-  missingVisitedHrIdCount: number;
-  mrCoverageCount: number;
-  pmVisitCount: number;
-  totalRows: number;
-  totalVisits: number;
-  vacantOrUnmappedVisitCount: number;
-  warningCount: number;
-};
-
-export type DoubleVisitPreview = {
-  importId?: string;
-  metadata: {
-    fileName: string;
-    generatedAt: string;
-    sheetName: string | null;
-    sourceType: DoubleVisitSourceType;
-  };
-  rows: DoubleVisitNormalizedRow[];
-  sampleRows: DoubleVisitNormalizedRow[];
-  summary: DoubleVisitImportSummary;
-  warnings: DoubleVisitValidationIssue[];
-};
-
-export type DoubleVisitImportListItem = DoubleVisitImportSummary & {
-  id: string;
-  publishedAt: string | null;
-  publishedBy: string | null;
-  sheetName: string | null;
-  sourceFilename: string;
-  sourceType: DoubleVisitSourceType;
-  status: DoubleVisitImportStatus;
-  uploadedAt: string;
-  uploadedBy: string;
-};
 
 export type DoubleVisitKpis = {
   activeCalendarDays: number;
@@ -111,6 +47,7 @@ export type DoubleVisitMrScore = {
   daysSinceLastDv: number | null;
   distinctDoubleVisitors: number;
   dvsLast90Days: number;
+  dvsPrev90Days: number;
   employeeStatus: string | null;
   hireDate: string | null;
   hrId: string;
@@ -121,6 +58,7 @@ export type DoubleVisitMrScore = {
   managerName: string | null;
   mrName: string;
   totalDvs: number;
+  trendDirection: "improving" | "declining" | "flat";
 };
 
 export type DoubleVisitExecutiveManagerReport = {
@@ -164,6 +102,7 @@ export type DoubleVisitManagerSummary = {
   coveragePct: number | null;
   daysSinceLastDv: number | null;
   distinctMrs: number;
+  effectivenessScore: number | null;
   firstDvDate: string | null;
   inDirectory: boolean;
   lastDvDate: string | null;
@@ -260,6 +199,15 @@ export type DoubleVisitExpenseWorkloadEvidence = {
   sourceLabel: string;
 };
 
+// One point in the weekly double-visit trend (ISO week start date, e.g. a Monday).
+export type DoubleVisitTrendPoint = {
+  amVisits: number;
+  distinctMrs: number;
+  pmVisits: number;
+  totalDvs: number;
+  weekStart: string;
+};
+
 export type DoubleVisitDashboardData = {
   asOfDate: string;
   dateFrom: string;
@@ -275,13 +223,13 @@ export type DoubleVisitDashboardData = {
     byArea: DoubleVisitBreakdownRow[];
     byLine: DoubleVisitBreakdownRow[];
   };
-  imports: DoubleVisitImportListItem[];
   kpis: DoubleVisitKpis;
   managerSummaries: DoubleVisitManagerSummary[];
   mrScores: DoubleVisitMrScore[];
-  publishedImport: DoubleVisitImportListItem | null;
+  neglectedMrs: DoubleVisitMrScore[];
   salesComparisonAvailable: boolean;
   schemaReady: boolean;
+  trend: DoubleVisitTrendPoint[];
   visitLog: DoubleVisitLogEntry[];
 };
 
@@ -346,12 +294,8 @@ export type DoubleVisitReportRow = {
   visitedHrId: string | null;
   visitedName: string | null;
   visitedStatus: DoubleVisitVisitedEmployeeStatus;
-  /**
-   * "Regular" (iReports360 visitType 0, or any Excel-sourced row — that workflow has no other
-   * concept), the CRM's own label for a non-regular visit (e.g. "Campaign"/"Conference"), or
-   * "Non-Regular" when the type is present but undescribed. All visit kinds still count toward
-   * totals — this is for visibility, not filtering (owner decision).
-   */
+  /** "Regular" (visitType 0) or the CRM's own label for Campaign (visitType -8) — the only
+   * two visit types that ever reach this table (see the module header comment). */
   visitKind: string;
 };
 
@@ -399,6 +343,8 @@ export type DoubleVisitIntegrityIssue = {
   visitedStatus: DoubleVisitVisitedEmployeeStatus;
 };
 
+// Kept for the workspace's conditional "problematic imports" panel (always empty now that
+// there is no import concept) — see getDoubleVisitDataIntegrityReport in service.ts.
 export type DoubleVisitIntegrityImportSummary = {
   dateFrom: string;
   dateTo: string;
@@ -407,7 +353,7 @@ export type DoubleVisitIntegrityImportSummary = {
   missingVisitedHrIdCount: number;
   sourceFilename: string;
   sourceType: DoubleVisitSourceType;
-  status: DoubleVisitImportStatus;
+  status: "archived" | "preview" | "published" | "superseded";
   totalRows: number;
   uploadedAt: string;
   vacantOrUnmappedVisitCount: number;
