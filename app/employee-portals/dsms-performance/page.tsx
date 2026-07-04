@@ -8,7 +8,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
-import { getNsmDsmPerformance } from "@/lib/employee-portal/service";
+import { getNsmDsmPerformance, normalizeTeamComparisonPeriods } from "@/lib/employee-portal/service";
 
 import {
   TeamAchievementChart,
@@ -29,10 +29,24 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function periodHref(period: string | null) {
-  return period
-    ? `/employee-portals/dsms-performance?period=${period}`
+function periodHref(periods: string[]) {
+  return periods.length > 0
+    ? `/employee-portals/dsms-performance?period=${periods.join(",")}`
     : "/employee-portals/dsms-performance";
+}
+
+/** Toggles one period in/out of the current multi-select, preserving the rest. */
+function togglePeriodHref(selectedPeriods: string[], period: string) {
+  const next = selectedPeriods.includes(period)
+    ? selectedPeriods.filter((p) => p !== period)
+    : [...selectedPeriods, period];
+  return periodHref(next);
+}
+
+function periodsSummaryLabel(selectedPeriods: string[]) {
+  if (selectedPeriods.length === 0) return "All periods";
+  if (selectedPeriods.length === 1) return `Period: ${toPeriodLabel(selectedPeriods[0])}`;
+  return `Periods: ${selectedPeriods.map(toPeriodLabel).join(", ")}`;
 }
 
 /** Returns a Tailwind text-color class driven by achievement percentage. */
@@ -88,8 +102,10 @@ export default async function DsmsPerformancePage({
 
   const { dsms, periods, lineAchievementPercent, dsmCount, lineTotalSales, lineTotalTarget } = data;
 
-  const validPeriod =
-    requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
+  // Supports a single period, several comma-separated periods, or none (all periods).
+  const selectedPeriods = normalizeTeamComparisonPeriods(requestedPeriod).filter((period) =>
+    periods.includes(period),
+  );
   const eligibleCount = dsms.filter((d) => d.achievementPercent >= 90).length;
 
   /* Achievement distribution zones */
@@ -113,7 +129,7 @@ export default async function DsmsPerformancePage({
   return (
     <EmployeePortalPageShell
       badge="Team Performance"
-      description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
+      description={`${periodsSummaryLabel(selectedPeriods)} across ${
         dsmCount > 0 ? `${dsmCount} district managers in line` : "no available district data"
       }.`}
       errorBoundaryTitle="DSMs Performance unavailable"
@@ -134,7 +150,7 @@ export default async function DsmsPerformancePage({
                 Line Snapshot
               </h2>
               <p className="mt-1.5 max-w-2xl text-sm font-medium text-slate-500">
-                {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
+                {periodsSummaryLabel(selectedPeriods)}
                 {" | "}
                 {dsmCount > 0 ? `${dsmCount} district managers in line` : "No data"}
               </p>
@@ -150,12 +166,21 @@ export default async function DsmsPerformancePage({
             </div>
           </div>
 
-          {/* Period filter pills */}
+          {/* Period filter pills — toggle any combination of months, or clear back to All Periods */}
           {periods.length > 0 && (
             <div className="mb-4 flex flex-wrap gap-1.5 sm:mb-5">
-              {[null, ...periods.slice(0, 5)].map((period) => {
-                const active =
-                  period === null ? !validPeriod : validPeriod === period;
+              <Link
+                className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+                  selectedPeriods.length === 0
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-gray-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                }`}
+                href={periodHref([])}
+              >
+                All Periods
+              </Link>
+              {periods.slice(0, 12).map((period) => {
+                const active = selectedPeriods.includes(period);
                 return (
                   <Link
                     className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
@@ -163,10 +188,10 @@ export default async function DsmsPerformancePage({
                         ? "border-orange-500 bg-orange-500 text-white"
                         : "border-gray-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                     }`}
-                    href={periodHref(period)}
-                    key={period ?? "all"}
+                    href={togglePeriodHref(selectedPeriods, period)}
+                    key={period}
                   >
-                    {period ? toPeriodLabel(period) : "All Periods"}
+                    {toPeriodLabel(period)}
                   </Link>
                 );
               })}

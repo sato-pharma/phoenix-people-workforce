@@ -480,7 +480,7 @@ function normalizeTeamComparisonPeriod(value: string | null | undefined) {
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : null;
 }
 
-function normalizeTeamComparisonPeriods(value: string | string[] | null | undefined) {
+export function normalizeTeamComparisonPeriods(value: string | string[] | null | undefined) {
   const values = Array.isArray(value) ? value : [value];
   return Array.from(
     new Set(
@@ -4783,7 +4783,7 @@ export async function getEmployeePortalVacancies(
 
 export async function getNsmDsmPerformance(
   access: AccessContext,
-  options: { period?: string | null } = {},
+  options: { period?: string | string[] | null } = {},
 ): Promise<NsmDsmPerformanceData | null> {
   try {
     const currentUser = await resolvePortalCurrentUser(access);
@@ -4841,6 +4841,7 @@ export async function getNsmDsmPerformance(
     // dropped or rolled up to the NSM, so their district still appears in the
     // DSMs performance view. See src/lib/workforce/hierarchy-resolver.ts.
     const medRepToDsmCanonical = new Map<string, string>();
+    const medRepCanonicalToRawHrId = new Map<string, string>();
     const vacantSeatLabelByCanonical = new Map<string, string>();
     directory.employees.forEach((emp) => {
       if (!isMedicalRepDirectoryEmployee(emp)) return;
@@ -4848,6 +4849,7 @@ export async function getNsmDsmPerformance(
 
       const repCanonical = toCanonicalPortalHrId(emp.hrId);
       if (!repCanonical) return;
+      medRepCanonicalToRawHrId.set(repCanonical, emp.hrId);
 
       const grouping = resolveSeatGrouping(emp, {
         vacantSeatTitle: "DSM seat",
@@ -4892,10 +4894,15 @@ export async function getNsmDsmPerformance(
     };
 
     // Fetch by scoped HR IDs so stale app_auth_users.line values do not leak other lines.
+    // Sales rows key off the rep's RAW hr_id (e.g. "B-100"), so the query must use
+    // that raw form rather than medRepToDsmCanonical's hyphen-stripped keys — those
+    // are only for in-memory matching and never match the stored hr_id.
     const salesQueryHrIds = Array.from(
       new Set([
         ...dsmRows.map((emp) => emp.hrId),
-        ...Array.from(medRepToDsmCanonical.keys()),
+        ...Array.from(medRepToDsmCanonical.keys()).map(
+          (canonical) => medRepCanonicalToRawHrId.get(canonical) ?? canonical,
+        ),
       ]),
     );
     const fetchedRecords =
@@ -4914,9 +4921,9 @@ export async function getNsmDsmPerformance(
     const periods = Array.from(new Set(allRecords.map(({ record }) => record.period).filter(Boolean)))
       .sort((a, b) => b.localeCompare(a));
 
-    const selectedPeriod = normalizeTeamComparisonPeriod(options.period);
-    const records = selectedPeriod
-      ? allRecords.filter(({ record }) => record.period === selectedPeriod)
+    const selectedPeriods = normalizeTeamComparisonPeriods(options.period);
+    const records = selectedPeriods.length > 0
+      ? allRecords.filter(({ record }) => selectedPeriods.includes(record.period))
       : allRecords;
 
     const salesByDsmProduct = new Map<string, { sales: number; units: number; family: string }>();
