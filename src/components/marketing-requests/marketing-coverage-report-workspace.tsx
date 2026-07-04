@@ -109,6 +109,15 @@ const RESULT_BADGE_CLASS: Record<MarketingRoiResultStatus, string> = {
   no_data: "border-slate-200 bg-slate-50 text-slate-500",
 };
 
+/** Only the 3 requested states get a color; every other status keeps the plain-text look
+ *  it already had (draft/returned/active/roi_tracking/closed/finance_hold are unaffected). */
+const STATUS_BADGE_CLASS: Partial<Record<string, string>> = {
+  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  rejected: "border-rose-200 bg-rose-50 text-rose-700",
+  pending_validation: "border-amber-200 bg-amber-50 text-amber-700",
+  pending_approval: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
 const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string }> = [
   { value: "on_track", label: ROI_RESULT_STATUS_LABEL.on_track },
   { value: "behind", label: ROI_RESULT_STATUS_LABEL.behind },
@@ -802,40 +811,37 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 <table className="w-full min-w-[960px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("requestCode")} className="inline-flex items-center gap-1 font-black">Request {requestSortArrow("requestCode")}</button>
                       </th>
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("requesterName")} className="inline-flex items-center gap-1 font-black">Requester {requestSortArrow("requesterName")}</button>
                       </th>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("line")} className="inline-flex items-center gap-1 font-black">Line / Region / Area {requestSortArrow("line")}</button>
-                      </th>
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("customerName")} className="inline-flex items-center gap-1 font-black">Customer {requestSortArrow("customerName")}</button>
                       </th>
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("status")} className="inline-flex items-center gap-1 font-black">Status {requestSortArrow("status")}</button>
                       </th>
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("payDate")} className="inline-flex items-center gap-1 font-black">Pay date {requestSortArrow("payDate")}</button>
                       </th>
-                      <th className="px-3 py-2.5 text-right">
+                      <th className="px-2 py-2.5 text-right">
                         <button type="button" onClick={() => toggleRequestSort("estimatedCost")} className="inline-flex items-center gap-1 font-black">Cost {requestSortArrow("estimatedCost")}</button>
                       </th>
-                      <th className="px-3 py-2.5 text-right">
+                      <th className="px-2 py-2.5 text-right">
                         <button type="button" onClick={() => toggleRequestSort("requiredRoiValue")} className="inline-flex items-center gap-1 font-black">Required {requestSortArrow("requiredRoiValue")}</button>
                       </th>
-                      <th className="px-3 py-2.5 text-right">
+                      <th className="px-2 py-2.5 text-right">
                         <button type="button" onClick={() => toggleRequestSort("actualSalesValue")} className="inline-flex items-center gap-1 font-black">Actual {requestSortArrow("actualSalesValue")}</button>
                       </th>
-                      <th className="px-3 py-2.5 text-right">
+                      <th className="px-2 py-2.5 text-right">
                         <button type="button" onClick={() => toggleRequestSort("actualCoverageRatio")} className="inline-flex items-center gap-1 font-black">Coverage {requestSortArrow("actualCoverageRatio")}</button>
                       </th>
-                      <th className="px-3 py-2.5">
+                      <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("resultStatus")} className="inline-flex items-center gap-1 font-black">Result {requestSortArrow("resultStatus")}</button>
                       </th>
-                      <th className="px-3 py-2.5" />
+                      <th className="px-2 py-2.5" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1063,6 +1069,10 @@ function RequestAccordionRow({
   const [pharmacies, setPharmacies] = React.useState<MarketingCoveragePharmacyRow[] | null>(cachedPharmacies);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Only one pharmacy's sales-detail drill-down open at a time per request, mirroring the
+  // single-expanded-request convention at the parent level — no separate fetch on toggle,
+  // salesDetail is already present on each pharmacy row from the same load above.
+  const [expandedPharmacyCode, setExpandedPharmacyCode] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     // A cache hit is already reflected via the useState(cachedPharmacies) initializer above,
@@ -1107,31 +1117,41 @@ function RequestAccordionRow({
         }}
         className="cursor-pointer border-b border-[rgba(249,115,22,0.22)] align-middle transition hover:bg-orange-50/40"
       >
-        <td className="whitespace-nowrap px-3 py-2.5 font-bold text-slate-900">{row.requestCode}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
-          {row.requesterName ?? row.requesterHrId}
-          {row.requesterTier ? <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({row.requesterTier})</span> : null}
+        <td className="whitespace-nowrap px-2 py-2.5 font-bold text-slate-900">{row.requestCode}</td>
+        <td className="px-2 py-2.5">
+          <span className="block whitespace-nowrap font-bold text-slate-900">{row.requesterName ?? row.requesterHrId}</span>
+          <span className="block whitespace-nowrap text-xs text-slate-400">
+            {locationLabel}
+            {row.requesterTier ? <span className="ml-1.5 font-semibold">({row.requesterTier})</span> : null}
+          </span>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{locationLabel}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">{row.customerName}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{STATUS_LABELS[row.status] ?? row.status}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.payDate ?? "—"}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(row.estimatedCost)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(row.requiredRoiValue)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{money(row.actualSalesValue)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{percent(row.actualCoverageRatio)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5">
+        <td className="whitespace-nowrap px-2 py-2.5 text-slate-700">{row.customerName}</td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">
+          {STATUS_BADGE_CLASS[row.status] ? (
+            <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", STATUS_BADGE_CLASS[row.status])}>
+              {STATUS_LABELS[row.status] ?? row.status}
+            </span>
+          ) : (
+            STATUS_LABELS[row.status] ?? row.status
+          )}
+        </td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.payDate ?? "—"}</td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{money(row.estimatedCost)}</td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{money(row.requiredRoiValue)}</td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums font-semibold text-slate-900">{money(row.actualSalesValue)}</td>
+        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{percent(row.actualCoverageRatio)}</td>
+        <td className="whitespace-nowrap px-2 py-2.5">
           <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
             {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
           </span>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right">
+        <td className="whitespace-nowrap px-2 py-2.5 text-right">
           <ChevronDown className={cn("h-4 w-4 text-slate-400 transition", expanded ? "rotate-180" : "")} />
         </td>
       </tr>
       {expanded ? (
         <tr className="border-b border-[rgba(249,115,22,0.22)] bg-slate-50">
-          <td colSpan={12} className="px-3 py-3">
+          <td colSpan={11} className="px-3 py-3">
             {loading ? (
               <div className="flex items-center gap-2 py-3 text-[13px] font-semibold text-slate-500">
                 <LoadingSpinner /> Loading target pharmacies…
@@ -1145,32 +1165,73 @@ function RequestAccordionRow({
                 <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">
                   {pharmacies.length} target pharmac{pharmacies.length === 1 ? "y" : "ies"} — sales shown even at zero
                 </p>
-                {pharmacies.map((pharmacy) => (
-                  <div
-                    key={pharmacy.pharmacyCode}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-slate-200 bg-white px-3 py-2"
-                  >
-                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
-                    <span className="whitespace-nowrap text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
-                    <span className="text-slate-300">·</span>
-                    <span className="whitespace-nowrap text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
-                    <span className="ml-auto flex items-center gap-2">
-                      <span className={cn("whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
-                        {money(pharmacy.salesValue)} EGP
-                      </span>
-                      {isSuperAdmin && pharmacy.parentDistributorCode ? (
-                        <a
-                          href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-[#F97316] hover:text-[#F97316]"
-                        >
-                          <ExternalLink className="h-3 w-3" /> Full sales history
-                        </a>
+                {pharmacies.map((pharmacy) => {
+                  const pharmacyExpanded = expandedPharmacyCode === pharmacy.pharmacyCode;
+                  return (
+                    <div key={pharmacy.pharmacyCode} className="rounded-none border border-slate-200 bg-white">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode))}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode));
+                        }}
+                        className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-orange-50/40"
+                      >
+                        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", pharmacyExpanded ? "rotate-180" : "")} />
+                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
+                        <span className="whitespace-nowrap text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="whitespace-nowrap text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
+                        <span className="ml-auto flex items-center gap-2">
+                          <span className={cn("whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
+                            {money(pharmacy.salesValue)} EGP
+                          </span>
+                          {isSuperAdmin && pharmacy.parentDistributorCode ? (
+                            <a
+                              href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-[#F97316] hover:text-[#F97316]"
+                            >
+                              <ExternalLink className="h-3 w-3" /> Full sales history
+                            </a>
+                          ) : null}
+                        </span>
+                      </div>
+                      {pharmacyExpanded ? (
+                        <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
+                          {pharmacy.salesDetail.length === 0 ? (
+                            <p className="py-1 text-[12px] font-medium text-slate-500">No matched sales in this window.</p>
+                          ) : (
+                            <table className="w-full min-w-[480px] border-collapse text-[12px]">
+                              <thead>
+                                <tr className="text-left text-[10px] font-black uppercase tracking-wide text-slate-400">
+                                  <th className="px-2 py-1">Product</th>
+                                  <th className="px-2 py-1">Month</th>
+                                  <th className="px-2 py-1 text-right">Qty</th>
+                                  <th className="px-2 py-1 text-right">Value (EGP)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pharmacy.salesDetail.map((sale, index) => (
+                                  <tr key={`${sale.productCode}-${sale.invoicePeriod}-${index}`} className="border-t border-slate-200">
+                                    <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-900">{sale.productName}</td>
+                                    <td className="whitespace-nowrap px-2 py-1 text-slate-600">{formatPeriod(sale.invoicePeriod)}</td>
+                                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-700">{sale.qty.toLocaleString("en-US")}</td>
+                                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold text-emerald-700">{money(sale.value)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
                       ) : null}
-                    </span>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </td>
