@@ -21,10 +21,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Sales Intelligence section is Product / Group Product Managers only. Line scope is
-// applied inside getSalesMarketingDashboard (resolveDashboardLineScope); the
-// service also strips confidential products for non-CEO/Super-Admin viewers.
-const ROI_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager"]);
+// Sales Intelligence section is Product / Group Product Managers, Marketing Manager,
+// and National Sales Manager. Line scope is applied inside getSalesMarketingDashboard
+// (resolveDashboardLineScope) — NSM's business scope is LINE (see getSalesScope), so
+// they only ever see their own line's ROI/customer data; the service also strips
+// confidential products for non-CEO/Super-Admin viewers.
+const ROI_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager"]);
 
 // Inner async component — loads data after the portal shell streams to the client.
 async function RoiDashboardContent({

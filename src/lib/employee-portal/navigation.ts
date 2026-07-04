@@ -219,6 +219,11 @@ export function resolveEmployeePortalNavVisibility(
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
   const showSalesIntelligence = isProductManager || isGroupProductManager || isMarketingManager;
+  // National Sales Manager also gets the ROI/Marketing Intelligence dashboard (their business
+  // scope is LINE — see getSalesScope — so the page + service already bound them to their own
+  // line's data). Deliberately NOT folded into showSalesIntelligence: that flag also drives
+  // Coaching Analytics and Double-Visit Analytics, which NSM was not asked to gain here.
+  const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -263,7 +268,7 @@ export function resolveEmployeePortalNavVisibility(
     // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
     showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager,
-    showRoiIntelligenceTab: showSalesIntelligence,
+    showRoiIntelligenceTab,
     showSourceOfSalesTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
