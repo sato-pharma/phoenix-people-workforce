@@ -7,6 +7,7 @@ export type VisitsReportRow = {
   agentHrId: string | null;
   agentName: string | null;
   ampm: string | null;
+  attendance: number | null;
   callType: number | null;
   comment: string | null;
   contactName: string | null;
@@ -44,7 +45,15 @@ export type VisitsSyncRun = {
   dateTo: string;
   errorMessage: string | null;
   id: string;
+  /** Rows removed from ireports360_visits by this run's delete-reconciliation (present in the
+   * mirror for this run's window but absent from the fresh CRM fetch — voided/deleted upstream). */
+  rowsDeleted: number;
   rowsFetched: number;
+  /** Visits this run fetched but did not upsert because the CRM returned a missing/invalid visitDate. */
+  rowsSkippedInvalidDate: number;
+  /** Stale rows this run found but did NOT delete because they exceeded the 50% sanity cap —
+   * a signal the fetch may have been partial/truncated rather than reflecting real deletions. */
+  rowsSkippedReconcile: number;
   rowsUpserted: number;
   startedAt: string;
   status: VisitsSyncStatus;

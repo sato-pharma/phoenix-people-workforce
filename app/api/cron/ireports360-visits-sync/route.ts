@@ -11,7 +11,7 @@ export const maxDuration = 180;
 // Matches runScheduledIReports360Sync's own lookback window (see visits-report/service.ts) —
 // Double Visit Analytics has no separate sync step of its own (it reads ireports360_visits
 // live), so this only drives the probation DV auto-tick over the same just-refreshed range.
-const DV_TICK_LOOKBACK_DAYS = 10;
+const DV_TICK_LOOKBACK_DAYS = 21;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;

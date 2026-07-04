@@ -145,7 +145,20 @@ async function getCrmIdentityResolutions(): Promise<CrmResolutionRow[]> {
   }));
 }
 
-function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
+/** True for a well-formed YYYY-MM-DD date string — used to keep a visit with a missing/malformed
+ * CRM visitDate from corrupting the NOT NULL `visit_date` column or aborting its whole chunk. */
+export function isValidIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** Last-wins dedup by a key — used before chunking visits/check-ins for upsert, so a CRM
+ * response that (against its own contract) repeats an id within one page can never make a
+ * single chunk's upsert throw ("ON CONFLICT DO UPDATE command cannot affect row a second time"). */
+export function dedupeByKey<T>(rows: T[], keyOf: (row: T) => number | string): T[] {
+  return Array.from(new Map(rows.map((row) => [keyOf(row), row])).values());
+}
+
+export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
   const doubleCrmId = visit.doubleID && visit.doubleID !== 0 ? visit.doubleID : null;
   return {
     agent_crm_id: visit.agentID,
@@ -166,7 +179,10 @@ function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
     raw_payload: visit as unknown as Record<string, unknown>,
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    visit_date: visit.visitDate.slice(0, 10),
+    // The vendor's own type contract declares visitDate required, but the sibling
+    // field-workforce-compliance/ireports360-source.ts module defensively guards the exact same
+    // field from the exact same API — matching that here rather than trusting the contract.
+    visit_date: (visit.visitDate ?? "").slice(0, 10),
     visit_date_time: visit.visitDate,
     visit_type: visit.visitType,
     visit_type_description: visit.visitTypeDescription,
@@ -208,7 +224,9 @@ export async function syncIReports360Visits(input: {
   checkinsFetched: number;
   checkinsUpserted: number;
   fieldWorkforceComplianceRefresh: { refreshed: string[]; warnings: string[] };
+  rowsDeleted: number;
   rowsFetched: number;
+  rowsSkippedInvalidDate: number;
   rowsUpserted: number;
   runId: string;
 }> {
@@ -241,27 +259,116 @@ export async function syncIReports360Visits(input: {
     ]);
     const maps = buildCrmIdentityMaps(employees, resolutions);
 
+    // Dedupe by the CRM's own stable id (last-wins) BEFORE chunking — if the API ever returns
+    // two records sharing an id in one response, a raw chunked upsert would throw ("ON CONFLICT
+    // DO UPDATE command cannot affect row a second time"). Built from the FULL fetch (including
+    // rows an invalid visit_date will exclude from the actual upsert below) so every crm_visit_id
+    // this fetch ever saw still counts as "present" for the reconciliation delete further down —
+    // a single malformed date must never look like a CRM deletion of an otherwise-good visit.
     const visitRows = visits.map((visit) => rowFromVisit(visit, maps));
+    const dedupedVisitRows = dedupeByKey(visitRows, (row) => row.crm_visit_id);
+    const validVisitRows = dedupedVisitRows.filter((row) => isValidIsoDate(row.visit_date));
+    const rowsSkippedInvalidDate = dedupedVisitRows.length - validVisitRows.length;
+
     let visitsUpserted = 0;
-    for (let index = 0; index < visitRows.length; index += upsertBatchSize) {
-      const chunk = visitRows.slice(index, index + upsertBatchSize);
+    for (let index = 0; index < validVisitRows.length; index += upsertBatchSize) {
+      const chunk = validVisitRows.slice(index, index + upsertBatchSize);
       const { error } = await supabase.from(visitsTable).upsert(chunk, { onConflict: "crm_visit_id" });
       if (error) throw new Error(error.message);
       visitsUpserted += chunk.length;
     }
 
     const checkinRows = checkins.map((checkin) => rowFromCheckin(checkin, maps));
+    const dedupedCheckinRows = dedupeByKey(checkinRows, (row) => row.crm_checkin_id);
     let checkinsUpserted = 0;
-    for (let index = 0; index < checkinRows.length; index += upsertBatchSize) {
-      const chunk = checkinRows.slice(index, index + upsertBatchSize);
+    for (let index = 0; index < dedupedCheckinRows.length; index += upsertBatchSize) {
+      const chunk = dedupedCheckinRows.slice(index, index + upsertBatchSize);
       const { error } = await supabase.from(checkinsTable).upsert(chunk, { onConflict: "crm_checkin_id" });
       if (error) throw new Error(error.message);
       checkinsUpserted += chunk.length;
     }
 
+    // Reconcile deletions strictly within [input.dateFrom, input.dateTo]: after a successful,
+    // non-empty fetch, any crm_visit_id that exists in the mirror for this window but was NOT
+    // seen in this fetch at all was voided/deleted in the CRM — remove it. Never runs on an
+    // empty fetch (that would treat "we got nothing back" as "nothing exists"). A partial or
+    // truncated CRM response looks identical to real deletions, so this is capped at 50% of the
+    // window's existing rows as a sanity check rather than ever wiping most of a window blind.
+    let rowsDeleted = 0;
+    let rowsSkippedReconcile = 0;
+    if (dedupedVisitRows.length > 0) {
+      const freshIds = new Set(dedupedVisitRows.map((row) => row.crm_visit_id));
+      const existingIds: number[] = [];
+      const reconcilePageSize = 5000;
+      for (let from = 0; ; from += reconcilePageSize) {
+        const { data, error } = await supabase
+          .from(visitsTable)
+          .select("crm_visit_id")
+          .gte("visit_date", input.dateFrom)
+          .lte("visit_date", input.dateTo)
+          .range(from, from + reconcilePageSize - 1);
+        if (error) throw new Error(error.message);
+        const page = (data ?? []) as Array<{ crm_visit_id: number }>;
+        existingIds.push(...page.map((row) => row.crm_visit_id));
+        if (page.length < reconcilePageSize) break;
+      }
+      const staleIds = existingIds.filter((id) => !freshIds.has(id));
+      if (existingIds.length > 0 && staleIds.length / existingIds.length > 0.5) {
+        rowsSkippedReconcile = staleIds.length;
+      } else {
+        for (let index = 0; index < staleIds.length; index += upsertBatchSize) {
+          const chunk = staleIds.slice(index, index + upsertBatchSize);
+          const { error } = await supabase.from(visitsTable).delete().in("crm_visit_id", chunk);
+          if (error) throw new Error(error.message);
+          rowsDeleted += chunk.length;
+        }
+      }
+    }
+
+    // Check-in reconciliation mirrors the visits one above, scoped by check_date instead of
+    // visit_date — but stays best-effort (never fails the run), matching the check-ins fetch's
+    // own posture a few lines up: GPS check-ins are a nice-to-have overlay, never required.
+    try {
+      if (dedupedCheckinRows.length > 0) {
+        const freshCheckinIds = new Set(dedupedCheckinRows.map((row) => row.crm_checkin_id));
+        const existingCheckinIds: number[] = [];
+        const reconcilePageSize = 5000;
+        for (let from = 0; ; from += reconcilePageSize) {
+          const { data, error } = await supabase
+            .from(checkinsTable)
+            .select("crm_checkin_id")
+            .gte("check_date", `${input.dateFrom}T00:00:00`)
+            .lte("check_date", `${input.dateTo}T23:59:59`)
+            .range(from, from + reconcilePageSize - 1);
+          if (error) throw new Error(error.message);
+          const page = (data ?? []) as Array<{ crm_checkin_id: number }>;
+          existingCheckinIds.push(...page.map((row) => row.crm_checkin_id));
+          if (page.length < reconcilePageSize) break;
+        }
+        const staleCheckinIds = existingCheckinIds.filter((id) => !freshCheckinIds.has(id));
+        if (!(existingCheckinIds.length > 0 && staleCheckinIds.length / existingCheckinIds.length > 0.5)) {
+          for (let index = 0; index < staleCheckinIds.length; index += upsertBatchSize) {
+            const chunk = staleCheckinIds.slice(index, index + upsertBatchSize);
+            const { error } = await supabase.from(checkinsTable).delete().in("crm_checkin_id", chunk);
+            if (error) throw new Error(error.message);
+          }
+        }
+      }
+    } catch {
+      // best-effort — a check-ins reconciliation problem must never fail an otherwise-successful sync.
+    }
+
     await supabase
       .from(syncRunsTable)
-      .update({ completed_at: new Date().toISOString(), rows_fetched: visits.length, rows_upserted: visitsUpserted, status: "success" })
+      .update({
+        completed_at: new Date().toISOString(),
+        rows_deleted: rowsDeleted,
+        rows_fetched: visits.length,
+        rows_skipped_invalid_date: rowsSkippedInvalidDate,
+        rows_skipped_reconcile: rowsSkippedReconcile,
+        rows_upserted: visitsUpserted,
+        status: "success",
+      })
       .eq("id", runId);
 
     // Best-effort: keep Field Workforce Compliance's per-month snapshots current for whatever
@@ -272,7 +379,16 @@ export async function syncIReports360Visits(input: {
       dateTo: input.dateTo,
     });
 
-    return { checkinsFetched: checkins.length, checkinsUpserted, fieldWorkforceComplianceRefresh, rowsFetched: visits.length, rowsUpserted: visitsUpserted, runId };
+    return {
+      checkinsFetched: checkins.length,
+      checkinsUpserted,
+      fieldWorkforceComplianceRefresh,
+      rowsDeleted,
+      rowsFetched: visits.length,
+      rowsSkippedInvalidDate,
+      rowsUpserted: visitsUpserted,
+      runId,
+    };
   } catch (error) {
     await supabase
       .from(syncRunsTable)
@@ -287,7 +403,24 @@ export async function syncIReports360Visits(input: {
 }
 
 /** The recurring cron's window: always re-pulls the last N days so late CRM edits get caught. */
-export async function runScheduledIReports360Sync(lookbackDays = 10) {
+export async function runScheduledIReports360Sync(lookbackDays = 21) {
+  const dateTo = todayIso();
+  const dateFrom = addDaysIso(dateTo, -lookbackDays);
+  return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });
+}
+
+/**
+ * Weekly wide reconciliation: the daily cron's rolling window only catches a visit CRM-edited
+ * or re-saved within its own lookback — a visit saved long after its own visitDate, older than
+ * that window, is otherwise never re-synced. iReports360's /visits endpoint only supports a
+ * visitDate range (no "saved since" filter exists), so periodically re-scanning a much wider
+ * window is the only way to catch this. Reuses syncIReports360Visits exactly like the daily
+ * cron and manual backfill do — same idempotent upsert, and (since delete-reconciliation lives
+ * inside syncIReports360Visits scoped to whatever window is passed in) the same
+ * delete-reconciliation, but bounded to THIS call's own much wider [dateFrom, dateTo] — never
+ * the daily cron's narrower one.
+ */
+export async function runWideIReports360Reconciliation(lookbackDays = 120) {
   const dateTo = todayIso();
   const dateFrom = addDaysIso(dateTo, -lookbackDays);
   return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });
@@ -536,7 +669,10 @@ function mapSyncRun(row: Record<string, unknown>): VisitsSyncRun {
     dateTo: row.date_to as string,
     errorMessage: (row.error_message as string | null) ?? null,
     id: row.id as string,
+    rowsDeleted: Number(row.rows_deleted ?? 0),
     rowsFetched: Number(row.rows_fetched ?? 0),
+    rowsSkippedInvalidDate: Number(row.rows_skipped_invalid_date ?? 0),
+    rowsSkippedReconcile: Number(row.rows_skipped_reconcile ?? 0),
     rowsUpserted: Number(row.rows_upserted ?? 0),
     startedAt: row.started_at as string,
     status: row.status as VisitsSyncRun["status"],
@@ -557,12 +693,13 @@ export async function getLatestVisitsSyncRuns(limit = 10): Promise<VisitsSyncRun
   return ((data ?? []) as Record<string, unknown>[]).map(mapSyncRun);
 }
 
-function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
+export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
   return {
     agentCrmId: Number(row.agent_crm_id),
     agentHrId: (row.agent_hr_id as string | null) ?? null,
     agentName: (row.agent_name as string | null) ?? null,
     ampm: (row.ampm as string | null) ?? null,
+    attendance: row.attendance == null ? null : Number(row.attendance),
     callType: row.call_type == null ? null : Number(row.call_type),
     comment: (row.comment as string | null) ?? null,
     contactName: (row.contact_name as string | null) ?? null,
