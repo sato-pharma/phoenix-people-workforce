@@ -706,6 +706,17 @@ function EmployeePicker({
   );
 }
 
+const CUSTOMER_AUTHENTICITY_RULE_LABELS: Record<string, string> = {
+  consecutive_same_contact: "same contact 3+ consecutive days",
+  high_concentration: "≥60% of visits to one contact",
+  low_variety: "fewer than 3 distinct contacts all month",
+  pm_recurring_contact: "same contact recurring in the PM slot",
+};
+
+function customerAuthenticityRuleLabel(rule: string): string {
+  return CUSTOMER_AUTHENTICITY_RULE_LABELS[rule] ?? rule;
+}
+
 function employeeRiskLabel(employee: FieldWorkforceEmployeeSummary) {
   if (employee.severityCounts.High > 0) return "High";
   if (employee.noActivityPattern.hasThreeDayStreak) return "High";
@@ -746,10 +757,26 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
             <MetricCard label="Late Log Days" tone={employee.loggingTimingSummary.lateStartDayCount ? "warning" : "success"} value={formatNumber(employee.loggingTimingSummary.lateStartDayCount)} />
           </>
         ) : null}
+        {employee.customerAuthenticity && employee.customerAuthenticity.totalCustomerVisits > 0 ? (
+          <>
+            <MetricCard label="Distinct Contacts" value={formatNumber(employee.customerAuthenticity.distinctContacts)} />
+            <MetricCard
+              label="Top Contact Share"
+              tone={employee.customerAuthenticity.flagged ? "warning" : "success"}
+              value={employee.customerAuthenticity.topContactShare != null ? `${Math.round(employee.customerAuthenticity.topContactShare * 100)}%` : "-"}
+            />
+          </>
+        ) : null}
       </div>
       <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-900">
         Consecutive no-activity signal: {employee.noActivityPattern.summary}
       </div>
+      {employee.customerAuthenticity?.flagged ? (
+        <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
+          Customer pattern review: {employee.customerAuthenticity.flaggedRules.map(customerAuthenticityRuleLabel).join("; ")}
+          {employee.customerAuthenticity.topContactName ? ` (top contact: ${employee.customerAuthenticity.topContactName})` : ""}
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -1156,6 +1183,7 @@ function MonthlySummaryTable({
               <th className="px-4 py-3">Unknown</th>
               <th className="px-4 py-3">Avg First Logged</th>
               <th className="px-4 py-3">Late Log Days</th>
+              <th className="px-4 py-3">Customer Pattern</th>
               <th className="px-4 py-3">Hierarchy</th>
             </tr>
           </thead>
@@ -1180,6 +1208,11 @@ function MonthlySummaryTable({
                 <td className="whitespace-nowrap px-4 py-3">{employee.loggingTimingSummary?.avgFirstLoggedTime ?? "-"}</td>
                 <td className={cn("px-4 py-3", employee.loggingTimingSummary?.lateStartDayCount ? "font-bold text-violet-700" : "")}>
                   {employee.loggingTimingSummary ? formatNumber(employee.loggingTimingSummary.lateStartDayCount) : "-"}
+                </td>
+                <td className={cn("px-4 py-3", employee.customerAuthenticity?.flagged ? "font-bold text-violet-700" : "")}>
+                  {employee.customerAuthenticity?.flagged
+                    ? employee.customerAuthenticity.flaggedRules.map(customerAuthenticityRuleLabel).join("; ")
+                    : "-"}
                 </td>
                 <td className="px-4 py-3">{[employee.managerName, employee.lineName, employee.areaName].filter(Boolean).join(" / ") || "-"}</td>
               </tr>

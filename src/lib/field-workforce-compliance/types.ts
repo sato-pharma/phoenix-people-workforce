@@ -175,6 +175,25 @@ export type FieldWorkforceCrmIdentity = {
   crmId: string | null;
 };
 
+/**
+ * Suspicious customer-visit-pattern flags for one employee-month, computed from the visits
+ * mirror's contact_crm_id/contact_name/ampm columns on regular (customer) visits only.
+ * Informational only — never affects severity, status, or deduction candidates.
+ *  - low_variety: <3 distinct contacts visited all month (only when the employee had visits).
+ *  - high_concentration: >=60% of the month's visits went to a single contact.
+ *  - consecutive_same_contact: the same contact was visited 3+ consecutive calendar days.
+ *  - pm_recurring_contact: the same contact appears in the ampm='PM' slot twice within one
+ *    ISO week, or in the PM slot across every week that month with any PM visit.
+ */
+export type FieldWorkforceCustomerAuthenticity = {
+  distinctContacts: number;
+  flagged: boolean;
+  flaggedRules: string[];
+  topContactName: string | null;
+  topContactShare: number | null;
+  totalCustomerVisits: number;
+};
+
 export type FieldWorkforceEmployeeSummary = {
   areaName: string | null;
   campaignDays: number;
@@ -184,6 +203,11 @@ export type FieldWorkforceEmployeeSummary = {
    * path, where the workbook itself is the trusted source and no CRM join happens.
    */
   crmIdentity?: FieldWorkforceCrmIdentity | null;
+  /**
+   * Customer-visit-pattern signal for the live (visits-mirror) path. Null on the Excel-upload
+   * path (the workbook has no per-visit contact identity).
+   */
+  customerAuthenticity?: FieldWorkforceCustomerAuthenticity | null;
   employeeName: string;
   employmentStatus: string | null;
   eligibleWorkingDays: number;
