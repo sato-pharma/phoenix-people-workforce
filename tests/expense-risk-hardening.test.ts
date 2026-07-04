@@ -109,8 +109,12 @@ export function runExpenseRiskHardeningTests() {
   assert.doesNotMatch(employeePortalService, /Confirmed by HR/);
   assert.doesNotMatch(employeePortalService, /function expenseTypeLabel/);
 
-  assert.match(payrollExpenses, /const requestTripIds = new Set/);
-  assert.match(payrollExpenses, /dedupedHistoricalExpenses/);
+  // Trip-dedup is now a shared, reused helper (portal shell, DSM report, and unified
+  // payroll list all call it) so a live outstation trip is never double-counted against
+  // its historical Excel row. Lock the helper + its Set-based tripId dedup + the consumer.
+  assert.match(payrollExpenses, /export function dedupeHistoricalExpensesByTrip/);
+  assert.match(payrollExpenses, /new Set\(live\.map\(\(expense\) => expense\.tripId\)\)/);
+  assert.match(payrollExpenses, /dedupedHistoricalExpenses = dedupeHistoricalExpensesByTrip/);
 
   const commandCenter = source("src/lib/admin/command-center.ts");
   assert.match(commandCenter, /getPayrollExpenseMetrics/);

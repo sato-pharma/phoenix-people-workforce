@@ -20,6 +20,7 @@ import {
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
+import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -2164,7 +2165,10 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
         trips: row.trips,
       })),
       highRiskByLocation: groupNumeric(
-        requests.filter((request) => request.approvalRecommendation === "reject"),
+        // Canonical high-risk predicate (reject recommendation OR GPS-suspicion ≥ threshold
+        // OR any fraud flag) — keeps this heatmap aligned with the command-center and the
+        // daily-digest cron instead of undercounting on reject-recommendation alone.
+        requests.filter(isHighRiskRequest),
         (request) => request.toCity ?? request.toArea ?? "Unknown",
         () => 1,
       ).map((row) => ({
@@ -2173,7 +2177,7 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       })),
     },
     kpis: {
-      highRiskRequests: requests.filter((request) => request.approvalRecommendation === "reject").length,
+      highRiskRequests: requests.filter(isHighRiskRequest).length,
       totalClaimed: roundMoney(sumBy(requests, (request) => request.claimedTotalAmount)),
       totalExpected: roundMoney(sumBy(requests, (request) => request.expectedTotalAmount)),
       totalRequests: requests.length,

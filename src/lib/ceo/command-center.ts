@@ -258,7 +258,13 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
       active: workforce?.activeEmployees ?? 0,
       total: workforce?.totalStructure ?? workforce?.totalEmployees ?? 0,
       vacancies: workforce?.openVacancies ?? 0,
-      attritionRate30d: 0,
+      // Rolling 30-day departures ÷ active headcount (matches admin/command-center.ts).
+      // Falls back to 0 when headcount or resignation signals are unavailable; the
+      // underlying gaps surface separately via `dataUnavailable`.
+      attritionRate30d:
+        adminSignals && workforce?.activeEmployees
+          ? (adminSignals.departuresLast30d / workforce.activeEmployees) * 100
+          : 0,
       uniqueLines: workforce?.uniqueLines ?? 0,
       uniqueAreas: workforce?.uniqueAreas ?? 0,
     },
@@ -368,6 +374,7 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
   return {
     attention: signalAttention,
     dataUnavailable: Array.from(new Set(dataUnavailable)),
+    departuresLast30d,
     health,
     trends,
     payroll: {
@@ -405,6 +412,8 @@ export type CeoRoiSignal = {
 export type CeoAdminSignals = {
   attention: CeoAttentionItem[];
   dataUnavailable: string[];
+  /** Rolling 30-day departures (resignations effective within the last 30 days); 0 if resignation data is unavailable. */
+  departuresLast30d: number;
   health: {
     salesLinkageRate: number;
     attendanceReadinessRate: number;
