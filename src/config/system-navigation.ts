@@ -304,6 +304,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
       { href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Data Integrity", roles: ["Super Admin"] },
       { href: "/admin/visits-report", icon: FileSpreadsheet, label: "Visits Report", roles: ["Super Admin"] },
+      { href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity", roles: ["Super Admin"] },
       { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
       { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
     ],
