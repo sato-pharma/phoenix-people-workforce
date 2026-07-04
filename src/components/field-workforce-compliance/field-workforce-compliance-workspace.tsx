@@ -48,6 +48,11 @@ import type {
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
 import type { FieldWorkforceEmployeeTrend, FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
+import {
+  buildFieldWorkforceLineScorecards,
+  buildFieldWorkforceManagerScorecards,
+  type FieldWorkforceGroupScorecard,
+} from "@/lib/field-workforce-compliance/scorecards";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -117,7 +122,7 @@ type ComparisonResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "queue" | "summary" | "diagnostics" | "archives" | "comparison" | "recommendations";
+type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -125,6 +130,7 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "team-calendar", label: "Team Calendar" },
   { id: "queue", label: "Review Queue" },
   { id: "summary", label: "Monthly Summary" },
+  { id: "scorecards", label: "Scorecards" },
   { id: "diagnostics", label: "Diagnostics" },
   { id: "archives", label: "Excel Archives" },
   { id: "comparison", label: "Comparison" },
@@ -1310,6 +1316,55 @@ function MonthlySummaryTable({
   );
 }
 
+function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroupScorecard[]; title: string }) {
+  return (
+    <AdminTableShell description="Worst-first (lowest average compliance). Informational rollup of the currently loaded month — no severity or deduction impact." title={title}>
+      <div className="phoenix-horizontal-scroll overflow-auto">
+        <table className="w-full min-w-[820px] text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Group</th>
+              <th className="px-4 py-3">Employees</th>
+              <th className="px-4 py-3">Avg Compliance</th>
+              <th className="px-4 py-3">No Activity Total</th>
+              <th className="px-4 py-3">High Severity Total</th>
+              <th className="px-4 py-3">Flagged Employees</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {scorecards.length === 0 ? (
+              <tr><td className="px-4 py-6 text-sm text-slate-500" colSpan={6}>No employees to roll up for this month.</td></tr>
+            ) : scorecards.map((scorecard) => (
+              <tr className="text-slate-700 hover:bg-slate-50/70" key={scorecard.groupName}>
+                <td className="px-4 py-3 font-black text-slate-950">{scorecard.groupName}</td>
+                <td className="px-4 py-3">{formatNumber(scorecard.employeeCount)}</td>
+                <td className={cn("px-4 py-3 font-black", scorecard.avgCompliancePercent >= 75 ? "text-emerald-700" : scorecard.avgCompliancePercent >= 50 ? "text-amber-700" : "text-rose-700")}>
+                  {scorecard.avgCompliancePercent}%
+                </td>
+                <td className="px-4 py-3 text-rose-700">{formatNumber(scorecard.totalNoActivityCandidates)}</td>
+                <td className="px-4 py-3 text-rose-700">{formatNumber(scorecard.totalHighSeverityCount)}</td>
+                <td className={cn("px-4 py-3", scorecard.flaggedEmployeeCount ? "font-bold text-rose-700" : "")}>{formatNumber(scorecard.flaggedEmployeeCount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AdminTableShell>
+  );
+}
+
+function ScorecardsPanel({ employees }: { employees: FieldWorkforceEmployeeSummary[] }) {
+  const managerScorecards = useMemo(() => buildFieldWorkforceManagerScorecards(employees), [employees]);
+  const lineScorecards = useMemo(() => buildFieldWorkforceLineScorecards(employees), [employees]);
+
+  return (
+    <div className="space-y-4">
+      <ScorecardTable scorecards={managerScorecards} title="Manager Scorecard" />
+      <ScorecardTable scorecards={lineScorecards} title="Line Scorecard" />
+    </div>
+  );
+}
+
 function DiagnosticsPanel({
   errors,
   result,
@@ -1440,6 +1495,7 @@ function ReviewWorkspacePanels({
 
   if (activeTab === "queue") return <ReviewQueue candidates={result.reviewCandidates} />;
   if (activeTab === "summary") return <MonthlySummaryTable employees={result.employees} hierarchyFilters={hierarchyFilters} onHierarchyFiltersChange={setHierarchyFilters} />;
+  if (activeTab === "scorecards") return <ScorecardsPanel employees={result.employees} />;
   if (activeTab === "diagnostics") return <DiagnosticsPanel errors={errors} result={result} warnings={warnings} />;
 
   return null;
