@@ -20,7 +20,12 @@ export type ExecutiveDashboardModule =
 //  - "sos-reference"  -> shared SoS reference masters (products / brick centroids)
 // Busting these after a validated import makes the dashboards reflect fresh data immediately
 // instead of only after the 300s TTL. Kept in one place so every import/refresh path agrees.
-export const SALES_DASHBOARD_CACHE_TAGS = ["sos-dashboard", "smi-dashboard", "sos-reference"] as const;
+export const SALES_DASHBOARD_CACHE_TAGS = [
+  "sos-dashboard", "smi-dashboard", "sos-reference",
+  // /admin/analytics/* caches (src/lib/analytics/service.ts) — SoS-derived, closing-derived,
+  // and weekly-derived. Busted by the same sales/SoS import paths that already bust the above.
+  "analytics-sos", "analytics-closing", "analytics-weekly",
+] as const;
 
 export function invalidateExecutiveDashboardCache(
   reason: string,

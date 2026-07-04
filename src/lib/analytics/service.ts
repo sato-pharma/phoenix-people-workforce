@@ -2,6 +2,8 @@
 // All queries go through getSupabaseAdmin (service role) matching the existing
 // Phoenix pattern. Access control is enforced at the page/API route layer.
 
+import { unstable_cache } from "next/cache.js";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canViewRestrictedProducts, stripHeadOfficeRows } from "@/lib/sales/access-scope";
 import type { PhoenixRole } from "@/lib/auth/permissions";
@@ -210,7 +212,7 @@ export type SosByLineRow = {
   value: number;
 };
 
-export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLineRow[]> {
+async function loadSosByLineUncached(filters: SosFilters): Promise<SosByLineRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_line" as never, {
     p_period:      filters.period      ?? null,
@@ -238,7 +240,7 @@ export async function loadSosByLine(filters: SosFilters = {}): Promise<SosByLine
   return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
-export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiRow[]> {
+async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]> {
   const db = getSupabaseAdmin();
   // Query the analytics view via raw SQL through RPC or direct admin select.
   // We use .from() with schema qualifier via rpc pattern. Since analytics schema
@@ -265,7 +267,7 @@ export async function loadSosByPeriod(filters: SosFilters = {}): Promise<SosKpiR
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosKpiRow);
 }
 
-export async function loadSosByArea(filters: SosFilters = {}): Promise<SosByAreaRow[]> {
+async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_area" as never, {
     p_period:      filters.period      ?? null,
@@ -287,7 +289,7 @@ export async function loadSosByArea(filters: SosFilters = {}): Promise<SosByArea
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaRow);
 }
 
-export async function loadSosByProduct(filters: SosFilters = {}): Promise<SosByProductRow[]> {
+async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProductRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_product" as never, {
     p_period:      filters.period      ?? null,
@@ -307,7 +309,7 @@ export async function loadSosByProduct(filters: SosFilters = {}): Promise<SosByP
   return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
-export async function loadSosByCustomer(filters: SosFilters = {}): Promise<SosByCustomerRow[]> {
+async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCustomerRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_customer" as never, {
     p_period:       filters.period      ?? null,
@@ -339,7 +341,7 @@ export type ClosingFilters = {
   canViewHeadOffice?: boolean;
 };
 
-export async function loadClosingByEmployee(filters: ClosingFilters = {}): Promise<ClosingByEmployeeRow[]> {
+async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<ClosingByEmployeeRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_closing_by_employee" as never, {
     p_period:       filters.period      ?? null,
@@ -370,7 +372,7 @@ export type WeeklyFilters = {
   families?: string[];
 };
 
-export async function loadWeeklyFact(filters: WeeklyFilters = {}): Promise<WeeklyFactRow[]> {
+async function loadWeeklyFactUncached(filters: WeeklyFilters): Promise<WeeklyFactRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_weekly_fact" as never, {
     p_week_start:   filters.weekStart   ?? null,
@@ -387,7 +389,8 @@ export async function loadWeeklyFact(filters: WeeklyFilters = {}): Promise<Weekl
 
 // ── Cross-source comparison loader ────────────────────────────────────────────
 
-export async function loadCrossSource(filters: { periodFrom?: string | null; periodTo?: string | null; lines?: string[]; canViewHeadOffice?: boolean } = {}): Promise<CrossSourceRow[]> {
+type CrossSourceFilters = { periodFrom?: string | null; periodTo?: string | null; lines?: string[]; canViewHeadOffice?: boolean };
+async function loadCrossSourceUncached(filters: CrossSourceFilters): Promise<CrossSourceRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_cross_source" as never, {
     p_period_from: filters.periodFrom ?? null,
@@ -398,6 +401,49 @@ export async function loadCrossSource(filters: { periodFrom?: string | null; per
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapCrossSourceRow);
   return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
+
+// ── Row mappers ───────────────────────────────────────────────────────────────
+
+// ── Cached public loaders ─────────────────────────────────────────────────────
+// Each /admin/analytics/* loader reads a rollup-view-backed analytics_* RPC whose
+// output is fully determined by its filter args (scope + head-office flag are folded
+// into `filters` by the caller), so wrapping in unstable_cache is scope-safe: two
+// callers share a cache entry only when they requested identical, already-scoped
+// filters. Tags are busted by the sales/SoS import paths (SALES_DASHBOARD_CACHE_TAGS
+// in src/lib/dashboard/invalidation.ts); the 300s TTL bounds any un-wired path.
+const ANALYTICS_SOS_TAG = "analytics-sos";
+const ANALYTICS_CLOSING_TAG = "analytics-closing";
+const ANALYTICS_WEEKLY_TAG = "analytics-weekly";
+
+// Sort a copy of every array field so the same logical filter set always maps to the
+// same cache key regardless of the order values arrive in (the RPCs treat arrays as sets).
+function sortArraysForKey<F>(filters: F): F {
+  const src = filters as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(src).sort()) {
+    const value = src[key];
+    out[key] = Array.isArray(value) ? [...value].map((v) => String(v)).sort() : value;
+  }
+  return out as F;
+}
+
+function cachedAnalyticsLoader<F, R>(
+  keyName: string,
+  tags: string[],
+  raw: (filters: F) => Promise<R>,
+): (filters?: F) => Promise<R> {
+  const wrapped = unstable_cache((filters: F) => raw(filters), [keyName], { revalidate: 300, tags });
+  return (filters: F = {} as F) => wrapped(sortArraysForKey(filters));
+}
+
+export const loadSosByLine = cachedAnalyticsLoader("analytics-sos-by-line", [ANALYTICS_SOS_TAG], loadSosByLineUncached);
+export const loadSosByPeriod = cachedAnalyticsLoader("analytics-sos-by-period", [ANALYTICS_SOS_TAG], loadSosByPeriodUncached);
+export const loadSosByArea = cachedAnalyticsLoader("analytics-sos-by-area", [ANALYTICS_SOS_TAG], loadSosByAreaUncached);
+export const loadSosByProduct = cachedAnalyticsLoader("analytics-sos-by-product", [ANALYTICS_SOS_TAG], loadSosByProductUncached);
+export const loadSosByCustomer = cachedAnalyticsLoader("analytics-sos-by-customer", [ANALYTICS_SOS_TAG], loadSosByCustomerUncached);
+export const loadClosingByEmployee = cachedAnalyticsLoader("analytics-closing-by-employee", [ANALYTICS_CLOSING_TAG], loadClosingByEmployeeUncached);
+export const loadWeeklyFact = cachedAnalyticsLoader("analytics-weekly-fact", [ANALYTICS_WEEKLY_TAG], loadWeeklyFactUncached);
+export const loadCrossSource = cachedAnalyticsLoader("analytics-cross-source", [ANALYTICS_SOS_TAG, ANALYTICS_CLOSING_TAG, ANALYTICS_WEEKLY_TAG], loadCrossSourceUncached);
 
 // ── Row mappers ───────────────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
     if (rpcError) {
       return NextResponse.json({ error: rpcError.message }, { status: 500 });
     }
+
+    // The refresh just rebuilt the marketing-ROI fact tables; bust the cached dashboards
+    // (smi-dashboard + the analytics caches) so the new numbers show immediately.
+    invalidateSalesDashboardCache("marketing roi manual refresh");
 
     // Return the completed run row so the client can display the result.
     const { data: latest } = await supabase
