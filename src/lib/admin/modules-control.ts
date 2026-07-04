@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getAccessControlDashboard, type AccessActor } from "@/lib/admin/access-control";
 import {
@@ -668,10 +670,15 @@ async function assignmentRowsForCandidate(
   return (data ?? []) as Array<{ module_id?: string | null; sort_order?: number | null }>;
 }
 
-export async function getEffectiveSidebarModuleIds(
+// Per-request memoized: AppShell resolves the effective sidebar once per navigation, but the same
+// (access, navigationMode) can be requested by multiple server components in one render. cache()
+// dedupes the lookupUserForAccess + lookupEmployeePosition + assignment queries to one pass. Keyed
+// by the access OBJECT — callers pass the same cached AccessContext from resolveAccessContextFromPage,
+// so the reference matches within a request.
+export const getEffectiveSidebarModuleIds = cache(async (
   access: AccessContext,
   navigationMode: ModuleControlNavigationMode,
-): Promise<string[] | null> {
+): Promise<string[] | null> => {
   if (!access.loginId && !access.hrId) return null;
 
   const user = await lookupUserForAccess(access);
@@ -715,4 +722,4 @@ export async function getEffectiveSidebarModuleIds(
   }
 
   return null;
-}
+});

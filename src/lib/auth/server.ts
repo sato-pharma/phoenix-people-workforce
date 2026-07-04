@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import {
   parseRoleStrict,
   createAccessContext,
@@ -378,7 +380,13 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   });
 }
 
-export async function resolveAccessContextFromPage(): Promise<AccessContext> {
+// Per-request memoized: the admin/portal layout, the page it renders, and AppShell all resolve the
+// access context on the same request. React cache() dedupes them to ONE session validation + one
+// set of employees/app_auth_users reads per request (was re-run per call → the bulk of the ~154k
+// employee reads). cache() is request-scoped, so it never leaks a session across requests and stays
+// correct under force-dynamic; the session-version / role / active / lifecycle checks still run
+// (once) and their rejection audits still fire (once).
+export const resolveAccessContextFromPage = cache(async (): Promise<AccessContext> => {
   const cookieStore = await cookies();
   const headerStore = await headers();
   const cookieValue = cookieStore.get(phoenixSessionCookieName)?.value;
@@ -413,7 +421,7 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
     role,
     source: "dev-header",
   });
-}
+});
 
 function buildInitials(input: string) {
   const parts = input
@@ -426,7 +434,7 @@ function buildInitials(input: string) {
   return parts.map((part) => part.charAt(0).toUpperCase()).join("");
 }
 
-export async function resolveViewerIdentityFromPage(accessContext?: AccessContext): Promise<ViewerIdentity> {
+export const resolveViewerIdentityFromPage = cache(async (accessContext?: AccessContext): Promise<ViewerIdentity> => {
   const access = accessContext ?? await resolveAccessContextFromPage();
   const fallbackName = access.loginId || formatHrIdForDisplay(access.hrId) || "User";
   const fallbackRole = access.role;
@@ -470,7 +478,7 @@ export async function resolveViewerIdentityFromPage(accessContext?: AccessContex
     roleLabel,
     imageUrl: employeeProfileImageForHrId(row?.hr_id ?? access.hrId),
   };
-}
+});
 
 export async function resolveCurrentUserDisplay(
   loginId: string | null | undefined,
