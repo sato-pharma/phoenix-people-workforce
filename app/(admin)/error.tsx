@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { RouteErrorState } from "@/components/ui/route-error-state";
+import { isStaleDeployChunkError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
 // Group-level error boundary for the whole admin surface. Because the (admin)
 // layout renders AppShell, this boundary renders INSIDE the shell — so when an
@@ -15,6 +17,12 @@ export default function AdminGroupError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    if (isStaleDeployChunkError(error)) {
+      recoverFromStaleDeployOnce();
+    }
+  }, [error]);
+
   return (
     <RouteErrorState
       description="This admin view stopped unexpectedly. Your navigation stays intact — retry to reload just this page, or use the sidebar to move elsewhere."
