@@ -13,6 +13,7 @@ import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
+import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ async function runDailyNotifications(request: Request) {
     outstationSla,
     resignationSla,
     weeklyPlansDrift,
+    rateLimitPrune,
   ] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
@@ -56,6 +58,7 @@ async function runDailyNotifications(request: Request) {
     runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runWeeklyPlansDriftCheck().catch((e: unknown) => ({ ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) })),
+    pruneExpiredRateLimitBuckets().catch((e: unknown) => ({ deleted: 0, error: String(e) })),
   ]);
   const [birthdays, contractRenewals] = await Promise.all([
     birthdayResponse.json(),
@@ -70,6 +73,7 @@ async function runDailyNotifications(request: Request) {
     outstationGeocodeWarmup,
     outstationHighRisk,
     outstationSla,
+    rateLimitPrune,
     recruitment,
     resignationSla,
     success: true,
