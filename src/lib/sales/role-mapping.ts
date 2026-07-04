@@ -7,6 +7,12 @@ const salesRoleByHrId: Record<string, SalesOrgRole> = {
   "B-118": "DSM",
   "B-119": "DSM",
   "B-120": "DSM",
+  // Hany Saad Mohamed Omar — Regional Sales Manager for the Pedia line's AB/D1/D2
+  // regions (see sales_manager_region_scope), sitting between the NSM and DSMs
+  // B-74/B-154/B-5. His job_title doesn't match the NSM pattern, so the linkage
+  // validation flagged him "expected NSM, found Regional Sales Manager" even
+  // though he's the correct, legitimate person above those three DSMs.
+  "PD-0001": "NSM",
 };
 
 export function salesRoleOverrideForHrId(hrId: string | null | undefined) {
