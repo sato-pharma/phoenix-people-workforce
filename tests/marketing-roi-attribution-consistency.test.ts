@@ -126,8 +126,12 @@ function testRefreshFactsFixMigrationRemovesFallback() {
   const sql = readFileSync(new URL(migrationFile, migrationsDirUrl()), "utf8");
   assert.match(sql, /create\s+or\s+replace\s+function\s+public\.phx_refresh_marketing_roi_facts\s*\(/i, "redefines phx_refresh_marketing_roi_facts");
 
-  const { body, file } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
-  assert.equal(file, migrationFile, "this migration is the latest definition of phx_refresh_marketing_roi_facts");
+  // The attribution-consistency migration need not stay the LATEST definition forever — a later
+  // migration may legitimately extend phx_refresh_marketing_roi_facts (e.g. adding another fact
+  // table's worth of INSERTs) without reintroducing the fallback path. What must hold, on
+  // whichever migration is currently latest, is the substantive guarantee below: no fallback
+  // CTEs/joins, and all_hits still resolves to exact_hits only.
+  const { body } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
   assertNoFallbackLogic(body, "phx_refresh_marketing_roi_facts");
 
   // all_hits must resolve to exact_hits only — no union with any fallback set.
