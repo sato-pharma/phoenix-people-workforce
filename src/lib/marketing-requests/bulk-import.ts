@@ -813,114 +813,90 @@ export async function executeBulkImport(
       continue;
     }
 
-    let requestId: string | null = null;
     try {
       const requestCode = row.requestCode?.trim() || generateMarketingCode("MKT-REQ");
       const now = new Date().toISOString();
       const requestDateTs = row.requestDate ? `${row.requestDate}T00:00:00.000Z` : now;
 
       const expectedRoiValue = resolved.expectedRoiValueOverride ?? resolved.computedExpectedRoi;
-      const requiredRoiValue = resolved.requiredRoi;
       const roiStatus = resolved.roiStatus;
 
-      // Insert request
-      const reqInsert = await supabase
-        .from("marketing_requests")
-        .insert({
-          request_code: requestCode,
-          requester_hr_id: resolved.requesterHrId,
-          customer_id: resolved.resolvedCustomerId,
-          request_type_id: resolved.requestTypeId,
-          other_request_type: resolved.otherTypeDescription,
-          request_date: resolved.requestDate,
-          pay_date: resolved.payDate,
-          roi_duration_months: resolved.roiDurationMonths,
-          estimated_cost: resolved.estimatedCost,
-          expected_roi_value: expectedRoiValue,
-          required_roi_value: requiredRoiValue,
-          roi_coverage_ratio: requiredRoiValue > 0 ? roundMarketingMoney(expectedRoiValue / requiredRoiValue) : 0,
-          roi_status: roiStatus,
-          notes: resolved.notes,
-          status: resolved.importStatus === "approved" ? "approved" : "pending_approval",
-          submitted_at: requestDateTs,
-          approved_at: resolved.importStatus === "approved" ? requestDateTs : null,
-          created_by_hr_id: access.hrId,
-          updated_by_hr_id: access.hrId,
-        })
-        .select("id")
-        .single();
-      if (reqInsert.error) throw reqInsert.error;
-      requestId = reqInsert.data.id as string;
+      // Request row. required_roi_value / roi_coverage_ratio are GENERATED ALWAYS
+      // columns — the DB derives them, so they are intentionally not sent.
+      const requestPayload = {
+        request_code: requestCode,
+        requester_hr_id: resolved.requesterHrId,
+        customer_id: resolved.resolvedCustomerId,
+        request_type_id: resolved.requestTypeId,
+        other_request_type: resolved.otherTypeDescription,
+        request_date: resolved.requestDate,
+        pay_date: resolved.payDate,
+        roi_duration_months: resolved.roiDurationMonths,
+        estimated_cost: resolved.estimatedCost,
+        expected_roi_value: expectedRoiValue,
+        roi_status: roiStatus,
+        notes: resolved.notes,
+        status: resolved.importStatus === "approved" ? "approved" : "pending_approval",
+        submitted_at: requestDateTs,
+        approved_at: resolved.importStatus === "approved" ? requestDateTs : null,
+        created_by_hr_id: access.hrId,
+        updated_by_hr_id: access.hrId,
+      };
 
-      // Insert products
-      const productInsertRows = resolved.resolvedProducts
-        .filter((p) => p.productId !== null)
-        .map((p) => {
-          const roiP = calculateMarketingRoiPreview({
-            estimatedCost: row.estimatedCost,
-            products: [{ productId: p.productId!, factoryPrice: p.factoryPrice, quantity: p.qty }],
-          });
-          return {
-            request_id: requestId,
-            product_id: p.productId,
-            product_name_snapshot: p.productName,
-            factory_price_snapshot: p.factoryPrice,
-            forecast_quantity: p.qty,
-            expected_value: p.expectedValue,
-            value_share: roiP.products[0]?.valueShare ?? 0,
-          };
-        });
-
-      if (productInsertRows.length > 0) {
+      // Product rows. value_share comes from the batch ROI calc across all of the
+      // row's products (product expected_value is a GENERATED ALWAYS column).
+      const resolvedProducts = resolved.resolvedProducts.filter((p) => p.productId !== null);
+      let productPayload: Array<Record<string, unknown>> = [];
+      if (resolvedProducts.length > 0) {
         const fullRoi = calculateMarketingRoiPreview({
           estimatedCost: row.estimatedCost,
-          products: resolved.resolvedProducts
-            .filter((p) => p.productId !== null)
-            .map((p) => ({ productId: p.productId!, factoryPrice: p.factoryPrice, quantity: p.qty })),
+          products: resolvedProducts.map((p) => ({
+            productId: p.productId!,
+            factoryPrice: p.factoryPrice,
+            quantity: p.qty,
+          })),
         });
-        const valueShareMap = new Map(
-          fullRoi.products.map((p, i) => [i, p.valueShare])
-        );
-        const fixedRows = productInsertRows.map((r, i) => ({
-          ...r,
-          value_share: valueShareMap.get(i) ?? 0,
+        productPayload = resolvedProducts.map((p, i) => ({
+          product_id: p.productId,
+          product_name_snapshot: p.productName,
+          factory_price_snapshot: p.factoryPrice,
+          forecast_quantity: p.qty,
+          value_share: fullRoi.products[i]?.valueShare ?? 0,
         }));
-        const prodInsert = await supabase.from("marketing_request_products").insert(fixedRows);
-        if (prodInsert.error) throw prodInsert.error;
       }
 
-      // Insert pharmacies (only resolved ones)
-      const pharmacyRows = resolved.resolvedPharmacies
+      const pharmacyPayload = resolved.resolvedPharmacies
         .filter((ph) => ph.distributorCodeId !== null)
         .map((ph) => ({
-          request_id: requestId,
           distributor_code_id: ph.distributorCodeId,
           tracking_status: "pending_validation",
         }));
-      if (pharmacyRows.length > 0) {
-        const pharmInsert = await supabase.from("marketing_request_pharmacies").insert(pharmacyRows);
-        if (pharmInsert.error) throw pharmInsert.error;
-      }
 
-      // Create approval steps
-      if (workflowSteps.length > 0) {
-        const stepRows = workflowSteps.map((step, idx) => ({
-          request_id: requestId,
-          workflow_step_id: step.id,
-          sequence: step.sequence,
-          step_code: step.step_code,
-          step_name: step.step_name,
-          assigned_role: step.assigned_role,
-          status: resolved.importStatus === "approved"
-            ? "approved"
-            : (idx === 0 ? "current" : "pending"),
-          decision_at: resolved.importStatus === "approved" ? requestDateTs : null,
-          decision_by_hr_id: resolved.importStatus === "approved" ? access.hrId : null,
-          decision_note: resolved.importStatus === "approved" ? "Imported via bulk upload" : null,
-        }));
-        const stepsInsert = await supabase.from("marketing_request_approval_steps").insert(stepRows);
-        if (stepsInsert.error) throw stepsInsert.error;
-      }
+      const stepPayload = workflowSteps.map((step, idx) => ({
+        workflow_step_id: step.id,
+        sequence: step.sequence,
+        step_code: step.step_code,
+        step_name: step.step_name,
+        assigned_role: step.assigned_role,
+        status: resolved.importStatus === "approved"
+          ? "approved"
+          : (idx === 0 ? "current" : "pending"),
+        decision_at: resolved.importStatus === "approved" ? requestDateTs : null,
+        decision_by_hr_id: resolved.importStatus === "approved" ? access.hrId : null,
+        decision_note: resolved.importStatus === "approved" ? "Imported via bulk upload" : null,
+      }));
+
+      // Atomic per-row insert: request + products + pharmacies + steps all commit
+      // together or roll back together. Replaces the old four-insert sequence with
+      // best-effort parent-delete cleanup, which could leave partial data if the
+      // cleanup delete itself failed.
+      const { error: rpcError } = await supabase.rpc("import_marketing_request_atomic", {
+        p_request: requestPayload,
+        p_products: productPayload,
+        p_pharmacies: pharmacyPayload,
+        p_steps: stepPayload,
+      });
+      if (rpcError) throw rpcError;
 
       results.push({
         rowIndex: row.rowIndex,
@@ -931,10 +907,8 @@ export async function executeBulkImport(
       });
       imported++;
     } catch (err) {
-      // Best-effort cleanup: delete the request row if it was inserted
-      if (requestId) {
-        await supabase.from("marketing_requests").delete().eq("id", requestId).then(() => undefined, () => undefined);
-      }
+      // No manual cleanup needed: import_marketing_request_atomic is transactional,
+      // so a failed row leaves nothing behind.
       results.push({
         rowIndex: row.rowIndex,
         requestCode: row.requestCode ?? "(none)",
