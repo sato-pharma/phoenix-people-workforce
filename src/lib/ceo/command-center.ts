@@ -85,6 +85,11 @@ export type CeoCommandCenterData = {
     financial: Array<{ label: string; revenue: number; cost: number }>;
     hireExit: Array<{ label: string; hires: number; exits: number }>;
   };
+  // Already-computed Phase A admin signals, threaded to the page so it can pass
+  // them into Phase B (getCeoLandingDeferred) instead of that phase recomputing
+  // the same 6 heavy sub-fetches + getPlatformMetrics a second time. Null only
+  // when Phase A's own admin-signals fetch failed — Phase B then retries fresh.
+  adminSignals: CeoAdminSignals | null;
 };
 
 
@@ -269,6 +274,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     approvals: { leavePending, plansPending },
     sos: sosOut,
     trends,
+    adminSignals,
   };
 }
 
@@ -444,19 +450,25 @@ export type CeoLandingDeferredData = {
   adminSignals: CeoAdminSignals | null;
 };
 
-export async function getCeoLandingDeferred(access: AccessContext): Promise<CeoLandingDeferredData> {
+export async function getCeoLandingDeferred(
+  access: AccessContext,
+  prefetchedAdminSignals?: CeoAdminSignals | null,
+): Promise<CeoLandingDeferredData> {
   const dataUnavailable: string[] = [];
 
   // Run all heavy sources concurrently. SoS is NOT re-fetched here — the fast path
   // already loads it and passes byRegion/byProduct via sosPrefetched prop on the page.
   // getCeoAdminSignals() replaces the old getAdminCommandCenterData + getOverviewDashboard
   // with CEO-safe service aggregates.
+  // adminSignals is likewise reused from the fast path when it succeeded there (avoids
+  // recomputing the same 6 heavy sub-fetches + getPlatformMetrics a second time per page
+  // load); only re-fetched here if the fast path didn't compute it or its fetch failed.
   const [dvR, expenseR, attendanceR, marketingR, adminSignalsR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
     getOutstationExpenseCommandData(access, { preset: "30d" }),
     getAttendanceAnalytics(),
     getSalesMarketingDashboardSnapshot(access, parseSalesMarketingDashboardFilters({})),
-    getCeoAdminSignals(access),
+    prefetchedAdminSignals ? Promise.resolve(prefetchedAdminSignals) : getCeoAdminSignals(access),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;

@@ -91,7 +91,11 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     <>
       <CeoCommandCenter data={result.data} welcome={welcome} access={access} />
       <Suspense fallback={<CeoPhaseBSkeleton />}>
-        <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} />
+        <CeoPhaseBWidgets
+          access={access}
+          sosPrefetched={result.data.sos}
+          adminSignalsPrefetched={result.data.adminSignals}
+        />
       </Suspense>
     </>
   );

@@ -493,11 +493,13 @@ export function CeoPhaseBSkeleton() {
 export async function CeoPhaseBWidgets({
   access,
   sosPrefetched,
+  adminSignalsPrefetched,
 }: {
   access: AccessContext;
   sosPrefetched: CeoCommandCenterData["sos"];
+  adminSignalsPrefetched: CeoCommandCenterData["adminSignals"];
 }) {
-  const landing = await getCeoLandingDeferred(access);
+  const landing = await getCeoLandingDeferred(access, adminSignalsPrefetched);
   const unavailableSources = Array.from(new Set(landing.dataUnavailable));
 
   return (
