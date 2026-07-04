@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Check, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -130,6 +131,7 @@ export function SearchableSelect({
   const [internalValue, setInternalValue] = React.useState<string>(() => uncontrolledDefaultValue);
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
+  const [menuRect, setMenuRect] = React.useState<{ top: number; left: number; width: number } | null>(null);
 
   const currentValue = React.useMemo(() => {
     if (isControlled) return String(value ?? "");
@@ -157,7 +159,8 @@ export function SearchableSelect({
     function onDocumentMouseDown(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      if (!wrapperRef.current || wrapperRef.current.contains(target)) return;
+      if (wrapperRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
       setOpen(false);
       setQuery("");
     }
@@ -165,6 +168,24 @@ export function SearchableSelect({
     document.addEventListener("mousedown", onDocumentMouseDown);
     return () => document.removeEventListener("mousedown", onDocumentMouseDown);
   }, []);
+
+  const updateMenuPosition = React.useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    setMenuRect({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    updateMenuPosition();
+    window.addEventListener("scroll", updateMenuPosition, true);
+    window.addEventListener("resize", updateMenuPosition);
+    return () => {
+      window.removeEventListener("scroll", updateMenuPosition, true);
+      window.removeEventListener("resize", updateMenuPosition);
+    };
+  }, [open, updateMenuPosition]);
 
   const emitChange = (nextValue: string) => {
     if (!isControlled) setInternalValue(nextValue);
@@ -280,59 +301,63 @@ export function SearchableSelect({
         <Search className="h-4 w-4" />
       </span>
 
-      {open ? (
-        <div
-          ref={dropdownRef}
-          role="listbox"
-          aria-label={placeholder ?? "Options"}
-          className="absolute left-0 right-0 top-full z-[1000] mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
-          id={`${id ?? "searchable-select"}-options`}
-        >
-        {filteredOptions.length === 0 ? (
-            <div className="p-2 text-xs text-[#64748B]" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
-          ) : (
-            filteredOptions.map((option, index) => {
-              const isActive = currentValue === option.value;
-              if (option.disabled) {
-                return (
-                  <div
-                    key={`${option.value}-${index}`}
-                    role="option"
-                    aria-disabled="true"
-                    aria-selected={false}
-                    className={cn(
-                      "w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
-                      "last:border-b-0"
-                    )}
-                  >
-                    {option.label}
-                  </div>
-                );
-              }
-              return (
-                <button
-                  key={`${option.value}-${index}`}
-                  role="option"
-                  aria-selected={isActive}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left text-sm transition last:border-b-0",
-                    isActive ? "bg-orange-50 font-semibold text-orange-700" : "text-slate-700 hover:bg-orange-50 hover:text-orange-700",
-                  )}
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    if (option.disabled) return;
-                    selectOption(option.value);
-                  }}
-                >
-                  <span className="truncate">{option.label}</span>
-                  {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
-                </button>
-              );
-            })
-          )}
-        </div>
-      ) : null}
+      {open && menuRect
+        ? createPortal(
+            <div
+              ref={dropdownRef}
+              role="listbox"
+              aria-label={placeholder ?? "Options"}
+              className="fixed z-[1000] max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
+              id={`${id ?? "searchable-select"}-options`}
+              style={{ top: menuRect.top, left: menuRect.left, width: menuRect.width }}
+            >
+              {filteredOptions.length === 0 ? (
+                <div className="p-2 text-xs text-[#64748B]" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
+              ) : (
+                filteredOptions.map((option, index) => {
+                  const isActive = currentValue === option.value;
+                  if (option.disabled) {
+                    return (
+                      <div
+                        key={`${option.value}-${index}`}
+                        role="option"
+                        aria-disabled="true"
+                        aria-selected={false}
+                        className={cn(
+                          "w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
+                          "last:border-b-0"
+                        )}
+                      >
+                        {option.label}
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={`${option.value}-${index}`}
+                      role="option"
+                      aria-selected={isActive}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left text-sm transition last:border-b-0",
+                        isActive ? "bg-orange-50 font-semibold text-orange-700" : "text-slate-700 hover:bg-orange-50 hover:text-orange-700",
+                      )}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        if (option.disabled) return;
+                        selectOption(option.value);
+                      }}
+                    >
+                      <span className="truncate">{option.label}</span>
+                      {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
 
       <input type="hidden" name={name} required={required} value={currentValue} />
     </div>
