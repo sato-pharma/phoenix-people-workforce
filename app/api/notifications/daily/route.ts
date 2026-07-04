@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
+import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
@@ -40,6 +41,7 @@ async function runDailyNotifications(request: Request) {
     telegramDigest,
     outstationGeocodeWarmup,
     outstationHighRisk,
+    fieldWorkforceComplianceDigest,
     excuseSla,
     outstationSla,
     resignationSla,
@@ -54,6 +56,7 @@ async function runDailyNotifications(request: Request) {
     runTelegramDailyHrDigest(),
     runOutstationGeocodeWarmup(),
     runOutstationHighRiskDigest(),
+    runFieldWorkforceComplianceDigest(),
     runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
     runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
@@ -69,6 +72,7 @@ async function runDailyNotifications(request: Request) {
     birthdays,
     contractRenewals,
     excuseSla,
+    fieldWorkforceComplianceDigest,
     marketingSla,
     outstationGeocodeWarmup,
     outstationHighRisk,
