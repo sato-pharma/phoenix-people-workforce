@@ -35,6 +35,7 @@ export function runEmployeePortalNavigationTests() {
   const adminPageSource = readFileSync("app/(admin)/admin/page.tsx", "utf8");
   const vacanciesPageSource = readFileSync("app/employee-portals/vacancies/page.tsx", "utf8");
   const teamPerformancePageSource = readFileSync("app/employee-portals/team-performance/page.tsx", "utf8");
+  const roiPageSource = readFileSync("app/employee-portals/roi/page.tsx", "utf8");
   const launchSmokeSource = readFileSync("scripts/employee-portal-launch-smoke.mjs", "utf8");
 
   assert.doesNotMatch(
@@ -69,6 +70,11 @@ export function runEmployeePortalNavigationTests() {
   assert.doesNotMatch(vacanciesPageSource, /assertPermission\(access, "vacancies", "read"\)/);
   assert.match(teamPerformancePageSource, /canAccess\(access, "sales", "read"\)/);
   assert.doesNotMatch(teamPerformancePageSource, /assertPermission\(access, "sales", "read"\)/);
+  assert.match(
+    roiPageSource,
+    /ROI_PORTAL_ROLES = new Set\(\[[^\]]*"National Sales Manager"[^\]]*\]\)/,
+    "ROI Intelligence page-level role gate must include National Sales Manager to match the sidebar tab",
+  );
   assert.match(launchSmokeSource, /employeePortalStaticRoutes/);
   assert.match(launchSmokeSource, /employeePortalReachableRoutes/);
   assert.match(launchSmokeSource, /\/payslips/);
@@ -136,6 +142,21 @@ export function runEmployeePortalNavigationTests() {
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
   assert.equal(nationalSalesManager.showTeamCoachingTab, true, "NSM should see Team Coaching Reports");
+  assert.equal(
+    nationalSalesManager.showRoiIntelligenceTab,
+    true,
+    "NSM should see the ROI/Sales Marketing Intelligence dashboard (scoped to their own line server-side)",
+  );
+  assert.equal(
+    nationalSalesManager.showCoachingAnalyticsTab,
+    false,
+    "NSM gaining ROI Intelligence must not also grant Coaching Analytics (that stays PM/GPM/MM only)",
+  );
+  assert.equal(
+    nationalSalesManager.showDoubleVisitAnalyticsTab,
+    false,
+    "NSM gaining ROI Intelligence must not also grant Double-Visit Analytics (that stays PM/GPM/MM only)",
+  );
 
   const nsmAlias = resolveEmployeePortalNavVisibility("NSM");
   assert.equal(nsmAlias.showTeamCoachingTab, true, "NSM alias should see Team Coaching Reports");
