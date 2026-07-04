@@ -2438,6 +2438,52 @@ export async function bulkDecideEmployeePlans(
   return results;
 }
 
+// Manager isn't notified by the RPC itself — alert them (in-app + email + Telegram) so a
+// pending edit request doesn't sit unseen in their queue. Best-effort: a notify failure
+// must never roll back or block the already-committed status transition.
+async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
+  if (!plan.manager_hr_id) {
+    console.error(`[weekly-plans] plan ${plan.id} edit request has no manager_hr_id — manual follow-up required`);
+    return;
+  }
+  try {
+    const actionUrl = await planReviewActionUrl(plan.manager_hr_id, plan.id);
+    await notifyRecipients({
+      actionUrl,
+      eventType: "plan_edit_requested",
+      message: `${plan.employee_name} requested to edit their submitted ${plan.plan_kind} plan for ${plan.period_key}.`,
+      plan,
+      recipients: [{ hrId: plan.manager_hr_id }],
+      title: `${plan.employee_name} requested to edit their ${plan.plan_kind} plan`,
+    });
+  } catch (notifyError) {
+    console.error(`[weekly-plans] failed to notify manager of edit request for plan ${plan.id}`, notifyError);
+  }
+}
+
+// Mirrors notifyEmployeeReturnedOrRejected — the employee otherwise has no way to know
+// their edit request was decided short of reopening the portal themselves.
+async function notifyEmployeeEditRequestDecision(
+  plan: PlanHeaderRow,
+  decision: "approve" | "reject",
+  comment: string | null,
+): Promise<void> {
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      eventType: decision === "approve" ? "plan_edit_request_approved" : "plan_edit_request_rejected",
+      message: decision === "approve"
+        ? `Your manager approved your edit request. You can now edit and resubmit your ${plan.plan_kind} plan for ${plan.period_key}.`
+        : `Your manager rejected your edit request for your ${plan.plan_kind} plan.${comment ? ` Comment: ${comment}` : ""}`,
+      plan,
+      recipients: [{ hrId: plan.employee_hr_id }],
+      title: decision === "approve" ? "Your edit request was approved" : "Your edit request was rejected",
+    });
+  } catch (notifyError) {
+    console.error(`[weekly-plans] failed to notify employee of edit request decision for plan ${plan.id}`, notifyError);
+  }
+}
+
 export async function requestEditEmployeePlan(access: AccessContext, planId: string) {
   await assertPermission(access, "weekly_plans", "update");
   const plan = await loadPlanRow(planId);
@@ -2454,7 +2500,9 @@ export async function requestEditEmployeePlan(access: AccessContext, planId: str
     oldValues: { status: plan.status },
     summary: `${plan.plan_kind} plan edit requested by employee`,
   });
-  return mapPlan(await loadPlanRow(planId));
+  const updated = await loadPlanRow(planId);
+  await notifyManagerEditRequested(updated);
+  return mapPlan(updated);
 }
 
 export async function decideEditRequest(
@@ -2491,5 +2539,7 @@ export async function decideEditRequest(
     oldValues: { status: plan.status },
     summary: `${plan.plan_kind} plan decision: ${action}`,
   });
-  return mapPlan(await loadPlanRow(planId));
+  const updated = await loadPlanRow(planId);
+  await notifyEmployeeEditRequestDecision(updated, input.decision, input.comment ?? null);
+  return mapPlan(updated);
 }
