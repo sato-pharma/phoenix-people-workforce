@@ -6,8 +6,7 @@
 -- failing the CHECK constraint. This widens the constraint to the value already in use;
 -- no data migration needed since no 'coverage_report' rows exist yet (they all failed).
 --
--- APPROVAL-GATED — NOT YET APPLIED: stage to staging, verify, then apply to production with
--- explicit per-migration approval.
+-- Applied to staging and production on 2026-07-04, both with explicit per-migration approval.
 
 alter table public.marketing_roi_export_audit
   drop constraint if exists marketing_roi_export_audit_kind_check;
