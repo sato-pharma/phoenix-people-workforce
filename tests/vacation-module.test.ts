@@ -153,7 +153,8 @@ export function runVacationModuleTests() {
   assert.match(parallelApprovalMigrationSource, /enable row level security/);
   assert.ok(submittedStart >= 0 && submittedEnd > submittedStart, "vacation submitted notifications must use a dedicated governed helper");
   assert.match(serviceSource, /resolveVacationParallelApprovalRecipients/, "vacation submit must resolve the exact parallel approval participants");
-  assert.match(serviceSource, /\.in\("role", \["HR Manager", "Super Admin"\]\)/, "vacation HR approvers must be resolved by elevated role, not hardcoded IDs");
+  assert.match(serviceSource, /\.eq\("role", "Super Admin"\)/, "vacation HR approvers must be resolved by elevated role, not hardcoded IDs");
+  assert.doesNotMatch(serviceSource, /\["HR Manager", "Super Admin"\]/, "HR step authority is Super Admin only, not a separate HR Manager role");
   assert.doesNotMatch(serviceSource, /vacationPilotHrApproverKeys/, "hardcoded approver keys must be removed from vacation service");
   assert.match(serviceSource, /createVacationApprovalSteps/, "vacation submit must create approval-step rows");
   assert.match(submittedBlock, /createSystemNotification\(\{/, "vacation submitted pilot must route through createSystemNotification");
@@ -288,6 +289,8 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /Separation of duties requires a different HR or Super Admin actor/);
   assert.match(serviceSource, /async function hasAlternateHrApprover\(excludeHrId: string \| null\)/);
   assert.match(serviceSource, /hr_self_acknowledged_sole_admin_exception/);
+  assert.match(serviceSource, /async function closeSiblingPendingHrApprovalSteps/, "the hr step must close sibling pending rows once any Super Admin decides it");
+  assert.match(serviceSource, /hrSteps\.length === 0 \|\| hrSteps\.some\(\(candidate\) => candidate\.status === "approved"\)/, "the legacy flow must treat the hr step as OR-satisfied, not requiring every HR/Super Admin row to approve");
   assert.match(serviceSource, /vacationRetentionPolicyDefaults/);
   assert.match(serviceSource, /runVacationRetentionPurge/);
   assert.match(serviceSource, /runVacationSlaDaily/);

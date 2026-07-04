@@ -1445,10 +1445,13 @@ function mapVacationApprovalStep(row: VacationApprovalStepRow) {
 }
 
 async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData): Promise<VacationApprovalRecipient[]> {
+  // HR-step authority is Super Admin only — this org runs HR acknowledgement through the
+  // System Administrator account(s), not a separate "HR Manager" role login. Owner decision
+  // 2026-07-04.
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("login_id,hr_id,name,auth_email,is_active")
-    .in("role", ["HR Manager", "Super Admin"])
+    .eq("role", "Super Admin")
     .eq("is_active", true);
 
   if (error) throwVacationDatabaseError(error);
@@ -1471,7 +1474,7 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
     });
 
   if (rows.length === 0) {
-    throw new Error("Vacation HR approval step is not configured. No active HR Manager or Super Admin account was found.");
+    throw new Error("Vacation HR approval step is not configured. No active Super Admin account was found.");
   }
 
   const unique = new Map<string, VacationApprovalRecipient>();
@@ -1635,6 +1638,33 @@ async function recordVacationApprovalStepDecision(input: {
   if (error) throwVacationDatabaseError(error);
   if (!data) throw new Error("This vacation approval step was already decided.");
   return mapVacationApprovalStep(data as VacationApprovalStepRow);
+}
+
+// The "hr" step fans out to every active Super Admin account (so each is notified/can act via
+// their own magic-link email), which previously meant a request could be left waiting on a
+// second HR/Super Admin to also decide, or a decided request left a phantom "pending" item in
+// the other account's queue forever. HR is one conceptual authority: the first Super Admin to
+// decide closes the step for everyone else on this request.
+async function closeSiblingPendingHrApprovalSteps(input: {
+  actorHrId?: string | null;
+  decidedStepId: string;
+  decisionValue: "approved" | "rejected";
+  requestId: string;
+}) {
+  const now = new Date().toISOString();
+  const { error } = await getSupabaseAdmin()
+    .from(vacationApprovalStepsTable)
+    .update({
+      decided_at: now,
+      decision_comment: `Auto-completed: HR step already decided by ${input.actorHrId ?? "another HR/Super Admin account"}.`,
+      status: input.decisionValue,
+      updated_at: now,
+    })
+    .eq("request_id", input.requestId)
+    .eq("step_key", "hr")
+    .eq("status", "pending")
+    .neq("id", input.decidedStepId);
+  if (error) throwVacationDatabaseError(error);
 }
 
 async function markVacationDecisionAccess<T extends VacationRequestRecord>(access: AccessContext, rows: T[]) {
@@ -3002,6 +3032,14 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     decisionComment: input.decisionComment,
     stepId: step.id,
   });
+  if (step.stepKey === "hr") {
+    await closeSiblingPendingHrApprovalSteps({
+      actorHrId: input.actorHrId,
+      decidedStepId: step.id,
+      decisionValue,
+      requestId: input.request.id,
+    });
+  }
 
   const nextStatus = evaluation.nextStatus;
   const isFinal = evaluation.isFinal;
@@ -3244,11 +3282,26 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     decisionComment: input.decisionComment,
     stepId: step.id,
   });
+  if (step.stepKey === "hr") {
+    await closeSiblingPendingHrApprovalSteps({
+      actorHrId: input.actorHrId,
+      decidedStepId: step.id,
+      decisionValue,
+      requestId: input.request.id,
+    });
+  }
   const stepsAfterDecision = steps.map((candidate) =>
     candidate.id === decidedStep.id ? decidedStep : candidate
   );
   const rejected = input.decision === "reject" || stepsAfterDecision.some((candidate) => candidate.status === "rejected");
-  const allApproved = stepsAfterDecision.every((candidate) => candidate.status === "approved");
+  // HR fans out to every active Super Admin account as its own parallel "hr" row, but HR is one
+  // conceptual authority — only ONE of those rows needs to approve, not all of them. Management
+  // steps keep unanimous (AND) semantics.
+  const nonHrSteps = stepsAfterDecision.filter((candidate) => candidate.stepKey !== "hr");
+  const hrSteps = stepsAfterDecision.filter((candidate) => candidate.stepKey === "hr");
+  const allApproved =
+    nonHrSteps.every((candidate) => candidate.status === "approved") &&
+    (hrSteps.length === 0 || hrSteps.some((candidate) => candidate.status === "approved"));
   const isFinalDecision = rejected || allApproved;
   if (allApproved) {
     balance = await calculatePaymentForRequest({
