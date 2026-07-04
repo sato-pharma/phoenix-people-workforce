@@ -33,6 +33,7 @@ import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/pre
 import type {
   FieldWorkforceCrmIdentity,
   FieldWorkforceCrmIdentityConfidence,
+  FieldWorkforceCustomerAuthenticity,
   FieldWorkforceDayCell,
   FieldWorkforceEmployeeReference,
   FieldWorkforceHoliday,
@@ -180,6 +181,117 @@ function normalizeAmpm(value: string | null | undefined): "AM" | "PM" | null {
   return upper === "AM" || upper === "PM" ? upper : null;
 }
 
+// Customer-authenticity thresholds — owner-confirmed (2026-07).
+const HIGH_CONCENTRATION_SHARE = 0.6;
+const LOW_VARIETY_MIN_CONTACTS = 3;
+const CONSECUTIVE_SAME_CONTACT_DAYS = 3;
+const PM_RECURRING_MIN_WEEKS_IN_ONE_WEEK = 2;
+
+/** ISO 8601 week key ("<isoYear>-W<weekNumber>") for a calendar date, so weeks that span a
+ * month/year boundary still group correctly. Only used for informational pattern detection —
+ * not a payroll/attendance week boundary. */
+function isoWeekKey(dateIso: string): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  const target = new Date(date.getTime());
+  const dayNumber = (date.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3); // nearest Thursday
+  const isoYear = target.getUTCFullYear();
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4));
+  const firstDayNumber = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNumber + 3);
+  const weekNumber = 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 86_400_000));
+  return `${isoYear}-W${pad2(weekNumber)}`;
+}
+
+/** Readable contact label: the mirror's contact_name (99.9% populated in production),
+ * falling back to "Contact #<id>" on the rare null. */
+function contactDisplayName(contactId: number, contactName: string | null): string {
+  const cleaned = String(contactName ?? "").trim();
+  return cleaned || `Contact #${contactId}`;
+}
+
+/**
+ * Customer-visit-pattern signal for one employee's month, from their REGULAR (customer)
+ * visits only — campaign/meeting/training/leave visit types have no real customer contact
+ * and are excluded. contact_crm_id is never null on regular visits in production (verified),
+ * so no fuzzy contact matching is needed. See FieldWorkforceCustomerAuthenticity for the rule
+ * definitions. Pure function — no DB access — so it's directly unit-testable.
+ */
+function computeCustomerAuthenticitySignals(monthVisits: FieldWorkforceMatrixVisit[]): FieldWorkforceCustomerAuthenticity {
+  const customerVisits = monthVisits.filter((visit) => visit.visitType === 0 && visit.contactID != null);
+  const totalCustomerVisits = customerVisits.length;
+
+  if (totalCustomerVisits === 0) {
+    return { distinctContacts: 0, flagged: false, flaggedRules: [], topContactName: null, topContactShare: null, totalCustomerVisits: 0 };
+  }
+
+  const countByContact = new Map<number, number>();
+  const nameByContact = new Map<number, string | null>();
+  const daysByContact = new Map<number, Set<string>>();
+  const pmWeeksByContact = new Map<number, Map<string, number>>();
+  const weeksWithAnyPmVisit = new Set<string>();
+
+  for (const visit of customerVisits) {
+    const contactId = visit.contactID as number;
+    countByContact.set(contactId, (countByContact.get(contactId) ?? 0) + 1);
+    if (!nameByContact.has(contactId)) nameByContact.set(contactId, visit.contactName);
+
+    const dayIso = (visit.visitDate ?? "").slice(0, 10);
+    const days = daysByContact.get(contactId) ?? new Set<string>();
+    days.add(dayIso);
+    daysByContact.set(contactId, days);
+
+    if (normalizeAmpm(visit.ampm) === "PM") {
+      const week = isoWeekKey(dayIso);
+      weeksWithAnyPmVisit.add(week);
+      const weeks = pmWeeksByContact.get(contactId) ?? new Map<string, number>();
+      weeks.set(week, (weeks.get(week) ?? 0) + 1);
+      pmWeeksByContact.set(contactId, weeks);
+    }
+  }
+
+  const distinctContacts = countByContact.size;
+  const [topContactId, topCount] = [...countByContact.entries()].reduce(
+    (best, entry) => (entry[1] > best[1] ? entry : best),
+  );
+  const topContactShare = topCount / totalCustomerVisits;
+  const topContactName = contactDisplayName(topContactId, nameByContact.get(topContactId) ?? null);
+
+  const flaggedRules: string[] = [];
+  if (distinctContacts < LOW_VARIETY_MIN_CONTACTS) flaggedRules.push("low_variety");
+  if (topContactShare >= HIGH_CONCENTRATION_SHARE) flaggedRules.push("high_concentration");
+
+  const hasConsecutiveSameContact = [...daysByContact.values()].some((days) => {
+    const sorted = [...days].sort();
+    let streak = 1;
+    for (let index = 1; index < sorted.length; index += 1) {
+      const previous = new Date(`${sorted[index - 1]}T00:00:00Z`);
+      const current = new Date(`${sorted[index]}T00:00:00Z`);
+      const dayGap = Math.round((current.getTime() - previous.getTime()) / 86_400_000);
+      streak = dayGap === 1 ? streak + 1 : 1;
+      if (streak >= CONSECUTIVE_SAME_CONTACT_DAYS) return true;
+    }
+    return false;
+  });
+  if (hasConsecutiveSameContact) flaggedRules.push("consecutive_same_contact");
+
+  const hasPmRecurringContact = [...pmWeeksByContact.entries()].some(([, weeks]) => {
+    const twiceInOneWeek = [...weeks.values()].some((count) => count >= PM_RECURRING_MIN_WEEKS_IN_ONE_WEEK);
+    const everyPmWeek = weeksWithAnyPmVisit.size >= 2 && weeks.size === weeksWithAnyPmVisit.size;
+    return twiceInOneWeek || everyPmWeek;
+  });
+  if (hasPmRecurringContact) flaggedRules.push("pm_recurring_contact");
+
+  return {
+    distinctContacts,
+    flagged: flaggedRules.length > 0,
+    flaggedRules,
+    topContactName,
+    topContactShare,
+    totalCustomerVisits,
+  };
+}
+
 /**
  * Builds the Field Workforce Compliance matrix (header row + one row per EMPLOYEE) for a
  * month of iReports360 visits. The report is **employee-driven**: every eligible, active
@@ -204,6 +316,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   visits: FieldWorkforceMatrixVisit[];
   year: number;
 }): {
+  customerAuthenticityByHrKey: Map<string, FieldWorkforceCustomerAuthenticity>;
   identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
   matrix: unknown[][];
@@ -266,6 +379,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const matrix: unknown[][] = [header];
   const identityByHrKey = new Map<string, FieldWorkforceCrmIdentity>();
   const loggingTimingByHrKeyAndDate = new Map<string, FieldWorkforceLoggingTiming>();
+  const customerAuthenticityByHrKey = new Map<string, FieldWorkforceCustomerAuthenticity>();
 
   const eligible = employees
     .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
@@ -305,6 +419,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
         const timing = computeLoggingTiming(dayVisits);
         if (timing) loggingTimingByHrKeyAndDate.set(`${hrKey}|${dayIso}`, timing);
       }
+      customerAuthenticityByHrKey.set(hrKey, computeCustomerAuthenticitySignals(agentVisits));
     }
 
     const dayCells = dateIsos.map((dateIso) => {
@@ -325,7 +440,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
+  return { customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -451,6 +566,8 @@ export type VisitsMirrorRow = {
   agent_hr_id?: string | null;
   agent_name: string | null;
   ampm?: string | null;
+  contact_crm_id?: number | null;
+  contact_name?: string | null;
   crm_save_date?: string | null;
   double_crm_id: number | null;
   double_hr_id?: string | null;
@@ -478,8 +595,8 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     attendance: null,
     callType: null,
     comment: null,
-    contactID: null,
-    contactName: null,
+    contactID: row.contact_crm_id ?? null,
+    contactName: row.contact_name ?? null,
     customerName: null,
     doubleHrId: row.double_hr_id ?? null,
     doubleID: row.double_crm_id,
@@ -512,7 +629,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
   for (;;) {
     const { data, error } = await supabase
       .from(VISITS_MIRROR_TABLE)
-      .select("agent_crm_id, agent_hr_id, agent_name, ampm, crm_save_date, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
+      .select("agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
       .gte("visit_date", startDate)
       .lte("visit_date", endDate)
       .range(from, from + VISITS_MIRROR_PAGE_SIZE - 1);
@@ -575,7 +692,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
-  const { identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
+  const { customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -615,8 +732,9 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
       return timing ? { ...cell, loggingTiming: timing } : cell;
     });
     const loggingTimingSummary = summarizeLoggingTiming(timeline);
+    const customerAuthenticity = hrKey ? customerAuthenticityByHrKey.get(hrKey) ?? null : null;
 
-    return { ...employee, crmIdentity: identity, loggingTimingSummary, timeline };
+    return { ...employee, crmIdentity: identity, customerAuthenticity, loggingTimingSummary, timeline };
   });
 
   const warnings = [...preview.warnings];

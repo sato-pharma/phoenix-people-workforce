@@ -305,4 +305,102 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(timingOf("T-3", "2026-05-06")?.isLateStart, null, "T-3 has no AM-tagged entry that day -> isLateStart is null, not guessed");
 
   assert.equal(timingOf("T-4", "2026-05-06"), undefined, "a visit with no saveDate produces no timing entry for that day");
+
+  // --- 1.2 Customer-authenticity: repeat-customer / low-variety / PM-recurrence patterns ---
+  // May 2026 week boundaries (Mon-Sun) used below: week A = 05-04..05-10, week B = 05-11..05-17.
+  const contactVisit = (
+    agentID: number,
+    contactID: number,
+    contactName: string,
+    visitDate: string,
+    ampm: "AM" | "PM" | null = null,
+  ): FieldWorkforceMatrixVisit => ({
+    agentID, agentName: "x", ampm, attendance: null, callType: null, comment: null,
+    contactID, contactName, customerName: null, doubleID: null, doubleName: null, id: 0,
+    saveDate: null, visitDate, visitType: 0, visitTypeDescription: null,
+  });
+  const caEmployees: FieldWorkforceEmployeeInput[] = [
+    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "CA High Concentration + Low Variety", hireDate: "2024-01-01", hrId: "CA-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "301", crmUsername: null, employmentStatus: "active", fullName: "CA Consecutive Days", hireDate: "2024-01-01", hrId: "CA-2", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "302", crmUsername: null, employmentStatus: "active", fullName: "CA PM Twice One Week", hireDate: "2024-01-01", hrId: "CA-3", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "303", crmUsername: null, employmentStatus: "active", fullName: "CA PM Every Week", hireDate: "2024-01-01", hrId: "CA-4", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "304", crmUsername: null, employmentStatus: "active", fullName: "CA Healthy Pattern", hireDate: "2024-01-01", hrId: "CA-5", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "305", crmUsername: null, employmentStatus: "active", fullName: "CA No Visits", hireDate: "2024-01-01", hrId: "CA-6", jobTitle: "Medical Representative", positionTitle: null },
+  ];
+  const caVisits: FieldWorkforceMatrixVisit[] = [
+    // CA-1: contact 900 gets 5 of 6 visits (83% share, and only 2 distinct contacts) -> both rules.
+    contactVisit(300, 900, "Dr Mostly Visited", "2026-05-04"),
+    contactVisit(300, 900, "Dr Mostly Visited", "2026-05-06"),
+    contactVisit(300, 900, "Dr Mostly Visited", "2026-05-08"),
+    contactVisit(300, 900, "Dr Mostly Visited", "2026-05-12"),
+    contactVisit(300, 900, "Dr Mostly Visited", "2026-05-14"),
+    contactVisit(300, 901, "Dr Rarely Visited", "2026-05-20"),
+
+    // CA-2: contact 910 visited 3 consecutive days, plus 5 other distinct single-visit contacts
+    // (dilutes share to 3/8=37.5% and distinctContacts to 6, so only consecutive_same_contact fires).
+    contactVisit(301, 910, "Dr Consecutive", "2026-05-04"),
+    contactVisit(301, 910, "Dr Consecutive", "2026-05-05"),
+    contactVisit(301, 910, "Dr Consecutive", "2026-05-06"),
+    contactVisit(301, 911, "Dr Other A", "2026-05-11"),
+    contactVisit(301, 912, "Dr Other B", "2026-05-12"),
+    contactVisit(301, 913, "Dr Other C", "2026-05-13"),
+    contactVisit(301, 914, "Dr Other D", "2026-05-14"),
+    contactVisit(301, 915, "Dr Other E", "2026-05-15"),
+
+    // CA-3: contact 920 gets 2 PM visits within the SAME week (week A) -> "twice in one week".
+    // Other contacts dilute variety/concentration below their thresholds.
+    contactVisit(302, 920, "Dr PM Repeat", "2026-05-04", "PM"),
+    contactVisit(302, 920, "Dr PM Repeat", "2026-05-06", "PM"),
+    contactVisit(302, 921, "Dr Other F", "2026-05-11", "AM"),
+    contactVisit(302, 922, "Dr Other G", "2026-05-12", "AM"),
+    contactVisit(302, 923, "Dr Other H", "2026-05-13", "AM"),
+
+    // CA-4: contact 930 gets exactly one PM visit in week A AND one PM visit in week B — never
+    // twice in the same week, but recurs across EVERY week that has any PM visit at all.
+    contactVisit(303, 930, "Dr PM Every Week", "2026-05-04", "PM"),
+    contactVisit(303, 930, "Dr PM Every Week", "2026-05-11", "PM"),
+    contactVisit(303, 931, "Dr Other I", "2026-05-12", "AM"),
+    contactVisit(303, 932, "Dr Other J", "2026-05-13", "AM"),
+    contactVisit(303, 933, "Dr Other K", "2026-05-14", "AM"),
+
+    // CA-5: healthy — 5 distinct contacts, one visit each, no PM, no consecutive days -> no flags.
+    contactVisit(304, 940, "Dr Healthy A", "2026-05-04"),
+    contactVisit(304, 941, "Dr Healthy B", "2026-05-06"),
+    contactVisit(304, 942, "Dr Healthy C", "2026-05-08"),
+    contactVisit(304, 943, "Dr Healthy D", "2026-05-11"),
+    contactVisit(304, 944, "Dr Healthy E", "2026-05-13"),
+
+    // CA-6: no customer visits at all (e.g. campaign-only month) -> zero-visit shape, not flagged.
+  ];
+  const { customerAuthenticityByHrKey } = buildIReports360FieldWorkforceMatrix({
+    employees: caEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: caVisits,
+  });
+  const caOf = (hr: string) => {
+    const key = canonicalHrIdKey(hr);
+    return key ? customerAuthenticityByHrKey.get(key) : undefined;
+  };
+
+  const ca1 = caOf("CA-1");
+  assert.equal(ca1?.distinctContacts, 2, "CA-1 has 2 distinct contacts");
+  assert.equal(ca1?.topContactShare, 5 / 6, "CA-1 top contact share is 5/6");
+  assert.equal(ca1?.topContactName, "Dr Mostly Visited", "CA-1 top contact name resolves from contact_name");
+  assert.ok(ca1?.flaggedRules.includes("low_variety"), "CA-1 flags low_variety (<3 distinct contacts)");
+  assert.ok(ca1?.flaggedRules.includes("high_concentration"), "CA-1 flags high_concentration (>=60% one contact)");
+  assert.equal(ca1?.flagged, true);
+
+  const ca2 = caOf("CA-2");
+  assert.deepEqual(ca2?.flaggedRules, ["consecutive_same_contact"], "CA-2 flags ONLY consecutive_same_contact — diluted variety/share don't also fire");
+
+  const ca3 = caOf("CA-3");
+  assert.ok(ca3?.flaggedRules.includes("pm_recurring_contact"), "CA-3 flags pm_recurring_contact (twice in one ISO week)");
+
+  const ca4 = caOf("CA-4");
+  assert.ok(ca4?.flaggedRules.includes("pm_recurring_contact"), "CA-4 flags pm_recurring_contact (recurs every week with a PM visit, even though never twice in the same week)");
+
+  const ca5 = caOf("CA-5");
+  assert.deepEqual(ca5?.flaggedRules, [], "CA-5 healthy pattern has no flags");
+  assert.equal(ca5?.flagged, false);
+
+  const ca6 = caOf("CA-6");
+  assert.deepEqual(ca6, { distinctContacts: 0, flagged: false, flaggedRules: [], topContactName: null, topContactShare: null, totalCustomerVisits: 0 }, "CA-6 with zero customer visits is the empty shape, not flagged");
 }
