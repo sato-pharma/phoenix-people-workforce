@@ -1,4 +1,4 @@
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
@@ -413,8 +413,8 @@ function assertWorkflowActionAllowed(
 }
 
 export async function getProbationRows(access: AccessContext): Promise<ProbationRow[]> {
-  const [employees, viewerAllowedLines] = await Promise.all([
-    getEmployeeDirectoryRows(),
+  const [{ employees }, viewerAllowedLines] = await Promise.all([
+    getEmployeeDirectory(),
     resolveViewerAllowedLines(access),
   ]);
   const viewerHrId = normalizeHrId(access.hrId);
