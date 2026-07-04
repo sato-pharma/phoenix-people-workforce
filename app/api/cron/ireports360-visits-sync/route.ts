@@ -1,12 +1,17 @@
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
-import { buildAndSaveDoubleVisitFromMirror } from "@/lib/double-visit-analytics/service";
+import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
+
+// Matches runScheduledIReports360Sync's own lookback window (see visits-report/service.ts) —
+// Double Visit Analytics has no separate sync step of its own (it reads ireports360_visits
+// live), so this only drives the probation DV auto-tick over the same just-refreshed range.
+const DV_TICK_LOOKBACK_DAYS = 10;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -16,13 +21,21 @@ function isAuthorized(request: Request) {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+function isoDaysAgo(days: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
 async function runSync() {
   const mirrorSync = await runScheduledIReports360Sync();
-  // Rebuild the official Double Visit Analytics snapshot from the now-fresh mirror. Only reached
-  // if the mirror sync above succeeded (it throws on failure, which short-circuits this call) —
-  // never rebuild the official snapshot from a mirror sync we know just failed.
-  const doubleVisitSync = await buildAndSaveDoubleVisitFromMirror();
-  return NextResponse.json({ doubleVisitSync, success: true, ...mirrorSync });
+  // Auto-tick probation DV checkboxes for double visits in the just-refreshed window. Only
+  // reached if the mirror sync above succeeded (it throws on failure, which short-circuits this
+  // call). Never let a probation-tick failure mask an otherwise-successful visits sync.
+  const dateTo = isoDaysAgo(0);
+  const dateFrom = isoDaysAgo(DV_TICK_LOOKBACK_DAYS);
+  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch(() => undefined);
+  return NextResponse.json({ success: true, ...mirrorSync });
 }
 
 export async function GET(request: Request) {

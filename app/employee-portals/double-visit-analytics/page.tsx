@@ -7,7 +7,6 @@ import { canAccess, normalizeHrId } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitDashboardData } from "@/lib/double-visit-analytics/types";
-import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const runtime = "nodejs";
@@ -17,7 +16,8 @@ export const maxDuration = 60;
 // Sales Intelligence section is Product / Group Product Managers only. The dashboard
 // scope (self + reporting chain, WIDENED to the manager's whole product line) is applied
 // inside getDoubleVisitDashboardData via resolveDoubleVisitAccessScope. This portal view is
-// read-only (no import/publish) — the workspace is rendered with embedded + canImport/canPublish=false.
+// always read-only — there is no import/publish step anymore (the module reads the live
+// Visits Report mirror directly) — the workspace is rendered with embedded=true.
 const DOUBLE_VISIT_PORTAL_ROLES = new Set(["Product Manager", "Group Product Manager", "Training Manager", "Marketing Manager"]);
 
 function dateParam(value: string | string[] | undefined) {
@@ -88,11 +88,8 @@ export default async function PortalDoubleVisitAnalyticsPage({
       title="Double-Visit Analytics"
     >
       <DoubleVisitAnalyticsWorkspace
-        canImport={false}
-        canPublish={false}
         dashboard={dashboard}
         embedded
-        ireports360Configured={isIReports360Configured()}
         ownDoubleVisits={ownDoubleVisits}
       />
     </EmployeePortalPageShell>
