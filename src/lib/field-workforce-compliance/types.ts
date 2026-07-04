@@ -111,7 +111,33 @@ export type FieldWorkforceDayCell = {
   rawValue: FieldWorkforceSourceCellValue;
   severity?: FieldWorkforceSeverity;
   status: FieldWorkforceCellStatus;
+  /**
+   * CRM-logging-timing signal for this day, from the visits mirror's crm_save_date/ampm
+   * columns. IMPORTANT: this is when the visit was LOGGED/SAVED into the CRM, not a
+   * GPS-verified visit time — iReports360 does not return an actual visit clock time
+   * (visit_date_time is a fixed midnight placeholder on every row, verified in production).
+   * crm_save_date is a reasonable proxy for real-time field logging (spreads realistically
+   * across a rep's day rather than clustering at one batch-save instant), but every UI label
+   * says "logged" not "visited" so HR never mistakes it for something GPS-verified.
+   * Informational only — never affects severity, status, or deduction candidates. Null/undefined
+   * on the Excel-upload path (the workbook has no per-visit timestamps).
+   */
+  loggingTiming?: FieldWorkforceLoggingTiming | null;
   visitCount?: number;
+};
+
+/**
+ * CRM-logging-timing signal for one employee-day, computed from the visits mirror's
+ * crm_save_date (both regular and non-regular visit types) and ampm columns. Times are
+ * Cairo-local "HH:MM" (24h) — the time each visit record was saved into the CRM, not a
+ * GPS-verified visit time. isLateStart is null (not just false) when the day has no
+ * ampm='AM'-tagged visit to judge — never inferred from an untagged visit.
+ */
+export type FieldWorkforceLoggingTiming = {
+  activeWindowMinutes: number | null;
+  firstLoggedTime: string | null;
+  isLateStart: boolean | null;
+  lastLoggedTime: string | null;
 };
 
 export type FieldWorkforceNoActivityPattern = {
@@ -183,7 +209,18 @@ export type FieldWorkforceEmployeeSummary = {
   totalVisits: number;
   unknownValues: number;
   vacationSignalDays: number;
+  /**
+   * Month-level rollup of each day's loggingTiming. Null/undefined on the Excel-upload path or
+   * when no day that month had a CRM-logged save timestamp. Informational only.
+   */
+  loggingTimingSummary?: FieldWorkforceLoggingTimingSummary | null;
   workedDays: number;
+};
+
+export type FieldWorkforceLoggingTimingSummary = {
+  avgFirstLoggedTime: string | null;
+  lateStartDayCount: number;
+  timedDayCount: number;
 };
 
 export type FieldWorkforceReviewCandidate = {

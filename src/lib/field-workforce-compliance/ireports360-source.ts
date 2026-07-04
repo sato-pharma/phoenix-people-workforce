@@ -33,8 +33,11 @@ import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/pre
 import type {
   FieldWorkforceCrmIdentity,
   FieldWorkforceCrmIdentityConfidence,
+  FieldWorkforceDayCell,
   FieldWorkforceEmployeeReference,
   FieldWorkforceHoliday,
+  FieldWorkforceLoggingTiming,
+  FieldWorkforceLoggingTimingSummary,
   FieldWorkforcePreviewResult,
 } from "@/lib/field-workforce-compliance/types";
 import {
@@ -136,6 +139,48 @@ export type FieldWorkforceMatrixVisit = IReports360Visit & {
 };
 
 /**
+ * IReports360Visit.saveDate — when this visit record was SAVED into the CRM, from the
+ * mirror's crm_save_date column — is what feeds the logging-timing signal below. NOT a
+ * GPS-verified visit time: iReports360's own visitDate/visit_date_time is a fixed midnight
+ * placeholder on every row (verified in production, 2026-07: 100% of 93,742 rows match), so
+ * it carries no real time-of-day signal at all. saveDate is a reasonable proxy for real-time
+ * field logging (spreads realistically across a rep's day rather than clustering at one
+ * batch-save instant on the vast majority of multi-visit days), but every consumer of it
+ * must label it "logged", never "visited".
+ */
+
+const FWC_TIME_ZONE = "Africa/Cairo";
+const LATE_START_THRESHOLD_MINUTES = 11 * 60 + 30; // 11:30 AM, owner-confirmed.
+
+/** Cairo-local minute-of-day for a timestamp, using real IANA timezone rules (not a fixed
+ * UTC offset) — mirrors the proven technique in src/lib/attendance/punch-minutes.ts. */
+function cairoMinutesOfDay(date: Date): number | null {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    timeZone: FWC_TIME_ZONE,
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? NaN);
+  const hour = value("hour");
+  const minute = value("minute");
+  return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : null;
+}
+
+function minutesToClockString(minutes: number): string {
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+/** "AM"/"PM" only (case-normalized); null for anything else (blank, unrecognized values seen
+ * in production) — never guessed. */
+function normalizeAmpm(value: string | null | undefined): "AM" | "PM" | null {
+  const upper = String(value ?? "").trim().toUpperCase();
+  return upper === "AM" || upper === "PM" ? upper : null;
+}
+
+/**
  * Builds the Field Workforce Compliance matrix (header row + one row per EMPLOYEE) for a
  * month of iReports360 visits. The report is **employee-driven**: every eligible, active
  * Phoenix employee gets a row even with zero visits, so fully-absent reps and non-visiting
@@ -158,7 +203,11 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   todayIso?: string | null;
   visits: FieldWorkforceMatrixVisit[];
   year: number;
-}): { identityByHrKey: Map<string, FieldWorkforceCrmIdentity>; matrix: unknown[][] } {
+}): {
+  identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
+  loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
+  matrix: unknown[][];
+} {
   const { employees, month, visits, year } = input;
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
@@ -216,6 +265,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const header: unknown[] = ["TM", "HR ID", "Hiring Date", "Month", "Year", ...dateIsos];
   const matrix: unknown[][] = [header];
   const identityByHrKey = new Map<string, FieldWorkforceCrmIdentity>();
+  const loggingTimingByHrKeyAndDate = new Map<string, FieldWorkforceLoggingTiming>();
 
   const eligible = employees
     .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
@@ -250,6 +300,13 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       byDay.get(dayIso)!.push(visit);
     }
 
+    if (hrKey) {
+      for (const [dayIso, dayVisits] of byDay) {
+        const timing = computeLoggingTiming(dayVisits);
+        if (timing) loggingTimingByHrKeyAndDate.set(`${hrKey}|${dayIso}`, timing);
+      }
+    }
+
     const dayCells = dateIsos.map((dateIso) => {
       const dayVisits = byDay.get(dateIso);
       if (dayVisits && dayVisits.length > 0) return dayCellValue(dayVisits);
@@ -268,7 +325,64 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { identityByHrKey, matrix };
+  return { identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
+}
+
+/** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
+ * Null when no visit that day has a usable save timestamp. See the comment above
+ * FieldWorkforceMatrixVisit for why this is "logged" time, not a GPS-verified visit time. */
+function computeLoggingTiming(dayVisits: FieldWorkforceMatrixVisit[]): FieldWorkforceLoggingTiming | null {
+  const timedVisits = dayVisits
+    .map((visit) => {
+      if (!visit.saveDate) return null;
+      const date = new Date(visit.saveDate);
+      if (Number.isNaN(date.getTime())) return null;
+      const minutes = cairoMinutesOfDay(date);
+      if (minutes == null) return null;
+      return { ampm: normalizeAmpm(visit.ampm), minutes };
+    })
+    .filter((entry): entry is { ampm: "AM" | "PM" | null; minutes: number } => entry !== null);
+
+  if (timedVisits.length === 0) return null;
+
+  const allMinutes = timedVisits.map((entry) => entry.minutes);
+  const firstMinutes = Math.min(...allMinutes);
+  const lastMinutes = Math.max(...allMinutes);
+
+  const amMinutes = timedVisits.filter((entry) => entry.ampm === "AM").map((entry) => entry.minutes);
+  const isLateStart = amMinutes.length > 0 ? Math.min(...amMinutes) > LATE_START_THRESHOLD_MINUTES : null;
+
+  return {
+    activeWindowMinutes: lastMinutes - firstMinutes,
+    firstLoggedTime: minutesToClockString(firstMinutes),
+    isLateStart,
+    lastLoggedTime: minutesToClockString(lastMinutes),
+  };
+}
+
+/** Parses an "HH:MM" clock string (as produced by minutesToClockString) back to minutes. */
+function clockStringToMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+/** Month-level rollup of a timeline's per-day loggingTiming. Null if no day that month has a
+ * CRM-logged save timestamp (Excel path). */
+function summarizeLoggingTiming(timeline: FieldWorkforceDayCell[]): FieldWorkforceLoggingTimingSummary | null {
+  const timedDays = timeline.filter((cell): cell is FieldWorkforceDayCell & { loggingTiming: FieldWorkforceLoggingTiming } =>
+    Boolean(cell.loggingTiming));
+  if (timedDays.length === 0) return null;
+
+  const firstLoggedMinutes = timedDays
+    .map((cell) => (cell.loggingTiming.firstLoggedTime ? clockStringToMinutes(cell.loggingTiming.firstLoggedTime) : null))
+    .filter((value): value is number => value != null);
+  const avgFirstLoggedTime = firstLoggedMinutes.length > 0
+    ? minutesToClockString(Math.round(firstLoggedMinutes.reduce((sum, value) => sum + value, 0) / firstLoggedMinutes.length))
+    : null;
+  const lateStartDayCount = timedDays.filter((cell) => cell.loggingTiming.isLateStart === true).length;
+
+  return { avgFirstLoggedTime, lateStartDayCount, timedDayCount: timedDays.length };
 }
 
 function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeReference {
@@ -336,6 +450,8 @@ export type VisitsMirrorRow = {
   agent_crm_id: number;
   agent_hr_id?: string | null;
   agent_name: string | null;
+  ampm?: string | null;
+  crm_save_date?: string | null;
   double_crm_id: number | null;
   double_hr_id?: string | null;
   double_name: string | null;
@@ -358,7 +474,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     agentHrId: row.agent_hr_id ?? null,
     agentID: row.agent_crm_id,
     agentName: row.agent_name,
-    ampm: null,
+    ampm: row.ampm ?? null,
     attendance: null,
     callType: null,
     comment: null,
@@ -369,7 +485,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: 0,
-    saveDate: null,
+    saveDate: row.crm_save_date ?? null,
     visitDate: row.visit_date,
     visitType: row.visit_type,
     visitTypeDescription: null,
@@ -380,11 +496,15 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
  * be in memory at once to build the matrix, unlike visits-report's UI which paginates for
  * display only.
  *
- * Day bucketing: filtering and every downstream day cell key off `visit_date` (a pure DATE),
- * which visits-report bucketed to the Cairo local day at sync time. Verified in production
- * (2026-07): `visit_date` equals the Africa/Cairo date of `visit_date_time` on 100% of rows —
- * no visit falls in the midnight–02:00 window where Cairo and UTC diverge — so there is no
- * off-by-one-day risk that would turn a real visit into a spurious "N". */
+ * Day bucketing: filtering and every downstream day cell key off `visit_date` (a pure DATE
+ * populated directly by visits-report's own sync from the CRM API's visit-date field — its
+ * correctness is a visits-report concern, not derived here). Note: `visit_date_time` is NOT a
+ * useful cross-check for this — verified in production (2026-07) that it is a fixed
+ * `<visit_date> 00:00:00+00` placeholder on all 93,742 rows (iReports360 never returns a real
+ * visit clock time), so comparing it to `visit_date` is tautological, not a real timezone
+ * verification. `crm_save_date`, by contrast, does carry real time variety and is what the
+ * logging-timing signal (computeLoggingTiming) is built on — see the comment above
+ * FieldWorkforceMatrixVisit. */
 async function loadMirrorVisitsForRange(startDate: string, endDate: string): Promise<VisitsMirrorRow[]> {
   const supabase = getSupabaseAdmin();
   const rows: VisitsMirrorRow[] = [];
@@ -392,7 +512,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
   for (;;) {
     const { data, error } = await supabase
       .from(VISITS_MIRROR_TABLE)
-      .select("agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
+      .select("agent_crm_id, agent_hr_id, agent_name, ampm, crm_save_date, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
       .gte("visit_date", startDate)
       .lte("visit_date", endDate)
       .range(from, from + VISITS_MIRROR_PAGE_SIZE - 1);
@@ -455,7 +575,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
-  const { identityByHrKey, matrix } = buildIReports360FieldWorkforceMatrix({
+  const { identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -482,12 +602,21 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
 
   // Attach the CRM-identity resolution to each employee so the UI and the deductions guard
   // can tell a genuinely-absent rep apart from one we simply couldn't match to a CRM account.
+  // Also attach per-day CRM-logging timing (informational only — never affects
+  // severity/deductions) and roll it up into a month-level summary per employee.
   const unresolvedHrIds: string[] = [];
   const employeesWithIdentity = preview.employees.map((employee) => {
     const hrKey = canonicalHrIdKey(employee.hrId);
     const identity = hrKey ? identityByHrKey.get(hrKey) ?? null : null;
     if (identity?.confidence === "unresolved") unresolvedHrIds.push(employee.hrId);
-    return { ...employee, crmIdentity: identity };
+
+    const timeline = employee.timeline.map((cell) => {
+      const timing = hrKey ? loggingTimingByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
+      return timing ? { ...cell, loggingTiming: timing } : cell;
+    });
+    const loggingTimingSummary = summarizeLoggingTiming(timeline);
+
+    return { ...employee, crmIdentity: identity, loggingTimingSummary, timeline };
   });
 
   const warnings = [...preview.warnings];

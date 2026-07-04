@@ -472,16 +472,35 @@ function MetricCard({
   );
 }
 
+/** Appends the CRM-logging-timing line (first/last logged, active window, late-start) to a
+ * day's tooltip text, when present. IMPORTANT: this is when the visit was LOGGED into the CRM,
+ * not a GPS-verified visit time (iReports360 never returns an actual visit clock time) — the
+ * copy always says "logged", never "visit(ed)", so it can't be mistaken for something verified.
+ * Informational only — never changes the cell's status/color. */
+function withLoggingTimingTooltip(explanation: string, cell: FieldWorkforceDayCell): string {
+  const timing = cell.loggingTiming;
+  if (!timing || !timing.firstLoggedTime) return explanation;
+  const windowText = timing.activeWindowMinutes != null
+    ? ` (logged over ${Math.floor(timing.activeWindowMinutes / 60)}h ${timing.activeWindowMinutes % 60}m)`
+    : "";
+  const lateText = timing.isLateStart ? " — late log (first AM-tagged entry logged after 11:30)" : "";
+  return `${explanation} Logged ${timing.firstLoggedTime}–${timing.lastLoggedTime ?? timing.firstLoggedTime}${windowText}${lateText}.`;
+}
+
 function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   const baseClass = cn(
     "relative flex h-10 w-full items-center justify-center rounded-lg border text-xs font-black",
     statusCellClass(cell),
   );
+  const tooltip = withLoggingTimingTooltip(cell.explanation, cell);
   const content = (
     <>
       {statusLabel(cell.status, cell.visitCount)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+      ) : null}
+      {cell.loggingTiming?.isLateStart ? (
+        <span className="absolute -bottom-1 -left-1 h-2.5 w-2.5 rounded-full border border-white bg-violet-500" />
       ) : null}
     </>
   );
@@ -489,19 +508,19 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   if (cell.status === "VISITS") {
     return (
       <Link
-        aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation} (open visits)`}
+        aria-label={`${cell.employeeName} ${cell.dateIso}: ${tooltip} (open visits)`}
         className={cn(baseClass, "transition hover:ring-2 hover:ring-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-300")}
         href={`/admin/field-workforce-compliance/visits/${encodeURIComponent(cell.hrId)}/${cell.dateIso}`}
         rel="noopener noreferrer"
         target="_blank"
-        title={`${cell.explanation} — click to open the day's visits`}
+        title={`${tooltip} — click to open the day's visits`}
       >
         {content}
       </Link>
     );
   }
   return (
-    <div aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation}`} className={baseClass} title={cell.explanation}>
+    <div aria-label={`${cell.employeeName} ${cell.dateIso}: ${tooltip}`} className={baseClass} title={tooltip}>
       {content}
     </div>
   );
@@ -516,6 +535,7 @@ function TimelineLegend() {
       <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits">5</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
+      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800 ring-2 ring-violet-300" label="Late log (AM-tagged entry logged after 11:30 — CRM log time, not a verified visit time)">•</LegendChip>
     </div>
   );
 }
@@ -720,6 +740,12 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
         <MetricCard label="Longest N Streak" tone={employee.noActivityPattern.longestStreak >= 3 ? "danger" : employee.noActivityPattern.longestStreak >= 2 ? "warning" : "neutral"} value={formatNumber(employee.noActivityPattern.longestStreak)} />
         <MetricCard label="Holiday Warnings" tone={employee.holidayWarnings ? "warning" : "neutral"} value={formatNumber(employee.holidayWarnings)} />
         <MetricCard label="Pre-hire Context" tone={employee.preHireIgnoredValues ? "warning" : "neutral"} value={formatNumber(employee.preHireIgnoredValues)} />
+        {employee.loggingTimingSummary ? (
+          <>
+            <MetricCard label="Avg First Logged" value={employee.loggingTimingSummary.avgFirstLoggedTime ?? "-"} />
+            <MetricCard label="Late Log Days" tone={employee.loggingTimingSummary.lateStartDayCount ? "warning" : "success"} value={formatNumber(employee.loggingTimingSummary.lateStartDayCount)} />
+          </>
+        ) : null}
       </div>
       <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-900">
         Consecutive no-activity signal: {employee.noActivityPattern.summary}
@@ -1128,6 +1154,8 @@ function MonthlySummaryTable({
               <th className="px-4 py-3">Holidays</th>
               <th className="px-4 py-3">Pre-hire</th>
               <th className="px-4 py-3">Unknown</th>
+              <th className="px-4 py-3">Avg First Logged</th>
+              <th className="px-4 py-3">Late Log Days</th>
               <th className="px-4 py-3">Hierarchy</th>
             </tr>
           </thead>
@@ -1149,6 +1177,10 @@ function MonthlySummaryTable({
                 <td className="px-4 py-3 text-orange-700">{formatNumber(employee.holidayWarnings)}</td>
                 <td className="px-4 py-3 text-rose-700">{formatNumber(employee.preHireIgnoredValues)}</td>
                 <td className="px-4 py-3 text-red-700">{formatNumber(employee.unknownValues)}</td>
+                <td className="whitespace-nowrap px-4 py-3">{employee.loggingTimingSummary?.avgFirstLoggedTime ?? "-"}</td>
+                <td className={cn("px-4 py-3", employee.loggingTimingSummary?.lateStartDayCount ? "font-bold text-violet-700" : "")}>
+                  {employee.loggingTimingSummary ? formatNumber(employee.loggingTimingSummary.lateStartDayCount) : "-"}
+                </td>
                 <td className="px-4 py-3">{[employee.managerName, employee.lineName, employee.areaName].filter(Boolean).join(" / ") || "-"}</td>
               </tr>
             ))}
