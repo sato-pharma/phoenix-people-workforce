@@ -468,12 +468,30 @@ export type MarketingCoverageFilterOptions = {
 export type MarketingCoverageRequestIndexEntry = MarketingRoiRequestIndexEntry & {
   areaName: string | null;
   requesterTier: string | null;
+  /** Per-distributor share of this request's target pharmacies — e.g. a request
+   *  targeting 3 pharmacies at distributor A and 2 at B gets [{A, 0.6}, {B, 0.4}].
+   *  Mirrors phx_refresh_marketing_roi_facts' own `1 / target_count` pharmacy-share
+   *  weighting exactly (not an invented formula) so the coverage-breakdown's
+   *  distributor cost/required-ROI roll-up is a real allocation, not a guess.
+   *  Pharmacies with no resolvable parent distributor code count toward neither the
+   *  numerator nor denominator. A request with zero resolvable targets gets `[]` —
+   *  it contributes to no distributor bucket, rather than being split evenly. */
+  distributorWeights: Array<{ distributorCode: string; weight: number }>;
+};
+
+/** Governance surface — who last exported this report, and when. Read-only, best-effort
+ *  (marketing_roi_export_audit is an append-only audit trail, not load-bearing for the
+ *  report itself) — null when no export has happened yet or the audit read fails. */
+export type MarketingCoverageLastExport = {
+  exportedByName: string;
+  exportedAt: string;
 };
 
 export type MarketingCoverageFilterFacets = {
   entries: MarketingCoverageRequestIndexEntry[];
   canRevealRestricted: boolean;
   totalCount: number;
+  lastExport: MarketingCoverageLastExport | null;
 };
 
 /** MarketingRoiReportRow + the fields this report's KPI/detail layer needs:
@@ -493,6 +511,26 @@ export type MarketingCoverageKpiBand = MarketingRoiKpiBand & {
   distinctCustomerCount: number;
 };
 
+/** One distributor's slice of the currently filtered request set, weighted by
+ *  MarketingCoverageRequestIndexEntry.distributorWeights. Deliberately carries NO
+ *  actualSalesValue / coverage-ratio field: a real per-distributor sales split would
+ *  require re-deriving live attribution for every filtered request — the exact slow
+ *  path the fact-table reliability work exists to eliminate. Once that work exposes
+ *  marketing_roi_request_geo_facts (grain: request × distributor × region, already
+ *  holding real per-distributor sales) to this report, add it there — never show a
+ *  coverage number here that isn't real. */
+export type MarketingCoverageDistributorRollupRow = {
+  distributorCode: string;
+  distributorName: string | null;
+  /** Count of distinct requests that target this distributor at all — a real
+   *  yes/no fact per request, not weighted. */
+  requestCount: number;
+  /** Sum of estimatedCost * distributorWeights[thisCode] across matching rows. */
+  allocatedCost: number;
+  /** Sum of requiredRoiValue * distributorWeights[thisCode] across matching rows. */
+  allocatedRequiredRoi: number;
+};
+
 export type MarketingCoverageReport = {
   rows: MarketingCoverageReportRow[];
   kpi: MarketingCoverageKpiBand;
@@ -500,6 +538,7 @@ export type MarketingCoverageReport = {
   autoAppliedByDimension: Partial<Record<MarketingCoverageFilterKey, string[]>>;
   includedRestricted: boolean;
   generatedAtIso: string;
+  distributorRollup: MarketingCoverageDistributorRollupRow[];
 };
 
 export type MarketingCoveragePreset = {

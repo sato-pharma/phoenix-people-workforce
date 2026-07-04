@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import { resolveRoiDataCoverage } from "@/lib/marketing-requests/roi-labels";
@@ -29,6 +30,7 @@ import {
 } from "@/lib/marketing-requests/roi-report-service";
 import {
   emptyMarketingCoverageFilterState,
+  type MarketingCoverageDistributorRollupRow,
   type MarketingCoverageFilterFacets,
   type MarketingCoverageFilterState,
   type MarketingCoverageKpiBand,
@@ -66,6 +68,7 @@ type CoverageIndexContext = {
   requestById: Map<string, MappedRoiRequest>;
   customerNameById: Map<string, string>;
   salesDataAsOf: string | null;
+  distributorNameByCode: Map<string, string | null>;
 };
 
 const COVERAGE_INDEX_CACHE_TTL_MS = 60_000;
@@ -153,7 +156,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
   const requestById = new Map(requests.map((request) => [request.id, request] as const));
   const allIds = requests.map((request) => request.id);
 
-  const [productLinks, pharmacyLinks, approvalSteps, rollupRows, customersResult, typesResult, salesDataAsOf] =
+  const [productLinks, pharmacyLinks, approvalSteps, rollupRows, customersResult, typesResult, salesDataAsOf, sosDistributorsResult] =
     await Promise.all([
       loadByRequestIds<{ request_id: string; product_id: number | string }>(
         supabase,
@@ -177,10 +180,18 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
       supabase.from("marketing_customers").select("id, display_name"),
       supabase.from("marketing_request_types").select("id, name"),
       loadLatestValidatedPeriod(supabase),
+      supabase.from("source_of_sales_distributors").select("distributor_code, distributor_name"),
     ]);
   if (rollupRows.error) throw rollupRows.error;
   if (customersResult.error) throw customersResult.error;
   if (typesResult.error) throw typesResult.error;
+  if (sosDistributorsResult.error) throw sosDistributorsResult.error;
+
+  const distributorNameByCode = new Map<string, string | null>(
+    ((sosDistributorsResult.data ?? []) as Array<{ distributor_code: string; distributor_name?: string | null }>).map(
+      (row) => [row.distributor_code, (row.distributor_name ?? "").trim() || null] as const,
+    ),
+  );
 
   const productIds = Array.from(new Set(productLinks.map((link) => Number(link.product_id)).filter(Boolean)));
   const productById = new Map<number, { code: string; name: string; normalizedName: string; line: string | null }>();
@@ -331,6 +342,17 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
     const distributorCodes = Array.from(
       new Set(pharmacies.map((pharmacy) => pharmacy.parentCode).filter((code): code is string => Boolean(code))),
     );
+    // Pharmacy-target-count weighting per distributor — mirrors phx_refresh_marketing_roi_facts'
+    // own `1 / target_count` share exactly. Pharmacies with no resolvable parent code count
+    // toward neither the numerator nor denominator.
+    const resolvableTargetCount = pharmacies.filter((pharmacy) => Boolean(pharmacy.parentCode)).length;
+    const distributorWeights: Array<{ distributorCode: string; weight: number }> = resolvableTargetCount > 0
+      ? distributorCodes.map((code) => ({
+          distributorCode: code,
+          weight:
+            pharmacies.filter((pharmacy) => pharmacy.parentCode === code).length / resolvableTargetCount,
+        }))
+      : [];
     const pharmacyKeys: string[] = [];
     const pharmacyNames: string[] = [];
     const seenPharmacy = new Set<string>();
@@ -366,6 +388,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
       rsmName: seats.rsmName,
       approverRoleKeys: Array.from(approverRolesByRequest.get(request.id) ?? []),
       distributorCodes,
+      distributorWeights,
       productCodes: visibleProducts.map((product) => product.code),
       productNames: visibleProducts.map((product) => product.name || product.code),
       pharmacyKeys,
@@ -374,7 +397,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
     });
   }
 
-  return { scope, entries, requestById, customerNameById, salesDataAsOf };
+  return { scope, entries, requestById, customerNameById, salesDataAsOf, distributorNameByCode };
 }
 
 export async function getMarketingCoverageFilterOptions(access: AccessContext): Promise<MarketingCoverageFilterFacets> {
@@ -384,10 +407,41 @@ export async function getMarketingCoverageFilterOptions(access: AccessContext): 
       entries: ctx.entries,
       canRevealRestricted: ctx.scope.canRevealRestricted,
       totalCount: ctx.entries.length,
+      lastExport: await getLatestCoverageReportExportAudit(),
     };
   } catch (error) {
     logRoiServiceFailure("getMarketingCoverageFilterOptions:buildCoverageIndex", error, { role: access.role });
     throw error;
+  }
+}
+
+/** Read-only governance surface for the export-audit trail — best-effort: never throws,
+ *  never blocks the filter-options response. Returns null on no export yet OR any read
+ *  failure (e.g. the audit table/constraint migration hasn't landed on this database yet). */
+async function getLatestCoverageReportExportAudit(): Promise<MarketingCoverageFilterFacets["lastExport"]> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: auditRow } = await supabase
+      .from("marketing_roi_export_audit")
+      .select("exported_by_hr_id, exported_at")
+      .eq("kind", "coverage_report")
+      .order("exported_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!auditRow) return null;
+
+    const { data: employeeRow } = await supabase
+      .from("employees")
+      .select("full_name, nickname")
+      .eq("hr_id", auditRow.exported_by_hr_id)
+      .maybeSingle();
+
+    return {
+      exportedByName: employeeRow ? resolveEmployeeDisplayName(employeeRow.full_name, employeeRow.nickname) : auditRow.exported_by_hr_id,
+      exportedAt: auditRow.exported_at,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -437,6 +491,47 @@ export function countDistinctCoverage(rows: MarketingCoverageReportRow[]): {
     if (row.customerId) customers.add(row.customerId);
   }
   return { distinctPharmacyCount: pharmacies.size, distinctCustomerCount: customers.size };
+}
+
+/**
+ * Distributor cost/required-ROI roll-up over the final filtered rows, weighted by each
+ * request's distributorWeights (pharmacy-target-count share — see
+ * MarketingCoverageRequestIndexEntry). Deliberately carries no actual-sales/coverage figure —
+ * see the MarketingCoverageDistributorRollupRow type comment for why. requestCount is an
+ * unweighted count of distinct requests touching each distributor (a real yes/no fact).
+ */
+export function computeDistributorRollup(
+  rows: MarketingCoverageReportRow[],
+  entryById: Map<string, MarketingCoverageRequestIndexEntry>,
+  distributorNameByCode: Map<string, string | null>,
+): MarketingCoverageDistributorRollupRow[] {
+  const byCode = new Map<string, MarketingCoverageDistributorRollupRow>();
+
+  for (const row of rows) {
+    const entry = entryById.get(row.requestId);
+    if (!entry) continue;
+    for (const { distributorCode, weight } of entry.distributorWeights) {
+      const bucket = byCode.get(distributorCode) ?? {
+        distributorCode,
+        distributorName: distributorNameByCode.get(distributorCode) ?? null,
+        requestCount: 0,
+        allocatedCost: 0,
+        allocatedRequiredRoi: 0,
+      };
+      bucket.requestCount += 1;
+      bucket.allocatedCost += row.estimatedCost * weight;
+      bucket.allocatedRequiredRoi += row.requiredRoiValue * weight;
+      byCode.set(distributorCode, bucket);
+    }
+  }
+
+  const result = Array.from(byCode.values()).map((bucket) => ({
+    ...bucket,
+    allocatedCost: roundMarketingMoney(bucket.allocatedCost),
+    allocatedRequiredRoi: roundMarketingMoney(bucket.allocatedRequiredRoi),
+  }));
+  result.sort((a, b) => b.allocatedCost - a.allocatedCost);
+  return result;
 }
 
 export async function getMarketingCoverageReport(
@@ -576,6 +671,8 @@ export async function getMarketingCoverageReport(
   const baseKpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount);
   const { distinctPharmacyCount, distinctCustomerCount } = countDistinctCoverage(finalRows);
   const kpi: MarketingCoverageKpiBand = { ...baseKpi, distinctPharmacyCount, distinctCustomerCount };
+  const entryById = new Map(ctx.entries.map((entry) => [entry.requestId, entry] as const));
+  const distributorRollup = computeDistributorRollup(finalRows, entryById, ctx.distributorNameByCode);
 
   return {
     rows: finalRows,
@@ -584,6 +681,7 @@ export async function getMarketingCoverageReport(
     autoAppliedByDimension,
     includedRestricted: includeRestricted,
     generatedAtIso,
+    distributorRollup,
   };
 }
 

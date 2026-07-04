@@ -56,19 +56,44 @@ export function CoverageKpiCard({
   value,
   description,
   tone = "orange",
+  onClick,
+  active = false,
 }: {
   icon: ReactNode;
   label: string;
   value: ReactNode;
   description?: string;
   tone?: CoverageKpiTone;
+  /** When provided, the card becomes clickable (e.g. "Behind" toggles the roiStatus
+   *  filter to that one value) — rendered with button semantics for keyboard/screen-reader
+   *  access, since the shared Card component is a plain div. */
+  onClick?: () => void;
+  /** Visual "this KPI's filter is currently applied" state — a tone-matched ring. */
+  active?: boolean;
 }) {
   const toneClasses = TONE_CLASSES[tone];
+  const interactive = Boolean(onClick);
   return (
     <Card
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        interactive
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
       className={cn(
         "relative overflow-hidden rounded-none border border-slate-200/90 bg-white/95 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.01]",
         toneClasses.border,
+        interactive && "cursor-pointer",
+        active && "ring-2 ring-offset-1",
+        active && toneClasses.icon.match(/ring-\S+/)?.[0],
       )}
     >
       <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-none blur-3xl", toneClasses.bg)} />

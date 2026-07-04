@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bookmark,
   ChevronDown,
@@ -21,6 +22,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   CircleSlash,
+  CalendarClock,
+  Flame,
 } from "lucide-react";
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
@@ -32,8 +35,20 @@ import {
   pruneCoverageFilterState,
   withCoverageFilterValues,
 } from "@/lib/marketing-requests/coverage-report-facets";
+import { coverageFiltersFromSearchParams, coverageFiltersToSearchParams } from "@/lib/marketing-requests/coverage-report-url-state";
+import {
+  computeCoverageRollupByDimension,
+  computeCoverageTrend,
+  findWorstZeroSalesOutlier,
+  sortRequestRows,
+  type CoverageDimensionRollupRow,
+  type CoverageRollupDimension,
+  type RequestSortKey,
+  type SortDirection,
+} from "@/lib/marketing-requests/coverage-report-analytics";
 import {
   emptyMarketingCoverageFilterState,
+  type MarketingCoverageDistributorRollupRow,
   type MarketingCoverageFilterFacets,
   type MarketingCoverageFilterKey,
   type MarketingCoverageFilterState,
@@ -53,6 +68,26 @@ function money(value: number) {
 function percent(ratio: number) {
   return `${Math.round((Number.isFinite(ratio) ? ratio : 0) * 100)}%`;
 }
+function formatPeriod(period: string | null): string {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) return "not yet available";
+  const [year, month] = period.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+function formatExportTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+const ROLLUP_DIMENSION_LABELS: Record<CoverageRollupDimension, string> = {
+  line: "Line",
+  region: "Region",
+  requesterTier: "Requester tier",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -84,6 +119,9 @@ const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string
 type EngineState = "ready" | "loading" | "loaded" | "error";
 
 export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [facets, setFacets] = React.useState<MarketingCoverageFilterFacets | null>(null);
   const [optionsError, setOptionsError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<MarketingCoverageFilterState>(emptyMarketingCoverageFilterState);
@@ -96,6 +134,29 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   const [savingPreset, setSavingPreset] = React.useState(false);
   const [expandedRequestId, setExpandedRequestId] = React.useState<string | null>(null);
   const [, startFilterTransition] = React.useTransition();
+  const [requestSort, setRequestSort] = React.useState<{ key: RequestSortKey; direction: SortDirection }>({
+    key: "requestCode",
+    direction: "asc",
+  });
+  // Request-scoped, not filter-scoped: a request's target-pharmacy sales are fixed to its own
+  // ROI window regardless of the report's active filters, so this never needs invalidating
+  // when filters/report change — it just lives for the component's mount lifetime.
+  const [pharmacyCache, setPharmacyCache] = React.useState<Map<string, MarketingCoveragePharmacyRow[]>>(new Map());
+
+  function toggleRequestSort(key: RequestSortKey) {
+    setRequestSort((current) => (current.key === key ? { key, direction: current.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" }));
+  }
+  function requestSortArrow(key: RequestSortKey) {
+    if (requestSort.key !== key) return "↕";
+    return requestSort.direction === "asc" ? "↑" : "↓";
+  }
+  function cachePharmacies(requestId: string, pharmacies: MarketingCoveragePharmacyRow[]) {
+    setPharmacyCache((prev) => {
+      const next = new Map(prev);
+      next.set(requestId, pharmacies);
+      return next;
+    });
+  }
 
   async function fetchPresets(): Promise<MarketingCoveragePreset[]> {
     const response = await fetch("/api/marketing-requests/coverage-report/presets", { cache: "no-store" });
@@ -120,10 +181,13 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
         setFacets(payload);
         setPresets(presetList);
 
+        // A shared/deep-linked URL wins over the user's own saved default view.
+        const fromUrl = coverageFiltersFromSearchParams(new URLSearchParams(searchParams.toString()));
         const fallbackDefault = presetList.find((preset) => preset.isDefault);
-        if (fallbackDefault) {
-          startFilterTransition(() => setFilters(fallbackDefault.filters));
-          void runReport(fallbackDefault.filters);
+        const initial = fromUrl ?? fallbackDefault?.filters ?? null;
+        if (initial) {
+          startFilterTransition(() => setFilters(initial));
+          void runReport(initial);
         }
       } catch (error) {
         if (!cancelled) setOptionsError(error instanceof Error ? error.message : "Unable to load filters.");
@@ -132,6 +196,10 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
     return () => {
       cancelled = true;
     };
+    // Reads searchParams only once, at mount, to hydrate a shared/deep-linked URL — must
+    // NOT re-run when the URL changes later, since runReport itself writes the URL back
+    // (see below), which would otherwise loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function refreshPresets() {
@@ -202,6 +270,11 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
       setReport(payload as MarketingCoverageReport);
       setState("loaded");
       setExpandedRequestId(null);
+      // Mirror the applied filters into the URL so the view is shareable — replace (not
+      // push) so repeatedly adjusting filters doesn't spam browser history.
+      const params = coverageFiltersToSearchParams(next);
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     } catch {
       setReport(null);
       setReportError("Unable to load the report.");
@@ -230,6 +303,28 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
         return facets ? pruneCoverageFilterState(facets.entries, next) : next;
       });
     });
+  }
+
+  /** Sets one dimension to a single value and immediately re-runs the report — the same
+   *  "click to filter" pathway the breakdown panel and clickable KPI cards both use. Mirrors
+   *  applyPreset's pattern (compute next from current filters, set state, run report with
+   *  that same next value) rather than setArray's functional updater, since we need the
+   *  computed next value to pass into runReport. */
+  function applyDimensionFilterAndRun(key: MarketingCoverageFilterKey, values: string[]) {
+    const withValues = withCoverageFilterValues(filters, key, values);
+    const next = facets ? pruneCoverageFilterState(facets.entries, withValues, key) : withValues;
+    startFilterTransition(() => setFilters(next));
+    void runReport(next);
+  }
+
+  /** Toggles the roiStatus filter to exactly one status (or clears it if already active).
+   *  roiStatus isn't part of the faceted/cascading dimension system in this component (its
+   *  own multiselect above reads/writes it directly), so this mirrors that direct pattern. */
+  function toggleRoiStatusKpiFilter(status: MarketingRoiResultStatus) {
+    const isActive = filters.roiStatus.length === 1 && filters.roiStatus[0] === status;
+    const next: MarketingCoverageFilterState = { ...filters, roiStatus: isActive ? [] : [status] };
+    startFilterTransition(() => setFilters(next));
+    void runReport(next);
   }
 
   function renderableDimensions() {
@@ -287,6 +382,21 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   }
 
   const kpi = report?.kpi ?? null;
+
+  const [breakdownDimension, setBreakdownDimension] = React.useState<CoverageRollupDimension | "distributor">("line");
+  const outlier = React.useMemo(() => (report ? findWorstZeroSalesOutlier(report.rows) : null), [report]);
+  const dimensionRollup = React.useMemo(
+    () =>
+      report && breakdownDimension !== "distributor"
+        ? computeCoverageRollupByDimension(report.rows, breakdownDimension)
+        : [],
+    [report, breakdownDimension],
+  );
+  const trend = React.useMemo(() => (report ? computeCoverageTrend(report.rows) : []), [report]);
+  const sortedRows = React.useMemo(
+    () => (report ? sortRequestRows(report.rows, requestSort.key, requestSort.direction) : []),
+    [report, requestSort],
+  );
 
   return (
     <WorkspaceErrorBoundary fallbackTitle="Marketing Coverage Report error">
@@ -390,6 +500,84 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                     </div>
                   ) : null}
                 </div>
+
+                {(() => {
+                  type ActiveChip = { key: string; label: string; onClear: () => void };
+                  const chips: ActiveChip[] = [];
+
+                  for (const dim of renderableDimensions()) {
+                    for (const value of selectedFor(dim.key)) {
+                      const optionLabel = dim.options.find((option) => option.value === value)?.label ?? value;
+                      chips.push({
+                        key: `${dim.key}:${value}`,
+                        label: `${dim.label}: ${optionLabel}`,
+                        onClear: () => applyDimensionFilterAndRun(dim.key, selectedFor(dim.key).filter((v) => v !== value)),
+                      });
+                    }
+                  }
+                  for (const status of filters.roiStatus) {
+                    chips.push({
+                      key: `roiStatus:${status}`,
+                      label: `ROI status: ${ROI_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status}`,
+                      onClear: () => {
+                        const next = { ...filters, roiStatus: filters.roiStatus.filter((s) => s !== status) };
+                        startFilterTransition(() => setFilters(next));
+                        void runReport(next);
+                      },
+                    });
+                  }
+                  if (filters.durationMin !== null || filters.durationMax !== null) {
+                    chips.push({
+                      key: "duration",
+                      label: `Duration: ${filters.durationMin ?? "…"}–${filters.durationMax ?? "…"}`,
+                      onClear: () => {
+                        const next = { ...filters, durationMin: null, durationMax: null };
+                        startFilterTransition(() => setFilters(next));
+                        void runReport(next);
+                      },
+                    });
+                  }
+                  if (filters.payDateFrom || filters.payDateTo) {
+                    chips.push({
+                      key: "payDate",
+                      label: `Pay date: ${filters.payDateFrom ?? "…"}–${filters.payDateTo ?? "…"}`,
+                      onClear: () => {
+                        const next = { ...filters, payDateFrom: null, payDateTo: null };
+                        startFilterTransition(() => setFilters(next));
+                        void runReport(next);
+                      },
+                    });
+                  }
+                  if (filters.includeRestricted) {
+                    chips.push({
+                      key: "includeRestricted",
+                      label: "Include confidential products",
+                      onClear: () => {
+                        const next = { ...filters, includeRestricted: false };
+                        startFilterTransition(() => setFilters(next));
+                        void runReport(next);
+                      },
+                    });
+                  }
+
+                  if (chips.length === 0) return null;
+                  return (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Active filters:</span>
+                      {chips.map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          onClick={chip.onClear}
+                          className="inline-flex items-center gap-1.5 rounded-none border border-[#FDBA74] bg-orange-50 px-2 py-1 text-[11px] font-bold text-[#9A3412] transition hover:border-[#F97316] hover:bg-orange-100"
+                        >
+                          {chip.label}
+                          <span aria-hidden="true" className="text-[#C2410C]">×</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {(() => {
                   const autoChips = autoAppliedDimensions()
@@ -506,20 +694,87 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
           <div className="rounded-none border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-semibold text-rose-800">{reportError}</div>
         ) : null}
 
-        {/* ── Premium KPI band ─────────────────────────────────────────────── */}
+        {/* ── Freshness banner ─────────────────────────────────────────────── */}
         {kpi ? (
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-semibold text-[#64748B]">
+            <span className="flex items-center gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5 text-[#94A3B8]" />
+              Sales data current through {formatPeriod(kpi.salesDataAsOf)}
+            </span>
+            {facets?.lastExport ? (
+              <span className="flex items-center gap-1.5">
+                <Download className="h-3.5 w-3.5 text-[#94A3B8]" />
+                Last exported by {facets.lastExport.exportedByName} on {formatExportTimestamp(facets.lastExport.exportedAt)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ── Worst zero-sales outlier ─────────────────────────────────────── */}
+        {outlier ? (
+          <button
+            type="button"
+            onClick={() => setExpandedRequestId(outlier.requestId)}
+            className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-left text-[13px] font-semibold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100"
+          >
+            <Flame className="h-4 w-4 shrink-0 text-amber-600" />
+            <span className="font-black uppercase tracking-wide text-amber-700">Highest spend, zero attributed sales:</span>
+            <span className="font-bold">{outlier.requestCode}</span>
+            <span className="text-amber-700">{outlier.requesterName ?? outlier.requesterHrId}</span>
+            <span className="ml-auto font-black tabular-nums">{money(outlier.estimatedCost)} EGP</span>
+          </button>
+        ) : null}
+
+        {/* ── Premium KPI band ─────────────────────────────────────────────── */}
+        {/* Sticky just below the topbar (sticky top-0 z-20, ~72–88px tall incl. padding —
+            src/components/layout/topbar.tsx:58) so context never scrolls away; z-10 keeps
+            it under the topbar, and the opaque background stops table rows showing through. */}
+        {kpi ? (
+          <section className="sticky top-[68px] z-10 grid grid-cols-1 gap-3 bg-[#F8FAFC] py-2 sm:top-20 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <CoverageKpiCard tone="slate" icon={<PackageSearch className="h-5 w-5" />} label="Requests" value={kpi.requestCount.toLocaleString("en-US")} />
             <CoverageKpiCard tone="orange" icon={<CircleDollarSign className="h-5 w-5" />} label="Total cost (EGP)" value={money(kpi.totalEstimatedCost)} />
             <CoverageKpiCard tone="orange" icon={<Target className="h-5 w-5" />} label="Required ROI (EGP)" value={money(kpi.totalRequiredRoi)} />
             <CoverageKpiCard tone="emerald" icon={<TrendingUp className="h-5 w-5" />} label="Actual sales (EGP)" value={money(kpi.totalActualValue)} />
             <CoverageKpiCard tone="blue" icon={<Filter className="h-5 w-5" />} label="Coverage" value={percent(kpi.coverageRatio)} />
-            <CoverageKpiCard tone="emerald" icon={<CheckCircle2 className="h-5 w-5" />} label="On track" value={kpi.onTrackCount.toLocaleString("en-US")} />
-            <CoverageKpiCard tone="amber" icon={<AlertTriangle className="h-5 w-5" />} label="Behind" value={kpi.behindCount.toLocaleString("en-US")} />
-            <CoverageKpiCard tone="slate" icon={<CircleSlash className="h-5 w-5" />} label="No data" value={kpi.noDataCount.toLocaleString("en-US")} />
+            <CoverageKpiCard
+              tone="emerald"
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label="On track"
+              value={kpi.onTrackCount.toLocaleString("en-US")}
+              onClick={() => toggleRoiStatusKpiFilter("on_track")}
+              active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "on_track"}
+            />
+            <CoverageKpiCard
+              tone="amber"
+              icon={<AlertTriangle className="h-5 w-5" />}
+              label="Behind"
+              value={kpi.behindCount.toLocaleString("en-US")}
+              onClick={() => toggleRoiStatusKpiFilter("behind")}
+              active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "behind"}
+            />
+            <CoverageKpiCard
+              tone="slate"
+              icon={<CircleSlash className="h-5 w-5" />}
+              label="No data"
+              value={kpi.noDataCount.toLocaleString("en-US")}
+              onClick={() => toggleRoiStatusKpiFilter("no_data")}
+              active={filters.roiStatus.length === 1 && filters.roiStatus[0] === "no_data"}
+            />
             <CoverageKpiCard tone="violet" icon={<Building2 className="h-5 w-5" />} label="Distinct pharmacies" value={kpi.distinctPharmacyCount.toLocaleString("en-US")} />
             <CoverageKpiCard tone="violet" icon={<Users2 className="h-5 w-5" />} label="Distinct customers" value={kpi.distinctCustomerCount.toLocaleString("en-US")} />
           </section>
+        ) : null}
+
+        {/* ── Coverage breakdown + trend ───────────────────────────────────── */}
+        {report ? (
+          <CoverageBreakdownPanel
+            dimension={breakdownDimension}
+            onDimensionChange={setBreakdownDimension}
+            dimensionRollup={dimensionRollup}
+            distributorRollup={report.distributorRollup}
+            trend={trend}
+            onFilterDimension={applyDimensionFilterAndRun}
+          />
         ) : null}
 
         {/* ── Collapsible request list ─────────────────────────────────────── */}
@@ -532,28 +787,52 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 <table className="w-full min-w-[960px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
-                      <th className="px-3 py-2.5">Request</th>
-                      <th className="px-3 py-2.5">Requester</th>
-                      <th className="px-3 py-2.5">Line / Region / Area</th>
-                      <th className="px-3 py-2.5">Customer</th>
-                      <th className="px-3 py-2.5">Status</th>
-                      <th className="px-3 py-2.5">Pay date</th>
-                      <th className="px-3 py-2.5 text-right">Cost</th>
-                      <th className="px-3 py-2.5 text-right">Required</th>
-                      <th className="px-3 py-2.5 text-right">Actual</th>
-                      <th className="px-3 py-2.5 text-right">Coverage</th>
-                      <th className="px-3 py-2.5">Result</th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("requestCode")} className="inline-flex items-center gap-1 font-black">Request {requestSortArrow("requestCode")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("requesterName")} className="inline-flex items-center gap-1 font-black">Requester {requestSortArrow("requesterName")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("line")} className="inline-flex items-center gap-1 font-black">Line / Region / Area {requestSortArrow("line")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("customerName")} className="inline-flex items-center gap-1 font-black">Customer {requestSortArrow("customerName")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("status")} className="inline-flex items-center gap-1 font-black">Status {requestSortArrow("status")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("payDate")} className="inline-flex items-center gap-1 font-black">Pay date {requestSortArrow("payDate")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleRequestSort("estimatedCost")} className="inline-flex items-center gap-1 font-black">Cost {requestSortArrow("estimatedCost")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleRequestSort("requiredRoiValue")} className="inline-flex items-center gap-1 font-black">Required {requestSortArrow("requiredRoiValue")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleRequestSort("actualSalesValue")} className="inline-flex items-center gap-1 font-black">Actual {requestSortArrow("actualSalesValue")}</button>
+                      </th>
+                      <th className="px-3 py-2.5 text-right">
+                        <button type="button" onClick={() => toggleRequestSort("actualCoverageRatio")} className="inline-flex items-center gap-1 font-black">Coverage {requestSortArrow("actualCoverageRatio")}</button>
+                      </th>
+                      <th className="px-3 py-2.5">
+                        <button type="button" onClick={() => toggleRequestSort("resultStatus")} className="inline-flex items-center gap-1 font-black">Result {requestSortArrow("resultStatus")}</button>
+                      </th>
                       <th className="px-3 py-2.5" />
                     </tr>
                   </thead>
                   <tbody>
-                    {report.rows.map((row) => (
+                    {sortedRows.map((row) => (
                       <RequestAccordionRow
                         key={row.requestId}
                         row={row}
                         expanded={expandedRequestId === row.requestId}
                         onToggle={() => setExpandedRequestId((current) => (current === row.requestId ? null : row.requestId))}
                         isSuperAdmin={isSuperAdmin}
+                        cachedPharmacies={pharmacyCache.get(row.requestId) ?? null}
+                        onPharmaciesLoaded={(pharmacies) => cachePharmacies(row.requestId, pharmacies)}
                       />
                     ))}
                   </tbody>
@@ -567,22 +846,213 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   );
 }
 
+const BREAKDOWN_TABS: Array<{ key: CoverageRollupDimension | "distributor"; label: string }> = [
+  { key: "line", label: "Line" },
+  { key: "region", label: "Region" },
+  { key: "requesterTier", label: "Requester tier" },
+  { key: "distributor", label: "Distributor" },
+];
+
+/**
+ * "Where is coverage failing" panel — a segmented control switching between Line/Region/
+ * Requester-Tier (client-computed, real coverage %, worst-first) and Distributor
+ * (server-computed weighted cost/required-ROI split — no coverage % column, since a real
+ * per-distributor sales split isn't available at this grain yet; see
+ * MarketingCoverageDistributorRollupRow's type comment). Clicking any row applies that
+ * dimension's filter and re-runs the report. A month-by-month trend of the currently
+ * filtered rows sits below.
+ */
+function CoverageBreakdownPanel({
+  dimension,
+  onDimensionChange,
+  dimensionRollup,
+  distributorRollup,
+  trend,
+  onFilterDimension,
+}: {
+  dimension: CoverageRollupDimension | "distributor";
+  onDimensionChange: (dimension: CoverageRollupDimension | "distributor") => void;
+  dimensionRollup: CoverageDimensionRollupRow[];
+  distributorRollup: MarketingCoverageDistributorRollupRow[];
+  trend: ReturnType<typeof computeCoverageTrend>;
+  onFilterDimension: (key: MarketingCoverageFilterKey, values: string[]) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-none border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3 sm:px-5">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">Coverage breakdown</p>
+          <h3 className="text-[14px] font-black tracking-tight text-[#0F172A]">Where is coverage failing?</h3>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {BREAKDOWN_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onDimensionChange(tab.key)}
+              className={cn(
+                "rounded-none border px-3 py-1.5 text-[12px] font-bold uppercase tracking-wide transition",
+                dimension === tab.key
+                  ? "border-[#F97316] bg-[#F97316] text-white"
+                  : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74] hover:text-[#F97316]",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        {dimension === "distributor" ? (
+          distributorRollup.length === 0 ? (
+            <p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No distributor data for the current filter.</p>
+          ) : (
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                  <th className="px-3 py-2.5">Distributor</th>
+                  <th className="px-3 py-2.5 text-right">Requests</th>
+                  <th className="px-3 py-2.5 text-right">Allocated cost</th>
+                  <th className="px-3 py-2.5 text-right">Allocated required ROI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {distributorRollup.map((row) => (
+                  <tr
+                    key={row.distributorCode}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onFilterDimension("distributor", [row.distributorCode])}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
+                    }}
+                    className="cursor-pointer border-b border-[#F1F5F9] transition hover:bg-orange-50/40"
+                  >
+                    <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
+                      {row.distributorName ?? row.distributorCode}
+                      <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({row.distributorCode})</span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedRequiredRoi)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : dimensionRollup.length === 0 ? (
+          <p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No data for the current filter.</p>
+        ) : (
+          <table className="w-full min-w-[720px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
+                <th className="px-3 py-2.5 text-right">Requests</th>
+                <th className="px-3 py-2.5 text-right">Cost</th>
+                <th className="px-3 py-2.5 text-right">Actual</th>
+                <th className="px-3 py-2.5 text-right">Coverage</th>
+                <th className="px-3 py-2.5 text-right">Behind</th>
+                <th className="px-3 py-2.5 text-right">No data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dimensionRollup.map((row) => {
+                // "Unassigned" is a display fallback for a null/blank dimension value on
+                // the row, not a real filterable value — filtering by it would silently
+                // produce a wrong/empty result, so those rows render inert (no click).
+                const filterable = row.key !== "Unassigned";
+                return (
+                  <tr
+                    key={row.key}
+                    role={filterable ? "button" : undefined}
+                    tabIndex={filterable ? 0 : undefined}
+                    onClick={filterable ? () => onFilterDimension(dimension, [row.key]) : undefined}
+                    onKeyDown={
+                      filterable
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") onFilterDimension(dimension, [row.key]);
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      "border-b border-[#F1F5F9] transition",
+                      filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70",
+                    )}
+                  >
+                    <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{row.label}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.totalCost)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{money(row.totalActualValue)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-amber-700">{row.behindCount.toLocaleString("en-US")}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{row.noDataCount.toLocaleString("en-US")}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {trend.length > 0 ? (
+        <div className="border-t border-[#F1F5F9] px-4 py-3 sm:px-5">
+          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">Trend by pay month</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <thead>
+                <tr className="text-left text-[11px] font-black uppercase tracking-wide text-slate-400">
+                  <th className="px-3 py-1.5">Month</th>
+                  <th className="px-3 py-1.5 text-right">Requests</th>
+                  <th className="px-3 py-1.5 text-right">Cost</th>
+                  <th className="px-3 py-1.5 text-right">Actual</th>
+                  <th className="px-3 py-1.5 text-right">Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trend.map((point) => (
+                  <tr key={point.month} className="border-t border-[#F1F5F9]">
+                    <td className="whitespace-nowrap px-3 py-1.5 font-bold text-slate-900">{point.month}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{money(point.totalActualValue)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{percent(point.coverageRatio)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function RequestAccordionRow({
   row,
   expanded,
   onToggle,
   isSuperAdmin,
+  cachedPharmacies,
+  onPharmaciesLoaded,
 }: {
   row: MarketingCoverageReportRow;
   expanded: boolean;
   onToggle: () => void;
   isSuperAdmin: boolean;
+  /** Parent-level cache lookup — a request's target-pharmacy sales don't change on
+   *  re-expand, so a cache hit skips the network fetch entirely. */
+  cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
+  onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
 }) {
-  const [pharmacies, setPharmacies] = React.useState<MarketingCoveragePharmacyRow[] | null>(null);
+  const [pharmacies, setPharmacies] = React.useState<MarketingCoveragePharmacyRow[] | null>(cachedPharmacies);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    // A cache hit is already reflected via the useState(cachedPharmacies) initializer above,
+    // so `pharmacies !== null` here covers both "already fetched locally" and "seeded from
+    // the parent cache" — no separate synchronous setState-from-effect branch needed.
     if (!expanded || pharmacies !== null || loading) return;
     let cancelled = false;
     (async () => {
@@ -592,7 +1062,11 @@ function RequestAccordionRow({
         const response = await fetch(`/api/marketing-requests/coverage-report/${encodeURIComponent(row.requestId)}/pharmacies`, { cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.message ?? "Unable to load target pharmacies.");
-        if (!cancelled) setPharmacies((payload.pharmacies ?? []) as MarketingCoveragePharmacyRow[]);
+        const loaded = (payload.pharmacies ?? []) as MarketingCoveragePharmacyRow[];
+        if (!cancelled) {
+          setPharmacies(loaded);
+          onPharmaciesLoaded(loaded);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load target pharmacies.");
       } finally {

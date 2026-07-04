@@ -20,6 +20,7 @@ function entry(overrides: Partial<MarketingCoverageRequestIndexEntry>): Marketin
     dmHrId: "d1", dmName: "DM One", nsmHrId: "n1", nsmName: "NSM One",
     rsmHrId: null, rsmName: null, approverRoleKeys: [], distributorCodes: ["IS"], productCodes: ["P1"],
     productNames: ["Prod 1"], pharmacyKeys: ["ph1"], pharmacyNames: ["Pharm 1"], hasRestrictedProduct: false,
+    distributorWeights: [{ distributorCode: "IS", weight: 1 }],
     ...overrides,
   };
 }

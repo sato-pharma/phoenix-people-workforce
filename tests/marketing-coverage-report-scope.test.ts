@@ -76,6 +76,7 @@ function entry(overrides: Partial<MarketingCoverageRequestIndexEntry>): Marketin
     pharmacyKeys: ["ph-1"],
     pharmacyNames: ["Pharmacy One"],
     hasRestrictedProduct: false,
+    distributorWeights: [{ distributorCode: "IS", weight: 1 }],
     ...overrides,
   };
 }
