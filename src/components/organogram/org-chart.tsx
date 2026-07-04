@@ -119,6 +119,17 @@ function childLaneKey(parentKey: string, lane: ManagerLane, index: number) {
   return lane.dsm ? `${parentKey}-child-${rowKey(lane.dsm)}` : `${parentKey}-child-${lane.name}-${index}`;
 }
 
+// Lane-grid column count: a plain `auto-fit` grid packs as many 240px+ lanes
+// as the viewport allows per row, so the same line renders a different,
+// unbalanced split (e.g. 5 then 2) depending on screen width. Fixing the
+// column count at ceil(count/2) instead always wraps into two even-ish rows
+// (7 -> 4+3, 6 -> 3+3) regardless of viewport, matching how a manually laid
+// out org chart reads. Below 5 lanes there's no wrap to balance, so show
+// them all on one row.
+function laneGridColumnCount(count: number) {
+  return count > 4 ? Math.ceil(count / 2) : Math.max(count, 1);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Avatar + person / vacancy card                                    */
 /* ------------------------------------------------------------------ */
@@ -1058,7 +1069,7 @@ export function OrgChartTree({
                 />
                 <div
                   className="grid gap-3"
-                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+                  style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(directDsms.length)}, minmax(240px, 1fr))` }}
                 >
                   {directDsms.map((group, index) => {
                     const laneKey = tierLaneKey("t1", group, index);
@@ -1128,7 +1139,7 @@ export function OrgChartTree({
                     </div>
                     <div
                       className="grid gap-3 bg-orange-50/30 p-3"
-                      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+                      style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(childLanes.length)}, minmax(240px, 1fr))` }}
                     >
                       {childLanes.length > 0 ? (
                         childLanes.map((lane, laneIndex) => {
@@ -1167,7 +1178,7 @@ export function OrgChartTree({
                 />
                 <div
                   className="grid gap-3"
-                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
+                  style={{ gridTemplateColumns: `repeat(${laneGridColumnCount(otherGroups.length)}, minmax(240px, 1fr))` }}
                 >
                   {otherGroups.map((group, index) => {
                     const laneKey = `other-${group.name}-${index}`;

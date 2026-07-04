@@ -422,7 +422,33 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       .map(rowKey),
   );
   const assignedToDsm = new Set<string>();
-  const dsmGroups: ManagerLane[] = groupBy(dsmRows, managerIdentityKey).map(([, dsms]) => {
+  const dsmIdentityGroups = groupBy(dsmRows, managerIdentityKey);
+  // A rep row can have NO manager link at all (managerHrId and the
+  // seat-continuity marker both empty) purely from an import gap — e.g. a
+  // seeded vacancy missing its manager_hr_id even though its sibling rows for
+  // the same manager correctly have it (confirmed case: a CNS Delta 2 rep
+  // vacancy with manager_hr_id NULL and a typo'd managerName, while its 3
+  // sibling vacancies for the same real DSM correctly link by ID). Recognize it
+  // by its REGION instead: when the row's region exactly matches a DSM's own
+  // area/territory, AND exactly one DSM group owns that area (no ambiguity),
+  // it unambiguously belongs to that DSM's team — mirrors this file's existing
+  // "exact match only, refuse to guess when ambiguous" rule for the Cairo
+  // broad-fallback above, just keyed on the DSM's own territory instead.
+  const dsmGroupsByOwnAreaKey = new Map<string, unknown[]>();
+  for (const [, dsms] of dsmIdentityGroups) {
+    const areaKey = normalizeNameKey(dsms[0]?.areaName);
+    if (!areaKey) continue;
+    dsmGroupsByOwnAreaKey.set(areaKey, [...(dsmGroupsByOwnAreaKey.get(areaKey) ?? []), dsms]);
+  }
+  function unambiguousRegionOwnerDsms(row: OrganogramRow): OrganogramRow[] | null {
+    if (row.managerHrId || row.managerReplacementForHrId) return null;
+    if (!isMedicalRep(row)) return null;
+    const regionKey = normalizeNameKey(row.regionName);
+    if (!regionKey) return null;
+    const owners = dsmGroupsByOwnAreaKey.get(regionKey);
+    return owners?.length === 1 ? (owners[0] as OrganogramRow[]) : null;
+  }
+  const dsmGroups: ManagerLane[] = dsmIdentityGroups.map(([, dsms]) => {
     const primaryDsm = [...dsms].sort((left, right) =>
       left.type === right.type
         ? left.fullName.localeCompare(right.fullName)
@@ -440,7 +466,8 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
         return dsms.some(
           (dsm) =>
             reportsToKnownManager(row, dsm, byCanonicalHrId) ||
-            (!ambiguousBroadCairoRowKeys.has(key) && reportsToVacantManagerSlot(row, dsm)),
+            (!ambiguousBroadCairoRowKeys.has(key) && reportsToVacantManagerSlot(row, dsm)) ||
+            unambiguousRegionOwnerDsms(row) === dsms,
         );
       })
       .sort((left, right) =>
@@ -535,7 +562,19 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
         (!reportsToLineLeader || heldByVacantSeat) &&
         (managerHrId || row.managerName || heldByVacantSeat) &&
         (!managerHrId || !dsmHrIds.has(managerHrId)) &&
-        (!managerNameKey || !dsmNameKeys.has(managerNameKey))
+        (!managerNameKey || !dsmNameKeys.has(managerNameKey)) &&
+        // A vacancy stub with no manager ID and no seat-continuity marker has an
+        // unverified free-text managerName — it could be an honest placeholder
+        // ("Vacant Cairo District Manager") or a broken/typo'd reference to a
+        // real person (e.g. "Sally Saeed" vs. the real "Sally Saied") or import
+        // test debris. Only trust it as a real fallback lane when it explicitly
+        // self-declares as a vacant placeholder; otherwise route to Unassigned
+        // rather than fabricating a one-off manager identity from unverified
+        // text (see unassignedMembers below).
+        (row.type !== "vacancy" ||
+          Boolean(managerHrId) ||
+          heldByVacantSeat ||
+          managerNameKey.includes("vacant"))
       );
     }),
     (row) => {
@@ -582,8 +621,26 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
   });
   const unassignedMembers = teamRows.filter((row) => {
     const key = rowKey(row);
+    if (assignedToDsm.has(key)) return false;
 
-    return !assignedToDsm.has(key) && !row.managerHrId && !row.managerName;
+    // No manager info at all.
+    if (!row.managerHrId && !row.managerName) return true;
+
+    // Mirrors the fallbackManagerGroups exclusion above: a vacancy stub with an
+    // unverified free-text managerName (no ID, no seat-continuity marker, not a
+    // self-declared "vacant" placeholder) is rescued here instead of vanishing,
+    // rather than fabricating a one-off manager lane from that unverified text.
+    if (
+      row.type === "vacancy" &&
+      !normalizeHrIdKey(row.managerHrId) &&
+      !normalizeHrIdKey(row.managerReplacementForHrId) &&
+      Boolean(row.managerName) &&
+      !normalizeNameKey(row.managerName).includes("vacant")
+    ) {
+      return true;
+    }
+
+    return false;
   });
   const allGroups: TopManagerLane[] = [
     ...directDsmGroups,

@@ -264,17 +264,12 @@ export function runOrganogramGodmodeTests() {
   );
   assert.equal(repLandedInADsmLane, false);
 
-  // MD-8 — co-located seats of the same title sharing identical slot metadata
-  // (manager/line/area/team/position/department, with no per-seat instance
-  // identifier to tell them apart). N active employees on a slot key can
-  // plausibly explain away at most N same-key vacancies as stale duplicates;
-  // when vacancies OUTNUMBER employees on a key, the excess is provably a
-  // genuine additional opening, not a guess. (The irreducible 1-employee/
-  // 1-vacancy case is a real data-model limitation — nothing in the row
-  // shape distinguishes "this vacancy is the same seat, now filled" from "a
-  // different co-located seat", so guessing either way would be unsafe; that
-  // case still suppresses, unchanged, and is intentionally not addressed
-  // here — see the second assertion below.)
+  // MD-8 (occupancy-truth model) — an area under a manager is ONE fixed seat.
+  // Filled-vs-vacant is decided by live occupancy, not by the mutable vacancy
+  // status, and multiple vacancy records for the same seat collapse to a single
+  // vacant box. So: an occupied seat hides ALL of its stale vacancy records, and
+  // an unoccupied seat shows exactly one box no matter how many stale records it
+  // has. This is what stops a re-hired area from also showing a phantom vacancy.
   const dsmSlot = {
     areaId: 30,
     areaName: "Nasr City",
@@ -302,26 +297,85 @@ export function runOrganogramGodmodeTests() {
     type: "vacancy",
     vacancyCode: "vacancy_dsm_seat_b",
   });
-  // 1 employee + 2 vacancies sharing a key: exactly 1 suppressed (explained
-  // away as the employee's own now-filled seat), 1 survives as a genuine
-  // second opening. Which specific one survives is unspecified (filter order
-  // decides), so assert the COUNT, not which hrId.
+  // 1 active employee + 2 same-seat vacancies: the seat is FILLED, so both stale
+  // vacancy records are hidden (no phantom vacant box next to the active hire).
   const twoVacanciesOneEmployee = suppressFilledVacancyRows([
     coLocatedActiveDsm,
     coLocatedVacancyA,
     coLocatedVacancyB,
   ]);
-  assert.equal(twoVacanciesOneEmployee.filter((r) => r.type === "vacancy").length, 1);
+  assert.equal(twoVacanciesOneEmployee.filter((r) => r.type === "vacancy").length, 0);
 
-  // The irreducible 1-vs-1 case: unchanged, still suppresses (documented
-  // limitation above, not a regression).
+  // 1 active employee + 1 same-seat vacancy: filled → the vacancy is hidden.
   const oneVacancyOneEmployee = suppressFilledVacancyRows([coLocatedActiveDsm, coLocatedVacancyA]);
   assert.equal(oneVacancyOneEmployee.some((r) => r.type === "vacancy"), false);
 
-  // 0 employees + 2 vacancies sharing a key: both survive untouched (no
-  // employee at all to suppress anything).
+  // 0 employees + 2 same-seat vacancies: the seat is VACANT and its duplicate
+  // records collapse to exactly one vacant box.
   const noEmployeesTwoVacancies = suppressFilledVacancyRows([coLocatedVacancyA, coLocatedVacancyB]);
-  assert.equal(noEmployeesTwoVacancies.filter((r) => r.type === "vacancy").length, 2);
+  assert.equal(noEmployeesTwoVacancies.filter((r) => r.type === "vacancy").length, 1);
+
+  // Region-owner attachment — a rep vacancy can be missing BOTH managerHrId and
+  // a seat-continuity marker purely from an import gap (confirmed real case: a
+  // CNS Delta 2 rep vacancy with a typo'd, unlinked managerName "Sally Saeed"
+  // while its sibling vacancies for the same real DSM "Sally Saied" correctly
+  // link by ID). Recognize it by REGION instead: when the row's region exactly
+  // matches exactly ONE known DSM's own area, it belongs to that DSM's lane —
+  // not a fabricated fallback lane from the unverified name, and not dumped in
+  // Unassigned.
+  const dsmDelta2 = row({
+    areaName: "Delta (2)",
+    hrId: "DSM-DELTA2",
+    jobTitle: "District Sales Manager",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: "NSM-1",
+    positionId: 200,
+    positionTitle: "District Sales Manager",
+  });
+  const unlinkedRepVacancyInDsmRegion = row({
+    areaName: "Port said - Domiat",
+    hrId: "VAC-UNLINKED",
+    jobTitle: "Medical Representative",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: null,
+    managerName: "Sally Saeed", // typo/unlinked text — must not be trusted
+    positionTitle: "Medical Representative",
+    regionName: "Delta (2)", // matches dsmDelta2's OWN area, uniquely
+    status: "filled",
+    type: "vacancy",
+    vacancyCode: "VAC-UNLINKED",
+  });
+  const regionOwnerLanes = buildOrganogramLanes([dsmDelta2, unlinkedRepVacancyInDsmRegion]);
+  const delta2Lane = regionOwnerLanes.groups.find((g) => g.dsm?.hrId === "DSM-DELTA2");
+  assert.equal(delta2Lane?.members.some((m) => m.hrId === "VAC-UNLINKED"), true);
+  assert.equal(
+    regionOwnerLanes.groups.some((g) => g.name === "Sally Saeed"),
+    false,
+  );
+
+  // Ambiguity guard: when TWO DSMs share the same own-area, an unlinked rep
+  // vacancy in that region must NOT guess which one it belongs to.
+  const dsmDelta2Twin = row({
+    areaName: "Delta (2)",
+    hrId: "DSM-DELTA2-TWIN",
+    jobTitle: "District Sales Manager",
+    lineId: 3,
+    lineName: "CNS",
+    managerHrId: "NSM-1",
+    positionId: 200,
+    positionTitle: "District Sales Manager",
+  });
+  const ambiguousRegionLanes = buildOrganogramLanes([
+    dsmDelta2,
+    dsmDelta2Twin,
+    unlinkedRepVacancyInDsmRegion,
+  ]);
+  const ambiguousDsmMembers = ambiguousRegionLanes.groups
+    .filter((g) => g.dsm?.hrId === "DSM-DELTA2" || g.dsm?.hrId === "DSM-DELTA2-TWIN")
+    .flatMap((g) => g.members);
+  assert.equal(ambiguousDsmMembers.some((m) => m.hrId === "VAC-UNLINKED"), false);
 
   // LO-9 — a dangling manager reference (managerHrId set, but no row with
   // that hrId exists in scope) is counted, not silently absorbed into the
