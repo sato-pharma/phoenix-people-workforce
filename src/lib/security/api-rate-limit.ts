@@ -154,3 +154,29 @@ export async function assertApiRateLimit(input: {
     throw error;
   }
 }
+
+/**
+ * Deletes rate-limit buckets whose window expired more than `graceMs` ago. Runs from
+ * the daily cron so `api_rate_limit_buckets` does not accumulate dead rows on the hot
+ * auth path. The 1-hour grace protects any window still in flight. Degrades gracefully
+ * to a no-op when the rate-limit schema is not deployed.
+ */
+export async function pruneExpiredRateLimitBuckets(
+  graceMs = 60 * 60 * 1000,
+): Promise<{ deleted: number; skipped?: boolean }> {
+  const cutoff = new Date(Date.now() - graceMs).toISOString();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { count, error } = await supabase
+      .from("api_rate_limit_buckets")
+      .delete({ count: "exact" })
+      .lt("reset_at", cutoff);
+    if (error) throw error;
+    return { deleted: count ?? 0 };
+  } catch (error) {
+    if (isRateLimitSchemaMissing(error)) {
+      return { deleted: 0, skipped: true };
+    }
+    throw error;
+  }
+}
