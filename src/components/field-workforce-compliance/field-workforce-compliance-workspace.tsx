@@ -22,7 +22,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
-  AdminInsightChip,
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
@@ -803,79 +802,48 @@ function TimelinePanel({
   );
 }
 
-function TeamLineFilters({
-  lineName,
-  teamName,
-  lineOptions,
-  teamOptions,
-  onChange,
-}: {
-  lineName: string;
-  teamName: string;
-  lineOptions: string[];
-  teamOptions: string[];
-  onChange: (next: { lineName: string; teamName: string }) => void;
-}) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      <label className="block">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Line</span>
-        <SearchableSelect
-          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
-          value={lineName}
-          onChange={(event) => onChange({ lineName: event.target.value, teamName })}
-        >
-          <option value="All">All Lines</option>
-          {lineOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </SearchableSelect>
-      </label>
-      <label className="block">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Team</span>
-        <SearchableSelect
-          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
-          value={teamName}
-          onChange={(event) => onChange({ lineName, teamName: event.target.value })}
-        >
-          <option value="All">All Teams</option>
-          {teamOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </SearchableSelect>
-      </label>
-    </div>
-  );
-}
-
-/** Whole line / whole team / all employees on one page — each rep's full month, green days deep-link. */
+/** Whole line / whole team / all employees on one page — each rep's full month, green days deep-link.
+ * Uses the same shared HierarchyFilters (all 6 dimensions) as Employee Timeline / Monthly Summary,
+ * plus a name/HR-ID search — replaces the old bespoke Line+Team-only filter, whose Team dropdown
+ * didn't cascade off the selected Line (picking a Team from a different Line silently produced
+ * zero results, reading as "the filter is broken"). */
 function TeamCalendarPanel({ employees }: { employees: FieldWorkforceEmployeeSummary[] }) {
-  const [lineName, setLineName] = useState("All");
-  const [teamName, setTeamName] = useState("All");
-  const lineOptions = useMemo(() => uniqueHierarchyOptions(employees, "lineName"), [employees]);
-  const teamOptions = useMemo(() => uniqueHierarchyOptions(employees, "teamName"), [employees]);
-  const filtered = useMemo(
-    () => employees.filter((employee) =>
-      matchesHierarchyFilters(employee, { ...emptyHierarchyFilters, lineName, teamName }),
-    ),
-    [employees, lineName, teamName],
-  );
+  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return employees.filter((employee) =>
+      (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
+      matchesHierarchyFilters(employee, hierarchyFilters),
+    );
+  }, [employees, hierarchyFilters, query]);
 
   return (
     <div className="space-y-4">
       <Card className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-sm font-black text-slate-950">Team Calendar</p>
         <p className="mt-1 text-xs font-semibold text-slate-500">A whole line, a whole team, or everyone — each rep&apos;s full month on one page. Click a green numeric day to open that day&apos;s visits.</p>
+        <div className="relative mt-3">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            placeholder="Search employee or HR ID"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
         <div className="mt-3">
-          <TeamLineFilters
-            lineName={lineName}
-            teamName={teamName}
-            lineOptions={lineOptions}
-            teamOptions={teamOptions}
-            onChange={(next) => { setLineName(next.lineName); setTeamName(next.teamName); }}
+          <HierarchyFilters
+            filters={hierarchyFilters}
+            items={employees}
+            onChange={setHierarchyFilters}
           />
         </div>
       </Card>
       <TimelineLegend />
       <p className="text-xs font-bold text-slate-500">Showing {filtered.length} of {employees.length} reps</p>
       {filtered.length === 0 ? (
-        <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No employee matches the current filter.</Card>
+        <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No employee matches the current filters.</Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((employee) => (
@@ -2370,76 +2338,48 @@ export function FieldWorkforceComplianceWorkspace() {
               </Button>
             </div>
           )}
-          badges={(
-            <>
-              <AdminInsightChip tone="orange">Preview + archive</AdminInsightChip>
-              <AdminInsightChip>Historical review only</AdminInsightChip>
-              <AdminInsightChip tone="slate">No payroll or leave mutation</AdminInsightChip>
-            </>
-          )}
           description="Understand and review monthly field workforce activity safely before any future HR, leave, or payroll decision."
           eyebrow="Operational HR Governance"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Workforce Compliance"
         />
 
-        <AdminTableShell
-          description="Upload one monthly workbook. Preview first, then optionally save it as a historical archive."
-          title="Monthly File Preview"
-        >
-          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <button
-              className="flex min-h-[104px] w-full items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-4 text-left text-sm shadow-sm transition hover:border-orange-400 hover:bg-orange-50/40"
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-orange-600">
-                  <FileSpreadsheet className="h-5 w-5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-base font-black text-slate-950">
-                    {selectedFile?.name ?? "Choose monthly field workforce workbook"}
-                  </span>
-                  <span className="mt-1 block text-xs font-semibold text-slate-500">
-                    {selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB selected` : ".xlsx only"}
-                  </span>
-                </span>
-              </span>
-              <UploadCloud className="h-5 w-5 shrink-0 text-slate-400" />
-            </button>
-            <Card className="rounded-xl border border-slate-200 bg-white p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Preview Status</p>
-              <div className="mt-3 flex items-center gap-2">
-                <Badge variant={result ? "success" : errors.length ? "danger" : "neutral"}>
-                  {result ? "Ready" : errors.length ? "Blocked" : "Waiting"}
-                </Badge>
-                {result ? <span className="text-xs font-semibold text-slate-500">{result.metadata.monthLabel} {result.metadata.year}</span> : null}
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                {result
-                  ? `${result.metadata.employeeCount} employees from ${result.metadata.sheetName}. Archive save is optional and does not affect payroll or leave.`
-                  : "No upload data is saved until HR/Admin uses Save Archived Month."}
-              </p>
-              <input
-                accept=".xlsx"
-                className="hidden"
-                ref={fileInputRef}
-                type="file"
-                onChange={(event) => {
-                  setSelectedFile(event.target.files?.[0] ?? null);
-                  setResult(null);
-                  setErrors([]);
-                  setWarnings([]);
-                  setMessage(null);
-                  setArchiveMessage(null);
-                  setArchiveError(null);
-                  setActiveTab("overview");
-                }}
-              />
-            </Card>
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm">
+          <Button
+            className="gap-2 rounded-xl font-black"
+            type="button"
+            variant="secondary"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Choose Workbook
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-600">
+            {selectedFile?.name ?? "No file selected — .xlsx only"}
+          </span>
+          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <CalendarDays className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-black text-slate-700">
+              {selectedFile && result ? `${result.metadata.monthLabel} ${result.metadata.year}` : "Date detected after preview"}
+            </span>
           </div>
-        </AdminTableShell>
+          <input
+            accept=".xlsx"
+            className="hidden"
+            ref={fileInputRef}
+            type="file"
+            onChange={(event) => {
+              setSelectedFile(event.target.files?.[0] ?? null);
+              setResult(null);
+              setErrors([]);
+              setWarnings([]);
+              setMessage(null);
+              setArchiveMessage(null);
+              setArchiveError(null);
+              setActiveTab("overview");
+            }}
+          />
+        </div>
 
         <AdminTableShell
           description="Auto-updated whenever the iReports360 visits mirror syncs — every month self-refreshes in the background, so picking one here is instant. Nothing is archived automatically. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
