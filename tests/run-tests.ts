@@ -164,7 +164,10 @@ import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
 import { runMarketingRoiFacetsTests } from "./marketing-roi-facets.test.ts";
 import { runMarketingRoiExportWorkbookTests } from "./marketing-roi-export-workbook.test.ts";
 import { runMarketingRoiAttributionConsistencyTests } from "./marketing-roi-attribution-consistency.test.ts";
-import { runMarketingCoverageReportAccessTests } from "./marketing-coverage-report-access.test.ts";
+import {
+  runMarketingCoverageReportAccessTests,
+  runMarketingCoverageReportReachabilityTests,
+} from "./marketing-coverage-report-access.test.ts";
 import { runMarketingCoverageReportScopeTests } from "./marketing-coverage-report-scope.test.ts";
 import { runMarketingCoverageReportRoleParityTests } from "./marketing-coverage-report-role-parity.test.ts";
 import { runMarketingCoverageFacetsTests } from "./marketing-coverage-facets.test.ts";
@@ -478,6 +481,7 @@ await runTest("pharmacy master matching (Phase 1 candidate classifier + read-onl
 await runTest("marketing ROI facets (smart cascading filters)", runMarketingRoiFacetsTests);
 await runTest("marketing ROI export workbook (xlsx builds)", runMarketingRoiExportWorkbookTests);
 await runTest("marketing coverage report access (role sets)", runMarketingCoverageReportAccessTests);
+await runTest("marketing coverage report reachability (every viewer role has a working shell route)", runMarketingCoverageReportReachabilityTests);
 await runTest("marketing coverage report scope (Finance/Financial Advisor scoped, unlike ROI Tracking)", runMarketingCoverageReportScopeTests);
 await runTest("marketing coverage report role parity (page-guard wiring source-guard)", runMarketingCoverageReportRoleParityTests);
 await runTest("marketing coverage facets (area/requesterTier cascading filters)", runMarketingCoverageFacetsTests);
