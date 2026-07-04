@@ -67,11 +67,14 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.equal(sameAreaTitleDifferentLine.length, 2);
 
-  const sameLineDifferentTeam = applyOrganogramMirrorSafety([
-    vacancy({ hrId: "vacancy_3", teamId: 20, teamName: "New Cairo", vacancyCode: "vacancy_3" }),
-    vacancy({ hrId: "vacancy_4", teamId: 21, teamName: "Nasr City", vacancyCode: "vacancy_4" }),
+  // Two distinct AREA seats under the same manager both render (each area is its
+  // own fixed seat). Real rep areas are always specific names, so distinct seats
+  // are distinguished by area, not by team within one broad area.
+  const sameLineDifferentArea = applyOrganogramMirrorSafety([
+    vacancy({ hrId: "vacancy_3", areaName: "Nasr City", teamId: 20, teamName: "New Cairo", vacancyCode: "vacancy_3" }),
+    vacancy({ hrId: "vacancy_4", areaName: "Heliopolis", teamId: 21, teamName: "Nasr City", vacancyCode: "vacancy_4" }),
   ]);
-  assert.equal(sameLineDifferentTeam.length, 2);
+  assert.equal(sameLineDifferentArea.length, 2);
 
   const sameCairoDsmAcrossChildAreas = applyOrganogramMirrorSafety([
     vacancy({
@@ -103,13 +106,37 @@ export function runOrganogramHardeningTests() {
   ]);
   assert.equal(sameLineTeamDifferentManager.length, 2);
 
-  const activeRepDoesNotHideOpenRepVacancy = applyOrganogramMirrorSafety([
+  // Occupancy-truth model: a Medical-Rep area is one fixed seat. An active rep
+  // on the SAME (manager, area, line) fills that seat, so a same-seat vacancy
+  // record is stale and collapses into the active rep (one rep suppresses one
+  // same-seat vacancy).
+  const activeRepFillsItsAreaSeat = applyOrganogramMirrorSafety([
     row({ hrId: "MR-1" }),
     vacancy({ vacancyCode: "vacancy_7" }),
   ]);
-  assert.deepEqual(activeRepDoesNotHideOpenRepVacancy.map((item) => item.type), ["employee", "vacancy"]);
+  assert.deepEqual(activeRepFillsItsAreaSeat.map((item) => item.type), ["employee"]);
 
-  const sameCairoTeamRepVacanciesRemainVisible = applyOrganogramMirrorSafety([
+  // ...but a rep in one area never hides a vacancy in a DIFFERENT area under the
+  // same manager — each area is its own fixed seat.
+  const activeRepDoesNotHideOtherAreaVacancy = applyOrganogramMirrorSafety([
+    row({ hrId: "MR-HELIO-ACTIVE", areaName: "Heliopolis", regionName: "Cairo", teamName: null }),
+    vacancy({
+      areaName: "Nasr City",
+      regionName: "Cairo",
+      teamName: null,
+      hrId: "vacancy_nasr_city",
+      vacancyCode: "vacancy_nasr_city",
+    }),
+  ]);
+  assert.deepEqual(
+    activeRepDoesNotHideOtherAreaVacancy.map((item) => item.type),
+    ["employee", "vacancy"],
+  );
+
+  // An active rep fills its area seat, so EVERY stale same-seat vacancy record is
+  // hidden (an occupied seat shows no vacant box, no matter how many duplicate
+  // records exist for it).
+  const activeRepHidesAllSameSeatVacancies = applyOrganogramMirrorSafety([
     row({ hrId: "MR-CAIRO-1", areaName: "Cairo", regionName: "Cairo", teamName: "New Cairo" }),
     vacancy({
       areaName: "Cairo",
@@ -126,7 +153,7 @@ export function runOrganogramHardeningTests() {
       vacancyCode: "vacancy_mr_cairo_2",
     }),
   ]);
-  assert.equal(sameCairoTeamRepVacanciesRemainVisible.filter((item) => item.type === "vacancy").length, 2);
+  assert.equal(activeRepHidesAllSameSeatVacancies.filter((item) => item.type === "vacancy").length, 0);
 
   const filledDsmSlotSuppressesManagerVacancy = applyOrganogramMirrorSafety([
     row({
@@ -148,7 +175,11 @@ export function runOrganogramHardeningTests() {
     ["employee"],
   );
 
-  const broadCairoDsmVacancyWithoutTeamIsPreserved = applyOrganogramMirrorSafety([
+  // An active Cairo DSM fills the Cairo DSM seat, so a stale Cairo DSM vacancy
+  // record (even one with no team context and a "filled"-era status) is hidden —
+  // occupancy is the truth. Each DSM owns a distinct area, so area alone
+  // identifies the seat; no phantom "second Cairo DSM" is shown next to the hire.
+  const activeCairoDsmSuppressesStaleCairoDsmVacancy = applyOrganogramMirrorSafety([
     row({
       areaId: null,
       areaName: "Cairo",
@@ -157,8 +188,8 @@ export function runOrganogramHardeningTests() {
       managerHrId: "NSM-1",
       positionId: 200,
       positionTitle: "District Sales Manager",
-      teamId: null,
-      teamName: null,
+      teamId: 49,
+      teamName: "Cairo",
     }),
     vacancy({
       areaId: null,
@@ -174,8 +205,8 @@ export function runOrganogramHardeningTests() {
     }),
   ]);
   assert.deepEqual(
-    broadCairoDsmVacancyWithoutTeamIsPreserved.map((item) => item.type),
-    ["employee", "vacancy"],
+    activeCairoDsmSuppressesStaleCairoDsmVacancy.map((item) => item.type),
+    ["employee"],
   );
 
   const missingMetadata = applyOrganogramMirrorSafety([
@@ -183,6 +214,65 @@ export function runOrganogramHardeningTests() {
     vacancy({ areaId: null, areaName: null, vacancyCode: "vacancy_8" }),
   ]);
   assert.equal(missingMetadata.filter((item) => item.type === "vacancy").length, 1);
+
+  // Root-cause fix: a resigned rep's area is a FIXED seat and must stay visible
+  // as vacant even though its stale vacancy record wrongly says status="filled".
+  // Occupancy — not the mutable status field — decides. Nobody active occupies
+  // the Heliopolis seat, so its vacancy renders.
+  const resignedAreaStaysVisibleDespiteFilledStatus = applyOrganogramMirrorSafety([
+    row({ hrId: "MR-NASR", areaName: "Nasr City", regionName: "Cairo", teamName: null }),
+    vacancy({
+      areaName: "Heliopolis",
+      regionName: "Cairo",
+      teamName: null,
+      hrId: "VAC-HELIO",
+      status: "filled",
+      vacancyCode: "VAC-HELIO",
+    }),
+  ]);
+  assert.deepEqual(
+    resignedAreaStaysVisibleDespiteFilledStatus
+      .filter((item) => item.type === "vacancy")
+      .map((item) => item.areaName),
+    ["Heliopolis"],
+  );
+
+  // Symmetric guard: a "filled" vacancy whose seat IS occupied by an active rep
+  // stays hidden — occupancy correctly recognizes the seat as filled.
+  const filledStatusVacancyHiddenWhenSeatOccupied = applyOrganogramMirrorSafety([
+    row({ hrId: "MR-NASR-ACTIVE", areaName: "Nasr City", regionName: "Cairo", teamName: null }),
+    vacancy({
+      areaName: "Nasr City",
+      regionName: "Cairo",
+      teamName: null,
+      hrId: "VAC-NASR",
+      status: "filled",
+      vacancyCode: "VAC-NASR",
+    }),
+  ]);
+  assert.equal(
+    filledStatusVacancyHiddenWhenSeatOccupied.filter((item) => item.type === "vacancy").length,
+    0,
+  );
+
+  // Orphaned import/test debris: a manager-level vacancy with no manager to
+  // report to and no seat-continuity marker is structurally unplaceable and must
+  // never render (this is what kept ~14 fake "PHASE15" DSM rows off the chart).
+  const orphanManagerVacancyDropped = applyOrganogramMirrorSafety([
+    vacancy({
+      areaName: "Cairo",
+      hrId: "VAC-ORPHAN",
+      jobTitle: "District Sales Manager",
+      managerHrId: null,
+      managerName: "PHASE15_FAKE Manager",
+      managerReplacementForHrId: null,
+      positionId: 200,
+      positionTitle: "District Sales Manager",
+      status: "filled",
+      vacancyCode: "VAC-ORPHAN",
+    }),
+  ]);
+  assert.equal(orphanManagerVacancyDropped.length, 0);
 
   const resignationVacancy = applyOrganogramMirrorSafety([
     vacancy({

@@ -181,61 +181,57 @@ export function organogramPositionSlotKey(row: OrganogramReportRow) {
   ].join("|");
 }
 
-function exactEmployeeFilledSlotKey(row: OrganogramReportRow) {
+// Statuses on position_vacancies that mean the seat was deliberately REMOVED
+// from the fixed structure (not merely vacated). These always hide a seat.
+function isRemovedVacancyStatus(status: string | null | undefined) {
+  const normalized = normalizeText(status);
+  return (
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
+    normalized === "closed" ||
+    normalized === "removed"
+  );
+}
+
+// The identity of a FIXED structural seat: its level + line + area + the manager
+// it reports to. The org structure per line is fixed — each area under a manager
+// is ONE seat, either FILLED (an active employee is on this key) or VACANT (no
+// active employee is). This is the authoritative filled/vacant signal and it is
+// INDEPENDENT of the mutable position_vacancies.status: a resigned-but-unreplaced
+// area (whose stale record may still say "filled") stays visible as vacant, and a
+// re-hired area's stale vacancy record is hidden. Area is keyed by SPECIFIC name
+// only — region is never a fallback (a broad region like "Cairo" spans many
+// distinct area seats, so matching on it could wrongly mark a real vacant area as
+// filled). Rows without a specific area/line/manager are under-specified and
+// return null, so they are never suppressed on a guess.
+function seatOccupancyKey(row: OrganogramReportRow): string | null {
   const level = classifyOrganogramStructureLevel(row);
-  const slotKey = organogramPositionSlotKey(row);
+  if (!level) return null;
 
-  if (!level || !slotKey) {
-    return null;
-  }
+  const manager = normalizeCode(row.managerHrId) || normalizeText(row.managerName);
+  const area = normalizeText(row.areaName);
+  const line = normalizeText(row.lineName);
 
-  // Medical Representative headcount is not one natural slot per
-  // manager/area/team/title. Cairo teams can have several active reps plus
-  // valid open boxes with the same metadata, so suppressing by natural key
-  // hides real vacancies. Preserve those vacancies unless lifecycle status
-  // has explicitly closed/filled them.
-  if (level === "medicalRep") {
-    return null;
-  }
+  if (!area || !line || !manager) return null;
 
-  const hasTeamContext = Boolean(slotPart(row.teamId, row.teamName));
-  const broadArea =
-    isCairoMarketName(row.areaName) ||
-    isCairoMarketName(row.regionName);
-
-  // A broad Cairo manager slot without team context is not unique enough to
-  // prove that an active manager fills the exact vacancy box.
-  if (!hasTeamContext && broadArea) {
-    return null;
-  }
-
-  return slotKey;
+  return `${level}|${line}|${area}|${manager}`;
 }
 
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
-  // Count active employees per slot key rather than a boolean "filled" flag.
-  // organogramPositionSlotKey has no per-seat instance number, so two
-  // co-located seats of the same title/manager/line/area/team/department
-  // (e.g. 2 budgeted DSM headcount on one team, one filled, one open) share
-  // an identical key. N active employees on a key can plausibly explain away
-  // at most N same-key vacancies as "already filled, stale record" — any
-  // vacancy beyond that count is a genuinely open additional seat and must
-  // not be suppressed just because the key collides with a filled one.
-  const filledSlotCounts = new Map<string, number>();
-
+  // Seats occupied by an active employee. Occupancy — not the status field —
+  // decides filled-vs-vacant, so the fixed area structure never loses a seat to
+  // an employee's lifecycle: hire fills the seat, resignation empties it.
+  const occupiedSeatKeys = new Set<string>();
   for (const row of rows) {
     if (row.type !== "employee") continue;
-    const level = classifyOrganogramStructureLevel(row);
-    if (!level) continue;
-
-    const slotKey = exactEmployeeFilledSlotKey(row);
-    if (slotKey) {
-      filledSlotCounts.set(slotKey, (filledSlotCounts.get(slotKey) ?? 0) + 1);
-    }
+    const key = seatOccupancyKey(row);
+    if (key) occupiedSeatKeys.add(key);
   }
 
-  const suppressedSlotCounts = new Map<string, number>();
-  const seenOpenVacancySlots = new Set<string>();
+  // One vacant box per fixed seat: collapse duplicate vacancy records (several
+  // import/resignation rows for the same area under the same manager) to one.
+  const emittedSeatKeys = new Set<string>();
+  const seenVacancyCodes = new Set<string>();
 
   return rows.filter((row) => {
     if (row.type !== "vacancy") return true;
@@ -243,22 +239,37 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
     const level = classifyOrganogramStructureLevel(row);
     if (!level) return true;
 
-    if (normalizeText(row.status) && normalizeText(row.status) !== "open") return false;
+    // Deliberately-removed seats never render.
+    if (isRemovedVacancyStatus(row.status)) return false;
 
-    const slotKey = exactEmployeeFilledSlotKey(row);
-    if (slotKey) {
-      const filledCount = filledSlotCounts.get(slotKey) ?? 0;
-      const suppressedSoFar = suppressedSlotCounts.get(slotKey) ?? 0;
-      if (suppressedSoFar < filledCount) {
-        suppressedSlotCounts.set(slotKey, suppressedSoFar + 1);
-        return false;
-      }
+    // A manager-level (DSM/RSM/NSM) vacancy with no manager to report to AND no
+    // seat-continuity marker is structurally unplaceable (a vacant manager seat
+    // must report to a known manager). These are orphaned import/test debris.
+    const isManagerLevelSeat = level === "dsm" || level === "rsm" || level === "nsm";
+    if (
+      isManagerLevelSeat &&
+      !normalizeCode(row.managerHrId) &&
+      !normalizeCode(row.managerReplacementForHrId)
+    ) {
+      return false;
     }
 
+    const seatKey = seatOccupancyKey(row);
+    if (seatKey) {
+      // Seat filled by an active employee → the stale vacancy record is hidden.
+      if (occupiedSeatKeys.has(seatKey)) return false;
+      // Duplicate vacancy record for a seat already shown → collapse to one box.
+      if (emittedSeatKeys.has(seatKey)) return false;
+      emittedSeatKeys.add(seatKey);
+      return true;
+    }
+
+    // No resolvable seat key (missing area/line/manager) — dedupe by code only so
+    // a genuinely under-specified vacancy still renders exactly once.
     const vacancyCodeKey = normalizeCode(row.vacancyCode ?? row.hrId);
     if (vacancyCodeKey) {
-      if (seenOpenVacancySlots.has(vacancyCodeKey)) return false;
-      seenOpenVacancySlots.add(vacancyCodeKey);
+      if (seenVacancyCodes.has(vacancyCodeKey)) return false;
+      seenVacancyCodes.add(vacancyCodeKey);
     }
 
     return true;

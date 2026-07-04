@@ -401,14 +401,16 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   const rows = dedupeVacancyReportRows(mappedRows);
   const openRows = rows.filter((row) => row.status === "open");
 
-  // Organogram display uses raw vacancy rows and its own strict slot safety.
-  // Vacancy reporting can still de-duplicate broad seat buckets, but the
-  // Organogram must not collapse similar vacancies across lines, teams, or
-  // managers before exact slot matching runs.
+  // Organogram display uses raw vacancy rows and its own strict slot safety
+  // (applyOrganogramMirrorSafety), which decides filled-vs-vacant by live
+  // occupancy. Keep every vacancy that maps to a known structural seat —
+  // including non-open Medical-Rep seats. The org structure per line is fixed:
+  // an area seat must not disappear because a stale import record wrongly marks
+  // it "filled". Whether it renders as vacant is decided downstream by whether
+  // an active employee actually occupies it, not by the mutable status here.
   const organogramVacancyRows = mappedRows.filter((row) => {
     if (row.status === "open") return true;
-    const level = classifyOrganogramStructureLevel(row);
-    return level !== null && level !== "medicalRep";
+    return classifyOrganogramStructureLevel(row) !== null;
   });
 
   const employeeOrganogramRows: OrganogramReportRow[] =
