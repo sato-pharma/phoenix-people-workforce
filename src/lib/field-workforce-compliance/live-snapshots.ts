@@ -34,6 +34,41 @@ export type FieldWorkforceLiveSnapshotDetail = FieldWorkforceLiveSnapshotListIte
   preview: FieldWorkforcePreviewResult;
 };
 
+/**
+ * Freshness of the underlying visits mirror for a given month, so the decision surface can
+ * warn when the data a snapshot was computed from may be incomplete. `isStale` trips when the
+ * last successful visits sync is older than the threshold (the sync runs ~3×/day, so >26h
+ * means several missed cycles). `isOpenMonth` marks the current calendar month, whose latest
+ * days are still filling in — a legitimate reason "N" days may not yet be real absences.
+ */
+export type FieldWorkforceMirrorFreshness = {
+  ageHours: number | null;
+  isOpenMonth: boolean;
+  isStale: boolean;
+  lastSyncedAt: string | null;
+  latestStatus: string | null;
+};
+
+export const FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS = 26;
+
+/** Pure freshness summary from the visits-report sync-run history. Exported for unit tests. */
+export function summarizeFieldWorkforceMirrorFreshness(input: {
+  monthKey: string;
+  nowIso: string;
+  runs: Array<{ completedAt: string | null; startedAt: string; status: string }>;
+}): FieldWorkforceMirrorFreshness {
+  const latestSuccess = input.runs.find((run) => run.status === "success") ?? null;
+  const lastSyncedAt = latestSuccess?.completedAt ?? latestSuccess?.startedAt ?? null;
+  const nowMs = new Date(input.nowIso).getTime();
+  const ageHours = lastSyncedAt
+    ? Math.max(0, Math.round(((nowMs - new Date(lastSyncedAt).getTime()) / 3_600_000) * 10) / 10)
+    : null;
+  const isStale = ageHours == null || ageHours > FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS;
+  const isOpenMonth = input.monthKey === input.nowIso.slice(0, 7);
+  const latestStatus = input.runs[0]?.status ?? null;
+  return { ageHours, isOpenMonth, isStale, lastSyncedAt, latestStatus };
+}
+
 type SnapshotRow = {
   computed_at: string;
   employee_count: number;

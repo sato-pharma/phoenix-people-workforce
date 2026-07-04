@@ -47,7 +47,7 @@ import type {
   FieldWorkforceSeverity,
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
-import type { FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem } from "@/lib/field-workforce-compliance/live-snapshots";
+import type { FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -72,6 +72,7 @@ type LiveSnapshotDetailResponse = {
   data?: FieldWorkforceLiveSnapshotDetail;
   error?: string;
   message?: string;
+  mirrorFreshness?: FieldWorkforceMirrorFreshness;
   success: boolean;
 };
 
@@ -240,6 +241,14 @@ function displayDateTime(value: string | null) {
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+/** Human "N ago" for a mirror-sync age in hours (e.g. 0.5 -> "just now", 3 -> "3h ago"). */
+function formatSyncAge(ageHours: number) {
+  if (ageHours < 1) return "under an hour ago";
+  if (ageHours < 24) return `${Math.round(ageHours)}h ago`;
+  const days = Math.round(ageHours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function weekday(value: string) {
@@ -1964,6 +1973,7 @@ export function FieldWorkforceComplianceWorkspace() {
   const [sourceMode, setSourceMode] = useState<SourceMode | null>(null);
   const [liveMirrorMonthKey, setLiveMirrorMonthKey] = useState<string | null>(null);
   const [mirrorLastSyncedAt, setMirrorLastSyncedAt] = useState<string | null>(null);
+  const [mirrorFreshness, setMirrorFreshness] = useState<FieldWorkforceMirrorFreshness | null>(null);
   const [liveSnapshots, setLiveSnapshots] = useState<FieldWorkforceLiveSnapshotListItem[]>([]);
   const [isLoadingLiveSnapshots, setIsLoadingLiveSnapshots] = useState(false);
   const [liveSnapshotsError, setLiveSnapshotsError] = useState<string | null>(null);
@@ -2191,6 +2201,7 @@ export function FieldWorkforceComplianceWorkspace() {
         setSourceMode("live-mirror");
         setLiveMirrorMonthKey(payload.data.monthKey);
         setMirrorLastSyncedAt(payload.data.computedAt);
+        setMirrorFreshness(payload.mirrorFreshness ?? null);
         setSelectedMonthKey(payload.data.monthKey);
         setActiveTab("timeline");
         if (forceRefresh) void loadLiveSnapshots();
@@ -2423,6 +2434,9 @@ export function FieldWorkforceComplianceWorkspace() {
             {sourceMode === "live-mirror" && mirrorLastSyncedAt ? (
               <span className="text-xs font-semibold text-slate-500">
                 Report last computed {displayDateTime(mirrorLastSyncedAt)}
+                {mirrorFreshness?.ageHours != null
+                  ? ` · Visits mirror synced ${formatSyncAge(mirrorFreshness.ageHours)}`
+                  : ""}
               </span>
             ) : null}
           </div>
@@ -2431,6 +2445,18 @@ export function FieldWorkforceComplianceWorkspace() {
               <AdminCallout tone="warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4" />
                 <p>{liveSnapshotsError}</p>
+              </AdminCallout>
+            </div>
+          ) : null}
+          {sourceMode === "live-mirror" && mirrorFreshness && (mirrorFreshness.isStale || mirrorFreshness.isOpenMonth) ? (
+            <div className="border-t border-slate-100 p-4">
+              <AdminCallout tone={mirrorFreshness.isStale ? "danger" : "warning"}>
+                <AlertTriangle className="mt-0.5 h-4 w-4" />
+                <p>
+                  {mirrorFreshness.isStale
+                    ? `The visits mirror hasn't synced successfully in ${mirrorFreshness.ageHours != null ? formatSyncAge(mirrorFreshness.ageHours) : "over a day"}${mirrorFreshness.latestStatus === "failed" ? " (last sync failed)" : ""}. This month's latest days may be incomplete — verify before approving any leave or deduction.`
+                    : "This month is still in progress. Its most recent days are still filling in, so treat late “N” days as provisional and confirm before approving any leave or deduction."}
+                </p>
               </AdminCallout>
             </div>
           ) : null}

@@ -334,6 +334,14 @@ function generatedRecommendations(
   const payrollRecommendations: FieldWorkforceRecommendation[] = [];
 
   for (const employee of archiveDetail.preview.employees) {
+    // Tier 0 guard: an employee we could never tie to a CRM identity has an all-"N" month
+    // that reflects a data-mapping gap, not absence. Generating leave/payroll recommendations
+    // from it would risk a wrong deduction, so skip them entirely — they still appear in the
+    // report (flagged unresolved) for the mapping fix, just never as an actionable candidate.
+    // crmIdentity is undefined on the Excel-upload path, where the workbook is the trusted
+    // source and no CRM join happens, so those employees are never skipped.
+    if (employee.crmIdentity?.confidence === "unresolved") continue;
+
     const hierarchy = {
       areaName: employee.areaName,
       employeeCode: employee.hrId,

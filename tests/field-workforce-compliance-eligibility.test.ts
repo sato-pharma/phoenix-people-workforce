@@ -5,9 +5,12 @@ import {
   buildIReports360FieldWorkforceMatrix,
   visitFromMirrorRow,
   type FieldWorkforceEmployeeInput,
+  type FieldWorkforceMatrixVisit,
   type VisitsMirrorRow,
 } from "../src/lib/field-workforce-compliance/ireports360-source.ts";
+import { buildFieldWorkforceRecommendationsReportFromArchive } from "../src/lib/field-workforce-compliance/recommendations.ts";
 import type { IReports360Visit } from "../src/lib/field-workforce-compliance/ireports360-client.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
 function visit(
   agentID: number,
@@ -188,4 +191,71 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(mirrorRepRow[15], "AV", "visitType -4 maps to AV via the mirror row path");
   assert.equal(mirrorRepRow[22], "CP", "visitType -8 maps to CP via the mirror row path");
   assert.equal(mirrorMgrRow[22], "CP", "the double partner is credited the same CP day via the mirror row path");
+
+  // --- Tier 0.1/0.2: deterministic crm_id -> hr_id resolution + confidence, NO fuzzy names ---
+  const baseVisit = (agentID: number, agentName: string | null): FieldWorkforceMatrixVisit => ({
+    agentID, agentName, ampm: null, attendance: null, callType: null, comment: null, contactID: null,
+    contactName: null, customerName: null, doubleID: null, doubleName: null, id: 0, saveDate: null,
+    visitDate: "2026-05-06", visitType: 0, visitTypeDescription: null,
+  });
+  const identityEmployees: FieldWorkforceEmployeeInput[] = [
+    // Resolved by directory crm_id.
+    { crmId: "100", crmUsername: "res.byid", employmentStatus: "active", fullName: "Res ById", hireDate: "2024-01-01", hrId: "B-1", jobTitle: "Medical Representative", positionTitle: null },
+    // No crm_id/username of ours, but the mirror already resolved their hr_id (sync override/username).
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Res ByOverride", hireDate: "2024-01-01", hrId: "B-2", jobTitle: "Medical Representative", positionTitle: null },
+    // Has a username but no crm_id; a visit's NAME matches it — must NOT be fuzzy-attributed.
+    { crmId: null, crmUsername: "No.Crm", employmentStatus: "active", fullName: "Name Only", hireDate: "2024-01-01", hrId: "B-3", jobTitle: "Medical Representative", positionTitle: null },
+    // No crm identity anywhere -> unresolved.
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Ghost None", hireDate: "2024-01-01", hrId: "B-4", jobTitle: "Medical Representative", positionTitle: null },
+  ];
+  const identityVisits: FieldWorkforceMatrixVisit[] = [
+    baseVisit(100, "Anything At All"),                                   // crm_id 100 -> B-1 via directory
+    { ...baseVisit(999, "Ghost"), agentHrId: "B-2" },                    // crm_id not in directory, mirror hr_id -> B-2
+    baseVisit(555, "No.Crm ( Cairo / A )"),                              // name matches B-3's username -> must be IGNORED
+  ];
+  const { identityByHrKey, matrix: identityMatrix } = buildIReports360FieldWorkforceMatrix({
+    employees: identityEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: identityVisits,
+  });
+  const idOf = (hr: string) => {
+    const key = canonicalHrIdKey(hr);
+    return key ? identityByHrKey.get(key) : undefined;
+  };
+
+  assert.equal(idOf("B-1")?.confidence, "crm_id", "directory crm_id -> crm_id confidence");
+  assert.equal(idOf("B-1")?.attributedVisitRows, 1, "B-1 gets its crm_id-matched visit");
+  assert.equal(idOf("B-2")?.confidence, "override", "no directory crm mapping, resolved only by the mirror's hr_id");
+  assert.equal(idOf("B-2")?.attributedVisitRows, 1, "B-2 is attributed via the mirror's agent_hr_id (crm_id gap-fill)");
+  assert.equal(idOf("B-3")?.confidence, "crm_username", "username on file but no crm_id");
+  assert.equal(idOf("B-3")?.attributedVisitRows, 0, "no fuzzy name matching: the name-matching visit is NOT credited to B-3");
+  assert.equal(idOf("B-4")?.confidence, "unresolved", "no crm_id/username/override -> unresolved");
+  assert.equal(idOf("B-4")?.attributedVisitRows, 0, "unresolved employee has zero attributed visits");
+  // B-3's row must have no numeric activity (proves the fuzzy-name visit was dropped).
+  const b3Row = identityMatrix.find((row) => row[1] === "B-3")!;
+  assert.ok(b3Row.slice(5).every((cell) => cell === "N" || cell === null), "B-3 shows only N/blank — never the fuzzy-matched visit");
+
+  // --- Tier 0.2 guard: an unresolved employee generates NO leave/payroll recommendations ---
+  const nCell = (dateIso: string) => ({
+    context: [], countedAsNoActivityCandidate: true, countedAsVisitTotal: false, countedAsWorkedDay: false,
+    dateIso, dayNumber: Number(dateIso.slice(8, 10)), employeeName: "x", explanation: "", hrId: "x",
+    ignored: false, isFriday: false, isPreHire: false, isPublicHoliday: false, rawValue: "N",
+    severity: "Medium", status: "N",
+  });
+  const guardEmployee = (hrId: string, confidence: "crm_id" | "unresolved") => ({
+    areaName: null, campaignDays: 0, compliancePercent: 0, crmIdentity: { attributedVisitRows: 0, confidence, crmId: null },
+    employeeName: hrId, employmentStatus: "active", eligibleWorkingDays: 1, fridays: 0, hiringDateIso: "2024-01-01",
+    hiringDateSource: "employee_directory", holidayWarnings: 0, hrId, lineName: null, managerHrId: null, managerName: null,
+    matchedEmployeeName: hrId, matchedHrId: hrId, matchStatus: "matched", noActivityCandidates: 1,
+    noActivityPattern: { adjacentToFridayDates: [], adjacentToPublicHolidayDates: [], consecutiveSignalCount: 0, hasThreeDayStreak: false, hasTwoDayStreak: false, highMonthlyCount: false, longestStreak: 1, summary: "" },
+    preHireIgnoredValues: 0, roleName: null, severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, sourceRowNumber: 1,
+    teamName: null, timeline: [nCell("2026-05-06")], totalVisits: 0, unknownValues: 0, vacationSignalDays: 0, workedDays: 0,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const guardArchive: any = {
+    archive: { id: "live:2026-05", monthKey: "2026-05", month: 5, year: 2026, employeeCount: 2, highSeverityCount: 0, reviewCandidateCount: 2, sheetName: "s", sourceFilename: "f", status: "archived", uploadedAt: "2026-06-01T00:00:00.000Z", uploadedBy: "test" },
+    preview: { employees: [guardEmployee("C-1", "crm_id"), guardEmployee("C-2", "unresolved")], errors: [], metadata: { dateRange: { start: "2026-05-01", end: "2026-05-31" } }, reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 2, Review: 0 }, warnings: [] },
+  };
+  const guardReport = buildFieldWorkforceRecommendationsReportFromArchive(guardArchive, [], undefined);
+  const guardCodes = [...guardReport.leaveRecommendations, ...guardReport.payrollRecommendations].map((rec) => rec.employeeCode);
+  assert.ok(guardCodes.includes("C-1"), "resolved employee still generates recommendations");
+  assert.ok(!guardCodes.includes("C-2"), "unresolved employee generates NO recommendations (deduction money-safety guard)");
 }
