@@ -8,6 +8,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import {
   buildOrganogramLanes,
   filterOrganogramRows,
+  isOfficeLine,
   isOrganogramVisibleRow,
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
@@ -85,6 +86,10 @@ export function EmployeeOrganogramDashboard({
     if (!showLinePicker) return [] as string[];
     const seen = new Set<string>();
     for (const r of rows) {
+      // Head Office/Office rows are kept in the data only as reporting-chain
+      // context (e.g. a multi-line Product Manager's Marketing Manager and CEO
+      // ancestors) — never a real selectable product line for this picker.
+      if (isOfficeLine(r)) continue;
       if (r.lineName?.trim()) seen.add(r.lineName.trim());
     }
     return Array.from(seen).sort();
