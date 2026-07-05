@@ -233,7 +233,8 @@ export async function syncIReports360Visits(input: {
   if (!isIReports360Configured()) {
     throw new Error("iReports360 is not configured (missing IREPORTS360_BASE_URL/USERNAME/PASSWORD).");
   }
-  const supabase = getSupabaseAdmin();
+  // Raise timeout — batched upserts into large visit/checkin tables can legitimately exceed the default 15s.
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 60_000 });
   const { data: runRow, error: runError } = await supabase
     .from(syncRunsTable)
     .insert({ date_from: input.dateFrom, date_to: input.dateTo, status: "running", trigger: input.trigger })
