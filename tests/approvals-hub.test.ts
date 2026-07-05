@@ -296,6 +296,24 @@ export function runApprovalsHubTests() {
   // Access registry: plan count API is registered (weekly_plans:read, not the admin:read catch-all).
   assert.match(registry, /\/api\/approvals\/plan\/pending-count/, "plan count API is registered");
 
+  // ── Portal sidebar: dedicated "Approvals Hub" section (matches the admin shell's own
+  // named section) instead of bundling the 3 links into the generic "My Workspace" group ──
+  assert.match(portalLayout, /title: "Approvals Hub"/, "portal sidebar has its own dedicated Approvals Hub section, mirroring the admin shell");
+  {
+    const hubSectionMatch = portalLayout.match(/title: "Approvals Hub",\s*items: \[([\s\S]*?)\],\s*\}/);
+    assert.ok(hubSectionMatch, "Approvals Hub section body is present");
+    const hubBody = hubSectionMatch![1];
+    assert.match(hubBody, /approvals\/vacation/, "Vacation Approvals lives inside the Approvals Hub section");
+    assert.match(hubBody, /approvals\/excuse/, "Excuse Approvals lives inside the Approvals Hub section");
+    assert.match(hubBody, /approvals\/plan/, "Plan Approvals lives inside the Approvals Hub section");
+  }
+  // "Other Approvals" (the residual combined hub) stays OUT of the new section, same split as admin.
+  const myWorkspaceMatch = portalLayout.match(/title: "My Workspace",\s*items: \[([\s\S]*?)\],\s*\}/);
+  assert.ok(myWorkspaceMatch, "My Workspace section body is present");
+  assert.doesNotMatch(myWorkspaceMatch![1], /approvals\/vacation|approvals\/excuse|approvals\/plan/, "the 3 approval links moved out of My Workspace into the dedicated Approvals Hub section");
+  assert.match(myWorkspaceMatch![1], /approvals-hub.*Other Approvals/, "Other Approvals (residual combined hub) stays in My Workspace, not the new Approvals Hub section");
+  assert.match(portalLayout, /if \(title === "Approvals Hub"\) return CalendarDays;/, "the collapsed-rail icon map has an entry for the new section");
+
   // ── Plan Phase 2 enhancements ────────────────────────────────────────────────
   // Edit-request stage + overdue-first sort, all reusing the existing plan workflow (no new routing).
   assert.match(svc, /export type PlanApprovalStage = "manager" \| "ceo" \| "hr" \| "edit_request";/, "the edit-request decision is surfaced as its own stage");

@@ -123,6 +123,7 @@ type EmployeePortalNavSection = {
 };
 
 function sectionRailIcon(title: string): typeof Activity {
+  if (title === "Approvals Hub") return CalendarDays;
   if (title === "My Workspace") return Home;
   if (title === "Marketing & ROI") return BriefcaseBusiness;
   if (title === "Leave Management") return CalendarDays;
@@ -188,13 +189,20 @@ function buildEmployeePortalSections({
         ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
       ],
     },
+    // Dedicated Approvals Hub section — mirrors the admin shell's own "Approvals Hub" nav
+    // section (system-navigation.ts) rather than bundling these links into "My Workspace".
+    {
+      title: "Approvals Hub",
+      items: [
+        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
+        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
+        ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
+      ],
+    },
     {
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
-        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
-        ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
