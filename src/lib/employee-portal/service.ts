@@ -739,7 +739,7 @@ function normalizeFilter(value: unknown) {
   return isPortalFilterText(value) ? value.trim() : null;
 }
 
-function toCanonicalPortalHrId(hrId: string | null | undefined) {
+export function toCanonicalPortalHrId(hrId: string | null | undefined) {
   const normalized = normalizeHrId(hrId);
   if (!normalized) return null;
   return normalizeHrIdForAccess(normalized) || normalized;
@@ -2743,7 +2743,7 @@ function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employm
   return classifyEmployeeNode(employee).eligible_for_headcount;
 }
 
-function isMedicalRepDirectoryEmployee(
+export function isMedicalRepDirectoryEmployee(
   employee: Pick<EmployeeDirectoryRow, "jobTitle" | "positionTitle">,
 ) {
   const normalizedTitle = `${employee.jobTitle ?? ""} ${employee.positionTitle ?? ""}`.toLowerCase();
@@ -4120,7 +4120,7 @@ export type DsmTeamPerformanceData = {
  * exactly one open DSM seat under this NSM/line. If zero or more than one open
  * DSM seat exists, no seat is returned (we never guess across districts).
  */
-function resolveNsmVacantDsmSeat(
+export function resolveNsmVacantDsmSeat(
   directory: EmployeeDirectoryData,
   lineScope: ReturnType<typeof createPortalSalesLineScope>,
   nsmCanonicalHrId: string | null,

@@ -18,6 +18,11 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { isNationalSalesManager } from "@/lib/auth/permissions";
 import {
+  isMedicalRepDirectoryEmployee,
+  resolveNsmVacantDsmSeat,
+  toCanonicalPortalHrId,
+} from "@/lib/employee-portal/service";
+import {
   createPortalSalesLineScope,
   employeeMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
@@ -27,6 +32,7 @@ import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/fiel
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import type { FieldWorkforceEmployeeSummary } from "@/lib/field-workforce-compliance/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { formatVacantSeatLabel, resolveSeatGrouping } from "@/lib/workforce/hierarchy-resolver";
 
 export type NsmTeamCalendarStatus = "ok" | "not_ready";
 
@@ -78,9 +84,21 @@ function normalizeYear(value: number | null | undefined, fallback: number): numb
     : fallback;
 }
 
+/**
+ * Where an orphaned rep (real DSM resigned, seat not yet refilled) should actually be
+ * grouped: seatKey is either the resigned DSM's own HR ID (continuity marker present) or a
+ * synthetic `vacant-seat:<id>` key (marker lost, resolved via the line's single open DSM
+ * vacancy instead) — see resolveSeatGrouping. Never a currently-active person's own seat.
+ */
+type SeatOverride = {
+  seatKey: string;
+  seatName: string | null;
+};
+
 type ResolvedNsmScope = {
   allowedKeys: Set<string>;
   lineName: string | null;
+  seatOverridesByHrKey: Map<string, SeatOverride>;
 };
 
 /**
@@ -132,7 +150,41 @@ async function resolveNsmScope(access: AccessContext): Promise<ResolvedNsmScope 
   }
   allowedKeys.add(key); // the NSM themself always appears
 
-  return { allowedKeys, lineName: scope.lineName };
+  // Seat continuity: when a DSM resigns, their reports get reassigned UP to the NSM
+  // (manager_hr_id becomes the NSM's) until a replacement is hired, so a rep's raw
+  // managerHrId can no longer identify their real seat. Resolve every medical rep through
+  // the same two-tier logic the DSMs/MRs Performance pages use — the resignation trigger's
+  // pending-replacement marker first, then the line's single unambiguous open DSM vacancy as
+  // a fallback — so an orphaned rep groups under their (vacant) DSM seat in the calendar
+  // instead of looking like a standalone manager with no team.
+  const nsmCanonical = toCanonicalPortalHrId(access.hrId) ?? toCanonicalPortalHrId(access.loginId);
+  const vacantDsmSeat = resolveNsmVacantDsmSeat(directory, scope, nsmCanonical);
+
+  const seatOverridesByHrKey = new Map<string, SeatOverride>();
+  for (const employee of directory.employees) {
+    if (!isMedicalRepDirectoryEmployee(employee)) continue;
+    if (!employeeMatchesPortalSalesScope(employee, scope)) continue;
+
+    const grouping = resolveSeatGrouping(employee, {
+      vacantSeatTitle: "DSM seat",
+      orphanFallback: {
+        isOrphanToNsm: toCanonicalPortalHrId(employee.managerHrId) === nsmCanonical,
+        vacantSeat: vacantDsmSeat.seat,
+      },
+    });
+    if (!grouping.isVacant || !grouping.seatHrId) continue;
+
+    const employeeKey = canonicalHrIdKey(employee.hrId);
+    if (!employeeKey) continue;
+    seatOverridesByHrKey.set(employeeKey, {
+      seatKey: grouping.seatKeyIsSynthetic
+        ? grouping.seatHrId
+        : canonicalHrIdKey(grouping.seatHrId) ?? grouping.seatHrId,
+      seatName: grouping.seatName ?? formatVacantSeatLabel(employee, "DSM seat"),
+    });
+  }
+
+  return { allowedKeys, lineName: scope.lineName, seatOverridesByHrKey };
 }
 
 /**
@@ -145,26 +197,43 @@ async function resolveNsmScope(access: AccessContext): Promise<ResolvedNsmScope 
  * proved fragile — a DSM whose title doesn't exactly match a known string would silently
  * never form a group, dumping their whole team into a single flat "Other" bucket. Manager
  * HR-ID topology can't misclassify a real manager, it can only ever be right or absent.
+ *
+ * `seatOverridesByHrKey` (from resolveNsmScope) redirects orphaned reps — a real DSM
+ * resigned, seat not yet refilled, so their raw managerHrId now points at the NSM — to a
+ * synthetic/vacant-seat group instead of letting them fall out as a lone false "manager".
  */
-export function buildDsmGroups(employees: FieldWorkforceEmployeeSummary[]): NsmTeamCalendarGroup[] {
+export function buildDsmGroups(
+  employees: FieldWorkforceEmployeeSummary[],
+  seatOverridesByHrKey: ReadonlyMap<string, SeatOverride> = new Map(),
+): NsmTeamCalendarGroup[] {
   const byName = (a: FieldWorkforceEmployeeSummary, b: FieldWorkforceEmployeeSummary) =>
     String(a.employeeName).localeCompare(String(b.employeeName), undefined, { numeric: true });
   const keyOf = (employee: FieldWorkforceEmployeeSummary) => canonicalHrIdKey(employee.hrId);
 
   const presentKeys = new Set(employees.map(keyOf).filter((key): key is string => key != null));
   const childrenByManagerKey = new Map<string, FieldWorkforceEmployeeSummary[]>();
+  const vacantSeatLabels = new Map<string, string>();
   const roots: FieldWorkforceEmployeeSummary[] = [];
 
   for (const employee of employees) {
     const ownKey = keyOf(employee);
+    const override = ownKey ? seatOverridesByHrKey.get(ownKey) : undefined;
+
+    if (override) {
+      const bucket = childrenByManagerKey.get(override.seatKey) ?? [];
+      bucket.push(employee);
+      childrenByManagerKey.set(override.seatKey, bucket);
+      if (override.seatName) vacantSeatLabels.set(override.seatKey, override.seatName);
+      continue;
+    }
+
     const managerKey = canonicalHrIdKey(employee.managerHrId);
     if (managerKey && managerKey !== ownKey && presentKeys.has(managerKey)) {
       const bucket = childrenByManagerKey.get(managerKey) ?? [];
       bucket.push(employee);
       childrenByManagerKey.set(managerKey, bucket);
     } else {
-      // No manager in the scoped set (e.g. a DSM once the NSM is dropped, or a rep whose
-      // DSM seat is vacant) -> this employee is a root of their own.
+      // No manager in the scoped set (e.g. a DSM once the NSM is dropped) -> a root.
       roots.push(employee);
     }
   }
@@ -189,6 +258,20 @@ export function buildDsmGroups(employees: FieldWorkforceEmployeeSummary[]): NsmT
     flatten(root, members);
     return { managerHrId: root.hrId, managerName: root.employeeName, members };
   });
+
+  // Vacant-seat groups: a seat key that doesn't match any currently-present employee's HR
+  // ID (a resigned DSM's own hrId, or a synthetic vacant-seat:<id> key) still gets its own
+  // labeled group instead of being silently absorbed into the trailing safety-net bucket.
+  for (const [seatKey, members] of childrenByManagerKey) {
+    if (presentKeys.has(seatKey)) continue; // a real employee root already covers this
+    members.sort(byName);
+    members.forEach((member) => visited.add(member));
+    groups.push({
+      managerHrId: null,
+      managerName: vacantSeatLabels.get(seatKey) ?? "Vacant seat",
+      members,
+    });
+  }
 
   const unreached = employees.filter((employee) => !visited.has(employee));
   if (unreached.length > 0) {
@@ -232,7 +315,7 @@ export async function getNsmTeamCalendar(
 
     return {
       employeeCount: employees.length,
-      groups: buildDsmGroups(employees),
+      groups: buildDsmGroups(employees, resolved.seatOverridesByHrKey),
       lineName: resolved.lineName,
       message: null,
       month,
