@@ -240,6 +240,12 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
     <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
       <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/sato-pharma-logo.png"
+        alt="SATO Pharma"
+        className="pointer-events-none absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 sm:block"
+      />
       {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one line. */}
       <div className="relative flex flex-col sm:flex-row sm:divide-x sm:divide-white/[0.06]">
         {(employee.line || hireDateLabel) && (
@@ -253,7 +259,7 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
           </div>
         )}
         {employee.manager && (
-          <IntelField icon={User} label="Reports To" value={employee.manager} className="sm:min-w-0 sm:flex-1" />
+          <IntelField icon={User} label="Reports To" value={employee.manager} className="sm:min-w-0 sm:flex-1 sm:pr-24" />
         )}
       </div>
     </div>
