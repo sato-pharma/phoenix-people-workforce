@@ -164,6 +164,21 @@ function assertOwnDraftOrOverride(access: AccessContext, report: CoachingReportR
   }
 }
 
+// UI-gating mirror of the submitCoachingReport authorization checks (lifecycle role +
+// own-draft-or-override), so a Submit button only renders when the click would actually
+// succeed. The server call remains the authoritative check (workflow registry + permission
+// matrix overrides can still deny it), so this stays intentionally narrower than a full re-run
+// of submitCoachingReport's assertions.
+export function canSubmitCoachingDraft(
+  access: AccessContext,
+  report: Pick<CoachingReportRow, "coach_hr_id" | "status">,
+) {
+  if (report.status !== "draft") return false;
+  if (!canManageCoachingReports(access)) return false;
+  if (access.scope === "system" || access.role === "Super Admin") return true;
+  return idsMatch(access.hrId, report.coach_hr_id);
+}
+
 function findEmployee(rows: EmployeeDirectoryRow[], hrId: string) {
   return rows.find((row) => idsMatch(row.hrId, hrId)) ?? null;
 }

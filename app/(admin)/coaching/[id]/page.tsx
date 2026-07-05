@@ -7,6 +7,7 @@ import {
   AdminPageHero,
 } from "@/components/admin/admin-design-system";
 import { CoachingReportDetail } from "@/components/coaching/coaching-report-detail";
+import { CoachingReportSubmitAction } from "@/components/coaching/coaching-report-submit-action";
 import {
   canAccess,
   canManageCoachingReports,
@@ -14,7 +15,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getCoachingReportById } from "@/lib/coaching/service";
+import { canSubmitCoachingDraft, getCoachingReportById } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
   const canCreate =
     canManageCoachingReports(access) &&
     (await canAccess(access, "coaching", "create"));
+  const canSubmit = canSubmitCoachingDraft(access, detail.report);
 
   return (
     <div className="space-y-6">
@@ -104,11 +106,12 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
                 Create Report
               </Link>
             ) : null}
+            {canSubmit ? <CoachingReportSubmitAction reportId={detail.report.id} /> : null}
           </div>
         }
         badges={
           <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>Read-only Report</AdminInsightChip>
+            <AdminInsightChip>{canSubmit ? "Draft — Ready to Submit" : "Read-only Report"}</AdminInsightChip>
             <AdminInsightChip tone="orange">{detail.report.report_number}</AdminInsightChip>
             <AdminInsightChip tone="slate">Employee acknowledgment tracked</AdminInsightChip>
           </div>
