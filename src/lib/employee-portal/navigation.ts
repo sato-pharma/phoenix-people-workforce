@@ -20,6 +20,10 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
   showDsmsPerformanceTab?: boolean;
+  // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
+  // server-side (see src/lib/employee-portal/team-calendar.ts). Reads the iReports360
+  // visits mirror; each green numeric day deep-links to that rep's day drill-down.
+  showTeamCalendarTab?: boolean;
   showTeamExpensesTab?: boolean;
   showVacanciesTab?: boolean;
   showProbationTab?: boolean;
@@ -230,6 +234,7 @@ export function resolveEmployeePortalNavVisibility(
   return {
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
+    showTeamCalendarTab: isNationalSalesManager,
     showExcusesTab:
       isHeadOffice ||
       isNationalSalesManager ||

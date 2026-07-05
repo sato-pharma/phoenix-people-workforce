@@ -35,7 +35,19 @@ type VisitsResponse = {
   success: boolean;
 };
 
-export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: string }) {
+export function FieldWorkforceVisitsView({
+  backHref = "/admin/field-workforce-compliance",
+  backLabel = "Back to compliance",
+  date,
+  endpoint = "/api/admin/field-workforce-compliance/visits",
+  hrId,
+}: {
+  backHref?: string;
+  backLabel?: string;
+  date: string;
+  endpoint?: string;
+  hrId: string;
+}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<VisitsResponse["data"] | null>(null);
@@ -46,7 +58,7 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/admin/field-workforce-compliance/visits?hrId=${encodeURIComponent(hrId)}&date=${encodeURIComponent(date)}`);
+        const response = await fetch(`${endpoint}?hrId=${encodeURIComponent(hrId)}&date=${encodeURIComponent(date)}`);
         const payload = (await response.json()) as VisitsResponse;
         if (!active) return;
         if (payload.success && payload.data) setData(payload.data);
@@ -61,7 +73,7 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
     return () => {
       active = false;
     };
-  }, [date, hrId]);
+  }, [date, endpoint, hrId]);
 
   const repName = data?.rep?.fullName ?? hrId;
   const visits = data?.visits ?? [];
@@ -73,9 +85,9 @@ export function FieldWorkforceVisitsView({ date, hrId }: { date: string; hrId: s
       <div>
         <Link
           className="inline-flex items-center gap-1 text-sm font-bold text-orange-700 hover:underline"
-          href="/admin/field-workforce-compliance"
+          href={backHref}
         >
-          <ChevronLeft className="h-4 w-4" /> Back to compliance
+          <ChevronLeft className="h-4 w-4" /> {backLabel}
         </Link>
         <h1 className="mt-2 text-2xl font-black text-slate-950">Visits — {repName}</h1>
         <p className="mt-1 text-sm font-semibold text-slate-500">{hrId} &middot; {date}</p>
