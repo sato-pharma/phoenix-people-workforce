@@ -669,22 +669,41 @@ function RepComparisonChart({ data }: { data: { avg: number; name: string; fullN
   );
 }
 
-/** Radar chart for coaching quality dimensions */
-function CoachingRadarChart({ data }: { data: { dimension: string; value: number; fullMark: number }[] }) {
+/** Radar chart for coaching quality dimensions. When `wide`, pairs the radar
+ * with a per-dimension score breakdown so it fills a full-width row instead of
+ * leaving large horizontal gaps around the (inherently circular) chart. */
+function CoachingRadarChart({ data, wide = false }: { data: { dimension: string; value: number; fullMark: number }[]; wide?: boolean }) {
   if (data.length === 0) return null;
   return (
     <ErrorBoundaryChart title="Coaching quality radar">
       <div className="border border-slate-200 bg-white p-4" role="region" aria-label="Coaching quality radar chart">
         <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Coaching quality overview</p>
-        <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
-              <PolarGrid stroke="#e2e8f0" />
-              <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 10, fill: "#64748b" }} />
-              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} />
-              <Radar name="Score" dataKey="value" stroke="#ea580c" fill="#ea580c" fillOpacity={0.15} strokeWidth={2} />
-            </RadarChart>
-          </ResponsiveContainer>
+        <div className={cn("grid gap-4", wide ? "md:grid-cols-2 md:items-center" : "")}>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
+                <PolarGrid stroke="#e2e8f0" />
+                <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 10, fill: "#64748b" }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} />
+                <Radar name="Score" dataKey="value" stroke="#ea580c" fill="#ea580c" fillOpacity={0.15} strokeWidth={2} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          {wide ? (
+            <div className="space-y-3">
+              {data.map((d) => (
+                <div key={d.dimension}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-600">{d.dimension}</span>
+                    <span className="whitespace-nowrap text-sm font-bold tabular-nums" style={{ color: getScoreColor(d.value) }}>{d.value.toFixed(1)}%</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-slate-100">
+                    <div className="h-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, d.value))}%`, backgroundColor: getScoreColor(d.value) }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </ErrorBoundaryChart>
@@ -1048,7 +1067,7 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
           {(repComparison.length > 0 || radarData.length > 0) ? (
             <div className={cn("grid gap-4", (repComparison.length > 0 && radarData.length > 0) ? "lg:grid-cols-2" : "")}>
               {repComparison.length > 0 ? <RepComparisonChart data={repComparison} /> : null}
-              {radarData.length > 0 ? <CoachingRadarChart data={radarData} /> : null}
+              {radarData.length > 0 ? <CoachingRadarChart data={radarData} wide={repComparison.length === 0} /> : null}
             </div>
           ) : null}
         </>
