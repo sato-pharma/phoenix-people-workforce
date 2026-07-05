@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { SentryUserIdentity } from "@/components/layout/sentry-user-identity";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 
@@ -25,6 +26,7 @@ export default async function AdminGroupLayout({ children }: { children: ReactNo
 
   return (
     <AppShell accessContext={access} navigationMode="admin">
+      <SentryUserIdentity hrId={access.hrId} role={access.role} />
       {children}
     </AppShell>
   );
