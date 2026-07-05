@@ -966,7 +966,7 @@ export function PlansWorkspace({
   const plans = workspace.plans;
   const plan = plans.find((item) => item.id === selectedPlan) ?? null;
   const ownPlans = plans.filter(
-    (item) => item.employeeHrId === workspace.currentEmployee?.hrId,
+    (item) => hrIdsMatch(item.employeeHrId, workspace.currentEmployee?.hrId),
   );
   // The employee's most recent earlier weekly plan, for one-tap "copy last week".
   const previousWeeklyPlan = useMemo(() => {
@@ -2674,7 +2674,7 @@ function MobileDayCard({
   row: DraftItem;
 }) {
   const rule = activityRule(row.activityType, row.activityTitle);
-  const selectedRep = medicalRepOptions.find((rep) => rep.hrId === row.doubleVisitMedicalRepHrId);
+  const selectedRep = medicalRepOptions.find((rep) => hrIdsMatch(rep.hrId, row.doubleVisitMedicalRepHrId));
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const repName = row.doubleVisitMedicalRepName || selectedRep?.fullName || autoRep?.fullName || "";
   const needsRep = rule.requiresRep && !autoRep;

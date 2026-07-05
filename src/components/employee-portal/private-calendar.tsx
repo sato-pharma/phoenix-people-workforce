@@ -966,7 +966,7 @@ export function PrivateCalendar({
                   <span className="mt-1.5 block space-y-1">
                     {dayExceptions.slice(0, 2).map((exception) => (
                       <span
-                        className="block whitespace-nowrap rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
+                        className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
                         key={exception.id}
                         title={exception.description}
                       >
@@ -975,7 +975,7 @@ export function PrivateCalendar({
                     ))}
                     {dayItems.slice(0, dayExceptions.length > 0 ? 3 : 4).map((item) => (
                       <span
-                        className={["block whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
+                        className={["block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
                         key={item.id}
                         title={chipTitle(item, viewMode)}
                       >
@@ -983,7 +983,7 @@ export function PrivateCalendar({
                       </span>
                     ))}
                     {dayItems.length + dayExceptions.length > 5 ? (
-                      <span className="block rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                      <span className="block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
                         + {dayItems.length + dayExceptions.length - 5} more
                       </span>
                     ) : null}
@@ -1113,7 +1113,7 @@ function PrivateCalendarAgenda({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", sourceSwatchColor(item.source)].join(" ")} />
                     <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
                       {sourceIcon(item.source)}
                       {privateCalendarSourceLabels[item.source]}
                     </span>
@@ -1315,7 +1315,7 @@ function CalendarReportTable({
               key={`${row.id}-mobile`}
               meta={reportDateLabel(row.date)}
               status={
-                <span className={["inline-flex rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                <span className={["inline-flex rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                   {sourceReportLabel(row.source)}
                 </span>
               }
@@ -1357,7 +1357,7 @@ function CalendarReportTable({
                     {reportDateLabel(row.date)}
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                    <span className={["inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {sourceReportLabel(row.source)}
                     </span>
                   </td>
@@ -1377,7 +1377,7 @@ function CalendarReportTable({
                     {row.workingHours ?? "-"}
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
+                    <span className={["inline-flex whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
                       {row.status ?? row.sourceLabel}
                     </span>
                   </td>
@@ -1400,12 +1400,12 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={["inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+              <span className={["inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
                 {sourceIcon(item.source)}
                 {privateCalendarSourceLabels[item.source]}
               </span>
               {item.time ? (
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">
                   {item.time}
                 </span>
               ) : null}

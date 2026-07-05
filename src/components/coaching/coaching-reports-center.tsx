@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { ArrowUpRight, Download, Filter, Loader2, Plus, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 
+import { formatDateOnly } from "@/lib/date-only";
 import {
   AdminSectionHeader,
   adminInsetPanelClassName,
@@ -120,15 +121,9 @@ const monthOptions = Array.from({ length: 12 }, (_, index) => ({
 }));
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "Not set";
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "UTC",
-    year: "numeric",
-  }).format(date);
+  // Parse + format both in local time via the shared helper so the literal
+  // date-only value never shifts a day on non-UTC clients (e.g. Cairo browsers).
+  return formatDateOnly(value, "en-US", { day: "2-digit", month: "short", year: "numeric" }, "Not set");
 }
 
 function formatPercent(value: number | string | null | undefined) {

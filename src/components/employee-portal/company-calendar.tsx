@@ -215,7 +215,7 @@ export function CompanyCalendar({
   return (
     <div className="space-y-4">
       {!workspace.schemaReady ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
           Calendar database migration is not applied yet — showing holidays, leave, and birthdays only.
         </div>
       ) : null}
@@ -225,7 +225,7 @@ export function CompanyCalendar({
         <div className="flex items-center gap-2">
           <button
             aria-label="Previous month"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 active:bg-slate-50"
+            className="flex h-9 w-9 items-center justify-center rounded border border-slate-200 text-slate-600 active:bg-slate-50"
             disabled={isPending}
             onClick={() => shiftMonth(-1)}
             type="button"
@@ -237,7 +237,7 @@ export function CompanyCalendar({
           </h2>
           <button
             aria-label="Next month"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 active:bg-slate-50"
+            className="flex h-9 w-9 items-center justify-center rounded border border-slate-200 text-slate-600 active:bg-slate-50"
             disabled={isPending}
             onClick={() => shiftMonth(1)}
             type="button"
@@ -245,7 +245,7 @@ export function CompanyCalendar({
             <ChevronRight className="h-4 w-4" />
           </button>
           <button
-            className="ml-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 active:bg-slate-50"
+            className="ml-1 rounded border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 active:bg-slate-50"
             disabled={isPending}
             onClick={goToday}
             type="button"
@@ -262,7 +262,7 @@ export function CompanyCalendar({
       </div>
 
       {message ? (
-        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
+        <div className="rounded border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
           {message}
         </div>
       ) : null}
@@ -349,7 +349,7 @@ export function CompanyCalendar({
               const tone = toneFor(item);
               return (
                 <li
-                  className={`flex items-start justify-between gap-2 rounded-lg border p-2.5 ${tone.chip}`}
+                  className={`flex items-start justify-between gap-2 rounded border p-2.5 ${tone.chip}`}
                   key={item.id}
                 >
                   <div className="min-w-0">
@@ -374,7 +374,7 @@ export function CompanyCalendar({
                   </div>
                   {item.source === "event" && item.canManage ? (
                     <button
-                      className="shrink-0 rounded-md border border-black/10 bg-white/60 px-2 py-1 text-[11px] font-bold"
+                      className="shrink-0 rounded border border-black/10 bg-white/60 px-2 py-1 text-[11px] font-bold"
                       onClick={() => openEdit(item)}
                       type="button"
                     >
@@ -447,7 +447,7 @@ export function CompanyCalendar({
                           <option value="line">My team / line</option>
                         </SearchableSelect>
                       ) : (
-                        <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
+                        <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
                           {viewerLineName ? `Team: ${viewerLineName}` : "Your team line"}
                         </div>
                       )}
@@ -510,7 +510,7 @@ export function CompanyCalendar({
                   </Field>
                   <Field label="Description (optional)">
                     <textarea
-                      className="min-h-20 w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                      className="min-h-20 w-full rounded border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                       onChange={(e) => setEditor({ ...editor, description: e.target.value })}
                       value={editor.description}
                     />
@@ -541,7 +541,7 @@ export function CompanyCalendar({
 }
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20";
+  "h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20";
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (

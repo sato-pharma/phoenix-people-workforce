@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { formatDateOnly } from "@/lib/date-only";
 import {
   ArrowUpRight,
   Calendar,
@@ -94,10 +95,9 @@ const completedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_
 /* ━━━━━━━━━━━━━━━━━━ Utilities ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+  // Parse + format both in local time via the shared helper so the literal
+  // date-only value never shifts a day on non-UTC clients (e.g. Cairo browsers).
+  return formatDateOnly(value, "en-US", { day: "2-digit", month: "short", year: "numeric" }, "—");
 }
 
 function formatPct(value: number) {

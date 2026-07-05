@@ -92,7 +92,7 @@ export async function runMarketingReviewRoutingTests() {
   assert.match(service, /viewerCanComment/, "request detail computes viewer comment eligibility");
   assert.match(
     source("src/components/employee-portal/marketing-advisory-comment-box.tsx"),
-    /\/api\/marketing-requests\/\$\{requestId\}\/comment/,
+    /\/api\/marketing-requests\/\$\{(?:encodeURIComponent\()?requestId\)?\}\/comment/,
     "the shared advisory comment box posts to the comment endpoint",
   );
   const draftsSource = source("src/components/employee-portal/marketing-request-drafts.tsx");

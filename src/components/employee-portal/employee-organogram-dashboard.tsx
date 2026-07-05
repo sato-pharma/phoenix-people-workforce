@@ -29,7 +29,7 @@ type EmployeeOrganogramDashboardProps = {
 /* ------------------------------------------------------------------ */
 
 const inputClassName =
-  "w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
+  "w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
 
 const labelClassName =
   "text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -124,7 +124,7 @@ export function EmployeeOrganogramDashboard({
     <div className="space-y-5" dir="auto">
       {/* ---- MM Line Picker (horizontal buttons) ---- */}
       {showLinePicker && report && (
-        <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <span className={`mb-2 block ${labelClassName}`}>Product Line</span>
           {availableLines.length === 0 ? (
             <p className="text-sm text-slate-400">No product lines available.</p>
@@ -135,10 +135,10 @@ export function EmployeeOrganogramDashboard({
                 return (
                   <button
                     aria-pressed={isActive}
-                    className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${
+                    className={`rounded border px-4 py-2 text-sm font-semibold transition ${
                       isActive
                         ? "border-orange-500 bg-orange-500 text-white shadow-sm"
-                        : "border-gray-200 bg-white text-slate-700 hover:border-orange-300 hover:text-orange-600"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-orange-300 hover:text-orange-600"
                     }`}
                     key={line}
                     onClick={() => setSelectedMmLine(isActive ? null : line)}
@@ -155,7 +155,7 @@ export function EmployeeOrganogramDashboard({
 
       {/* ---- MM Prompt (no line selected yet) ---- */}
       {showLinePicker && !selectedMmLine && report && (
-        <Card className={`rounded-lg border border-gray-100 p-8 text-center ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-8 text-center ${cardShadow}`}>
           <h3 className="text-sm font-semibold text-slate-700">
             Select a product line to view its organogram
           </h3>
@@ -169,7 +169,7 @@ export function EmployeeOrganogramDashboard({
       {mmReady && <>
       {/* ---- Error Message ---- */}
       {error && (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm">
+        <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm">
           <p className="font-semibold text-rose-800">Organogram unavailable</p>
           <p className="mt-0.5 text-rose-700">{error}</p>
         </div>
@@ -177,7 +177,7 @@ export function EmployeeOrganogramDashboard({
 
       {/* ---- Loading ---- */}
       {isLoading && !report && (
-        <Card className={`rounded-lg border border-gray-100 p-6 ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-6 ${cardShadow}`}>
           <div className="flex items-center gap-3 text-sm text-slate-500">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
             Loading organogram...
@@ -187,10 +187,10 @@ export function EmployeeOrganogramDashboard({
 
       {/* ---- Search & Filters ---- */}
       {report && (
-        <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
                 Filters
               </span>
               <span className="text-[11px] font-medium text-slate-500">
@@ -213,7 +213,7 @@ export function EmployeeOrganogramDashboard({
               {organogramSearch && (
                 <button
                   aria-label="Clear search"
-                  className="inline-flex h-10 items-center rounded-md border border-gray-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+                  className="inline-flex h-10 items-center rounded border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                   onClick={() => setOrganogramSearch("")}
                   type="button"
                 >
@@ -222,7 +222,7 @@ export function EmployeeOrganogramDashboard({
               )}
               <button
                 aria-label="Refresh organogram data"
-                className="inline-flex h-10 items-center rounded-md bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
+                className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
                 disabled={isLoading}
                 onClick={() => void loadReport()}
                 type="button"
@@ -237,9 +237,9 @@ export function EmployeeOrganogramDashboard({
       {/* ---- Organogram Chart ---- */}
       {report && lanes && (
         <WorkspaceErrorBoundary fallbackTitle="Organogram tree unavailable">
-          <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}>
+          <Card className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
             {/* Section header */}
-            <div className="border-b border-gray-100 px-4 py-3 sm:px-5">
+            <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
@@ -253,15 +253,15 @@ export function EmployeeOrganogramDashboard({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
                     {employees} employees
                   </span>
                   {vacancies > 0 && (
-                    <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                    <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
                       {vacancies} vacancies
                     </span>
                   )}
-                  <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
                     {lanes.groups.length} lanes
                   </span>
                 </div>
@@ -283,7 +283,7 @@ export function EmployeeOrganogramDashboard({
 
       {/* No line selected message — shown for non-MM roles that have no filter yet */}
       {!showLinePicker && report && !effectiveLineFilter && !normalizedSearch && (
-        <Card className={`rounded-lg border border-gray-100 p-8 text-center ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-8 text-center ${cardShadow}`}>
           <h3 className="text-sm font-semibold text-slate-700">
             Select a line to view the organogram
           </h3>
