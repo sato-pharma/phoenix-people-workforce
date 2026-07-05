@@ -1,4 +1,5 @@
 import { cache } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 import {
   parseRoleStrict,
@@ -330,6 +331,13 @@ export async function resolveSessionState(
     role,
     source: "session",
   });
+
+  // Server-side Sentry scope for this request/render only — relies on the SDK's
+  // automatic per-request isolation scope (via withSentryConfig + instrumentation.ts),
+  // not global mutable state. Errors on the request still go through
+  // scrubSentryErrorEvent, which strips event.user before send (see
+  // src/lib/observability/sentry.ts) — this only affects breadcrumb/tag-level context.
+  Sentry.setUser({ id: access.hrId ?? undefined, role: access.role });
 
   return {
     access,

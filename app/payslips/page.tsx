@@ -8,6 +8,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { AppShell } from "@/components/layout/app-shell";
+import { SentryUserIdentity } from "@/components/layout/sentry-user-identity";
 import { PageTransition } from "@/components/ui/page-transition";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -34,6 +35,7 @@ export default async function PayslipsPage() {
     if (navigationMode === "admin") {
       return (
         <AppShell navigationMode="admin">
+          <SentryUserIdentity hrId={access.hrId} role={access.role} />
           <EmployeePortalEmptyState
             message="Your payslips workspace is temporarily unavailable. Please try again in a moment."
             title="Payslips Unavailable"
@@ -44,6 +46,7 @@ export default async function PayslipsPage() {
 
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.10),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-4">
+        <SentryUserIdentity hrId={access.hrId} role={access.role} />
         <div className="mx-auto w-full max-w-[960px]">
           <EmployeePortalEmptyState
             message="Your payslips workspace is temporarily unavailable. Please try again in a moment."
@@ -70,6 +73,7 @@ export default async function PayslipsPage() {
   if (navigationMode === "admin") {
     return (
       <AppShell navigationMode="admin">
+        <SentryUserIdentity hrId={access.hrId} role={access.role} />
         <div className="space-y-6">
           <AdminPageHero
             badges={
@@ -93,6 +97,7 @@ export default async function PayslipsPage() {
 
   return (
     <EmployeePortalChrome data={data} visibility={visibility}>
+      <SentryUserIdentity hrId={access.hrId} role={access.role} />
       <EmployeePortalPageShell
         description="Review your monthly compensation with clarity and confidence."
         title="My Earnings"
