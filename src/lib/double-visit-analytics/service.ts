@@ -1442,7 +1442,20 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     getLiveDoubleVisitRows(trendStart, todayIso(), employees),
     getProbationRows(access).catch(() => []),
   ]);
-  const medicalRepProbationRows = probationRows.filter((row) => isMedicalRepProbationRow(row, employees));
+  // The probation watchlist must live inside the SAME double-visit scope as the coverage roster
+  // below. getProbationRows is intentionally broader for some roles (e.g. an NSM gets his whole
+  // line, while his DV scope is only the reporting chain resolved in resolveDoubleVisitAccessScope),
+  // so intersect on the DV-scoped set — otherwise a viewer sees probation alarms for reps outside
+  // his double-visit scope (a cross-scope leak the coverage/trend blocks never had).
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
+  const scopedHrKeys = new Set(
+    scopedEmployees.map((employee) => canonicalHrIdKey(employee.hrId)).filter((key): key is string => Boolean(key)),
+  );
+  const medicalRepProbationRows = probationRows.filter((row) => {
+    if (!isMedicalRepProbationRow(row, employees)) return false;
+    const key = canonicalHrIdKey(row.hr_id);
+    return key ? scopedHrKeys.has(key) : false;
+  });
   const ownRows = viewerCanonicalKey
     ? allDvRows.filter((row) => canonicalHrIdKey(row.double_visitor_hr_id) === viewerCanonicalKey)
     : [];
@@ -1461,10 +1474,10 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   }));
 
   // Block 2 — scope coverage: which in-scope MRs has the viewer EVER personally double-visited.
+  // scopedEmployees was resolved above so the probation watchlist shares this exact DV scope.
   const visitedKeys = new Set(
     ownRows.map((row) => canonicalHrIdKey(row.visited_employee_hr_id)).filter((key): key is string => Boolean(key)),
   );
-  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
   const roster = scopedEmployees.filter((employee) => {
     if (!isActiveEmployee(employee) || !isMedicalRep(employee)) return false;
     return normalizedHrKey(employee.hrId) !== viewerKey;
