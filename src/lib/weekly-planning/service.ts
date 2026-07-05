@@ -68,7 +68,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -585,6 +585,41 @@ function isOrgWidePlanningEmployee(employee: EmployeeDirectoryRow | null, fallba
   return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "Training Manager";
 }
 
+// Single Visit's region -> area cascade must show every area in the region,
+// including ones with no rep hired yet (it never assigns a rep). Double
+// Visit/Coaching need the opposite - only areas with a real same-line rep to
+// auto-assign. Rather than two data sources, we fold open Medical Rep
+// position_vacancies (already loaded via getEmployeeDirectory().lookups) into
+// the same options array with a "Vacant" fullName, so areasForRegion's
+// existing requireAssignedRep filter (keyed off isVacantMedicalRep) naturally
+// includes them for Single Visit and excludes them for Double Visit/Coaching.
+function vacantMedicalRepOptionsForEmployee(
+  vacancies: EmployeeDirectoryData["lookups"]["medicalRepVacancies"],
+  employee: EmployeeDirectoryRow,
+  orgWide: boolean,
+  overrideLineKeys: Set<string> | null,
+) {
+  return vacancies
+    .filter((vacancy) => Boolean(vacancy.areaName) && vacancy.areaName !== "Unknown Area")
+    .filter((vacancy) => {
+      if (orgWide) return true;
+      if (overrideLineKeys) return overrideLineKeys.has(normalizedName(vacancy.lineName));
+      if (typeof vacancy.lineId === "number" && typeof employee.lineId === "number") {
+        return vacancy.lineId === employee.lineId;
+      }
+      const vacancyLine = normalizedName(vacancy.lineName);
+      const employeeLine = normalizedName(employee.lineName);
+      return Boolean(vacancyLine && employeeLine && vacancyLine === employeeLine);
+    })
+    .map((vacancy) => ({
+      areaName: vacancy.areaName,
+      fullName: "Vacant Medical Rep Seat",
+      hrId: `vacancy:${vacancy.vacancyCode}`,
+      lineName: vacancy.lineName,
+      regionName: vacancy.regionName,
+    }));
+}
+
 async function medicalRepOptionsForEmployee(
   employee: EmployeeDirectoryRow | null,
   orgWide = false,
@@ -600,7 +635,7 @@ async function medicalRepOptionsForEmployee(
   const overrideLineKeys = allowedLineNames && allowedLineNames.length > 0
     ? new Set(allowedLineNames.map((line) => normalizedName(line)).filter(Boolean))
     : null;
-  return directory.employees
+  const activeOptions = directory.employees
     .filter((candidate) => candidate.hrId !== employee.hrId)
     .filter(isActiveEmployee)
     .filter(isMedicalRepEmployee)
@@ -616,8 +651,14 @@ async function medicalRepOptionsForEmployee(
       hrId: candidate.hrId,
       lineName: candidate.lineName,
       regionName: candidate.regionName,
-    }))
-    .sort((left, right) => left.fullName.localeCompare(right.fullName));
+    }));
+  const vacantOptions = vacantMedicalRepOptionsForEmployee(
+    directory.lookups.medicalRepVacancies,
+    employee,
+    orgWide,
+    overrideLineKeys,
+  );
+  return [...activeOptions, ...vacantOptions].sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
 function isHrReviewer(access: AccessContext, _employee: EmployeeDirectoryRow | null) {
