@@ -182,6 +182,18 @@ function buildEmployeePortalSections({
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     {
+      title: "My Workspace",
+      items: [
+        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
+        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
+        ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
+        ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
+        ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
+        ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint }] : []),
+      ],
+    },
+    {
       title: "Training Manager",
       items: [
         ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
@@ -198,18 +210,6 @@ function buildEmployeePortalSections({
         ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
-      ],
-    },
-    {
-      title: "My Workspace",
-      items: [
-        ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
-        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
-        ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
-        ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
-        ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
-        ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint }] : []),
       ],
     },
     {
