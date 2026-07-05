@@ -197,10 +197,12 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const dataUnavailable: string[] = [];
   const canRestricted = canViewRestrictedProducts(access.role);
   const platformPromise = getPlatformMetrics(access);
-  const adminSignalsPromise = platformPromise.then(
-    (platformMetrics) => getCeoAdminSignals(access, platformMetrics),
-    () => getCeoAdminSignals(access),
-  );
+  // Share the in-flight platformPromise rather than chaining .then() after it —
+  // getCeoAdminSignals's own 6 aggregate fetches are independent of platform
+  // metrics (only needed for the health/trends fallback at the very end), so
+  // gating them behind platformPromise resolving first serialized two rounds
+  // of executive-signal fetching that could run concurrently.
+  const adminSignalsPromise = getCeoAdminSignals(access, platformPromise);
 
   const [sosR, leaveR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
@@ -289,18 +291,28 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
 // getAdminCommandCenterData + getOverviewDashboard have been REPLACED with
 // getCeoAdminSignals() composes the same service-level aggregate sources used by platform/admin metrics.
 
-async function getCeoAdminSignals(access: AccessContext, platformMetrics?: PlatformMetrics): Promise<CeoAdminSignals> {
-  const resolvedPlatformMetrics = platformMetrics ?? await getPlatformMetrics(access);
-
-  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR] =
-    await Promise.allSettled([
+async function getCeoAdminSignals(
+  access: AccessContext,
+  platformMetrics?: PlatformMetrics | Promise<PlatformMetrics>,
+): Promise<CeoAdminSignals> {
+  // Kick off the 6 independent aggregates and the platform-metrics resolution
+  // together — platformMetrics is only consumed at the bottom of this function
+  // (health/trends/payroll fallback), so it must not gate these fetches from
+  // starting. Promise.all (not allSettled) here preserves the original
+  // semantics: if platform metrics reject, this whole function rejects, same
+  // as the prior `await getPlatformMetrics(access)` would have.
+  const [signalResults, resolvedPlatformMetrics] = await Promise.all([
+    Promise.allSettled([
       getResignationsDashboardData(access),
       getVacationReportData(access, { status: "all" }),
       getContractRenewalDashboardData(access),
       getCeoProbationCounts(access),
       getCoachingReports({}, access).then(buildCoachingReportAnalytics),
       getSalaryFlags(),
-    ]);
+    ]),
+    platformMetrics ?? getPlatformMetrics(access),
+  ]);
+  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR] = signalResults;
   const dataUnavailable: string[] = [];
   if (resignationsR.status === "rejected") dataUnavailable.push("Resignation risk signals");
   if (leavePendingR.status === "rejected") dataUnavailable.push("Leave SLA risk signals");
