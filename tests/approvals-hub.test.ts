@@ -325,13 +325,26 @@ export function runApprovalsHubTests() {
     assert.match(hubBody, /approvals\/vacation/, "Vacation Approvals lives inside the Approvals Hub section");
     assert.match(hubBody, /approvals\/excuse/, "Excuse Approvals lives inside the Approvals Hub section");
     assert.match(hubBody, /approvals\/plan/, "Plan Approvals lives inside the Approvals Hub section");
+    // "Other Approvals" (residual combined inbox) and the Marketing Requests Inbox also live
+    // in Approvals Hub now (owner request), not in My Workspace / Marketing & ROI.
+    assert.match(hubBody, /approvals-hub.*Other Approvals/, "Other Approvals (residual combined hub) lives inside the Approvals Hub section");
+    assert.match(hubBody, /marketing-requests\/inbox.*Marketing Requests Inbox/, "the Marketing Requests Inbox lives inside the Approvals Hub section, under its renamed label");
   }
-  // "Other Approvals" (the residual combined hub) stays OUT of the new section, same split as admin.
   const myWorkspaceMatch = portalLayout.match(/title: "My Workspace",\s*items: \[([\s\S]*?)\],\s*\}/);
   assert.ok(myWorkspaceMatch, "My Workspace section body is present");
   assert.doesNotMatch(myWorkspaceMatch![1], /approvals\/vacation|approvals\/excuse|approvals\/plan/, "the 3 approval links moved out of My Workspace into the dedicated Approvals Hub section");
-  assert.match(myWorkspaceMatch![1], /approvals-hub.*Other Approvals/, "Other Approvals (residual combined hub) stays in My Workspace, not the new Approvals Hub section");
+  assert.doesNotMatch(myWorkspaceMatch![1], /approvals-hub/, "Other Approvals moved out of My Workspace into the dedicated Approvals Hub section");
+  const marketingSectionMatch = portalLayout.match(/title: "Marketing & ROI",\s*items: \[([\s\S]*?)\],\s*\}/);
+  assert.ok(marketingSectionMatch, "Marketing & ROI section body is present");
+  assert.doesNotMatch(marketingSectionMatch![1], /marketing-requests\/inbox/, "the Marketing Requests Inbox moved out of Marketing & ROI into the Approvals Hub section");
   assert.match(portalLayout, /if \(title === "Approvals Hub"\) return CalendarDays;/, "the collapsed-rail icon map has an entry for the new section");
+
+  // The rename applies to the portal route's own page heading too (not the separate admin-shell
+  // "Approval Inbox" at /admin/marketing-requests/inbox, which is untouched).
+  const portalInboxPage = readFileSync("app/employee-portals/marketing-requests/inbox/page.tsx", "utf8");
+  assert.match(portalInboxPage, /title="Marketing Requests Inbox"/, "the portal inbox page's own heading matches the renamed sidebar label");
+  assert.doesNotMatch(portalInboxPage, /title="Approval Inbox"/, "the old page title is fully replaced, not left alongside the new one");
+  assert.match(navRegistry, /fullLabel: "Marketing Requests Inbox"/, "the nav registry's full label matches the rename too (bottom-nav/quick-nav consistency)");
 
   // "My Workspace" is the first section returned (owner request) — ahead of Training Manager and
   // Approvals Hub, which are both conditional/secondary for most portal users.
