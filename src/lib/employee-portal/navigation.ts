@@ -49,7 +49,10 @@ export type EmployeePortalNavVisibility = {
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showActionsTab?: boolean;
-  showApprovalsTab?: boolean;
+  showVacationApprovalsTab?: boolean;
+  // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
+  // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
+  showExcuseApprovalsTab?: boolean;
   showPlanApprovalsTab?: boolean;
   showAttendanceTab?: boolean;
   showPrivateCalendarTab?: boolean;
@@ -296,11 +299,22 @@ export function resolveEmployeePortalNavVisibility(
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     showActionsTab: !isTrainingManager && !isMedicalRep,
-    // Vacation & Excuse Approvals — confirmed portal-shell approver roles only.
-    showApprovalsTab:
+    // Vacation Approvals — confirmed portal-shell approver roles.
+    showVacationApprovalsTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Manager",
+    // Excuse Approvals — same set MINUS National Sales Manager: reps under a District Manager
+    // never route an excuse up to the NSM (excuse is direct-manager-only, no manager-of-manager
+    // step, and NSM-level submissions go through Head Office instead) — so an NSM never has
+    // anything actionable here and the link is hidden for that role only.
+    showExcuseApprovalsTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager" ||
