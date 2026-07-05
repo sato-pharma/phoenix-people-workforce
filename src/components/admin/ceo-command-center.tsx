@@ -339,6 +339,10 @@ export function CeoCommandCenter({
       <SectionShell
         title="Workforce & payroll snapshot"
         description="Company-level totals from CEO-safe aggregate loaders."
+        action={
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/sato-pharma-logo.png" alt="SATO Pharma" className="mr-[28px] h-8 w-auto shrink-0" />
+        }
       >
         <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
           <MetricTile

@@ -78,7 +78,7 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
         fullName: "Dr. Anwar Gaweesh",
         roleLabel: "Chief Executive Officer",
         hrId: access.hrId,
-        imageUrl: null,
+        imageUrl: "/people/ceo-anwar-gaweesh-transparent.png",
       }
     : {
         fullName: viewer.displayName,
