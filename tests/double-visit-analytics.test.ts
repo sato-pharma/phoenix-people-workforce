@@ -6,6 +6,7 @@ import {
   buildManagerMrPairs,
   buildManagerSummariesDetailed,
   resolveDoubleVisitAccessScope,
+  resolveDoubleVisitChains,
 } from "../src/lib/double-visit-analytics/service.ts";
 import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
@@ -117,6 +118,8 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(service, /addWorksheet\("Manager × MR Pairs"\)/, "export must include a Manager × MR Pairs sheet");
   assert.match(service, /buildManagerMrPairs\(data\.visitLog\)/, "pairs sheet must be built from the visit log");
   assert.match(service, /\.range\(from, from \+ pageSize/, "live rows must be paged past the PostgREST row cap, not truncated");
+  assert.match(service, /resolveDoubleVisitChains\(/, "same-day chain resolver is wired into the live loader");
+  assert.match(service, /resolved_via_chain/, "chain-resolved rows are flagged so the integrity report can audit them");
   assert.match(service, /double_visitor_hr_id\) === employeeKey/, "expense workload matching must use Double Visitor HR ID");
   assert.match(service, /loadDoubleVisitPrivateCalendarItems/, "private calendar must receive Double Visit evidence");
   assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
@@ -380,4 +383,108 @@ export function runDoubleVisitAnalyticsTests() {
   const sfeSummary = mmSfeSummaries.find((s) => s.managerName === "SFE Boss");
   assert.equal(mmSummary?.roleCode, "MM", "Marketing Manager resolves to a DV role code");
   assert.equal(sfeSummary?.roleCode, "SFE", "SFE Manager resolves to a DV role code");
+
+  // ── Same-day chain resolution: senior manager rides along on a junior manager's DV ──────────
+  // The CRM stores only one partner per visit row, so an NSM accompanying a DM who is himself
+  // double-visiting an MR shows up as two records on the same day: NSM→DM (visited party is a
+  // manager, normally discarded) and DM→MR. resolveDoubleVisitChains follows the hinge (the DM)
+  // down to the real MR and re-credits the NSM. Modeled on the proven B-122/B-117/B-137 case.
+  type MirrorInput = {
+    agent: string;
+    agentName?: string;
+    ampm?: "AM" | "PM" | "UNKNOWN";
+    contact?: string;
+    date?: string;
+    double: string;
+    doubleName?: string;
+    id: string;
+  };
+  const mirrorRow = (input: MirrorInput): Record<string, unknown> => ({
+    agent_hr_id: input.agent,
+    agent_name: input.agentName ?? null,
+    ampm: input.ampm ?? "PM",
+    contact_name: input.contact ?? null,
+    crm_visit_id: 1,
+    customer_name: null,
+    double_crm_id: 1,
+    double_hr_id: input.double,
+    double_name: input.doubleName ?? null,
+    id: input.id,
+    raw_payload: null,
+    visit_date: input.date ?? "2026-07-01",
+  });
+  type MirrorRows = Parameters<typeof resolveDoubleVisitChains>[0];
+  const asMirror = (rows: Array<Record<string, unknown>>) => rows as unknown as MirrorRows;
+  const cK = (id: string) => canonicalHrIdKey(id);
+  const setOf = (...ids: string[]) => new Set(ids.map((id) => cK(id)).filter((k): k is string => Boolean(k)));
+
+  // Proven case: NSM B-122 rode along with DM B-117, who double-visited MR B-137.
+  const provenManagers = setOf("B-122", "B-117");
+  const provenMrs = setOf("B-137");
+  const provenRows = asMirror([
+    mirrorRow({ id: "nsm-1", agent: "B-117", agentName: "Sameh", double: "B-122", doubleName: "Amr" }),
+    mirrorRow({ id: "nsm-2", agent: "B-117", agentName: "Sameh", double: "B-122", doubleName: "Amr" }),
+    mirrorRow({ id: "dm-1", agent: "B-137", agentName: "Samir Saad", double: "B-117", contact: "Dr A" }),
+    mirrorRow({ id: "dm-2", agent: "B-137", agentName: "Samir Saad", double: "B-117", contact: "Dr B" }),
+  ]);
+  const proven = resolveDoubleVisitChains(provenRows, (k) => provenManagers.has(k), (k) => provenMrs.has(k));
+  assert.equal(cK(proven.get("nsm-1")?.mrHrId ?? ""), cK("B-137"), "NSM's manager-visited row resolves to the real MR");
+  assert.equal(cK(proven.get("nsm-2")?.mrHrId ?? ""), cK("B-137"), "every NSM→DM row on that day resolves to the MR");
+  assert.equal(proven.get("nsm-1")?.hingeHrId, "B-117", "the hinge is the junior (DM) manager");
+  assert.ok(proven.get("nsm-1")?.customerNames.includes("Dr A"), "recovered chain carries the real customers");
+  assert.equal(proven.has("dm-1"), false, "a genuine manager→MR row is not itself a recovered chain");
+
+  // No downstream MR → a real manager→manager visit stays flagged (never invented).
+  const orphan = resolveDoubleVisitChains(
+    asMirror([mirrorRow({ id: "x", agent: "B-117", double: "B-122" })]),
+    (k) => provenManagers.has(k),
+    (k) => provenMrs.has(k),
+  );
+  assert.equal(orphan.has("x"), false, "no same-day MR chain means no resolution");
+
+  // Ambiguous: the DM double-visited TWO MRs that day (same period) → do not guess.
+  const ambiguousMrs = setOf("B-137", "B-200");
+  const ambiguous = resolveDoubleVisitChains(
+    asMirror([
+      mirrorRow({ id: "r", agent: "B-117", double: "B-122" }),
+      mirrorRow({ id: "d1", agent: "B-137", double: "B-117" }),
+      mirrorRow({ id: "d2", agent: "B-200", double: "B-117" }),
+    ]),
+    (k) => provenManagers.has(k),
+    (k) => ambiguousMrs.has(k),
+  );
+  assert.equal(ambiguous.has("r"), false, "two downstream MRs on the same day is ambiguous → left flagged");
+
+  // Period disambiguation: DM saw MR-AM in the morning and MR-PM in the afternoon; the NSM's
+  // PM ride-along resolves to the PM MR, not the ambiguous whole-day union.
+  const periodRes = resolveDoubleVisitChains(
+    asMirror([
+      mirrorRow({ id: "r", agent: "B-117", double: "B-122", ampm: "PM" }),
+      mirrorRow({ id: "dAM", agent: "B-137", double: "B-117", ampm: "AM" }),
+      mirrorRow({ id: "dPM", agent: "B-200", double: "B-117", ampm: "PM" }),
+    ]),
+    (k) => provenManagers.has(k),
+    (k) => ambiguousMrs.has(k),
+  );
+  assert.equal(cK(periodRes.get("r")?.mrHrId ?? ""), cK("B-200"), "period picks the matching-half MR");
+
+  // Multi-level convoy: GM → NSM → DM → MR all resolve transitively to the same MR.
+  const chainManagers = setOf("G-1", "N-1", "D-1");
+  const chainMrs = setOf("M-1");
+  const multi = resolveDoubleVisitChains(
+    asMirror([
+      mirrorRow({ id: "gm", agent: "N-1", double: "G-1" }),
+      mirrorRow({ id: "nsm", agent: "D-1", double: "N-1" }),
+      mirrorRow({ id: "dm", agent: "M-1", double: "D-1" }),
+    ]),
+    (k) => chainManagers.has(k),
+    (k) => chainMrs.has(k),
+  );
+  assert.equal(cK(multi.get("gm")?.mrHrId ?? ""), cK("M-1"), "GM resolves transitively through NSM+DM to the MR");
+  assert.equal(cK(multi.get("nsm")?.mrHrId ?? ""), cK("M-1"), "NSM resolves through the DM to the MR");
+
+  // The Data Integrity workspace renders the recovered chains section.
+  const integrity = readFileSync("src/components/double-visit-analytics/double-visit-data-integrity-workspace.tsx", "utf8");
+  assert.match(integrity, /Recovered Via Chain/i, "the integrity workspace surfaces recovered chains");
+  assert.match(integrity, /report\.recoveredChains/, "the workspace reads recoveredChains from the report");
 }

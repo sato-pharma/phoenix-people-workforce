@@ -359,11 +359,33 @@ export type DoubleVisitIntegrityImportSummary = {
   vacantOrUnmappedVisitCount: number;
 };
 
+// A double visit that WOULD have been discarded as "visited party is a manager", but was
+// recovered by following the same-day chain down to the real Medical Rep the whole convoy
+// actually saw (senior manager → junior/hinge manager → Medical Rep). See resolveDoubleVisitChains.
+export type DoubleVisitRecoveredChain = {
+  activityDate: string;
+  areaName: string | null;
+  customerSample: string[];
+  higherManagerHrId: string | null; // the senior double-visitor who was losing the credit
+  higherManagerName: string | null;
+  hingeManagerHrId: string | null; // the junior manager whose record links the two halves
+  hingeManagerName: string | null;
+  id: string;
+  lineName: string | null;
+  period: DoubleVisitPeriod;
+  resolvedMrHrId: string | null; // the real MR the credit is re-attributed to
+  resolvedMrName: string | null;
+  visitCount: number;
+};
+
 export type DoubleVisitIntegrityReport = {
   asOfDate: string;
   countsByType: Record<DoubleVisitIntegrityIssueType, number>;
   importSummaries: DoubleVisitIntegrityImportSummary[];
   issues: DoubleVisitIntegrityIssue[];
+  // Chain-resolved double visits: no longer flagged, credited to the real MR instead — listed
+  // here so the recovery is auditable rather than a silent re-attribution.
+  recoveredChains: DoubleVisitRecoveredChain[];
   schemaReady: boolean;
   totalRowsScanned: number;
 };
