@@ -141,6 +141,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "PATCH"], pattern: "/api/admin/notifications/telegram", permission: { resource: "communication", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-reply/send", permission: { resource: "communication", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/recommendations/export", permission: { resource: "hr_calendar", action: "export" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/export", permission: { resource: "hr_calendar", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/monitoring/events-csv", permission: { resource: "admin", action: "export" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/exports/table", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Company-wide unscoped iReports360 data sync utility; checks access.role === "Super Admin"
