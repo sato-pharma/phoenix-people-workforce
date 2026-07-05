@@ -106,7 +106,20 @@ function scrubEvent<T extends Event>(event: T): T {
   return mutable as T;
 }
 
+/** Drop synthetic smoke-test events emitted by Codex to verify Sentry ingestion. */
+const smokeTestPattern = /sentry ingestion smoke/i;
+
+function isSmokeTestEvent(event: Event): boolean {
+  if (typeof event.message === "string" && smokeTestPattern.test(event.message)) return true;
+  if (event.tags && typeof event.tags === "object") {
+    const tags = event.tags as Record<string, unknown>;
+    if ("codex_smoke" in tags || "Codex Smoke" in tags) return true;
+  }
+  return false;
+}
+
 export function scrubSentryErrorEvent(event: ErrorEvent) {
+  if (isSmokeTestEvent(event)) return null;
   return scrubEvent(event);
 }
 
