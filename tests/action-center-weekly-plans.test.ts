@@ -20,17 +20,23 @@ export function runActionCenterWeeklyPlansTests() {
   // A plan with no manager resolved never lands on a non-admin's queue.
   assert.equal(resolveApproverPlanStage("submitted", null, manager), null);
 
-  // Super Admin is the manager-stage fallback (mirrors assertManagerReviewer) and sees
-  // every submitted plan regardless of who the assigned manager is.
-  assert.equal(resolveApproverPlanStage("submitted", "A-9", superAdmin), "manager");
-  assert.equal(resolveApproverPlanStage("submitted", null, superAdmin), "manager");
+  // Owner-confirmed rule: Super Admin has NO standing bypass at the manager or CEO stage — he
+  // cannot act on someone else's turn. He only acts there if he personally is the assigned
+  // manager (hrIdsMatch, exactly like anyone else); his real place in the chain is the separate,
+  // final HR-acknowledge step (handled elsewhere, not by this function).
+  assert.equal(resolveApproverPlanStage("submitted", "A-9", superAdmin), null);
+  assert.equal(resolveApproverPlanStage("submitted", null, superAdmin), null);
+  // ...but if Super Admin's own hrId happens to literally be the assigned manager, he acts on it
+  // like any other manager would.
+  assert.equal(resolveApproverPlanStage("submitted", "B-10", superAdmin), "manager");
 
   // CEO does NOT act at the manager stage…
   assert.equal(resolveApproverPlanStage("submitted", "A-9", ceo), null);
-  // …but owns the CEO stage once the manager approved.
+  // …but owns the CEO stage once the manager approved — and ONLY the actual CEO; Super Admin does
+  // not get a CEO-stage bypass either.
   assert.equal(resolveApproverPlanStage("manager_approved", "A-9", ceo), "ceo");
-  assert.equal(resolveApproverPlanStage("manager_approved", "A-9", superAdmin), "ceo");
-  // The assigned line manager never gets the CEO gate — that step is CEO/Super Admin only.
+  assert.equal(resolveApproverPlanStage("manager_approved", "A-9", superAdmin), null);
+  // The assigned line manager never gets the CEO gate — that step is CEO-only.
   assert.equal(resolveApproverPlanStage("manager_approved", "A-9", manager), null);
 
   // Closed / non-pending statuses never surface in the approver inbox, for anyone.

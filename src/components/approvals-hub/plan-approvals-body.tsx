@@ -1,0 +1,28 @@
+import type { PlanWorkspaceData } from "@/lib/approvals-hub/service";
+import { ApprovalsWorkspace, type WorkspaceSection } from "@/components/approvals-hub/approvals-workspace";
+
+export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
+  const sections: WorkspaceSection[] = [
+    { key: "awaiting", title: "Awaiting your response", cards: data.awaiting },
+    {
+      key: "upcoming",
+      title: "Coming to you",
+      subtitle: "Waiting on an earlier approver — not yet your turn.",
+      readOnly: true,
+      cards: data.upcoming,
+    },
+  ];
+  return (
+    <ApprovalsWorkspace
+      sections={sections}
+      history={data.history}
+      pendingCount={data.pendingCount}
+      slaModule="plan"
+      historyExportTitle="Plan Approval History"
+      historyEmptyLabel="You have not responded to any weekly/monthly plans yet."
+      myRequests={data.myRequests}
+      companyWide={data.companyWide}
+      companyWideExportTitle="Company-Wide Plan Decisions"
+    />
+  );
+}

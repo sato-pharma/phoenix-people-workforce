@@ -320,7 +320,10 @@ function parseItemOrder(raw: string): Record<string, string[]> | null {
 }
 
 // ── Pending-count badge for the Action Center nav item ───────────────────────
-function NavBadge({ src }: { src: string }): ReactNode {
+// Exported: reused verbatim by the employee-portal sidebar (employee-portal-layout.tsx) so both
+// shells share the exact same polling client (src/lib/nav-badge-store.ts) — no separate portal
+// badge mechanism.
+export function NavBadge({ src }: { src: string }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => subscribeNavBadge(src, setCount), [src]);
   if (!count) return null;
@@ -399,6 +402,8 @@ function NavRow({
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
             {item.navBadge === "approvals-hub-pending" && <NavBadge src="/api/approvals-hub/pending-count" />}
+            {item.navBadge === "vacation-approvals-pending" && <NavBadge src="/api/approvals/vacation/pending-count" />}
+            {item.navBadge === "excuse-approvals-pending" && <NavBadge src="/api/approvals/excuse/pending-count" />}
           </span>
         )}
       </Link>

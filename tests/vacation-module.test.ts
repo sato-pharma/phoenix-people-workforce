@@ -162,13 +162,13 @@ export function runVacationModuleTests() {
   assert.match(submittedBlock, /input\.approvalRecipients\.map/, "vacation submitted pilot must notify exact approval-step recipients");
   assert.match(submittedBlock, /recipientHrId: recipient\.hrId/, "vacation submitted pilot must send only to resolved approvers");
   assert.match(submittedBlock, /recipientUserId: recipient\.userId/, "vacation submitted pilot must preserve approver login identity when available");
-  assert.match(submittedBlock, /Approve in Phoenix/, "Telegram approval button must open Phoenix");
-  assert.match(submittedBlock, /Reject in Phoenix/, "Telegram rejection button must open Phoenix");
-  assert.match(submittedBlock, /\/leave-management\/vacation-decision\/\$\{encodeURIComponent\(input\.request\.id\)\}\?decision=approve/, "Telegram approve URL must be a Phoenix confirmation URL");
-  // PR3: the sequential workflow (Annual/Other/Compensatory/Emergency) redirects email/Telegram to
-  // the Vacation Action Center instead of approving directly; only legacy Sick keeps direct buttons.
-  assert.match(submittedBlock, /Review Request/, "sequential workflow notifications use a Review Request redirect");
-  assert.match(submittedBlock, /vacation-action-center\?requestId=/, "Review button opens the Vacation Action Center by request id");
+  // Every leave type (incl. legacy Sick) now redirects the responder to the per-request Vacation
+  // Approvals page — no one-click approve/reject links anywhere.
+  assert.doesNotMatch(submittedBlock, /Approve in Phoenix/, "one-click Telegram approve button must be removed");
+  assert.doesNotMatch(submittedBlock, /Reject in Phoenix/, "one-click Telegram reject button must be removed");
+  assert.doesNotMatch(submittedBlock, /vacation-decision\/\$\{encodeURIComponent\(input\.request\.id\)\}\?decision=/, "one-click token decision URLs must be removed from notifications");
+  assert.match(submittedBlock, /Review Request/, "notifications use a single Review Request redirect");
+  assert.match(submittedBlock, /\/admin\/approvals\/vacation\/\$\{encodeURIComponent\(input\.request\.id\)\}/, "Review button opens the per-request Vacation Approvals page");
 
   // Email-template wiring: sequential submit emails render from the user-edited "leave_request"
   // WYSIWYG template (sendVacationManagerDecisionEmail) and the generic notification's email
@@ -217,13 +217,13 @@ export function runVacationModuleTests() {
   assert.match(decisionBlock, /sendVacationDecisionResultEmail\(/, "decision dispatch must send the templated decision result email");
   assert.match(
     serviceSource,
-    /This request must be reviewed in the Vacation Action Center; email approval links are disabled/,
+    /This request must be reviewed on the Vacation Approvals page; email approval links are disabled/,
     "token-based direct approval must be disabled for the sequential workflow",
   );
-  assert.match(submittedBlock, /requestUrl: sequential \? actionCenterUrl : input\.href/, "vacation submitted metadata must include requestUrl for Telegram templates");
-  assert.match(submittedBlock, /actionUrl: sequential \? actionCenterUrl : input\.href/, "vacation submitted metadata must include actionUrl for Telegram templates");
-  assert.match(submittedBlock, /approveUrl/, "vacation submitted metadata must include approveUrl for Telegram templates");
-  assert.match(submittedBlock, /rejectUrl/, "vacation submitted metadata must include rejectUrl for Telegram templates");
+  assert.match(submittedBlock, /requestUrl: actionCenterUrl/, "vacation submitted metadata must include requestUrl for Telegram templates");
+  assert.match(submittedBlock, /actionUrl: actionCenterUrl/, "vacation submitted metadata must include actionUrl for Telegram templates");
+  assert.doesNotMatch(submittedBlock, /approveUrl/, "one-click approveUrl must no longer be emitted in submit metadata");
+  assert.doesNotMatch(submittedBlock, /rejectUrl/, "one-click rejectUrl must no longer be emitted in submit metadata");
   assert.match(submittedBlock, /employeeName: input\.request\.employeeName/, "vacation submitted metadata must include employeeName");
   assert.match(submittedBlock, /employeeHrId: input\.request\.employeeHrId/, "vacation submitted metadata must include employeeHrId");
   assert.match(submittedBlock, /period/, "vacation submitted metadata must include period");

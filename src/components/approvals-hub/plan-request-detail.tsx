@@ -1,0 +1,137 @@
+import Link from "next/link";
+import { ArrowLeft, ExternalLink } from "lucide-react";
+
+import type { PlanApprovalDetail } from "@/lib/approvals-hub/service";
+import { RequestTracker } from "@/components/approvals-hub/request-tracker";
+import { PlanDecisionActions } from "@/components/approvals-hub/plan-decision-actions";
+import { PlanApproverContext } from "@/components/approvals-hub/plan-approver-context";
+import { PlanCompositionSummary, PlanPeriodBadge } from "@/components/approvals-hub/plan-summary";
+import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
+
+type Props = {
+  detail: PlanApprovalDetail;
+  backHref: string;
+};
+
+function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
+      <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="text-sm font-semibold text-slate-900">{value === null || value === undefined || value === "" ? "—" : value}</dd>
+    </div>
+  );
+}
+
+export function PlanRequestDetail({ detail, backHref }: Props) {
+  if (detail.notFound) {
+    return (
+      <div className="space-y-4">
+        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
+          <ArrowLeft className="h-4 w-4" /> Back to list
+        </Link>
+        <p className="border border-[#e4e9ec] bg-white px-4 py-6 text-sm text-slate-600">
+          This plan could not be found, or you do not have access to it.
+        </p>
+      </div>
+    );
+  }
+
+  const kindLabel = detail.planKind === "monthly" ? "Monthly" : "Weekly";
+
+  return (
+    <div className="space-y-4">
+      <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
+        <ArrowLeft className="h-4 w-4" /> Back to list
+      </Link>
+
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#e4e9ec] pb-3">
+        <div>
+          <h2 className="text-lg font-black text-slate-900">{detail.employeeName}</h2>
+          <p className="text-sm text-slate-600">
+            {kindLabel} plan · {detail.periodKey}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <PlanPeriodBadge status={detail.periodStatus} />
+          <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
+            {detail.statusLabel}
+          </span>
+        </div>
+      </div>
+
+      {detail.readOnly && detail.readOnlyReason ? (
+        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+          {detail.readOnlyReason}
+        </p>
+      ) : null}
+
+      {/* The submitter's own plan: a clear jump to the planner, where they can view/edit it through
+          its lifecycle (e.g. fix a returned plan) — the hub page itself is read-only for them. */}
+      {detail.isOwner && detail.plannerHref ? (
+        <a
+          href={detail.plannerHref}
+          className="inline-flex items-center gap-1.5 bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
+        >
+          <ExternalLink className="h-4 w-4" /> Open in my planner
+        </a>
+      ) : null}
+
+      <PlanCompositionSummary composition={detail.composition} />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4">
+          <section className="border border-[#e4e9ec] bg-white">
+            <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Plan details</h3>
+            </header>
+            <dl className="px-4 py-2">
+              <Row label="Employee" value={`${detail.employeeName} (${detail.employeeHrId})`} />
+              <Row label="Job title" value={detail.employeeJobTitle} />
+              <Row label="Plan type" value={`${kindLabel} plan`} />
+              <Row label="Period" value={detail.periodKey} />
+              <Row label="Submitted" value={detail.submittedAt ? new Date(detail.submittedAt).toLocaleDateString("en-GB") : "—"} />
+              <Row label="Manager" value={detail.managerName} />
+              <Row label="Activities" value={detail.composition.total} />
+            </dl>
+          </section>
+
+          {/* Approver decision-support — never shown to the submitter viewing their own plan. */}
+          {!detail.isOwner ? <PlanApproverContext employeeHrId={detail.employeeHrId} /> : null}
+
+          <RequestTracker
+            steps={detail.steps}
+            stageLabel={detail.stageLabel}
+            ageDays={detail.slaAgeDays}
+            slaModule="plan"
+            fallbackStatusLabel={`Status: ${detail.statusLabel}`}
+          />
+
+          {!detail.readOnly ? (
+            <PlanDecisionActions
+              planId={detail.planId}
+              decisionStage={detail.decisionStage}
+              canAcknowledge={detail.canAcknowledge}
+              isEditRequestDecision={detail.isEditRequestDecision}
+              canRequestVisitDetails={detail.canRequestVisitDetails}
+              returnableActivities={detail.returnableActivities}
+              backHref={backHref}
+            />
+          ) : null}
+        </div>
+
+        <section className="border border-[#e4e9ec] bg-white lg:col-span-2">
+          <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+            <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Planned activities</h3>
+          </header>
+          <div className="px-4 py-4">
+            {detail.calendar ? (
+              <WeeklyPlanCalendar detail={detail.calendar} />
+            ) : (
+              <p className="text-sm text-slate-500">This plan has no activities.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

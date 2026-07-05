@@ -358,7 +358,7 @@ async function getCeoAdminSignals(access: AccessContext, platformMetrics?: Platf
     signalAttention.push({ key: "resignations", label: "Pending resignations", count: pendingResignations, href: "/resignations", tone: "rose" });
   }
   if (overdueLeaveSla > 0) {
-    signalAttention.push({ key: "leaveSla", label: "Pending leave approvals", count: overdueLeaveSla, href: "/admin/approvals-hub", tone: "rose" });
+    signalAttention.push({ key: "leaveSla", label: "Pending leave approvals", count: overdueLeaveSla, href: "/admin/approvals/vacation", tone: "rose" });
   }
   if (unresolvedSalaryFlags > 0) {
     signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/admin/m-payroll", tone: "rose" });

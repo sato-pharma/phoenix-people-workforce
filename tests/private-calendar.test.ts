@@ -264,8 +264,8 @@ export function runPrivateCalendarTests() {
   const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
   assert.match(adminPageSource, /PrivateCalendarsFilterMap|PrivateCalendar/, "admin private calendars page must render a calendar or filter-map component");
 
-  const vacationActionCenterSource = readFileSync("src/components/vacation/vacation-action-center.tsx", "utf8");
-  assert.match(vacationActionCenterSource, /Approval impact preview/, "vacation action center must show approval impact preview");
+  // (The legacy Vacation Action Center component was removed — replaced by the Approvals Hub
+  // Vacation Approvals page. Its "approval impact preview" is a deferred nicety on the new page.)
 
   const excuseDecisionRouteSource = readFileSync("app/api/excuses/[id]/decision/route.ts", "utf8");
   assert.match(excuseDecisionRouteSource, /private calendar/, "excuse approval result must mention private calendar impact");

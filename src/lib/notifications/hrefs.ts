@@ -44,26 +44,60 @@ export function notificationHrefForViewerRole(input: {
   const fallback = internalHref(input.fallbackHref);
 
   // Retroactive remap: old plan-submitted notifications stored action_url as
-  // "/admin/weekly-plans?plan=<id>" before roleHrefs was added. Portal-mode managers
-  // clicking those links get redirected to the portal home instead of the plan page.
-  // Rewrite the URL here at read time so existing notifications work correctly.
+  // "/admin/weekly-plans?plan=<id>" (the planner) before the dedicated Approvals Hub plan page
+  // existed. Portal-mode managers clicking those links otherwise land on the planner/home instead
+  // of their plan approval page. Rewrite at read time so existing notifications land correctly.
   if (role && PORTAL_PLAN_ROLES.has(role) && fallback.startsWith("/admin/weekly-plans")) {
     const planMatch = /[?&]plan=([^&]+)/.exec(fallback);
     const planId = planMatch ? planMatch[1] : null;
-    return planId
-      ? `/employee-portals/approvals-hub?id=${planId}&module=weekly_plan`
-      : "/employee-portals/approvals-hub?module=weekly_plan";
+    return planId ? `/employee-portals/approvals/plan/${planId}` : "/employee-portals/approvals/plan";
   }
 
-  // Remap: vacation action center is guarded by Super Admin access in the admin shell.
-  // Portal-mode managers (DM, RM, NSM, etc.) who receive a vacation approval notification
-  // must be sent to the portal Approvals Hub instead, where the request is actionable.
-  if (role && PORTAL_PLAN_ROLES.has(role) && fallback.startsWith("/leave-management/vacation-action-center")) {
-    const requestIdMatch = /[?&]requestId=([^&]+)/.exec(fallback);
-    const requestId = requestIdMatch ? decodeURIComponent(requestIdMatch[1]) : null;
-    return requestId
-      ? `/employee-portals/approvals-hub?module=leave&id=${encodeURIComponent(requestId)}`
-      : "/employee-portals/approvals-hub?module=leave";
+  const isPortal = Boolean(role && PORTAL_PLAN_ROLES.has(role));
+
+  // Vacation approvals now live on the dedicated per-request page (Approvals Hub › Vacation
+  // Approvals). Route BOTH the new canonical URL and legacy vacation-action-center /
+  // vacation-report links to the correct shell so old and new notifications both land there.
+  {
+    const legacyActionCenter = fallback.startsWith("/leave-management/vacation-action-center");
+    const current = fallback.startsWith("/admin/approvals/vacation") || fallback.startsWith("/employee-portals/approvals/vacation");
+    if (legacyActionCenter || current) {
+      const requestId =
+        /[?&]requestId=([^&]+)/.exec(fallback)?.[1] ??
+        /\/approvals\/vacation\/([^/?#]+)/.exec(fallback)?.[1] ??
+        null;
+      const base = isPortal ? "/employee-portals/approvals/vacation" : "/admin/approvals/vacation";
+      return requestId ? `${base}/${requestId}` : base;
+    }
+  }
+
+  // Excuse approvals — route new canonical URL and the legacy approvals-hub?module=excuse link.
+  {
+    const legacyHub = /approvals-hub\?/.test(fallback) && /module=excuse/.test(fallback);
+    const current = fallback.startsWith("/admin/approvals/excuse") || fallback.startsWith("/employee-portals/approvals/excuse");
+    if (legacyHub || current) {
+      const id =
+        /[?&]id=([^&]+)/.exec(fallback)?.[1] ??
+        /\/approvals\/excuse\/([^/?#]+)/.exec(fallback)?.[1] ??
+        null;
+      const base = isPortal ? "/employee-portals/approvals/excuse" : "/admin/approvals/excuse";
+      return id ? `${base}/${id}` : base;
+    }
+  }
+
+  // Plan approvals — route the new canonical URL and the legacy approvals-hub?module=weekly_plan
+  // link to the correct shell for the viewer, mirroring vacation/excuse.
+  {
+    const legacyHub = /approvals-hub\?/.test(fallback) && /module=weekly_plan/.test(fallback);
+    const current = fallback.startsWith("/admin/approvals/plan") || fallback.startsWith("/employee-portals/approvals/plan");
+    if (legacyHub || current) {
+      const id =
+        /[?&]id=([^&]+)/.exec(fallback)?.[1] ??
+        /\/approvals\/plan\/([^/?#]+)/.exec(fallback)?.[1] ??
+        null;
+      const base = isPortal ? "/employee-portals/approvals/plan" : "/admin/approvals/plan";
+      return id ? `${base}/${id}` : base;
+    }
   }
 
   return fallback;

@@ -40,6 +40,17 @@ function humanize(status: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Exported: reused by the Approvals Hub's company-wide "All Decisions" view
+// (src/lib/approvals-hub/service.ts) so decision-text parsing stays in one place.
+export function decodeDecision(raw: string | null | undefined): "approved" | "rejected" | "returned" | null {
+  if (!raw) return null;
+  const s = raw.toLowerCase();
+  if (/(approv|accept)/.test(s)) return "approved";
+  if (/(reject|declin|denied)/.test(s)) return "rejected";
+  if (/(return|resubmit|sent_back)/.test(s)) return "returned";
+  return null;
+}
+
 function mapVacation(row: VacationRequestRecord): MyRequestItem {
   const type = vacationTypeLabel(row.vacationType);
   return {
@@ -417,7 +428,16 @@ export async function getAwaitingMyActionItems(
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   // Never surface a requester's own submission in their own action inbox — the CEO
   // role can submit requests and those should only appear in "My Requests", not here.
-  return items.filter((item) => !hrIdsMatch(item.employeeHrId, access.hrId));
+  // Vacation (leave), excuse & weekly/monthly plans now live on the dedicated Approvals Hub pages
+  // (/…/approvals/vacation, /…/approvals/excuse, /…/approvals/plan) — exclude them here so this
+  // residual "Other Approvals" inbox shows each request in exactly one place.
+  return items.filter(
+    (item) =>
+      item.module !== "leave" &&
+      item.module !== "excuse" &&
+      item.module !== "weekly_plan" &&
+      !hrIdsMatch(item.employeeHrId, access.hrId),
+  );
 }
 
 /**
@@ -520,15 +540,6 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .order("decided_at", { ascending: false })
         .limit(200),
     ]);
-
-  function decodeDecision(raw: string | null | undefined): "approved" | "rejected" | "returned" | null {
-    if (!raw) return null;
-    const s = raw.toLowerCase();
-    if (/(approv|accept)/.test(s)) return "approved";
-    if (/(reject|declin|denied)/.test(s)) return "rejected";
-    if (/(return|resubmit|sent_back)/.test(s)) return "returned";
-    return null;
-  }
 
   if (leaves.status === "fulfilled" && !leaves.value.error) {
     for (const row of leaves.value.data ?? []) {

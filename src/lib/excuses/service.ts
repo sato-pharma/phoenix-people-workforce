@@ -114,7 +114,8 @@ function activeStatus(status: EmployeeExcuseStatus) {
 }
 
 function actionCenterHref(requestId: string) {
-  return `/admin/approvals-hub?module=excuse&id=${encodeURIComponent(requestId)}`;
+  // Canonical admin URL; hrefs.ts remaps to the portal shell for portal-mode readers.
+  return `/admin/approvals/excuse/${encodeURIComponent(requestId)}`;
 }
 
 function statusLabel(status: EmployeeExcuseStatus) {
@@ -700,6 +701,10 @@ export async function decideExcuseRequestByToken(input: {
 
 export async function getManagerPendingExcuses(access: AccessContext): Promise<EmployeeExcuseRequest[]> {
   const supabase = getSupabaseAdmin();
+  // Excuse has no HR-acknowledge stage (single-step: direct manager decides only) — Super Admin
+  // gets NO blanket bypass here, matching the confirmed model: he can only act where he's the
+  // actual assigned manager, or at a genuine HR step (which doesn't exist for excuses). scope
+  // "system" is reserved for background/system-actor calls, never a real user session.
   const isSystemActor = access.scope === "system";
   let query = supabase
     .from("v2_excuse_requests")
@@ -723,6 +728,8 @@ export async function decideExcuseRequestAsManager(
   input: { requestId: string; decision: EmployeeExcuseDecision; comment?: string | null },
 ): Promise<EmployeeExcuseRequest> {
   const actorHrId = resolveEmployeeIdentityId(access);
+  // Same as getManagerPendingExcuses above — no Super Admin bypass; excuse has no HR step, so
+  // authority is strictly "the assigned manager, and only the assigned manager."
   const isSystemActor = access.scope === "system";
 
   const requestRow = await fetchRequestById(input.requestId);
@@ -954,9 +961,9 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
         priority: "normal",
         recipientHrId: String(row.manager_hr_id),
         title: "Excuse approval overdue",
-        actionUrl: `/admin/approvals-hub?module=excuse&id=${String(row.id)}`,
+        actionUrl: `/admin/approvals/excuse/${encodeURIComponent(String(row.id))}`,
         email: {
-          ctaHref: `/admin/approvals-hub?module=excuse&id=${String(row.id)}`,
+          ctaHref: `/admin/approvals/excuse/${encodeURIComponent(String(row.id))}`,
           ctaLabel: "Review now",
           tone: "warning" as const,
         },
