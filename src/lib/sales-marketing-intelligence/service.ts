@@ -510,6 +510,48 @@ async function scopeProductFilterToLines(
 }
 
 /**
+ * Close the cross-line leak in the product / region / distributor ROI breakdowns for
+ * line-bounded viewers (Product / Group Product / National Sales Manager).
+ *
+ * The RPC scopes the marketing-REQUEST side of every breakdown by the injected `p_lines`,
+ * but the ACTUAL-sales side is grafted on via a FULL JOIN to line-agnostic `*_actuals`
+ * fact CTEs (marketing_roi_{product,region,distributor}_facts) that are NOT line-filtered.
+ * So any product / region / distributor with company-wide attributed sales surfaced as an
+ * actuals-only row (no in-scope marketing request), leaking other lines' footprint into a
+ * single-line viewer's Product/Region/Distributor ROI reports. (lineRoi is unaffected — its
+ * actuals CTE IS `p_lines`-filtered; the summary/trend/customer breakdowns read only `fr`.)
+ *
+ * We drop those actuals-only rows here. Doing it in the app layer keeps it source-agnostic
+ * (covers both the live `phx_marketing_roi_customer_dashboard` and the fast
+ * `phx_marketing_roi_fast` RPCs) and needs no DB migration:
+ *   • productRoi — keep a row if it has an in-scope request (`requestCount > 0`) OR its line
+ *     is in scope. A product resolves to exactly one line, so an out-of-scope product always
+ *     carries another line's label and is dropped; an in-scope product (even one with sales
+ *     but no request) is kept.
+ *   • region/distributor Roi — these rows carry no line, so key on request footprint alone:
+ *     an in-scope row always has `requestCount >= 1` (it came from the line-scoped request
+ *     aggregate); an actuals-only leak has `requestCount === 0`. Fail-closed — an actual-sales
+ *     row we cannot attribute to a line is hidden, never shown.
+ *
+ * `allowed === null` (company-wide viewers) returns the snapshot untouched — they are meant
+ * to see the full "sales but no marketing request" picture across every line.
+ */
+export function scopeBreakdownRowsToLine(
+  snapshot: SalesMarketingDashboardSnapshot,
+  allowed: Set<string> | null,
+): SalesMarketingDashboardSnapshot {
+  if (!allowed) return snapshot;
+  const allowedKeys = new Set([...allowed].map(normalizeLineKey));
+  const lineInScope = (line: string | null) => allowedKeys.has(normalizeLineKey(line));
+  return {
+    ...snapshot,
+    productRoi: snapshot.productRoi.filter((row) => row.requestCount > 0 || lineInScope(row.line)),
+    regionRoi: snapshot.regionRoi.filter((row) => row.requestCount > 0),
+    distributorRoi: snapshot.distributorRoi.filter((row) => row.requestCount > 0),
+  };
+}
+
+/**
  * Server-side confidential-product exclusion passed to the RPC's `p_exclude_codes`. CEO / Super
  * Admin get the full picture (empty list = nothing excluded); every other dashboard role
  * (Marketing Manager, SFE Manager, …) gets the restricted codes excluded INSIDE the RPC, so the
@@ -735,7 +777,10 @@ export async function getSalesMarketingDashboardSnapshot(
   const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(rawData), filters.lines, lineScope);
   // Line-bounded viewers must only be offered THEIR line's products in the filter dropdown — the
   // RPC returns the full catalog, so we scope it here to match the already line-scoped data.
-  const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
+  const productScopedSnapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
+  // …and must never see other lines' products / regions / distributors that leaked in as
+  // actuals-only rows via the RPC's FULL JOIN to line-agnostic actuals fact tables.
+  const snapshot = scopeBreakdownRowsToLine(productScopedSnapshot, lineScope);
 
   // Confidential products (LA003 / LA004 / SS001): only CEO / Super Admin may see them. The RPC
   // now excludes them server-side via `p_exclude_codes` (above), so the summary and EVERY breakdown
@@ -784,7 +829,9 @@ async function getSalesMarketingDashboardFast(
   });
 
   const lineScopedSnapshot = applyDashboardLineScope(normalizeDashboardSnapshot(rawData), filters.lines, lineScope);
-  const snapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
+  const productScopedSnapshot = await scopeProductFilterToLines(lineScopedSnapshot, lineScope);
+  // Drop other lines' products / regions / distributors that leaked in as actuals-only rows.
+  const snapshot = scopeBreakdownRowsToLine(productScopedSnapshot, lineScope);
   if (canViewRestrictedProducts(access.role)) return snapshot;
   // Non-CEO/SA: strip confidential products AND the confidential Head Office line.
   return stripHeadOfficeFromMarketingSnapshot(
