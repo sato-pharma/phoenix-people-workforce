@@ -516,6 +516,7 @@ function buildEmployeeSummary(input: {
     noActivityCandidates: timeline.filter((cell) => cell.countedAsNoActivityCandidate).length,
     noActivityPattern,
     preHireIgnoredValues: timeline.filter((cell) => cell.isPreHire && cell.rawValue !== null).length,
+    regionName: input.employeeReference?.regionName ?? null,
     roleName: input.employeeReference?.roleName ?? input.employeeReference?.jobTitle ?? null,
     severityCounts,
     sourceRowNumber: input.employee.sourceRowNumber,

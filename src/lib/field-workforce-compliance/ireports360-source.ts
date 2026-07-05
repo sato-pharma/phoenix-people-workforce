@@ -511,7 +511,9 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
     hrId: employee.hrId,
     jobTitle: employee.jobTitle,
     lineName: employee.lineName,
+    managerHrId: employee.managerHrId,
     managerName: employee.managerName,
+    regionName: employee.regionName,
     roleName: employee.positionTitle ?? employee.jobTitle,
     teamName: employee.teamName,
   };

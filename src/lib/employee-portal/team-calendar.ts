@@ -30,7 +30,12 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type NsmTeamCalendarStatus = "ok" | "not_ready";
 
-/** One DSM followed by the reps who report to them (DSM first, then their team). */
+/**
+ * One manager followed by their team, recursively (manager first, then everyone who
+ * reports to them, directly or through another manager also in this group). Usually a
+ * DSM followed by their reps; managerHrId/managerName are null for the safety-net trailing
+ * group (duplicate HR IDs / cycles — should not occur with real data).
+ */
 export type NsmTeamCalendarGroup = {
   managerHrId: string | null;
   managerName: string | null;
@@ -131,46 +136,63 @@ async function resolveNsmScope(access: AccessContext): Promise<ResolvedNsmScope 
 }
 
 /**
- * Arrange the scoped field force as: each DSM, immediately followed by the reps who report
- * to them (DSM first, then their team), one group per DSM ordered by name. Reps whose DSM
- * isn't in the set (e.g. a vacant DSM seat) and any non-DSM/non-rep still in scope (e.g. a
- * Regional Manager) fall into a trailing "Other" group so nobody is silently dropped.
+ * Arrange the scoped field force by REAL manager/report topology (managerHrId), not job
+ * title: each "root" — someone whose manager isn't also in the scoped set, i.e. a DSM once
+ * the NSM's own row is dropped, or a Regional Manager if one is in-scope above the DSMs —
+ * becomes its own group, followed by everyone recursively reporting to them (DSM, then
+ * their reps; or RSM, then their DSMs, then those DSMs' reps). This mirrors the admin WFC
+ * classifier's orderEmployeesByHierarchy, but title-based classification was tried first and
+ * proved fragile — a DSM whose title doesn't exactly match a known string would silently
+ * never form a group, dumping their whole team into a single flat "Other" bucket. Manager
+ * HR-ID topology can't misclassify a real manager, it can only ever be right or absent.
  */
-function buildDsmGroups(employees: FieldWorkforceEmployeeSummary[]): NsmTeamCalendarGroup[] {
+export function buildDsmGroups(employees: FieldWorkforceEmployeeSummary[]): NsmTeamCalendarGroup[] {
   const byName = (a: FieldWorkforceEmployeeSummary, b: FieldWorkforceEmployeeSummary) =>
     String(a.employeeName).localeCompare(String(b.employeeName), undefined, { numeric: true });
-  const jobRoleOf = (employee: FieldWorkforceEmployeeSummary) => resolveJobFunctionRole(employee.roleName ?? "");
-  const isDsm = (employee: FieldWorkforceEmployeeSummary) => {
-    const role = jobRoleOf(employee);
-    return role === "District Manager" || role === "Manager";
-  };
-  const isRep = (employee: FieldWorkforceEmployeeSummary) => jobRoleOf(employee) === "Medical Rep";
+  const keyOf = (employee: FieldWorkforceEmployeeSummary) => canonicalHrIdKey(employee.hrId);
 
-  const dsms = [...employees].filter(isDsm).sort(byName);
-  const dsmKeys = new Set(dsms.map((dsm) => canonicalHrIdKey(dsm.hrId)).filter((k): k is string => k != null));
+  const presentKeys = new Set(employees.map(keyOf).filter((key): key is string => key != null));
+  const childrenByManagerKey = new Map<string, FieldWorkforceEmployeeSummary[]>();
+  const roots: FieldWorkforceEmployeeSummary[] = [];
 
-  const repsByDsm = new Map<string, FieldWorkforceEmployeeSummary[]>();
-  const leftovers: FieldWorkforceEmployeeSummary[] = [];
   for (const employee of employees) {
-    if (isDsm(employee)) continue;
-    const managerKey = isRep(employee) ? canonicalHrIdKey(employee.managerHrId) : null;
-    if (managerKey && dsmKeys.has(managerKey)) {
-      const bucket = repsByDsm.get(managerKey) ?? [];
+    const ownKey = keyOf(employee);
+    const managerKey = canonicalHrIdKey(employee.managerHrId);
+    if (managerKey && managerKey !== ownKey && presentKeys.has(managerKey)) {
+      const bucket = childrenByManagerKey.get(managerKey) ?? [];
       bucket.push(employee);
-      repsByDsm.set(managerKey, bucket);
+      childrenByManagerKey.set(managerKey, bucket);
     } else {
-      leftovers.push(employee);
+      // No manager in the scoped set (e.g. a DSM once the NSM is dropped, or a rep whose
+      // DSM seat is vacant) -> this employee is a root of their own.
+      roots.push(employee);
     }
   }
 
-  const groups: NsmTeamCalendarGroup[] = dsms.map((dsm) => {
-    const key = canonicalHrIdKey(dsm.hrId);
-    const team = (key ? repsByDsm.get(key) ?? [] : []).sort(byName);
-    return { managerHrId: dsm.hrId, managerName: dsm.employeeName, members: [dsm, ...team] };
+  roots.sort(byName);
+  for (const bucket of childrenByManagerKey.values()) bucket.sort(byName);
+
+  // Depth-first flatten of each root's subtree: the root, then its direct reports and
+  // theirs, recursively. `visited` guards duplicate HR IDs / cycles from ever looping or
+  // double-counting, matching orderEmployeesByHierarchy's safety net.
+  const visited = new Set<FieldWorkforceEmployeeSummary>();
+  const flatten = (employee: FieldWorkforceEmployeeSummary, out: FieldWorkforceEmployeeSummary[]) => {
+    if (visited.has(employee)) return;
+    visited.add(employee);
+    out.push(employee);
+    const key = keyOf(employee);
+    for (const child of (key ? childrenByManagerKey.get(key) : undefined) ?? []) flatten(child, out);
+  };
+
+  const groups: NsmTeamCalendarGroup[] = roots.map((root) => {
+    const members: FieldWorkforceEmployeeSummary[] = [];
+    flatten(root, members);
+    return { managerHrId: root.hrId, managerName: root.employeeName, members };
   });
 
-  if (leftovers.length > 0) {
-    groups.push({ managerHrId: null, managerName: null, members: leftovers.sort(byName) });
+  const unreached = employees.filter((employee) => !visited.has(employee));
+  if (unreached.length > 0) {
+    groups.push({ managerHrId: null, managerName: null, members: unreached.sort(byName) });
   }
 
   return groups;
