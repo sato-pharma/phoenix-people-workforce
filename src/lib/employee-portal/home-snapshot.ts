@@ -8,6 +8,7 @@ import {
   getNsmDsmPerformance,
   type EmployeePortalShellData,
 } from "@/lib/employee-portal/service";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
@@ -160,16 +161,29 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "National Sales Manager") {
-      const [national, repTeam, approvals] = await Promise.all([
+      const [national, repTeam, approvals, directoryRows] = await Promise.all([
         getNsmDsmPerformance(access, {}),
         getDsmTeamPerformance(access, {}),
         getAwaitingMyActionItems(access, "portal").catch(() => []),
+        getEmployeeDirectoryRows().catch(() => []),
       ]);
       if (!national) return emptyRoleExtras;
 
+      // Show the nickname when set, else the full name. The performance services return
+      // raw full names, so resolve the directory's nickname-aware displayName by a
+      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
+      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const displayByKey = new Map<string, string>();
+      for (const row of directoryRows) {
+        const key = nameKey(row.hrId);
+        if (key) displayByKey.set(key, row.displayName);
+      }
+      const display = (hrId: string | null | undefined, fallback: string) =>
+        displayByKey.get(nameKey(hrId)) ?? fallback;
+
       const dsms = national.dsms.map((d) => ({
         hrId: d.hrId,
-        name: d.name,
+        name: display(d.hrId, d.name),
         achievementPercent: d.achievementPercent,
         totalSales: d.totalSales,
         totalTarget: d.totalTarget,
@@ -182,16 +196,16 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         .slice(0, 10)
         .map((m) => ({
           hrId: m.hrId,
-          name: m.name,
+          name: display(m.hrId, m.name),
           achievementPercent: m.achievementPercent,
           totalSales: m.totalSales,
           totalTarget: m.totalTarget,
-          managerName: m.managerName,
+          managerName: m.managerName ? display(m.managerHrId, m.managerName) : m.managerName,
         }));
 
       // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10.
       const crm = await getNsmCrmCompliance({
-        reps: repMembers.map((m) => ({ hrId: m.hrId, name: m.name })),
+        reps: repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
         dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
       }).catch(() => null);
 
