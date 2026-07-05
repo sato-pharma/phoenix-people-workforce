@@ -545,7 +545,10 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
           typeof payload?.message === "string"
             ? payload.message
             : `Supabase request failed with ${response.status}.`;
-        throw new Error(message);
+        const err = new Error(message);
+        (err as Error & { pgrst_code?: string }).pgrst_code =
+          typeof payload?.code === "string" ? payload.code : undefined;
+        throw err;
       }
 
       return payload as T;
@@ -555,7 +558,11 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
         error instanceof Error &&
         (error.name === "AbortError" ||
           error.message.toLowerCase().includes("timed out"));
-      const shouldRetry = isTimeout && attempt < DATABASE_QUERY_MAX_ATTEMPTS - 1;
+      const isSchemaCache =
+        error instanceof Error &&
+        (error as Error & { pgrst_code?: string }).pgrst_code === "PGRST002";
+      const shouldRetry =
+        (isTimeout || isSchemaCache) && attempt < DATABASE_QUERY_MAX_ATTEMPTS - 1;
 
       if (!shouldRetry) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -564,9 +571,9 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
         throw error;
       }
 
-      if (attempt < DATABASE_QUERY_MAX_ATTEMPTS - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
+      // Use a longer back-off for schema cache errors so PostgREST has time to reload.
+      const backOffMs = isSchemaCache ? 800 : 250;
+      await new Promise((resolve) => setTimeout(resolve, backOffMs));
     } finally {
       clearTimeout(timeout);
     }
