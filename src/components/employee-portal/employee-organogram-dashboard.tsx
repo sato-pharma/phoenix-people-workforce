@@ -9,7 +9,6 @@ import {
   buildOrganogramLanes,
   filterOrganogramRows,
   isOrganogramVisibleRow,
-  normalizeSearchValue,
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 
@@ -27,9 +26,6 @@ type EmployeeOrganogramDashboardProps = {
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
-
-const inputClassName =
-  "w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
 
 const labelClassName =
   "text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -59,10 +55,8 @@ export function EmployeeOrganogramDashboard({
   const [report, setReport] = useState<VacancyReportData | null>(initialReport);
   const [error, setError] = useState<string | null>(initialError);
   const [isLoading, setIsLoading] = useState(false);
-  const [organogramSearch, setOrganogramSearch] = useState("");
   const [selectedMmLine, setSelectedMmLine] = useState<string | null>(null);
   const effectiveLineFilter = showLinePicker ? (selectedMmLine ?? "") : (fixedLine ?? "");
-  const normalizedSearch = normalizeSearchValue(organogramSearch);
 
   const loadReport = useCallback(async () => {
     setIsLoading(true);
@@ -99,8 +93,8 @@ export function EmployeeOrganogramDashboard({
   const mmReady = !showLinePicker || selectedMmLine !== null;
 
   const filteredRows = useMemo(
-    () => filterOrganogramRows(rows, effectiveLineFilter, normalizedSearch),
-    [effectiveLineFilter, normalizedSearch, rows],
+    () => filterOrganogramRows(rows, effectiveLineFilter, ""),
+    [effectiveLineFilter, rows],
   );
 
   const employees = useMemo(
@@ -114,8 +108,8 @@ export function EmployeeOrganogramDashboard({
   );
 
   const lanes = useMemo(
-    () => (effectiveLineFilter || normalizedSearch ? buildOrganogramLanes(filteredRows) : null),
-    [effectiveLineFilter, filteredRows, normalizedSearch],
+    () => (effectiveLineFilter ? buildOrganogramLanes(filteredRows) : null),
+    [effectiveLineFilter, filteredRows],
   );
 
   const lineName = effectiveLineFilter || "Select Line";
@@ -185,10 +179,10 @@ export function EmployeeOrganogramDashboard({
         </Card>
       )}
 
-      {/* ---- Search & Filters ---- */}
+      {/* ---- Filters ---- */}
       {report && (
         <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
                 Filters
@@ -197,39 +191,15 @@ export function EmployeeOrganogramDashboard({
                 {filteredRows.length} of {rows.length} positions shown
               </span>
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-            <label className="block">
-              <span className={`mb-1.5 block ${labelClassName}`}>Search</span>
-              <input
-                className={inputClassName}
-                onChange={(e) => setOrganogramSearch(e.target.value)}
-                placeholder="Search name, HR ID, manager..."
-                type="text"
-                value={organogramSearch}
-              />
-            </label>
-            <div className="flex items-end gap-2">
-              {organogramSearch && (
-                <button
-                  aria-label="Clear search"
-                  className="inline-flex h-10 items-center rounded border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
-                  onClick={() => setOrganogramSearch("")}
-                  type="button"
-                >
-                  Reset
-                </button>
-              )}
-              <button
-                aria-label="Refresh organogram data"
-                className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
-                disabled={isLoading}
-                onClick={() => void loadReport()}
-                type="button"
-              >
-                {isLoading ? "Loading..." : "Refresh"}
-              </button>
-            </div>
+            <button
+              aria-label="Refresh organogram data"
+              className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
+              disabled={isLoading}
+              onClick={() => void loadReport()}
+              type="button"
+            >
+              {isLoading ? "Loading..." : "Refresh"}
+            </button>
           </div>
         </Card>
       )}
@@ -272,7 +242,7 @@ export function EmployeeOrganogramDashboard({
             <div className="px-3 py-4 sm:px-5">
               <OrgChartTree
                 kpiLabels={PORTAL_KPI_LABELS}
-                lineName={effectiveLineFilter || (normalizedSearch ? "Search results" : lineName)}
+                lineName={effectiveLineFilter || lineName}
                 rows={filteredRows}
                 theme="portal"
               />
@@ -282,7 +252,7 @@ export function EmployeeOrganogramDashboard({
       )}
 
       {/* No line selected message — shown for non-MM roles that have no filter yet */}
-      {!showLinePicker && report && !effectiveLineFilter && !normalizedSearch && (
+      {!showLinePicker && report && !effectiveLineFilter && (
         <Card className={`rounded border border-slate-100 p-8 text-center ${cardShadow}`}>
           <h3 className="text-sm font-semibold text-slate-700">
             Select a line to view the organogram
