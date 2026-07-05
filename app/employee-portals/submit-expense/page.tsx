@@ -7,7 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { getDsmTeamPerformance, getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
 
@@ -58,7 +58,9 @@ export default async function EmployeePortalSubmitExpensePage() {
     redirect("/employee-portals/expenses");
   }
 
-  await assertPermission(access, "outstation", "create");
+  if (!(await canAccess(access, "outstation", "create"))) {
+    redirect("/employee-portals/expenses");
+  }
 
   const [portalDataResult, outstationContextResult, teamPerformanceResult] = await Promise.allSettled([
     getEmployeePortalShellData(access),

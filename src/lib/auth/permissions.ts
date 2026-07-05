@@ -317,6 +317,23 @@ export const portalMinimumPermissions: ReadonlyArray<{
       "CEO",
     ],
   },
+  // Submit-expense page (/employee-portals/submit-expense) requires outstation:create
+  // for all roles that can reach it. Without this floor, a deny-override in
+  // role_permission_overrides can silently break the page with a Forbidden error.
+  {
+    resource: "outstation",
+    action: "create",
+    roles: [
+      "Employee",
+      "Manager",
+      "District Manager",
+      "Regional Manager",
+      "National Sales Manager",
+      "Product Manager",
+      "Group Product Manager",
+      "Marketing Manager",
+    ],
+  },
 ];
 
 export function isDenialBlockedByMinimumPermission(
