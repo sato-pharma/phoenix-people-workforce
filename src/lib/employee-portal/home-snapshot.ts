@@ -12,6 +12,7 @@ import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingO
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
+import { getNsmCrmCompliance, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 
 // Roles that get the double-visit "focus" landing widgets (trend, scope coverage, probation
 // watch) and the Double Visit Report page. Kept as its own gate (rather than folded into
@@ -62,18 +63,37 @@ export type PortalHomeSnapshot = {
   nsmNational:
     | { achievementPercent: number; dsmCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
     | null;
+  /**
+   * National Sales Manager only: leaderboards (DSMs + top med reps by achievement %) and the
+   * CRM first-visit compliance board for the NSM's line. Null for every other role / on failure.
+   */
+  nsmBoard:
+    | {
+        dsms: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
+        topReps: Array<{
+          hrId: string;
+          name: string;
+          achievementPercent: number;
+          totalSales: number;
+          totalTarget: number;
+          managerName: string | null;
+        }>;
+        crm: NsmCrmComplianceData | null;
+      }
+    | null;
   plansAwaitingManagerApproval: number | null;
   /** DM/RM/NSM/PM/GPM/TM only: personal DV trend, scope coverage, and probation DV watchlist. */
   dvFocus: DoubleVisitPortalFocus | null;
 };
 
-type RoleSpecificExtras = Pick<PortalHomeSnapshot, "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational">;
+type RoleSpecificExtras = Pick<PortalHomeSnapshot, "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational" | "nsmBoard">;
 
 const emptyRoleExtras: RoleSpecificExtras = {
   pmMarketing: null,
   mmOverview: null,
   dsmTeam: null,
   nsmNational: null,
+  nsmBoard: null,
 };
 
 /** Cheap, single-query "what's paying out soon" — real pay_date rows, no recomputation. */
@@ -140,11 +160,41 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "National Sales Manager") {
-      const [national, approvals] = await Promise.all([
+      const [national, repTeam, approvals] = await Promise.all([
         getNsmDsmPerformance(access, {}),
+        getDsmTeamPerformance(access, {}),
         getAwaitingMyActionItems(access, "portal").catch(() => []),
       ]);
       if (!national) return emptyRoleExtras;
+
+      const dsms = national.dsms.map((d) => ({
+        hrId: d.hrId,
+        name: d.name,
+        achievementPercent: d.achievementPercent,
+        totalSales: d.totalSales,
+        totalTarget: d.totalTarget,
+      }));
+
+      const repMembers = repTeam?.members ?? [];
+      const topReps = repMembers
+        .slice()
+        .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
+        .slice(0, 10)
+        .map((m) => ({
+          hrId: m.hrId,
+          name: m.name,
+          achievementPercent: m.achievementPercent,
+          totalSales: m.totalSales,
+          totalTarget: m.totalTarget,
+          managerName: m.managerName,
+        }));
+
+      // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10.
+      const crm = await getNsmCrmCompliance({
+        reps: repMembers.map((m) => ({ hrId: m.hrId, name: m.name })),
+        dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+      }).catch(() => null);
+
       return {
         ...emptyRoleExtras,
         nsmNational: {
@@ -154,6 +204,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           totalTarget: national.lineTotalTarget,
           pendingApprovals: approvals.length,
         },
+        nsmBoard: { dsms, topReps, crm },
       };
     }
   } catch {
