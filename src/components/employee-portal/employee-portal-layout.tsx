@@ -183,6 +183,18 @@ function buildEmployeePortalSections({
   showPrivateCalendarTab = true,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
+    // Training Manager's own section leads the sidebar for TMs. It sits above
+    // "My Workspace" here; for every other role this section is empty and is
+    // dropped by the items.length filter below, so their order is unchanged.
+    {
+      title: "Training Manager",
+      items: [
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
+        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
+        ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
+        ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
+      ],
+    },
     {
       title: "My Workspace",
       items: [
@@ -193,15 +205,6 @@ function buildEmployeePortalSections({
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
         ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint }] : []),
-      ],
-    },
-    {
-      title: "Training Manager",
-      items: [
-        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
-        ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
-        ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
-        ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
       ],
     },
     // Dedicated Approvals Hub section — mirrors the admin shell's own "Approvals Hub" nav

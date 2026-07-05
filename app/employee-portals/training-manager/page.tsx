@@ -1,16 +1,15 @@
-import { Activity, BarChart3, BriefcaseBusiness, Building2, CalendarDays, CalendarX2, CheckCircle2, ClipboardCheck, FilePlus2, FileText } from "lucide-react";
+import { CalendarDays, CalendarRange, CalendarX2, CheckCircle2, ClipboardCheck, FilePlus2, Receipt } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { CoachingQualityRadarCard } from "@/components/coaching/coaching-quality-radar-card";
 import { CoachingScoreTrendCard } from "@/components/coaching/coaching-score-trend-card";
-import { CoachingTopScoresCard } from "@/components/coaching/coaching-top-scores-card";
+import { CoachingStarsOfMonthCard } from "@/components/coaching/coaching-stars-of-month-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
+import { LineTopAchieversCard } from "@/components/employee-portal/line-top-achievers-card";
 import {
   GlanceStrip,
-  MarketingToolRow,
   PendingActions,
   ProfileIntelBar,
-  PremiumNavTile,
   QuickActions,
 } from "@/components/employee-portal/portal-command-center";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
@@ -23,6 +22,8 @@ import {
   buildMonthlyCoachingScoreTrend,
   buildTopCoachingScores,
 } from "@/lib/coaching/landing-insights";
+import { getCompanyLineTopAchievers } from "@/lib/employee-portal/service";
+import { getEmployeePhotoMap, resolveEmployeePhotoSrc } from "@/lib/employees/employee-photo";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -52,15 +53,17 @@ export default async function TrainingManagerOverviewPage() {
   const previousMonthYear = previousMonthAnchor.getFullYear();
   const previousMonthLabel = previousMonthAnchor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const [snapshotResult, coachingResult, previousMonthResult] = await Promise.allSettled([
-    getPortalHomeSnapshot(access),
-    access.hrId
-      ? getCoachingReports({ year: currentYear }, access)
-      : Promise.resolve([]),
-    access.hrId
-      ? getCoachingReports({ year: previousMonthYear, month: previousMonth }, access)
-      : Promise.resolve([]),
-  ]);
+  const [snapshotResult, coachingResult, previousMonthResult, topAchieversResult] =
+    await Promise.allSettled([
+      getPortalHomeSnapshot(access),
+      access.hrId
+        ? getCoachingReports({ year: currentYear }, access)
+        : Promise.resolve([]),
+      access.hrId
+        ? getCoachingReports({ year: previousMonthYear, month: previousMonth }, access)
+        : Promise.resolve([]),
+      getCompanyLineTopAchievers(access, { perLine: 3 }),
+    ]);
 
   if (snapshotResult.status === "rejected") {
     logPortalFailure(
@@ -78,13 +81,24 @@ export default async function TrainingManagerOverviewPage() {
   const snapshot = snapshotResult.value;
   const coachingReports = coachingResult.status === "fulfilled" ? coachingResult.value : [];
   const previousMonthReports = previousMonthResult.status === "fulfilled" ? previousMonthResult.value : [];
+  const lineTopAchievers = topAchieversResult.status === "fulfilled" ? topAchieversResult.value : [];
 
   const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const reportsThisMonth = coachingReports.filter((r) => r.coachingMonth === currentMonth).length;
   const scoreTrend = buildMonthlyCoachingScoreTrend(coachingReports);
   const qualityRadar = buildCoachingQualityRadar(coachingReports);
-  const topScoresLastMonth = buildTopCoachingScores(previousMonthReports, 5);
+  // Stars of the month: the previous month's top 3 coaching-report scores, shown
+  // with the reps' photos (uploaded photo → bundled static → initials fallback).
+  const topScoresLastMonth = buildTopCoachingScores(previousMonthReports, 3);
+  const photoMap = await getEmployeePhotoMap();
+  const starsOfMonth = topScoresLastMonth.map((entry) => ({
+    hrId: entry.medicalRepHrId,
+    name: entry.medicalRepName,
+    photoSrc: resolveEmployeePhotoSrc(entry.medicalRepHrId, photoMap),
+    scorePercent: entry.finalScorePercent,
+    zone: entry.performanceZone,
+  }));
 
   return (
     <div className="mx-auto w-full space-y-4" dir="auto">
@@ -117,10 +131,11 @@ export default async function TrainingManagerOverviewPage() {
 
       <QuickActions
         actions={[
-          { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "New Report" },
-          { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching" },
-          { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "DV Analytics" },
-          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
+          { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Submit Coach Report" },
+          { href: "/employee-portals/plans", icon: CalendarRange, label: "Submit Weekly Plan" },
+          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Submit Vacation" },
+          { href: "/employee-portals/excuses", icon: CalendarX2, label: "Submit Excuse" },
+          { href: "/employee-portals/submit-expense", icon: Receipt, label: "Submit Expense" },
         ]}
       />
 
@@ -128,87 +143,15 @@ export default async function TrainingManagerOverviewPage() {
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
-      {/* Coaching — primary domain */}
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Coaching</h2>
-        </div>
-        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
-          <PremiumNavTile
-            href="/employee-portals/training-manager/coaching"
-            icon={BarChart3}
-            label="Coaching Dashboard"
-            description="Field coaching performance & quarterly analytics"
-          />
-          <PremiumNavTile
-            href="/employee-portals/training-manager/field-coaching"
-            icon={ClipboardCheck}
-            label="Field Coaching"
-            description="View and manage all field coaching reports"
-          />
-          <PremiumNavTile
-            href="/employee-portals/training-manager/create-coaching-report"
-            icon={FilePlus2}
-            label="New Report"
-            description="Create a new coaching report for a medical rep"
-          />
-        </div>
-      </div>
-
       {/* Coaching performance insights — mirror the coaching analytics widgets, above the DV trend */}
       <CoachingScoreTrendCard data={scoreTrend} />
       <CoachingQualityRadarCard data={qualityRadar} />
-      <CoachingTopScoresCard entries={topScoresLastMonth} monthLabel={previousMonthLabel} />
+      <CoachingStarsOfMonthCard stars={starsOfMonth} monthLabel={previousMonthLabel} />
+
+      {/* Sales: top 3 medical-rep achievers in each line (snapshot of Medical Reps Performance) */}
+      <LineTopAchieversCard groups={lineTopAchievers} />
 
       <DoubleVisitFocusSection focus={snapshot.dvFocus} />
-
-      {/* Team Operations */}
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Team Operations</h2>
-        </div>
-        <div className="divide-y divide-slate-100 bg-white">
-          <MarketingToolRow
-            href="/employee-portals/double-visit-analytics"
-            icon={Activity}
-            label="DV Analytics"
-            sub="Double-visit field coverage and per-rep intensity"
-          />
-          <MarketingToolRow
-            href="/employee-portals/vacancies"
-            icon={BriefcaseBusiness}
-            label="Vacancies"
-            sub="Open positions and DSM vacancies across your scope"
-          />
-          <MarketingToolRow
-            href="/employee-portals/probation"
-            icon={ClipboardCheck}
-            label="Probation Tracker"
-            sub="Monitor probation timelines and risk zones"
-          />
-          <MarketingToolRow
-            href="/employee-portals/organogram"
-            icon={Building2}
-            label="Organogram"
-            sub="Reporting structure and role relationships for your line"
-          />
-        </div>
-      </div>
-
-      {/* Pharmacovigilance */}
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Pharmacovigilance</h2>
-        </div>
-        <div className="bg-white">
-          <MarketingToolRow
-            href="/employee-portals/report-it"
-            icon={FileText}
-            label="Report It"
-            sub="Submit and track adverse drug reaction reports"
-          />
-        </div>
-      </div>
 
       {totalPending === 0 && (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
