@@ -945,8 +945,12 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
 
   // Re-apply portal minimum permissions after overrides so that a deny-override
   // in the DB can never strip a floor permission required for portal functionality.
+  // Only roles that already carry the floor permission in defaultPermissionMatrix
+  // are protected here — this must never GRANT a resource to a role that was
+  // deliberately never given it (e.g. Financial Advisor has no payroll access).
   for (const min of portalMinimumPermissions) {
     for (const role of min.roles) {
+      if (!defaultPermissionMatrix[role][min.resource]?.includes(min.action)) continue;
       const current = merged[role][min.resource] ?? [];
       if (!current.includes(min.action)) {
         merged[role][min.resource] = [...current, min.action];
