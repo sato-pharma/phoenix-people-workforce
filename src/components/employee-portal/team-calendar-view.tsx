@@ -125,21 +125,18 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   );
 }
 
-function RepMonthTimeline({ employee, isManager = false }: { employee: FieldWorkforceEmployeeSummary; isManager?: boolean }) {
+/** One employee's month grid — used INSIDE a ManagerBlock, so it carries no border of its
+ * own (the block's single outer border is the only border for the whole DSM + team unit). */
+function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSummary; isFirst: boolean }) {
   const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(0, 1fr))` };
   const hierarchy = [employee.teamName, employee.areaName, employee.managerName]
     .filter(Boolean)
     .join(" / ");
   return (
-    <Card className={cn("overflow-hidden rounded-xl border bg-white shadow-sm", isManager ? "border-orange-300 ring-1 ring-orange-100" : "border-slate-200")}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+    <div className={cn("bg-white px-4 py-3", isFirst ? "" : "border-t border-slate-100")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-black text-slate-950">
-            {isManager ? (
-              <span className="mr-2 inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-orange-700">Manager</span>
-            ) : null}
-            {employee.employeeName}
-          </p>
+          <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
           <p className="mt-1 font-mono text-xs font-bold text-slate-500">
             {employee.hrId}
             {hierarchy ? ` · ${hierarchy}` : ""}
@@ -151,7 +148,7 @@ function RepMonthTimeline({ employee, isManager = false }: { employee: FieldWork
         </div>
       </div>
       {/* Full month fits the width — no horizontal scroll. */}
-      <div className="p-3">
+      <div className="mt-3">
         <div className="grid gap-1" style={monthColumns}>
           {employee.timeline.map((cell) => (
             <div
@@ -173,7 +170,36 @@ function RepMonthTimeline({ employee, isManager = false }: { employee: FieldWork
           ))}
         </div>
       </div>
-    </Card>
+    </div>
+  );
+}
+
+/**
+ * One DSM (or vacant-seat placeholder) and his whole team as ONE visually separate block: a
+ * single black border wraps the manager row + every rep's row, with no border between them
+ * inside — the block itself, not each person, is the bordered unit.
+ */
+function managerBlockLabel(group: TeamCalendarGroup): string {
+  // A real manager has a real hrId; a vacant-seat placeholder (managerHrId is null) already
+  // carries its own descriptive label ("Cairo — Vacant DSM seat") and must not be prefixed
+  // with "Manager ·", which would misleadingly imply someone is actually managing the team.
+  if (group.managerHrId != null) return `Manager · ${group.managerName ?? ""}`;
+  return group.managerName ?? "Other";
+}
+
+function ManagerBlock({ group }: { group: TeamCalendarGroup }) {
+  return (
+    <div className="overflow-hidden rounded-xl border-2 border-black">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-black px-4 py-2.5">
+        <span className="text-xs font-black uppercase tracking-wide text-white">
+          {managerBlockLabel(group)}
+        </span>
+        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">{group.members.length} shown</span>
+      </div>
+      {group.members.map((employee, index) => (
+        <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} />
+      ))}
+    </div>
   );
 }
 
@@ -304,26 +330,13 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
           No one matches the current filter for {heading}.
         </Card>
       ) : (
-        <div className="space-y-6">
+        <div>
           {visibleGroups.map((group, groupIndex) => (
-            <section className="space-y-3" key={group.managerHrId ?? `unassigned-${groupIndex}`}>
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-white">
-                  {group.managerName ? `Manager · ${group.managerName}` : "Other"}
-                </span>
-                <span className="h-px flex-1 bg-slate-200" />
-                <span className="whitespace-nowrap text-[11px] font-bold text-slate-400">{group.members.length} shown</span>
-              </div>
-              <div className="space-y-3">
-                {group.members.map((employee) => (
-                  <RepMonthTimeline
-                    employee={employee}
-                    isManager={group.managerHrId != null && employee.hrId === group.managerHrId}
-                    key={employee.hrId}
-                  />
-                ))}
-              </div>
-            </section>
+            <div key={group.managerHrId ?? `unassigned-${groupIndex}`}>
+              <ManagerBlock group={group} />
+              {/* Straight line between one DSM's block and the next — not after the last one. */}
+              {groupIndex < visibleGroups.length - 1 ? <div className="my-5 h-px bg-slate-400" /> : null}
+            </div>
           ))}
         </div>
       )}
