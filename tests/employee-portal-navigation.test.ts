@@ -195,6 +195,7 @@ export function runEmployeePortalNavigationTests() {
   const nsmDefault = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nsmDefault.showMarketingRequestsTab, true, "NSM should see Marketing Requests in nav (full module, flag-independent)");
   assert.equal(nsmDefault.showSupportTab, true, "NSM should see Contact HR Support in nav (full module, flag-independent)");
+  assert.equal(nsmDefault.showDoubleVisitReportTab, true, "NSM should see the Double Visit Report tab in the portal sidebar (in DV_FOCUS_ROLES)");
 
   // Product Manager and Group Product Manager are authorized for Marketing and must
   // see the module in nav without the launch flag (regression coverage).
@@ -219,18 +220,22 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
-  // MM mirrors GPM on every nav surface EXCEPT two intentional differences:
+  // MM mirrors GPM on every nav surface EXCEPT three intentional differences:
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
+  // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
   assert.deepEqual(
     {
       ...marketingManagerDefault,
       showIncentiveTab: groupProductManagerDefault.showIncentiveTab,
       showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
+      showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab and the Attendance Analytics tab)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, and the Double Visit Report tab)",
   );
+  assert.equal(groupProductManagerDefault.showDoubleVisitReportTab, true, "Group Product Manager sees the Double Visit Report tab (in DV_FOCUS_ROLES)");
+  assert.equal(marketingManagerDefault.showDoubleVisitReportTab, false, "Marketing Manager does NOT get the Double Visit Report tab (not in DV_FOCUS_ROLES — its page would redirect)");
   assert.equal(groupProductManagerDefault.showIncentiveTab, true, "Group Product Manager still sees Incentive (only MM is hidden)");
   assert.equal(marketingManagerDefault.showIncentiveTab, false, "Marketing Manager should NOT see Incentive (hidden from MM per portal policy)");
   assert.equal(

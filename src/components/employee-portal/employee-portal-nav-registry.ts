@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Database,
   FilePlus2,
+  FileSpreadsheet,
   FileText,
   Fingerprint,
   Gift,
@@ -67,6 +68,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
+  { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"] },
   // Training Manager
   { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
   { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
