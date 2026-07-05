@@ -2445,16 +2445,16 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
   const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
   const inputClass =
-    "h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
+    "h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
   const labelClass = "text-[10px] font-semibold uppercase tracking-wider text-slate-500";
 
   return (
     <div className="space-y-5" dir="auto">
       {/* ---- Insights strip (response time / channels / hours) ---- */}
       <Card
-        className={`overflow-hidden rounded-lg border border-gray-100 p-0 print:break-inside-avoid ${cardShadow}`}
+        className={`overflow-hidden rounded border border-slate-100 p-0 print:break-inside-avoid ${cardShadow}`}
       >
-        <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 sm:grid-cols-3">
+        <div className="grid grid-cols-1 divide-x divide-y divide-slate-100 sm:grid-cols-3">
           <div className="border-l-2 border-l-emerald-400 px-4 py-3">
             <p className={labelClass}>Avg response time</p>
             <p className="mt-1 text-base font-bold text-slate-800">~ 4 hours</p>
@@ -2476,9 +2476,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       <div className="grid gap-5 lg:grid-cols-2">
         {/* ---- HR Channels ---- */}
         <Card
-          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
               <div>
@@ -2488,12 +2488,12 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 </p>
               </div>
             </div>
-            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
               {hrTeam.length}
             </span>
           </div>
 
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-100">
             {hrTeam.length > 0 ? (
               hrTeam.map((member) => (
                 <div
@@ -2503,7 +2503,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   <div className="flex items-start gap-3">
                     <span
                       aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-700"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-100 text-[11px] font-bold text-slate-700"
                     >
                       {member.name
                         .split(" ")
@@ -2526,7 +2526,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <button
                           aria-label={`Use support form for ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded-md bg-orange-500 px-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-orange-600"
+                          className="inline-flex h-7 items-center gap-1 rounded bg-orange-500 px-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-orange-600"
                           onClick={() => {
                             setCategory("HR Request");
                             setSubject(`${member.name} request`);
@@ -2538,7 +2538,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         </button>
                         <a
                           aria-label={`Email ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                           href={`mailto:${member.email}?subject=${encodeURIComponent(
                             `Phoenix Workforce - ${employeeName}`,
                           )}`}
@@ -2548,7 +2548,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         </a>
                         <a
                           aria-label={`WhatsApp ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
+                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-[11px] font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
                           href={`https://wa.me/${member.whatsapp}?text=${encodeURIComponent(
                             `Hello ${member.name}, this is ${employeeName} (Phoenix Workforce).`,
                           )}`}
@@ -2574,16 +2574,16 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             )}
           </div>
 
-          <div className="border-t border-gray-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500 sm:px-5">
+          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500 sm:px-5">
             For urgent HR matters, use the support form so the request is tracked inside Phoenix Workforce.
           </div>
         </Card>
 
         {/* ---- Request Form ---- */}
         <Card
-          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
               <div>
@@ -2593,7 +2593,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 </p>
               </div>
             </div>
-            <span className="hidden whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
+            <span className="hidden whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
               {employeeName}
             </span>
           </div>
@@ -2606,7 +2606,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {showSuccess && (
               <div
                 aria-live="polite"
-                className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-800"
+                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-800"
                 role="status"
               >
                 Request submitted successfully.
@@ -2615,7 +2615,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {submitError && (
               <div
                 aria-live="polite"
-                className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
+                className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
                 role="status"
               >
                 {submitError}
@@ -2688,8 +2688,8 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </div>
               <textarea
                 aria-label="Support description"
-                className={`w-full resize-none rounded-md border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
-                  descriptionOverSoftLimit ? "border-rose-300" : "border-gray-200"
+                className={`w-full resize-none rounded border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
+                  descriptionOverSoftLimit ? "border-rose-300" : "border-slate-200"
                 }`}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue or request in detail..."
@@ -2720,7 +2720,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               />
               <button
                 aria-label="Choose files to attach"
-                className="flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-gray-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
+                className="flex w-full cursor-pointer flex-col items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
                 onClick={() => fileInputRef.current?.click()}
                 type="button"
               >
@@ -2736,7 +2736,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <ul className="mt-2 flex flex-wrap gap-1.5">
                   {attachments.map((file) => (
                     <li
-                      className="inline-flex items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium text-orange-800"
+                      className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium text-orange-800"
                       key={`${file.name}-${file.size}`}
                     >
                       <span className="whitespace-nowrap" title={file.name}>
@@ -2761,7 +2761,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
             <Button
               aria-label="Submit support request"
-              className="h-10 w-full rounded-md text-sm font-semibold"
+              className="h-10 w-full rounded text-sm font-semibold"
               disabled={isSubmitting}
               type="submit"
             >
@@ -2781,14 +2781,14 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       {/* ---- Last Ticket (pinned) - only when at least one exists ---- */}
       {lastTicket && (
         <Card
-          className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-slate-50/40 px-4 py-2 sm:px-5">
-            <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/40 px-4 py-2 sm:px-5">
+            <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
               Your latest ticket
             </span>
             <span
-              className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
+              className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
             >
               {lastTicket.status}
             </span>
@@ -2817,9 +2817,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
       {/* ---- Recent Requests ---- */}
       <Card
-        className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}
+        className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
             <div>
@@ -2830,7 +2830,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </div>
           </div>
           {recentRequests.length > 0 && (
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+            <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
               {recentRequests.length}
             </span>
           )}
@@ -2856,7 +2856,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {/* Desktop table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-gray-100 bg-slate-50/60">
+                <thead className="border-b border-slate-100 bg-slate-50/60">
                   <tr>
                     <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                       Request ID
@@ -2875,7 +2875,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white">
                   {recentRequests.map((request) => (
                     <tr
                       className="transition hover:bg-orange-50/30"
@@ -2893,7 +2893,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       </td>
                       <td className="px-4 py-2.5">
                         <span
-                          className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                          className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
                         >
                           {request.status}
                         </span>
@@ -2908,7 +2908,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </div>
 
             {/* Mobile stacked cards */}
-            <div className="divide-y divide-gray-100 md:hidden">
+            <div className="divide-y divide-slate-100 md:hidden">
               {recentRequests.map((request) => (
                 <div
                   className="border-l-2 border-l-orange-400 px-4 py-3"
@@ -2919,7 +2919,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       {request.id.slice(0, 8)}
                     </p>
                     <span
-                      className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                      className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
                     >
                       {request.status}
                     </span>

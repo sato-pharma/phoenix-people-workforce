@@ -1023,7 +1023,44 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
 
   return (
     <Section title="Upload completeness · current period">
-      <div className="overflow-x-auto">
+      {/* Mobile: per-distributor completeness cards (wide matrix is desktop-only) */}
+      <div className="space-y-2 md:hidden">
+        {data.distributors.map((dist) => (
+          <div className="border border-slate-100 bg-white px-3 py-2.5" key={`m-${dist.code}`}>
+            <p className="text-[13px] font-semibold text-slate-800">{dist.name}</p>
+            <div className="mt-2 space-y-1.5">
+              {months.map((m) => {
+                const done = weeks.filter((w) => uploadedKeys.has(`${dist.code}-${m}-${w}`)).length;
+                return (
+                  <div className="flex items-center justify-between gap-2" key={`m-${dist.code}-${m}`}>
+                    <span className="text-[11px] font-medium text-slate-500">{formatCycleMonth(m).slice(0, 3)}</span>
+                    <div className="flex items-center gap-1">
+                      {weeks.map((w) => {
+                        const uploaded = uploadedKeys.has(`${dist.code}-${m}-${w}`);
+                        return (
+                          <span
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-[10px] font-black ${
+                              uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                            }`}
+                            key={w}
+                            title={`W${w} ${uploaded ? "Uploaded" : "Pending"}`}
+                          >
+                            {uploaded ? "✓" : "·"}
+                          </span>
+                        );
+                      })}
+                      <span className="ml-1 text-[11px] font-bold text-slate-600 tabular-nums">{done}/4</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: full matrix */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500">

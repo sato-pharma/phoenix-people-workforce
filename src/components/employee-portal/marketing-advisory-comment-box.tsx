@@ -30,7 +30,7 @@ export function MarketingAdvisoryCommentBox({
     setIsSubmitting(true);
     setError(null);
     try {
-      const response = await fetch(`/api/marketing-requests/${requestId}/comment`, {
+      const response = await fetch(`/api/marketing-requests/${encodeURIComponent(requestId)}/comment`, {
         body: JSON.stringify({ comment }),
         headers: { "Content-Type": "application/json" },
         method: "POST",

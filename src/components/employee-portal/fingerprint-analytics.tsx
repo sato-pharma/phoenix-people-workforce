@@ -374,7 +374,51 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile: premium card list (tables are desktop-only) */}
+            <div className="space-y-2.5 p-3 md:hidden">
+              {rows.map((row) => {
+                const lateMin = parseInt(row.lateMinutes ?? "0", 10);
+                return (
+                  <div className="border border-slate-200 bg-white p-3" key={row.rawDate}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-800">{row.date}</span>
+                      <StatusBadge status={row.status} />
+                    </div>
+                    <dl className="mt-2.5 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.firstPunch || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.lastPunch || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Duration</dt>
+                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.timeLong || "—"}</dd>
+                      </div>
+                    </dl>
+                    {(lateMin > 0 || row.deductionConfirmed) && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {lateMin > 0 && (
+                          <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
+                            +{lateMin} min late
+                          </span>
+                        )}
+                        {row.deductionConfirmed && (
+                          <span className="inline-flex bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 tabular-nums">
+                            −{row.deductionDays}d deduction
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: full table */}
+            <div className="hidden overflow-x-auto md:block">
               {(() => {
                 const showDeductionCol = rows.some((r) => r.deductionConfirmed);
                 const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;

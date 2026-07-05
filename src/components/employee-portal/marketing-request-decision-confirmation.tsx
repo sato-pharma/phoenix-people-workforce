@@ -115,24 +115,41 @@ export function MarketingRequestDecisionConfirmation({
 
           <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>
           {summary.products.length > 0 ? (
-            <table className="mt-2 w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-950 text-white">
-                  <th className="px-3 py-2 text-left font-medium">Product</th>
-                  <th className="px-3 py-2 text-right font-medium">Qty</th>
-                  <th className="px-3 py-2 text-right font-medium">Value</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Mobile: card list (tables are desktop-only) */}
+              <div className="mt-2 space-y-2 md:hidden">
                 {summary.products.map((product, index) => (
-                  <tr key={`${product.name}-${index}`} className="border-b border-orange-100">
-                    <td className="px-3 py-2 text-slate-950">{product.name}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{product.quantity}</td>
-                    <td className="px-3 py-2 text-right text-slate-950">{egp(product.value)}</td>
-                  </tr>
+                  <div className="border border-slate-200 bg-white px-3 py-2.5" key={`m-${product.name}-${index}`}>
+                    <p className="text-[13px] font-medium text-slate-950">{product.name}</p>
+                    <div className="mt-1.5 flex items-center justify-between text-xs">
+                      <span className="text-slate-500">
+                        Qty <span className="font-semibold text-slate-800">{product.quantity}</span>
+                      </span>
+                      <span className="font-medium text-slate-950">{egp(product.value)}</span>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+              {/* Desktop: table */}
+              <table className="mt-2 hidden w-full border-collapse text-sm md:table">
+                <thead>
+                  <tr className="bg-slate-950 text-white">
+                    <th className="px-3 py-2 text-left font-medium">Product</th>
+                    <th className="px-3 py-2 text-right font-medium">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.products.map((product, index) => (
+                    <tr key={`${product.name}-${index}`} className="border-b border-orange-100">
+                      <td className="px-3 py-2 text-slate-950">{product.name}</td>
+                      <td className="px-3 py-2 text-right text-slate-600">{product.quantity}</td>
+                      <td className="px-3 py-2 text-right text-slate-950">{egp(product.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           ) : (
             <p className="mt-2 text-sm text-slate-500">No products listed on this request.</p>
           )}

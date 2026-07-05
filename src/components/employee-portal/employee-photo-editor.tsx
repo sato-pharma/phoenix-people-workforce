@@ -84,7 +84,7 @@ export function EmployeePhotoEditor({
   }
 
   return (
-    <div className="rounded border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
+    <div className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
       <div className="mb-4 flex items-center gap-2">
         <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
           Profile photo

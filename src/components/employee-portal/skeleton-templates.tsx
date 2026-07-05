@@ -42,7 +42,7 @@ export function RedirectSkeleton() {
   return (
     <div className="mx-auto w-full space-y-5">
       <HeroSkeleton />
-      <Card className={`rounded-lg border border-gray-100 bg-white p-4 sm:p-5 ${cardShadow}`}>
+      <Card className={`rounded border border-slate-100 bg-white p-4 sm:p-5 ${cardShadow}`}>
         <Pulse className="h-4 w-40" />
         <Pulse className="mt-2 h-3 w-64" />
       </Card>
@@ -58,8 +58,8 @@ export function FormSkeleton({ fieldCount = 4 }: { fieldCount?: number }) {
   return (
     <div className="mx-auto w-full space-y-5">
       <HeroSkeleton />
-      <Card className={`rounded-lg border border-gray-100 bg-white ${cardShadow}`}>
-        <div className="border-b border-gray-100 px-4 py-3 sm:px-5">
+      <Card className={`rounded border border-slate-100 bg-white ${cardShadow}`}>
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
           <Pulse className="h-4 w-36" />
           <Pulse className="mt-1.5 h-3 w-56" />
         </div>
@@ -93,12 +93,13 @@ export function DashboardSkeleton({
       <HeroSkeleton />
 
       {/* KPI strip */}
-      <Card className={`rounded-lg border border-gray-100 bg-white p-0 ${cardShadow}`}>
+      <Card className={`rounded border border-slate-100 bg-white p-0 ${cardShadow}`}>
         <div
-          className={`grid grid-cols-2 gap-px sm:grid-cols-${Math.min(kpiCount, 4)}`}
-          style={{
-            gridTemplateColumns: `repeat(${Math.min(kpiCount, 4)}, minmax(0, 1fr))`,
-          }}
+          className={`grid grid-cols-2 gap-px ${
+            { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4" }[
+              Math.min(kpiCount, 4)
+            ] ?? "sm:grid-cols-4"
+          }`}
         >
           {Array.from({ length: kpiCount }).map((_, i) => (
             <div className="px-4 py-4" key={i}>
@@ -111,7 +112,7 @@ export function DashboardSkeleton({
       </Card>
 
       {/* Filters card */}
-      <Card className={`rounded-lg border border-gray-100 bg-white p-4 sm:p-5 ${cardShadow}`}>
+      <Card className={`rounded border border-slate-100 bg-white p-4 sm:p-5 ${cardShadow}`}>
         <Pulse className="mb-3 h-4 w-24" />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -129,7 +130,7 @@ export function DashboardSkeleton({
       >
         {Array.from({ length: chartCount }).map((_, i) => (
           <Card
-            className={`rounded-lg border border-gray-100 bg-white p-4 sm:p-5 ${cardShadow}`}
+            className={`rounded border border-slate-100 bg-white p-4 sm:p-5 ${cardShadow}`}
             key={i}
           >
             <Pulse className="h-4 w-44" />
@@ -140,11 +141,11 @@ export function DashboardSkeleton({
       </section>
 
       {/* Table placeholder */}
-      <Card className={`rounded-lg border border-gray-100 bg-white ${cardShadow}`}>
-        <div className="border-b border-gray-100 p-3">
+      <Card className={`rounded border border-slate-100 bg-white ${cardShadow}`}>
+        <div className="border-b border-slate-100 p-3">
           <Pulse className="h-5 w-32" />
         </div>
-        <div className="divide-y divide-gray-100 p-3">
+        <div className="divide-y divide-slate-100 p-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <div className="flex items-center gap-3 py-3" key={i}>
               <Pulse className="h-3 w-16" />

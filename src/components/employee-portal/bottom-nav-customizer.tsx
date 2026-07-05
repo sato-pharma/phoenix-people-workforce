@@ -32,7 +32,7 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
   }
 
   return (
-    <Card className="rounded border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 lg:col-span-2">
+    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 lg:col-span-2">
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
           Quick Navigation
@@ -54,7 +54,7 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
           const Icon = entry.icon;
           return (
             <span
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-500"
+              className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-500"
               key={entry.href}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -65,7 +65,7 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
         })}
         {pinnedSet.size > 0 ? (
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:border-orange-300 hover:text-orange-600"
+            className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:border-orange-300 hover:text-orange-600"
             onClick={() => setSelected([])}
             type="button"
           >
@@ -82,14 +82,14 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
           const disabled = !isPinned && atMax;
           return (
             <div
-              className={`relative flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+              className={`relative flex items-center gap-3 rounded border p-3 transition-colors ${
                 isPinned ? "border-orange-300 bg-orange-50/50" : "border-slate-200 bg-white"
               }`}
               key={entry.href}
             >
               <Link className="flex min-w-0 flex-1 items-center gap-3" href={entry.href}>
                 <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded ${
                     isPinned ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-500"
                   }`}
                 >
@@ -100,7 +100,7 @@ export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortal
               <button
                 aria-label={isPinned ? `Unpin ${entry.fullLabel}` : `Pin ${entry.fullLabel}`}
                 aria-pressed={isPinned}
-                className={`shrink-0 rounded-md p-1.5 transition-colors ${
+                className={`shrink-0 rounded p-1.5 transition-colors ${
                   isPinned
                     ? "text-orange-600 hover:bg-orange-100"
                     : disabled

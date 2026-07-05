@@ -63,7 +63,7 @@ const ALL_VALUE = "__all__";
 const PROBATION_PAGE_SIZE = 25;
 
 const inputClassName =
-  "w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
+  "w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
 
 const labelClassName =
   "text-[11px] font-semibold uppercase tracking-wider text-slate-400";
@@ -313,8 +313,8 @@ export function EmployeeProbationDashboard({
   return (
     <div className="space-y-5" dir="auto">
       {/* ---- Stat Cards ---- */}
-      <Card className={`overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}>
-        <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 lg:grid-cols-4">
+      <Card className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 lg:grid-cols-4">
           {/* Total */}
           <div className="border-l-2 border-l-orange-400 px-4 py-4">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -368,7 +368,7 @@ export function EmployeeProbationDashboard({
 
       {/* ---- Zone Distribution Bar ---- */}
       <WorkspaceErrorBoundary fallbackTitle="Zone distribution unavailable">
-        <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="mb-3">
             <h3 className="text-sm font-bold text-slate-800">Zone Distribution</h3>
             <p className="mt-0.5 text-[11px] text-slate-400">
@@ -379,7 +379,7 @@ export function EmployeeProbationDashboard({
             <>
               <div
                 aria-label="Zone distribution chart"
-                className="flex h-4 w-full overflow-hidden rounded-md"
+                className="flex h-4 w-full overflow-hidden rounded"
                 role="img"
               >
                 {summary.safe > 0 && (
@@ -423,7 +423,7 @@ export function EmployeeProbationDashboard({
               </div>
             </>
           ) : (
-            <div className="flex h-4 w-full items-center justify-center rounded-md bg-slate-100">
+            <div className="flex h-4 w-full items-center justify-center rounded bg-slate-100">
               <span className="text-[10px] text-slate-400">No data</span>
             </div>
           )}
@@ -433,7 +433,7 @@ export function EmployeeProbationDashboard({
       {/* ---- Message ---- */}
       {message && (
         <div
-          className={`rounded-md border px-4 py-3 text-sm ${
+          className={`rounded border px-4 py-3 text-sm ${
             message.tone === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-rose-200 bg-rose-50 text-rose-800"
@@ -447,9 +447,9 @@ export function EmployeeProbationDashboard({
       )}
 
       {/* ---- Filters ---- */}
-      <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+      <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+          <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
             Filters
           </span>
           <span className="text-[11px] text-slate-400">
@@ -552,7 +552,7 @@ export function EmployeeProbationDashboard({
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             aria-label="Apply probation filters"
-            className="rounded-md bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
+            className="rounded bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
             disabled={!hasActiveFilters}
             onClick={() => {
               /* Filters apply reactively; this is a visual confirmation anchor */
@@ -563,7 +563,7 @@ export function EmployeeProbationDashboard({
           </button>
           <button
             aria-label="Reset all probation filters"
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
             disabled={!hasActiveFilters}
             onClick={resetFilters}
             type="button"
@@ -574,7 +574,7 @@ export function EmployeeProbationDashboard({
       </Card>
 
       {/* ---- Desktop Table ---- */}
-      <Card className={`hidden overflow-hidden rounded-lg border border-gray-100 p-0 md:block ${cardShadow}`}>
+      <Card className={`hidden overflow-hidden rounded border border-slate-100 p-0 md:block ${cardShadow}`}>
         <PortalDesktopTable minWidth="1180px">
             <thead>
               <tr className="bg-slate-50/80">
@@ -620,7 +620,7 @@ export function EmployeeProbationDashboard({
 
                   return (
                     <tr
-                      className="border-t border-gray-100 transition-colors hover:bg-slate-50/50"
+                      className="border-t border-slate-100 transition-colors hover:bg-slate-50/50"
                       key={row.hr_id}
                     >
                       {/* Employee */}
@@ -703,7 +703,7 @@ export function EmployeeProbationDashboard({
                       {/* Zone */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
+                          className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
                         >
                           {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
                         </span>
@@ -712,7 +712,7 @@ export function EmployeeProbationDashboard({
                       {/* Review */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                          className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
                         >
                           {workflowStatusLabel(row.workflow?.status)}
                         </span>
@@ -723,7 +723,7 @@ export function EmployeeProbationDashboard({
                         <div className="flex flex-wrap gap-1.5">
                           {row.workflow && allowed.map((action) => (
                             <button
-                              className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
+                              className={`rounded px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
                                 action === "terminate"
                                   ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                   : action === "pass"
@@ -740,7 +740,7 @@ export function EmployeeProbationDashboard({
                           ))}
                           {canSubmitManagerFeedback && row.probation_id && (
                             <button
-                              className="rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 transition"
+                              className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 transition"
                               onClick={() => setFeedbackEmployeeHrId(feedbackEmployeeHrId === row.hr_id ? null : row.hr_id)}
                               type="button"
                             >
@@ -762,7 +762,7 @@ export function EmployeeProbationDashboard({
 
       {/* ---- Mobile Card View ---- */}
       <div className="space-y-0 md:hidden">
-        <Card className={`divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-100 p-0 ${cardShadow}`}>
+        <Card className={`divide-y divide-slate-100 overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
           {filteredRows.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">
               No probation records match the current filters.
@@ -786,7 +786,7 @@ export function EmployeeProbationDashboard({
                       <p className="mt-0.5 text-xs text-slate-600">{row.job_title}</p>
                     </div>
                     <span
-                      className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
+                      className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
                     >
                       {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
                     </span>
@@ -833,7 +833,7 @@ export function EmployeeProbationDashboard({
                   {/* Review + actions */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                     <span
-                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                      className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
                     >
                       {workflowStatusLabel(row.workflow?.status)}
                     </span>
@@ -841,7 +841,7 @@ export function EmployeeProbationDashboard({
                       <>
                         {allowed.map((action) => (
                           <button
-                            className={`rounded-md px-2 py-1 text-[10px] font-semibold transition disabled:opacity-50 ${
+                            className={`rounded px-2 py-1 text-[10px] font-semibold transition disabled:opacity-50 ${
                               action === "terminate"
                                 ? "border border-rose-200 bg-rose-50 text-rose-700"
                                 : action === "pass"
@@ -877,7 +877,7 @@ export function EmployeeProbationDashboard({
       {feedbackEmployeeHrId && (() => {
         const feedbackRow = rows.find(r => r.hr_id === feedbackEmployeeHrId);
         return feedbackRow ? (
-          <Card className={`rounded-lg border border-orange-100 p-0 ${cardShadow}`}>
+          <Card className={`rounded border border-orange-100 p-0 ${cardShadow}`}>
             <FeedbackFormPanel
               employeeHrId={feedbackRow.hr_id}
               employeeName={feedbackRow.full_name}
@@ -889,7 +889,7 @@ export function EmployeeProbationDashboard({
 
       {/* ---- Workflow Action Form ---- */}
       {selectedAction && (
-        <Card className={`rounded-lg border border-gray-100 p-4 sm:p-5 ${cardShadow}`}>
+        <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="mb-4">
             <h3 className="text-sm font-bold text-slate-800">
               {actionLabel(selectedAction.action)}: {selectedAction.row.full_name}
@@ -973,7 +973,7 @@ export function EmployeeProbationDashboard({
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
-              className={`rounded-md px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 ${
+              className={`rounded px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 ${
                 selectedAction.action === "terminate"
                   ? "bg-rose-600 hover:bg-rose-700"
                   : "bg-orange-500 hover:bg-orange-600"
@@ -985,7 +985,7 @@ export function EmployeeProbationDashboard({
               {pendingAction ? "Submitting..." : actionLabel(selectedAction.action)}
             </button>
             <button
-              className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               onClick={() => {
                 setSelectedAction(null);
                 setActionForm(emptyActionForm());

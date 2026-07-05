@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { CalendarCheck, Clock, MessageSquare, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -31,10 +31,10 @@ function statusBadge(status: string) {
 
 function StatCard({ label, value, sub }: { label: string; sub?: string; value: string | number }) {
   return (
-    <div className="rounded border border-border bg-background p-4 text-center">
-      <div className="text-2xl font-bold tabular-nums">{value}</div>
-      <div className="mt-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
-      {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
+    <div className="rounded border border-slate-200 bg-white p-4 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
+      <div className="text-2xl font-black tabular-nums text-slate-900">{value}</div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      {sub && <div className="mt-0.5 text-[11px] font-semibold text-orange-600">{sub}</div>}
     </div>
   );
 }
@@ -150,7 +150,90 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
         </Card>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          {/* Mobile: premium card list (tables are desktop-only) */}
+          <div className="space-y-2.5 md:hidden">
+            {rows.map((row) => {
+              const dispute = disputes[row.rawDate];
+              const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
+              return (
+                <div className="rounded border border-border bg-background p-3" key={row.rawDate}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold">{row.date}</span>
+                    {statusBadge(row.status)}
+                  </div>
+                  <dl className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">In</dt>
+                      <dd className="mt-0.5 font-medium">{row.firstPunch || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Out</dt>
+                      <dd className="mt-0.5 font-medium">{row.lastPunch || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Hours</dt>
+                      <dd className="mt-0.5 font-mono font-medium">{row.timeLong || "—"}</dd>
+                    </div>
+                  </dl>
+                  {row.deductionConfirmed && (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      Deduction: -{row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}
+                    </p>
+                  )}
+                  {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
+                    <Button
+                      className="mt-2 h-8 w-full text-xs"
+                      onClick={() => openDispute(row.rawDate, row.date)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <MessageSquare className="mr-1 h-3 w-3" />
+                      Dispute
+                    </Button>
+                  )}
+                  {dispute?.submitted && (
+                    <span className="mt-2 flex items-center gap-1 text-xs font-medium text-orange-600">
+                      <ShieldCheck className="h-3 w-3" />
+                      Pending review
+                    </span>
+                  )}
+                  {dispute && !dispute.submitted && (
+                    <div className="mt-2">
+                      <textarea
+                        className="w-full rounded border border-orange-300 bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
+                        placeholder="Describe why this record should be reconsidered (e.g. official visit, technical issue with device)…"
+                        rows={2}
+                        value={dispute.reason}
+                      />
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
+                          disabled={dispute.submitting}
+                          onClick={() => submitDispute(row.rawDate, hrId)}
+                          size="sm"
+                        >
+                          {dispute.submitting ? "Sending…" : "Submit"}
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={() => cancelDispute(row.rawDate)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      {dispute.error && <p className="mt-1 text-xs text-red-600">{dispute.error}</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop: full table */}
+          <div className="hidden overflow-x-auto md:block">
             {(() => {
               const showDeductionCol = rows.some((r) => r.deductionConfirmed);
               const colSpanTotal = showDeductionCol ? 7 : 6;
@@ -174,8 +257,8 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                       const dispute = disputes[row.rawDate];
                       const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
                       return (
-                        <>
-                          <tr key={row.rawDate} className="hover:bg-muted/30">
+                        <Fragment key={row.rawDate}>
+                          <tr className="hover:bg-muted/30">
                             <td className="px-4 py-3 font-mono text-xs">{row.date}</td>
                             <td className="px-4 py-3 text-xs">
                               {row.firstPunch ? (
@@ -251,7 +334,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                               </td>
                             </tr>
                           )}
-                        </>
+                        </Fragment>
                       );
                     })}
                   </tbody>

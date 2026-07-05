@@ -93,7 +93,7 @@ function TrendTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="max-w-[calc(100vw-4rem)] rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
+    <div className="max-w-[calc(100vw-4rem)] rounded border border-slate-200 bg-white p-3 text-sm shadow-sm">
       <p className="mb-1 break-words font-semibold text-slate-900">{label}</p>
       {payload.map((p) => (
         <p key={p.name} className="text-slate-600">
@@ -117,7 +117,7 @@ function RankingTooltip({
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="max-w-[calc(100vw-4rem)] rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
+    <div className="max-w-[calc(100vw-4rem)] rounded border border-slate-200 bg-white p-3 text-sm shadow-sm">
       <p className="mb-1 break-words font-semibold text-slate-900">{d.fullName ?? ""}</p>
       <p className="text-slate-600">
         Total: <span className="font-bold text-slate-900">{egp(d.totalExpenses)}</span>
@@ -167,11 +167,11 @@ export function NsmTeamExpensesDashboard({
   return (
     <div className="space-y-5 sm:space-y-7">
       {/* ── Stat Cards with Thin Gridlines ── */}
-      <Card className="rounded-lg border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none print:break-inside-avoid">
-        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y divide-gray-100">
+      <Card className="rounded border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none print:break-inside-avoid">
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y divide-slate-100">
           {stats.map((stat) => (
             <div
-              className={`min-w-0 border-l-2 ${statBorders[stat.label] ?? "border-l-gray-300"} bg-white px-3 py-3 sm:px-4 sm:py-4`}
+              className={`min-w-0 border-l-2 ${statBorders[stat.label] ?? "border-l-slate-300"} bg-white px-3 py-3 sm:px-4 sm:py-4`}
               key={stat.label}
             >
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -190,7 +190,7 @@ export function NsmTeamExpensesDashboard({
 
       {/* ── Charts (Trend + Ranking) ── */}
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+        <Card className="min-w-0 overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
               Monthly Trend
@@ -246,7 +246,7 @@ export function NsmTeamExpensesDashboard({
           </WorkspaceErrorBoundary>
         </Card>
 
-        <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+        <Card className="min-w-0 overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
               DSM Expense Ranking
@@ -293,7 +293,7 @@ export function NsmTeamExpensesDashboard({
       </div>
 
       {/* ── DSM Summary Table ── */}
-      <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+      <Card className="min-w-0 overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
         <div className="mb-4 sm:mb-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
             DSM Summary
@@ -310,7 +310,7 @@ export function NsmTeamExpensesDashboard({
             const color = expenseColor(dsm.totalExpenses, maxExpense);
             return (
               <div
-                className="relative min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm"
+                className="relative min-w-0 overflow-hidden rounded border border-slate-100 bg-white shadow-sm"
                 key={dsm.hrId}
               >
                 <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: color }} />
@@ -409,7 +409,7 @@ export function NsmTeamExpensesDashboard({
       </Card>
 
       {/* ── Recent Expense Rows ── */}
-      <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+      <Card className="min-w-0 overflow-hidden rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
         <div className="mb-4 sm:mb-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
             Recent Trips
@@ -423,7 +423,7 @@ export function NsmTeamExpensesDashboard({
         <div className="grid gap-2.5 md:hidden">
           {data.expenseRows.slice(0, 20).map((expense) => (
             <div
-              className="relative min-w-0 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm"
+              className="relative min-w-0 overflow-hidden rounded border border-slate-100 bg-white shadow-sm"
               key={`${expense.tripId}-${expense.date}-${expense.dsmName}`}
             >
               <div

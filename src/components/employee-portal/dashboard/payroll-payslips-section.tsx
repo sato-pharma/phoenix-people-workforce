@@ -46,7 +46,7 @@ function PayrollStat({
   const toggleLabel = isValueVisible ? `Hide ${label}` : `Show ${label}`;
 
   return (
-    <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
+    <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
         <button
@@ -258,7 +258,39 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
                   {historyRows.length} record{historyRows.length === 1 ? "" : "s"}
                 </span>
               </div>
-              <div className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded border border-slate-100">
+              {/* Mobile: premium card list (tables are desktop-only) */}
+              <div className="max-h-[320px] space-y-2 overflow-y-auto md:hidden">
+                {historyRows.length === 0 ? (
+                  <p className="rounded border border-slate-100 bg-slate-50/60 px-3 py-6 text-center text-sm text-slate-500">
+                    No payroll history records found yet.
+                  </p>
+                ) : (
+                  historyRows.map((row) => (
+                    <div
+                      className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-white px-3 py-2.5"
+                      key={`m-${row.id}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                        <Badge
+                          className="mt-1 whitespace-nowrap px-2 py-0.5 text-[10px]"
+                          variant={payrollStatusTone(row.status)}
+                        >
+                          {row.status.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                      <Link className="shrink-0" href={`/api/payroll/${row.id}/payslips`} target="_blank">
+                        <Button className="h-8 px-3 text-xs" variant="secondary">
+                          View
+                        </Button>
+                      </Link>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop: full table */}
+              <div className="hidden max-h-[320px] overflow-y-auto overflow-x-hidden rounded border border-slate-100 md:block">
                 <table className="w-full border-collapse table-fixed text-left text-xs sm:text-sm">
                   <colgroup>
                     <col className="w-[32%]" />
