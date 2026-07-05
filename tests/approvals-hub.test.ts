@@ -333,6 +333,17 @@ export function runApprovalsHubTests() {
   assert.match(myWorkspaceMatch![1], /approvals-hub.*Other Approvals/, "Other Approvals (residual combined hub) stays in My Workspace, not the new Approvals Hub section");
   assert.match(portalLayout, /if \(title === "Approvals Hub"\) return CalendarDays;/, "the collapsed-rail icon map has an entry for the new section");
 
+  // "My Workspace" is the first section returned (owner request) — ahead of Training Manager and
+  // Approvals Hub, which are both conditional/secondary for most portal users.
+  {
+    const myWorkspaceIdx = portalLayout.indexOf('title: "My Workspace"');
+    const trainingManagerIdx = portalLayout.indexOf('title: "Training Manager"');
+    const approvalsHubIdx = portalLayout.indexOf('title: "Approvals Hub"');
+    assert.ok(myWorkspaceIdx > -1 && trainingManagerIdx > -1 && approvalsHubIdx > -1, "all three section titles are present");
+    assert.ok(myWorkspaceIdx < trainingManagerIdx, "My Workspace is ordered before Training Manager");
+    assert.ok(myWorkspaceIdx < approvalsHubIdx, "My Workspace is ordered before Approvals Hub");
+  }
+
   // ── Plan Phase 2 enhancements ────────────────────────────────────────────────
   // Edit-request stage + overdue-first sort, all reusing the existing plan workflow (no new routing).
   assert.match(svc, /export type PlanApprovalStage = "manager" \| "ceo" \| "hr" \| "edit_request";/, "the edit-request decision is surfaced as its own stage");
