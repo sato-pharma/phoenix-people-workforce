@@ -287,8 +287,14 @@ export type DoubleVisitReportRow = {
   daysSinceVisitedHire: number | null;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
+  /** The double-visitor's job title / role label (e.g. "District Manager"), resolved via
+   * resolveDvRole. Null when the double-visitor can't be matched to a directory employee. */
+  doubleVisitorRole: string | null;
   lineName: string | null;
   period: DoubleVisitPeriod;
+  /** Region containing areaName, resolved from the employee directory's area→region mapping
+   * (not a raw source-system field — the DV feed itself carries no region). */
+  regionName: string | null;
   visitCount: number;
   visitedEmployeeHireDate: string | null;
   visitedHrId: string | null;
@@ -305,8 +311,11 @@ export type DoubleVisitReportData = {
   dateTo: string;
   filters: {
     areas: string[];
+    /** Distinct double-visitor job-title/role labels present in `rows` (e.g. "District
+     * Manager", "Regional Manager") — replaces the old line-based filter. */
+    doubleVisitorRoles: string[];
     doubleVisitors: string[];
-    lines: string[];
+    regions: string[];
     visitKinds: string[];
   };
   neverVisited: DoubleVisitFocusRosterEntry[];
