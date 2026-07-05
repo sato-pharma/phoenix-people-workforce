@@ -38,7 +38,12 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    if (!isPortalWeeklyRole(access.role)) {
+    // Company executives consume this same feed from the admin Field Sales pages
+    // (/admin/field-sales/weekly-sales). Scope still resolves server-side from the
+    // session — CEO / Super Admin land on the full COMPANY tier and cannot widen
+    // anything via query params.
+    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
+    if (!isPortalWeeklyRole(access.role) && !isCompanyExecutive) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 
