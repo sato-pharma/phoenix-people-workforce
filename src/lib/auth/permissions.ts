@@ -943,6 +943,17 @@ function toPermissionMatrix(overrides: PermissionDbOverrideRow[]): PermissionMat
     merged[role][resource] = override.is_allowed ? [...withoutAction, action] : withoutAction;
   });
 
+  // Re-apply portal minimum permissions after overrides so that a deny-override
+  // in the DB can never strip a floor permission required for portal functionality.
+  for (const min of portalMinimumPermissions) {
+    for (const role of min.roles) {
+      const current = merged[role][min.resource] ?? [];
+      if (!current.includes(min.action)) {
+        merged[role][min.resource] = [...current, min.action];
+      }
+    }
+  }
+
   return applyHardPermissionBoundaries(merged);
 }
 
