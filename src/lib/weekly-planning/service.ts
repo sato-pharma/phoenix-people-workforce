@@ -1303,38 +1303,52 @@ async function notifyPlanSubmitted(plan: PlanHeaderRow) {
   await Promise.allSettled([notifyManager(plan, hrRecipients), notifyHrOnSubmit(plan, hrRecipients)]);
 }
 
+// Best-effort — a failure to notify must never mask a decision that already
+// committed via rpcDecidePlan (see decideEmployeePlan).
 async function notifyCeo(plan: PlanHeaderRow) {
-  const ceos = await authUsersByRole("CEO");
-  await notifyRecipients({
-    actionUrl: `/admin/approvals/plan/${plan.id}`,
-    eventType: "plan_manager_approved",
-    message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}.`,
-    plan,
-    recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
-    title: `${plan.employee_name}'s ${plan.plan_kind} plan needs CEO approval`,
-  });
+  try {
+    const ceos = await authUsersByRole("CEO");
+    await notifyRecipients({
+      actionUrl: `/admin/approvals/plan/${plan.id}`,
+      eventType: "plan_manager_approved",
+      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}.`,
+      plan,
+      recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
+      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs CEO approval`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify CEO for plan ${plan.id}`, error);
+  }
 }
 
 async function notifyHr(plan: PlanHeaderRow) {
-  await notifyRecipients({
-    actionUrl: `/admin/approvals/plan/${plan.id}`,
-    eventType: "plan_ceo_approved",
-    message: `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
-    plan,
-    recipients: await hrAcknowledgementRecipients(),
-    title: `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
-  });
+  try {
+    await notifyRecipients({
+      actionUrl: `/admin/approvals/plan/${plan.id}`,
+      eventType: "plan_ceo_approved",
+      message: `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
+      plan,
+      recipients: await hrAcknowledgementRecipients(),
+      title: `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify HR for plan ${plan.id}`, error);
+  }
 }
 
 async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: EmployeePlanAction, comment: string | null) {
-  await notifyRecipients({
-    actionUrl: `/employee-portals/plans?plan=${plan.id}`,
-    eventType: action,
-    message: `${plan.plan_kind} plan ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
-    plan,
-    recipients: [{ hrId: plan.employee_hr_id }],
-    title: `Your ${plan.plan_kind} plan was ${action.includes("reject") ? "rejected" : "returned"}`,
-  });
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      eventType: action,
+      message: `${plan.plan_kind} plan ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
+      plan,
+      recipients: [{ hrId: plan.employee_hr_id }],
+      title: `Your ${plan.plan_kind} plan was ${action.includes("reject") ? "rejected" : "returned"}`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify employee of ${action} for plan ${plan.id}`, error);
+  }
 }
 
 export async function getEmployeePlansWorkspace(access: AccessContext): Promise<EmployeePlansWorkspace> {

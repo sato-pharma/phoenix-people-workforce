@@ -476,54 +476,61 @@ async function notifyDecisionRecipients(input: {
   const noteSuffix = managerNote ? ` Manager reply/reason: ${managerNote}` : "";
   const summary = `Your ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by your direct manager.${noteSuffix}`;
   const title = `Excuse request ${requestStatusLabel}`;
-  await createSystemNotification({
-    actionUrl,
-    actorId: input.request.managerHrId,
-    channels: ["in_app", "email", "telegram"],
-    email: {
-      ctaHref: actionUrl,
-      ctaLabel: "Open in Action Center",
-      employeeHrId: input.request.employeeHrId,
-      includeHrInbox: true,
-      metrics: [
-        { label: "Excuse type", value: excuseTypeLabel },
-        { label: "Date", value: input.request.excuseDate },
-        { label: "Status", value: requestStatusLabel },
-      ],
-      notificationType: "general",
-      recipients: employeeEmail ? [employeeEmail] : undefined,
-      subject: `Your excuse request was ${requestStatusLabel}`,
-      summary,
-      // Pin the dedicated employee-facing template so the decision email does NOT reuse
-      // manager-oriented wording ("...pending your review", "Dear Dr.").
-      templateKey: EMAIL_TEMPLATE_KEYS.EXCUSE_DECISION,
-      templateContext: {
-        duration: `${input.request.durationHours} hours`,
+  try {
+    // Best-effort — the manager's decision (DB update + audit log) has already committed by
+    // the time callers reach this point; a notification failure (e.g. a synthetic/orphaned
+    // employeeHrId tripping the notification_events.employee_hr_id FK) must never mask that.
+    await createSystemNotification({
+      actionUrl,
+      actorId: input.request.managerHrId,
+      channels: ["in_app", "email", "telegram"],
+      email: {
+        ctaHref: actionUrl,
+        ctaLabel: "Open in Action Center",
         employeeHrId: input.request.employeeHrId,
-        employeeName: input.request.employeeName,
-        excuseDate: input.request.excuseDate,
-        excuseType: excuseTypeLabel,
-        line: input.request.lineName ?? "—",
-        status: requestStatusLabel,
+        includeHrInbox: true,
+        metrics: [
+          { label: "Excuse type", value: excuseTypeLabel },
+          { label: "Date", value: input.request.excuseDate },
+          { label: "Status", value: requestStatusLabel },
+        ],
+        notificationType: "general",
+        recipients: employeeEmail ? [employeeEmail] : undefined,
+        subject: `Your excuse request was ${requestStatusLabel}`,
+        summary,
+        // Pin the dedicated employee-facing template so the decision email does NOT reuse
+        // manager-oriented wording ("...pending your review", "Dear Dr.").
+        templateKey: EMAIL_TEMPLATE_KEYS.EXCUSE_DECISION,
+        templateContext: {
+          duration: `${input.request.durationHours} hours`,
+          employeeHrId: input.request.employeeHrId,
+          employeeName: input.request.employeeName,
+          excuseDate: input.request.excuseDate,
+          excuseType: excuseTypeLabel,
+          line: input.request.lineName ?? "—",
+          status: requestStatusLabel,
+        },
+        title,
+        tone: input.request.status === "approved" ? "success" : "warning",
       },
+      eventType: "request_decided",
+      message: summary,
+      metadata: {
+        employeeHrId: input.request.employeeHrId,
+        idempotencyKey: `excuse:employee:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
+        requestId: input.request.id,
+        status: input.request.status,
+      },
+      module: "excuse",
+      priority: "normal",
+      recipientHrId: input.request.employeeHrId,
+      recordId: input.request.id,
+      subjectHrId: input.request.employeeHrId,
       title,
-      tone: input.request.status === "approved" ? "success" : "warning",
-    },
-    eventType: "request_decided",
-    message: summary,
-    metadata: {
-      employeeHrId: input.request.employeeHrId,
-      idempotencyKey: `excuse:employee:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
-      requestId: input.request.id,
-      status: input.request.status,
-    },
-    module: "excuse",
-    priority: "normal",
-    recipientHrId: input.request.employeeHrId,
-    recordId: input.request.id,
-    subjectHrId: input.request.employeeHrId,
-    title,
-  });
+    });
+  } catch (error) {
+    console.error(`[excuses] failed to notify employee of decision for request ${input.request.id}`, error);
+  }
 
   await notifyHrVisibilityRecipients({
     actionUrl,
