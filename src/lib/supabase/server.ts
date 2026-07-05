@@ -3,6 +3,51 @@ import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
 
 const supabaseRequestTimeoutMs = 15000;
 
+/**
+ * PostgREST error codes that indicate a transient schema-cache failure.
+ * PGRST002: PostgREST could not reach PostgreSQL to build/refresh its schema
+ * cache. The message itself says "Retrying." — we honour that hint here.
+ */
+const RETRYABLE_PGRST_CODES = new Set(["PGRST002"]);
+const PGRST_RETRY_DELAYS_MS = [200, 400, 800];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Returns true when the parsed JSON body of a PostgREST response signals a
+ * transient schema-cache error that is safe to retry.
+ */
+function isRetryablePostgrestError(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const code = (body as Record<string, unknown>).code;
+  return typeof code === "string" && RETRYABLE_PGRST_CODES.has(code);
+}
+
+/**
+ * Executes a single fetch attempt with its own AbortController-based timeout.
+ * Throws a user-friendly error on abort; re-throws all other fetch errors.
+ */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  requestTimeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Supabase request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequestTimeoutMs): SupabaseClient {
   return createClient(
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -14,26 +59,37 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
       },
       global: {
         fetch: async (input, init) => {
-          const controller = new AbortController();
-          const timeout = setTimeout(
-            () => controller.abort(),
-            requestTimeoutMs,
-          );
+          // First attempt — no delay.
+          let response = await fetchWithTimeout(input, init, requestTimeoutMs);
 
-          try {
-            return await fetch(input, {
-              ...init,
-              signal: controller.signal,
-            });
-          } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") {
-              throw new Error("Supabase request timed out.");
+          // Retry on transient PostgREST schema-cache errors (e.g. PGRST002).
+          // We must clone before reading the body so the SDK can still consume
+          // the response normally on a successful retry or on final failure.
+          for (const delayMs of PGRST_RETRY_DELAYS_MS) {
+            if (!response.ok) {
+              // Only attempt to parse JSON error bodies (PostgREST always sends
+              // application/json for errors; avoid consuming binary responses).
+              const contentType = response.headers.get("content-type") ?? "";
+              if (contentType.includes("application/json")) {
+                const cloned = response.clone();
+                let body: unknown;
+                try {
+                  body = await cloned.json();
+                } catch {
+                  break;
+                }
+                if (isRetryablePostgrestError(body)) {
+                  await sleep(delayMs);
+                  response = await fetchWithTimeout(input, init, requestTimeoutMs);
+                  continue;
+                }
+              }
             }
-
-            throw error;
-          } finally {
-            clearTimeout(timeout);
+            // Non-retryable response (success or a different error) — stop.
+            break;
           }
+
+          return response;
         },
       },
     },
