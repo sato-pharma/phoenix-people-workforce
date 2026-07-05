@@ -432,25 +432,6 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
-      <div className="overflow-hidden border border-slate-200">
-        <SectionHead title="My Tools" />
-        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
-          <Link href="/employee-portals/med-reps-performance" className="group flex min-h-[64px] items-center gap-4 bg-white px-4 py-4 transition-colors hover:bg-orange-50">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-            <p className="text-sm font-semibold text-slate-800">Med Rep Performance</p>
-          </Link>
-          <Link href="/employee-portals/expenses" className="group flex min-h-[64px] items-center gap-4 bg-white px-4 py-4 transition-colors hover:bg-orange-50">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white">
-              <ReceiptText className="h-4 w-4" />
-            </div>
-            <p className="text-sm font-semibold text-slate-800">Team Expenses</p>
-          </Link>
-        </div>
-      </div>
-
-      {/* ── New command-center sections (added below, nothing replaced) ── */}
       <NationalKeycards nsmNational={nsmNational} />
 
       <DashboardsGrid />
