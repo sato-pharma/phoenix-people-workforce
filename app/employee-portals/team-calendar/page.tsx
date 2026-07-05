@@ -65,7 +65,8 @@ export default async function TeamCalendarPage({
         />
       ) : (
         <TeamCalendarView
-          employees={data.employees}
+          employeeCount={data.employeeCount}
+          groups={data.groups}
           lineName={data.lineName}
           month={data.month}
           monthLabel={data.monthLabel}
