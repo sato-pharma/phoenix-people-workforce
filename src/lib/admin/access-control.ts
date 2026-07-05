@@ -851,9 +851,12 @@ export async function updateAccessUserStatus(
     appStatusWritten = true;
 
     if (typeof existing.auth_user_id === "string") {
+      // loginId lets setSupabaseAuthIdentityAccess recover if auth_user_id has gone stale
+      // (re-finds the live GoTrue user by email) instead of hard-failing the whole status change.
       await setSupabaseAuthIdentityAccess({
         authUserId: existing.auth_user_id,
         isActive,
+        loginId,
       });
       authStatusWritten = true;
 
@@ -905,6 +908,7 @@ export async function updateAccessUserStatus(
         await setSupabaseAuthIdentityAccess({
           authUserId: existing.auth_user_id,
           isActive: previousIsActive,
+          loginId,
         });
       } catch (rollbackError) {
         logCompensationFailure("status_auth_restore", rollbackError);
