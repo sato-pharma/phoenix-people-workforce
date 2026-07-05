@@ -186,7 +186,8 @@ export function DoubleVisitReportWorkspace({
   const [search, setSearch] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [areaFilter, setAreaFilter] = useState(ALL);
-  const [lineFilter, setLineFilter] = useState(ALL);
+  const [regionFilter, setRegionFilter] = useState(ALL);
+  const [roleFilter, setRoleFilter] = useState(ALL);
   const [visitKindFilter, setVisitKindFilter] = useState(ALL);
   const [periodFilter, setPeriodFilter] = useState(ALL);
   const [dvStatusFilter, setDvStatusFilter] = useState<"ALL" | "done" | "pending">(ALL as "ALL");
@@ -213,7 +214,8 @@ export function DoubleVisitReportWorkspace({
     const term = search.trim().toLowerCase();
     return data.rows.filter((row) => {
       if (areaFilter !== ALL && row.areaName !== areaFilter) return false;
-      if (lineFilter !== ALL && row.lineName !== lineFilter) return false;
+      if (regionFilter !== ALL && row.regionName !== regionFilter) return false;
+      if (roleFilter !== ALL && row.doubleVisitorRole !== roleFilter) return false;
       if (visitorFilter !== ALL && (row.doubleVisitorName ?? row.doubleVisitorHrId) !== visitorFilter) return false;
       if (visitKindFilter !== ALL && row.visitKind !== visitKindFilter) return false;
       if (periodFilter !== ALL && row.period !== periodFilter) return false;
@@ -224,7 +226,7 @@ export function DoubleVisitReportWorkspace({
         (row.visitedHrId ?? "").toLowerCase().includes(term)
       );
     });
-  }, [data.rows, search, areaFilter, lineFilter, visitorFilter, visitKindFilter, periodFilter]);
+  }, [data.rows, search, areaFilter, regionFilter, roleFilter, visitorFilter, visitKindFilter, periodFilter]);
 
   const neverVisitedRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -246,14 +248,16 @@ export function DoubleVisitReportWorkspace({
     });
   }, [data.probation, search, dvStatusFilter]);
 
-  const logSort = useSort<DoubleVisitReportRow, "date" | "visitor" | "visited" | "area" | "line" | "period" | "visits" | "kind">(
+  const logSort = useSort<DoubleVisitReportRow, "date" | "visitor" | "role" | "visited" | "area" | "region" | "line" | "period" | "visits" | "kind">(
     logRows,
     (row, key) => {
       switch (key) {
         case "date": return row.activityDate;
         case "visitor": return row.doubleVisitorName ?? "";
+        case "role": return row.doubleVisitorRole ?? "";
         case "visited": return row.visitedName ?? "";
         case "area": return row.areaName ?? "";
+        case "region": return row.regionName ?? "";
         case "line": return row.lineName ?? "";
         case "period": return row.period;
         case "visits": return row.visitCount;
@@ -300,7 +304,7 @@ export function DoubleVisitReportWorkspace({
 
   const advancedActive =
     tab === "log"
-      ? areaFilter !== ALL || lineFilter !== ALL || visitorFilter !== ALL || visitKindFilter !== ALL || periodFilter !== ALL
+      ? areaFilter !== ALL || regionFilter !== ALL || roleFilter !== ALL || visitorFilter !== ALL || visitKindFilter !== ALL || periodFilter !== ALL
       : tab === "neverVisited"
         ? areaFilter !== ALL || flaggedOnly
         : dvStatusFilter !== ALL;
@@ -308,7 +312,8 @@ export function DoubleVisitReportWorkspace({
   function clearFilters() {
     setSearch("");
     setAreaFilter(ALL);
-    setLineFilter(ALL);
+    setRegionFilter(ALL);
+    setRoleFilter(ALL);
     setVisitorFilter(ALL);
     setVisitKindFilter(ALL);
     setPeriodFilter(ALL);
@@ -391,11 +396,19 @@ export function DoubleVisitReportWorkspace({
                     ))}
                   </select>
                 </FilterField>
-                <FilterField label="Line">
-                  <select value={lineFilter} onChange={(event) => setLineFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
-                    <option value={ALL}>All lines</option>
-                    {data.filters.lines.map((line) => (
-                      <option key={line} value={line}>{line}</option>
+                <FilterField label="Region">
+                  <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                    <option value={ALL}>All regions</option>
+                    {data.filters.regions.map((region) => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
+                </FilterField>
+                <FilterField label="Job Title">
+                  <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                    <option value={ALL}>All job titles</option>
+                    {data.filters.doubleVisitorRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
                     ))}
                   </select>
                 </FilterField>
@@ -415,7 +428,7 @@ export function DoubleVisitReportWorkspace({
                     ))}
                   </select>
                 </FilterField>
-                <FilterField label="Period">
+                <FilterField label="Time Period">
                   <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All periods</option>
                     {periodOptions.map((period) => (
@@ -461,13 +474,15 @@ export function DoubleVisitReportWorkspace({
             or a Campaign/other activity. Both count toward totals — this column and filter are for visibility, not exclusion.
           </p>
           <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full min-w-[940px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className={STICKY_HEAD}>
                 <tr>
                   <SortHeader label="Date" sortKey="date" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Double Visitor" sortKey="visitor" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                  <SortHeader label="Job Title" sortKey="role" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Visited MR" sortKey="visited" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Area" sortKey="area" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                  <SortHeader label="Region" sortKey="region" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Line" sortKey="line" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Period" sortKey="period" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
                   <SortHeader label="Type" sortKey="kind" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
@@ -476,14 +491,16 @@ export function DoubleVisitReportWorkspace({
               </thead>
               <tbody className="divide-y divide-orange-100">
                 {logSort.sorted.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
+                  <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
                 ) : (
                   logPageRows.map((row, index) => (
                     <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                       <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
                       <td className="px-3 py-2.5">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</td>
+                      <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.visitedName ?? row.visitedHrId ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
+                      <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
                       <td className="px-3 py-2.5">{row.period}</td>
                       <td className="px-3 py-2.5">
