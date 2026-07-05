@@ -101,7 +101,7 @@ export async function getAuditLogs(filter: AuditLogFilter = {}): Promise<AuditLo
 }
 
 async function insertAuditLog(input: AuditLogInput) {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: 3000 });
   const { error } = await supabase.from("audit_logs").insert({
     actor_login_id: input.actorLoginId ?? "system",
     entity_id: input.entityId ?? null,
