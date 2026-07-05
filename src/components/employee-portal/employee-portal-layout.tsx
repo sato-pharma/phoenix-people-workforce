@@ -28,6 +28,7 @@ import {
   Home,
   Send,
   FileText,
+  FileSpreadsheet,
   Fingerprint,
   Gift,
   CalendarDays,
@@ -172,6 +173,7 @@ function buildEmployeePortalSections({
   showSourceOfSalesTab = false,
   showWeeklyTab = false,
   showDoubleVisitAnalyticsTab = false,
+  showDoubleVisitReportTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showVacationApprovalsTab = false,
@@ -185,7 +187,8 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
+        // Incentive now lives in the Payroll section; "Other Approvals" now lives in the
+        // Approvals Hub section — neither belongs in My Workspace anymore.
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
@@ -218,6 +221,7 @@ function buildEmployeePortalSections({
     {
       title: "Payroll",
       items: [
+        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
         { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
       ],
@@ -233,6 +237,7 @@ function buildEmployeePortalSections({
       title: "Coaching",
       items: [
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
+        ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
         ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
       ],
     },

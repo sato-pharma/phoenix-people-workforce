@@ -48,6 +48,7 @@ export type EmployeePortalNavVisibility = {
   showWeeklyTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
+  showDoubleVisitReportTab?: boolean;
   showActionsTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
@@ -298,6 +299,15 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Marketing Manager",
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
+    // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate
+    // (home-snapshot.ts): DSM/RM/NSM/PM/GPM/TM. Each server-scopes its own data.
+    showDoubleVisitReportTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Training Manager",
     showActionsTab: !isTrainingManager && !isMedicalRep,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:

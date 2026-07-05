@@ -217,7 +217,6 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     access.scope === "system" ||
     access.role === "CEO" ||
     access.role === "Super Admin" ||
-    access.role === "National Sales Manager" ||
     access.role === "SFE Manager" ||
     access.role === "Training Manager" ||
     // Marketing Manager: executive company-wide READ oversight of double-visit analytics.
@@ -225,6 +224,8 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   ) {
     return { all: true as const };
   }
+  // National Sales Manager is NOT company-wide: he sees only his own scope — himself plus
+  // everyone reporting up to him (the descendantHrIds chain resolved below).
 
   const viewerKey = normalizedHrKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId);
   const viewer = viewerKey

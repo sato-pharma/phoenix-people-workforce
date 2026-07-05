@@ -374,6 +374,29 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.equal(tmScope.all, true, "Training Manager retains org-wide double-visit visibility");
 
+  // National Sales Manager is scoped to HIS OWN chain (self + everyone reporting up to him),
+  // NOT company-wide. An unrelated branch that does not report to him stays out of scope.
+  const nsmEmployees = [
+    employee({ fullName: "NSM Owner", hrId: "N-1", positionTitle: "National Sales Manager" }),
+    employee({ fullName: "RM Under NSM", hrId: "R-9", managerHrId: "N-1" }),
+    employee({ fullName: "DSM Under RM", hrId: "D-9", managerHrId: "R-9" }),
+    employee({ fullName: "Rep Under DSM", hrId: "M-50", managerHrId: "D-9" }),
+    // A different NSM's rep — must NOT be visible.
+    employee({ fullName: "Other Chain Rep", hrId: "M-99", managerHrId: "D-8" }),
+  ];
+  const nsmScope = resolveDoubleVisitAccessScope(
+    { hrId: "N-1", loginId: "N-1", role: "National Sales Manager", scope: "line", source: "session" } as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
+    nsmEmployees,
+  );
+  assert.equal(nsmScope.all, false, "NSM is not granted company-wide double-visit access");
+  if (nsmScope.all === false) {
+    assert.ok(nsmScope.allowedHrIds.has(k("N-1")), "NSM sees himself");
+    assert.ok(nsmScope.allowedHrIds.has(k("R-9")), "NSM sees the RM reporting to him");
+    assert.ok(nsmScope.allowedHrIds.has(k("D-9")), "NSM sees the DSM down his chain");
+    assert.ok(nsmScope.allowedHrIds.has(k("M-50")), "NSM sees the rep down his chain");
+    assert.ok(!nsmScope.allowedHrIds.has(k("M-99")), "NSM does NOT see a rep outside his chain");
+  }
+
   // ── DV_ROLE_CODES: Marketing Manager and SFE Manager resolve to a role code ─────────────────
   const mmSfeEmployees = [
     employee({ fullName: "Marketing Boss", hrId: "A-9", jobTitle: "Marketing Manager", positionTitle: "Marketing Manager" }),
