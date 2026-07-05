@@ -243,6 +243,7 @@ import { runAccessIdentityHardeningTests } from "./access-identity-hardening.tes
 import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
+import { runApprovalsHubTests } from "./approvals-hub.test.ts";
 import { runVacationApprovalFlowTests } from "./vacation-approval-flow.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
@@ -574,6 +575,7 @@ await runTest("access registry coverage", runAccessRegistryCoverageTests);
 await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("workflow registry", runWorkflowRegistryTests);
 await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTests);
+await runTest("approvals hub (vacation + excuse)", runApprovalsHubTests);
 await runTest("vacation approval flow", runVacationApprovalFlowTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);

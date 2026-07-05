@@ -45,6 +45,8 @@ export type EmployeePortalNavVisibility = {
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showActionsTab?: boolean;
+  showApprovalsTab?: boolean;
+  showPlanApprovalsTab?: boolean;
   showAttendanceTab?: boolean;
   showPrivateCalendarTab?: boolean;
 };
@@ -286,6 +288,25 @@ export function resolveEmployeePortalNavVisibility(
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     showActionsTab: !isTrainingManager && !isMedicalRep,
+    // Vacation & Excuse Approvals — confirmed portal-shell approver roles only.
+    showApprovalsTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Manager",
+    // Weekly / Monthly Plan Approvals — plan submitters + their managers (same portal set as the
+    // plan builder link). Kept as its own flag so it never drifts with the leave/excuse gate.
+    showPlanApprovalsTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Manager",
     showAttendanceTab: true,
     showPrivateCalendarTab: !isMedicalRep,
   };

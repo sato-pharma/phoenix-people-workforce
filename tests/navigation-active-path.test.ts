@@ -199,7 +199,6 @@ export function runNavigationActivePathTests() {
   ] as const;
   const systemAdministratorOnlyHrefs = [
     "/attendance/exceptions",
-    "/leave-management/vacation-action-center",
     "/payroll/expenses/dashboard",
     "/payroll/expenses",
     "/admin/marketing-requests/control",
@@ -280,11 +279,20 @@ export function runNavigationActivePathTests() {
   const employeeAdmin = adminHrefsFor("Employee");
   assertExcludesAll(employeeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"], "Employee must not see admin-shell authority modules");
 
-  for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Finance Manager"] as const) {
+  // Approvals Hub › Vacation & Excuse Approvals — visible to the confirmed portal-shell
+  // approver roles, hidden from individual contributors who only submit.
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] as const) {
+    assertIncludesAll(
+      employeePortalHrefsFor(role),
+      ["/employee-portals/approvals/vacation", "/employee-portals/approvals/excuse"],
+      `${role} must see the Vacation & Excuse Approvals links in the employee portal`,
+    );
+  }
+  for (const role of ["Employee", "Medical Rep"] as const) {
     assertExcludesAll(
       employeePortalHrefsFor(role),
-      ["/leave-management/vacation-action-center"],
-      `${role} must not see the system-administrator-only Vacation Action Center in the employee portal`,
+      ["/employee-portals/approvals/vacation", "/employee-portals/approvals/excuse"],
+      `${role} submits requests and must not see the approval links`,
     );
   }
 }

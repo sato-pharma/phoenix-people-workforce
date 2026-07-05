@@ -345,7 +345,11 @@ function hrIdsMatch(left: string | null | undefined, right: string | null | unde
   return Boolean(leftCanonical && rightCanonical && leftCanonical === rightCanonical);
 }
 
-function isAllVacationVisibility(access: AccessContext) {
+// Exported for the Approvals Hub responder service, which must apply the EXACT same HR-authority
+// rule (Super Admin / system only) as the rest of the vacation module — not the broader
+// isHrAuthorityRole set (which also includes Talent Acquisition, a confirmed NON-approver for
+// leave/excuse). Keeping one function avoids the two drifting apart again.
+export function isAllVacationVisibility(access: AccessContext) {
   return access.scope === "system" || access.role === "Super Admin";
 }
 
@@ -1621,13 +1625,20 @@ async function getPendingVacationApprovalStepForActor(input: {
 }) {
   const steps = await fetchVacationApprovalStepsForRequest(input.request.id);
   const pendingSteps = steps.filter((step) => step.status === "pending");
-  const step = input.access
+  let step = input.access
     ? pendingSteps.find((candidate) => approvalStepMatchesAccess(input.access as AccessContext, candidate))
     : pendingSteps.find((candidate) => approvalStepMatchesActor({
       actorHrId: input.actorHrId,
       actorLoginId: input.actorLoginId,
       step: candidate,
     }));
+  // HR authority (Super Admin / system) may act on the pending HR step for ANY request — HR is one
+  // conceptual authority (see closeSiblingPendingHrApprovalSteps), so it must not be gated to the
+  // specific approver_hr_id on the row. evaluateStepAction still enforces the sequencing:
+  // acknowledgement waits for management approvals; reject is allowed at any time.
+  if (!step && input.access && isAllVacationVisibility(input.access)) {
+    step = pendingSteps.find((candidate) => candidate.stepKey === "hr");
+  }
   return { step: step ?? null, steps };
 }
 
@@ -1776,10 +1787,11 @@ async function notifyVacationSubmittedByGovernance(input: {
   // Direct approve/reject deep links are used ONLY for the legacy (Sick) flow. Sequential types
   // (Annual/Other/Compensatory/Emergency) must be reviewed inside the Vacation Action Center —
   // email/Telegram never approve or reject directly for them.
-  const actionCenterUrl = `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`;
+  // Every leave type — sequential AND legacy Sick — is reviewed on the dedicated per-request
+  // Vacation Approvals page. No one-click approve/reject links: notifications always redirect
+  // the responder to the page to respond explicitly.
+  const actionCenterUrl = `/admin/approvals/vacation/${encodeURIComponent(input.request.id)}`;
   const absoluteReviewUrl = toAbsoluteAppUrl(actionCenterUrl);
-  const approveUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=approve`;
-  const rejectUrl = `/leave-management/vacation-decision/${encodeURIComponent(input.request.id)}?decision=reject`;
 
   // Role/stage-specific copy for the sequential workflow; legacy keeps the generic submit message.
   const recipientCopy = (stepKey: VacationApprovalStepKey): { message: string; status: string } => {
@@ -1827,18 +1839,12 @@ async function notifyVacationSubmittedByGovernance(input: {
   await Promise.allSettled([
     ...input.approvalRecipients.map((recipient) => {
       const copy = recipientCopy(recipient.stepKey);
-      const telegramButtons = sequential
-        ? [{ label: "Review Request", url: actionCenterUrl }]
-        : [
-            { label: "Open Phoenix", url: input.href },
-            { label: "Approve in Phoenix", url: approveUrl },
-            { label: "Reject in Phoenix", url: rejectUrl },
-          ];
+      const telegramButtons = [{ label: "Review Request", url: actionCenterUrl }];
       // Sequential submit email is sent once above: primary manager TO, visibility approvers CC.
       // Per-recipient notification records remain in-app/Telegram only.
       const isPrimaryEmailRecipient = !sequential && samePrimaryRecipient(recipient);
       return createSystemNotification({
-        actionUrl: sequential ? actionCenterUrl : input.href,
+        actionUrl: actionCenterUrl,
         category: "vacation_request",
         channels: sequential || !isPrimaryEmailRecipient ? ["in_app", "telegram"] : ["in_app", "email", "telegram"],
         ...(!isPrimaryEmailRecipient
@@ -1848,8 +1854,8 @@ async function notifyVacationSubmittedByGovernance(input: {
         message: copy.message,
         metadata: {
           ...(input.metadata ?? {}),
-          actionUrl: sequential ? actionCenterUrl : input.href,
-          ...(sequential ? { reviewUrl: actionCenterUrl } : { approveUrl, rejectUrl }),
+          actionUrl: actionCenterUrl,
+          reviewUrl: actionCenterUrl,
           approvalStep: recipient.stepKey,
           approverName: recipient.name,
           area: employee?.areaName ?? "",
@@ -1866,7 +1872,7 @@ async function notifyVacationSubmittedByGovernance(input: {
           recipientName: recipient.name,
           requestId: input.request.id,
           requestType: vacationTypeLabel(input.request.vacationType),
-          requestUrl: sequential ? actionCenterUrl : input.href,
+          requestUrl: actionCenterUrl,
           status: copy.status,
           team: employee?.teamName ?? "",
         },
@@ -1934,7 +1940,7 @@ async function dispatchVacationManagerReview(input: {
   const hrRecipients = await getHrRecipients(input.directory);
   const sequential = isSequentialWorkflowType(input.request.vacationType);
   const reportHref = sequential
-    ? `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`
+    ? `/admin/approvals/vacation/${encodeURIComponent(input.request.id)}`
     : `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
     href: reportHref,
@@ -1996,7 +2002,7 @@ async function dispatchVacationNextManagerStep(input: {
 }) {
   const actingManager = findEmployeeByHrId(input.directory, input.actingManagerHrId);
   const actingName = actingManager?.fullName ?? input.request.managerName ?? "Your manager";
-  const actionHref = `/leave-management/vacation-action-center?requestId=${encodeURIComponent(input.request.id)}`;
+  const actionHref = `/admin/approvals/vacation/${encodeURIComponent(input.request.id)}`;
   const detailBase = [
     { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
     { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
@@ -3016,7 +3022,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     const hrRecipientsForReturn = await getHrRecipients(directory);
     void notifyRecipients({
       channels: ["in_app", "telegram"],
-      href: `/leave-management/vacation-action-center?requestId=${encodeURIComponent(returned.id)}`,
+      href: `/admin/approvals/vacation/${encodeURIComponent(returned.id)}`,
       message: `${actorName} returned ${returned.employeeName}'s ${vacationTypeLabel(returned.vacationType)} request (${returned.startDate} → ${returned.endDate}) for revision. Reason: ${returnReason}`,
       metadata: { requestId: returned.id, status: "returned" },
       recipients: hrRecipientsForReturn.map((r) => r.hrId),
@@ -3489,7 +3495,7 @@ export async function decideVacationRequestByToken(input: {
   // Sequential-workflow types (Annual/Other/Compensatory/Emergency) must be reviewed and actioned
   // inside the Vacation Action Center — token-based direct approval is disabled for them.
   if (isSequentialWorkflowType(request.vacationType)) {
-    throw new Error("This request must be reviewed in the Vacation Action Center; email approval links are disabled for it.");
+    throw new Error("This request must be reviewed on the Vacation Approvals page; email approval links are disabled for it.");
   }
   if (request.status !== "pending_manager") {
     throw new Error("This email approval link is no longer valid because the request is not pending direct manager review.");
@@ -3554,7 +3560,7 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   });
   void notifyRecipients({
     channels: ["in_app", "telegram"],
-    href: `/leave-management/vacation-action-center?requestId=${encodeURIComponent(resubmitted.id)}`,
+    href: `/admin/approvals/vacation/${encodeURIComponent(resubmitted.id)}`,
     message: `${resubmitted.employeeName}'s ${vacationTypeLabel(resubmitted.vacationType)} vacation request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending your review.`,
     metadata: { requestId: resubmitted.id, status: "pending_manager" },
     recipients: [resubmitted.managerHrId, resubmitted.managerOfManagerHrId].filter(Boolean) as string[],
@@ -3739,7 +3745,17 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
       stepKey: step.stepKey,
     }));
 
-    const actorRawStep = rawSteps.find((step) => step.status === "pending" && approvalStepMatchesAccess(access, step)) ?? null;
+    let actorRawStep = rawSteps.find((step) => step.status === "pending" && approvalStepMatchesAccess(access, step)) ?? null;
+    // HR authority (Super Admin / system) is ONE conceptual HR actor — any of them may perform the
+    // HR acknowledgement for ANY request once management approvals are complete, even when the HR
+    // step row is assigned to a different Super Admin (or the actor has no HR-ID, e.g. the shared
+    // admin login). Bind them to the active HR step so the Acknowledge button appears at HR's turn.
+    if (!actorRawStep && isHrActor) {
+      const active = resolveActiveStep(stepStates);
+      if (active?.stepKey === "hr") {
+        actorRawStep = rawSteps.find((step) => step.stepKey === "hr" && step.status === "pending") ?? null;
+      }
+    }
     // Show rows the caller is an assigned pending approver of, or (HR) any actionable row.
     if (!actorRawStep && !isHrActor) continue;
 
@@ -4284,12 +4300,19 @@ export async function createVacationAttachmentReviewUrl(access: AccessContext, i
   requestId: string;
 }) {
   await assertPermission(access, "leave", "read");
-  if (!isAllVacationVisibility(access)) {
-    throw new Error("Forbidden: only HR or Super Admin can review vacation evidence attachments.");
-  }
 
   const request = await fetchVacationRequestById(input.requestId);
   if (!request) throw new Error("Vacation request was not found.");
+
+  // HR/Super Admin can always review evidence; otherwise the caller must be the CURRENTLY
+  // pending, assigned approver for THIS specific request (their turn to decide) — widened from
+  // HR-only so a manager can actually see the sick note/evidence before approving it.
+  if (!isAllVacationVisibility(access)) {
+    const { step } = await getPendingVacationApprovalStepForActor({ access, request });
+    if (!step) {
+      throw new Error("Forbidden: only the assigned approver or HR/Super Admin can review vacation evidence attachments.");
+    }
+  }
 
   const attachment = input.attachmentKind === "sick"
     ? {
@@ -4841,7 +4864,7 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
       const reminderRecipients = needsAssignment ? allHr : isManagerStage ? [row.managerHrId] : allHr;
       const recipients = Array.from(new Set([...reminderRecipients, ...escalationRecipients].filter(Boolean) as string[]));
       const reviewHref = isSequentialWorkflowType(row.vacationType)
-        ? `/leave-management/vacation-action-center?requestId=${encodeURIComponent(row.id)}`
+        ? `/admin/approvals/vacation/${encodeURIComponent(row.id)}`
         : `/leave-management/vacation-report?requestId=${encodeURIComponent(row.id)}`;
       const stageWord = needsAssignment ? "HR approver assignment" : isManagerStage ? "manager" : "HR";
       await notifyRecipients({

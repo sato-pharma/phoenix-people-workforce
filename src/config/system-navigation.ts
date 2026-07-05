@@ -79,7 +79,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "approvals-hub-pending";
+  navBadge?: "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -129,6 +129,38 @@ function withModuleIds(
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
 const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
+// Confirmed Vacation/Excuse approver roles that land in the ADMIN shell. Portal-shell
+// approvers (District/Regional/National Sales Manager, PM/GPM, Marketing Manager, Manager)
+// see the same two links via the portal sidebar (employee-portal-layout.tsx flags).
+const leaveExcuseApproverAdminNavigationRoles = [
+  "Super Admin",
+  "CEO",
+  "Finance Manager",
+  "Financial Advisor",
+] as const satisfies readonly PhoenixRole[];
+const leaveExcuseApproverPortalNavigationRoles = [
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Manager",
+] as const satisfies readonly PhoenixRole[];
+// Weekly / Monthly Plan Approvals — admin shell: only the CEO (stage-2 approver) and Super Admin
+// (HR acknowledge). Finance Manager / Financial Advisor are NOT plan approvers.
+const planApproverAdminNavigationRoles = ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[];
+// Portal shell: plan submitters + their managers (mirrors the plan builder link's roles). Q4 —
+// pure submitters (e.g. a District Manager) get the link too, for their own "My Requests" tab.
+const planApproverPortalNavigationRoles = [
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Manager",
+] as const satisfies readonly PhoenixRole[];
 
 export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   admin: "/admin/access",
@@ -145,6 +177,18 @@ const adminNavigationSectionSeeds = [
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO"] },
     ],
     label: "Command Center",
+  },
+
+  // ── Approvals Hub: consolidated per-module approval surfaces (near the top —
+  // responding to approvals is frequent daily work). Phase 1: Vacation + Excuse.
+  {
+    id: "approvals-hub",
+    items: [
+      { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
+      { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+    ],
+    label: "Approvals Hub",
   },
 
   // ── Tier 1b: Admin Tools ──────────────────────────────────────────────────────
@@ -202,7 +246,10 @@ const adminNavigationSectionSeeds = [
   {
     id: "people-management",
     items: [
-      { href: "/admin/approvals-hub", icon: Inbox, label: "Approvals Hub", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
+      // Residual combined inbox — vacation & excuse now live in the dedicated Approvals Hub
+      // section above; this keeps the cross-module inbox for resignation/outstation/contract/plan
+      // until those migrate. Renamed to avoid a duplicate "Approvals Hub" label.
+      { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
       { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }], roles: ["Super Admin"] },
       // Organogram/Probation/Vacancies Report duplicate the workspace-team-operations
       // /workspace/organogram, /workspace/probation, /workspace/vacancies entries for the
@@ -265,7 +312,7 @@ const adminNavigationSectionSeeds = [
       { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }], roles: ["Super Admin", "CEO"] },
       { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }], roles: ["Super Admin", "CEO"] },
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
-      { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
+      // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
     ],
     label: "Leave Management",
   },
@@ -410,7 +457,11 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-portal",
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Approvals Hub", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
+      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
+      { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
+      // Residual combined inbox — vacation & excuse now live in the dedicated links above.
+      { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
@@ -549,7 +600,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }] },
       { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }] },
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
-      { href: "/leave-management/vacation-action-center", icon: ClipboardCheck, label: "Vacation Action Center", permissions: [{ resource: "leave" }], roles: systemAdministratorNavigationRoles },
+      // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/attendance/digests", icon: CalendarClock, label: "Weekly Digest", permissions: [{ resource: "attendance", action: "read" }] },
     ],

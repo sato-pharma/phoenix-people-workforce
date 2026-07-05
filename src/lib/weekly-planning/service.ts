@@ -638,8 +638,12 @@ function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
   }
 }
 
+// Super Admin has NO standing bypass here — he may decide a manager-stage plan only if he
+// personally is the assigned manager (hrIdsMatch below already covers that case like anyone
+// else). Owner-confirmed rule: Super Admin cannot act on someone else's turn — his own place in
+// the chain is the final HR-acknowledge step (see acknowledgeEmployeePlan/isHrReviewer), not a
+// stand-in for the direct manager or CEO.
 async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
-  if (access.role === "Super Admin") return;
   if (!hrIdsMatch(access.hrId, plan.manager_hr_id)) {
     throw new Error("Forbidden: only the direct manager can decide this plan.");
   }
@@ -650,8 +654,10 @@ async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow)
   }
 }
 
+// Same rule as assertManagerReviewer — only the actual CEO decides this stage; Super Admin's
+// authority does not extend to standing in for the CEO.
 function assertCeoReviewer(access: AccessContext) {
-  if (access.role !== "CEO" && access.role !== "Super Admin" && access.scope !== "system") {
+  if (access.role !== "CEO") {
     throw new Error("Forbidden: only the CEO can decide this stage.");
   }
 }
@@ -1147,10 +1153,12 @@ async function planReviewActionUrl(hrId: string | null | undefined, planId: stri
   } catch {
     // best-effort — fall back to the admin shell review page
   }
+  // Approver review lands on the dedicated Approvals Hub plan page (role-aware shell), replacing
+  // the old combined-hub deep-link / planner. The employee-facing planner stays for editing.
   if (mode === "employee-portal") {
-    return `/employee-portals/approvals-hub?id=${planId}&module=weekly_plan`;
+    return `/employee-portals/approvals/plan/${planId}`;
   }
-  return `/admin/weekly-plans?plan=${planId}`;
+  return `/admin/approvals/plan/${planId}`;
 }
 
 async function hrAcknowledgementRecipients() {
@@ -1224,7 +1232,7 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
     // roleHrefs ensures portal-mode managers (PM, GPM, MM, NSM, DM, RM, TM…) always
     // land at the employee-portal review page regardless of when the plan was submitted.
     // The fallback actionUrl (admin shell) covers CEO and Super Admin.
-    const portalPlanUrl = `/employee-portals/approvals-hub?id=${plan.id}&module=weekly_plan`;
+    const portalPlanUrl = `/employee-portals/approvals/plan/${plan.id}`;
     const roleHrefs: Record<string, string> = {
       "Employee": portalPlanUrl,
       "Medical Rep": portalPlanUrl,
@@ -1277,7 +1285,7 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
 
   if (primary.length === 0) return;
   await notifyRecipients({
-    actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
+    actionUrl: `/admin/approvals/plan/${plan.id}`,
     emailMode: "none",
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
@@ -1298,7 +1306,7 @@ async function notifyPlanSubmitted(plan: PlanHeaderRow) {
 async function notifyCeo(plan: PlanHeaderRow) {
   const ceos = await authUsersByRole("CEO");
   await notifyRecipients({
-    actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
+    actionUrl: `/admin/approvals/plan/${plan.id}`,
     eventType: "plan_manager_approved",
     message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}.`,
     plan,
@@ -1309,7 +1317,7 @@ async function notifyCeo(plan: PlanHeaderRow) {
 
 async function notifyHr(plan: PlanHeaderRow) {
   await notifyRecipients({
-    actionUrl: `/admin/weekly-plans?plan=${plan.id}`,
+    actionUrl: `/admin/approvals/plan/${plan.id}`,
     eventType: "plan_ceo_approved",
     message: `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
     plan,
@@ -1417,8 +1425,11 @@ export type ApproverPlanStage = "manager" | "ceo";
  * Pure authorization rule deciding which approval gate (if any) a plan in a given
  * status is awaiting from the caller. Mirrors the server-side guards enforced in
  * decideEmployeePlan (assertManagerReviewer / assertCeoReviewer):
- *   • submitted        → manager stage for the assigned manager (Super Admin too).
- *   • manager_approved → CEO stage for CEO / Super Admin only.
+ *   • submitted        → manager stage, only for the actual assigned manager.
+ *   • manager_approved → CEO stage, only for the actual CEO.
+ * Super Admin has NO standing bypass here (owner-confirmed: he cannot act on someone else's
+ * turn — only where he's personally the assigned manager, which hrIdsMatch already covers, or
+ * at the final HR-acknowledge stage, handled separately by acknowledgeEmployeePlan/isHrReviewer).
  * Returns null when the caller has no pending action on the plan.
  */
 export function resolveApproverPlanStage(
@@ -1426,13 +1437,12 @@ export function resolveApproverPlanStage(
   managerHrId: string | null,
   access: Pick<AccessContext, "hrId" | "role" | "scope">,
 ): ApproverPlanStage | null {
-  const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
   const isCeo = access.role === "CEO";
   if (status === "submitted") {
-    return isSuperAdmin || hrIdsMatch(access.hrId, managerHrId) ? "manager" : null;
+    return hrIdsMatch(access.hrId, managerHrId) ? "manager" : null;
   }
   if (status === "manager_approved") {
-    return isSuperAdmin || isCeo ? "ceo" : null;
+    return isCeo ? "ceo" : null;
   }
   return null;
 }

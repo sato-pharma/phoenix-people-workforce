@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { NavBadge } from "@/components/layout/sidebar";
 import {
   Menu,
   Search,
@@ -110,6 +111,9 @@ type EmployeePortalNavItem = {
   href: string;
   label: string;
   icon: typeof Activity;
+  // Live pending-count badge (mirrors the admin sidebar's navBadge) — currently only the
+  // Vacation/Excuse/Plan Approvals links carry one.
+  navBadge?: "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
 };
 
 type EmployeePortalNavSection = {
@@ -168,6 +172,8 @@ function buildEmployeePortalSections({
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
+  showApprovalsTab = false,
+  showPlanApprovalsTab = false,
   showAttendanceTab: _showAttendanceTab = false,
   showPrivateCalendarTab = true,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
@@ -185,7 +191,10 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Approvals Hub", icon: Inbox }] : []),
+        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
+        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
+        ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
@@ -423,6 +432,9 @@ function EmployeePortalMenu({
                     } shrink-0 transition ${pending ? "text-[#EA580C]" : navIconClass(active)}`}
                   />
                   <span>{item.label}</span>
+                  {item.navBadge === "vacation-approvals-pending" ? <NavBadge src="/api/approvals/vacation/pending-count" /> : null}
+                  {item.navBadge === "excuse-approvals-pending" ? <NavBadge src="/api/approvals/excuse/pending-count" /> : null}
+                  {item.navBadge === "plan-approvals-pending" ? <NavBadge src="/api/approvals/plan/pending-count" /> : null}
                   {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                 </Link>
               );

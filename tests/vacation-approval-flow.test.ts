@@ -212,17 +212,15 @@ export function runVacationApprovalFlowTests() {
   assert.match(serviceSource, /initialRequestStatus = "needs_assignment"/, "missing first manager routes to needs_assignment for sequential types");
   assert.match(serviceSource, /export async function getVacationActionCenterData\(/, "action center feed exists");
 
-  // ---- PR2 source guards: Action Center page/component/route/nav + employee tracking ----
+  // ---- Approvals Hub guards: Vacation Approvals page/component/nav + employee tracking ----
   const navSource = readFileSync(new URL("../src/config/system-navigation.ts", import.meta.url), "utf8");
-  assert.match(navSource, /\/leave-management\/vacation-action-center/, "nav exposes the Vacation Action Center");
-  const acPage = readFileSync(new URL("../app/(admin)/leave-management/vacation-action-center/page.tsx", import.meta.url), "utf8");
-  assert.match(acPage, /getVacationActionCenterData/, "action center page loads action-center data");
-  assert.match(acPage, /canAccessSystemAdministratorWorkspace\(access\)/, "action center page is system-administrator-only");
-  const acComponent = readFileSync(new URL("../src/components/vacation/vacation-action-center.tsx", import.meta.url), "utf8");
-  assert.match(acComponent, /Acknowledge \/ Record by HR/, "HR action is acknowledgement/recording");
-  assert.doesNotMatch(acComponent, /Final Approval/i, "Action Center must never label HR as 'Final Approval'");
-  assert.match(acComponent, /Reject with reason/, "reject-with-reason action present");
-  assert.match(acComponent, /disabledReason/, "disabled buttons explain why");
+  assert.match(navSource, /\/admin\/approvals\/vacation/, "nav exposes the Vacation Approvals page");
+  const vacPage = readFileSync(new URL("../app/(admin)/admin/approvals/vacation/page.tsx", import.meta.url), "utf8");
+  assert.match(vacPage, /getVacationWorkspaceData/, "vacation approvals page loads the responder workspace data");
+  const decisionActions = readFileSync(new URL("../src/components/approvals-hub/decision-actions.tsx", import.meta.url), "utf8");
+  assert.match(decisionActions, /Acknowledge \(HR\)/, "HR action is acknowledgement");
+  assert.doesNotMatch(decisionActions, /Final Approval/i, "must never label HR as 'Final Approval'");
+  assert.match(decisionActions, /A reason is required/, "reject/return require a reason");
   const assignRoute = readFileSync(new URL("../app/api/vacations/requests/[id]/assign/route.ts", import.meta.url), "utf8");
   assert.match(assignRoute, /assignVacationManagementApprover/, "assign route resumes a needs-assignment request");
   const reportSource = readFileSync(new URL("../src/components/vacation/vacation-report.tsx", import.meta.url), "utf8");
