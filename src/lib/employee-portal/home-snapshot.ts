@@ -58,7 +58,14 @@ export type PortalHomeSnapshot = {
   mmOverview: (MarketingOverviewMetrics & { upcoming: UpcomingMarketingActivity[]; asOf: number }) | null;
   /** District Manager only: the DSM's own med-rep team, current period, + team approvals awaiting the DSM. */
   dsmTeam:
-    | { achievementPercent: number; memberCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
+    | {
+        achievementPercent: number;
+        memberCount: number;
+        totalSales: number;
+        totalTarget: number;
+        pendingApprovals: number;
+        members: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
+      }
     | null;
   /** National Sales Manager only: the NSM's line, rolled up by DSM, + approvals awaiting the NSM. */
   nsmNational:
@@ -149,6 +156,17 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         getAwaitingMyActionItems(access, "portal").catch(() => []),
       ]);
       if (!team) return emptyRoleExtras;
+      const members = (team.members ?? [])
+        .slice()
+        .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
+        .slice(0, 10)
+        .map((m) => ({
+          hrId: m.hrId,
+          name: m.name,
+          achievementPercent: m.achievementPercent,
+          totalSales: m.totalSales,
+          totalTarget: m.totalTarget,
+        }));
       return {
         ...emptyRoleExtras,
         dsmTeam: {
@@ -157,6 +175,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           totalSales: team.teamTotalSales,
           totalTarget: team.teamTotalTarget,
           pendingApprovals: approvals.length,
+          members,
         },
       };
     }
