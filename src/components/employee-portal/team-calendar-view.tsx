@@ -5,12 +5,21 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   FieldWorkforceCellStatus,
   FieldWorkforceDayCell,
   FieldWorkforceEmployeeSummary,
 } from "@/lib/field-workforce-compliance/types";
 import { cn } from "@/lib/utils";
+
+const ALL_FILTER = "All";
+
+function uniqueSortedValues(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
 
 /** Mirrors NsmTeamCalendarGroup from the server module (structural; no server import). */
 type TeamCalendarGroup = {
@@ -127,7 +136,7 @@ function RepMonthTimeline({ employee, isManager = false }: { employee: FieldWork
         <div className="min-w-0">
           <p className="text-sm font-black text-slate-950">
             {isManager ? (
-              <span className="mr-2 inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-orange-700">DSM</span>
+              <span className="mr-2 inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-orange-700">Manager</span>
             ) : null}
             {employee.employeeName}
           </p>
@@ -181,19 +190,31 @@ function monthHref(month: number, year: number) {
 
 export function TeamCalendarView({ employeeCount, groups, lineName, month, monthLabel, year }: TeamCalendarViewProps) {
   const [query, setQuery] = useState("");
+  const [teamFilter, setTeamFilter] = useState(ALL_FILTER);
+  const [regionFilter, setRegionFilter] = useState(ALL_FILTER);
+  const [areaFilter, setAreaFilter] = useState(ALL_FILTER);
+
+  const allMembers = useMemo(() => groups.flatMap((group) => group.members), [groups]);
+  const teamOptions = useMemo(() => uniqueSortedValues(allMembers.map((employee) => employee.teamName)), [allMembers]);
+  const regionOptions = useMemo(() => uniqueSortedValues(allMembers.map((employee) => employee.regionName)), [allMembers]);
+  const areaOptions = useMemo(() => uniqueSortedValues(allMembers.map((employee) => employee.areaName)), [allMembers]);
 
   const needle = query.trim().toLowerCase();
   const visibleGroups = useMemo(() => {
-    if (!needle) return groups;
+    if (!needle && teamFilter === ALL_FILTER && regionFilter === ALL_FILTER && areaFilter === ALL_FILTER) return groups;
     return groups
       .map((group) => ({
         ...group,
-        members: group.members.filter((employee) =>
-          `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle),
-        ),
+        members: group.members.filter((employee) => {
+          if (teamFilter !== ALL_FILTER && employee.teamName !== teamFilter) return false;
+          if (regionFilter !== ALL_FILTER && employee.regionName !== regionFilter) return false;
+          if (areaFilter !== ALL_FILTER && employee.areaName !== areaFilter) return false;
+          if (needle && !`${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) return false;
+          return true;
+        }),
       }))
       .filter((group) => group.members.length > 0);
-  }, [groups, needle]);
+  }, [areaFilter, groups, needle, regionFilter, teamFilter]);
 
   const shownCount = useMemo(
     () => visibleGroups.reduce((sum, group) => sum + group.members.length, 0),
@@ -211,8 +232,8 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-950">Team Calendar — {heading}</p>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              {lineName ? `${lineName} line` : "Your line"} · grouped by DSM, each manager followed by their
-              team. Click a green numeric day to open that day&apos;s visits.
+              {lineName ? `${lineName} line` : "Your line"} · grouped by manager, each manager followed by
+              their team. Click a green numeric day to open that day&apos;s visits.
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -235,13 +256,43 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
             </Link>
           </div>
         </div>
-        <div className="mt-3">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 xl:col-span-1"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search rep name or HR ID"
             value={query}
           />
+          {teamOptions.length > 0 ? (
+            <SearchableSelect
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              value={teamFilter}
+              onChange={(event) => setTeamFilter(event.target.value)}
+            >
+              <option value={ALL_FILTER}>All teams</option>
+              {teamOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </SearchableSelect>
+          ) : null}
+          {regionOptions.length > 0 ? (
+            <SearchableSelect
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              value={regionFilter}
+              onChange={(event) => setRegionFilter(event.target.value)}
+            >
+              <option value={ALL_FILTER}>All regions</option>
+              {regionOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </SearchableSelect>
+          ) : null}
+          {areaOptions.length > 0 ? (
+            <SearchableSelect
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              value={areaFilter}
+              onChange={(event) => setAreaFilter(event.target.value)}
+            >
+              <option value={ALL_FILTER}>All areas</option>
+              {areaOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </SearchableSelect>
+          ) : null}
         </div>
       </Card>
 
@@ -258,7 +309,7 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
             <section className="space-y-3" key={group.managerHrId ?? `unassigned-${groupIndex}`}>
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-white">
-                  {group.managerName ? `DSM · ${group.managerName}` : "Other"}
+                  {group.managerName ? `Manager · ${group.managerName}` : "Other"}
                 </span>
                 <span className="h-px flex-1 bg-slate-200" />
                 <span className="whitespace-nowrap text-[11px] font-bold text-slate-400">{group.members.length} shown</span>

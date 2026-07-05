@@ -82,6 +82,7 @@ export type FieldWorkforceEmployeeReference = {
   lineName?: string | null;
   managerHrId?: string | null;
   managerName?: string | null;
+  regionName?: string | null;
   roleName?: string | null;
   teamName?: string | null;
 };
@@ -239,6 +240,11 @@ export type FieldWorkforceEmployeeSummary = {
   noActivityCandidates: number;
   noActivityPattern: FieldWorkforceNoActivityPattern;
   preHireIgnoredValues: number;
+  /**
+   * Region — live (visits-mirror) path only, from the employee directory's region_name.
+   * Undefined on the Excel-upload/archive path, which never carried this field.
+   */
+  regionName?: string | null;
   roleName: string | null;
   severityCounts: Record<FieldWorkforceSeverity, number>;
   sourceRowNumber: number;
