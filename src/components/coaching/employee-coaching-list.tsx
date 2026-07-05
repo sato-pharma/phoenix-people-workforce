@@ -1033,28 +1033,30 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
         return null;
       })()}
 
-      {/* ─── Charts Row ──────────────────────────────────────────────── */}
+      {/* ─── Charts ──────────────────────────────────────────────────── */}
       {(scoreTrend.length >= 2 || repComparison.length > 0 || radarData.length > 0) ? (
-        <div className={cn("grid gap-4", (scoreTrend.length >= 2 && (repComparison.length > 0 || radarData.length > 0)) ? "lg:grid-cols-2" : "")}>
+        <>
+          {/* Score trend — full page-width row */}
           {scoreTrend.length >= 2 ? (
             <ScoreTrendChart
               data={scoreTrend}
               title={isTeamMode ? "Monthly score trend" : "My score progression"}
             />
           ) : null}
-          {repComparison.length > 0 ? <RepComparisonChart data={repComparison} /> : null}
-          {radarData.length > 0 && !repComparison.length ? <CoachingRadarChart data={radarData} /> : null}
-        </div>
+
+          {/* Secondary charts — rep comparison + coaching quality overview radar */}
+          {(repComparison.length > 0 || radarData.length > 0) ? (
+            <div className={cn("grid gap-4", (repComparison.length > 0 && radarData.length > 0) ? "lg:grid-cols-2" : "")}>
+              {repComparison.length > 0 ? <RepComparisonChart data={repComparison} /> : null}
+              {radarData.length > 0 ? <CoachingRadarChart data={radarData} /> : null}
+            </div>
+          ) : null}
+        </>
       ) : filtered.length > 0 ? (
         <div className="border border-slate-200 bg-white px-4 py-6 text-center">
           <p className="text-sm font-semibold text-slate-500">Not enough data for trend analysis</p>
           <p className="mt-1 text-[11px] text-slate-400">Score trend charts require at least 2 scored reports across different periods.</p>
         </div>
-      ) : null}
-
-      {/* ─── Radar Chart (standalone row when both rep comparison + trend are shown) */}
-      {radarData.length > 0 && repComparison.length > 0 && scoreTrend.length >= 2 ? (
-        <CoachingRadarChart data={radarData} />
       ) : null}
 
       {/* ─── Reports Table (desktop >=480px) ─────────────────────────── */}
