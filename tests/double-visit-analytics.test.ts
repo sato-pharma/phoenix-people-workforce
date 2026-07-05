@@ -397,6 +397,29 @@ export function runDoubleVisitAnalyticsTests() {
     assert.ok(!nsmScope.allowedHrIds.has(k("M-99")), "NSM does NOT see a rep outside his chain");
   }
 
+  // ── Portal-focus probation watchlist is intersected with the viewer's double-visit scope ────
+  // getProbationRows is intentionally broader than the DV scope for some roles (an NSM gets his
+  // whole line, but his double-visit scope is only his reporting chain), so the portal-focus
+  // probation watchlist MUST be filtered down to the same filterEmployeesForDoubleVisitAccess set
+  // the coverage roster uses — otherwise a viewer sees probation alarms for med reps outside his
+  // double-visit scope (the coverage/trend blocks never had that leak).
+  const focusFn = service.slice(
+    service.indexOf("export async function getDoubleVisitPortalFocus"),
+    service.indexOf("export async function getDoubleVisitReportData"),
+  );
+  assert.ok(focusFn.length > 0, "getDoubleVisitPortalFocus body located for scope-intersection check");
+  assert.match(
+    focusFn,
+    /const scopedEmployees = filterEmployeesForDoubleVisitAccess\(employees, access\)/,
+    "portal focus resolves the DV-scoped employee set",
+  );
+  assert.match(focusFn, /scopedHrKeys/, "portal focus builds a DV-scoped key set for the probation watchlist");
+  assert.match(
+    focusFn,
+    /medicalRepProbationRows = probationRows\.filter\(\(row\) => \{[\s\S]*?scopedHrKeys\.has\(key\)/,
+    "the probation watchlist is intersected against the DV-scoped key set (no cross-scope leak)",
+  );
+
   // ── DV_ROLE_CODES: Marketing Manager and SFE Manager resolve to a role code ─────────────────
   const mmSfeEmployees = [
     employee({ fullName: "Marketing Boss", hrId: "A-9", jobTitle: "Marketing Manager", positionTitle: "Marketing Manager" }),
