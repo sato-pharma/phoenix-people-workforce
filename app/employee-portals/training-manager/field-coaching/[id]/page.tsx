@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { CoachingReportDetail } from "@/components/coaching/coaching-report-detail";
+import { CoachingReportSubmitAction } from "@/components/coaching/coaching-report-submit-action";
 import {
   EmployeePortalActionBar,
   EmployeePortalActionLink,
@@ -13,7 +14,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getCoachingReportById } from "@/lib/coaching/service";
+import { canSubmitCoachingDraft, getCoachingReportById } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
   const canCreate =
     canManageCoachingReports(access) &&
     (await canAccess(access, "coaching", "create"));
+  const canSubmit = canSubmitCoachingDraft(access, detail.report);
 
   return (
     <EmployeePortalPageShell
@@ -85,6 +87,7 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
             {canCreate ? (
               <EmployeePortalActionLink href={createCoachingReportHref} label="Create Report" />
             ) : null}
+            {canSubmit ? <CoachingReportSubmitAction reportId={detail.report.id} /> : null}
           </>
         }
       />
