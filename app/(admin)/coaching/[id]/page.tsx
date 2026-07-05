@@ -1,4 +1,4 @@
-import { ArrowLeft, ClipboardCheck, Plus } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -11,6 +11,7 @@ import { CoachingReportSubmitAction } from "@/components/coaching/coaching-repor
 import {
   canAccess,
   canManageCoachingReports,
+  hrIdsMatch,
   normalizeHrId,
   type AccessContext,
 } from "@/lib/auth/permissions";
@@ -80,9 +81,17 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
     );
   }
 
-  const canCreate =
-    canManageCoachingReports(access) &&
-    (await canAccess(access, "coaching", "create"));
+  const canManageCoaching = canManageCoachingReports(access);
+  const canCreate = canManageCoaching && (await canAccess(access, "coaching", "create"));
+  // Only an unsubmitted draft owned by the coach (or a Super Admin / system
+  // override) can be resumed and submitted; everything else stays read-only.
+  const canEditDraft =
+    detail.report.status === "draft" &&
+    canManageCoaching &&
+    (await canAccess(access, "coaching", "update")) &&
+    (access.scope === "system" ||
+      access.role === "Super Admin" ||
+      hrIdsMatch(access.hrId, detail.report.coach_hr_id));
   const canSubmit = canSubmitCoachingDraft(access, detail.report);
 
   return (
@@ -97,6 +106,15 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
               <ArrowLeft className="h-4 w-4" />
               Back to Reports
             </Link>
+            {canEditDraft ? (
+              <Link
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
+                href={`/coaching/${id}/edit`}
+              >
+                <Pencil className="h-4 w-4" />
+                Resume Draft
+              </Link>
+            ) : null}
             {canCreate ? (
               <Link
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"

@@ -1,6 +1,9 @@
 import { Activity, BarChart3, BriefcaseBusiness, Building2, CalendarDays, CalendarX2, CheckCircle2, ClipboardCheck, FilePlus2, FileText } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { CoachingQualityRadarCard } from "@/components/coaching/coaching-quality-radar-card";
+import { CoachingScoreTrendCard } from "@/components/coaching/coaching-score-trend-card";
+import { CoachingTopScoresCard } from "@/components/coaching/coaching-top-scores-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   GlanceStrip,
@@ -15,6 +18,11 @@ import { EmployeePortalEmptyState } from "@/components/employee-portal/enterpris
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCoachingReports } from "@/lib/coaching/service";
+import {
+  buildCoachingQualityRadar,
+  buildMonthlyCoachingScoreTrend,
+  buildTopCoachingScores,
+} from "@/lib/coaching/landing-insights";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -33,13 +41,24 @@ export default async function TrainingManagerOverviewPage() {
     redirect("/employee-portals");
   }
 
-  const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth() + 1;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  // Previous calendar month, normalized across year boundaries (January → last
+  // December) so the "top scores" leaderboard rolls to last month automatically
+  // on the 1st of each month.
+  const previousMonthAnchor = new Date(currentYear, currentMonth - 2, 1);
+  const previousMonth = previousMonthAnchor.getMonth() + 1;
+  const previousMonthYear = previousMonthAnchor.getFullYear();
+  const previousMonthLabel = previousMonthAnchor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-  const [snapshotResult, coachingResult] = await Promise.allSettled([
+  const [snapshotResult, coachingResult, previousMonthResult] = await Promise.allSettled([
     getPortalHomeSnapshot(access),
     access.hrId
       ? getCoachingReports({ year: currentYear }, access)
+      : Promise.resolve([]),
+    access.hrId
+      ? getCoachingReports({ year: previousMonthYear, month: previousMonth }, access)
       : Promise.resolve([]),
   ]);
 
@@ -58,10 +77,14 @@ export default async function TrainingManagerOverviewPage() {
 
   const snapshot = snapshotResult.value;
   const coachingReports = coachingResult.status === "fulfilled" ? coachingResult.value : [];
+  const previousMonthReports = previousMonthResult.status === "fulfilled" ? previousMonthResult.value : [];
 
   const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const reportsThisMonth = coachingReports.filter((r) => r.coachingMonth === currentMonth).length;
+  const scoreTrend = buildMonthlyCoachingScoreTrend(coachingReports);
+  const qualityRadar = buildCoachingQualityRadar(coachingReports);
+  const topScoresLastMonth = buildTopCoachingScores(previousMonthReports, 5);
 
   return (
     <div className="mx-auto w-full space-y-4" dir="auto">
@@ -131,6 +154,11 @@ export default async function TrainingManagerOverviewPage() {
           />
         </div>
       </div>
+
+      {/* Coaching performance insights — mirror the coaching analytics widgets, above the DV trend */}
+      <CoachingScoreTrendCard data={scoreTrend} />
+      <CoachingQualityRadarCard data={qualityRadar} />
+      <CoachingTopScoresCard entries={topScoresLastMonth} monthLabel={previousMonthLabel} />
 
       <DoubleVisitFocusSection focus={snapshot.dvFocus} />
 

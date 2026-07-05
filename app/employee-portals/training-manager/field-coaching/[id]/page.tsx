@@ -11,6 +11,7 @@ import {
 import {
   canAccess,
   canManageCoachingReports,
+  hrIdsMatch,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -66,9 +67,14 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
     );
   }
 
-  const canCreate =
-    canManageCoachingReports(access) &&
-    (await canAccess(access, "coaching", "create"));
+  const canManageCoaching = canManageCoachingReports(access);
+  const canCreate = canManageCoaching && (await canAccess(access, "coaching", "create"));
+  // A Training Manager can resume only their own unsubmitted draft.
+  const canEditDraft =
+    detail.report.status === "draft" &&
+    canManageCoaching &&
+    (await canAccess(access, "coaching", "update")) &&
+    hrIdsMatch(access.hrId, detail.report.coach_hr_id);
   const canSubmit = canSubmitCoachingDraft(access, detail.report);
 
   return (
@@ -84,6 +90,9 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
               {detail.report.report_number}
             </span>
             <EmployeePortalActionLink href={fieldCoachingHref} label="Back to Reports" />
+            {canEditDraft ? (
+              <EmployeePortalActionLink href={`${fieldCoachingHref}/${id}/edit`} label="Resume Draft" />
+            ) : null}
             {canCreate ? (
               <EmployeePortalActionLink href={createCoachingReportHref} label="Create Report" />
             ) : null}

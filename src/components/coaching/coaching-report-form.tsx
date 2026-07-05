@@ -57,6 +57,11 @@ type CoachingReportFormProps = {
     role: string;
   };
   employees: CoachingEmployeeOption[];
+  /**
+   * When provided, the form opens in "resume draft" mode: state is hydrated from
+   * the existing draft and Save Draft / Submit Report act on that report id.
+   */
+  initialDraft?: CoachingReportDetail | null;
 };
 
 type FormMessage = {
@@ -183,15 +188,40 @@ function DetailPill({ label, value }: { label: string; value: React.ReactNode })
   );
 }
 
-export function CoachingReportForm({ coach, employees }: CoachingReportFormProps) {
-  const [selectedHrId, setSelectedHrId] = useState("");
-  const [coachingDate, setCoachingDate] = useState(todayIsoDate());
-  const [areaOfDevelopment, setAreaOfDevelopment] = useState("");
-  const [strengthPoints, setStrengthPoints] = useState("");
-  const [generalRemarks, setGeneralRemarks] = useState("");
-  const [scores, setScores] = useState<Partial<Record<CoachingScoreItemKey, number>>>({});
-  const [scoreNotes, setScoreNotes] = useState<ScoreItemNotes>({});
-  const [draftId, setDraftId] = useState<string | null>(null);
+function initialScoresFromDraft(draft: CoachingReportDetail | null | undefined) {
+  const scores: Partial<Record<CoachingScoreItemKey, number>> = {};
+  if (!draft) return scores;
+  for (const item of draft.scores) {
+    if (Number.isInteger(item.score)) scores[item.score_item_key] = item.score;
+  }
+  return scores;
+}
+
+function initialNotesFromDraft(draft: CoachingReportDetail | null | undefined) {
+  const notes: ScoreItemNotes = {};
+  if (!draft) return notes;
+  for (const item of draft.scores) {
+    notes[item.score_item_key] = {
+      areaToBeImproved: item.area_to_be_improved ?? "",
+      strengthPoint: item.strength_point ?? "",
+    };
+  }
+  return notes;
+}
+
+export function CoachingReportForm({ coach, employees, initialDraft }: CoachingReportFormProps) {
+  const [selectedHrId, setSelectedHrId] = useState(initialDraft?.report.medical_rep_hr_id ?? "");
+  const [coachingDate, setCoachingDate] = useState(
+    initialDraft?.report.coaching_date?.slice(0, 10) ?? todayIsoDate(),
+  );
+  const [areaOfDevelopment, setAreaOfDevelopment] = useState(initialDraft?.report.area_of_development ?? "");
+  const [strengthPoints, setStrengthPoints] = useState(initialDraft?.report.strength_points ?? "");
+  const [generalRemarks, setGeneralRemarks] = useState(initialDraft?.report.general_remarks ?? "");
+  const [scores, setScores] = useState<Partial<Record<CoachingScoreItemKey, number>>>(
+    () => initialScoresFromDraft(initialDraft),
+  );
+  const [scoreNotes, setScoreNotes] = useState<ScoreItemNotes>(() => initialNotesFromDraft(initialDraft));
+  const [draftId, setDraftId] = useState<string | null>(initialDraft?.report.id ?? null);
   const [result, setResult] = useState<CoachingReportDetail | null>(null);
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [isSaving, setIsSaving] = useState(false);
