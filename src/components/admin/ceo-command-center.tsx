@@ -565,6 +565,52 @@ export function CeoCommandCenter({
             href="/admin/marketing-requests/roi-tracking"
           />
         </div>
+
+        {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
+        <div className="grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickLinkCard
+            title="Weekly Sales · Company"
+            icon={<Activity className="h-3.5 w-3.5" />}
+            headline="All lines · all regions · week-over-week"
+            sub="Open the company weekly dashboard"
+            href="/admin/field-sales/weekly-sales"
+          />
+          <QuickLinkCard
+            title="Source of Sales · Company"
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            headline="Channel mix, regions, areas, products, distributors"
+            sub="Open the company SoS dashboard"
+            href="/admin/field-sales/source-of-sales"
+          />
+          <QuickLinkCard
+            title="DSM Performance"
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            headline="Every line's district managers vs target"
+            sub="Open company DSM performance"
+            href="/admin/field-sales/dsm-performance"
+          />
+          <QuickLinkCard
+            title="Med-Rep Performance"
+            icon={<Activity className="h-3.5 w-3.5" />}
+            headline="Every line's reps, grouped by district"
+            sub="Open company med-rep performance"
+            href="/admin/field-sales/med-reps-performance"
+          />
+          <QuickLinkCard
+            title="Double-Visit Intelligence"
+            icon={<MapPinned className="h-3.5 w-3.5" />}
+            headline="Coverage, AM/PM split, per-rep intensity"
+            sub="Open Double-Visit Analytics"
+            href="/admin/double-visit-analytics"
+          />
+          <QuickLinkCard
+            title="Events Calendar"
+            icon={<CalendarClock className="h-3.5 w-3.5" />}
+            headline="Company events, leave, plans, birthdays"
+            sub="Open the company events calendar"
+            href="/admin/company-calendar"
+          />
+        </div>
       </SectionShell>
 
       {/* ── Footer ────────────────────────────────────────────────────────── */}

@@ -26,7 +26,10 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    if (!isPortalSosRole(access.role)) {
+    // Company executives export from the admin Field Sales pages — same session-side
+    // scope resolution as the dashboard feed (CEO / Super Admin ⇒ full COMPANY scope).
+    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
+    if (!isPortalSosRole(access.role) && !isCompanyExecutive) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 

@@ -284,6 +284,10 @@ const adminNavigationSectionSeeds = [
       { href: "/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
       { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
+      // Admin host of the portal events calendar (events, holidays, leave, birthdays) for executives.
+      // attendance/read (not hr_calendar): CEO's effective matrix lacks hr_calendar — same
+      // permission pattern as the CEO-visible Private Calendars entry below.
+      { href: "/admin/company-calendar", icon: CalendarDays, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
       { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
       { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
       { href: "/attendance/settlement-dashboard", icon: ChartColumnBig, label: "Settlement Dashboard", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
@@ -409,6 +413,11 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/analytics/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Analytics", permissions: [{ resource: "weekly_sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
       { href: "/admin/analytics/executive-comparison", icon: ChartColumnBig, label: "Executive Comparison", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
       { href: "/admin/analytics/reconciliation", icon: ChartColumnBig, label: "Reconciliation", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      // Company-scope re-hosts of the portal field dashboards (NSM-parity views for executives).
+      { href: "/admin/field-sales/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Field Weekly Sales", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      { href: "/admin/field-sales/source-of-sales", icon: ChartColumnBig, label: "Field Source of Sales", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      { href: "/admin/field-sales/dsm-performance", icon: ChartColumnBig, label: "DSM Performance", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      { href: "/admin/field-sales/med-reps-performance", icon: ChartNoAxesColumnIncreasing, label: "Med-Rep Performance", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
     ],
     label: "Sales Analytics",
   },

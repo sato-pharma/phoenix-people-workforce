@@ -267,8 +267,7 @@ const DETAIL_ORDER_BY = ["distributor_code", "region_code", "area_code", "produc
 // entitled to identical rows; keepExec in getSosDashboard stays the authoritative per-request
 // authorization backstop. Invalidated on any validated SoS/marketing import via
 // invalidateSalesDashboardCache (tag "sos-dashboard").
-const fetchSosDashboardRpcRows = unstable_cache(
-  async (inputs: SosRpcInputs): Promise<SosRpcRows> => {
+const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<SosRpcRows> => {
     const {
       windowPeriods,
       selectedPeriods,
@@ -354,10 +353,25 @@ const fetchSosDashboardRpcRows = unstable_cache(
       yoyDetailRowsPromise,
     ]);
     return { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw };
-  },
-  ["sos-dashboard"],
-  { revalidate: 300, tags: ["sos-dashboard"] },
-);
+};
+
+const fetchSosDashboardRpcRowsCached = unstable_cache(fetchSosDashboardRpcRowsUncached, ["sos-dashboard"], {
+  revalidate: 300,
+  tags: ["sos-dashboard"],
+});
+
+// Company-wide callers (no line restriction + cross-line geography, i.e. CEO / Super Admin)
+// pull the full brick + customer row sets, which exceed Next's 2MB data-cache entry limit —
+// unstable_cache then rejects asynchronously (unhandledRejection noise) and nothing gets
+// cached anyway. Route those callers straight to the fetcher; every line/region/product
+// scoped viewer keeps the cached path exactly as before.
+function fetchSosDashboardRpcRows(inputs: SosRpcInputs): Promise<SosRpcRows> {
+  const unrestrictedLines = !inputs.trendLineNames || inputs.trendLineNames.length === 0;
+  if (inputs.canSeeCrossLineGeography && unrestrictedLines) {
+    return fetchSosDashboardRpcRowsUncached(inputs);
+  }
+  return fetchSosDashboardRpcRowsCached(inputs);
+}
 
 /**
  * Optional server-resolved scope overrides. Used by the employee-portal Source-of-Sales

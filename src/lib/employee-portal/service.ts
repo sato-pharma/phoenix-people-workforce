@@ -4175,6 +4175,38 @@ export async function getDsmTeamPerformance(
       lineName: currentEmployee?.lineName ?? null,
     });
 
+    return await buildTeamPerformanceForScope({
+      directory,
+      lineScope,
+      mode: isNsm ? "nsm-line" : "dsm-direct",
+      anchorCanonical: dsmCanonical,
+      period: options.period ?? null,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shared team-performance builder (med-rep grain) — the single implementation behind the
+ * DSM team view and NSM line view (getDsmTeamPerformance) AND the company-wide executive
+ * rollup (getCompanyMedRepPerformance). "dsm-direct" = direct reports of the anchor DSM;
+ * "nsm-line" = every med-rep on the line, seat-continuity aware. One code path keeps the
+ * CEO's company numbers reconciled exactly with what each NSM/DSM sees.
+ */
+async function buildTeamPerformanceForScope(input: {
+  directory: EmployeeDirectoryData;
+  lineScope: ReturnType<typeof createPortalSalesLineScope>;
+  mode: "dsm-direct" | "nsm-line";
+  /** Canonical anchor: the DSM (dsm-direct) or the line's NSM (nsm-line); null when the NSM seat is vacant. */
+  anchorCanonical: string | null;
+  period?: string | null;
+}): Promise<DsmTeamPerformanceData> {
+  // Local aliases keep the body below byte-identical to the pre-refactor implementation.
+  const { directory, lineScope } = input;
+  const isNsm = input.mode === "nsm-line";
+  const dsmCanonical = input.anchorCanonical;
+
     const scopedDsmRows = isNsm
       ? directory.employees.filter(
           (emp) =>
@@ -4275,7 +4307,7 @@ export async function getDsmTeamPerformance(
       .sort((a, b) => b.localeCompare(a));
 
     // Filter records by period in memory if requested
-    const selectedPeriod = normalizeTeamComparisonPeriod(options.period);
+    const selectedPeriod = normalizeTeamComparisonPeriod(input.period ?? null);
     const records = selectedPeriod
       ? allRecords.filter((r) => r.period === selectedPeriod)
       : allRecords;
@@ -4430,6 +4462,105 @@ export async function getDsmTeamPerformance(
       teamMemberCount: members.length,
       teamTotalSales,
       teamTotalTarget,
+    };
+}
+
+export type CompanyMedRepPerformanceLine = {
+  lineId: number | null;
+  lineName: string;
+  /** The line's NSM display name; null when the NSM seat is vacant. */
+  nsmName: string | null;
+  performance: DsmTeamPerformanceData;
+};
+
+export type CompanyMedRepPerformanceData = {
+  /** Per-line blocks, computed by the same builder each NSM's own view uses, sorted by sales desc. */
+  lines: CompanyMedRepPerformanceLine[];
+  /** Union of sales periods across lines, newest first. */
+  periods: string[];
+  companyTotalSales: number;
+  companyTotalTarget: number;
+  companyAchievementPercent: number;
+  repCount: number;
+  lineCount: number;
+};
+
+/**
+ * Company-wide medical-rep performance rollup for the executive admin surface (CEO /
+ * Super Admin). Runs the SAME line builder the NSM's Med Reps Performance view uses for
+ * every line that has medical reps, so company totals reconcile exactly with the per-line
+ * NSM views — seat-continuity included. Gated on company scope + executive role, NOT
+ * canSeeEmployee (which stays manager-scoped).
+ */
+export async function getCompanyMedRepPerformance(
+  access: AccessContext,
+  options: { period?: string | null } = {},
+): Promise<CompanyMedRepPerformanceData | null> {
+  try {
+    if (access.scope !== "company") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return null;
+
+    const lineInfoByKey = new Map<string, { lineId: number | null; lineName: string }>();
+    directory.employees.forEach((emp) => {
+      if (!isMedicalRepDirectoryEmployee(emp)) return;
+      const lineId = emp.lineId ?? null;
+      const lineName = emp.lineName ?? null;
+      if (lineId == null && !lineName) return;
+      const key = `${lineId ?? ""}::${(lineName ?? "").trim().toLowerCase()}`;
+      if (!lineInfoByKey.has(key)) {
+        lineInfoByKey.set(key, { lineId, lineName: lineName ?? `Line ${lineId}` });
+      }
+    });
+
+    const lineBlocks = await Promise.all(
+      Array.from(lineInfoByKey.values()).map(async (info) => {
+        const lineScope = createPortalSalesLineScope({
+          fallbackLine: info.lineName,
+          lineId: info.lineId,
+          lineName: info.lineName,
+        });
+        const nsmEmployee = directory.employees.find(
+          (emp) =>
+            isNationalSalesManagerDirectoryEmployee(emp) &&
+            employeeMatchesPortalSalesScope(emp, lineScope),
+        );
+        const performance = await buildTeamPerformanceForScope({
+          directory,
+          lineScope,
+          mode: "nsm-line",
+          anchorCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
+          period: options.period ?? null,
+        });
+        return {
+          lineId: info.lineId,
+          lineName: info.lineName,
+          nsmName: nsmEmployee?.fullName ?? null,
+          performance,
+        };
+      }),
+    );
+
+    const lines = lineBlocks
+      .filter((line) => line.performance.members.length > 0)
+      .sort((a, b) => b.performance.teamTotalSales - a.performance.teamTotalSales);
+
+    const companyTotalSales = lines.reduce((sum, line) => sum + line.performance.teamTotalSales, 0);
+    const companyTotalTarget = lines.reduce((sum, line) => sum + line.performance.teamTotalTarget, 0);
+    const periods = Array.from(new Set(lines.flatMap((line) => line.performance.periods))).sort((a, b) =>
+      b.localeCompare(a),
+    );
+
+    return {
+      lines,
+      periods,
+      companyTotalSales,
+      companyTotalTarget,
+      companyAchievementPercent: companyTotalTarget > 0 ? (companyTotalSales / companyTotalTarget) * 100 : 0,
+      repCount: lines.reduce((sum, line) => sum + line.performance.teamMemberCount, 0),
+      lineCount: lines.length,
     };
   } catch {
     return null;
@@ -4802,6 +4933,35 @@ export async function getNsmDsmPerformance(
       lineName: currentEmployee?.lineName ?? null,
     });
 
+    return await buildDsmPerformanceForLineScope({
+      directory,
+      lineScope,
+      nsmCanonical: toCanonicalPortalHrId(currentUser.hrId),
+      managerName: currentUser.name ?? "National Sales Manager",
+      period: options.period ?? null,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shared line-level DSM performance builder — the single implementation behind BOTH the
+ * NSM portal view (getNsmDsmPerformance) and the company-wide executive rollup
+ * (getCompanyDsmPerformance). Keeping one code path is what guarantees the CEO's company
+ * numbers reconcile exactly with the per-line numbers each NSM sees.
+ */
+async function buildDsmPerformanceForLineScope(input: {
+  directory: EmployeeDirectoryData;
+  lineScope: ReturnType<typeof createPortalSalesLineScope>;
+  /** Canonical HR_ID of the line's NSM (orphan-rep seat fallback anchor); null when the NSM seat is vacant. */
+  nsmCanonical: string | null;
+  /** Display name used as the DSM nodes' manager label (the line's NSM, or a line label when vacant). */
+  managerName: string;
+  period?: string | string[] | null;
+}): Promise<NsmDsmPerformanceData> {
+  const { directory, lineScope, nsmCanonical, managerName } = input;
+
     const dsmRows = directory.employees.filter((emp) => {
       return (
         isDistrictManagerEmployee(emp) &&
@@ -4824,7 +4984,6 @@ export async function getNsmDsmPerformance(
     });
     const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
 
-    const nsmCanonical = toCanonicalPortalHrId(currentUser.hrId);
     // Fallback seat-continuity: the single open DSM seat under this NSM/line, used
     // when an orphaned rep's continuity marker was lost.
     const vacantDsmSeat = resolveNsmVacantDsmSeat(directory, lineScope, nsmCanonical);
@@ -4921,7 +5080,7 @@ export async function getNsmDsmPerformance(
     const periods = Array.from(new Set(allRecords.map(({ record }) => record.period).filter(Boolean)))
       .sort((a, b) => b.localeCompare(a));
 
-    const selectedPeriods = normalizeTeamComparisonPeriods(options.period);
+    const selectedPeriods = normalizeTeamComparisonPeriods(input.period ?? null);
     const records = selectedPeriods.length > 0
       ? allRecords.filter(({ record }) => selectedPeriods.includes(record.period))
       : allRecords;
@@ -4986,7 +5145,7 @@ export async function getNsmDsmPerformance(
         hrId: canonical,
         name: emp.fullName,
         managerHrId: null, // NSM is the manager
-        managerName: currentUser.name,
+        managerName,
         position: 0,
         products: [],
         totalSales: 0,
@@ -5003,7 +5162,7 @@ export async function getNsmDsmPerformance(
         hrId: seatCanonical,
         name: label,
         managerHrId: null, // NSM is the manager
-        managerName: currentUser.name,
+        managerName,
         position: 0,
         products: [],
         totalSales: 0,
@@ -5053,6 +5212,106 @@ export async function getNsmDsmPerformance(
       dsmCount: dsms.length,
       lineTotalSales,
       lineTotalTarget
+    };
+}
+
+export type CompanyDsmPerformanceLine = {
+  lineId: number | null;
+  lineName: string;
+  /** The line's NSM display name; null when the NSM seat is vacant. */
+  nsmName: string | null;
+  performance: NsmDsmPerformanceData;
+};
+
+export type CompanyDsmPerformanceData = {
+  /** Per-line blocks, computed by the same builder each NSM's own view uses, sorted by sales desc. */
+  lines: CompanyDsmPerformanceLine[];
+  /** Union of sales periods across lines, newest first. */
+  periods: string[];
+  companyTotalSales: number;
+  companyTotalTarget: number;
+  companyAchievementPercent: number;
+  dsmCount: number;
+  lineCount: number;
+};
+
+/**
+ * Company-wide DSM performance rollup for the executive admin surface (CEO / Super Admin).
+ * Iterates every line that has District Managers and runs the SAME line builder the NSM
+ * portal view uses, so `companyTotalSales` is exactly the sum of what each NSM sees —
+ * seat-continuity (vacant DSM seats, orphaned reps) included. Deliberately gated on the
+ * company scope + executive role, NOT canSeeEmployee (which stays manager-scoped).
+ */
+export async function getCompanyDsmPerformance(
+  access: AccessContext,
+  options: { period?: string | null } = {},
+): Promise<CompanyDsmPerformanceData | null> {
+  try {
+    if (access.scope !== "company") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return null;
+
+    // Distinct lines that actually have District Managers (Head Office naturally drops out).
+    const lineInfoByKey = new Map<string, { lineId: number | null; lineName: string }>();
+    directory.employees.forEach((emp) => {
+      if (!isDistrictManagerEmployee(emp)) return;
+      const lineId = emp.lineId ?? null;
+      const lineName = emp.lineName ?? null;
+      if (lineId == null && !lineName) return;
+      const key = `${lineId ?? ""}::${(lineName ?? "").trim().toLowerCase()}`;
+      if (!lineInfoByKey.has(key)) {
+        lineInfoByKey.set(key, { lineId, lineName: lineName ?? `Line ${lineId}` });
+      }
+    });
+
+    const lineBlocks = await Promise.all(
+      Array.from(lineInfoByKey.values()).map(async (info) => {
+        const lineScope = createPortalSalesLineScope({
+          fallbackLine: info.lineName,
+          lineId: info.lineId,
+          lineName: info.lineName,
+        });
+        const nsmEmployee = directory.employees.find(
+          (emp) =>
+            isNationalSalesManagerDirectoryEmployee(emp) &&
+            employeeMatchesPortalSalesScope(emp, lineScope),
+        );
+        const performance = await buildDsmPerformanceForLineScope({
+          directory,
+          lineScope,
+          nsmCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
+          managerName: nsmEmployee?.fullName ?? `${info.lineName} (NSM seat vacant)`,
+          period: options.period ?? null,
+        });
+        return {
+          lineId: info.lineId,
+          lineName: info.lineName,
+          nsmName: nsmEmployee?.fullName ?? null,
+          performance,
+        };
+      }),
+    );
+
+    const lines = lineBlocks
+      .filter((line) => line.performance.dsms.length > 0)
+      .sort((a, b) => b.performance.lineTotalSales - a.performance.lineTotalSales);
+
+    const companyTotalSales = lines.reduce((sum, line) => sum + line.performance.lineTotalSales, 0);
+    const companyTotalTarget = lines.reduce((sum, line) => sum + line.performance.lineTotalTarget, 0);
+    const periods = Array.from(new Set(lines.flatMap((line) => line.performance.periods))).sort((a, b) =>
+      b.localeCompare(a),
+    );
+
+    return {
+      lines,
+      periods,
+      companyTotalSales,
+      companyTotalTarget,
+      companyAchievementPercent: companyTotalTarget > 0 ? (companyTotalSales / companyTotalTarget) * 100 : 0,
+      dsmCount: lines.reduce((sum, line) => sum + line.performance.dsmCount, 0),
+      lineCount: lines.length,
     };
   } catch {
     return null;

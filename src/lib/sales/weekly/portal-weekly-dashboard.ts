@@ -46,7 +46,7 @@ export type PortalWeeklyFilterVisibility = {
   month: boolean;
   /** Always true. */
   weekNumber: boolean;
-  /** True only for Marketing Manager (multi-line role). */
+  /** True for Marketing Manager (multi-line role) and full-tier company viewers (CEO / Super Admin). */
   line: boolean;
   /** False when locked to exactly one region (DSM). */
   region: boolean;
@@ -59,16 +59,18 @@ export type PortalWeeklyFilterVisibility = {
 /**
  * Pure visibility rule — exported for unit testing.
  * Region hidden ONLY when locked to exactly one region (DSM territory tier).
- * Line shown ONLY for Marketing Manager.
+ * Line shown for Marketing Manager (multi-line role) and for full-tier company
+ * viewers (CEO / Super Admin on the admin Field Sales pages).
  */
 export function computePortalWeeklyVisibility(
   role: PhoenixRole,
   allowedRegionCodes: Set<string> | null,
+  companyWide = false,
 ): PortalWeeklyFilterVisibility {
   return {
     month: true,
     weekNumber: true,
-    line: role === "Marketing Manager",
+    line: role === "Marketing Manager" || companyWide,
     region: !(allowedRegionCodes !== null && allowedRegionCodes.size === 1),
     product: true,
     distributor: true,
@@ -164,7 +166,7 @@ export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<Port
   }
 
   const isSingleRegion = allowedRegionCodes !== null && allowedRegionCodes.size === 1;
-  const visibility = computePortalWeeklyVisibility(role, allowedRegionCodes);
+  const visibility = computePortalWeeklyVisibility(role, allowedRegionCodes, accessScope.tier === "full");
   const scopeSummary = buildWeeklyScopeSummary(accessScope, role);
 
   return {
@@ -201,8 +203,9 @@ function trimWeeklyFilterOptions(
     );
   }
 
-  if (scope.role !== "Marketing Manager") {
-    // Non-MM roles are bounded to their own line(s); the line filter is hidden entirely.
+  if (scope.role !== "Marketing Manager" && scope.accessScope.tier !== "full") {
+    // Line-bounded roles get the line filter hidden entirely; Marketing Manager and
+    // full-tier company viewers (CEO / Super Admin) keep the line list for slicing.
     availableLines = [];
   }
 
