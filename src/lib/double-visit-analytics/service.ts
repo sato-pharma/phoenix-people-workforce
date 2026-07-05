@@ -1562,7 +1562,7 @@ export async function getDoubleVisitReportData(input: {
       asOfDate: today,
       dateFrom,
       dateTo,
-      filters: { areas: [], doubleVisitors: [], lines: [], visitKinds: [] },
+      filters: { areas: [], doubleVisitorRoles: [], doubleVisitors: [], regions: [], visitKinds: [] },
       neverVisited: [],
       probation: [],
       rows: [],
@@ -1577,6 +1577,20 @@ export async function getDoubleVisitReportData(input: {
       .map((employee) => [canonicalHrIdKey(employee.hrId), employee.hireDate] as const)
       .filter((entry): entry is [string, string | null] => Boolean(entry[0])),
   );
+  const employeeByHrKey = new Map(
+    employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+  // The DV feed carries no region field — resolve it from the employee directory's own
+  // area→region pairing (every employee row already has both), keyed by normalized area name.
+  const regionByAreaKey = new Map<string, string>();
+  for (const employee of employees) {
+    const areaKey = employee.areaName?.trim().toLowerCase();
+    if (areaKey && employee.regionName && !regionByAreaKey.has(areaKey)) {
+      regionByAreaKey.set(areaKey, employee.regionName);
+    }
+  }
   const managerHrIdKeys = new Set(
     scopedEmployees
       .filter((employee) => resolveDvRole(employee) !== null)
@@ -1594,14 +1608,20 @@ export async function getDoubleVisitReportData(input: {
     .map((row) => {
       const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
       const visitedHireDate = visitedKey ? hireDateByKey.get(visitedKey) ?? null : null;
+      const doubleVisitorKey = canonicalHrIdKey(row.double_visitor_hr_id);
+      const doubleVisitorEmployee = doubleVisitorKey ? employeeByHrKey.get(doubleVisitorKey) ?? null : null;
+      const areaName = nullableText(row.area_name);
+      const areaKey = areaName?.trim().toLowerCase();
       return {
         activityDate: row.activity_date,
-        areaName: nullableText(row.area_name),
+        areaName,
         daysSinceVisitedHire: daysBetween(visitedHireDate, dateTo),
         doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
         doubleVisitorName: nullableText(row.double_visitor_name),
+        doubleVisitorRole: resolveDvRole(doubleVisitorEmployee)?.role ?? null,
         lineName: nullableText(row.line_name),
         period: row.period,
+        regionName: areaKey ? regionByAreaKey.get(areaKey) ?? null : null,
         visitCount: asNumber(row.visit_count),
         visitedEmployeeHireDate: visitedHireDate,
         visitedHrId: nullableText(row.visited_employee_hr_id),
@@ -1659,17 +1679,18 @@ export async function getDoubleVisitReportData(input: {
   });
 
   const areas = Array.from(new Set(rows.map((row) => row.areaName).filter((value): value is string => Boolean(value)))).sort();
-  const lines = Array.from(new Set(rows.map((row) => row.lineName).filter((value): value is string => Boolean(value)))).sort();
+  const regions = Array.from(new Set(rows.map((row) => row.regionName).filter((value): value is string => Boolean(value)))).sort();
   const doubleVisitors = Array.from(
     new Set(rows.map((row) => row.doubleVisitorName ?? row.doubleVisitorHrId).filter((value): value is string => Boolean(value))),
   ).sort();
+  const doubleVisitorRoles = Array.from(new Set(rows.map((row) => row.doubleVisitorRole).filter((value): value is string => Boolean(value)))).sort();
   const visitKinds = Array.from(new Set(rows.map((row) => row.visitKind))).sort();
 
   return {
     asOfDate: today,
     dateFrom,
     dateTo,
-    filters: { areas, doubleVisitors, lines, visitKinds },
+    filters: { areas, doubleVisitorRoles, doubleVisitors, regions, visitKinds },
     neverVisited,
     probation,
     rows,
