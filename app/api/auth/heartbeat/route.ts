@@ -22,6 +22,7 @@ import {
   isApiRateLimitError,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
+import { isSupabaseTimeout } from "@/lib/reports/vacancies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,7 +59,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const sessionState = await resolveSessionState(sessionToken, { refreshIdle: true });
+  let sessionState: Awaited<ReturnType<typeof resolveSessionState>>;
+  try {
+    sessionState = await resolveSessionState(sessionToken, { refreshIdle: true });
+  } catch (error) {
+    if (isSupabaseTimeout(error)) {
+      return NextResponse.json(
+        { error: "db_timeout", message: "Session service temporarily unavailable." },
+        { status: 503 },
+      );
+    }
+    throw error;
+  }
 
   if (!sessionState) {
     const devPreview = isLocalDevelopmentRequest(request)
