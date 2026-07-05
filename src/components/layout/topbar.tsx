@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 
-import { PhoenixLogo } from "@/components/brand/phoenix-logo";
 import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
@@ -73,10 +72,6 @@ export function Topbar({
         >
           <Menu className="h-5 w-5" />
         </button>
-
-        <div className="min-w-0 lg:hidden">
-          <PhoenixLogo compact onDark={isAdminMode} />
-        </div>
 
         <button
           aria-label="Open command palette"
