@@ -119,7 +119,12 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(service, /buildManagerMrPairs\(data\.visitLog\)/, "pairs sheet must be built from the visit log");
   assert.match(service, /\.range\(from, from \+ pageSize/, "live rows must be paged past the PostgREST row cap, not truncated");
   assert.match(service, /resolveDoubleVisitChains\(/, "same-day chain resolver is wired into the live loader");
-  assert.match(service, /resolved_via_chain/, "chain-resolved rows are flagged so the integrity report can audit them");
+  assert.match(service, /resolved_via_chain/, "chain-resolved rows are flagged so callers can audit them");
+  assert.match(service, /export async function getDoubleVisitRecoveredChains/, "recovered chains are exposed as their own reusable loader (consumed by Visits Report, not the Integrity report)");
+
+  const dvTypes = readFileSync("src/lib/double-visit-analytics/types.ts", "utf8");
+  const integrityReportType = dvTypes.slice(dvTypes.indexOf("export type DoubleVisitIntegrityReport"));
+  assert.doesNotMatch(integrityReportType, /recoveredChains/, "DoubleVisitIntegrityReport must not carry recoveredChains any more — that audit moved to Visits Report");
   assert.match(service, /double_visitor_hr_id\) === employeeKey/, "expense workload matching must use Double Visitor HR ID");
   assert.match(service, /loadDoubleVisitPrivateCalendarItems/, "private calendar must receive Double Visit evidence");
   assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
@@ -483,8 +488,19 @@ export function runDoubleVisitAnalyticsTests() {
   assert.equal(cK(multi.get("gm")?.mrHrId ?? ""), cK("M-1"), "GM resolves transitively through NSM+DM to the MR");
   assert.equal(cK(multi.get("nsm")?.mrHrId ?? ""), cK("M-1"), "NSM resolves through the DM to the MR");
 
-  // The Data Integrity workspace renders the recovered chains section.
+  // The Data Integrity workspace no longer surfaces recovered chains — that audit moved to the
+  // Visits Report page (Recovered Chains tab), per owner decision.
   const integrity = readFileSync("src/components/double-visit-analytics/double-visit-data-integrity-workspace.tsx", "utf8");
-  assert.match(integrity, /Recovered Via Chain/i, "the integrity workspace surfaces recovered chains");
-  assert.match(integrity, /report\.recoveredChains/, "the workspace reads recoveredChains from the report");
+  assert.doesNotMatch(integrity, /Recovered Via Chain/i, "recovered-chain audit UI must not live on the Data Integrity page");
+  assert.doesNotMatch(integrity, /recoveredChains/, "the Integrity workspace must not read recoveredChains any more");
+
+  // The Visits Report page + workspace now own the Recovered Chains audit tab.
+  const visitsReportPage = readFileSync("app/(admin)/admin/visits-report/page.tsx", "utf8");
+  assert.match(visitsReportPage, /getDoubleVisitRecoveredChains/, "the Visits Report page loads recovered chains");
+  assert.match(visitsReportPage, /tab === "recovered"/, "the Visits Report page recognizes the recovered tab");
+
+  const visitsReportWorkspace = readFileSync("src/components/visits-report/visits-report-workspace.tsx", "utf8");
+  assert.match(visitsReportWorkspace, /Recovered Chains/, "the Visits Report workspace has a Recovered Chains tab");
+  assert.match(visitsReportWorkspace, /RecoveredChainsPanel/, "the Visits Report workspace renders the recovered-chains panel");
+  assert.match(visitsReportWorkspace, /DoubleVisitRecoveredChain/, "the Visits Report workspace types against the shared DoubleVisitRecoveredChain shape");
 }

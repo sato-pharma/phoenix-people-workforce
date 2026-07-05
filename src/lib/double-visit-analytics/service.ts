@@ -2040,7 +2040,6 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
       countsByType: emptyIntegrityCounts(),
       importSummaries: [],
       issues: [],
-      recoveredChains: [],
       schemaReady: false,
       totalRowsScanned: 0,
     };
@@ -2057,32 +2056,12 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
   );
 
   const issues: DoubleVisitIntegrityIssue[] = [];
-  const recoveredChains: DoubleVisitRecoveredChain[] = [];
   const countsByType = emptyIntegrityCounts();
 
   for (const row of rawRows) {
-    // A row that the same-day chain recovered is no longer a "visited-is-manager" defect — it is
-    // now credited to the real MR (in visited_employee_*). Surface it as an auditable recovery
-    // instead of an issue.
-    if (row.resolved_via_chain) {
-      recoveredChains.push({
-        activityDate: row.activity_date,
-        areaName: nullableText(row.area_name),
-        customerSample: (row.chain_customer_names ?? []).slice(0, 4),
-        higherManagerHrId: nullableText(row.double_visitor_hr_id),
-        higherManagerName: nullableText(row.double_visitor_name),
-        hingeManagerHrId: nullableText(row.chain_hinge_hr_id),
-        hingeManagerName: nullableText(row.chain_hinge_name),
-        id: row.id,
-        lineName: nullableText(row.line_name),
-        period: row.period,
-        resolvedMrHrId: nullableText(row.visited_employee_hr_id),
-        resolvedMrName: nullableText(row.visited_employee_name),
-        visitCount: asNumber(row.visit_count),
-      });
-      continue;
-    }
-
+    // A row the same-day chain resolver recovered (see resolveDoubleVisitChains) already carries
+    // the real MR in visited_employee_* — it never reaches "visited_is_manager" below, and is
+    // surfaced separately in the Visits Report's own Recovered Chains tab, not here.
     const doubleVisitorRaw = nullableText(row.double_visitor_hr_id);
     let issueType: DoubleVisitIntegrityIssueType | null = null;
 
@@ -2122,15 +2101,55 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
     });
   }
   issues.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
-  recoveredChains.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
 
   return {
     asOfDate: todayIso(),
     countsByType,
     importSummaries: [],
     issues,
-    recoveredChains,
     schemaReady: true,
     totalRowsScanned: rawRows.length,
   };
+}
+
+// ── Recovered Chains (admin-only): double visits the same-day chain resolver re-attributed
+// from a manager to the real MR they actually saw (see resolveDoubleVisitChains). Lives on the
+// Visits Report page (a raw-CRM-mirror browsing tool) rather than the Data Integrity report,
+// since these rows are no longer defects — they're already correctly counted everywhere; this is
+// purely an audit trail of what got recovered and how.
+
+export async function getDoubleVisitRecoveredChains(input: {
+  access: AccessContext;
+  dateFrom: string;
+  dateTo: string;
+}): Promise<DoubleVisitRecoveredChain[]> {
+  if (input.access.role !== "Super Admin") {
+    throw new Error("Forbidden: only Super Admin can view recovered double-visit chains.");
+  }
+  if (!(await isDoubleVisitSchemaReady())) return [];
+
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const rawRows = await getLiveDoubleVisitRows(input.dateFrom, input.dateTo, employees);
+
+  const recoveredChains: DoubleVisitRecoveredChain[] = [];
+  for (const row of rawRows) {
+    if (!row.resolved_via_chain) continue;
+    recoveredChains.push({
+      activityDate: row.activity_date,
+      areaName: nullableText(row.area_name),
+      customerSample: (row.chain_customer_names ?? []).slice(0, 4),
+      higherManagerHrId: nullableText(row.double_visitor_hr_id),
+      higherManagerName: nullableText(row.double_visitor_name),
+      hingeManagerHrId: nullableText(row.chain_hinge_hr_id),
+      hingeManagerName: nullableText(row.chain_hinge_name),
+      id: row.id,
+      lineName: nullableText(row.line_name),
+      period: row.period,
+      resolvedMrHrId: nullableText(row.visited_employee_hr_id),
+      resolvedMrName: nullableText(row.visited_employee_name),
+      visitCount: asNumber(row.visit_count),
+    });
+  }
+  recoveredChains.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
+  return recoveredChains;
 }
