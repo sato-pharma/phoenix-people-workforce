@@ -62,16 +62,27 @@ export default async function EmployeePortalOrganogramPage() {
   // fixedLine locks the UI filter to one line; for multi-line users it stays null
   // because the report is already pre-filtered server-side via lineNames.
   let fixedLine: string | null = null;
+  // showLinePicker renders the horizontal line-select buttons. Company-wide roles
+  // (MM/TM) always get it. Line-scoped roles get it too when they resolve to more
+  // than one line (e.g. a Product Manager with a line_scope_override spanning two
+  // lines, such as Anti infective + Pedia) — otherwise they'd land on a dead-end
+  // "select a line" screen with no way to actually select one.
+  let showLinePicker = false;
 
   try {
     if (isCompanyScoped) {
       initialReport = await getOrganogramReport(access, { mode: "company" });
+      showLinePicker = true;
     } else {
       const resolvedLines = await resolveOrganogramLinesForEmployee(access);
       if (!resolvedLines || resolvedLines.length === 0) {
         initialError = "Unable to resolve your Organogram line scope.";
       } else {
-        if (resolvedLines.length === 1) fixedLine = resolvedLines[0];
+        if (resolvedLines.length === 1) {
+          fixedLine = resolvedLines[0];
+        } else {
+          showLinePicker = true;
+        }
         initialReport = await getOrganogramReport(access, { lineNames: resolvedLines, mode: "line" });
       }
     }
@@ -109,7 +120,7 @@ export default async function EmployeePortalOrganogramPage() {
         fixedLine={fixedLine}
         initialError={initialError}
         initialReport={initialReport}
-        showLinePicker={access.role === "Marketing Manager" || access.role === "Training Manager"}
+        showLinePicker={showLinePicker}
       />
     </EmployeePortalPageShell>
   );
