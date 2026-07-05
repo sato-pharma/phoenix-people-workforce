@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  CalendarX2,
   ChartColumnBig,
   CheckCircle2,
   CircleDollarSign,
@@ -25,10 +26,22 @@ import {
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
-import { PendingActions, ProfileIntelBar } from "@/components/employee-portal/portal-command-center";
+import {
+  GlanceStrip,
+  PendingActions,
+  PortalContextBar,
+  ProfileIntelBar,
+  QuickActions,
+  egp,
+} from "@/components/employee-portal/portal-command-center";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+
+function monthLabel(ym: string) {
+  const [y, m] = ym.split("-");
+  return new Date(Number(y), Number(m) - 1).toLocaleString("en-US", { month: "short", year: "numeric" });
+}
 
 type NsmBoard = NonNullable<PortalHomeSnapshot["nsmBoard"]>;
 type CrmData = NsmBoard["crm"];
@@ -55,13 +68,6 @@ function egpCompact(value: number): string {
   if (!unit) return `${Math.round(value).toLocaleString("en-US")} EGP`;
   const scaled = (value / unit.div).toFixed(2).replace(/\.?0+$/, "");
   return `${scaled} ${unit.suffix} EGP`;
-}
-
-// First + last token only — keeps long full names on one line without truncating/wrapping.
-function shortName(full: string): string {
-  const parts = full.trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 2) return full.trim();
-  return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
 function cairoTime(iso: string): string {
@@ -250,10 +256,10 @@ function RankingPanel({
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
                   <div className="min-w-0">
-                    <p className="whitespace-nowrap text-sm font-semibold text-slate-800">{shortName(row.name)}</p>
+                    <p className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.name}</p>
                     {showManager && row.managerName ? (
                       <p className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {shortName(row.managerName)}
+                        {row.managerName}
                       </p>
                     ) : null}
                   </div>
@@ -284,7 +290,7 @@ function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: str
     <div className="flex flex-wrap gap-1.5">
       {people.map((p) => (
         <span key={p.hrId || p.name} className={`whitespace-nowrap border px-2 py-1 text-[11px] font-semibold ${cls}`}>
-          {shortName(p.name)}
+          {p.name}
         </span>
       ))}
     </div>
@@ -344,7 +350,7 @@ function CrmBoard({ crm }: { crm: CrmData }) {
                     className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
                   >
                     <span className="font-black text-emerald-600">{i + 1}</span>
-                    {shortName(b.name)}
+                    {b.name}
                     <span className="font-normal text-emerald-600/70">{cairoTime(b.at)}</span>
                   </span>
                 ))}
@@ -423,19 +429,120 @@ function ActionStrip() {
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, nsmNational, nsmBoard, dvFocus } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
+  const pct = nsmNational ? Math.max(0, Math.round(nsmNational.achievementPercent)) : null;
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
+      {/* ── Original dashboard (recovered as-is) ────────────────────── */}
       <IdentityCard data={shell} />
       <ProfileIntelBar shell={shell} />
+      <PortalContextBar role="National Sales Manager" context={nsmNational ? `${nsmNational.dsmCount} districts` : "—"} />
 
-      <NationalKeycards nsmNational={nsmNational} />
+      <GlanceStrip
+        items={[
+          {
+            icon: TrendingUp,
+            value: pct !== null ? `${pct}%` : "—",
+            label: "national achievement",
+            href: "/employee-portals/dsms-performance",
+            urgent: pct !== null && pct < 70,
+          },
+          {
+            icon: ClipboardCheck,
+            value: nsmNational ? String(nsmNational.pendingApprovals) : "—",
+            label: nsmNational?.pendingApprovals === 1 ? "approval pending" : "approvals pending",
+            href: "/employee-portals/approvals-hub",
+            urgent: !!nsmNational && nsmNational.pendingApprovals > 0,
+          },
+          {
+            icon: CalendarX2,
+            value: String(totalPending),
+            label: totalPending === 1 ? "my pending request" : "my pending requests",
+            href: "/employee-portals/approvals-hub",
+          },
+          {
+            icon: Wallet,
+            value: latestPayslip ? egp(latestPayslip.netSalary) : "—",
+            label: latestPayslip ? `${monthLabel(latestPayslip.month)} payslip` : "last payslip",
+            href: "/employee-portals/payslips",
+          },
+        ]}
+      />
+
+      <QuickActions
+        actions={[
+          { href: "/employee-portals/dsms-performance", icon: Network, label: "Regional Comparison" },
+          { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
+          { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Review Team KPIs" },
+          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
+        ]}
+      />
 
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
+
+      <div className="overflow-hidden border border-slate-200 bg-white">
+        <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">National Snapshot</h2>
+          <div className="h-1.5 w-12 bg-orange-500" />
+        </div>
+        {nsmNational ? (
+          <div className="grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-4">
+            {[
+              { label: "Districts", value: String(nsmNational.dsmCount) },
+              { label: "Sales", value: egp(nsmNational.totalSales) },
+              { label: "Target", value: egp(nsmNational.totalTarget) },
+              { label: "Achievement", value: pct !== null ? `${pct}%` : "—" },
+            ].map((tile) => (
+              <div key={tile.label} className="bg-white px-4 py-4">
+                <p className="text-lg font-black text-slate-900">{tile.value}</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{tile.label}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="px-5 py-6 text-sm text-slate-500">No line sales data synced for the current period yet.</p>
+        )}
+      </div>
+
+      <div className="overflow-hidden border border-slate-200">
+        <div className="bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Upcoming</h2>
+        </div>
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">
+          No monthly closing deadlines or leadership reviews scheduled.
+        </p>
+      </div>
+
+      <InsightPreviewPanel note="Distributor and forecast recommendations for your line are coming soon." />
+
+      <DoubleVisitFocusSection focus={dvFocus} />
+
+      <div className="overflow-hidden border border-slate-200">
+        <div className="bg-slate-900 px-5 py-3">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">My Tools</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
+          <Link href="/employee-portals/med-reps-performance" className="group flex min-h-[64px] items-center gap-4 bg-white px-4 py-4 transition-colors hover:bg-orange-50">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <p className="text-sm font-semibold text-slate-800">Med Rep Performance</p>
+          </Link>
+          <Link href="/employee-portals/expenses" className="group flex min-h-[64px] items-center gap-4 bg-white px-4 py-4 transition-colors hover:bg-orange-50">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+              <ReceiptText className="h-4 w-4" />
+            </div>
+            <p className="text-sm font-semibold text-slate-800">Team Expenses</p>
+          </Link>
+        </div>
+      </div>
+
+      {/* ── New command-center sections (added below, nothing replaced) ── */}
+      <NationalKeycards nsmNational={nsmNational} />
 
       <DashboardsGrid />
 
@@ -453,10 +560,6 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <CrmBoard crm={nsmBoard?.crm ?? null} />
 
       <ActionStrip />
-
-      <DoubleVisitFocusSection focus={dvFocus} />
-
-      <InsightPreviewPanel note="Distributor and forecast recommendations for your line are coming soon." />
     </div>
   );
 }
