@@ -551,10 +551,6 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
   coaching_report: {
     bodyHtml:
       "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:separate;width:100%;border:1px solid #CBD5E1\">" +
-      "<tr><td style=\"background-color:#0F172A;padding:18px\">" +
-      "<p style=\"color:#FFFFFF;font-size:21px;line-height:1.3;font-weight:900\">Coaching Report Review</p>" +
-      "<p style=\"color:#CBD5E1;font-size:13px;line-height:1.6\">{{summary}}</p>" +
-      "</td></tr>" +
       "<tr><td style=\"background-color:#FFFFFF;padding:16px\">" +
       "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse;width:100%;border:1px solid #E2E8F0\">" +
       "<tr><td style=\"background-color:#F8FAFC;border:1px solid #E2E8F0;padding:10px 12px;color:#64748B;font-size:12px;line-height:1.4;font-weight:700;text-align:left\">Status</td>" +
@@ -566,7 +562,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "</td></tr>" +
       "</table>",
     bodyText:
-      "Coaching Report Review\n\n{{summary}}\n\nStatus: {{status}}\n\nMetric Scorecard\n{{scoreTable}}\n\nPlease review the submitted coaching scores and acknowledge the report in Phoenix Workforce.",
+      "Status: {{status}}\n\nMetric Scorecard\n{{scoreTable}}\n\nPlease review the submitted coaching scores and acknowledge the report in Phoenix Workforce.",
     closingText: "Open Phoenix Workforce to review and acknowledge the coaching report.",
     description: "Coaching report notifications: a submitted report awaiting the employee's review and acknowledgement.",
     greeting: "Dear {{honorific}}{{recipientName}},",
