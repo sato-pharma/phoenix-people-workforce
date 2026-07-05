@@ -87,6 +87,7 @@ import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-c
 import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce-compliance-live-snapshots.test.ts";
 import { runFieldWorkforceComplianceScorecardsTests } from "./field-workforce-compliance-scorecards.test.ts";
 import { runFieldWorkforceComplianceDigestTests } from "./field-workforce-compliance-digest.test.ts";
+import { runFieldWorkforceComplianceExportTests } from "./field-workforce-compliance-export.test.ts";
 import { runNsmTeamCalendarTests } from "./nsm-team-calendar.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
@@ -403,6 +404,7 @@ await runTest("field workforce compliance eligibility", runFieldWorkforceComplia
 await runTest("field workforce compliance live snapshots", runFieldWorkforceComplianceLiveSnapshotsTests);
 await runTest("field workforce compliance scorecards", runFieldWorkforceComplianceScorecardsTests);
 await runTest("field workforce compliance digest", runFieldWorkforceComplianceDigestTests);
+await runTest("field workforce compliance export (simple + god-mode workbooks)", runFieldWorkforceComplianceExportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
 await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);

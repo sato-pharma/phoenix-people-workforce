@@ -2124,6 +2124,32 @@ function ArchivedMonthsPanel({
                 <Badge variant="neutral">No leave mutation</Badge>
               </div>
             </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+              <p className="mr-auto text-xs font-semibold text-slate-500">
+                Export the whole month — report-only, no payroll or leave action.
+              </p>
+              <Button
+                className="gap-2"
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveDetail.archive.id}/export?variant=summary`;
+                }}
+              >
+                <Download className="h-4 w-4" />
+                Export Month Sheet
+              </Button>
+              <Button
+                className="gap-2"
+                type="button"
+                onClick={() => {
+                  window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveDetail.archive.id}/export?variant=godmode`;
+                }}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                God-Mode Book
+              </Button>
+            </div>
           </Card>
           <WorkspaceTabs activeTab={archiveActiveTab} tabs={archiveWorkspaceTabs} onChange={onArchiveTabChange} />
           {archiveActiveTab === "recommendations" ? (
