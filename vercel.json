@@ -23,6 +23,9 @@
     },
     "app/api/sales/**/*": {
       "maxDuration": 60
+    },
+    "app/api/cron/ireports360-visits-reconcile/route.ts": {
+      "maxDuration": 300
     }
   }
 }

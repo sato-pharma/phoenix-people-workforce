@@ -5,7 +5,10 @@ import {
   dedupeByKey,
   isValidIsoDate,
   mapVisitRow,
+  resolveWideReconciliationSlice,
   rowFromVisit,
+  WIDE_RECONCILIATION_SLICE_DAYS,
+  WIDE_RECONCILIATION_TOTAL_DAYS,
 } from "../src/lib/visits-report/service.ts";
 import type { IReports360Visit } from "../src/lib/field-workforce-compliance/ireports360-client.ts";
 
@@ -119,8 +122,52 @@ export function runVisitsReportSyncTests() {
     "delete-reconciliation must have a sanity cap against a partial/truncated fetch masquerading as real deletions",
   );
   assert.match(service, /export async function runWideIReports360Reconciliation/, "wide reconciliation function must exist");
-  assert.match(service, /lookbackDays = 120/, "wide reconciliation's default window must be materially larger than the daily cron's");
   assert.match(service, /lookbackDays = 21/, "daily cron's lookback must be widened from the original 10 days");
+  assert.equal(WIDE_RECONCILIATION_TOTAL_DAYS, 120, "wide reconciliation's total window must be materially larger than the daily cron's");
+
+  // ── resolveWideReconciliationSlice: stateless weekly slice rotation (2026-07-06 timeout fix) ──
+  // A single 120-day reconciliation run got killed mid-run (see the doc comment on
+  // runWideIReports360Reconciliation) — it's now split into 4 stateless 30-day slices, one per
+  // week, chosen purely from the ISO week number so no persisted "last slice" state is needed.
+  assert.equal(
+    Math.ceil(WIDE_RECONCILIATION_TOTAL_DAYS / WIDE_RECONCILIATION_SLICE_DAYS),
+    4,
+    "120 total days / 30-day slices must divide into exactly 4 slices",
+  );
+
+  const weeklySamples = Array.from({ length: 4 }, (_, i) =>
+    resolveWideReconciliationSlice(new Date(Date.UTC(2026, 6, 6 + i * 7))), // 4 consecutive Mondays
+  );
+  const seenSliceIndices = new Set(weeklySamples.map((slice) => slice.sliceIndex));
+  assert.equal(
+    seenSliceIndices.size,
+    4,
+    "4 consecutive weeks must rotate through all 4 distinct slices, never repeat one early or skip one",
+  );
+
+  weeklySamples.forEach((slice, i) => {
+    const now = new Date(Date.UTC(2026, 6, 6 + i * 7));
+    const today = now.toISOString().slice(0, 10);
+    const spanDays = Math.round(
+      (Date.parse(`${slice.dateTo}T00:00:00Z`) - Date.parse(`${slice.dateFrom}T00:00:00Z`)) / 86_400_000,
+    );
+    assert.equal(spanDays, WIDE_RECONCILIATION_SLICE_DAYS, "every slice must cover exactly one slice-width of days");
+    const offsetDays = Math.round(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${slice.dateTo}T00:00:00Z`)) / 86_400_000,
+    );
+    assert.equal(
+      offsetDays,
+      slice.sliceIndex * WIDE_RECONCILIATION_SLICE_DAYS,
+      "dateTo must sit exactly sliceIndex slice-widths before today, so the 4 possible slices tile the full 120-day window with no gaps or overlaps",
+    );
+  });
+
+  const rerun = resolveWideReconciliationSlice(new Date(Date.UTC(2026, 6, 6)));
+  assert.deepEqual(
+    rerun,
+    weeklySamples[0],
+    "resolveWideReconciliationSlice must be a pure function of `now` — a retried run must pick the same slice, not a different one",
+  );
 
   assert.ok(
     existsSync("app/api/cron/ireports360-visits-reconcile/route.ts"),

@@ -5,7 +5,12 @@ import { runWideIReports360Reconciliation } from "@/lib/visits-report/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+// 300s is the highest maxDuration already proven safe on this Vercel plan (see
+// app/api/sales/sales-upload/commit/route.ts). Even so, a full 120-day reconciliation
+// (fetch + upsert + delete-reconciliation + check-in reconciliation + FWC snapshot refresh)
+// may still exceed this under heavy CRM load - see the 2026-07-06 investigation note in
+// runWideIReports360Reconciliation's doc comment for the follow-up if this keeps timing out.
+export const maxDuration = 300;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -34,7 +39,10 @@ export async function GET(request: Request) {
       {
         schedule: { type: "crontab", value: "0 4 * * 0" },
         checkinMargin: 30,
-        maxRuntime: 180,
+        // Minutes, not seconds — was 180 (3h), which is why the 2026-07-05 timeout (route killed
+        // by Vercel's maxDuration=300s hard limit) took until 07:00 UTC to surface in Sentry
+        // instead of within minutes of the actual failure. 6 = maxDuration (300s) + 1min margin.
+        maxRuntime: 6,
         timezone: "Etc/UTC",
       },
     );

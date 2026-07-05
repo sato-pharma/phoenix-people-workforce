@@ -52,7 +52,9 @@ export async function GET(request: Request) {
       {
         schedule: { type: "crontab", value: "0 9,12,19 * * *" },
         checkinMargin: 30,
-        maxRuntime: 180,
+        // Minutes, not seconds — was 180 (3h) against a maxDuration of 180s (3min), the same
+        // mismatch fixed on ireports360-visits-reconcile. 4 = maxDuration (180s) + 1min margin.
+        maxRuntime: 4,
         timezone: "Etc/UTC",
       },
     );
