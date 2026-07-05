@@ -277,6 +277,26 @@ export const portalMinimumPermissions: ReadonlyArray<{
   { resource: "leave", action: "read", roles: phoenixRoles },
   { resource: "employee_profile", action: "read", roles: phoenixRoles },
   { resource: "payroll", action: "read", roles: phoenixRoles },
+  // Payslips portal (/employee-portals/payslips) requires payslips:read for all
+  // employee-portal roles that carry it by default. Without this floor, a deny-override
+  // in role_permission_overrides can silently break the page with a Forbidden error.
+  {
+    resource: "payslips",
+    action: "read",
+    roles: [
+      "Employee",
+      "Medical Rep",
+      "Manager",
+      "District Manager",
+      "Regional Manager",
+      "National Sales Manager",
+      "Product Manager",
+      "Group Product Manager",
+      "Marketing Manager",
+      "Training Manager",
+      "CEO",
+    ],
+  },
   // Expense dashboard (/employee-portals/expense-dashboard) requires expenses
   // read for all employee-portal roles. Without this floor, a deny-override in
   // role_permission_overrides can silently break the page with a Forbidden error.
