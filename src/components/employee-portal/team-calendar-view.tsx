@@ -12,8 +12,16 @@ import type {
 } from "@/lib/field-workforce-compliance/types";
 import { cn } from "@/lib/utils";
 
+/** Mirrors NsmTeamCalendarGroup from the server module (structural; no server import). */
+type TeamCalendarGroup = {
+  managerHrId: string | null;
+  managerName: string | null;
+  members: FieldWorkforceEmployeeSummary[];
+};
+
 type TeamCalendarViewProps = {
-  employees: FieldWorkforceEmployeeSummary[];
+  employeeCount: number;
+  groups: TeamCalendarGroup[];
   lineName: string | null;
   month: number;
   monthLabel: string | null;
@@ -108,16 +116,21 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   );
 }
 
-function RepMonthTimeline({ employee }: { employee: FieldWorkforceEmployeeSummary }) {
+function RepMonthTimeline({ employee, isManager = false }: { employee: FieldWorkforceEmployeeSummary; isManager?: boolean }) {
   const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(0, 1fr))` };
   const hierarchy = [employee.teamName, employee.areaName, employee.managerName]
     .filter(Boolean)
     .join(" / ");
   return (
-    <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <Card className={cn("overflow-hidden rounded-xl border bg-white shadow-sm", isManager ? "border-orange-300 ring-1 ring-orange-100" : "border-slate-200")}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
+          <p className="text-sm font-black text-slate-950">
+            {isManager ? (
+              <span className="mr-2 inline-flex rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-orange-700">DSM</span>
+            ) : null}
+            {employee.employeeName}
+          </p>
           <p className="mt-1 font-mono text-xs font-bold text-slate-500">
             {employee.hrId}
             {hierarchy ? ` · ${hierarchy}` : ""}
@@ -166,26 +179,26 @@ function monthHref(month: number, year: number) {
   return `/employee-portals/team-calendar?month=${month}&year=${year}`;
 }
 
-export function TeamCalendarView({ employees, lineName, month, monthLabel, year }: TeamCalendarViewProps) {
+export function TeamCalendarView({ employeeCount, groups, lineName, month, monthLabel, year }: TeamCalendarViewProps) {
   const [query, setQuery] = useState("");
-  const [team, setTeam] = useState("All");
 
-  const teamOptions = useMemo(
-    () =>
-      [...new Set(employees.map((employee) => employee.teamName).filter((value): value is string => Boolean(value)))].sort(
-        (left, right) => left.localeCompare(right),
-      ),
-    [employees],
+  const needle = query.trim().toLowerCase();
+  const visibleGroups = useMemo(() => {
+    if (!needle) return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        members: group.members.filter((employee) =>
+          `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle),
+        ),
+      }))
+      .filter((group) => group.members.length > 0);
+  }, [groups, needle]);
+
+  const shownCount = useMemo(
+    () => visibleGroups.reduce((sum, group) => sum + group.members.length, 0),
+    [visibleGroups],
   );
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return employees.filter((employee) => {
-      if (team !== "All" && employee.teamName !== team) return false;
-      if (!needle) return true;
-      return `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle);
-    });
-  }, [employees, query, team]);
 
   const previous = shiftMonth(month, year, -1);
   const next = shiftMonth(month, year, 1);
@@ -198,8 +211,8 @@ export function TeamCalendarView({ employees, lineName, month, monthLabel, year 
           <div className="min-w-0">
             <p className="text-sm font-black text-slate-950">Team Calendar — {heading}</p>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              {lineName ? `${lineName} line` : "Your line"} · each rep&apos;s field-visit month. Click a green
-              numeric day to open that day&apos;s visits.
+              {lineName ? `${lineName} line` : "Your line"} · grouped by DSM, each manager followed by their
+              team. Click a green numeric day to open that day&apos;s visits.
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -222,39 +235,44 @@ export function TeamCalendarView({ employees, lineName, month, monthLabel, year 
             </Link>
           </div>
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="mt-3">
           <input
             className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search rep name or HR ID"
             value={query}
           />
-          {teamOptions.length > 0 ? (
-            <select
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-              onChange={(event) => setTeam(event.target.value)}
-              value={team}
-            >
-              <option value="All">All teams</option>
-              {teamOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          ) : null}
         </div>
       </Card>
 
       <TimelineLegend />
-      <p className="text-xs font-bold text-slate-500">Showing {filtered.length} of {employees.length} reps</p>
+      <p className="text-xs font-bold text-slate-500">Showing {shownCount} of {employeeCount} people</p>
 
-      {filtered.length === 0 ? (
+      {visibleGroups.length === 0 ? (
         <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-          No rep matches the current filter for {heading}.
+          No one matches the current filter for {heading}.
         </Card>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((employee) => (
-            <RepMonthTimeline employee={employee} key={employee.hrId} />
+        <div className="space-y-6">
+          {visibleGroups.map((group, groupIndex) => (
+            <section className="space-y-3" key={group.managerHrId ?? `unassigned-${groupIndex}`}>
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-white">
+                  {group.managerName ? `DSM · ${group.managerName}` : "Other"}
+                </span>
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="whitespace-nowrap text-[11px] font-bold text-slate-400">{group.members.length} shown</span>
+              </div>
+              <div className="space-y-3">
+                {group.members.map((employee) => (
+                  <RepMonthTimeline
+                    employee={employee}
+                    isManager={group.managerHrId != null && employee.hrId === group.managerHrId}
+                    key={employee.hrId}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
