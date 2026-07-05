@@ -383,9 +383,6 @@ export type DoubleVisitIntegrityReport = {
   countsByType: Record<DoubleVisitIntegrityIssueType, number>;
   importSummaries: DoubleVisitIntegrityImportSummary[];
   issues: DoubleVisitIntegrityIssue[];
-  // Chain-resolved double visits: no longer flagged, credited to the real MR instead — listed
-  // here so the recovery is auditable rather than a silent re-attribution.
-  recoveredChains: DoubleVisitRecoveredChain[];
   schemaReady: boolean;
   totalRowsScanned: number;
 };

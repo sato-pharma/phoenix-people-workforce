@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { VisitsReportWorkspace } from "@/components/visits-report/visits-report-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
+import type { DoubleVisitRecoveredChain } from "@/lib/double-visit-analytics/types";
 import { getUnmappedCrmIdentities, getVisitsReportData } from "@/lib/visits-report/service";
 import type { VisitsMappingStatus } from "@/lib/visits-report/types";
 
@@ -43,7 +45,7 @@ export default async function VisitsReportPage({
   }
 
   const params = await searchParams;
-  const tab = params.tab === "unmapped" ? "unmapped" : "log";
+  const tab = params.tab === "unmapped" ? "unmapped" : params.tab === "recovered" ? "recovered" : "log";
   const initialFilters = {
     agent: stringParam(params.agent) ?? "",
     ampm: stringParam(params.ampm) ?? "",
@@ -69,6 +71,13 @@ export default async function VisitsReportPage({
     tab === "unmapped" ? getUnmappedCrmIdentities() : Promise.resolve([]),
   ]);
 
+  // Same lazy-loading rule as Unmapped Agents: only computed when its tab is active. Scoped to
+  // the same [dateFrom, dateTo] window the Visit Log resolved (post-defaulting), so both tabs
+  // always describe the same date range.
+  const recoveredChains: DoubleVisitRecoveredChain[] = tab === "recovered"
+    ? await getDoubleVisitRecoveredChains({ access, dateFrom: data.dateFrom, dateTo: data.dateTo })
+    : [];
+
   // VisitsReportWorkspace's filter inputs are seeded from `initialFilters`/`data.dateFrom`/
   // `data.dateTo` via useState — but a client-side navigation to a new URL (e.g. the Unmapped
   // Agents tab's "View in Visit Log" jump) re-renders the SAME component instance with new
@@ -83,6 +92,7 @@ export default async function VisitsReportPage({
       data={data}
       tab={tab}
       unmappedIdentities={unmappedIdentities}
+      recoveredChains={recoveredChains}
       initialFilters={initialFilters}
     />
   );
