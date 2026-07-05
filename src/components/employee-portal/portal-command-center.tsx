@@ -4,12 +4,17 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  Building2,
   CalendarClock,
   CalendarDays,
+  CalendarRange,
   CalendarX2,
+  ChartColumnBig,
   CheckCircle2,
   ClipboardCheck,
   Layers,
+  Network,
+  PieChart,
   ReceiptText,
   Send,
   Target,
@@ -21,7 +26,6 @@ import {
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
-import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
@@ -342,80 +346,291 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
   );
 }
 
+/* ── SectionHead (navy grid-pattern header used by the richer dashboards) ── */
+
+export function SectionHead({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+      <div className="relative flex items-center justify-between px-4 py-2.5 sm:px-5 sm:py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="h-4 w-[3px] bg-[#f47b20]" />
+          <h2 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-300">{title}</h2>
+        </div>
+        {right}
+      </div>
+    </div>
+  );
+}
+
+/* ── KeycardGrid (icon-square KPI cards, 4-up, under a SectionHead) ──── */
+
+export type Keycard = {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub: string;
+  accent: string;
+  valueClass: string;
+};
+
+export function KeycardGrid({ cards }: { cards: Keycard[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-px bg-slate-200 xl:grid-cols-4">
+      {cards.map((card) => (
+        <div key={card.label} className="relative bg-white px-4 py-4 sm:px-5 sm:py-5">
+          <span className={`absolute inset-x-0 top-0 h-[3px] ${card.accent}`} />
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
+              <card.icon className="h-3.5 w-3.5" />
+            </span>
+            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
+          </div>
+          <p className={`mt-3 whitespace-nowrap text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
+            {card.value}
+          </p>
+          <p className="mt-1 whitespace-nowrap text-[11px] font-medium text-slate-500">{card.sub}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── DashboardsGrid (icon-tile link grid under a "Dashboards" SectionHead) ── */
+
+export type DashboardLink = { href: string; icon: React.ElementType; label: string };
+
+export function DashboardsGrid({ items }: { items: readonly DashboardLink[] }) {
+  return (
+    <div className="overflow-hidden border border-slate-200 bg-white">
+      <SectionHead title="Dashboards" />
+      <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-4 sm:gap-2.5 sm:p-2.5">
+        {items.map((d) => (
+          <Link
+            key={d.href}
+            href={d.href}
+            className="group flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-2 py-4 text-center transition-colors hover:border-orange-300 hover:bg-orange-50"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
+              <d.icon className="h-[18px] w-[18px]" />
+            </span>
+            <span className="whitespace-nowrap text-xs font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700">
+              {d.label}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── RankingPanel (ranked leaderboard with an achievement-% bar) ─────── */
+
+export type RankRow = {
+  hrId: string;
+  name: string;
+  achievementPercent: number;
+  totalSales: number;
+  totalTarget: number;
+  managerName?: string | null;
+};
+
+function pctTextClass(pct: number): string {
+  return pct >= 100 ? "text-emerald-600" : pct >= 90 ? "text-amber-600" : pct >= 70 ? "text-orange-600" : "text-rose-600";
+}
+function pctBarClass(pct: number): string {
+  return pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : pct >= 70 ? "bg-orange-500" : "bg-rose-500";
+}
+function rankChipClass(index: number): string {
+  return index === 0
+    ? "bg-amber-400 text-slate-900"
+    : index === 1
+      ? "bg-slate-300 text-slate-900"
+      : index === 2
+        ? "bg-orange-300 text-slate-900"
+        : "bg-slate-900 text-white";
+}
+
+export function RankingPanel({
+  title,
+  subtitle,
+  icon: Icon,
+  rows,
+  showManager,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ElementType;
+  rows: RankRow[];
+  showManager?: boolean;
+}) {
+  const ranked = rows.slice().sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
+  return (
+    <div className="overflow-hidden border border-slate-200 bg-white">
+      <SectionHead
+        title={title}
+        right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">{subtitle}</span>}
+      />
+      {ranked.length === 0 ? (
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
+      ) : (
+        <div className="bg-white">
+          {ranked.map((row, i) => {
+            const pct = Math.max(0, Math.round(row.achievementPercent));
+            return (
+              <div
+                key={row.hrId || `${row.name}-${i}`}
+                className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
+              >
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-[11px] font-black ${rankChipClass(i)}`}>
+                  {i + 1}
+                </span>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
+                  <div className="min-w-0">
+                    <p className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.name}</p>
+                    {showManager && row.managerName ? (
+                      <p className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        {row.managerName}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="w-16 shrink-0">
+                  <p className={`text-right text-sm font-black tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
+                  <div className="mt-1 h-1 w-full bg-slate-100">
+                    <div className={`h-full ${pctBarClass(pct)}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── ActionStrip (4-icon quick-submit row) ───────────────────────────── */
+
+export type ActionStripItem = { href: string; icon: React.ElementType; label: string };
+
+export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
+  return (
+    <div className="grid grid-cols-4 gap-px overflow-hidden border border-slate-200 bg-slate-200">
+      {items.map((a) => (
+        <Link
+          key={a.href}
+          href={a.href}
+          className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
+        >
+          <a.icon className="h-4 w-4 shrink-0 text-orange-600" />
+          <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
+            {a.label}
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/* ── egpCompact (compact currency, e.g. "128.45 M EGP") ──────────────── */
+
+export function egpCompact(value: number): string {
+  const abs = Math.abs(value);
+  const unit =
+    abs >= 1_000_000_000
+      ? { div: 1_000_000_000, suffix: "B" }
+      : abs >= 1_000_000
+        ? { div: 1_000_000, suffix: "M" }
+        : abs >= 1_000
+          ? { div: 1_000, suffix: "K" }
+          : null;
+  if (!unit) return `${Math.round(value).toLocaleString("en-US")} EGP`;
+  const scaled = (value / unit.div).toFixed(2).replace(/\.?0+$/, "");
+  return `${scaled} ${unit.suffix} EGP`;
+}
+
 /* ── Private command center layouts ─────────────────────────────── */
+
+const PM_GPM_DASHBOARDS: readonly DashboardLink[] = [
+  { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing Requests" },
+  { href: "/employee-portals/plans", icon: CalendarDays, label: "My Plans" },
+  { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
+  { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales" },
+  { href: "/employee-portals/roi", icon: PieChart, label: "ROI Intelligence" },
+  { href: "/employee-portals/coaching-analytics", icon: ClipboardCheck, label: "Coaching Analytics" },
+  { href: "/employee-portals/double-visit-analytics", icon: Network, label: "Double-Visit Analytics" },
+  { href: "/employee-portals/organogram", icon: Building2, label: "Organogram" },
+];
+
+const PM_GPM_ACTIONS: readonly ActionStripItem[] = [
+  { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Leave" },
+  { href: "/employee-portals/excuses", icon: CalendarClock, label: "Excuse" },
+  { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing" },
+  { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Expense" },
+];
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
+  const cards: Keycard[] = [
+    {
+      icon: Send,
+      label: "Marketing Requests",
+      value: pmMarketing ? String(pmMarketing.myPendingRequests) : "—",
+      sub: "in flight",
+      accent: "bg-slate-900",
+      valueClass: "text-slate-900",
+    },
+    {
+      icon: CalendarX2,
+      label: "Pending Requests",
+      value: String(totalPending),
+      sub: "awaiting decision",
+      accent: totalPending > 0 ? "bg-orange-500" : "bg-slate-900",
+      valueClass: totalPending > 0 ? "text-orange-600" : "text-slate-900",
+    },
+    {
+      icon: CalendarDays,
+      label: "Leave Balance",
+      value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
+      sub: "annual entitlement",
+      accent: "bg-slate-900",
+      valueClass: "text-slate-900",
+    },
+    {
+      icon: Wallet,
+      label: "Latest Payslip",
+      value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
+      sub: "most recent issued",
+      accent: "bg-slate-900",
+      valueClass: "text-slate-900",
+    },
+  ];
+
   return (
-    <div className="mx-auto w-full space-y-2 sm:space-y-3" dir="auto">
+    <div className="mx-auto w-full space-y-3" dir="auto">
       <IdentityCard data={shell} />
       <ProfileIntelBar shell={shell} />
 
-      <GlanceStrip
-        items={[
-          {
-            icon: Send,
-            value: pmMarketing ? String(pmMarketing.myPendingRequests) : "—",
-            label: pmMarketing?.myPendingRequests === 1 ? "marketing request in flight" : "marketing requests in flight",
-            href: "/employee-portals/marketing-requests",
-          },
-          {
-            icon: CalendarX2,
-            value: String(totalPending),
-            label: totalPending === 1 ? "pending request" : "pending requests",
-            href: "/employee-portals/approvals-hub",
-            urgent: totalPending > 0,
-          },
-          {
-            icon: CalendarDays,
-            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
-            label: "leave balance",
-            href: "/employee-portals/vacation-request",
-          },
-          {
-            icon: Wallet,
-            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
-            label: "latest payslip",
-            href: "/employee-portals/payslips",
-          },
-        ]}
-      />
-      <QuickActions
-        actions={[
-          { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing Request" },
-          { href: "/employee-portals/plans", icon: CalendarDays, label: "My Plans" },
-          { href: "/employee-portals/roi", icon: Target, label: "ROI Intelligence" },
-          { href: "/employee-portals/vacation-request", icon: CalendarX2, label: "Request Leave" },
-        ]}
-      />
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
-      <InsightPreviewPanel note="Campaign and ROI recommendations for your line are coming soon." />
+      <div className="overflow-hidden border border-slate-200 bg-white">
+        <SectionHead title="My Workspace" />
+        <KeycardGrid cards={cards} />
+      </div>
+
+      <DashboardsGrid items={PM_GPM_DASHBOARDS} />
+
+      <ActionStrip items={PM_GPM_ACTIONS} />
 
       <DoubleVisitFocusSection focus={dvFocus} />
-
-      {/* ── STATUS ────────────────────────────────────────────────── */}
-      {totalPending > 0 ? (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
-      ) : (
-        <div className="relative overflow-hidden bg-[#0a2018] px-4 py-4 shadow-[0_4px_24px_rgba(0,0,0,0.12)] sm:px-6 sm:py-5">
-          <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
-          <div className="flex items-center gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-emerald-500/30 bg-emerald-500/10">
-              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-500">All Clear</p>
-              <p className="mt-0.5 text-sm font-medium text-emerald-300/80">Nothing needs your attention right now.</p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

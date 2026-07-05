@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   AlarmClock,
   AlertTriangle,
@@ -25,36 +24,23 @@ import {
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
-import { PendingActions, ProfileIntelBar } from "@/components/employee-portal/portal-command-center";
+import {
+  ActionStrip,
+  DashboardsGrid,
+  KeycardGrid,
+  PendingActions,
+  ProfileIntelBar,
+  RankingPanel,
+  SectionHead,
+  egpCompact,
+  type ActionStripItem,
+  type DashboardLink,
+} from "@/components/employee-portal/portal-command-center";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 
 type NsmBoard = NonNullable<PortalHomeSnapshot["nsmBoard"]>;
 type CrmData = NsmBoard["crm"];
-type RankRow = {
-  hrId: string;
-  name: string;
-  achievementPercent: number;
-  totalSales: number;
-  totalTarget: number;
-  managerName?: string | null;
-};
-
-// Compact EGP for the KPI keycards, e.g. 128,450,000 -> "128.45 M EGP".
-function egpCompact(value: number): string {
-  const abs = Math.abs(value);
-  const unit =
-    abs >= 1_000_000_000
-      ? { div: 1_000_000_000, suffix: "B" }
-      : abs >= 1_000_000
-        ? { div: 1_000_000, suffix: "M" }
-        : abs >= 1_000
-          ? { div: 1_000, suffix: "K" }
-          : null;
-  if (!unit) return `${Math.round(value).toLocaleString("en-US")} EGP`;
-  const scaled = (value / unit.div).toFixed(2).replace(/\.?0+$/, "");
-  return `${scaled} ${unit.suffix} EGP`;
-}
 
 function cairoTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-GB", {
@@ -62,39 +48,6 @@ function cairoTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function pctTextClass(pct: number): string {
-  return pct >= 100 ? "text-emerald-600" : pct >= 90 ? "text-amber-600" : pct >= 70 ? "text-orange-600" : "text-rose-600";
-}
-function pctBarClass(pct: number): string {
-  return pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : pct >= 70 ? "bg-orange-500" : "bg-rose-500";
-}
-function rankChipClass(index: number): string {
-  return index === 0
-    ? "bg-amber-400 text-slate-900"
-    : index === 1
-      ? "bg-slate-300 text-slate-900"
-      : index === 2
-        ? "bg-orange-300 text-slate-900"
-        : "bg-slate-900 text-white";
-}
-
-function SectionHead({ title, right }: { title: string; right?: React.ReactNode }) {
-  // Matches the ProfileIntelBar treatment: navy #0b1f3a, subtle grid, orange top hairline + accent.
-  return (
-    <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
-      <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
-      <div className="relative flex items-center justify-between px-4 py-2.5 sm:px-5 sm:py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="h-4 w-[3px] bg-[#f47b20]" />
-          <h2 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-300">{title}</h2>
-        </div>
-        {right}
-      </div>
-    </div>
-  );
 }
 
 /* ── National performance keycards ─────────────────────────────────── */
@@ -147,23 +100,7 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
         }
       />
       {nsmNational ? (
-        <div className="grid grid-cols-2 gap-px bg-slate-200 xl:grid-cols-4">
-          {cards.map((card) => (
-            <div key={card.label} className="relative bg-white px-4 py-4 sm:px-5 sm:py-5">
-              <span className={`absolute inset-x-0 top-0 h-[3px] ${card.accent}`} />
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
-                  <card.icon className="h-3.5 w-3.5" />
-                </span>
-                <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
-              </div>
-              <p className={`mt-3 whitespace-nowrap text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
-                {card.value}
-              </p>
-              <p className="mt-1 whitespace-nowrap text-[11px] font-medium text-slate-500">{card.sub}</p>
-            </div>
-          ))}
-        </div>
+        <KeycardGrid cards={cards} />
       ) : (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">No line sales data synced for the current period yet.</p>
       )}
@@ -173,7 +110,7 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
 
 /* ── Dashboards grid ───────────────────────────────────────────────── */
 
-const DASHBOARDS = [
+const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/source-of-sales", icon: ChartColumnBig, label: "Source of Sales" },
   { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales" },
   { href: "/employee-portals/roi", icon: PieChart, label: "ROI" },
@@ -182,93 +119,7 @@ const DASHBOARDS = [
   { href: "/employee-portals/med-reps-performance", icon: Users, label: "Med Reps" },
   { href: "/employee-portals/dsms-performance", icon: Network, label: "DSMs" },
   { href: "/employee-portals/organogram", icon: Building2, label: "Organogram" },
-] as const;
-
-function DashboardsGrid() {
-  return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
-      <SectionHead title="Dashboards" />
-      <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-4 sm:gap-2.5 sm:p-2.5">
-        {DASHBOARDS.map((d) => (
-          <Link
-            key={d.href}
-            href={d.href}
-            className="group flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-2 py-4 text-center transition-colors hover:border-orange-300 hover:bg-orange-50"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
-              <d.icon className="h-[18px] w-[18px]" />
-            </span>
-            <span className="whitespace-nowrap text-xs font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700">
-              {d.label}
-            </span>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Ranking panel ─────────────────────────────────────────────────── */
-
-function RankingPanel({
-  title,
-  subtitle,
-  icon: Icon,
-  rows,
-  showManager,
-}: {
-  title: string;
-  subtitle: string;
-  icon: React.ElementType;
-  rows: RankRow[];
-  showManager?: boolean;
-}) {
-  const ranked = rows.slice().sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
-  return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
-      <SectionHead
-        title={title}
-        right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">{subtitle}</span>}
-      />
-      {ranked.length === 0 ? (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
-      ) : (
-        <div className="bg-white">
-          {ranked.map((row, i) => {
-            const pct = Math.max(0, Math.round(row.achievementPercent));
-            return (
-              <div
-                key={row.hrId || `${row.name}-${i}`}
-                className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
-              >
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-[11px] font-black ${rankChipClass(i)}`}>
-                  {i + 1}
-                </span>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
-                  <div className="min-w-0">
-                    <p className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.name}</p>
-                    {showManager && row.managerName ? (
-                      <p className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {row.managerName}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="w-16 shrink-0">
-                  <p className={`text-right text-sm font-black tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
-                  <div className="mt-1 h-1 w-full bg-slate-100">
-                    <div className={`h-full ${pctBarClass(pct)}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+];
 
 /* ── CRM first-visit compliance ────────────────────────────────────── */
 
@@ -391,31 +242,12 @@ function CrmBoard({ crm }: { crm: CrmData }) {
 
 /* ── Quick-submit action strip ─────────────────────────────────────── */
 
-const ACTIONS = [
+const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Leave" },
   { href: "/employee-portals/excuses", icon: CalendarClock, label: "Excuse" },
   { href: "/employee-portals/marketing-requests", icon: Send, label: "Marketing" },
   { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Expense" },
-] as const;
-
-function ActionStrip() {
-  return (
-    <div className="grid grid-cols-4 gap-px overflow-hidden border border-slate-200 bg-slate-200">
-      {ACTIONS.map((a) => (
-        <Link
-          key={a.href}
-          href={a.href}
-          className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
-        >
-          <a.icon className="h-4 w-4 shrink-0 text-orange-600" />
-          <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
-            {a.label}
-          </span>
-        </Link>
-      ))}
-    </div>
-  );
-}
+];
 
 /* ── NSM command center ────────────────────────────────────────────── */
 
@@ -434,7 +266,7 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       <NationalKeycards nsmNational={nsmNational} />
 
-      <DashboardsGrid />
+      <DashboardsGrid items={DASHBOARDS} />
 
       <div className="grid gap-3 lg:grid-cols-2">
         <RankingPanel
@@ -449,7 +281,7 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       <CrmBoard crm={nsmBoard?.crm ?? null} />
 
-      <ActionStrip />
+      <ActionStrip items={ACTIONS} />
 
       <DoubleVisitFocusSection focus={dvFocus} />
     </div>
