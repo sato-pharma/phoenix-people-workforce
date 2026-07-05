@@ -293,6 +293,25 @@ export function runApprovalsHubTests() {
   const navRegistry = readFileSync("src/components/employee-portal/employee-portal-nav-registry.ts", "utf8");
   assert.match(navRegistry, /\/employee-portals\/approvals\/plan/, "the portal nav registry lists the plan approvals destination (keeps bottom-nav in sync)");
 
+  // ── Vacation/Excuse now have SEPARATE portal visibility flags (no longer a single shared
+  // showApprovalsTab) so one module can be hidden for a role without touching the other ──
+  assert.doesNotMatch(portalNav, /showApprovalsTab/, "the old shared vacation+excuse flag is fully retired, not left dangling alongside the split ones");
+  {
+    const vacationFlagMatch = portalNav.match(/showVacationApprovalsTab:\s*([\s\S]*?),\n\s*\/\//);
+    assert.ok(vacationFlagMatch, "showVacationApprovalsTab computation is present");
+    assert.match(vacationFlagMatch![1], /National Sales Manager/, "National Sales Manager still sees Vacation Approvals");
+    const excuseFlagMatch = portalNav.match(/showExcuseApprovalsTab:\s*([\s\S]*?),\n\s*\/\//);
+    assert.ok(excuseFlagMatch, "showExcuseApprovalsTab computation is present");
+    assert.doesNotMatch(excuseFlagMatch![1], /National Sales Manager/, "National Sales Manager does NOT see Excuse Approvals (reps under a DM never route excuses to the NSM; NSM-level goes through Head Office)");
+    for (const role of ["District Manager", "Regional Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"]) {
+      assert.match(excuseFlagMatch![1], new RegExp(role), `${role} still sees Excuse Approvals`);
+    }
+  }
+  assert.match(portalLayout, /showVacationApprovalsTab \? \[\{ href: "\/employee-portals\/approvals\/vacation"/, "the Vacation Approvals link is gated on the vacation-specific flag");
+  assert.match(portalLayout, /showExcuseApprovalsTab \? \[\{ href: "\/employee-portals\/approvals\/excuse"/, "the Excuse Approvals link is gated on the excuse-specific flag");
+  assert.match(navRegistry, /flags: \["showVacationApprovalsTab"\]/, "the nav registry (bottom-nav/quick-nav) uses the vacation-specific flag");
+  assert.match(navRegistry, /flags: \["showExcuseApprovalsTab"\]/, "the nav registry (bottom-nav/quick-nav) uses the excuse-specific flag");
+
   // Access registry: plan count API is registered (weekly_plans:read, not the admin:read catch-all).
   assert.match(registry, /\/api\/approvals\/plan\/pending-count/, "plan count API is registered");
 

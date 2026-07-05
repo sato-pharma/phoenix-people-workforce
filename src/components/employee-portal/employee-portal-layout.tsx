@@ -174,7 +174,8 @@ function buildEmployeePortalSections({
   showDoubleVisitAnalyticsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
-  showApprovalsTab = false,
+  showVacationApprovalsTab = false,
+  showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
   showAttendanceTab: _showAttendanceTab = false,
   showPrivateCalendarTab = true,
@@ -194,8 +195,8 @@ function buildEmployeePortalSections({
     {
       title: "Approvals Hub",
       items: [
-        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
-        ...(showApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
+        ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
+        ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
       ],
     },
