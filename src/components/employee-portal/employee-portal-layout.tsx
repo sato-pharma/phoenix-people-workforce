@@ -185,7 +185,6 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
-        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
@@ -204,12 +203,16 @@ function buildEmployeePortalSections({
     },
     // Dedicated Approvals Hub section — mirrors the admin shell's own "Approvals Hub" nav
     // section (system-navigation.ts) rather than bundling these links into "My Workspace".
+    // "Other Approvals" (residual combined inbox) and the Marketing Requests Inbox also live
+    // here now, alongside Vacation/Excuse/Plan Approvals — same visibility flags, new home.
     {
       title: "Approvals Hub",
       items: [
         ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
+        ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Requests Inbox", icon: Inbox }] : []),
+        ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox }] : []),
       ],
     },
     {
@@ -238,7 +241,6 @@ function buildEmployeePortalSections({
       items: [
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
-        ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Approval Inbox", icon: Inbox }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingCoverageReportTab ? [{ href: "/employee-portals/marketing-requests/coverage-report", label: "Coverage Report", icon: MapPinned }] : []),

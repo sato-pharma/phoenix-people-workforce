@@ -75,7 +75,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
-  { label: "Inbox", fullLabel: "Approval Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
+  { label: "Inbox", fullLabel: "Marketing Requests Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },
   { label: "Coverage", fullLabel: "Marketing Coverage Report", href: "/employee-portals/marketing-requests/coverage-report", icon: MapPinned, flags: ["showMarketingCoverageReportTab"] },

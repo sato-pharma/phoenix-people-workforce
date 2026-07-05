@@ -13,7 +13,7 @@ export default async function EmployeePortalMarketingInboxPage() {
     <EmployeePortalPageShell
       badge="Marketing"
       description="Marketing requests that are currently waiting for your approval decision. Approve, return, or reject each one."
-      title="Approval Inbox"
+      title="Marketing Requests Inbox"
     >
       <MarketingRequestInbox />
     </EmployeePortalPageShell>
