@@ -420,10 +420,52 @@ export async function runScheduledIReports360Sync(lookbackDays = 21) {
  * inside syncIReports360Visits scoped to whatever window is passed in) the same
  * delete-reconciliation, but bounded to THIS call's own much wider [dateFrom, dateTo] — never
  * the daily cron's narrower one.
+ *
+ * 2026-07-06: the 2026-07-05 04:00 UTC run (Sentry monitor "ireports360-visits-reconcile") was
+ * killed mid-run over a single 120-day window and left its ireports360_visits_sync_runs row
+ * stuck at status="running" for ~17h (manually resolved to "failed"). Root cause: this now
+ * layers delete-reconciliation + check-in reconciliation + an FWC snapshot refresh on top of the
+ * fetch/upsert, and doing all of that over the full 120 days in one run risked exceeding even the
+ * route's maxDuration (bumped 180->300 the same day) — a 44-day range under the lighter
+ * pre-delete-reconciliation pipeline already took ~435s. Fix: split the 120-day window into 4
+ * stateless 30-day slices (see resolveWideReconciliationSlice) so each weekly run's workload — and
+ * therefore its timeout risk — stays roughly constant regardless of window size. Full 120-day
+ * coverage now happens over a rolling ~4-week cycle instead of every single week; a rep who edits
+ * a visit 90-120 days after its original date is caught within 4 weeks, not immediately, which is
+ * an acceptable trade for a run that reliably finishes instead of one that reliably risks timing out.
  */
-export async function runWideIReports360Reconciliation(lookbackDays = 120) {
-  const dateTo = todayIso();
-  const dateFrom = addDaysIso(dateTo, -lookbackDays);
+export const WIDE_RECONCILIATION_TOTAL_DAYS = 120;
+export const WIDE_RECONCILIATION_SLICE_DAYS = 30;
+
+/** Standard ISO-8601 week number (1-53), UTC-based — used only as a stateless rotation key, not
+ * for calendar display, so its exact numbering convention doesn't matter as long as it's stable. */
+function isoWeekNumber(date: Date): number {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNumber = (target.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3); // nearest Thursday
+  const firstThursday = target.getTime();
+  target.setUTCMonth(0, 1);
+  if (target.getUTCDay() !== 4) {
+    target.setUTCMonth(0, 1 + ((4 - target.getUTCDay()) + 7) % 7);
+  }
+  return 1 + Math.round((firstThursday - target.getTime()) / 604_800_000);
+}
+
+/** Which 30-day slice of the trailing 120-day window this week's reconciliation should cover — a
+ * pure function of `now` (deterministically unit-testable without mocking the clock). Slice 0 is
+ * the most recent 30 days, slice 3 the oldest; which slice runs is `isoWeekNumber(now) % 4`, so it
+ * cycles through all 4 slices every 4 weeks with no persisted state. */
+export function resolveWideReconciliationSlice(now: Date) {
+  const sliceCount = Math.ceil(WIDE_RECONCILIATION_TOTAL_DAYS / WIDE_RECONCILIATION_SLICE_DAYS);
+  const sliceIndex = isoWeekNumber(now) % sliceCount;
+  const today = now.toISOString().slice(0, 10);
+  const dateTo = addDaysIso(today, -sliceIndex * WIDE_RECONCILIATION_SLICE_DAYS);
+  const dateFrom = addDaysIso(dateTo, -WIDE_RECONCILIATION_SLICE_DAYS);
+  return { dateFrom, dateTo, sliceIndex };
+}
+
+export async function runWideIReports360Reconciliation(now: Date = new Date()) {
+  const { dateFrom, dateTo } = resolveWideReconciliationSlice(now);
   return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });
 }
 
