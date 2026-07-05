@@ -31,6 +31,7 @@ import type {
   DoubleVisitIntegrityIssueType,
   DoubleVisitIntegrityReport,
   DoubleVisitPortalFocus,
+  DoubleVisitRecoveredChain,
   DoubleVisitReportData,
   DoubleVisitReportRow,
   DoubleVisitRoleCode,
@@ -79,6 +80,13 @@ type DoubleVisitDbRow = {
   visited_employee_hr_id: string | null;
   visited_employee_name: string | null;
   visited_employee_status: string;
+  // Set when this row's visited party was a manager but the same-day chain resolved it down to
+  // the real MR (see resolveDoubleVisitChains). The row above already carries the RESOLVED MR in
+  // visited_employee_*; these keep the original hinge manager + customers for the audit trail.
+  resolved_via_chain?: boolean;
+  chain_hinge_hr_id?: string | null;
+  chain_hinge_name?: string | null;
+  chain_customer_names?: string[] | null;
 };
 
 function text(value: unknown) {
@@ -373,12 +381,19 @@ function dbRowFromMirrorVisit(
   visit: MirrorVisitRow,
   employeeByHrKey: Map<string, EmployeeDirectoryRow>,
   managerHrIdKeys: Set<string>,
+  resolution: DoubleVisitChainResolution | null,
 ): DoubleVisitDbRow {
-  const visitedKey = canonicalHrIdKey(visit.agent_hr_id);
+  // When the same-day chain resolves this "manager-visited" row down to the real MR, the visited
+  // party becomes that MR (the whole convoy actually saw them); otherwise it stays the recorded
+  // agent. Everything downstream — coverage, MR scores, calendar — then credits the real MR.
+  const effectiveVisitedHrId = resolution ? resolution.mrHrId : visit.agent_hr_id;
+  const visitedKey = canonicalHrIdKey(effectiveVisitedHrId);
   const visitedEmployee = visitedKey ? employeeByHrKey.get(visitedKey) ?? null : null;
   const doubleKey = canonicalHrIdKey(visit.double_hr_id);
   const doubleEmployee = doubleKey ? employeeByHrKey.get(doubleKey) ?? null : null;
-  const label = extractNameAreaLine(visit.agent_name ?? visit.contact_name ?? visit.customer_name);
+  const label = extractNameAreaLine(
+    (resolution ? resolution.mrName : visit.agent_name) ?? visit.contact_name ?? visit.customer_name,
+  );
 
   // Manager-to-manager and resigned reclassification mirrors the deleted parser.ts's
   // markManagerVisitedRows/markResignedVisitedRows: a double visit is always manager -> MR,
@@ -403,10 +418,125 @@ function dbRowFromMirrorVisit(
     source_record_id: String(visit.crm_visit_id),
     source_type: "ireports360",
     visit_count: 1,
-    visited_employee_hr_id: visit.agent_hr_id,
-    visited_employee_name: visitedEmployee?.fullName ?? label.name ?? visit.agent_name,
+    visited_employee_hr_id: effectiveVisitedHrId,
+    visited_employee_name: visitedEmployee?.fullName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
     visited_employee_status: visitedStatus,
+    resolved_via_chain: resolution ? true : undefined,
+    chain_hinge_hr_id: resolution?.hingeHrId ?? undefined,
+    chain_hinge_name: resolution?.hingeName ?? undefined,
+    chain_customer_names: resolution?.customerNames ?? undefined,
   };
+}
+
+// ── Same-day chain resolution: "manager rides along on a junior manager's double visit" ──
+//
+// iReports360 stores only ONE partner per visit row, so when a senior manager (e.g. an NSM)
+// accompanies a junior manager (e.g. a DM) who is himself double-visiting a Medical Rep, the
+// CRM splits it: the senior→junior pair lands on one set of rows and the junior→MR pair on
+// another — same day. The senior's rows then look like "double visit whose visited party is a
+// manager" and drop out of every real-MR number, so the senior looks like they did no field
+// coaching at all. This walks the chain: for a row whose VISITED party M is a manager, follow
+// the people M personally double-visited that day (recursively through any further managers)
+// down to the real Medical Rep(s). If that resolves to EXACTLY ONE mapped active MR, the row is
+// re-attributed to that MR. Ambiguous days (M double-visited more than one MR that couldn't be
+// separated by AM/PM) are left flagged — the resolver only recovers real fieldwork, it never
+// guesses, and it never mutates ireports360_visits (a read-time derivation only).
+
+type MirrorAdjacencyNode = {
+  agentKey: string;
+  customers: Set<string>;
+  name: string | null;
+  periods: Set<"AM" | "PM" | "UNKNOWN">;
+  rawHrId: string;
+};
+
+export type DoubleVisitChainResolution = {
+  customerNames: string[];
+  hingeHrId: string | null;
+  hingeName: string | null;
+  mrHrId: string;
+  mrName: string | null;
+};
+
+export function resolveDoubleVisitChains(
+  mirrorRows: MirrorVisitRow[],
+  isManagerKey: (key: string) => boolean,
+  isMedicalRepKey: (key: string) => boolean,
+): Map<string, DoubleVisitChainResolution> {
+  // Per date: a hinge (double-visitor) key -> everyone that person double-visited that day.
+  const adjacencyByDate = new Map<string, Map<string, Map<string, MirrorAdjacencyNode>>>();
+  for (const row of mirrorRows) {
+    if (!row.agent_hr_id) continue;
+    const agentKey = canonicalHrIdKey(row.agent_hr_id);
+    const hingeKey = canonicalHrIdKey(row.double_hr_id);
+    if (!agentKey || !hingeKey) continue;
+    const byHinge = adjacencyByDate.get(row.visit_date) ?? new Map<string, Map<string, MirrorAdjacencyNode>>();
+    const nodes = byHinge.get(hingeKey) ?? new Map<string, MirrorAdjacencyNode>();
+    const node = nodes.get(agentKey) ?? {
+      agentKey,
+      customers: new Set<string>(),
+      name: nullableText(row.agent_name),
+      periods: new Set<"AM" | "PM" | "UNKNOWN">(),
+      rawHrId: row.agent_hr_id,
+    };
+    node.periods.add(periodFromAmpm(row.ampm));
+    const customer = nullableText(row.contact_name) ?? nullableText(row.customer_name);
+    if (customer) node.customers.add(customer);
+    nodes.set(agentKey, node);
+    byHinge.set(hingeKey, nodes);
+    adjacencyByDate.set(row.visit_date, byHinge);
+  }
+
+  // Real MRs reachable from a hinge manager on one date, optionally restricted to a period.
+  // Recurses through intermediate managers (multi-level convoys); anyone who is neither a known
+  // active MR nor a known manager is ignored so a chain never resolves to an unknown identity.
+  const reachableMrs = (
+    date: string,
+    startKey: string,
+    period: "AM" | "PM" | "UNKNOWN" | null,
+  ): Map<string, MirrorAdjacencyNode> => {
+    const found = new Map<string, MirrorAdjacencyNode>();
+    const byHinge = adjacencyByDate.get(date);
+    if (!byHinge) return found;
+    const seen = new Set<string>();
+    const stack = [startKey];
+    while (stack.length > 0) {
+      const cur = stack.pop() as string;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      const nodes = byHinge.get(cur);
+      if (!nodes) continue;
+      for (const node of nodes.values()) {
+        if (period && !node.periods.has(period)) continue;
+        if (isMedicalRepKey(node.agentKey)) {
+          found.set(node.agentKey, node);
+        } else if (isManagerKey(node.agentKey)) {
+          stack.push(node.agentKey);
+        }
+      }
+    }
+    return found;
+  };
+
+  const resolutions = new Map<string, DoubleVisitChainResolution>();
+  for (const row of mirrorRows) {
+    const hingeKey = canonicalHrIdKey(row.agent_hr_id); // the (manager) VISITED party = the hinge
+    if (!hingeKey || !isManagerKey(hingeKey)) continue;
+    const period = periodFromAmpm(row.ampm);
+    // Period-preferred first (keeps a distinct AM chain and PM chain apart), then whole-day.
+    let mrs = period === "UNKNOWN" ? new Map<string, MirrorAdjacencyNode>() : reachableMrs(row.visit_date, hingeKey, period);
+    if (mrs.size !== 1) mrs = reachableMrs(row.visit_date, hingeKey, null);
+    if (mrs.size !== 1) continue; // no chain, or ambiguous → leave flagged, never guess
+    const mr = mrs.values().next().value as MirrorAdjacencyNode;
+    resolutions.set(row.id, {
+      customerNames: Array.from(mr.customers),
+      hingeHrId: row.agent_hr_id,
+      hingeName: nullableText(row.agent_name),
+      mrHrId: mr.rawHrId,
+      mrName: mr.name,
+    });
+  }
+  return resolutions;
 }
 
 /** The single source loader every function in this module reads through: every double visit
@@ -430,7 +560,24 @@ export async function getLiveDoubleVisitRows(
       .map((employee) => canonicalHrIdKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),
   );
-  return mirrorRows.map((visit) => dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys));
+  const medicalRepHrIdKeys = new Set(
+    employees
+      .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+  // Recover senior-manager double visits that the CRM split into a manager→manager record plus a
+  // separate manager→MR record on the same day (see resolveDoubleVisitChains). Both halves are
+  // always inside [dateFrom, dateTo] because they share a date, so any range the callers request
+  // is self-sufficient for resolution.
+  const chainResolutions = resolveDoubleVisitChains(
+    mirrorRows,
+    (key) => managerHrIdKeys.has(key),
+    (key) => medicalRepHrIdKeys.has(key),
+  );
+  return mirrorRows.map((visit) =>
+    dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys, chainResolutions.get(visit.id) ?? null),
+  );
 }
 
 function isoWeekStart(dateIso: string): string {
@@ -1893,6 +2040,7 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
       countsByType: emptyIntegrityCounts(),
       importSummaries: [],
       issues: [],
+      recoveredChains: [],
       schemaReady: false,
       totalRowsScanned: 0,
     };
@@ -1909,9 +2057,32 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
   );
 
   const issues: DoubleVisitIntegrityIssue[] = [];
+  const recoveredChains: DoubleVisitRecoveredChain[] = [];
   const countsByType = emptyIntegrityCounts();
 
   for (const row of rawRows) {
+    // A row that the same-day chain recovered is no longer a "visited-is-manager" defect — it is
+    // now credited to the real MR (in visited_employee_*). Surface it as an auditable recovery
+    // instead of an issue.
+    if (row.resolved_via_chain) {
+      recoveredChains.push({
+        activityDate: row.activity_date,
+        areaName: nullableText(row.area_name),
+        customerSample: (row.chain_customer_names ?? []).slice(0, 4),
+        higherManagerHrId: nullableText(row.double_visitor_hr_id),
+        higherManagerName: nullableText(row.double_visitor_name),
+        hingeManagerHrId: nullableText(row.chain_hinge_hr_id),
+        hingeManagerName: nullableText(row.chain_hinge_name),
+        id: row.id,
+        lineName: nullableText(row.line_name),
+        period: row.period,
+        resolvedMrHrId: nullableText(row.visited_employee_hr_id),
+        resolvedMrName: nullableText(row.visited_employee_name),
+        visitCount: asNumber(row.visit_count),
+      });
+      continue;
+    }
+
     const doubleVisitorRaw = nullableText(row.double_visitor_hr_id);
     let issueType: DoubleVisitIntegrityIssueType | null = null;
 
@@ -1951,12 +2122,14 @@ export async function getDoubleVisitDataIntegrityReport(access: AccessContext): 
     });
   }
   issues.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
+  recoveredChains.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
 
   return {
     asOfDate: todayIso(),
     countsByType,
     importSummaries: [],
     issues,
+    recoveredChains,
     schemaReady: true,
     totalRowsScanned: rawRows.length,
   };

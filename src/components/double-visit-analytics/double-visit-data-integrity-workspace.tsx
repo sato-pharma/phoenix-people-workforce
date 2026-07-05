@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Link2, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -144,6 +144,35 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
 
   const totalIssues = report.issues.length;
 
+  const recovered = report.recoveredChains ?? [];
+  const recoveredVisits = recovered.reduce((sum, chain) => sum + chain.visitCount, 0);
+  const recoveredExportColumns: ExportColumn[] = [
+    { key: "date", label: "Date" },
+    { key: "creditedManager", label: "Credited Manager" },
+    { key: "creditedManagerHrId", label: "Credited Manager HR ID" },
+    { key: "viaManager", label: "Via (hinge manager)" },
+    { key: "viaManagerHrId", label: "Via HR ID" },
+    { key: "resolvedMr", label: "Resolved MR" },
+    { key: "resolvedMrHrId", label: "Resolved MR HR ID" },
+    { key: "area", label: "Area" },
+    { key: "line", label: "Line" },
+    { key: "customers", label: "Customer Sample" },
+    { key: "visits", label: "Visits", numeric: true },
+  ];
+  const recoveredExportRows: ExportRow[] = recovered.map((chain) => ({
+    date: chain.activityDate,
+    creditedManager: chain.higherManagerName ?? "—",
+    creditedManagerHrId: chain.higherManagerHrId ?? "—",
+    viaManager: chain.hingeManagerName ?? "—",
+    viaManagerHrId: chain.hingeManagerHrId ?? "—",
+    resolvedMr: chain.resolvedMrName ?? "—",
+    resolvedMrHrId: chain.resolvedMrHrId ?? "—",
+    area: chain.areaName ?? "—",
+    line: chain.lineName ?? "—",
+    customers: chain.customerSample.join(", ") || "—",
+    visits: chain.visitCount,
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -182,6 +211,72 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
               </button>
             ))}
           </div>
+
+          {recovered.length > 0 && (
+            <div className="overflow-hidden border border-slate-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 px-5 py-3">
+                <div>
+                  <h2 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                    <Link2 className="h-3.5 w-3.5" />
+                    Recovered Via Chain
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-[11px] font-medium leading-snug text-slate-300">
+                    {recovered.length} double {recovered.length === 1 ? "visit" : "visits"} ({recoveredVisits} activity{" "}
+                    {recoveredVisits === 1 ? "count" : "counts"}) that looked like a manager visiting a manager were
+                    re-credited to the real Medical Rep the convoy actually saw — matched by the same-day double visit
+                    the hinge manager performed. No longer counted as defects.
+                  </p>
+                </div>
+                <ExportXlsxButton
+                  title="Double Visit Recovered Chains"
+                  subtitle={`${recovered.length} recovered rows`}
+                  sheetName="Recovered Chains"
+                  columns={recoveredExportColumns}
+                  rows={recoveredExportRows}
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[960px] text-left text-sm">
+                  <thead className="bg-slate-900">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
+                      <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Credited Manager</th>
+                      <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Resolved Chain</th>
+                      <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Area</th>
+                      <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Line</th>
+                      <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-wider text-slate-300">Visits</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {recovered.map((chain, index) => (
+                      <tr key={chain.id} className={index % 2 === 0 ? "bg-white" : "bg-emerald-50/30"}>
+                        <td className="whitespace-nowrap px-3 py-2.5">{formatDate(chain.activityDate)}</td>
+                        <td className="px-3 py-2.5">
+                          <p className="font-medium text-slate-900">{chain.higherManagerName ?? "—"}</p>
+                          <p className="text-[11px] text-slate-400">{chain.higherManagerHrId ?? "no HR ID"}</p>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                            <span className="whitespace-nowrap text-slate-400">{chain.hingeManagerName ?? "hinge manager"}</span>
+                            <ArrowRight className="h-3 w-3 text-emerald-500" />
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                              {chain.resolvedMrName ?? chain.resolvedMrHrId ?? "MR"}
+                            </span>
+                          </div>
+                          {chain.customerSample.length > 0 && (
+                            <p className="mt-1 text-[10px] text-slate-400">{chain.customerSample.join(" · ")}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">{chain.areaName ?? "—"}</td>
+                        <td className="px-3 py-2.5">{chain.lineName ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-bold tabular-nums">{chain.visitCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {report.importSummaries.length > 0 && (
             <div className="overflow-hidden border border-slate-200 bg-white">
