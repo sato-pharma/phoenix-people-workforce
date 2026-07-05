@@ -537,6 +537,7 @@ export function SalesMarketingIntelligenceDashboard({
   canRefreshRoi = false,
   chrome = "admin",
   filters,
+  hideLineRoiReport = false,
   snapshot,
 }: {
   /** Where the filter form/reset post to. Defaults to the admin route; the employee
@@ -548,6 +549,10 @@ export function SalesMarketingIntelligenceDashboard({
    *  dashboard sits cleanly inside EmployeePortalPageShell's own hero. */
   chrome?: "admin" | "portal";
   filters: SalesMarketingDashboardFilters;
+  /** Drop the "Line ROI report" (by-line breakdown). Meaningless for single-line
+   *  viewers such as National Sales Manager, whose ROI scope is exactly one line,
+   *  so the Region ROI report then spans full width. */
+  hideLineRoiReport?: boolean;
   snapshot: SalesMarketingDashboardSnapshot;
 }) {
   const summary = snapshot.summary;
@@ -608,20 +613,29 @@ export function SalesMarketingIntelligenceDashboard({
 
       <RoiTrendChart snapshot={snapshot} />
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <RoiComparisonTable
-          description="ROI coverage by product line, using marketing cost allocation and attributed actual sales."
-          kind="line"
-          rows={snapshot.lineRoi}
-          title="Line ROI report"
-        />
+      {hideLineRoiReport ? (
         <RoiComparisonTable
           description="Regional request footprint, spend, actual attribution, coverage gap, and behind/no-data counts."
           kind="standard"
           rows={snapshot.regionRoi}
           title="Region ROI report"
         />
-      </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <RoiComparisonTable
+            description="ROI coverage by product line, using marketing cost allocation and attributed actual sales."
+            kind="line"
+            rows={snapshot.lineRoi}
+            title="Line ROI report"
+          />
+          <RoiComparisonTable
+            description="Regional request footprint, spend, actual attribution, coverage gap, and behind/no-data counts."
+            kind="standard"
+            rows={snapshot.regionRoi}
+            title="Region ROI report"
+          />
+        </div>
+      )}
 
       <RoiComparisonTable
         description="Distributor request footprint and ROI coverage. This is marketing attribution reporting, not broad distributor sales."

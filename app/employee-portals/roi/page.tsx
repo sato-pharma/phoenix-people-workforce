@@ -50,6 +50,7 @@ async function RoiDashboardContent({
         basePath="/employee-portals/roi"
         chrome="portal"
         filters={filters}
+        hideLineRoiReport={access.role === "National Sales Manager"}
         snapshot={snapshot}
       />
     );
