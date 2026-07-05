@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { hrIdsMatch } from "@/lib/auth/permissions";
 import { coachingMaxItemScore, coachingParameterLabels, type CoachingParameterKey } from "@/lib/coaching/constants";
 import { submitCoachingReport } from "@/lib/coaching/service";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import {
   jsonError,
@@ -97,12 +99,19 @@ export async function POST(request: Request, context: RouteContext) {
     const report = await submitCoachingReport(id, submitInput(payload), access);
     const coachName = report.summary?.coachName || report.report.coach_hr_id;
     const scoreContext = buildCoachingScoreEmailContext(report.scores);
+
+    // The coach who authored the report is CC'd on the medical rep's copy, so
+    // the Training Manager always has visibility into their own submitted reports.
+    const directory = await getEmployeeDirectoryRows();
+    const coachEmail = directory.find((employee) => hrIdsMatch(employee.hrId, report.report.coach_hr_id))?.workEmail?.trim() || null;
+
     const notification = await createSystemNotification({
       actionUrl: `/employee-portals/coaching/${report.report.id}`,
       category: "coaching_report",
       eventType: "report_submitted",
       message: `You have received a new coaching report from ${coachName}. Please review and acknowledge it.`,
       email: {
+        cc: coachEmail ? [coachEmail] : [],
         templateContext: scoreContext,
       },
       metadata: {
