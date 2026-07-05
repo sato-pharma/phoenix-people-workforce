@@ -81,6 +81,7 @@ desktop.ini
 .codex-worktrees/
 _wt-*/
 .claude/scheduled_tasks.lock
+.claude/session.lock
 .eslintcache
 
 # Local-only throwaway tooling/scratch (screenshots, scratch git objects)
