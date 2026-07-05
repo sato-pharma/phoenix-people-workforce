@@ -7,16 +7,50 @@ import {
   Radar,
   RadarChart,
   ResponsiveContainer,
+  Tooltip,
 } from "recharts";
 
 import { ChartErrorBoundary } from "@/components/coaching/chart-error-boundary";
 import { getCoachingScoreColor, type CoachingQualityRadarPoint } from "@/lib/coaching/landing-insights";
 
+// Plain-language explanation of each proxy metric, shown on hover (these
+// dimensions are abstract, so the tooltip clarifies what each one measures).
+const DIMENSION_DESCRIPTIONS: Record<string, string> = {
+  "Avg Score": "Average final coaching score across completed reports.",
+  Consistency: "How close the scores are to one another — 100% means every score is identical, lower means a wider spread.",
+  Completion: "Share of coaching reports that have been completed (submitted, reviewed, or locked).",
+  Acknowledgment: "Share of completed reports the medical rep has acknowledged.",
+  "Recent Trend": "Average score across the most recent half of reports — is coaching quality trending up or down?",
+};
+
+function RadarTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: CoachingQualityRadarPoint }>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  return (
+    <div className="max-w-[220px] border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
+      <p className="font-bold text-slate-900">
+        {point.dimension}:{" "}
+        <span className="tabular-nums" style={{ color: getCoachingScoreColor(point.value) }}>
+          {point.value.toFixed(1)}%
+        </span>
+      </p>
+      <p className="mt-1 leading-snug text-slate-500">{DIMENSION_DESCRIPTIONS[point.dimension] ?? ""}</p>
+    </div>
+  );
+}
+
 /**
  * "Coaching quality overview" radar — the same proxy-metric radar the coaching
  * analytics workspace shows (avg score, consistency, completion, acknowledgment,
  * recent trend), framed in the portal's premium design language and paired with
- * a per-dimension breakdown so it fills a full-width landing row.
+ * a per-dimension breakdown so it fills a full-width landing row. Hovering a
+ * point (or a breakdown row) explains what the metric measures.
  *
  * Renders nothing when there is no completed-report data.
  */
@@ -44,12 +78,13 @@ export function CoachingQualityRadarCard({
                 <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 10, fill: "#64748b" }} />
                 <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} />
                 <Radar name="Score" dataKey="value" stroke="#ea580c" fill="#ea580c" fillOpacity={0.15} strokeWidth={2} />
+                <Tooltip content={<RadarTooltip />} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
           <div className="space-y-3">
             {data.map((point) => (
-              <div key={point.dimension}>
+              <div key={point.dimension} className="cursor-help" title={DIMENSION_DESCRIPTIONS[point.dimension] ?? point.dimension}>
                 <div className="flex items-center justify-between gap-3">
                   <span className="whitespace-nowrap text-[11px] font-semibold text-slate-600">{point.dimension}</span>
                   <span

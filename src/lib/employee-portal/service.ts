@@ -4568,6 +4568,160 @@ export async function getCompanyMedRepPerformance(
 }
 
 // ---------------------------------------------------------------------------
+// Company-wide top achievers per line (read-only landing widget)
+// ---------------------------------------------------------------------------
+
+export type LineTopAchiever = {
+  achievementPercent: number;
+  areaName: string | null;
+  hrId: string;
+  lineName: string;
+  name: string;
+};
+
+export type LineTopAchieversGroup = {
+  achievers: LineTopAchiever[];
+  lineName: string;
+};
+
+// Roles allowed to see the cross-line medical-rep achievement leaderboard. Kept
+// deliberately narrow — sales leadership plus Training Manager (org-wide coaching
+// oversight) and system/Super Admin. This is a curated, read-only snapshot; it
+// does NOT widen the `sales` permission resource for these roles.
+const LINE_TOP_ACHIEVER_ROLES = new Set<AccessContext["role"]>([
+  "Super Admin",
+  "CEO",
+  "National Sales Manager",
+  "Training Manager",
+]);
+
+/**
+ * Top `perLine` medical reps by sales achievement (sales ÷ target, all periods)
+ * for every line, reusing the same per-rep achievement math as the Medical Reps
+ * Performance page. Fetches per line to stay at that page's query scale rather
+ * than pulling every rep company-wide in one call. Returns [] for roles outside
+ * the allowlist, and never throws (empty on any failure).
+ */
+export async function getCompanyLineTopAchievers(
+  access: AccessContext,
+  options: { perLine?: number } = {},
+): Promise<LineTopAchieversGroup[]> {
+  const perLine = options.perLine ?? 3;
+  try {
+    if (access.scope !== "system" && !LINE_TOP_ACHIEVER_ROLES.has(access.role)) {
+      return [];
+    }
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return [];
+
+    const repsByLine = new Map<string, typeof directory.employees>();
+    for (const emp of directory.employees) {
+      if (!isMedicalRepDirectoryEmployee(emp)) continue;
+      const line = emp.lineName?.trim();
+      if (!line) continue;
+      const arr = repsByLine.get(line) ?? [];
+      arr.push(emp);
+      repsByLine.set(line, arr);
+    }
+    if (repsByLine.size === 0) return [];
+
+    const groups = await Promise.all(
+      Array.from(repsByLine.entries()).map(async ([lineName, reps]) => ({
+        achievers: await computeLineTopAchievers(lineName, reps, perLine),
+        lineName,
+      })),
+    );
+
+    return groups
+      .filter((group) => group.achievers.length > 0)
+      .sort((a, b) => a.lineName.localeCompare(b.lineName));
+  } catch {
+    return [];
+  }
+}
+
+async function computeLineTopAchievers(
+  lineName: string,
+  reps: Array<{ areaName: string | null; fullName: string; hrId: string }>,
+  perLine: number,
+): Promise<LineTopAchiever[]> {
+  const hrIdToCanonical = new Map<string, string>();
+  const meta = new Map<string, { areaName: string | null; name: string }>();
+  for (const emp of reps) {
+    const canonical = toCanonicalPortalHrId(emp.hrId);
+    if (!canonical) continue;
+    const normalized = normalizeHrId(emp.hrId);
+    if (normalized) hrIdToCanonical.set(normalized, canonical);
+    hrIdToCanonical.set(canonical, canonical);
+    meta.set(canonical, { areaName: emp.areaName, name: emp.fullName });
+  }
+
+  const repHrIds = reps.map((emp) => emp.hrId).filter(Boolean) as string[];
+  if (repHrIds.length === 0) return [];
+
+  const records = await fetchPortalSalesRecords(repHrIds, {});
+
+  // Same target-dedup + per-rep achievement math as getDsmTeamPerformance:
+  // sum sales per (rep::product); take the max target per (rep::territory::period::product).
+  const salesByRepProduct = new Map<string, number>();
+  const maxTargetByKey = new Map<string, number>();
+  const targetKeyToRep = new Map<string, string>();
+
+  for (const record of records) {
+    const normalized = normalizeHrId(record.hrId);
+    if (!normalized) continue;
+    const canonical = hrIdToCanonical.get(normalized);
+    if (!canonical) continue;
+
+    const product = record.product || "Unknown";
+    const territory = record.territory || "Unassigned";
+    const period = record.period || "unknown";
+
+    const rpKey = `${canonical}::${product}`;
+    salesByRepProduct.set(rpKey, (salesByRepProduct.get(rpKey) ?? 0) + record.salesValue);
+
+    const targetKey = `${canonical}::${territory}::${period}::${product}`;
+    if (record.targetValue > (maxTargetByKey.get(targetKey) ?? 0)) {
+      maxTargetByKey.set(targetKey, record.targetValue);
+      targetKeyToRep.set(targetKey, canonical);
+    }
+  }
+
+  const salesByRep = new Map<string, number>();
+  salesByRepProduct.forEach((sales, key) => {
+    const repId = key.split("::")[0];
+    salesByRep.set(repId, (salesByRep.get(repId) ?? 0) + sales);
+  });
+
+  const targetByRep = new Map<string, number>();
+  maxTargetByKey.forEach((value, key) => {
+    const repId = targetKeyToRep.get(key);
+    if (!repId) return;
+    targetByRep.set(repId, (targetByRep.get(repId) ?? 0) + value);
+  });
+
+  const achievers: LineTopAchiever[] = [];
+  for (const [repId, target] of targetByRep.entries()) {
+    if (target <= 0) continue;
+    const info = meta.get(repId);
+    if (!info) continue;
+    const sales = salesByRep.get(repId) ?? 0;
+    achievers.push({
+      achievementPercent: (sales / target) * 100,
+      areaName: info.areaName,
+      hrId: repId,
+      lineName,
+      name: info.name,
+    });
+  }
+
+  return achievers
+    .sort((a, b) => b.achievementPercent - a.achievementPercent)
+    .slice(0, perLine);
+}
+
+// ---------------------------------------------------------------------------
 // NSM DSMs Performance
 // ---------------------------------------------------------------------------
 

@@ -346,14 +346,16 @@ export function runApprovalsHubTests() {
   assert.doesNotMatch(portalInboxPage, /title="Approval Inbox"/, "the old page title is fully replaced, not left alongside the new one");
   assert.match(navRegistry, /fullLabel: "Marketing Requests Inbox"/, "the nav registry's full label matches the rename too (bottom-nav/quick-nav consistency)");
 
-  // "My Workspace" is the first section returned (owner request) — ahead of Training Manager and
-  // Approvals Hub, which are both conditional/secondary for most portal users.
+  // The Training Manager's own section leads the sidebar (owner request) — ahead of "My Workspace".
+  // For non-TM roles the Training Manager section is empty and dropped by the items.length filter,
+  // so their first visible section is unchanged. My Workspace still precedes the conditional
+  // Approvals Hub section.
   {
     const myWorkspaceIdx = portalLayout.indexOf('title: "My Workspace"');
     const trainingManagerIdx = portalLayout.indexOf('title: "Training Manager"');
     const approvalsHubIdx = portalLayout.indexOf('title: "Approvals Hub"');
     assert.ok(myWorkspaceIdx > -1 && trainingManagerIdx > -1 && approvalsHubIdx > -1, "all three section titles are present");
-    assert.ok(myWorkspaceIdx < trainingManagerIdx, "My Workspace is ordered before Training Manager");
+    assert.ok(trainingManagerIdx < myWorkspaceIdx, "Training Manager section leads, ahead of My Workspace");
     assert.ok(myWorkspaceIdx < approvalsHubIdx, "My Workspace is ordered before Approvals Hub");
   }
 
