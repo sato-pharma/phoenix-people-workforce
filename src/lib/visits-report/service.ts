@@ -736,6 +736,17 @@ export async function getLatestVisitsSyncRuns(limit = 10): Promise<VisitsSyncRun
   return ((data ?? []) as Record<string, unknown>[]).map(mapSyncRun);
 }
 
+/**
+ * Columns getVisitsReportData / getVisitsReportExportRows actually need — kept in sync with
+ * mapVisitRow below. Excludes raw_payload, synced_at, and updated_at, which together are the
+ * majority of each row's byte size (raw_payload alone averages ~62% of a row) and are never read
+ * by either caller; select("*") was pulling all of it on every paginated report/export request.
+ */
+const visitReportColumns =
+  "id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
+  "contact_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, double_hr_id, " +
+  "double_name, visit_date, visit_date_time, visit_type, visit_type_description";
+
 export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
   return {
     agentCrmId: Number(row.agent_crm_id),
@@ -927,7 +938,7 @@ export async function getVisitsReportData(
   }
 
   const supabase = getSupabaseAdmin();
-  const baseQuery = supabase.from(visitsTable).select("*", { count: "exact" });
+  const baseQuery = supabase.from(visitsTable).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsFilters(baseQuery as unknown as FilterableQuery, { ...input, dateFrom, dateTo }) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
@@ -941,7 +952,7 @@ export async function getVisitsReportData(
   ]);
   if (error) throw new Error(error.message);
 
-  const rawRows = ((data ?? []) as Record<string, unknown>[]).map(mapVisitRow);
+  const rawRows = ((data ?? []) as unknown as Record<string, unknown>[]).map(mapVisitRow);
   const rows = await attachNearestCheckins(rawRows, dateFrom, dateTo);
 
   return {
@@ -970,7 +981,7 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
   }
 
   const supabase = getSupabaseAdmin();
-  const baseQuery = supabase.from(visitsTable).select("*", { count: "exact" });
+  const baseQuery = supabase.from(visitsTable).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsFilters(baseQuery as unknown as FilterableQuery, { ...input, dateFrom, dateTo }) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
@@ -979,7 +990,7 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
   const { data, error, count } = await filteredQuery;
   if (error) throw new Error(error.message);
 
-  const rawRows = ((data ?? []) as Record<string, unknown>[]).map(mapVisitRow);
+  const rawRows = ((data ?? []) as unknown as Record<string, unknown>[]).map(mapVisitRow);
   const rows = await attachNearestCheckins(rawRows, dateFrom, dateTo);
   const totalCount = count ?? rows.length;
 

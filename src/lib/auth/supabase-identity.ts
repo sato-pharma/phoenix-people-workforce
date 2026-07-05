@@ -278,15 +278,29 @@ export async function persistSupabaseAuthIdentityLink(
 export async function setSupabaseAuthIdentityAccess(input: {
   authUserId: string;
   isActive: boolean;
-}) {
+  /** Used only to recover via findAuthUserIdByEmail if authUserId is stale (see below). */
+  loginId?: string;
+}): Promise<{ authUserId: string }> {
   const supabaseAdmin = getSupabaseAdmin();
-  const { data: existing, error: lookupError } = await supabaseAdmin.auth.admin.getUserById(input.authUserId);
+  let authUserId = input.authUserId;
+  let { data: existing, error: lookupError } = await supabaseAdmin.auth.admin.getUserById(authUserId);
+
+  // Same stale-link recovery as provisionSupabaseAuthIdentity: app_auth_users.auth_user_id can
+  // drift from the live auth.users row (e.g. a prior re-provision under this login_id), which
+  // otherwise hard-fails every activate/deactivate for that user with a 404.
+  if (lookupError?.status === 404 && input.loginId) {
+    const recoveredAuthUserId = await findAuthUserIdByEmail(buildPhoenixAuthEmail(input.loginId));
+    if (recoveredAuthUserId) {
+      authUserId = recoveredAuthUserId;
+      ({ data: existing, error: lookupError } = await supabaseAdmin.auth.admin.getUserById(authUserId));
+    }
+  }
   if (lookupError) {
     throw lookupError;
   }
 
   const { error } = await supabaseAdmin.auth.admin.updateUserById(
-    input.authUserId,
+    authUserId,
     {
       app_metadata: {
         ...(existing.user?.app_metadata ?? {}),
@@ -299,12 +313,17 @@ export async function setSupabaseAuthIdentityAccess(input: {
   if (error) {
     throw error;
   }
+
+  return { authUserId };
 }
 
 export async function deleteSupabaseAuthIdentity(authUserId: string) {
   const supabaseAdmin = getSupabaseAdmin();
   const { error } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-  if (error) {
+  // A 404 here means the GoTrue user is already gone — that's the delete's desired end state,
+  // not a failure to surface (unlike updateUserById/getUserById, where a 404 on an id we still
+  // expect to be live signals broken app_auth_users<->auth.users linkage).
+  if (error && error.status !== 404) {
     throw error;
   }
 }
