@@ -264,7 +264,10 @@ export function resolveEmployeePortalNavVisibility(
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
     showSupportTab: true,
     showTeamCoachingTab,
-    showTeamExpensesTab: isNationalSalesManager,
+    // Team Expenses was an NSM-only surface. It is retired from the portal nav:
+    // the NSM's single expense destination is now the Expense Dashboard, whose
+    // LINE scope (see getExpensesScope) already covers self + the whole line.
+    showTeamExpensesTab: false,
     showTeamPerformanceTab,
     showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,

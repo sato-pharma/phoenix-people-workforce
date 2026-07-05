@@ -64,11 +64,19 @@ const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
 // hierarchy rather than a line-name filter. The Marketing Manager sits on the Head
 // Office line while the PM/GPM they supervise sit on the business lines, so a
 // same-line slice would silently drop the manager's own reports.
+//
+// The National Sales Manager is included for the inverse reason: the PM/GPM who
+// promote a product LINE share that line's line_id but report to Marketing (A-9),
+// not to the sales NSM. A role-blind LINE slice therefore pulls those PM/GPM (and
+// any other non-report on the line) into the NSM's expense dashboard. HIERARCHY
+// binds the NSM to exactly his own sales chain (RSM → DSM → MR), so PM/GPM/TM drop
+// out by construction while every real report is still covered.
 const PORTAL_HIERARCHY_EXPENSE_ROLES = new Set<PhoenixRole>([
   "Product Manager",
   "Group Product Manager",
   "Training Manager",
   "Marketing Manager",
+  "National Sales Manager",
 ]);
 
 function canBypassPayrollExpenseLocks(accessContext: Pick<AccessContext, "role">) {

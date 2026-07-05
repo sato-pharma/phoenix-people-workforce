@@ -283,7 +283,7 @@ export function runEmployeePortalNavigationTests() {
   const nsmCore = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nsmCore.showMedRepsPerformanceTab, true, "Core: NSM keeps MRs Performance with beta nav off");
   assert.equal(nsmCore.showDsmsPerformanceTab, true, "Core: NSM keeps DSMs Performance with beta nav off");
-  assert.equal(nsmCore.showTeamExpensesTab, true, "Core: NSM keeps Team Expenses with beta nav off");
+  assert.equal(nsmCore.showTeamExpensesTab, false, "NSM no longer sees the standalone Team Expenses tab (consolidated into the Expense Dashboard)");
 
   // Beta flag enabled: full modules stay visible; the flag never downgrades them.
   process.env.PHOENIX_PORTAL_SHOW_BETA_NAV = "true";
