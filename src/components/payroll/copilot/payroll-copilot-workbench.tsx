@@ -30,6 +30,8 @@ type SimpleEmployee = {
 
 type RecurringApplied = { hrId: string; kind: string; amount: number; note: string | null };
 
+type OtherTabBlocking = { label: string; count: number };
+
 type Draft = {
   period: { month: number; year: number };
   employeeCount: number;
@@ -37,6 +39,7 @@ type Draft = {
   flaggedOpenCount: number;
   openBlockCount: number;
   canMaterialize: boolean;
+  otherTabsBlocking: OtherTabBlocking[];
   recurringApplied: RecurringApplied[];
   flagged: FlaggedEmployee[];
   resolved: SimpleEmployee[];
@@ -630,9 +633,21 @@ function RunWorkspace(props: {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
         <p className="text-sm text-slate-500">
-          {draft.canMaterialize
-            ? "Ready — no blocking questions remain."
-            : `${draft.openBlockCount} blocking question(s) must be answered before generating the sheet.`}
+          {draft.canMaterialize ? (
+            "Ready — no blocking questions remain."
+          ) : (
+            <>
+              {draft.openBlockCount > 0
+                ? `${draft.openBlockCount} blocking question(s) must be answered. `
+                : null}
+              {draft.otherTabsBlocking.length > 0
+                ? `Still has open items: ${draft.otherTabsBlocking
+                    .map((tab) => `${tab.label} (${tab.count})`)
+                    .join(", ")}. `
+                : null}
+              Resolve these before generating the sheet.
+            </>
+          )}
         </p>
         <div className="flex gap-2">
           <button

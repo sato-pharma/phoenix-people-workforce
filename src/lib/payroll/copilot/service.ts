@@ -18,6 +18,8 @@ import {
 } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { systemAccessContext } from "@/lib/auth/permissions";
+
 import {
   buildRowForEmployee,
   groupAdjustmentsByEmployee,
@@ -25,13 +27,17 @@ import {
   isDeferred,
   lookupSource,
 } from "./assemble.ts";
-import { buildApprovedDeductionTotals } from "./deductions-review.ts";
+import {
+  buildApprovedDeductionTotals,
+  listCrmDeductionCandidates,
+  listFingerprintDeductionCandidates,
+} from "./deductions-review.ts";
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
 import { parseCeoReply } from "./llm.ts";
 import { applyActions } from "./negotiation.ts";
 import { consumeRecurringForPeriod, listRecurringForPeriod } from "./recurring.ts";
-import { buildSettledSalaryDeductionTotals } from "./vacation-settlement.ts";
+import { buildSettledSalaryDeductionTotals, listUnpaidVacationCandidates } from "./vacation-settlement.ts";
 import type {
   CopilotAdjustment,
   CopilotFlag,
@@ -370,11 +376,60 @@ async function updateRunCounts(runId: string, draft: CopilotDraftState): Promise
 // Public API used by routes
 // ---------------------------------------------------------------------------
 
+export type OtherTabBlocking = { label: string; count: number };
+
 export type CopilotRunView = {
   run: CopilotRun;
-  draft: ReturnType<typeof serializeDraft>;
+  draft: ReturnType<typeof serializeDraft> & { otherTabsBlocking: OtherTabBlocking[] };
   resumed?: boolean;
 };
+
+/**
+ * Pending-item counts for the Fingerprint/CRM/Unpaid Vacation tabs — folded
+ * into `canMaterialize` so "Generate payroll sheet" can no longer be clicked
+ * while those tabs still have real, undecided items sitting untouched. Before
+ * this, `canMaterialize` only looked at the Negotiation tab's blocking flags;
+ * a CEO could generate the sheet having never opened the other three tabs.
+ * Defensive: never throws — a governance-data outage must not permanently
+ * block payroll assembly, it just means this run's gate can't see that tab
+ * (same failure posture as `buildApprovedDeductionTotals`).
+ */
+async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlocking[]> {
+  const blocking: OtherTabBlocking[] = [];
+  try {
+    const [fingerprint, crm, vacation] = await Promise.all([
+      listFingerprintDeductionCandidates(systemAccessContext, period),
+      listCrmDeductionCandidates(systemAccessContext, period),
+      listUnpaidVacationCandidates(period),
+    ]);
+    const fingerprintPending = fingerprint.rows.filter(
+      (row) => (row.decision?.decisionStatus ?? "Pending") === "Pending",
+    ).length;
+    if (fingerprintPending > 0) blocking.push({ label: "Fingerprint Deductions", count: fingerprintPending });
+
+    const crmPending = crm.rows.filter((row) => (row.decision?.decisionStatus ?? "Pending") === "Pending").length;
+    if (crmPending > 0) blocking.push({ label: "CRM Deductions", count: crmPending });
+
+    const vacationPending = vacation.filter((candidate) => candidate.existingSettlement === null).length;
+    if (vacationPending > 0) blocking.push({ label: "Unpaid Vacation", count: vacationPending });
+  } catch (error) {
+    console.error("[payroll-copilot:service] other-tabs pending count failed:", error);
+  }
+  return blocking;
+}
+
+async function finalizeRunView(run: CopilotRun, draft: CopilotDraftState): Promise<CopilotRunView> {
+  const serialized = serializeDraft(draft);
+  const otherTabsBlocking = await countOtherTabsPending(draft.period);
+  return {
+    run,
+    draft: {
+      ...serialized,
+      canMaterialize: serialized.canMaterialize && otherTabsBlocking.length === 0,
+      otherTabsBlocking,
+    },
+  };
+}
 
 export function serializeDraft(draft: CopilotDraftState) {
   return {
@@ -440,7 +495,7 @@ export async function startRun(period: CopilotPeriod, actor: string | null): Pro
 
   const run = mapRun(data as Record<string, unknown>);
   await syncFlags(run.id, draft);
-  return { run, draft: serializeDraft(draft) };
+  return finalizeRunView(run, draft);
 }
 
 async function requireRun(runId: string): Promise<CopilotRun> {
@@ -461,7 +516,7 @@ export async function getRunView(runId: string): Promise<CopilotRunView> {
   const draft = await assembleDraft({ month: run.month, year: run.year }, adjustments);
   await syncFlags(runId, draft);
   await updateRunCounts(runId, draft);
-  return { run, draft: serializeDraft(draft) };
+  return finalizeRunView(run, draft);
 }
 
 /** Parse the CEO's chat message into proposed actions (no mutation). */
@@ -540,6 +595,14 @@ export async function materializeRun(
   if (draft.openBlockCount > 0) {
     throw new CopilotError(
       `${draft.openBlockCount} employee(s) still have blocking questions. Answer them before generating the sheet.`,
+      409,
+    );
+  }
+
+  const otherTabsBlocking = await countOtherTabsPending(period);
+  if (otherTabsBlocking.length > 0) {
+    throw new CopilotError(
+      `Still has open items: ${otherTabsBlocking.map((tab) => `${tab.label} (${tab.count})`).join(", ")}. Resolve those tabs before generating the sheet.`,
       409,
     );
   }
