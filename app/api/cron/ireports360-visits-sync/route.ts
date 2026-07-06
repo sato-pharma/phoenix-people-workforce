@@ -6,7 +6,10 @@ import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+// Raised from 180 -> 300 (the same ceiling already proven safe on sales-upload/commit and the
+// reconcile route) as a safety margin while the sync's own chunk-upsert loop is now parallelized
+// (see upsertConcurrency in visits-report/service.ts) rather than a substitute for that fix.
+export const maxDuration = 300;
 
 // Matches runScheduledIReports360Sync's own lookback window (see visits-report/service.ts) —
 // Double Visit Analytics has no separate sync step of its own (it reads ireports360_visits
@@ -52,9 +55,9 @@ export async function GET(request: Request) {
       {
         schedule: { type: "crontab", value: "0 9,12,19 * * *" },
         checkinMargin: 30,
-        // Minutes, not seconds — was 180 (3h) against a maxDuration of 180s (3min), the same
-        // mismatch fixed on ireports360-visits-reconcile. 4 = maxDuration (180s) + 1min margin.
-        maxRuntime: 4,
+        // Minutes, not seconds — same mismatch fixed on ireports360-visits-reconcile.
+        // 6 = maxDuration (300s) + 1min margin.
+        maxRuntime: 6,
         timezone: "Etc/UTC",
       },
     );

@@ -27,6 +27,13 @@ const checkinsTable = "ireports360_checkins";
 const syncRunsTable = "ireports360_visits_sync_runs";
 const resolutionsTable = "ireports360_crm_identity_resolutions";
 const upsertBatchSize = 500;
+// At the 21-day lookback, a full run chunks into ~26 visits requests + ~25 checkins requests.
+// Run one-at-a-time, each successive request measurably slows under sustained Supabase load
+// (observed 9.9s -> 15s per chunk in production), and the cumulative wall-clock was the actual
+// cause of the recurring "Supabase request timed out" cron failures — not per-row inserts, which
+// were already batched. Bounded concurrency (not full parallelism) keeps this from also
+// overwhelming Supabase's own connection pool.
+const upsertConcurrency = 4;
 const MAX_EXPORT_ROWS = 20000;
 
 function todayIso() {
@@ -158,6 +165,36 @@ export function dedupeByKey<T>(rows: T[], keyOf: (row: T) => number | string): T
   return Array.from(new Map(rows.map((row) => [keyOf(row), row])).values());
 }
 
+/** Splits `rows` into `chunkSize`-sized chunks and upserts them with up to `concurrency` chunk
+ * requests in flight at once, instead of one-at-a-time — see upsertConcurrency's doc comment for
+ * why sequential chunking alone was the cause of repeated cron timeouts. Returns the total row
+ * count upserted; throws (aborting remaining chunks) on the first chunk error, same failure
+ * behavior as the sequential loop it replaces. */
+async function upsertRowsConcurrently<T>(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  table: string,
+  rows: T[],
+  onConflict: string,
+  chunkSize: number,
+  concurrency: number,
+): Promise<number> {
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += chunkSize) chunks.push(rows.slice(index, index + chunkSize));
+  let upserted = 0;
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, chunks.length) }, async () => {
+      while (cursor < chunks.length) {
+        const chunk = chunks[cursor++];
+        const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+        if (error) throw new Error(error.message);
+        upserted += chunk.length;
+      }
+    }),
+  );
+  return upserted;
+}
+
 export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
   const doubleCrmId = visit.doubleID && visit.doubleID !== 0 ? visit.doubleID : null;
   return {
@@ -271,23 +308,25 @@ export async function syncIReports360Visits(input: {
     const validVisitRows = dedupedVisitRows.filter((row) => isValidIsoDate(row.visit_date));
     const rowsSkippedInvalidDate = dedupedVisitRows.length - validVisitRows.length;
 
-    let visitsUpserted = 0;
-    for (let index = 0; index < validVisitRows.length; index += upsertBatchSize) {
-      const chunk = validVisitRows.slice(index, index + upsertBatchSize);
-      const { error } = await supabase.from(visitsTable).upsert(chunk, { onConflict: "crm_visit_id" });
-      if (error) throw new Error(error.message);
-      visitsUpserted += chunk.length;
-    }
+    const visitsUpserted = await upsertRowsConcurrently(
+      supabase,
+      visitsTable,
+      validVisitRows,
+      "crm_visit_id",
+      upsertBatchSize,
+      upsertConcurrency,
+    );
 
     const checkinRows = checkins.map((checkin) => rowFromCheckin(checkin, maps));
     const dedupedCheckinRows = dedupeByKey(checkinRows, (row) => row.crm_checkin_id);
-    let checkinsUpserted = 0;
-    for (let index = 0; index < dedupedCheckinRows.length; index += upsertBatchSize) {
-      const chunk = dedupedCheckinRows.slice(index, index + upsertBatchSize);
-      const { error } = await supabase.from(checkinsTable).upsert(chunk, { onConflict: "crm_checkin_id" });
-      if (error) throw new Error(error.message);
-      checkinsUpserted += chunk.length;
-    }
+    const checkinsUpserted = await upsertRowsConcurrently(
+      supabase,
+      checkinsTable,
+      dedupedCheckinRows,
+      "crm_checkin_id",
+      upsertBatchSize,
+      upsertConcurrency,
+    );
 
     // Reconcile deletions strictly within [input.dateFrom, input.dateTo]: after a successful,
     // non-empty fetch, any crm_visit_id that exists in the mirror for this window but was NOT

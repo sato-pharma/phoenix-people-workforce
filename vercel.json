@@ -26,6 +26,9 @@
     },
     "app/api/cron/ireports360-visits-reconcile/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/ireports360-visits-sync/route.ts": {
+      "maxDuration": 300
     }
   }
 }
