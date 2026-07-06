@@ -176,6 +176,7 @@ export async function assembleDraft(
     if (isDeferred(empAdjustments)) continue;
 
     const source = lookupSource(sources, employee.hrId);
+    const feeder = feeders.get(compact);
     const row = buildRowForEmployee({
       employee,
       source,
@@ -184,6 +185,12 @@ export async function assembleDraft(
       period,
       index,
       statutory: { config: statutoryConfig, insuranceWage: insuranceWages.get(compact) ?? null },
+      resignation: feeder?.leaverLastWorkingDate
+        ? {
+            lastWorkingDate: feeder.leaverLastWorkingDate,
+            unpaidDaysInSpan: feeder.unpaidDaysBeforeLastWorkingDate,
+          }
+        : null,
     });
     if (!row) continue;
 
