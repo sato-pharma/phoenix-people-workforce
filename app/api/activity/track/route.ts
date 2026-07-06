@@ -48,20 +48,25 @@ export async function POST(request: NextRequest) {
     }
 
     const events = extractEvents(body).slice(0, MAX_EVENTS_PER_REQUEST);
-    for (const event of events) {
-      const path = typeof event?.path === "string" ? event.path : "";
-      if (!path) continue;
-      await recordPageView({
-        loginId: access.loginId ?? null,
-        hrId: access.hrId ?? null,
-        sessionId,
-        role: access.role ?? null,
-        path,
-        durationMs: Number(event.durationMs) || 0,
-        enteredAtIso: typeof event.enteredAt === "string" ? event.enteredAt : null,
-        userAgent,
-      });
-    }
+    // Each recordPageView is an independent insert with its own internal error handling
+    // (never throws) — running the batch in parallel instead of one at a time is what keeps
+    // this "fire-and-forget ingest" endpoint fast under a full 25-event batch.
+    await Promise.all(
+      events
+        .filter((event) => typeof event?.path === "string" && event.path)
+        .map((event) =>
+          recordPageView({
+            loginId: access.loginId ?? null,
+            hrId: access.hrId ?? null,
+            sessionId,
+            role: access.role ?? null,
+            path: event.path as string,
+            durationMs: Number(event.durationMs) || 0,
+            enteredAtIso: typeof event.enteredAt === "string" ? event.enteredAt : null,
+            userAgent,
+          }),
+        ),
+    );
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
