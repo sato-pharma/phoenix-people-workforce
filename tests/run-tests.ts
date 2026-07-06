@@ -79,6 +79,7 @@ import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.t
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
+import { runDoubleVisitReportExportTests } from "./double-visit-report-export.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
@@ -426,6 +427,7 @@ await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("action center weekly plans (approver inbox)", runActionCenterWeeklyPlansTests);
 await runTest("weekly plans round-3 features (bulk approve, export, autosave, timeline, notifications, a11y, virtualization)", runWeeklyPlansRound3FeaturesTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
+await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitReportExportTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("private calendar", runPrivateCalendarTests);

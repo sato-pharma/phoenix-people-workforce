@@ -7,6 +7,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
 import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
+import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
@@ -2026,6 +2027,116 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Last Visit", key: "lastDate", width: 14 },
   ];
   pairs.addRows(buildManagerMrPairs(data.visitLog));
+
+  for (const sheet of workbook.worksheets) {
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
+
+  return workbook;
+}
+
+// ── Double Visit Report export (filterable log, "Never Visited", "Probation") ───
+//
+// Plain-style export matching buildDoubleVisitExportWorkbook above — no charts/KPI-tile
+// design — so every export in this module looks and behaves the same way. `filtered` holds
+// whatever rows survived the SAME filter functions (src/lib/double-visit-analytics/
+// report-filters.ts) the on-screen workspace applies, so the file always matches the screen.
+// The KPI list itself comes from buildReportSummaryMetrics (report-filters.ts), shared with
+// the PDF builder, so the two export formats can never report different numbers.
+
+export async function buildDoubleVisitReportExportWorkbook(
+  data: DoubleVisitReportData,
+  filtered: {
+    logRows: DoubleVisitReportRow[];
+    neverVisitedRows: DoubleVisitFocusRosterEntry[];
+    probationRows: DoubleVisitFocusProbationEntry[];
+  },
+  activeFilters: Record<string, string>,
+) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Phoenix Workforce";
+  workbook.created = new Date();
+
+  const summary = workbook.addWorksheet("Executive Summary");
+  summary.columns = [
+    { header: "Metric", key: "metric", width: 34 },
+    { header: "Value", key: "value", width: 40 },
+  ];
+  summary.addRows([
+    { metric: "Date From", value: data.dateFrom },
+    { metric: "Date To", value: data.dateTo },
+    { metric: "Data Source", value: "Live iReports360 Visits Report (auto-synced)" },
+    { metric: "Active Filters", value: formatActiveFilters(activeFilters) },
+    ...buildReportSummaryMetrics(filtered),
+  ]);
+
+  const log = workbook.addWorksheet("Visit Log");
+  log.columns = [
+    { header: "Date", key: "date", width: 14 },
+    { header: "Double Visitor", key: "doubleVisitor", width: 26 },
+    { header: "Job Title", key: "role", width: 22 },
+    { header: "Visited MR", key: "visited", width: 26 },
+    { header: "Area", key: "area", width: 18 },
+    { header: "Region", key: "region", width: 18 },
+    { header: "Line", key: "line", width: 14 },
+    { header: "Period", key: "period", width: 10 },
+    { header: "Type", key: "kind", width: 12 },
+    { header: "Visits", key: "visits", width: 10 },
+  ];
+  log.addRows(
+    filtered.logRows.map((row) => ({
+      area: row.areaName ?? "—",
+      date: row.activityDate,
+      doubleVisitor: row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—",
+      kind: row.visitKind,
+      line: row.lineName ?? "—",
+      period: row.period,
+      region: row.regionName ?? "—",
+      role: row.doubleVisitorRole ?? "—",
+      visited: row.visitedName ?? row.visitedHrId ?? "—",
+      visits: row.visitCount,
+    })),
+  );
+
+  const neverVisited = workbook.addWorksheet("Never Visited");
+  neverVisited.columns = [
+    { header: "Name", key: "name", width: 28 },
+    { header: "Area", key: "area", width: 20 },
+    { header: "Hired", key: "hireDate", width: 14 },
+    { header: "Days Since Hire", key: "daysSinceHire", width: 16 },
+    { header: "Overdue (45+ Days)", key: "flagged", width: 18 },
+  ];
+  neverVisited.addRows(
+    filtered.neverVisitedRows.map((row) => ({
+      area: row.areaName ?? "—",
+      daysSinceHire: row.daysSinceHire ?? "—",
+      flagged: row.flagged ? "Yes" : "No",
+      hireDate: row.hireDate ?? "—",
+      name: row.name,
+    })),
+  );
+
+  const probation = workbook.addWorksheet("Probation Watchlist");
+  probation.columns = [
+    { header: "Name", key: "name", width: 28 },
+    { header: "Hired", key: "hireDate", width: 14 },
+    { header: "Probation End", key: "probationEndDate", width: 16 },
+    { header: "Days Left", key: "daysRemaining", width: 12 },
+    { header: "DV Count", key: "dvCount", width: 12 },
+    { header: "DV Status", key: "dvStatus", width: 14 },
+  ];
+  probation.addRows(
+    filtered.probationRows.map((row) => ({
+      daysRemaining: row.daysRemaining,
+      dvCount: row.dvCount,
+      dvStatus: row.dvDone === null ? "N/A" : row.dvDone ? "Done" : "Pending",
+      hireDate: row.hireDate,
+      name: row.name,
+      probationEndDate: row.probationEndDate,
+    })),
+  );
 
   for (const sheet of workbook.worksheets) {
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
