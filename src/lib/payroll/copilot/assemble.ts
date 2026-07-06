@@ -2,6 +2,8 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { roundCurrency } from "@/lib/payroll/money";
 import { calculatePayrollParts } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
+import { computeStatutory } from "@/lib/payroll/statutory/calculator";
+import type { StatutoryConfig } from "@/lib/payroll/statutory/types";
 import {
   salarySourceLookupKeys,
   type PayrollSalarySource,
@@ -81,6 +83,7 @@ type BuildRowInput = {
   adjustments: CopilotAdjustment[];
   period: CopilotPeriod;
   index: number;
+  statutory?: { config: StatutoryConfig; insuranceWage: number | null };
 };
 
 /**
@@ -91,14 +94,29 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   const { employee, source, recurring, adjustments, period, index } = input;
   if (isDeferred(adjustments)) return null;
 
-  const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+  let baseSalary = roundCurrency(source?.baseSalary ?? 0);
   const grossSalary = roundCurrency(source?.grossSalary ?? 0);
-  const netSalary = roundCurrency(source?.netSalary ?? 0);
-  const socialInsurance = roundCurrency(source?.socialInsurance ?? 0);
-  const employmentIncomeTax = roundCurrency(source?.employmentIncomeTax ?? 0);
+  let netSalary = roundCurrency(source?.netSalary ?? 0);
+  let socialInsurance = roundCurrency(source?.socialInsurance ?? 0);
+  let employmentIncomeTax = roundCurrency(source?.employmentIncomeTax ?? 0);
   const extraCostOfLiving = roundCurrency(source?.extraCostOfLiving ?? 0);
   const fuelAllowance = roundCurrency(source?.fuelAllowance ?? 0);
   const paymentMode = source?.paymentMode ?? "two_parts";
+
+  // Phase 2: compute statutory SI + income tax when a per-employee insurance
+  // wage is configured, then derive base/net from the model's own relationships
+  // (gross = base + SI + tax; net = base + ECOL + fuel), using gross as the fixed
+  // anchor. Without an insurance wage the carried values are kept (Phase 1).
+  if (input.statutory && input.statutory.insuranceWage != null && grossSalary > 0) {
+    const statutory = computeStatutory(
+      { monthlyGross: grossSalary, insuranceWage: input.statutory.insuranceWage },
+      input.statutory.config,
+    );
+    socialInsurance = statutory.socialInsurance;
+    employmentIncomeTax = statutory.incomeTax;
+    baseSalary = roundCurrency(grossSalary - socialInsurance - employmentIncomeTax);
+    netSalary = roundCurrency(baseSalary + extraCostOfLiving + fuelAllowance);
+  }
 
   // Additive components the Copilot fills; feeder-imported columns stay 0 in P1.
   let bonus = 0;
