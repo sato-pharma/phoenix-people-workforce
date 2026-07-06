@@ -31,6 +31,7 @@ import { evaluateEmployeeFlags } from "./flags.ts";
 import { parseCeoReply } from "./llm.ts";
 import { applyActions } from "./negotiation.ts";
 import { consumeRecurringForPeriod, listRecurringForPeriod } from "./recurring.ts";
+import { buildSettledSalaryDeductionTotals } from "./vacation-settlement.ts";
 import type {
   CopilotAdjustment,
   CopilotFlag,
@@ -143,8 +144,17 @@ export async function assembleDraft(
   period: CopilotPeriod,
   adjustments: CopilotAdjustment[],
 ): Promise<CopilotDraftState> {
-  const [directory, sources, recurring, feeders, priorRecords, statutoryConfig, insuranceWages, approvedDeductions] =
-    await Promise.all([
+  const [
+    directory,
+    sources,
+    recurring,
+    feeders,
+    priorRecords,
+    statutoryConfig,
+    insuranceWages,
+    approvedDeductions,
+    settledVacationSalaryDeductions,
+  ] = await Promise.all([
       getEmployeeDirectory(),
       getPayrollSalarySourcesByHrId(period),
       listRecurringForPeriod(period),
@@ -153,6 +163,7 @@ export async function assembleDraft(
       getStatutoryConfigForPeriod(period),
       loadInsuranceWages(),
       buildApprovedDeductionTotals(period),
+      buildSettledSalaryDeductionTotals(period),
     ]);
 
   const eligible = directory.employees.filter(
@@ -194,6 +205,7 @@ export async function assembleDraft(
           }
         : null,
       approvedDeductions: approvedDeductions.get(compact),
+      settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),
     });
     if (!row) continue;
 
