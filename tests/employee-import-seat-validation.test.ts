@@ -136,4 +136,56 @@ export function runEmployeeImportSeatValidationTests() {
     existingCrmUsernameOwner.validationErrors.some((issue) => issue.code === "crm_username_already_assigned"),
     true,
   );
+
+  // "Head Office" is a two-word line name that slugifies to "head_office" — a distinct slug from
+  // the single-word "office" key lineRules already mapped. Regression guard for that gap.
+  const headOfficeLine = validateEmployeeImportRows([
+    employeeRow({ Area: "", HR_ID: "T-011", Line: "Head Office" }),
+  ]);
+
+  assert.equal(
+    headOfficeLine.validationErrors.some((issue) => issue.code === "invalid_line"),
+    false,
+    headOfficeLine.validationErrors.find((issue) => issue.code === "invalid_line")?.message ?? "expected no invalid_line error",
+  );
+  assert.equal(headOfficeLine.failedRows, 0);
+
+  // The organogram's own areas table is the source of truth, not the 40-code Sales-geography
+  // reconciliation list — these are real pre-unification duplicate rows still assigned to active
+  // employees in production (confirmed live: head_office=13, delta_2=3, alex_behiera=1 employees).
+  // They must resolve via existingState.areaCodes even though they're absent from the official map.
+  const legacyLiveAreas = validateEmployeeImportRows(
+    [
+      employeeRow({ Area: "Head office", HR_ID: "T-012", Line: "Head Office" }),
+      employeeRow({ Area: "Delta (2)", HR_ID: "T-013" }),
+      employeeRow({ Area: "Alex - Behiera", HR_ID: "T-014" }),
+    ],
+    {
+      existingState: {
+        areaCodes: new Set(["head_office", "delta_2", "alex_behiera"]),
+      },
+    },
+  );
+
+  assert.equal(
+    legacyLiveAreas.validationErrors.some((issue) => issue.code === "invalid_area"),
+    false,
+    legacyLiveAreas.validationErrors.find((issue) => issue.code === "invalid_area")?.message ?? "expected no invalid_area error",
+  );
+
+  // An area slug that matches neither the official reconciliation map NOR any known organogram row
+  // (a genuine typo/unofficial name) must still be blocked.
+  const trulyUnofficialArea = validateEmployeeImportRows(
+    [employeeRow({ Area: "Not A Real Area", HR_ID: "T-015" })],
+    {
+      existingState: {
+        areaCodes: new Set(["head_office", "delta_2", "alex_behiera"]),
+      },
+    },
+  );
+
+  assert.equal(
+    trulyUnofficialArea.validationErrors.some((issue) => issue.code === "invalid_area"),
+    true,
+  );
 }

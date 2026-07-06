@@ -573,8 +573,14 @@ function resolveGlobalLine(
 }
 
 /**
- * Area is a governed global lookup, same as line — an import must reference one of the 40 official
- * Sales-geography areas, never auto-create a new area from a typo or unrecognized spelling.
+ * Area is a governed global lookup, same as line — an import must reference an area that already
+ * exists in the organogram (public.areas), never auto-create a new one from a typo or unrecognized
+ * spelling. The 40-code Sales-geography reconciliation list is the PREFERRED mapping (it collapses
+ * historical duplicates onto one canonical code), but it isn't exhaustive: some pre-unification
+ * duplicate rows (e.g. "Alex - Behiera", "Delta (2)", "Head office") were deliberately left
+ * unreconciled and are still assigned to real, active employees in the organogram today. Those must
+ * still resolve — the organogram's own area table is the source of truth here, not the Sales
+ * geography master, so fall back to the raw slug whenever it already matches a live organogram row.
  */
 function resolveGlobalArea(
   record: EmployeeImportRecord,
@@ -590,18 +596,19 @@ function resolveGlobalArea(
   const slug = record.codes.areaCode;
   const officialCode = slug ? OFFICIAL_AREA_CODE_BY_SLUG[slug] : undefined;
   const knownCodes = options.existingState?.areaCodes;
+  const resolvedCode = officialCode ?? (slug && knownCodes?.has(slug) ? slug : undefined);
 
-  if (!officialCode || (knownCodes && !knownCodes.has(officialCode))) {
+  if (!resolvedCode || (knownCodes && !knownCodes.has(resolvedCode))) {
     record.codes.areaCode = null;
     return {
       rowNumber: record.rowNumber,
       field: "area" as const,
       code: "invalid_area",
-      message: `Area "${areaText}" is not one of the 40 official Sales-geography areas. Use the exact area name/code from the master.`,
+      message: `Area "${areaText}" is not a recognized area in the organogram. Use the exact area name/code from the organogram's area master.`,
     };
   }
 
-  record.codes.areaCode = officialCode;
+  record.codes.areaCode = resolvedCode;
   return null;
 }
 
