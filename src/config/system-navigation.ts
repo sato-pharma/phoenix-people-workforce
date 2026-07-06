@@ -3,6 +3,7 @@ import {
   Archive,
   BellRing,
   BriefcaseBusiness,
+  Bug,
   Building2,
   CalendarCheck,
   CalendarClock,
@@ -197,6 +198,7 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
+      { href: "/admin/error-monitor", icon: Bug, label: "Error Monitor", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
       { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
       { href: "/admin/synthetic-journeys", icon: HeartPulse, label: "Synthetic Journeys", permissions: [{ resource: "synthetic_journeys" }], roles: ["Super Admin"] },

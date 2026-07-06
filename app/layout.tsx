@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
 import "./globals.css";
@@ -40,6 +41,7 @@ export default function RootLayout({
       <body className="min-h-full bg-bg font-sans text-text">
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
+        <GlobalErrorReporter />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
