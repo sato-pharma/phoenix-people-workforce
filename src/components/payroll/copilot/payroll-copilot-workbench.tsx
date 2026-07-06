@@ -331,7 +331,7 @@ function RunWorkspace(props: {
   onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
-  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint">("negotiation");
+  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm">("negotiation");
   if (!draft) return null;
 
   return (
@@ -358,6 +358,7 @@ function RunWorkspace(props: {
           [
             { key: "negotiation", label: "Negotiation" },
             { key: "fingerprint", label: "Fingerprint Deductions" },
+            { key: "crm", label: "CRM Deductions" },
           ] as const
         ).map((tab) => (
           <button
@@ -381,6 +382,13 @@ function RunWorkspace(props: {
           endpoint="fingerprint"
           title="Fingerprint / Attendance Deductions"
           valueLabel="Days/Hours"
+        />
+      ) : activeTab === "crm" ? (
+        <DeductionReviewTable
+          runId={view.run.id}
+          endpoint="crm"
+          title="CRM No-Activity Deductions"
+          valueLabel="No-Activity Days"
         />
       ) : (
       <div className="grid gap-6 lg:grid-cols-2">
