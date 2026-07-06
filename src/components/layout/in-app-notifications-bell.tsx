@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, CheckCheck, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
@@ -123,6 +123,15 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
     }).catch(() => undefined);
   }
 
+  async function clearAll() {
+    setNotifications([]);
+    await fetch("/api/notifications/in-app", {
+      body: JSON.stringify({ clearAll: true }),
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+    }).catch(() => undefined);
+  }
+
   const panelText = {
     border: isAdminMode ? "border-[#333333]" : "border-[#E2E8F0]",
     bg: isAdminMode ? "bg-[#050505]" : "bg-white",
@@ -149,7 +158,11 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
       >
         <Bell className="h-[18px] w-[18px]" />
         {unreadCount > 0 ? (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#F97316] ring-2 ring-white" />
+          <span
+            aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
+            className="nav-badge-alarm absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#F97316] ring-2 ring-white"
+            role="status"
+          />
         ) : null}
       </button>
 
@@ -180,6 +193,19 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                   type="button"
                 >
                   <CheckCheck className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                </button>
+                <button
+                  aria-label="Clear all notifications"
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition disabled:opacity-40",
+                    panelText.border,
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                  )}
+                  disabled={!hasNotifications}
+                  onClick={() => void clearAll()}
+                  type="button"
+                >
+                  <Trash2 className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
                 </button>
                 <button
                   aria-label="Refresh notifications"

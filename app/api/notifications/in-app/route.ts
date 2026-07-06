@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
-import { listInAppNotificationsForViewer, markAllInAppNotificationsRead, markInAppNotificationRead } from "@/lib/notifications/in-app";
+import {
+  archiveAllInAppNotifications,
+  listInAppNotificationsForViewer,
+  markAllInAppNotificationsRead,
+  markInAppNotificationRead,
+} from "@/lib/notifications/in-app";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -36,6 +41,9 @@ export async function PATCH(request: Request) {
     const body = await request.json().catch(() => ({}));
     if (body.markAll === true) {
       return NextResponse.json({ data: await markAllInAppNotificationsRead(access), success: true });
+    }
+    if (body.clearAll === true) {
+      return NextResponse.json({ data: await archiveAllInAppNotifications(access), success: true });
     }
 
     const id = typeof body.id === "string" ? body.id : "";

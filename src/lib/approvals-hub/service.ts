@@ -31,6 +31,7 @@ import type {
   WeeklyPlanCalendarItem,
   WeeklyPlanDetail,
 } from "@/components/action-center/types";
+import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 
 /**
  * Approvals Hub — Vacation & Excuse responder service (Phase 1).
@@ -216,6 +217,18 @@ export async function countVacationAwaiting(access: AccessContext): Promise<numb
   }
 }
 
+// True when at least one awaiting vacation request has breached its SLA — drives the sidebar
+// alarm badge's graduated urgency (see NavBadge in components/layout/sidebar.tsx).
+export async function isVacationAwaitingOverdue(access: AccessContext): Promise<boolean> {
+  try {
+    const { awaiting } = await getVacationApprovalsForResponder(access);
+    return awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue");
+  } catch (error) {
+    console.error("[approvals-hub] isVacationAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return false;
+  }
+}
+
 // ── Excuse buckets (single-step: no "coming to you") ──────────────────────────
 
 export type ExcuseApprovalsBuckets = {
@@ -243,6 +256,17 @@ export async function countExcuseAwaiting(access: AccessContext): Promise<number
   } catch (error) {
     console.error("[approvals-hub] countExcuseAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return 0;
+  }
+}
+
+// True when at least one awaiting excuse has breached its SLA (see isVacationAwaitingOverdue).
+export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<boolean> {
+  try {
+    const { awaiting } = await getExcuseApprovalsForResponder(access);
+    return awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue");
+  } catch (error) {
+    console.error("[approvals-hub] isExcuseAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return false;
   }
 }
 
@@ -809,6 +833,17 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   awaiting.sort(byMostOverdue);
   upcoming.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return { awaiting, upcoming };
+}
+
+// True when at least one awaiting plan has breached its SLA (see isVacationAwaitingOverdue).
+export async function isPlanAwaitingOverdue(access: AccessContext): Promise<boolean> {
+  try {
+    const { awaiting } = await getPlanApprovalsForResponder(access);
+    return awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue");
+  } catch (error) {
+    console.error("[approvals-hub] isPlanAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return false;
+  }
 }
 
 export async function countPlanAwaiting(access: AccessContext): Promise<number> {

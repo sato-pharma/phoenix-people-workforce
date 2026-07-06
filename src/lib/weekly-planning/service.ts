@@ -1327,6 +1327,10 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
   if (primary.length === 0) return;
   await notifyRecipients({
     actionUrl: `/admin/approvals/plan/${plan.id}`,
+    // Tags this copy as awareness-only (vs. the manager's action-needed copy of the same
+    // eventType) so the in-app bell's auto-archive-on-decide logic never treats HR's "FYI, a
+    // plan was submitted" ping as a stale pending-action item — see notifications/in-app.ts.
+    additionalMetadata: { audience: "hr_awareness" },
     emailMode: "none",
     eventType: "plan_submitted",
     message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
