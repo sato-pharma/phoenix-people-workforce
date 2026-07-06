@@ -396,4 +396,25 @@ export function runApprovalsHubTests() {
   assert.match(planDetailCmp, /<PlanPeriodBadge/, "the detail shows the period status badge");
   const planContext = readFileSync("src/components/approvals-hub/plan-approver-context.tsx", "utf8");
   assert.match(planContext, /\/api\/approvals-hub\/employee-context/, "approver context reuses the existing employee-context endpoint, not a new backend");
+
+  // ── Sidebar badge graduated urgency (SLA-overdue → red/faster pump) ───────────
+  assert.match(svc, /export async function isVacationAwaitingOverdue/, "vacation exposes an SLA-overdue check for the sidebar badge");
+  assert.match(svc, /export async function isExcuseAwaitingOverdue/, "excuse exposes an SLA-overdue check for the sidebar badge");
+  assert.match(svc, /export async function isPlanAwaitingOverdue/, "plan exposes an SLA-overdue check for the sidebar badge");
+  assert.match(svc, /slaTone\(row\.slaAgeDays, APPROVALS_SLA_THRESHOLDS\.leave\)/, "vacation overdue check reuses the shared SLA threshold, not a hardcoded number");
+  assert.match(svc, /slaTone\(daysSinceCalendar\(req\.createdAt\), APPROVALS_SLA_THRESHOLDS\.excuse\)/, "excuse overdue check reuses the shared SLA threshold and age helper");
+  assert.match(svc, /slaTone\(item\.ageDays, APPROVALS_SLA_THRESHOLDS\.plan\)/, "plan overdue check reuses the shared SLA threshold");
+
+  const vacationCountRoute = readFileSync("app/api/approvals/vacation/pending-count/route.ts", "utf8");
+  assert.match(vacationCountRoute, /isVacationAwaitingOverdue/, "vacation pending-count route computes overdue");
+  assert.match(vacationCountRoute, /NextResponse\.json\(\{ count, overdue \}/, "vacation pending-count route returns overdue alongside count");
+  const excuseCountRoute = readFileSync("app/api/approvals/excuse/pending-count/route.ts", "utf8");
+  assert.match(excuseCountRoute, /isExcuseAwaitingOverdue/, "excuse pending-count route computes overdue");
+  const planCountRoute = readFileSync("app/api/approvals/plan/pending-count/route.ts", "utf8");
+  assert.match(planCountRoute, /isPlanAwaitingOverdue/, "plan pending-count route computes overdue");
+
+  const navBadgeStore = readFileSync("src/lib/nav-badge-store.ts", "utf8");
+  assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean\) => void;/, "the badge poll store threads overdue through to listeners");
+
+  assert.match(sidebarSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
 }

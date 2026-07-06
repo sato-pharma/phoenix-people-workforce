@@ -545,6 +545,25 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
   60%       { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
 }
 
+/* Nav-badge "alarm" pump — scale beat layered on top of the breathe-orange ring
+   below, for a pending-count badge that a manager can't miss in the sidebar. */
+@keyframes nav-badge-alarm-pump {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.22); }
+}
+
+/* Graduated urgency: once an awaiting item breaches its SLA, the pump goes faster and
+   bigger, paired with a red breathe ring instead of orange (nav-badge-alarm-overdue). */
+@keyframes nav-badge-alarm-pump-urgent {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.32); }
+}
+
+@keyframes ep-breathe-red {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(220, 38, 38, 0.65); }
+  60%       { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+
 @keyframes ep-count-reveal {
   from { opacity: 0; transform: translateY(7px); }
   to   { opacity: 1; transform: translateY(0);   }
@@ -631,6 +650,17 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
 
 .employee-portal-nav-pending-dot {
   animation: ep-breathe-orange 1.2s ease-in-out infinite;
+}
+
+/* Approvals Hub sidebar badge (both shells) — pumps + glows while count > 0, so a
+   new/pending approval is visible on the tab itself, not just as a static number. */
+.nav-badge-alarm {
+  animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;
+}
+
+/* Same badge once at least one awaiting item is SLA-overdue — faster, bigger, red. */
+.nav-badge-alarm-overdue {
+  animation: nav-badge-alarm-pump-urgent 0.7s ease-in-out infinite, ep-breathe-red 0.7s ease-in-out infinite;
 }
 
 .phoenix-route-transition-indicator {
@@ -751,6 +781,8 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
   .employee-portal-route-loading,
   .employee-portal-skeleton,
   .employee-portal-nav-pending-dot,
+  .nav-badge-alarm,
+  .nav-badge-alarm-overdue,
   .phoenix-route-transition-bar {
     animation: none;
   }

@@ -10,11 +10,12 @@
  *  - SSR-safe: all browser globals are guarded before access.
  */
 
-type Listener = (count: number | null) => void;
+type Listener = (count: number | null, overdue: boolean) => void;
 
 interface Channel {
   count: number | null;
   prevCount: number | null;
+  overdue: boolean;
   inFlight: Promise<void> | null;
   listeners: Set<Listener>;
   intervalId: ReturnType<typeof setInterval> | null;
@@ -33,10 +34,11 @@ function fetchAndBroadcast(src: string): void {
   ch.inFlight = globalThis
     .fetch(src)
     .then((r) => r.json())
-    .then((d: { count?: number }) => {
+    .then((d: { count?: number; overdue?: boolean }) => {
       const channel = channels.get(src);
       if (!channel || typeof d.count !== "number") return;
       const newCount = d.count;
+      const overdue = d.overdue === true;
       if (
         channel.prevCount !== null &&
         newCount > channel.prevCount &&
@@ -54,7 +56,8 @@ function fetchAndBroadcast(src: string): void {
       }
       channel.prevCount = newCount;
       channel.count = newCount;
-      channel.listeners.forEach((l) => l(newCount));
+      channel.overdue = overdue;
+      channel.listeners.forEach((l) => l(newCount, overdue));
     })
     .catch(() => {})
     .finally(() => {
@@ -80,6 +83,7 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
     ch = {
       count: null,
       prevCount: null,
+      overdue: false,
       inFlight: null,
       listeners: new Set(),
       intervalId: null,
@@ -91,7 +95,7 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
 
   // Deliver cached count immediately so the badge doesn't blank on re-mount.
   if (ch.count !== null) {
-    listener(ch.count);
+    listener(ch.count, ch.overdue);
   }
 
   // Only the first subscriber starts the polling infrastructure.

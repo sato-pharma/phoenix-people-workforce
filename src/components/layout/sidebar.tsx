@@ -323,15 +323,59 @@ function parseItemOrder(raw: string): Record<string, string[]> | null {
 // Exported: reused verbatim by the employee-portal sidebar (employee-portal-layout.tsx) so both
 // shells share the exact same polling client (src/lib/nav-badge-store.ts) — no separate portal
 // badge mechanism.
-export function NavBadge({ src }: { src: string }): ReactNode {
+export function NavBadge({ compact = false, src }: { compact?: boolean; src: string }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
-  useEffect(() => subscribeNavBadge(src, setCount), [src]);
+  const [overdue, setOverdue] = useState(false);
+  useEffect(
+    () =>
+      subscribeNavBadge(src, (nextCount, nextOverdue) => {
+        setCount(nextCount);
+        setOverdue(nextOverdue);
+      }),
+    [src],
+  );
   if (!count) return null;
+  // Graduated urgency: once any awaiting item breaches its SLA, the pump switches from
+  // orange to a faster, redder alarm — see APPROVALS_SLA_THRESHOLDS and isXAwaitingOverdue.
+  const alarmClass = overdue ? "nav-badge-alarm-overdue bg-red-600" : "nav-badge-alarm bg-orange-500";
+  const label = `${count} pending — action required${overdue ? ", overdue" : ""}`;
+  if (compact) {
+    // Icon-rail mode has no room for a label + count pill — a pumping dot on the
+    // icon itself is the only way a pending item is visible when collapsed.
+    return (
+      <span
+        aria-label={label}
+        className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-900", alarmClass)}
+        role="status"
+      />
+    );
+  }
   return (
-    <span className="ml-auto min-w-[20px] rounded-full bg-orange-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white">
+    <span
+      aria-label={label}
+      className={cn("ml-auto min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white", alarmClass)}
+      role="status"
+    >
       {count > 99 ? "99+" : count}
     </span>
   );
+}
+
+// Shared between the expanded label row and the collapsed icon-rail so both
+// surfaces recognize the same set of navBadge values without duplicating the switch.
+function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: NavigationSectionItem["navBadge"] }): ReactNode {
+  switch (navBadge) {
+    case "approvals-hub-pending":
+      return <NavBadge compact={compact} src="/api/approvals-hub/pending-count" />;
+    case "vacation-approvals-pending":
+      return <NavBadge compact={compact} src="/api/approvals/vacation/pending-count" />;
+    case "excuse-approvals-pending":
+      return <NavBadge compact={compact} src="/api/approvals/excuse/pending-count" />;
+    case "plan-approvals-pending":
+      return <NavBadge compact={compact} src="/api/approvals/plan/pending-count" />;
+    default:
+      return null;
+  }
 }
 
 // ── A single navigation entry ────────────────────────────────────────────────
@@ -386,7 +430,7 @@ function NavRow({
         {active && <span className={cn("absolute left-0 w-[3px] bg-[#F97316]", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
         <span
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
+            "relative flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
             dark
               ? active
                 ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
@@ -397,13 +441,12 @@ function NavRow({
           )}
         >
           <Icon className="h-4 w-4" />
+          {rail && <ApprovalNavBadge compact navBadge={item.navBadge} />}
         </span>
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
-            {item.navBadge === "approvals-hub-pending" && <NavBadge src="/api/approvals-hub/pending-count" />}
-            {item.navBadge === "vacation-approvals-pending" && <NavBadge src="/api/approvals/vacation/pending-count" />}
-            {item.navBadge === "excuse-approvals-pending" && <NavBadge src="/api/approvals/excuse/pending-count" />}
+            <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
           </span>
         )}
       </Link>
