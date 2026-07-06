@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,10 @@ type RefreshRun = {
   finishedAt: string | null;
   error: string | null;
 };
+
+// A stuck backend job must never poll this endpoint forever - see the incident-response
+// standards on unbounded client-side polling.
+const MAX_POLL_MS = 30 * 60 * 1000;
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", {
@@ -33,6 +37,7 @@ export function RoiRefreshPanel({
   const [run, setRun] = useState<RefreshRun | null>(null);
   const [busy, setBusy] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const pollStartedAtRef = useRef<number | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -51,10 +56,23 @@ export function RoiRefreshPanel({
     void fetchStatus();
   }, [fetchStatus]);
 
-  // Poll every 5s while a refresh is running.
+  // Poll every 5s while a refresh is running, capped at MAX_POLL_MS so a job stuck "running"
+  // on the backend can't poll this endpoint forever.
   useEffect(() => {
-    if (run?.status !== "running") return;
-    const id = setInterval(() => void fetchStatus(), 5_000);
+    if (run?.status !== "running") {
+      pollStartedAtRef.current = null;
+      return;
+    }
+    if (pollStartedAtRef.current === null) pollStartedAtRef.current = Date.now();
+    const id = setInterval(() => {
+      const startedAt = pollStartedAtRef.current;
+      if (startedAt !== null && Date.now() - startedAt > MAX_POLL_MS) {
+        clearInterval(id);
+        setFetchError("Refresh is taking longer than expected — check back later.");
+        return;
+      }
+      void fetchStatus();
+    }, 5_000);
     return () => clearInterval(id);
   }, [run?.status, fetchStatus]);
 

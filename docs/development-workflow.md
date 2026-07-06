@@ -49,3 +49,4 @@ Key topics covered:
 - [Editing Guide](editing-guide.md) -- where to make edits, quality gate workflow
 - [Scripts Reference](scripts.md) -- all npm scripts with safety classifications
 - [Testing](testing.md) -- test strategy and adding new tests
+- [Performance Engineering Standards](performance-engineering-standards.md) -- mandatory query, caching, and data-lifecycle rules from the 2026-07 production incident
