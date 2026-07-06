@@ -1,8 +1,11 @@
 "use client";
 
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
 
 type RouteErrorStateProps = {
   description: string;
@@ -19,6 +22,15 @@ export function RouteErrorState({
   reset,
   title,
 }: RouteErrorStateProps) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (error) {
+      reportClientError({ digest: error.digest ?? null, error, route: pathname });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+
   return (
     <div className="flex min-h-[420px] items-center justify-center rounded-[26px] border border-rose-200 bg-[linear-gradient(180deg,#fff7f7_0%,#ffffff_100%)] p-6 text-center shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
       <div className="max-w-xl space-y-5">

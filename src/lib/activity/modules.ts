@@ -28,6 +28,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/admin/system-cleanup", key: "system_cleanup", label: "System Cleanup" },
   { prefix: "/admin/monitoring", key: "monitoring", label: "Monitoring" },
   { prefix: "/admin/logs", key: "audit_logs", label: "Audit Logs" },
+  { prefix: "/admin/error-monitor", key: "error_monitor", label: "Error Monitor" },
   { prefix: "/admin/access", key: "users_access", label: "Users & Access" },
   { prefix: "/admin/workflow-control", key: "workflow_control", label: "Workflow Control" },
   { prefix: "/admin/private-calendars", key: "private_calendars", label: "Private Calendars" },
