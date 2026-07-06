@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
+import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
 type Flag = {
   employeeHrId: string;
@@ -331,7 +332,7 @@ function RunWorkspace(props: {
   onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
-  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm">("negotiation");
+  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm" | "vacation">("negotiation");
   if (!draft) return null;
 
   return (
@@ -359,6 +360,7 @@ function RunWorkspace(props: {
             { key: "negotiation", label: "Negotiation" },
             { key: "fingerprint", label: "Fingerprint Deductions" },
             { key: "crm", label: "CRM Deductions" },
+            { key: "vacation", label: "Unpaid Vacation" },
           ] as const
         ).map((tab) => (
           <button
@@ -390,6 +392,8 @@ function RunWorkspace(props: {
           title="CRM No-Activity Deductions"
           valueLabel="No-Activity Days"
         />
+      ) : activeTab === "vacation" ? (
+        <UnpaidVacationTab runId={view.run.id} />
       ) : (
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-4">

@@ -249,7 +249,7 @@ type VacationSlaSettingsDbRow = {
   reminder_interval_days?: number | string | null;
 };
 
-type HrRecipient = {
+export type HrRecipient = {
   email: string | null;
   hrId: string;
   name: string;
@@ -1401,7 +1401,12 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrRecipient[]> {
+/**
+ * Exported so other domains (Payroll Copilot's Unpaid Vacation review tab)
+ * can CC HR the same way every vacation notification already does, without
+ * duplicating the "who is HR" (active Super Admin) resolution query.
+ */
+export async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrRecipient[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
@@ -2116,6 +2121,48 @@ async function resolveManagerEmail(directory: EmployeeDirectoryData, managerHrId
   return manager?.workEmail ?? null;
 }
 
+/**
+ * Days already settled against vacation balance via the Payroll Copilot's
+ * Unpaid Vacation tab (src/lib/payroll/copilot/vacation-settlement.ts) whose
+ * underlying request start_date falls in the same balance-period window —
+ * these must count as "used" for any later balance check the same way an
+ * ordinary paid v2_vacation_requests row does. Defensive: table may not
+ * exist yet on every environment; a missing-relation error is treated as
+ * zero rather than breaking every vacation balance calculation.
+ */
+async function balanceSettledDaysInPeriod(input: {
+  employeeHrId: string;
+  periodStart: string;
+  periodEnd: string;
+}): Promise<number> {
+  const compactHrId = input.employeeHrId.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!compactHrId) return 0;
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("payroll_copilot_vacation_settlements")
+      .select("balance_days_consumed")
+      .eq("employee_hr_id_compact", compactHrId)
+      .eq("settlement_method", "balance")
+      .is("superseded_at", null)
+      .gte("start_date", input.periodStart)
+      .lt("start_date", input.periodEnd);
+
+    if (error) {
+      const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+      if (message.includes("could not find the table") || message.includes("schema cache")) return 0;
+      throw error;
+    }
+    return (data ?? []).reduce(
+      (sum, row) => sum + numberValue((row as { balance_days_consumed?: unknown }).balance_days_consumed),
+      0,
+    );
+  } catch (error) {
+    console.error("[vacation:service] balance-settled days lookup failed:", error);
+    return 0;
+  }
+}
+
 async function approvedPaidDaysInPeriod(input: {
   employeeHrId: string;
   excludeRequestId?: string;
@@ -2143,16 +2190,33 @@ async function approvedPaidDaysInPeriod(input: {
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
 
-  return (data ?? [])
+  const requestDays = (data ?? [])
     .filter((row) => String((row as Record<string, unknown>).id) !== input.excludeRequestId)
     .reduce((sum, row) => {
       const record = row as Record<string, unknown>;
       if (record.paid_duration_days != null) return sum + numberValue(record.paid_duration_days);
       return record.payment_status === "paid" ? sum + numberValue(record.duration_days) : sum;
     }, 0);
+
+  // Only annual/emergency balance is settleable via the Copilot's Unpaid
+  // Vacation tab today — matches the vacation_type grouping just above.
+  if (input.vacationType !== "annual" && input.vacationType !== "emergency") return requestDays;
+
+  const settledDays = await balanceSettledDaysInPeriod({
+    employeeHrId: input.employeeHrId,
+    periodEnd: input.periodEnd,
+    periodStart: input.periodStart,
+  });
+  return requestDays + settledDays;
 }
 
-async function calculatePaymentForRequest(input: {
+/**
+ * Exported so other domains (Payroll Copilot's Unpaid Vacation review tab)
+ * can ask "does this employee currently have enough balance for N days" the
+ * same way a live request submission would be evaluated, without
+ * duplicating the balance-period/approved-days query logic above.
+ */
+export async function calculatePaymentForRequest(input: {
   durationDays: number;
   employeeHrId: string;
   excludeRequestId?: string;

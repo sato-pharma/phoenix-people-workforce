@@ -105,6 +105,8 @@ type BuildRowInput = {
   resignation?: { lastWorkingDate: string; unpaidDaysInSpan: number } | null;
   /** Already-"Approved for Payroll" fingerprint/CRM decisions for this employee this period (see deductions-review.ts). */
   approvedDeductions?: { crm: number; fingerPrint: number };
+  /** Already-decided "deduct from salary" unpaid-vacation settlement amount for this employee this period (see vacation-settlement.ts). */
+  settledUnpaidVacationSalaryDeduction?: number;
 };
 
 /**
@@ -152,7 +154,10 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   let otherAdditions = 0;
   let loans = 0;
   let otherDeductions = 0;
-  let unpaidVacations = 0;
+  // Seeded from any already-decided "deduct from salary" Unpaid Vacation tab
+  // settlement (see vacation-settlement.ts); the chat-driven `prorate` case
+  // below still layers on top for employees handled the older way.
+  let unpaidVacations = roundCurrency(input.settledUnpaidVacationSalaryDeduction ?? 0);
   const incentive = 0;
   const expenses = 0;
   // Sum of already-"Approved for Payroll" decisions from the Deductions

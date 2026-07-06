@@ -12,7 +12,7 @@ import {
   vacationTypeLabel,
   vacationUnpaidReasonLabel,
 } from "@/lib/vacation/calculations";
-import type { VacationDecision, VacationRequestRecord } from "@/lib/vacation/types";
+import type { VacationDecision, VacationRequestRecord, VacationType } from "@/lib/vacation/types";
 
 type VacationManagerEmailInput = {
   cc?: string[];
@@ -408,6 +408,81 @@ export async function sendVacationResubmitConfirmationEmail(
     subject: "Your vacation request has been resubmitted",
     text: fallback.text,
     to: [input.employeeEmail],
+  });
+}
+
+type VacationBalanceSettlementEmailInput = {
+  employeeEmail: string;
+  managerEmail: string;
+  cc: string[];
+  /** Lean subset — the Payroll Copilot's own read of the unpaid request, not the full enriched VacationRequestRecord. */
+  request: {
+    durationDays: number;
+    employeeHrId: string;
+    employeeName: string;
+    endDate: string;
+    id: string;
+    startDate: string;
+    vacationType: VacationType;
+  };
+  /** The EGP amount that would have been deducted from salary — for display only, no deduction occurs. */
+  wouldHaveDeductedAmount: number;
+};
+
+/**
+ * Notifies the employee and their manager (CC: HR) when the CEO settles an
+ * unpaid-leave request's cost against vacation balance instead of deducting
+ * it from payroll (Payroll Copilot's Unpaid Vacation tab). Idempotent per
+ * request — the caller stamps `email_sent_at` on the settlement row and never
+ * calls this a second time for the same settlement.
+ */
+export async function sendVacationBalanceSettlementEmail(
+  input: VacationBalanceSettlementEmailInput,
+): Promise<SendPhoenixEmailResult> {
+  const duration = formatDays(input.request.durationDays);
+  const period = `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}`;
+  const amount = `EGP ${Math.round(input.wouldHaveDeductedAmount).toLocaleString("en-US")}`;
+  const heading = `Based on ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} leave (${period}, ${duration}), a deduction of ${amount} would normally apply to this month's payroll for the unpaid portion. The system administrator has approved settling this against the vacation balance instead — no salary deduction will occur.`;
+
+  const templated = await sendTemplatedEmail({
+    context: {
+      amount,
+      duration,
+      employeeHrId: input.request.employeeHrId,
+      employeeName: input.request.employeeName,
+      endDate: formatDate(input.request.endDate),
+      recipientName: input.request.employeeName,
+      startDate: formatDate(input.request.startDate),
+      subject: `Vacation balance settlement — ${input.request.employeeName}`,
+      vacationType: vacationTypeLabel(input.request.vacationType),
+    },
+    employeeHrId: input.request.employeeHrId,
+    fallbackTo: [input.employeeEmail, input.managerEmail],
+    // Engine-owned routing: employee + manager both get the notice, HR in CC.
+    overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail, input.managerEmail] },
+    templateKey: "vacation_balance_settlement",
+  });
+  if (!isTemplateUnavailableSkip(templated)) return templated;
+
+  const fallback = buildFallbackEmail({
+    heading,
+    rows: [
+      ["Employee", `${input.request.employeeName} (${input.request.employeeHrId})`],
+      ["Type", vacationTypeLabel(input.request.vacationType)],
+      ["Period", period],
+      ["Duration", duration],
+      ["Amount waived", amount],
+    ],
+    subject: `Vacation balance settlement — ${input.request.employeeName}`,
+    title: "Vacation balance settlement",
+  });
+  return sendPhoenixEmail({
+    cc: input.cc,
+    html: fallback.html,
+    idempotencyKey: `vacation:${input.request.id}:balance_settlement_fallback`,
+    subject: `Vacation balance settlement — ${input.request.employeeName}`,
+    text: fallback.text,
+    to: [input.employeeEmail, input.managerEmail],
   });
 }
 
