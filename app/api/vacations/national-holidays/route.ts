@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const now = new Date();
     const year = numberParam(url.searchParams.get("year")) || now.getFullYear();
     const month = numberParam(url.searchParams.get("month")) || now.getMonth() + 1;
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load Egyptian national holidays.";

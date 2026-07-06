@@ -71,7 +71,7 @@ import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1964,7 +1964,7 @@ async function loadNationalHolidayDates(start: string, end: string): Promise<str
     const dates = new Set<string>();
     for (const key of monthsSeen) {
       const [year, month] = key.split("-").map(Number);
-      const result = await getEgyptianNationalHolidays({ month, year });
+      const result = await getConfirmedNationalHolidays({ month, year });
       for (const holiday of result.holidays) {
         for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
           if (date >= start && date <= end) dates.add(date);

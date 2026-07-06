@@ -1,8 +1,7 @@
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
-import { applyHolidayOverrides, listHolidayOverridesOverlappingRange } from "@/lib/attendance/holiday-overrides";
 
 const workingDaysTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -93,8 +92,9 @@ function listMonthsInRange(dateFromIso: string, dateToIso: string): Array<{ mont
 
 /**
  * Loads national + company holidays for every month overlapping the range and
- * expands them into a per-day lookup. getEgyptianNationalHolidays is cached, so
- * repeated calls within a request are cheap.
+ * expands them into a per-day lookup. getConfirmedNationalHolidays (raw
+ * source + admin-confirmed observed/postponed overrides applied) is cached,
+ * so repeated calls within a request are cheap.
  */
 export async function buildAttendanceCalendarContext(input: {
   dateFromIso: string;
@@ -106,7 +106,7 @@ export async function buildAttendanceCalendarContext(input: {
   if (isIsoDate(input.dateFromIso) && isIsoDate(input.dateToIso)) {
     const months = listMonthsInRange(input.dateFromIso, input.dateToIso);
     const results = await Promise.all(
-      months.map((entry) => getEgyptianNationalHolidays(entry).catch(() => null)),
+      months.map((entry) => getConfirmedNationalHolidays(entry).catch(() => null)),
     );
     for (const result of results) {
       if (!result) {
@@ -121,13 +121,6 @@ export async function buildAttendanceCalendarContext(input: {
         }
       }
     }
-
-    // Admin-configured observed/postponed dates take precedence over the raw
-    // source date. Fails open to "no overrides" (the pre-existing behavior)
-    // if the table isn't reachable, so a config-table hiccup never breaks
-    // every attendance calendar consumer.
-    const overrides = await listHolidayOverridesOverlappingRange(input.dateFromIso, input.dateToIso).catch(() => []);
-    applyHolidayOverrides(holidaysByDate, overrides);
   }
 
   return { holidaysByDate, holidaySourceConnected, todayIso: cairoTodayIso() };

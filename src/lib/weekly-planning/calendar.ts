@@ -30,6 +30,10 @@ export type PlanningCalendarPlanItem = {
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
+  // Nickname-aware short name for compact UI (month-grid cells). Falls back to
+  // employeeName when no nickname is set; legal/audit contexts keep using
+  // employeeName / title instead.
+  employeeDisplayName: string;
   endDate: string;
   id: string;
   lineName: string | null;

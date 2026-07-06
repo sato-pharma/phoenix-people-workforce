@@ -197,6 +197,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
     area: "Munufia 2",
     conflictKey: planningConflictKey("2026-06-21", "Line A", "MR-1"),
     conflictWarning: null,
+    employeeDisplayName: "placeholder",
     employeeJobTitle: "Product Manager",
     endDate: "2026-06-21",
     lineName: "Line A",

@@ -95,20 +95,23 @@ function planSearchText(item: PlanningCalendarPlanItem) {
     .toLowerCase();
 }
 
+// Left-accent-bar tone per activity type, used by the month-grid pills. Kept as a
+// single className string (border-l accent + tint + text) so the color coding stays
+// aligned with the same activity semantics used in the List/Week agenda dots.
 function planTone(item: PlanningCalendarPlanItem) {
   if (item.conflictWarning) {
-    return "border-red-200 bg-red-50 text-red-800";
+    return "border-red-500 bg-red-50 text-red-800";
   }
   if (item.activityTitle === "Coaching") {
-    return "border-violet-200 bg-violet-50 text-violet-800";
+    return "border-violet-500 bg-violet-50 text-violet-800";
   }
   if (item.activityTitle === "Double Visit") {
-    return "border-blue-200 bg-blue-50 text-blue-800";
+    return "border-blue-500 bg-blue-50 text-blue-800";
   }
   if (item.activityTitle === "Training") {
-    return "border-amber-200 bg-amber-50 text-amber-800";
+    return "border-amber-500 bg-amber-50 text-amber-800";
   }
-  return "border-slate-200 bg-white text-slate-800";
+  return "border-slate-400 bg-slate-50 text-slate-800";
 }
 
 function conflictForDay(conflicts: PlanningCalendarConflict[], date: string) {
@@ -541,7 +544,7 @@ export function PlanningCalendar({
               const isToday = date === today;
               return (
                 <button
-                  className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[138px] ${
+                  className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[150px] ${
                     day.inMonth ? "bg-white" : "bg-slate-50"
                   } ${isSelected ? "ring-2 ring-inset ring-orange-500" : "hover:bg-orange-50/40"}`}
                   disabled={!date}
@@ -551,8 +554,8 @@ export function PlanningCalendar({
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span
-                      className={`flex h-6 w-6 items-center justify-center border text-xs font-black ${
-                        isToday ? "border-orange-600 bg-orange-600 text-white" : "border-transparent text-slate-700"
+                      className={`flex h-6 w-6 items-center justify-center border text-xs font-black transition-colors ${
+                        isToday ? "border-orange-600 bg-orange-600 text-white shadow-sm" : "border-transparent text-slate-700"
                       }`}
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
@@ -564,19 +567,30 @@ export function PlanningCalendar({
                     ) : null}
                   </div>
 
-                  <div className="mt-1 hidden space-y-1 sm:block">
+                  <div className="mt-1.5 hidden space-y-1.5 sm:block">
                     {dayHolidays.slice(0, 1).map((holiday) => (
-                      <div className="whitespace-nowrap border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] font-black text-emerald-800" key={holiday.id}>
-                        {holiday.title}
+                      <div
+                        className="border-l-4 border-emerald-500 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800 shadow-sm"
+                        key={holiday.id}
+                      >
+                        <p className="line-clamp-2 break-words leading-snug">{holiday.title}</p>
                       </div>
                     ))}
                     {dayPlans.slice(0, 3).map((item) => (
-                      <div className={`whitespace-nowrap border px-1.5 py-1 text-[10px] font-bold ${planTone(item)}`} key={item.id}>
-                        {item.title}
+                      <div
+                        className={`border-l-4 px-2 py-1 shadow-sm transition-shadow hover:shadow ${planTone(item)}`}
+                        key={item.id}
+                        title={item.title}
+                      >
+                        <p className="line-clamp-2 break-words text-[10px] font-black leading-snug">
+                          {item.employeeDisplayName}
+                        </p>
                       </div>
                     ))}
                     {dayItems.length > 4 ? (
-                      <div className="px-1 text-[10px] font-black text-slate-500">+{dayItems.length - 4} more</div>
+                      <div className="border-l-4 border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">
+                        +{dayItems.length - 4} more
+                      </div>
                     ) : null}
                   </div>
 

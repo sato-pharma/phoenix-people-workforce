@@ -28,7 +28,7 @@ import {
   sameWorkforceDepartment,
 } from "@/lib/workforce/hierarchy-resolver";
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
-import { getEgyptianNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
   calculateVacationDurationDays,
   calculateVacationPayment,
@@ -933,7 +933,7 @@ async function validateOfficialHolidayAdjacency(input: {
 
   const holidays: EgyptianNationalHoliday[] = [];
   for (const period of holidayMonthKeysForDates([dayBeforeStart, dayAfterEnd])) {
-    const result = await getEgyptianNationalHolidays(period);
+    const result = await getConfirmedNationalHolidays(period);
     if (result.connected) holidays.push(...result.holidays);
   }
 
@@ -4172,7 +4172,7 @@ async function fetchHolidaysForRows(rows: VacationRequestRecord[]) {
   const dates = rows.flatMap((row) => [row.startDate, row.endDate]);
   const holidays: EgyptianNationalHoliday[] = [];
   for (const period of holidayMonthKeysForDates(dates)) {
-    const result = await getEgyptianNationalHolidays(period).catch(() => null);
+    const result = await getConfirmedNationalHolidays(period).catch(() => null);
     if (result?.connected) holidays.push(...result.holidays);
   }
   return holidays;

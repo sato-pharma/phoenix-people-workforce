@@ -6,7 +6,7 @@ import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import type { EmployeePlanActivityType, EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import {
   activityDisplayLabel,
@@ -162,7 +162,7 @@ function isPlanningSchemaMissing(error: unknown) {
 
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PlanningCalendarHolidayItem[]> {
   try {
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return result.holidays
       .filter((holiday) => rangesOverlap(holiday.startDate, holiday.endDate ?? holiday.startDate, start, end))
       .map((holiday) => ({
@@ -261,6 +261,7 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       employeeHrId: header.employee_hr_id,
       employeeJobTitle: header.employee_job_title,
       employeeName: header.employee_name,
+      employeeDisplayName: employee?.displayName || header.employee_name,
       endDate: row.activity_date,
       id: `plan-${row.id}`,
       lineName,

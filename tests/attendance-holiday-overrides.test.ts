@@ -1,20 +1,22 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { applyHolidayOverrides } from "../src/lib/attendance/holiday-overrides.ts";
+import { applyHolidayOverrides } from "../src/lib/vacation/holiday-override-store.ts";
 
 /**
- * Contract guards for the bulk holiday calendar
- * (src/lib/attendance/holiday-overrides.ts): admin-configured observed/
- * postponed dates layered on top of the raw Google/company holiday source
- * used across every attendance calendar consumer.
+ * Contract guards for admin-confirmed holiday overrides
+ * (src/lib/vacation/holiday-override-store.ts): observed/postponed dates
+ * layered on top of the raw Google/company holiday source
+ * (src/lib/vacation/national-holidays.ts), centralized there via
+ * getConfirmedNationalHolidays so every calendar/plan/attendance/vacation
+ * consumer sees the same confirmed date, not just attendance.
  */
 export function runAttendanceHolidayOverridesTests() {
   // 1. Pure logic: a postponed holiday moves off its official date onto the
   //    observed date, carrying the (possibly admin-edited) name with it.
   const shifted = new Map([["2026-07-10", "Eid al-Adha"]]);
   applyHolidayOverrides(shifted, [
-    { holidayName: "Eid al-Adha (observed)", id: 1, notes: null, observedDate: "2026-07-12", officialDate: "2026-07-10" },
+    { holidayName: "Eid al-Adha (observed)", id: 1, notes: null, observedDate: "2026-07-12", observedEndDate: "2026-07-12", officialDate: "2026-07-10" },
   ]);
   assert.equal(shifted.has("2026-07-10"), false, "the official date must revert to a normal working day once postponed");
   assert.equal(shifted.get("2026-07-12"), "Eid al-Adha (observed)", "the observed date must carry the (possibly renamed) holiday");
@@ -23,7 +25,7 @@ export function runAttendanceHolidayOverridesTests() {
   //    shift but still applies the admin's name.
   const confirmed = new Map([["2026-01-07", "Coptic Christmas"]]);
   applyHolidayOverrides(confirmed, [
-    { holidayName: "Coptic Christmas (confirmed)", id: 2, notes: null, observedDate: "2026-01-07", officialDate: "2026-01-07" },
+    { holidayName: "Coptic Christmas (confirmed)", id: 2, notes: null, observedDate: "2026-01-07", observedEndDate: "2026-01-07", officialDate: "2026-01-07" },
   ]);
   assert.equal(confirmed.get("2026-01-07"), "Coptic Christmas (confirmed)");
   assert.equal(confirmed.size, 1, "a same-day override must not create a duplicate entry");
@@ -34,30 +36,52 @@ export function runAttendanceHolidayOverridesTests() {
     ["2026-05-01", "Labour Day"],
   ]);
   applyHolidayOverrides(multi, [
-    { holidayName: "Sinai Liberation Day (observed)", id: 3, notes: null, observedDate: "2026-04-26", officialDate: "2026-04-25" },
+    { holidayName: "Sinai Liberation Day (observed)", id: 3, notes: null, observedDate: "2026-04-26", observedEndDate: "2026-04-26", officialDate: "2026-04-25" },
   ]);
   assert.equal(multi.has("2026-04-25"), false);
   assert.equal(multi.get("2026-04-26"), "Sinai Liberation Day (observed)");
   assert.equal(multi.get("2026-05-01"), "Labour Day", "an unrelated holiday must be untouched");
 
-  const service = readFileSync("src/lib/attendance/holiday-overrides.ts", "utf8");
+  const store = readFileSync("src/lib/vacation/holiday-override-store.ts", "utf8");
+  const nationalHolidays = readFileSync("src/lib/vacation/national-holidays.ts", "utf8");
 
-  // 4. working-days.ts applies overrides on top of the raw source and fails
-  //    open (no overrides) rather than breaking every attendance calendar
-  //    consumer if the config table isn't reachable.
+  // 4. getConfirmedNationalHolidays is the single source every calendar/plan/
+  //    vacation/attendance/field-workforce-compliance consumer must call, and
+  //    it fails open (no overrides) rather than breaking every consumer if
+  //    the config table isn't reachable.
+  assert.match(
+    nationalHolidays,
+    /listHolidayOverridesOverlappingRange\(monthStart, monthEnd\)\.catch\(\(\) => \[\]\)/,
+    "getConfirmedNationalHolidays must fail open to no overrides, not throw and break every consumer",
+  );
+  assert.match(
+    nationalHolidays,
+    /export async function getConfirmedNationalHolidays/,
+    "national-holidays.ts must expose the centralized confirmed-holiday function",
+  );
+
+  // 5. working-days.ts (attendance) must call the centralized confirmed
+  //    source, not the raw one directly, and must not duplicate its own
+  //    separate override-fetch-and-apply pass anymore.
   const workingDays = readFileSync("src/lib/attendance/working-days.ts", "utf8");
   assert.match(
     workingDays,
-    /listHolidayOverridesOverlappingRange\(input\.dateFromIso, input\.dateToIso\)\.catch\(\(\) => \[\]\)/,
-    "buildAttendanceCalendarContext must fail open to no overrides, not throw and break every attendance calendar consumer",
+    /getConfirmedNationalHolidays\(entry\)\.catch\(\(\) => null\)/,
+    "buildAttendanceCalendarContext must source holidays from getConfirmedNationalHolidays, not the raw getEgyptianNationalHolidays",
   );
-  assert.match(workingDays, /applyHolidayOverrides\(holidaysByDate, overrides\)/, "buildAttendanceCalendarContext must apply the overrides onto the built holiday map");
+  assert.doesNotMatch(
+    workingDays,
+    /getEgyptianNationalHolidays/,
+    "attendance must not call the raw holiday source directly — it would bypass System Admin confirmation",
+  );
 
-  // 5. Bulk upsert is keyed on official_date (one override per official
-  //    holiday, editable, not append-only).
-  assert.match(service, /onConflict: "official_date"/, "bulkUpsertHolidayOverrides must upsert by official_date, not insert duplicates on re-save");
+  // 6. Bulk upsert is keyed on official_date (one override per official
+  //    holiday, editable, not append-only), and the observed period is a
+  //    range (some national vacations span more than one day).
+  assert.match(store, /onConflict: "official_date"/, "bulkUpsertHolidayOverrides must upsert by official_date, not insert duplicates on re-save");
+  assert.match(store, /observedEndDate/, "the confirmed observed period must be a range (observedDate..observedEndDate), not a single day");
 
-  // 6. Routes registered with the correct read/update split.
+  // 7. Routes registered with the correct read/update split.
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(
     registry,

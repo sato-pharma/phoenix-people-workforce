@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
+import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-confirmation/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
@@ -36,6 +37,7 @@ async function runDailyNotifications(request: Request) {
   const [
     birthdayResponse,
     contractRenewalResponse,
+    holidayConfirmationResponse,
     vacationSla,
     marketingSla,
     recruitment,
@@ -52,6 +54,7 @@ async function runDailyNotifications(request: Request) {
   ] = await Promise.all([
     runBirthdayNotifications(request),
     runContractRenewalNotifications(request),
+    runHolidayConfirmationReminder(request),
     runVacationSlaDaily(),
     runMarketingSlaDaily(),
     runRecruitmentDailyNotifications(),
@@ -66,9 +69,10 @@ async function runDailyNotifications(request: Request) {
     runWeeklyPlansDriftCheck().catch((e: unknown) => ({ ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) })),
     pruneExpiredRateLimitBuckets().catch((e: unknown) => ({ deleted: 0, error: String(e) })),
   ]);
-  const [birthdays, contractRenewals] = await Promise.all([
+  const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse.json(),
     contractRenewalResponse.json(),
+    holidayConfirmationResponse.json(),
   ]);
 
   return NextResponse.json({
@@ -77,6 +81,7 @@ async function runDailyNotifications(request: Request) {
     excuseSla,
     fieldWorkforceComplianceDeductionsAutoSync,
     fieldWorkforceComplianceDigest,
+    holidayConfirmation,
     marketingSla,
     outstationGeocodeWarmup,
     outstationHighRisk,
