@@ -141,6 +141,7 @@ type EmployeeFormState = {
   socialInsurance: string;
   socialInsuranceNumber: string;
   socialInsuranceStatus: string;
+  socialInsuranceWage: string;
   taxes: string;
   teamId: string;
   workEmail: string;
@@ -193,6 +194,7 @@ const emptyForm: EmployeeFormState = {
   socialInsurance: "",
   socialInsuranceNumber: "",
   socialInsuranceStatus: "",
+  socialInsuranceWage: "",
   taxes: "",
   teamId: "",
   workEmail: "",
@@ -507,6 +509,7 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     socialInsurance: numberToText(employee.socialInsurance),
     socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
     socialInsuranceStatus: employee.socialInsuranceStatus ?? "",
+    socialInsuranceWage: numberToText(employee.socialInsuranceWage),
     taxes: numberToText(employee.taxes),
     teamId: employee.teamId ? String(employee.teamId) : "",
     workEmail: employee.workEmail ?? "",
@@ -580,6 +583,7 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     socialInsurance: optionalNumber(form.socialInsurance),
     socialInsuranceNumber: optionalText(form.socialInsuranceNumber),
     socialInsuranceStatus: optionalText(form.socialInsuranceStatus),
+    socialInsuranceWage: optionalNumber(form.socialInsuranceWage),
     taxes: optionalNumber(form.taxes),
     teamId: optionalNumber(form.teamId),
     workEmail: optionalText(form.workEmail),
@@ -2365,6 +2369,13 @@ export function EmployeeManagement({
                     placeholder="0.00"
                     type="number"
                     value={form.socialInsurance}
+                  />
+                  <TextField
+                    label="Insurance Wage (subject wage)"
+                    onChange={(value) => updateForm("socialInsuranceWage", value)}
+                    placeholder="0.00"
+                    type="number"
+                    value={form.socialInsuranceWage}
                   />
                   <SelectField
                     label="In Social Insurance"

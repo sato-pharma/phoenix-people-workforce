@@ -1873,6 +1873,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     regionCode: null,
     resignationDate: null,
     socialInsurance: null,
+    socialInsuranceWage: null,
     socialInsuranceStatus: null,
     socialInsuranceNumber: null,
     taxes: null,
