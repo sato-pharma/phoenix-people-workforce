@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/session-lock.mjs\" start \"$DIR\" 2>/dev/null || true",
+            "shell": "bash"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/session-lock.mjs\" end \"$DIR\" 2>/dev/null || true",
+            "shell": "bash"
+          }
+        ]
+      }
+    ]
+  }
+}
