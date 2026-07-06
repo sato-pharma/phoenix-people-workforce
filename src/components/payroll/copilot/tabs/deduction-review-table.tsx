@@ -55,6 +55,7 @@ export function DeductionReviewTable({
   valueLabel: string;
 }) {
   const [rows, setRows] = useState<DeductionCandidate[] | null>(null);
+  const [dryRun, setDryRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
@@ -64,9 +65,14 @@ export function DeductionReviewTable({
       const res = await fetch(`/api/payroll/copilot/${runId}/deductions/${endpoint}`, {
         credentials: "same-origin",
       });
-      const data = (await res.json().catch(() => ({}))) as { candidates?: DeductionCandidate[]; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        candidates?: DeductionCandidate[];
+        dryRun?: boolean;
+        message?: string;
+      };
       if (!res.ok) throw new Error(data.message ?? "Failed to load.");
       setRows(data.candidates ?? []);
+      setDryRun(Boolean(data.dryRun));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -104,10 +110,19 @@ export function DeductionReviewTable({
       {error ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{error}</div>
       ) : null}
+      {dryRun ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Attendance deductions are currently in <strong>dry-run mode</strong> — the weekly-digest
+          engine is computing recommendations but not yet pushing real candidates into payroll. Zero
+          candidates here is expected until dry-run is turned off in Attendance settings.
+        </div>
+      ) : null}
       {!rows ? (
         <p className="px-4 py-6 text-sm text-slate-500">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-500">No candidates for this period.</p>
+        <p className="px-4 py-6 text-sm text-slate-500">
+          {dryRun ? "No candidates while dry-run is on." : "No candidates for this period."}
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

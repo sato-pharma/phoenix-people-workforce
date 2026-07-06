@@ -37,6 +37,8 @@ export type UnpaidVacationCandidate = {
   salaryDeductionAmount: number;
   /** True only when settling the FULL unpaid amount against balance would still leave the employee non-negative. */
   balanceAvailable: boolean;
+  /** The employee's actual remaining vacation-balance days as of this request — shown inline so a disabled "deduct from balance" reads as a real number, not a silent toggle. */
+  balanceDaysAvailable: number;
   existingSettlement: {
     method: "salary" | "balance";
     decidedAt: string;
@@ -120,6 +122,7 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
     const salaryDeductionAmount = roundCurrency(dailyRate(baseSalary, period) * unpaidDays);
 
     let balanceAvailable = false;
+    let balanceDaysAvailable = 0;
     try {
       const snapshot = await calculatePaymentForRequest({
         durationDays: unpaidDays,
@@ -130,6 +133,7 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
         vacationType,
       });
       balanceAvailable = snapshot.paymentStatus === "paid";
+      balanceDaysAvailable = snapshot.balanceBeforeDays;
     } catch (balanceError) {
       console.error("[payroll-copilot:vacation-settlement] balance check failed:", balanceError);
     }
@@ -144,6 +148,7 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
       unpaidDays,
       salaryDeductionAmount,
       balanceAvailable,
+      balanceDaysAvailable,
       existingSettlement: existingSettlements.get(`${compact}:${startDate}`) ?? null,
     });
   }
