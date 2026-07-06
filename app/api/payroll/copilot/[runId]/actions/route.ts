@@ -66,6 +66,14 @@ function coerceActions(input: unknown): ProposedAction[] {
       case "confirm":
         out.push({ kind, hrId, reason });
         break;
+      case "hold": {
+        // Comment is mandatory (shown on the employee's payslip) — never fall
+        // back to a generic placeholder like the other kinds do.
+        const comment = typeof a.reason === "string" ? a.reason.trim() : "";
+        if (!comment) continue;
+        out.push({ kind, hrId, reason: comment });
+        break;
+      }
       default:
         break;
     }

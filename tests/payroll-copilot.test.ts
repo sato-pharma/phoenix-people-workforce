@@ -199,6 +199,22 @@ export function runPayrollCopilotTests() {
   });
   assert.equal(deferred, null);
 
+  // hold: unlike defer, still produces a row (0 payable) with the required
+  // comment surfaced via payrollComment (already rendered on the payslip)
+  const held = buildRowForEmployee({
+    employee: makeEmp(),
+    source: makeSource(),
+    recurring: [],
+    adjustments: [adj({ kind: "hold", reason: "Pending final HR review" })],
+    period: PERIOD,
+    index: 1,
+  });
+  assert.ok(held, "held row must still assemble, unlike defer");
+  assert.equal(held.firstPart, 0);
+  assert.equal(held.secondPart, 0);
+  assert.equal(held.monthSalary, 0);
+  assert.equal(held.payrollComment, "Pending final HR review");
+
   // recurring loan installment lands as a deduction
   const withRecurring = buildRowForEmployee({
     employee: makeEmp(),
