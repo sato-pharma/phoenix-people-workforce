@@ -49,7 +49,7 @@ type Run = {
   periodLabel: string | null;
 };
 
-type RunView = { run: Run; draft: Draft };
+type RunView = { run: Run; draft: Draft; resumed?: boolean };
 
 type ProposedAction = {
   kind: string;
@@ -205,6 +205,12 @@ export function PayrollCopilotWorkbench() {
 
         {error ? (
           <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+        ) : null}
+
+        {view?.resumed ? (
+          <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Resumed your in-progress run for this month — nothing was lost.
+          </div>
         ) : null}
 
         {!view ? (

@@ -351,6 +351,7 @@ async function updateRunCounts(runId: string, draft: CopilotDraftState): Promise
 export type CopilotRunView = {
   run: CopilotRun;
   draft: ReturnType<typeof serializeDraft>;
+  resumed?: boolean;
 };
 
 export function serializeDraft(draft: CopilotDraftState) {
@@ -384,10 +385,10 @@ export function serializeDraft(draft: CopilotDraftState) {
 export async function startRun(period: CopilotPeriod, actor: string | null): Promise<CopilotRunView> {
   const existingActive = await findActiveRun(period);
   if (existingActive) {
-    throw new CopilotError(
-      `A payroll run for ${MONTH_NAMES[period.month - 1]} ${period.year} is already in progress.`,
-      409,
-    );
+    // Resume the in-progress run rather than dead-ending on a conflict — the CEO
+    // may have navigated away; re-opening loses no work.
+    const view = await getRunView(existingActive.id);
+    return { ...view, resumed: true };
   }
   const existingBatch = await findSalaryBatchForPeriod(period.month, period.year);
   if (existingBatch) {
