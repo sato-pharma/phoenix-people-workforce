@@ -104,6 +104,8 @@ function describeAction(action: ProposedAction): string {
       return `Defer ${action.hrId} to next month`;
     case "confirm":
       return `Confirm ${action.hrId} as correct`;
+    case "hold":
+      return `Hold ${action.hrId}'s pay this run — "${action.reason ?? ""}"`;
     default:
       return `${action.kind} ${action.hrId}`;
   }
@@ -154,6 +156,41 @@ export function PayrollCopilotWorkbench() {
     await run(async () => {
       const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: chat });
       setProposals((data.proposedActions as ProposedAction[]) ?? []);
+    });
+  }
+
+  /** Row toggle — green side: confirm this employee as correct, no chat round-trip needed. */
+  async function confirmEmployee(hrId: string) {
+    await run(async () => {
+      if (!view) return;
+      const data = (await postJson(`/api/payroll/copilot/${view.run.id}/actions`, {
+        actions: [{ kind: "confirm", hrId }],
+      })) as unknown as RunView;
+      setView(data);
+    });
+  }
+
+  /** Row toggle — red side: describe what's wrong, routed through the same chat parser scoped to this employee. */
+  async function reportIssue(hrId: string, text: string) {
+    if (!text.trim()) return;
+    await run(async () => {
+      if (!view) return;
+      const scoped = `${hrId}: ${text}`;
+      const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: scoped });
+      setChat(scoped);
+      setProposals((data.proposedActions as ProposedAction[]) ?? []);
+    });
+  }
+
+  /** Separate Hold action — zeroes this employee's pay this run; the comment is required and shown on their payslip. */
+  async function holdEmployee(hrId: string, reason: string) {
+    if (!reason.trim()) return;
+    await run(async () => {
+      if (!view) return;
+      const data = (await postJson(`/api/payroll/copilot/${view.run.id}/actions`, {
+        actions: [{ kind: "hold", hrId, reason }],
+      })) as unknown as RunView;
+      setView(data);
     });
   }
 
@@ -264,6 +301,9 @@ export function PayrollCopilotWorkbench() {
             onDiscard={() => setProposals(null)}
             onMaterialize={materialize}
             onCancel={cancelRun}
+            onConfirmEmployee={confirmEmployee}
+            onReportIssue={reportIssue}
+            onHoldEmployee={holdEmployee}
           />
         )}
       </div>
@@ -284,6 +324,9 @@ function RunWorkspace(props: {
   onDiscard: () => void;
   onMaterialize: () => void;
   onCancel: () => void;
+  onConfirmEmployee: (hrId: string) => void;
+  onReportIssue: (hrId: string, text: string) => void;
+  onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
   if (!draft) return null;
@@ -319,19 +362,29 @@ function RunWorkspace(props: {
                   Everyone is green — no questions. You can generate the sheet.
                 </p>
               ) : (
-                draft.flagged.map((employee) =>
-                  employee.flags.map((flag) => (
-                    <div
-                      key={`${employee.hrId}-${flag.rule}`}
-                      className={`border-l-4 px-4 py-3 text-sm ${SEVERITY_STYLES[flag.severity]}`}
-                    >
+                draft.flagged.map((employee) => (
+                  <div key={employee.hrId} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-slate-900">
                         {employee.fullName} <span className="text-slate-400">({employee.hrId})</span>
                       </p>
-                      <p className="mt-1 text-slate-600">{flag.question}</p>
+                      {employee.flags.map((flag) => (
+                        <p
+                          key={flag.rule}
+                          className={`mt-1 border-l-4 pl-2 text-slate-600 ${SEVERITY_STYLES[flag.severity]}`}
+                        >
+                          {flag.question}
+                        </p>
+                      ))}
                     </div>
-                  )),
-                )
+                    <EmployeeRowActions
+                      busy={props.busy}
+                      onConfirm={() => props.onConfirmEmployee(employee.hrId)}
+                      onReportIssue={(text) => props.onReportIssue(employee.hrId, text)}
+                      onHold={(reason) => props.onHoldEmployee(employee.hrId, reason)}
+                    />
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -407,11 +460,19 @@ function RunWorkspace(props: {
             title={`Auto-filled — green (${draft.green.length})`}
             rows={draft.green}
             emptyText="No fully-clean employees yet."
+            busy={busy}
+            onConfirmEmployee={props.onConfirmEmployee}
+            onReportIssue={props.onReportIssue}
+            onHoldEmployee={props.onHoldEmployee}
           />
           <ListCard
             title={`Resolved by you (${draft.resolved.length})`}
             rows={draft.resolved}
             emptyText="No manual resolutions yet."
+            busy={busy}
+            onConfirmEmployee={props.onConfirmEmployee}
+            onReportIssue={props.onReportIssue}
+            onHoldEmployee={props.onHoldEmployee}
           />
           {draft.recurringApplied.length > 0 ? (
             <div className="border border-slate-200 bg-white">
@@ -475,10 +536,18 @@ function ListCard({
   title,
   rows,
   emptyText,
+  busy,
+  onConfirmEmployee,
+  onReportIssue,
+  onHoldEmployee,
 }: {
   title: string;
   rows: SimpleEmployee[];
   emptyText: string;
+  busy: boolean;
+  onConfirmEmployee: (hrId: string) => void;
+  onReportIssue: (hrId: string, text: string) => void;
+  onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
   return (
     <div className="border border-slate-200 bg-white">
@@ -488,15 +557,128 @@ function ListCard({
       ) : (
         <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto text-sm">
           {rows.map((employee) => (
-            <li key={employee.hrId} className="flex justify-between px-4 py-2">
-              <span className="text-slate-700">
+            <li key={employee.hrId} className="flex items-center justify-between gap-3 px-4 py-2">
+              <span className="min-w-0 truncate text-slate-700">
                 {employee.fullName} <span className="text-slate-400">({employee.hrId})</span>
               </span>
-              <span className="font-medium text-slate-900">{egp(employee.monthSalary || employee.netSalary)}</span>
+              <span className="flex shrink-0 items-center gap-3">
+                <span className="font-medium text-slate-900">{egp(employee.monthSalary || employee.netSalary)}</span>
+                <EmployeeRowActions
+                  busy={busy}
+                  onConfirm={() => onConfirmEmployee(employee.hrId)}
+                  onReportIssue={(text) => onReportIssue(employee.hrId, text)}
+                  onHold={(reason) => onHoldEmployee(employee.hrId, reason)}
+                />
+              </span>
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Per-employee toggle beside their name: green (right) confirms as-is; red
+ * (left) opens an inline box to describe the issue, routed through the same
+ * chat parser scoped to this employee. A separate Hold action puts their pay
+ * on temporary hold this run with a required comment shown on their payslip.
+ */
+function EmployeeRowActions({
+  busy,
+  onConfirm,
+  onReportIssue,
+  onHold,
+}: {
+  busy: boolean;
+  onConfirm: () => void;
+  onReportIssue: (text: string) => void;
+  onHold: (reason: string) => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "issue" | "hold">("idle");
+  const [text, setText] = useState("");
+
+  function reset() {
+    setMode("idle");
+    setText("");
+  }
+
+  if (mode === "issue" || mode === "hold") {
+    const isHold = mode === "hold";
+    return (
+      <div
+        className={`flex w-56 flex-col gap-2 border p-2 text-xs ${
+          isHold ? "border-slate-300 bg-slate-50" : "border-amber-300 bg-amber-50"
+        }`}
+      >
+        <p className="font-semibold text-slate-700">
+          {isHold ? "Hold pay — comment shown on payslip" : "What's wrong?"}
+        </p>
+        <textarea
+          className="h-16 w-full border border-slate-300 px-2 py-1 text-xs"
+          placeholder={isHold ? "Reason for the hold (required)" : "Describe the issue"}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          autoFocus
+        />
+        <div className="flex gap-1">
+          <button
+            type="button"
+            disabled={busy || !text.trim()}
+            onClick={() => {
+              if (isHold) onHold(text);
+              else onReportIssue(text);
+              reset();
+            }}
+            className={`px-2 py-1 font-semibold text-white disabled:opacity-50 ${
+              isHold ? "bg-rose-600 hover:bg-rose-700" : "bg-slate-900 hover:bg-slate-800"
+            }`}
+          >
+            {isHold ? "Confirm hold" : "Send"}
+          </button>
+          <button
+            type="button"
+            onClick={reset}
+            className="border border-slate-300 px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <div className="flex overflow-hidden border border-slate-300 text-xs font-semibold">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setMode("issue")}
+          title="Report an issue"
+          className="bg-rose-100 px-2 py-1 text-rose-700 hover:bg-rose-200 disabled:opacity-50"
+        >
+          ✕
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onConfirm}
+          title="Confirm as correct"
+          className="bg-emerald-100 px-2 py-1 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+        >
+          ✓
+        </button>
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setMode("hold")}
+        title="Put pay on hold"
+        className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+      >
+        Hold
+      </button>
     </div>
   );
 }

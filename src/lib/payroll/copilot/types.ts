@@ -63,7 +63,11 @@ export type ProposedAction =
   | { kind: "override"; hrId: string; field: CopilotOverrideField; value: number; reason: string }
   | { kind: "include"; hrId: string; reason?: string }
   | { kind: "defer"; hrId: string; reason?: string }
-  | { kind: "confirm"; hrId: string; reason?: string };
+  | { kind: "confirm"; hrId: string; reason?: string }
+  // Puts this employee's pay on temporary hold for this run (unlike defer,
+  // still produces a row — 0 payable — so the batch/payslip exist and the
+  // comment is visible). Comment is required and shown on the payslip.
+  | { kind: "hold"; hrId: string; reason: string };
 
 export type ProposedActionKind = ProposedAction["kind"];
 

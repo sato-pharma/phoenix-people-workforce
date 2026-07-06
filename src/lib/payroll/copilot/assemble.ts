@@ -80,6 +80,19 @@ export function isDeferred(adjustments: CopilotAdjustment[]): boolean {
   return adjustments.some((adjustment) => adjustment.kind === "defer");
 }
 
+/**
+ * True when the employee's pay is on temporary hold this run. Unlike defer,
+ * a held employee still gets a row (0 payable) so the batch/payslip exist and
+ * the CEO's comment is visible — see `payrollComment` on the returned row.
+ */
+export function isOnHold(adjustments: CopilotAdjustment[]): boolean {
+  return adjustments.some((adjustment) => adjustment.kind === "hold");
+}
+
+function holdReason(adjustments: CopilotAdjustment[]): string | null {
+  return adjustments.find((adjustment) => adjustment.kind === "hold")?.reason ?? null;
+}
+
 type BuildRowInput = {
   employee: EmployeeDirectoryRow;
   source: PayrollSalarySource | undefined;
@@ -307,7 +320,18 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     firstPart = roundCurrency(parts.firstPart);
     secondPart = roundCurrency(Math.max(0, parts.secondPart));
   }
-  const monthSalary = roundCurrency(firstPart + secondPart);
+  let monthSalary = roundCurrency(firstPart + secondPart);
+
+  // Hold: the CEO put this employee's pay on temporary hold this run. Zero
+  // the payable parts but keep the row (so the batch/payslip still exist) and
+  // surface the CEO's required comment via payrollComment — already rendered
+  // as a "Comment" section on the payslip template.
+  const onHold = isOnHold(adjustments);
+  if (onHold) {
+    firstPart = 0;
+    secondPart = 0;
+    monthSalary = 0;
+  }
 
   return {
     area: employee.areaName ?? "",
@@ -336,7 +360,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     otherAdditions,
     otherDeductions,
     overtime,
-    payrollComment: null,
+    payrollComment: onHold ? holdReason(adjustments) : null,
     paymentMode,
     row: index,
     secondPart,
