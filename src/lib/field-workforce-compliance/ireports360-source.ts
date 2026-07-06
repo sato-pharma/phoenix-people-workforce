@@ -54,7 +54,7 @@ import {
 } from "@/lib/field-workforce-compliance/ireports360-client";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
 
@@ -527,7 +527,7 @@ async function loadHolidays(month: number, year: number): Promise<{
   sourceLabel: string;
 }> {
   try {
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return {
       connected: result.connected,
       holidays: result.holidays.map((holiday) => ({

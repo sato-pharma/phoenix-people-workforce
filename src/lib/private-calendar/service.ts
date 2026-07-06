@@ -11,7 +11,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { sharedPlanningCalendarStatuses } from "@/lib/weekly-planning/calendar";
 import {
   canReadPrivateCalendarEmployee,
@@ -161,7 +161,7 @@ function filterItemsByEmployees(items: PrivateCalendarItem[], employees: Employe
 
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PrivateCalendarItem[]> {
   try {
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return result.holidays
       .filter((holiday) => rangesOverlap(holiday.startDate, holiday.endDate ?? holiday.startDate, start, end))
       .map((holiday) => mapHolidayToPrivateCalendarItem({

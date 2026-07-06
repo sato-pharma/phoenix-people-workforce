@@ -3,7 +3,7 @@ import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissio
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import {
   buildMonthGrid,
   canManageCompanyCalendar,
@@ -138,7 +138,7 @@ async function loadCompanyEvents(
 
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<CalendarItem[]> {
   try {
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return result.holidays.map((holiday) => ({
       id: `holiday-${holiday.id}`,
       source: "holiday" as const,

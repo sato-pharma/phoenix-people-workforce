@@ -23,6 +23,7 @@ function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: str
     conflictKey: null,
     conflictWarning: null,
     employeeName: "Test Employee",
+    employeeDisplayName: "Test Employee",
     endDate: "2026-07-06",
     id: "plan-1",
     lineName: "Pedia",

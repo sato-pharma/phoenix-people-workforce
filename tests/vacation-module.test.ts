@@ -340,7 +340,7 @@ export function runVacationModuleTests() {
   assert.match(dailyNotificationsRouteSource, /runBirthdayNotifications/);
   assert.match(dailyNotificationsRouteSource, /runContractRenewalNotifications/);
   assert.match(dailyNotificationsRouteSource, /runVacationSlaDaily/);
-  assert.match(nationalHolidaysRouteSource, /getEgyptianNationalHolidays/);
+  assert.match(nationalHolidaysRouteSource, /getConfirmedNationalHolidays/);
   assert.match(nationalHolidaysRouteSource, /assertPermission\(access, "leave", "read"\)/);
   assert.match(nationalHolidaysSource, /GOOGLE_CALENDAR_API_KEY/);
   assert.match(nationalHolidaysSource, /GOOGLE_HOLIDAY_CALENDAR_ID_EG/);

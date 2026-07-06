@@ -13,7 +13,7 @@ import type {
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
 import { loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
-import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 
 export class FieldWorkforcePreviewError extends Error {
   code: string;
@@ -82,7 +82,7 @@ async function loadHolidays(month: number, year: number): Promise<{
   sourceLabel: string;
 }> {
   try {
-    const result = await getEgyptianNationalHolidays({ month, year });
+    const result = await getConfirmedNationalHolidays({ month, year });
     return {
       connected: result.connected,
       holidays: result.holidays.map((holiday) => ({

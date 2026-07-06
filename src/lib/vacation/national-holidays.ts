@@ -1,4 +1,5 @@
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
+import { listHolidayOverridesOverlappingRange } from "@/lib/vacation/holiday-override-store";
 
 export type EgyptianNationalHoliday = {
   description: string | null;
@@ -407,4 +408,67 @@ export async function getEgyptianNationalHolidays(input: {
   };
   holidayCache.set(cacheKey, { expiresAt: Date.now() + holidayCacheTtlMs, result });
   return result;
+}
+
+/**
+ * Rule: a national holiday's real day off is only authoritative once a System
+ * Admin has explicitly confirmed it (see the T-3-day reminder in
+ * holiday-confirmation.ts) — the raw ministry/Google Calendar date
+ * (getEgyptianNationalHolidays) is a provisional default, not a substitute
+ * for that confirmation, because postponements are common (e.g. the June 30
+ * Revolution Day being observed on July 2 instead). Every consumer that
+ * decides "is this day off" — calendars, weekly/monthly plans, vacation,
+ * attendance, field workforce compliance — must call THIS function, not
+ * getEgyptianNationalHolidays directly.
+ *
+ * A holiday whose official and observed dates fall in different months is
+ * handled per-month-call: the official month's raw entry is dropped (it is
+ * no longer a holiday there) and the observed month's call injects a
+ * synthetic entry at the observed date, so callers that query one month at a
+ * time (the normal calling pattern everywhere in this codebase) each see the
+ * confirmed date land in the correct month regardless of which side of the
+ * month boundary the shift crosses.
+ */
+export async function getConfirmedNationalHolidays(input: {
+  month: number;
+  year: number;
+}): Promise<EgyptianNationalHolidayResult> {
+  const raw = await getEgyptianNationalHolidays(input);
+  const { endDate: monthEnd, startDate: monthStart } = monthDateRange(raw.year, raw.month);
+  const overrides = await listHolidayOverridesOverlappingRange(monthStart, monthEnd).catch(() => []);
+  if (overrides.length === 0) return raw;
+
+  const overrideByOfficialDate = new Map(overrides.map((override) => [override.officialDate, override]));
+
+  // Drop entries whose official date has a confirmed override — the real day
+  // off lives at the observed date instead (injected below, in whichever
+  // month it actually falls in).
+  const withoutOverriddenOfficialDates = raw.holidays.filter(
+    (holiday) => !overrideByOfficialDate.has(holiday.startDate),
+  );
+
+  const injected: EgyptianNationalHoliday[] = [];
+  for (const override of overrides) {
+    // Range overlap: the confirmed observed period is observedDate..observedEndDate
+    // (a multi-day national vacation, not just a single shifted day).
+    if (override.observedEndDate < monthStart || override.observedDate > monthEnd) continue;
+    const alreadyPresent = withoutOverriddenOfficialDates.some((holiday) => holiday.startDate === override.observedDate);
+    if (alreadyPresent) continue;
+    injected.push({
+      description: override.notes,
+      durationDays: inclusiveDaysBetween(override.observedDate, override.observedEndDate),
+      endDate: override.observedEndDate,
+      id: `override-${override.id}`,
+      name: override.holidayName,
+      source: "company",
+      startDate: override.observedDate,
+    });
+  }
+
+  if (injected.length === 0 && withoutOverriddenOfficialDates.length === raw.holidays.length) return raw;
+
+  return {
+    ...raw,
+    holidays: [...withoutOverriddenOfficialDates, ...injected].sort((left, right) => left.startDate.localeCompare(right.startDate)),
+  };
 }

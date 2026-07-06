@@ -7,14 +7,32 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function AttendanceHolidayCalendarPage() {
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function focusDateFromSearchParams(searchParams: Record<string, string | string[] | undefined>): string | null {
+  const raw = searchParams.confirm;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value && ISO_DATE_PATTERN.test(value) ? value : null;
+}
+
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AttendanceHolidayCalendarPage({ searchParams }: Props) {
   const access = await resolveAccessContextFromPage();
   if (!await canAccessAttendanceSetup(access, "read")) {
     redirect("/employee-portals");
   }
   const canEdit = await canAccessAttendanceSetup(access, "update");
 
-  const year = new Date().getUTCFullYear();
+  const resolvedSearchParams = await searchParams;
+  const focusDate = focusDateFromSearchParams(resolvedSearchParams);
+  // A confirmation CTA can point at a holiday from a different year than "now"
+  // (e.g. an email sent in late December about an early-January holiday) — load
+  // the year the focused holiday actually falls in so the CTA always lands on
+  // the right page instead of an empty/wrong year.
+  const year = focusDate ? Number(focusDate.slice(0, 4)) : new Date().getUTCFullYear();
   let initialView: Awaited<ReturnType<typeof buildHolidayCalendarYearView>> | null = null;
   let initialError: string | null = null;
   try {
@@ -23,5 +41,13 @@ export default async function AttendanceHolidayCalendarPage() {
     initialError = error instanceof Error ? error.message : "Holiday calendar failed to load.";
   }
 
-  return <HolidayCalendarManager canEdit={canEdit} initialError={initialError} initialView={initialView} initialYear={year} />;
+  return (
+    <HolidayCalendarManager
+      canEdit={canEdit}
+      focusDate={focusDate}
+      initialError={initialError}
+      initialView={initialView}
+      initialYear={year}
+    />
+  );
 }
