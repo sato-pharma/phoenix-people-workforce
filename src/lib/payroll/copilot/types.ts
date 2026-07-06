@@ -41,6 +41,11 @@ export const COPILOT_OVERRIDE_FIELDS = [
   "loans",
   "otherDeductions",
   "unpaidVacations",
+  // Auto-computed resignation/joiner settlement figures — overridable for a
+  // one-off exception (e.g. negotiated severance); always explicit/audited.
+  "baseSalary",
+  "extraCostOfLiving",
+  "fuelAllowance",
 ] as const;
 export type CopilotOverrideField = (typeof COPILOT_OVERRIDE_FIELDS)[number];
 
@@ -116,6 +121,8 @@ export type EmployeeFeederState = {
   unpaidLeaveDays: number;
   attendanceDeductionPending: boolean;
   leaverLastWorkingDate: string | null;
+  /** Unpaid-leave days overlapping [period start, leaverLastWorkingDate] only — resignation Rule 1. */
+  unpaidDaysBeforeLastWorkingDate: number;
   pendingExpense: boolean;
 };
 

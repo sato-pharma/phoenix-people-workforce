@@ -322,6 +322,7 @@ import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
+import { runPayrollCopilotProrationTests } from "./payroll-copilot-proration.test.ts";
 import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 
@@ -663,6 +664,7 @@ await runTest("approvals hub completion (deep-link render + canonical actor + hi
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
+await runTest("payroll copilot proration (resignation/joiner/unpaid-leave day-rate rules)", runPayrollCopilotProrationTests);
 await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
 

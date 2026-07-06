@@ -1,8 +1,8 @@
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { roundCurrency } from "@/lib/payroll/money";
-import { calculatePayrollParts } from "@/lib/payroll/policy";
+import { calculateBasicSalary, calculateGrossSalary, calculatePayrollParts } from "@/lib/payroll/policy";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
-import { computeStatutory } from "@/lib/payroll/statutory/calculator";
+import { computeIncomeTax, computeSocialInsurance } from "@/lib/payroll/statutory/calculator";
 import type { StatutoryConfig } from "@/lib/payroll/statutory/types";
 import {
   salarySourceLookupKeys,
@@ -10,6 +10,15 @@ import {
 } from "@/lib/payroll/salary-source-model";
 
 import { compactHrKey } from "./feeders.ts";
+import {
+  applyResignationPartsSplit,
+  calendarDaysInMonth,
+  computeJoinerPay,
+  computeResignationSettlement,
+  dailyRate,
+  isInPeriod,
+  type ResignationSettlement,
+} from "./proration.ts";
 import type {
   CopilotAdjustment,
   CopilotPeriod,
@@ -22,10 +31,9 @@ import type {
  * existing upload path produces), so the Copilot draft flows into the same
  * createSalaryBatch machinery.
  *
- * Phase 1 seeds fixed salary and allowances only; approved attendance/expense
- * amounts continue to import through the existing post-batch RPCs, and full
- * tax/insurance computation is Phase 2. The values here are carried, not
- * recomputed.
+ * Base, Basic, and Net always come from the employee master and are never
+ * recomputed by statutory math (Base×70% feeds the locked incentive scheme).
+ * Only Gross is derived forward from Base+SI+Tax for statutory reporting.
  */
 
 export function lookupSource(
@@ -72,10 +80,6 @@ export function isDeferred(adjustments: CopilotAdjustment[]): boolean {
   return adjustments.some((adjustment) => adjustment.kind === "defer");
 }
 
-function daysInMonth(period: CopilotPeriod): number {
-  return new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
-}
-
 type BuildRowInput = {
   employee: EmployeeDirectoryRow;
   source: PayrollSalarySource | undefined;
@@ -84,6 +88,8 @@ type BuildRowInput = {
   period: CopilotPeriod;
   index: number;
   statutory?: { config: StatutoryConfig; insuranceWage: number | null };
+  /** Set when this employee's last working date falls within `period` — routes through resignation Rule 1/2 instead of the normal parts split. */
+  resignation?: { lastWorkingDate: string; unpaidDaysInSpan: number } | null;
 };
 
 /**
@@ -94,28 +100,35 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   const { employee, source, recurring, adjustments, period, index } = input;
   if (isDeferred(adjustments)) return null;
 
-  let baseSalary = roundCurrency(source?.baseSalary ?? 0);
-  const grossSalary = roundCurrency(source?.grossSalary ?? 0);
-  let netSalary = roundCurrency(source?.netSalary ?? 0);
+  const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+  let grossSalary = roundCurrency(source?.grossSalary ?? 0);
+  const netSalary = roundCurrency(source?.netSalary ?? 0);
   let socialInsurance = roundCurrency(source?.socialInsurance ?? 0);
   let employmentIncomeTax = roundCurrency(source?.employmentIncomeTax ?? 0);
   const extraCostOfLiving = roundCurrency(source?.extraCostOfLiving ?? 0);
   const fuelAllowance = roundCurrency(source?.fuelAllowance ?? 0);
   const paymentMode = source?.paymentMode ?? "two_parts";
 
-  // Phase 2: compute statutory SI + income tax when a per-employee insurance
-  // wage is configured, then derive base/net from the model's own relationships
-  // (gross = base + SI + tax; net = base + ECOL + fuel), using gross as the fixed
-  // anchor. Without an insurance wage the carried values are kept (Phase 1).
-  if (input.statutory && input.statutory.insuranceWage != null && grossSalary > 0) {
-    const statutory = computeStatutory(
-      { monthlyGross: grossSalary, insuranceWage: input.statutory.insuranceWage },
+  // Base, Basic (base×70%), and Net are the source of truth from the employee
+  // master and must NEVER be recomputed here — Basic feeds the locked incentive
+  // scheme, so any drift would silently distort incentive payouts. When a
+  // per-employee insurance wage is configured, SI is computed from that wage
+  // (independent of base/gross) and income tax is computed on Base — not
+  // Gross — by passing `Base + SI` as the calculator's "monthlyGross" argument
+  // so its internal `(monthlyGross − SI) × 12` cancels back out to `Base × 12`.
+  // Gross is the only figure allowed to move, recomputed FORWARD as
+  // `Base + SI + Tax` (policy.ts's own formula) purely for statutory reporting
+  // — it never feeds back into base/net/monthSalary. Without an insurance wage
+  // configured, everything is carried as-is (Phase 1 behavior).
+  if (input.statutory && input.statutory.insuranceWage != null && baseSalary > 0) {
+    const si = computeSocialInsurance(input.statutory.insuranceWage, input.statutory.config);
+    socialInsurance = si.employee;
+    employmentIncomeTax = computeIncomeTax(
+      baseSalary + si.employee,
+      si.employee,
       input.statutory.config,
     );
-    socialInsurance = statutory.socialInsurance;
-    employmentIncomeTax = statutory.incomeTax;
-    baseSalary = roundCurrency(grossSalary - socialInsurance - employmentIncomeTax);
-    netSalary = roundCurrency(baseSalary + extraCostOfLiving + fuelAllowance);
+    grossSalary = calculateGrossSalary({ baseSalary, socialInsurance, employmentIncomeTax });
   }
 
   // Additive components the Copilot fills; feeder-imported columns stay 0 in P1.
@@ -129,7 +142,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   const expenses = 0;
   const crm = 0;
   const fingerPrint = 0;
-  const medicalInsurance = 0;
+  const medicalInsurance = roundCurrency(employee.medicalInsurance ?? 0);
 
   // 1) Recurring items for this period.
   for (const item of recurring) {
@@ -153,9 +166,12 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
         loans += amount;
         break;
       case "prorate": {
-        const worked = Math.max(0, Math.min(adjustment.workedDays ?? 0, daysInMonth(period)));
-        const total = daysInMonth(period);
-        const unpaid = total > 0 ? roundCurrency(netSalary * (1 - worked / total)) : 0;
+        // Universal proration principle: the daily rate is always Base ÷
+        // calendar days in month — ECOL/Fuel are never part of it, even here.
+        const total = calendarDaysInMonth(period);
+        const worked = Math.max(0, Math.min(adjustment.workedDays ?? 0, total));
+        const unpaidDays = Math.max(0, total - worked);
+        const unpaid = roundCurrency(dailyRate(baseSalary, period) * unpaidDays);
         unpaidVacations += Math.max(0, unpaid);
         break;
       }
@@ -182,41 +198,129 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   otherDeductions = roundCurrency(otherDeductions);
   unpaidVacations = roundCurrency(unpaidVacations);
 
+  // Resignation/joiner settlement: for a leaver/joiner this month, Base/ECOL/
+  // Fuel/Net for THIS row reflect the actual prorated entitlement (owner's
+  // formulas below) rather than the full carried master values — a genuine,
+  // rule-driven recalculation for a real partial-month event, distinct from
+  // the statutory-drift bug fixed above. Gross/SI/Tax are deliberately left
+  // as computed against the full master Base (Egyptian SI/tax proration for a
+  // partial month is out of scope here — owner: "not critical").
+  let effectiveBaseSalary = baseSalary;
+  let effectiveExtraCostOfLiving = extraCostOfLiving;
+  let effectiveFuelAllowance = fuelAllowance;
+  let effectiveNetSalary = netSalary;
+  let resignationSettlement: ResignationSettlement | null = null;
+
+  const settlementAdditions = roundCurrency(overtime + bonus + otherAdditions);
+  const settlementDeductions = roundCurrency(
+    crm + fingerPrint + medicalInsurance + loans + otherDeductions + unpaidVacations,
+  );
+
+  if (input.resignation?.lastWorkingDate) {
+    resignationSettlement = computeResignationSettlement({
+      baseSalary,
+      extraCostOfLiving,
+      fuelAllowance,
+      lastWorkingDate: input.resignation.lastWorkingDate,
+      period,
+      unpaidDaysInSpan: input.resignation.unpaidDaysInSpan,
+      otherAdditions: settlementAdditions,
+      otherDeductions: settlementDeductions,
+    });
+    if (resignationSettlement) {
+      effectiveBaseSalary = resignationSettlement.baseForMonth;
+      effectiveExtraCostOfLiving = resignationSettlement.ecolPaid;
+      effectiveFuelAllowance = resignationSettlement.fuelPaid;
+      effectiveNetSalary = resignationSettlement.netForMonth;
+    }
+  } else {
+    const hireDate = employee.hireDate;
+    if (hireDate && isInPeriod(hireDate, period)) {
+      const joinerPay = computeJoinerPay({ baseSalary, extraCostOfLiving, fuelAllowance, hireDate, period });
+      if (joinerPay) {
+        effectiveBaseSalary = joinerPay.baseForMonth;
+        effectiveExtraCostOfLiving = joinerPay.ecolPaid;
+        effectiveFuelAllowance = joinerPay.fuelPaid;
+        effectiveNetSalary = joinerPay.netForMonth;
+      }
+    }
+  }
+
+  // Manual chat overrides win over the auto-computed settlement — the CEO's
+  // explicit, audited escape hatch for a one-off exception.
+  let settlementOverridden = false;
+  if (overrides.has("baseSalary")) {
+    effectiveBaseSalary = overrides.get("baseSalary")!;
+    settlementOverridden = true;
+  }
+  if (overrides.has("extraCostOfLiving")) {
+    effectiveExtraCostOfLiving = overrides.get("extraCostOfLiving")!;
+    settlementOverridden = true;
+  }
+  if (overrides.has("fuelAllowance")) {
+    effectiveFuelAllowance = overrides.get("fuelAllowance")!;
+    settlementOverridden = true;
+  }
+  if (settlementOverridden) {
+    effectiveNetSalary = roundCurrency(
+      effectiveBaseSalary + effectiveExtraCostOfLiving + effectiveFuelAllowance,
+    );
+  }
+
   const totalAdditions = roundCurrency(
-    expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
+    expenses + incentive + overtime + bonus + effectiveExtraCostOfLiving + effectiveFuelAllowance + otherAdditions,
   );
   const totalDeductions = roundCurrency(
     crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
   );
   const governmentalDeductions = roundCurrency(socialInsurance + employmentIncomeTax);
 
-  const parts = calculatePayrollParts({
-    additions: expenses + incentive + overtime + bonus + otherAdditions,
-    deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
-    baseSalary,
-    extraCostOfLiving,
-    fuelAllowance,
-    netSalary,
-    paymentMode,
-    previousExpenses: 0,
-    secondPartAdditions: expenses + incentive,
-  });
-  const firstPart = roundCurrency(parts.firstPart);
-  const secondPart = roundCurrency(Math.max(0, parts.secondPart));
+  let firstPart: number;
+  let secondPart: number;
+  if (resignationSettlement && !settlementOverridden) {
+    // Resignation Rule 2 (two-part payment mode only): Part 1 stays at the
+    // normal fixed Basic Salary anchor unless the settlement is smaller, in
+    // which case Part 1 absorbs the whole settlement and Part 2 is 0.
+    if (paymentMode === "two_parts") {
+      const split = applyResignationPartsSplit({
+        totalPayable: resignationSettlement.total,
+        basicSalary: calculateBasicSalary({ baseSalary }),
+      });
+      firstPart = split.firstPart;
+      secondPart = split.secondPart;
+    } else {
+      firstPart = roundCurrency(Math.max(0, resignationSettlement.total));
+      secondPart = 0;
+    }
+  } else {
+    const parts = calculatePayrollParts({
+      additions: expenses + incentive + overtime + bonus + otherAdditions,
+      deductions: crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
+      baseSalary: effectiveBaseSalary,
+      extraCostOfLiving: effectiveExtraCostOfLiving,
+      fuelAllowance: effectiveFuelAllowance,
+      netSalary: effectiveNetSalary,
+      paymentMode,
+      previousExpenses: 0,
+      secondPartAdditions: expenses + incentive,
+    });
+    firstPart = roundCurrency(parts.firstPart);
+    secondPart = roundCurrency(Math.max(0, parts.secondPart));
+  }
   const monthSalary = roundCurrency(firstPart + secondPart);
 
   return {
     area: employee.areaName ?? "",
-    baseSalary,
+    baseSalary: effectiveBaseSalary,
     bonus,
     crm,
     hrId: employee.hrId,
     employmentIncomeTax,
     expenses,
-    extraCostOfLiving,
+    extraCostOfLiving: effectiveExtraCostOfLiving,
     fingerPrint,
     firstPart,
-    fuelAllowance,
+    fuelAllowance: effectiveFuelAllowance,
     governmentalDeductions,
     fullName: employee.fullName,
     grossSalary,
@@ -228,7 +332,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     medicalInsurance,
     monthSalary,
     nameAr: employee.nameAr,
-    netSalary,
+    netSalary: effectiveNetSalary,
     otherAdditions,
     otherDeductions,
     overtime,

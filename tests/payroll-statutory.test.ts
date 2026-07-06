@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import { buildRowForEmployee } from "../src/lib/payroll/copilot/assemble.ts";
+import { evaluateEmployeeFlags } from "../src/lib/payroll/copilot/flags.ts";
 import type { CopilotPeriod } from "../src/lib/payroll/copilot/types.ts";
 import {
   clampInsuranceWage,
@@ -101,8 +102,10 @@ export function runPayrollStatutoryTests() {
   );
 
   // --- copilot assembly integration -----------------------------------------
-  // With an insurance wage set, SI + tax are computed and base/net re-derived
-  // from the model (gross = base + SI + tax; net = base + ECOL + fuel).
+  // Base/Basic/Net must NEVER move regardless of SI/Tax — only Gross is
+  // allowed to move, computed FORWARD as Base + SI + Tax. Tax is computed on
+  // Base (not Gross): monthlyGross fed to computeIncomeTax is Base + SI so it
+  // cancels back out to Base × 12 annualized.
   const computedRow = buildRowForEmployee({
     employee: statEmp(),
     source: statSource(),
@@ -114,18 +117,17 @@ export function runPayrollStatutoryTests() {
   });
   assert.ok(computedRow, "row should assemble");
   assert.equal(computedRow.socialInsurance, 1100);
-  assert.equal(computedRow.employmentIncomeTax, 592.5);
-  assert.equal(computedRow.grossSalary, 10000);
-  assert.equal(computedRow.baseSalary, 8307.5); // 10000 - 1100 - 592.5
-  assert.equal(computedRow.netSalary, 10807.5); // 8307.5 + 2000 + 500
-  assert.equal(computedRow.governmentalDeductions, 1692.5);
-  // the assembled row must satisfy the shared validator (no formula mismatch)
-  const formulaIssues = validateSalaryRows([computedRow]).filter((issue) =>
-    ["gross_salary_formula_mismatch", "net_salary_formula_mismatch", "deductions_exceed_net"].includes(issue.code),
-  );
-  assert.deepEqual(formulaIssues, []);
+  // tax on (base 8000 + SI 1100 = 9100), SI 1100 → annualNet (9100-1100)*12=96000
+  // − 20,000 exemption = 76,000 taxable → 4,950/yr → 412.50/mo
+  assert.equal(computedRow.employmentIncomeTax, 412.5);
+  assert.equal(computedRow.baseSalary, 8000, "base must equal the stored master value, never re-derived");
+  assert.equal(computedRow.netSalary, 10500, "net must equal the stored master value, never re-derived");
+  assert.equal(computedRow.grossSalary, 9512.5); // forward: 8000 + 1100 + 412.5
+  assert.equal(computedRow.governmentalDeductions, 1512.5);
 
-  // Without an insurance wage, the carried values are kept (Phase 1 behavior).
+  // Gross's movement must never perturb the bank payout (monthSalary) — prove
+  // it by comparing against the same row assembled with NO insurance wage,
+  // where Gross is simply carried unchanged from source.
   const carriedRow = buildRowForEmployee({
     employee: statEmp(),
     source: statSource(),
@@ -135,6 +137,38 @@ export function runPayrollStatutoryTests() {
     index: 1,
     statutory: { config: CONFIG, insuranceWage: null },
   });
-  assert.equal(carriedRow?.socialInsurance, 999);
-  assert.equal(carriedRow?.employmentIncomeTax, 999);
+  assert.ok(carriedRow, "row should assemble");
+  assert.equal(carriedRow.socialInsurance, 999);
+  assert.equal(carriedRow.employmentIncomeTax, 999);
+  assert.equal(carriedRow.grossSalary, 10000); // carried straight from source, untouched
+  assert.equal(carriedRow.baseSalary, computedRow.baseSalary);
+  assert.equal(carriedRow.netSalary, computedRow.netSalary);
+  assert.equal(
+    carriedRow.monthSalary,
+    computedRow.monthSalary,
+    "monthSalary (bank payout) must be identical with or without an insurance wage configured",
+  );
+
+  // A prior snapshot with the same base but a different implied gross must
+  // never false-fire salary_role_change — proves the statutory-drift bug that
+  // caused ~100 false positives in the first live run is gone.
+  const flags = evaluateEmployeeFlags({
+    row: computedRow,
+    employee: statEmp(),
+    source: statSource(),
+    prior: { netSalary: computedRow.netSalary, baseSalary: computedRow.baseSalary, line: "Line A", jobTitle: "Medical Representative" },
+    feeder: undefined,
+    period: PERIOD,
+    bigChangeThreshold: 0.25,
+  });
+  assert.ok(
+    !flags.some((flag) => flag.rule === "salary_role_change"),
+    "salary_role_change must not fire when only Gross moved",
+  );
+
+  // the assembled row must satisfy the shared validator (no formula mismatch)
+  const formulaIssues = validateSalaryRows([computedRow]).filter((issue) =>
+    ["gross_salary_formula_mismatch", "net_salary_formula_mismatch", "deductions_exceed_net"].includes(issue.code),
+  );
+  assert.deepEqual(formulaIssues, []);
 }

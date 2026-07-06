@@ -10,6 +10,8 @@ import type { CopilotPeriod, EmployeeFeederState } from "./types.ts";
  *
  * Column names verified against the live migrations (2026-07-06):
  *   v2_vacation_requests  → payment_status='unpaid', status, start_date/end_date, duration_days
+ *                           (start_date/end_date also used to clip unpaid days to a leaver's
+ *                           specific settlement span — see the resignation Rule 1 pass below)
  *   deduction_candidates  → employee_hr_id_compact, month, year, superseded_at
  *   employee_resignations → employee_hr_id, last_working_date, exit_status
  *   payroll_expenses      → hr_id, payout_month, payout_year, hr_approved
@@ -26,6 +28,24 @@ function periodBounds(period: CopilotPeriod): { start: string; end: string } {
   const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
   const end = `${period.year}-${mm}-${String(lastDay).padStart(2, "0")}`;
   return { start, end };
+}
+
+function isoDateOnly(value: string): string {
+  return value.slice(0, 10);
+}
+
+function daysBetweenInclusive(startIso: string, endIso: string): number {
+  const start = Date.parse(`${isoDateOnly(startIso)}T00:00:00Z`);
+  const end = Date.parse(`${isoDateOnly(endIso)}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+  return Math.round((end - start) / 86400000) + 1;
+}
+
+/** Inclusive-day overlap between [aStart, aEnd] and [bStart, bEnd] (ISO date strings). */
+function overlapDays(aStart: string, aEnd: string, bStart: string, bEnd: string): number {
+  const start = aStart > bStart ? aStart : bStart;
+  const end = aEnd < bEnd ? aEnd : bEnd;
+  return daysBetweenInclusive(start, end);
 }
 
 async function safeRows(
@@ -52,6 +72,7 @@ function ensure(map: Map<string, EmployeeFeederState>, key: string): EmployeeFee
       unpaidLeaveDays: 0,
       attendanceDeductionPending: false,
       leaverLastWorkingDate: null,
+      unpaidDaysBeforeLastWorkingDate: 0,
       pendingExpense: false,
     };
     map.set(key, state);
@@ -73,18 +94,25 @@ export async function buildFeederStates(
   const unpaidLeave = await safeRows("unpaid_leave", () =>
     supabase
       .from("v2_vacation_requests")
-      .select("employee_hr_id,duration_days,status")
+      .select("employee_hr_id,duration_days,status,start_date,end_date")
       .eq("payment_status", "unpaid")
       .in("status", ["approved", "pending_manager"])
       .lte("start_date", end)
       .gte("end_date", start),
   );
+  type UnpaidLeaveRow = { key: string; startDate: string; endDate: string; days: number };
+  const unpaidLeaveRows: UnpaidLeaveRow[] = [];
   for (const row of unpaidLeave) {
     const key = compactHrKey(String(row.employee_hr_id ?? ""));
     if (!key) continue;
     const days = Number(row.duration_days ?? 0);
     const state = ensure(states, key);
     state.unpaidLeaveDays += Number.isFinite(days) ? days : 0;
+    const startDate = row.start_date ? isoDateOnly(String(row.start_date)) : "";
+    const endDate = row.end_date ? isoDateOnly(String(row.end_date)) : "";
+    if (startDate && endDate) {
+      unpaidLeaveRows.push({ key, startDate, endDate, days: Number.isFinite(days) ? days : 0 });
+    }
   }
 
   // Active attendance-device deduction candidates for the period.
@@ -115,6 +143,21 @@ export async function buildFeederStates(
     const key = compactHrKey(String(row.employee_hr_id ?? ""));
     if (!key) continue;
     ensure(states, key).leaverLastWorkingDate = String(row.last_working_date ?? "") || null;
+  }
+
+  // Resignation Rule 1 needs unpaid-leave days clipped to [period start, last
+  // working date] specifically — not the whole-month total above. Prorate each
+  // unpaid-leave row's duration_days by how much of its own span overlaps that
+  // narrower window, in case only part of a leave request falls before exit.
+  for (const row of unpaidLeaveRows) {
+    const state = states.get(row.key);
+    const lastWorkingDate = state?.leaverLastWorkingDate;
+    if (!state || !lastWorkingDate) continue;
+    const spanDays = daysBetweenInclusive(row.startDate, row.endDate);
+    if (spanDays <= 0) continue;
+    const clip = overlapDays(row.startDate, row.endDate, start, lastWorkingDate);
+    if (clip <= 0) continue;
+    state.unpaidDaysBeforeLastWorkingDate += row.days * (clip / spanDays);
   }
 
   // Expenses tied to this payout period that are not yet HR-approved.

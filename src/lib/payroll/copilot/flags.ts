@@ -3,6 +3,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import type { SalaryValidationRow } from "@/lib/payroll/salary-import";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model";
 
+import { dayOfMonth, isInPeriod } from "./proration.ts";
 import type {
   CopilotFlag,
   CopilotPeriod,
@@ -32,13 +33,6 @@ function money(value: number): string {
   return roundCurrency(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
-function isInPeriod(dateText: string | null, period: CopilotPeriod): boolean {
-  if (!dateText) return false;
-  const match = /^(\d{4})-(\d{2})/.exec(dateText.trim());
-  if (!match) return false;
-  return Number(match[1]) === period.year && Number(match[2]) === period.month;
-}
-
 export function evaluateEmployeeFlags(input: {
   row: SalaryValidationRow;
   employee: EmployeeDirectoryRow;
@@ -64,28 +58,41 @@ export function evaluateEmployeeFlags(input: {
     });
   }
 
-  // 2. joiner_leaver (block) — proration / final settlement needed.
+  // 2. joiner_leaver — the settlement is now fully auto-computed by assemble.ts
+  // (day-25/day-15 cutoffs, Base-only day-rate, Part1/Part2 clawback), so this
+  // warns for confirmation rather than blocking, showing the computed result.
+  // Stays a block only when the date itself can't be parsed at all — nothing
+  // was computed, so this genuinely needs a human to fix the data first.
   const isJoiner = isInPeriod(employee.hireDate, period);
   const leaverDate = feeder?.leaverLastWorkingDate ?? null;
+  const isLeaver = Boolean(leaverDate);
   if (isJoiner) {
+    const settlementComputable = employee.hireDate != null && dayOfMonth(employee.hireDate) != null;
     flags.push({
       employeeHrId: row.hrId,
       rule: "joiner_leaver",
-      severity: "block",
-      question: `${name} joined on ${employee.hireDate} — a partial month. How many days should they be paid (prorate), or pay a full month?`,
+      severity: settlementComputable ? "warn" : "block",
+      question: settlementComputable
+        ? `${name} joined on ${employee.hireDate} — a partial month. Settlement auto-calculated: EGP ${money(row.monthSalary)} this month. Confirm or override.`
+        : `${name} joined on ${employee.hireDate} — a partial month, but the hire date couldn't be parsed. Enter or confirm the exact hire date before including them.`,
     });
   } else if (leaverDate) {
+    const settlementComputable = dayOfMonth(leaverDate) != null;
     flags.push({
       employeeHrId: row.hrId,
       rule: "joiner_leaver",
-      severity: "block",
-      question: `${name} is leaving (last working day ${leaverDate}). Confirm the final settlement — days to pay and any final deductions.`,
+      severity: settlementComputable ? "warn" : "block",
+      question: settlementComputable
+        ? `${name} is leaving (last working day ${leaverDate}). Settlement auto-calculated: EGP ${money(row.monthSalary)} this month. Confirm or override.`
+        : `${name} is leaving, but the last working date couldn't be parsed. Enter or confirm the exact date before including them.`,
     });
   }
 
-  // 5. unpaid_leave (block) — reduces salary; needs an amount.
+  // 5. unpaid_leave (block) — reduces salary; needs an amount. Skipped for a
+  // leaver: resignation Rule 1 already nets unpaid days out of daysWorked
+  // automatically, so asking again here would be redundant/confusing.
   const unpaidDays = feeder?.unpaidLeaveDays ?? 0;
-  if (unpaidDays > 0 && row.unpaidVacations <= 0) {
+  if (unpaidDays > 0 && row.unpaidVacations <= 0 && !isLeaver) {
     flags.push({
       employeeHrId: row.hrId,
       rule: "unpaid_leave",
@@ -115,7 +122,10 @@ export function evaluateEmployeeFlags(input: {
   }
 
   // 4. salary_role_change (warn) — base/line/role differs from last month.
-  if (prior) {
+  // Skipped for a joiner/leaver: their base this month is a deliberate
+  // settlement figure (Rule 1/2), already explained by the joiner_leaver flag
+  // above, not an unexplained anomaly.
+  if (prior && !isJoiner && !isLeaver) {
     const baseChanged = changed(prior.baseSalary, row.baseSalary);
     const lineChanged = (prior.line || "") !== (row.line || "");
     const roleChanged = (prior.jobTitle || "") !== (row.jobTitle || "");
@@ -133,8 +143,9 @@ export function evaluateEmployeeFlags(input: {
     }
   }
 
-  // 7. big_change (warn) — net swings sharply vs last month.
-  if (prior && prior.netSalary > 0) {
+  // 7. big_change (warn) — net swings sharply vs last month. Skipped for a
+  // joiner/leaver: a partial-month swing is expected and already explained.
+  if (prior && prior.netSalary > 0 && !isJoiner && !isLeaver) {
     const swing = Math.abs(row.netSalary - prior.netSalary) / prior.netSalary;
     if (swing > bigChangeThreshold) {
       flags.push({
