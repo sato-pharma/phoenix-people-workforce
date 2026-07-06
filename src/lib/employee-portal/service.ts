@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   canSeeEmployee,
@@ -2336,7 +2338,7 @@ export type MedicalRepPortalData = {
  */
 export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract">;
 
-export async function getEmployeePortalShellData(access: AccessContext): Promise<EmployeePortalShellData> {
+export const getEmployeePortalShellData = cache(async (access: AccessContext): Promise<EmployeePortalShellData> => {
   const currentUser = await resolvePortalCurrentUser(access);
   const currentHrId = normalizeHrId(currentUser.hrId);
   const directory = await getEmployeeDirectory();
@@ -2352,6 +2354,11 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
         ? "On Probation"
         : "Completed";
 
+  const [manager, photoUrl] = await Promise.all([
+    resolveDirectManagerName(employee.hrId),
+    uploadedEmployeePhotoUrl(employee.hrId),
+  ]);
+
   return {
     employee: {
       area: employee.areaName,
@@ -2359,8 +2366,8 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       fullName: employee.displayName,
       hrId: employee.hrId,
       line: employee.lineName,
-      manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
-      photoUrl: await uploadedEmployeePhotoUrl(employee.hrId),
+      manager: manager ?? employee.managerName,
+      photoUrl,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
       territory: employee.regionName ?? employee.areaName,
@@ -2376,7 +2383,7 @@ export async function getEmployeePortalShellData(access: AccessContext): Promise
       serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
     },
   };
-}
+});
 
 async function buildEmployeePortalOverviewData(input: {
   access: AccessContext;

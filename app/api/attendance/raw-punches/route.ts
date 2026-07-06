@@ -214,6 +214,8 @@ async function recordUnmappedDeviceUsers(
   }
 }
 
+const insertConcurrency = 50;
+
 async function insertPunches(punches: ValidatedPunch[]) {
   const supabase = getSupabaseAdmin();
   const mappedHrIds = await resolveMappedHrIds(punches);
@@ -222,47 +224,62 @@ async function insertPunches(punches: ValidatedPunch[]) {
   let duplicate = 0;
   let skipped = 0;
   const unmappedPunches: ValidatedPunch[] = [];
+  const toInsert: Array<{ punch: ValidatedPunch; employeeHrId: string }> = [];
 
   for (const punch of punches) {
-    const { input_index, ...punchRow } = punch;
     const employeeHrId = punch.employee_hr_id ?? mappedHrIds.get(mapKey(punch)) ?? null;
     if (!employeeHrId) {
       unmappedPunches.push(punch);
       skipped += 1;
       continue;
     }
+    toInsert.push({ punch, employeeHrId });
+  }
 
-    // Conflict-tolerant insert. The DB function uses ON CONFLICT DO NOTHING so
-    // re-pushed punches are silently ignored at the database level (no 23505
-    // ERROR logged). Returns the new id, or null when the punch already existed.
-    const { data, error } = await supabase.rpc("phx_insert_attendance_raw_punch", {
-      p_device_id: punchRow.device_id,
-      p_device_user_id: punchRow.device_user_id,
-      p_employee_hr_id: employeeHrId,
-      p_punch_time: punchRow.punch_time,
-      p_punch_type: punchRow.punch_type,
-      p_verify_mode: punchRow.verify_mode,
-      p_raw_payload: punchRow.raw_payload ?? {},
-      p_source_run_id: punchRow.source_run_id,
-    });
+  // Each row is independent (the DB function's own ON CONFLICT DO NOTHING makes it safe to
+  // race) — chunked concurrency instead of one RPC at a time is what keeps a full
+  // maxPunchesPerRequest batch from taking minutes.
+  for (let i = 0; i < toInsert.length; i += insertConcurrency) {
+    const chunk = toInsert.slice(i, i + insertConcurrency);
+    const results = await Promise.all(
+      chunk.map(async ({ punch, employeeHrId }) => {
+        const { input_index, ...punchRow } = punch;
+        // Conflict-tolerant insert. The DB function uses ON CONFLICT DO NOTHING so
+        // re-pushed punches are silently ignored at the database level (no 23505
+        // ERROR logged). Returns the new id, or null when the punch already existed.
+        const { data, error } = await supabase.rpc("phx_insert_attendance_raw_punch", {
+          p_device_id: punchRow.device_id,
+          p_device_user_id: punchRow.device_user_id,
+          p_employee_hr_id: employeeHrId,
+          p_punch_time: punchRow.punch_time,
+          p_punch_type: punchRow.punch_type,
+          p_verify_mode: punchRow.verify_mode,
+          p_raw_payload: punchRow.raw_payload ?? {},
+          p_source_run_id: punchRow.source_run_id,
+        });
+        return { data, error, input_index };
+      }),
+    );
 
-    if (error) {
-      // Defensive: a unique violation should no longer surface here, but if the
-      // function is ever briefly unavailable, still treat it as a duplicate
-      // rather than a hard failure.
-      if (error.code === "23505") {
-        duplicate += 1;
+    for (const result of results) {
+      if (result.error) {
+        // Defensive: a unique violation should no longer surface here, but if the
+        // function is ever briefly unavailable, still treat it as a duplicate
+        // rather than a hard failure.
+        if (result.error.code === "23505") {
+          duplicate += 1;
+          continue;
+        }
+
+        failures.push({ index: result.input_index, message: result.error.message });
         continue;
       }
 
-      failures.push({ index: input_index, message: error.message });
-      continue;
-    }
-
-    if (data == null) {
-      duplicate += 1;
-    } else {
-      inserted += 1;
+      if (result.data == null) {
+        duplicate += 1;
+      } else {
+        inserted += 1;
+      }
     }
   }
 
