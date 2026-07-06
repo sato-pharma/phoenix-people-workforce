@@ -85,6 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
         unpaidDays: Number(body.unpaidDays ?? 0),
         salaryDeductionAmount: Number(body.salaryDeductionAmount ?? 0),
         balanceAvailable: Boolean(body.balanceAvailable),
+        balanceDaysAvailable: 0,
         existingSettlement: null,
       },
       method: body.method,

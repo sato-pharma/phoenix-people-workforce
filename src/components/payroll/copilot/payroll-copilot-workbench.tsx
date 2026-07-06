@@ -119,6 +119,40 @@ const SEVERITY_STYLES: Record<Flag["severity"], string> = {
   warn: "border-l-amber-500",
 };
 
+type QuestionGroup = {
+  key: string;
+  rule: string;
+  question: string;
+  severity: Flag["severity"];
+  hrIds: string[];
+  names: string[];
+};
+
+/** Employees sharing the EXACT same (rule, question) — offered a single bulk-resolve action instead of N separate ones. */
+function groupDuplicateQuestions(flagged: FlaggedEmployee[]): QuestionGroup[] {
+  const map = new Map<string, QuestionGroup>();
+  for (const employee of flagged) {
+    for (const flag of employee.flags) {
+      const key = `${flag.rule}::${flag.question}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.hrIds.push(employee.hrId);
+        existing.names.push(employee.fullName);
+      } else {
+        map.set(key, {
+          key,
+          rule: flag.rule,
+          question: flag.question,
+          severity: flag.severity,
+          hrIds: [employee.hrId],
+          names: [employee.fullName],
+        });
+      }
+    }
+  }
+  return Array.from(map.values()).filter((group) => group.hrIds.length >= 2);
+}
+
 export function PayrollCopilotWorkbench() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -179,6 +213,29 @@ export function PayrollCopilotWorkbench() {
     await run(async () => {
       if (!view) return;
       const scoped = `${hrId}: ${text}`;
+      const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: scoped });
+      setChat(scoped);
+      setProposals((data.proposedActions as ProposedAction[]) ?? []);
+    });
+  }
+
+  /** Bulk-confirm — every employee sharing an identical open question, confirmed as correct in one call. */
+  async function confirmGroup(hrIds: string[]) {
+    await run(async () => {
+      if (!view) return;
+      const data = (await postJson(`/api/payroll/copilot/${view.run.id}/actions`, {
+        actions: hrIds.map((hrId) => ({ kind: "confirm", hrId })),
+      })) as unknown as RunView;
+      setView(data);
+    });
+  }
+
+  /** Bulk report-issue — one answer applied to every employee sharing an identical open question, via the same chat parser. */
+  async function reportIssueGroup(hrIds: string[], text: string) {
+    if (!text.trim()) return;
+    await run(async () => {
+      if (!view) return;
+      const scoped = `${hrIds.join(", ")}: ${text}`;
       const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: scoped });
       setChat(scoped);
       setProposals((data.proposedActions as ProposedAction[]) ?? []);
@@ -307,6 +364,8 @@ export function PayrollCopilotWorkbench() {
             onConfirmEmployee={confirmEmployee}
             onReportIssue={reportIssue}
             onHoldEmployee={holdEmployee}
+            onConfirmGroup={confirmGroup}
+            onReportIssueGroup={reportIssueGroup}
           />
         )}
       </div>
@@ -330,10 +389,15 @@ function RunWorkspace(props: {
   onConfirmEmployee: (hrId: string) => void;
   onReportIssue: (hrId: string, text: string) => void;
   onHoldEmployee: (hrId: string, reason: string) => void;
+  onConfirmGroup: (hrIds: string[]) => void;
+  onReportIssueGroup: (hrIds: string[], text: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
   const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm" | "vacation">("negotiation");
   if (!draft) return null;
+
+  const questionGroups = groupDuplicateQuestions(draft.flagged);
+  const groupedHrIds = new Set(questionGroups.flatMap((group) => group.hrIds));
 
   return (
     <div className="space-y-6">
@@ -397,6 +461,25 @@ function RunWorkspace(props: {
       ) : (
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-4">
+          {questionGroups.length > 0 ? (
+            <div className="border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+                Same question, {questionGroups.length} group(s) — bulk resolve
+              </div>
+              <div className="divide-y divide-slate-100">
+                {questionGroups.map((group) => (
+                  <GroupedQuestionRow
+                    key={group.key}
+                    group={group}
+                    busy={props.busy}
+                    onConfirmAll={() => props.onConfirmGroup(group.hrIds)}
+                    onReportIssueAll={(text) => props.onReportIssueGroup(group.hrIds, text)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="border border-slate-200 bg-white">
             <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
               Questions ({draft.flagged.length})
@@ -412,6 +495,11 @@ function RunWorkspace(props: {
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-slate-900">
                         {employee.fullName} <span className="text-slate-400">({employee.hrId})</span>
+                        {groupedHrIds.has(employee.hrId) ? (
+                          <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Grouped above
+                          </span>
+                        ) : null}
                       </p>
                       {employee.flags.map((flag) => (
                         <p
@@ -619,6 +707,92 @@ function ListCard({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One row per group of employees sharing the exact same open question — lets
+ * the CEO resolve all of them in one action instead of repeating the same
+ * answer N times. "Confirm all" applies the confirm action to every hrId in
+ * one call; "Answer for all" routes one reply through the same chat parser
+ * used for a single employee, just addressed to every name in the group.
+ * No bulk Hold here — a hold's comment is inherently per-employee (shown on
+ * that one person's payslip), so it stays a single-row action only.
+ */
+function GroupedQuestionRow({
+  group,
+  busy,
+  onConfirmAll,
+  onReportIssueAll,
+}: {
+  group: QuestionGroup;
+  busy: boolean;
+  onConfirmAll: () => void;
+  onReportIssueAll: (text: string) => void;
+}) {
+  const [answering, setAnswering] = useState(false);
+  const [text, setText] = useState("");
+
+  return (
+    <div className="px-4 py-3 text-sm">
+      <p className={`border-l-4 pl-2 font-medium text-slate-800 ${SEVERITY_STYLES[group.severity]}`}>
+        {group.question}
+      </p>
+      <p className="mt-1 pl-2 text-xs text-slate-500">
+        {group.hrIds.length} people: {group.names.join(", ")}
+      </p>
+      {answering ? (
+        <div className="mt-2 flex flex-col gap-2 border border-slate-300 bg-slate-50 p-2">
+          <textarea
+            className="h-16 w-full border border-slate-300 px-2 py-1 text-xs"
+            placeholder="One answer, applied to everyone in this group"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            autoFocus
+          />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              disabled={busy || !text.trim()}
+              onClick={() => {
+                onReportIssueAll(text);
+                setAnswering(false);
+                setText("");
+              }}
+              className="bg-slate-900 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Send to all {group.hrIds.length}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAnswering(false)}
+              className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirmAll}
+            className="bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+          >
+            Confirm all {group.hrIds.length} as correct
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setAnswering(true)}
+            className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            Answer for all
+          </button>
+        </div>
       )}
     </div>
   );

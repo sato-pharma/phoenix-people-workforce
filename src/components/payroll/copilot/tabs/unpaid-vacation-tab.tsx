@@ -12,6 +12,7 @@ type UnpaidVacationCandidate = {
   unpaidDays: number;
   salaryDeductionAmount: number;
   balanceAvailable: boolean;
+  balanceDaysAvailable: number;
   existingSettlement: { method: "salary" | "balance"; decidedAt: string } | null;
 };
 
@@ -147,7 +148,6 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
                         <button
                           type="button"
                           disabled={busy || !row.balanceAvailable}
-                          title={row.balanceAvailable ? undefined : "Not enough vacation balance available"}
                           onClick={() => decide(row, "balance")}
                           className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
                             current === "balance"
@@ -155,8 +155,14 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
                               : "border border-slate-300 text-slate-700 hover:bg-slate-100"
                           }`}
                         >
-                          Deduct from vacation balance{row.balanceAvailable ? "" : " (unavailable)"}
+                          Deduct from vacation balance
                         </button>
+                        {!row.balanceAvailable ? (
+                          <p className="px-2 text-[11px] text-slate-500">
+                            Only {row.balanceDaysAvailable} of {row.unpaidDays} day(s) available in balance — not
+                            enough to cover this request.
+                          </p>
+                        ) : null}
                         <button
                           type="button"
                           disabled={busy}

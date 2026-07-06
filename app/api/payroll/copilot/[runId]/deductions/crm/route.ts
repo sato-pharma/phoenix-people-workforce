@@ -6,7 +6,7 @@ import {
   copilotErrorResponse,
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
-import { listCrmDeductionCandidates } from "@/lib/payroll/copilot/deductions-review";
+import { listCrmDeductionCandidates, syncCrmLiveMonthCandidates } from "@/lib/payroll/copilot/deductions-review";
 import { getRunPeriod } from "@/lib/payroll/copilot/service";
 import { recordCopilotDeductionDecision } from "@/lib/deductions-governance/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -20,6 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     assertCopilotAccess(access);
     const { runId } = await params;
     const period = await getRunPeriod(runId);
+    await syncCrmLiveMonthCandidates(period, resolveCopilotActor(access));
     const { cycle, rows } = await listCrmDeductionCandidates(access, period);
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveDigestCycle, type DigestCycle } from "@/lib/attendance/digest-cycle";
 import { getDigestSettings } from "@/lib/attendance/digest-recipients";
+import { syncFieldWorkforceNoActivityCandidatesForLiveMonth } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import {
   listDeductionCandidates,
   type DeductionInboxRow,
@@ -90,12 +91,45 @@ async function listCandidatesForSourceModule(
   return { cycle, rows };
 }
 
-/** Attendance-device deduction candidates for the resolved fingerprint cycle. */
+/**
+ * Attendance-device deduction candidates for the resolved fingerprint cycle.
+ * Also reports whether the attendance weekly-digest engine is currently in
+ * dry-run mode (`attendance_digest_settings.dry_run`) — in dry-run, the
+ * settlement flow that would push real rows into `deduction_candidates`
+ * intentionally no-ops, so this tab is expected to show zero candidates.
+ * `dryRun` lets the UI say that honestly instead of showing a bare "0".
+ */
 export async function listFingerprintDeductionCandidates(
   access: AccessContext,
   period: CopilotPeriod,
-): Promise<{ cycle: DigestCycle; rows: DeductionInboxRow[] }> {
-  return listCandidatesForSourceModule(access, period, "ATTENDANCE_DEVICE");
+): Promise<{ cycle: DigestCycle; rows: DeductionInboxRow[]; dryRun: boolean }> {
+  const [{ cycle, rows }, settings] = await Promise.all([
+    listCandidatesForSourceModule(access, period, "ATTENDANCE_DEVICE"),
+    getDigestSettings().catch(() => null),
+  ]);
+  return { cycle, rows, dryRun: settings?.dryRun ?? false };
+}
+
+/**
+ * Syncs the CURRENT/live month's pending Field Workforce Compliance
+ * no-activity candidates into `deduction_candidates` before reading them.
+ * Without this, only already-`Approved for Payroll` decisions ever reach
+ * this table (via the daily auto-sync) — the live month's still-pending
+ * candidates would never appear here, undercounting the tab. Insert-only/
+ * idempotent (skips rows that already exist), so safe to call on every load.
+ * Defensive: never throws — a sync failure just means this load reflects
+ * whatever was already synced, not a payroll-blocking error.
+ */
+export async function syncCrmLiveMonthCandidates(period: CopilotPeriod, createdBy: string): Promise<void> {
+  try {
+    await syncFieldWorkforceNoActivityCandidatesForLiveMonth({
+      createdBy,
+      month: period.month,
+      year: period.year,
+    });
+  } catch (error) {
+    console.error("[payroll-copilot:deductions-review] CRM live-month sync failed:", error);
+  }
 }
 
 /**
