@@ -1458,6 +1458,89 @@ export async function recordSystemApprovedAttendanceDecision(input: {
   return mapDecisionRow(data as DecisionRow);
 }
 
+/**
+ * Records an "Approved for Payroll" or "Do Not Take Action" decision made by
+ * the CEO/Super Admin from inside the Payroll Copilot's simplified review
+ * tabs (fingerprint/attendance and CRM no-activity deductions) — reads and
+ * writes the exact same `deduction_candidates`/`deduction_decisions` rows the
+ * full HR Deductions Governance workspace uses, so there is one shared source
+ * of truth regardless of which UI made the call.
+ *
+ * Deliberately bypasses `assertDeductionsGovernanceDecisionActor` (which is
+ * Super-Admin-only) the same way `recordSystemApprovedAttendanceDecision`
+ * does — the caller (the Copilot API route) has already asserted CEO/Super
+ * Admin access via `assertCopilotAccess`, so gating again here on the HR-only
+ * role would just lock the CEO out of a page built for them. Every write is
+ * stamped with a `copilot:<actor>` decided_by and a closed reason enum so it
+ * is never confused with a human HR-governance decision in the audit trail.
+ */
+export async function recordCopilotDeductionDecision(input: {
+  candidateId: string;
+  decisionStatus: "Approved for Payroll" | "Do Not Take Action";
+  appliedDeductionValue?: number | null;
+  actorLoginId: string;
+}): Promise<DeductionDecision> {
+  const candidate = await loadCandidateById(input.candidateId);
+  if (candidate.sourceModule !== "ATTENDANCE_DEVICE" && candidate.sourceModule !== "FIELD_WORKFORCE") {
+    throw new Error("recordCopilotDeductionDecision only supports ATTENDANCE_DEVICE and FIELD_WORKFORCE candidates.");
+  }
+
+  const payrollColumn = payrollColumnForDeduction({
+    deductionType: candidate.deductionType,
+    sourceModule: candidate.sourceModule,
+  });
+  if (input.decisionStatus === "Approved for Payroll" && !payrollColumn) {
+    throw new Error("This deduction source is not mapped to a payroll column.");
+  }
+
+  const appliedValue = normalizeAppliedValue({
+    candidate,
+    decisionStatus: input.decisionStatus,
+    requestedValue: input.appliedDeductionValue ?? null,
+  });
+  const appliedAmount = await calculateAppliedAmount({ appliedValue, candidate });
+  const actor = `copilot:${input.actorLoginId || "unknown"}`;
+  const now = new Date().toISOString();
+  const decisionReason =
+    input.decisionStatus === "Approved for Payroll"
+      ? "Approved via Payroll Copilot"
+      : "Rejected via Payroll Copilot";
+
+  const payload = {
+    actor_role_at_decision: "CEO/Super Admin (Payroll Copilot)",
+    actor_scope_at_decision: "system",
+    applied_amount: appliedAmount,
+    applied_deduction_value: appliedValue,
+    candidate_id: candidate.id,
+    decided_at: now,
+    decided_by: actor,
+    decision_reason: decisionReason,
+    decision_status: input.decisionStatus,
+    hr_note: "",
+    payroll_column: input.decisionStatus === "Approved for Payroll" ? payrollColumn : null,
+    payroll_handoff_status: "Not pushed" as const,
+    resolved_at: input.decisionStatus === "Do Not Take Action" ? now : null,
+    resolved_by: input.decisionStatus === "Do Not Take Action" ? actor : null,
+  };
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("deduction_decisions")
+    .upsert(payload, { onConflict: "candidate_id" })
+    .select(DECISION_COLUMNS)
+    .single();
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: actor,
+    entityId: candidate.id,
+    entityType: "deduction_decision",
+    newValues: payload,
+    summary: `Payroll Copilot decision for ${candidate.employeeCode} (${candidate.monthKey}): ${decisionReason}.`,
+  });
+
+  return mapDecisionRow(data as DecisionRow);
+}
+
 type SummaryRow = {
   candidate_count: number;
   created_at: string;

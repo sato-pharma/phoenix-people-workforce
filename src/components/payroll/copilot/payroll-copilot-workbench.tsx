@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { DeductionReviewTable } from "./tabs/deduction-review-table";
+
 type Flag = {
   employeeHrId: string;
   rule: string;
@@ -329,6 +331,7 @@ function RunWorkspace(props: {
   onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
+  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint">("negotiation");
   if (!draft) return null;
 
   return (
@@ -350,6 +353,36 @@ function RunWorkspace(props: {
         </div>
       ) : null}
 
+      <div className="flex gap-1 border-b border-slate-200">
+        {(
+          [
+            { key: "negotiation", label: "Negotiation" },
+            { key: "fingerprint", label: "Fingerprint Deductions" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2 text-sm font-semibold ${
+              activeTab === tab.key
+                ? "border-b-2 border-orange-500 text-slate-900"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "fingerprint" ? (
+        <DeductionReviewTable
+          runId={view.run.id}
+          endpoint="fingerprint"
+          title="Fingerprint / Attendance Deductions"
+          valueLabel="Days/Hours"
+        />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-4">
           <div className="border border-slate-200 bg-white">
@@ -493,6 +526,7 @@ function RunWorkspace(props: {
           ) : null}
         </section>
       </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
         <p className="text-sm text-slate-500">
