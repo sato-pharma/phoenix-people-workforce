@@ -9,6 +9,7 @@ import {
   type SalaryValidationRow,
 } from "@/lib/payroll/salary-import";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
+import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model";
 import {
   createSalaryBatch,
@@ -111,17 +112,46 @@ function priorSnapshotMap(
   return map;
 }
 
+/**
+ * Map of compact HR id -> per-employee social-insurance (subject) wage. Defensive:
+ * if the column/table is missing (migration not yet applied) it returns empty, so
+ * statutory computation simply doesn't apply and the carried values are kept.
+ */
+async function loadInsuranceWages(): Promise<Map<string, number | null>> {
+  const map = new Map<string, number | null>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from("employees").select("hr_id,social_insurance_wage");
+    if (error) {
+      console.error("[payroll-copilot:service] insurance wage load failed:", error);
+      return map;
+    }
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const key = compactHrKey(String(row.hr_id ?? ""));
+      if (!key) continue;
+      const wage = row.social_insurance_wage;
+      map.set(key, wage === null || wage === undefined ? null : Number(wage));
+    }
+  } catch (error) {
+    console.error("[payroll-copilot:service] insurance wage load threw:", error);
+  }
+  return map;
+}
+
 export async function assembleDraft(
   period: CopilotPeriod,
   adjustments: CopilotAdjustment[],
 ): Promise<CopilotDraftState> {
-  const [directory, sources, recurring, feeders, priorRecords] = await Promise.all([
-    getEmployeeDirectory(),
-    getPayrollSalarySourcesByHrId(period),
-    listRecurringForPeriod(period),
-    buildFeederStates(period),
-    getLatestSalaryRecordsBefore(period.month, period.year),
-  ]);
+  const [directory, sources, recurring, feeders, priorRecords, statutoryConfig, insuranceWages] =
+    await Promise.all([
+      getEmployeeDirectory(),
+      getPayrollSalarySourcesByHrId(period),
+      listRecurringForPeriod(period),
+      buildFeederStates(period),
+      getLatestSalaryRecordsBefore(period.month, period.year),
+      getStatutoryConfigForPeriod(period),
+      loadInsuranceWages(),
+    ]);
 
   const eligible = directory.employees.filter(
     (employee: EmployeeDirectoryRow) =>
@@ -153,6 +183,7 @@ export async function assembleDraft(
       adjustments: empAdjustments,
       period,
       index,
+      statutory: { config: statutoryConfig, insuranceWage: insuranceWages.get(compact) ?? null },
     });
     if (!row) continue;
 
