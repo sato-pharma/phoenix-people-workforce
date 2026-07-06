@@ -4215,6 +4215,18 @@ export function PayrollDashboard({
                       Download
                     </Button>
                   </Link>
+                  <Link href={`/api/payroll/${salaryReportBatch.id}/bank-file`}>
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Bank file
+                    </Button>
+                  </Link>
+                  <Link href={`/api/payroll/${salaryReportBatch.id}/statutory-summary`}>
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Statutory summary
+                    </Button>
+                  </Link>
                   {publishedPayslipStatuses.has(salaryReportBatch.status) ? (
                     <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
                       <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
