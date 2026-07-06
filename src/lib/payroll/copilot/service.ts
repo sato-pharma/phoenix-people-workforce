@@ -25,6 +25,7 @@ import {
   isDeferred,
   lookupSource,
 } from "./assemble.ts";
+import { buildApprovedDeductionTotals } from "./deductions-review.ts";
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
 import { parseCeoReply } from "./llm.ts";
@@ -142,7 +143,7 @@ export async function assembleDraft(
   period: CopilotPeriod,
   adjustments: CopilotAdjustment[],
 ): Promise<CopilotDraftState> {
-  const [directory, sources, recurring, feeders, priorRecords, statutoryConfig, insuranceWages] =
+  const [directory, sources, recurring, feeders, priorRecords, statutoryConfig, insuranceWages, approvedDeductions] =
     await Promise.all([
       getEmployeeDirectory(),
       getPayrollSalarySourcesByHrId(period),
@@ -151,6 +152,7 @@ export async function assembleDraft(
       getLatestSalaryRecordsBefore(period.month, period.year),
       getStatutoryConfigForPeriod(period),
       loadInsuranceWages(),
+      buildApprovedDeductionTotals(period),
     ]);
 
   const eligible = directory.employees.filter(
@@ -191,6 +193,7 @@ export async function assembleDraft(
             unpaidDaysInSpan: feeder.unpaidDaysBeforeLastWorkingDate,
           }
         : null,
+      approvedDeductions: approvedDeductions.get(compact),
     });
     if (!row) continue;
 
@@ -432,6 +435,12 @@ async function requireRun(runId: string): Promise<CopilotRun> {
   const run = await loadRun(runId);
   if (!run) throw new CopilotError("Payroll run not found.", 404);
   return run;
+}
+
+/** The run's payroll period — used by the fingerprint/CRM deduction review routes. */
+export async function getRunPeriod(runId: string): Promise<CopilotPeriod> {
+  const run = await requireRun(runId);
+  return { month: run.month, year: run.year };
 }
 
 export async function getRunView(runId: string): Promise<CopilotRunView> {

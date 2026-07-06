@@ -103,6 +103,8 @@ type BuildRowInput = {
   statutory?: { config: StatutoryConfig; insuranceWage: number | null };
   /** Set when this employee's last working date falls within `period` — routes through resignation Rule 1/2 instead of the normal parts split. */
   resignation?: { lastWorkingDate: string; unpaidDaysInSpan: number } | null;
+  /** Already-"Approved for Payroll" fingerprint/CRM decisions for this employee this period (see deductions-review.ts). */
+  approvedDeductions?: { crm: number; fingerPrint: number };
 };
 
 /**
@@ -153,8 +155,10 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   let unpaidVacations = 0;
   const incentive = 0;
   const expenses = 0;
-  const crm = 0;
-  const fingerPrint = 0;
+  // Sum of already-"Approved for Payroll" decisions from the Deductions
+  // Governance tables (see the Fingerprint/CRM review tabs + deductions-review.ts).
+  const crm = roundCurrency(input.approvedDeductions?.crm ?? 0);
+  const fingerPrint = roundCurrency(input.approvedDeductions?.fingerPrint ?? 0);
   const medicalInsurance = roundCurrency(employee.medicalInsurance ?? 0);
 
   // 1) Recurring items for this period.
