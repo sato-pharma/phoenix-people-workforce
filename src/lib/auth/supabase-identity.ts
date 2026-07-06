@@ -296,6 +296,11 @@ export async function setSupabaseAuthIdentityAccess(input: {
     }
   }
   if (lookupError) {
+    // A Supabase Auth user that's already gone can't authenticate anyway, so "banned" is already
+    // the effective end state — treat 404 as a no-op rather than failing the caller's saga (which
+    // otherwise rolls back an already-successful app_auth_users.is_active update). Only genuinely
+    // unexpected errors (network, permissions) still throw.
+    if (lookupError.status === 404) return { authUserId };
     throw lookupError;
   }
 
@@ -311,6 +316,7 @@ export async function setSupabaseAuthIdentityAccess(input: {
   );
 
   if (error) {
+    if (error.status === 404) return { authUserId };
     throw error;
   }
 
