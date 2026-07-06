@@ -1058,3 +1058,151 @@ export async function validateSalaryWorkbook(
     warningRows: warningRows.size,
   };
 }
+
+/**
+ * Shared, pure per-row payroll validation.
+ *
+ * Encodes the salary-sheet relationships (gross/net via the locked policy,
+ * additions/deductions totals), negative-value guards, and a new negative-pay
+ * guard (deductions must never exceed net), independent of Excel parsing.
+ *
+ * The Payroll Copilot assembles SalaryValidationRow[] and runs this before
+ * materializing a batch, so a Copilot-built sheet satisfies the same money
+ * relationships an uploaded sheet must. The Excel upload path keeps its own
+ * inline checks; this function is ADDITIVE and does not change that behavior.
+ */
+export function validateSalaryRows(
+  rows: SalaryValidationRow[],
+  sources?: Map<string, PayrollSalarySource>,
+): SalaryValidationIssue[] {
+  const issues: SalaryValidationIssue[] = [];
+  const seen = new Map<string, number>();
+
+  for (const row of rows) {
+    const hrId = (row.hrId ?? "").trim();
+
+    if (!hrId) {
+      issues.push({ code: "missing_hr_id", column: "HR_ID", message: "HR ID is required.", row: row.row });
+    } else {
+      const key = hrId.toLowerCase();
+      const priorRow = seen.get(key);
+      if (priorRow !== undefined) {
+        issues.push({
+          code: "duplicate_hr_id",
+          column: "HR_ID",
+          hrId,
+          message: `Duplicate HR ID also appears on row ${priorRow}.`,
+          row: row.row,
+        });
+      } else {
+        seen.set(key, row.row);
+      }
+    }
+
+    if (!(row.fullName ?? "").trim()) {
+      issues.push({ code: "missing_full_name", column: "Full Name", hrId, message: "Employee name is required.", row: row.row });
+    }
+
+    if (row.grossSalary <= 0) {
+      issues.push({ code: "missing_gross_salary", column: "Gross Salary", hrId, message: "Gross salary is required.", row: row.row });
+    }
+
+    // Gross/net must match the locked-policy derivation from the same inputs.
+    const fixed = resolveFixedSalaryAmounts({
+      baseSalary: row.baseSalary > 0 ? row.baseSalary : null,
+      employmentIncomeTax: row.employmentIncomeTax,
+      extraCostOfLiving: row.extraCostOfLiving,
+      fuelAllowance: row.fuelAllowance,
+      grossSalary: row.grossSalary,
+      netSalary: row.netSalary,
+      socialInsurance: row.socialInsurance,
+    });
+    if (row.baseSalary > 0 && row.grossSalary > 0 && differs(row.grossSalary, fixed.grossSalary)) {
+      issues.push({
+        code: "gross_salary_formula_mismatch",
+        column: "Gross Salary",
+        hrId,
+        message: `Gross salary ${money(row.grossSalary)} does not match the derived value ${money(fixed.grossSalary)}.`,
+        row: row.row,
+      });
+    }
+    if (row.baseSalary > 0 && row.netSalary > 0 && differs(row.netSalary, fixed.netSalary)) {
+      issues.push({
+        code: "net_salary_formula_mismatch",
+        column: "Net Salary",
+        hrId,
+        message: `Net salary ${money(row.netSalary)} does not match the derived value ${money(fixed.netSalary)}.`,
+        row: row.row,
+      });
+    }
+
+    // Optional master-compensation cross-check when sources are supplied.
+    const source = lookupSalarySource(sources, hrId);
+    if (source?.baseSalary != null && row.baseSalary > 0 && source.baseSalary > 0 && differs(row.baseSalary, source.baseSalary)) {
+      issues.push({
+        code: "base_salary_source_of_truth_mismatch",
+        column: "Base Salary",
+        hrId,
+        message: `Base salary ${money(row.baseSalary)} differs from master compensation ${money(source.baseSalary)}.`,
+        row: row.row,
+      });
+    }
+
+    // Additions / deductions totals must reconcile with their components.
+    const expectedAdditions =
+      row.expenses + row.incentive + row.overtime + row.bonus + row.extraCostOfLiving + row.fuelAllowance + row.otherAdditions;
+    if (row.totalAdditions > 0 && differs(row.totalAdditions, expectedAdditions)) {
+      issues.push({
+        code: "total_additions_mismatch",
+        column: "Total Additions",
+        hrId,
+        message: `Total additions ${money(row.totalAdditions)} does not match its components ${money(expectedAdditions)}.`,
+        row: row.row,
+      });
+    }
+    const expectedDeductions =
+      row.crm + row.fingerPrint + row.unpaidVacations + row.medicalInsurance + row.loans + row.otherDeductions;
+    if (row.totalDeductions > 0 && differs(row.totalDeductions, expectedDeductions)) {
+      issues.push({
+        code: "total_deductions_mismatch",
+        column: "Total Deductions",
+        hrId,
+        message: `Total deductions ${money(row.totalDeductions)} does not match its components ${money(expectedDeductions)}.`,
+        row: row.row,
+      });
+    }
+
+    // Negative-value guards.
+    const negativeChecks: ReadonlyArray<readonly [string, number, string]> = [
+      ["Base salary", row.baseSalary, "Base Salary"],
+      ["Net salary", row.netSalary, "Net Salary"],
+      ["Gross salary", row.grossSalary, "Gross Salary"],
+      ["Total deductions", row.totalDeductions, "Total Deductions"],
+    ];
+    for (const [label, value, column] of negativeChecks) {
+      if (value < 0) {
+        issues.push({
+          code: "negative_value",
+          column,
+          hrId,
+          message: `${label} cannot be negative (${money(value)}).`,
+          row: row.row,
+        });
+      }
+    }
+
+    // New guard: deductions must never exceed net — take-home pay cannot go negative.
+    const netForGuard = row.netSalary > 0 ? row.netSalary : fixed.netSalary;
+    if (netForGuard > 0 && row.totalDeductions > netForGuard + payrollFormulaTolerance) {
+      issues.push({
+        code: "deductions_exceed_net",
+        column: "Total Deductions",
+        hrId,
+        message: `Total deductions ${money(row.totalDeductions)} exceed net salary ${money(netForGuard)}; take-home pay would be negative.`,
+        row: row.row,
+      });
+    }
+  }
+
+  return issues;
+}
