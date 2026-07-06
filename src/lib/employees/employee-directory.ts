@@ -108,6 +108,7 @@ export type EmployeeDirectoryRow = {
   socialInsurance: number | null;
   socialInsuranceStatus: string | null;
   socialInsuranceNumber: string | null;
+  socialInsuranceWage: number | null;
   teamId: number | null;
   teamName: string | null;
   taxes: number | null;
@@ -200,6 +201,7 @@ export type EmployeeMutationInput = {
   socialInsurance?: number | null;
   socialInsuranceStatus?: string | null;
   socialInsuranceNumber?: string | null;
+  socialInsuranceWage?: number | null;
   taxes?: number | null;
   teamId?: number | null;
   workEmail?: string | null;
@@ -252,6 +254,7 @@ type EmployeeDbRow = {
   residence_area?: string | null;
   residence_city?: string | null;
   social_insurance?: number | null;
+  social_insurance_wage?: number | null;
   social_insurance_status?: string | null;
   social_insurance_number?: string | null;
   team_id: number | null;
@@ -894,7 +897,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters.
   // Built as a flat array + join (not a multi-line template literal) so the encoded `select` param
@@ -1069,6 +1072,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
+        socialInsuranceWage: row.social_insurance_wage ?? null,
         socialInsuranceStatus: row.social_insurance_status ?? null,
         socialInsuranceNumber: row.social_insurance_number ?? null,
         taxes: row.taxes ?? compensation?.taxes ?? null,
@@ -1228,6 +1232,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
+        socialInsuranceWage: row.social_insurance_wage ?? null,
         socialInsuranceStatus: row.social_insurance_status ?? null,
         socialInsuranceNumber: row.social_insurance_number ?? null,
         taxes: row.taxes ?? comp?.taxes ?? null,
@@ -1346,6 +1351,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
+      socialInsuranceWage: row.social_insurance_wage ?? null,
       socialInsuranceStatus: row.social_insurance_status ?? null,
       socialInsuranceNumber: row.social_insurance_number ?? null,
       taxes: row.taxes ?? compensation?.taxes ?? null,
@@ -1406,7 +1412,7 @@ async function fetchAllEmployeeRows(params: URLSearchParams): Promise<EmployeeDb
 
 async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,region_code,birth_date`,
     order: "full_name.asc,hr_id.asc",
@@ -1508,6 +1514,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? null,
+      socialInsuranceWage: row.social_insurance_wage ?? null,
       socialInsuranceStatus: row.social_insurance_status ?? null,
       socialInsuranceNumber: row.social_insurance_number ?? null,
       taxes: row.taxes ?? null,
@@ -1775,6 +1782,7 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     social_insurance: numberOrNull(input.socialInsurance),
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),
+    social_insurance_wage: numberOrNull(input.socialInsuranceWage),
     taxes: numberOrNull(input.taxes),
     team_id: numberOrNull(input.teamId),
     updated_at: new Date().toISOString(),

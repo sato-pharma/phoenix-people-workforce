@@ -321,6 +321,7 @@ import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
+import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -659,6 +660,7 @@ await runTest("approvals hub completion (deep-link render + canonical actor + hi
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
+await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

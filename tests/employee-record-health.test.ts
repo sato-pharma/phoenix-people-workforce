@@ -62,6 +62,7 @@ const completeEmployee: EmployeeDirectoryRow = {
   residenceLongitude: 31,
   salaryPaymentMode: "two_parts",
   socialInsurance: 50,
+  socialInsuranceWage: 4000,
   socialInsuranceNumber: "SOC-1",
   socialInsuranceStatus: "yes",
   taxes: 25,
