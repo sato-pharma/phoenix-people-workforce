@@ -2,9 +2,10 @@
 
 import { type ReactNode, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, SlidersHorizontal, Search } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Download, SlidersHorizontal, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { ALL, filterLogRows, filterNeverVisitedRows, filterProbationRows } from "@/lib/double-visit-analytics/report-filters";
 import type {
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusRosterEntry,
@@ -19,8 +20,6 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: "neverVisited", label: "Never Visited / At Risk" },
   { key: "probation", label: "Probation Watchlist" },
 ];
-
-const ALL = "ALL";
 
 // Every table is capped at 20 rows per page. Pages are clamped during render (never reset via
 // an effect) so a filter that shrinks a list can never strand the view on an empty page.
@@ -210,43 +209,20 @@ export function DoubleVisitReportWorkspace({
   // Distinct AM/PM/UNKNOWN periods present in the data (no server-provided list).
   const periodOptions = useMemo(() => [...new Set(data.rows.map((row) => row.period))].sort(), [data.rows]);
 
-  const logRows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return data.rows.filter((row) => {
-      if (areaFilter !== ALL && row.areaName !== areaFilter) return false;
-      if (regionFilter !== ALL && row.regionName !== regionFilter) return false;
-      if (roleFilter !== ALL && row.doubleVisitorRole !== roleFilter) return false;
-      if (visitorFilter !== ALL && (row.doubleVisitorName ?? row.doubleVisitorHrId) !== visitorFilter) return false;
-      if (visitKindFilter !== ALL && row.visitKind !== visitKindFilter) return false;
-      if (periodFilter !== ALL && row.period !== periodFilter) return false;
-      if (!term) return true;
-      return (
-        (row.visitedName ?? "").toLowerCase().includes(term) ||
-        (row.doubleVisitorName ?? "").toLowerCase().includes(term) ||
-        (row.visitedHrId ?? "").toLowerCase().includes(term)
-      );
-    });
-  }, [data.rows, search, areaFilter, regionFilter, roleFilter, visitorFilter, visitKindFilter, periodFilter]);
+  const logRows = useMemo(
+    () => filterLogRows(data.rows, { areaFilter, periodFilter, regionFilter, roleFilter, search, visitKindFilter, visitorFilter }),
+    [data.rows, search, areaFilter, regionFilter, roleFilter, visitorFilter, visitKindFilter, periodFilter],
+  );
 
-  const neverVisitedRows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return data.neverVisited.filter((row) => {
-      if (areaFilter !== ALL && row.areaName !== areaFilter) return false;
-      if (flaggedOnly && !row.flagged) return false;
-      if (!term) return true;
-      return row.name.toLowerCase().includes(term) || row.hrId.toLowerCase().includes(term);
-    });
-  }, [data.neverVisited, search, areaFilter, flaggedOnly]);
+  const neverVisitedRows = useMemo(
+    () => filterNeverVisitedRows(data.neverVisited, { areaFilter, flaggedOnly, search }),
+    [data.neverVisited, search, areaFilter, flaggedOnly],
+  );
 
-  const probationRows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return data.probation.filter((row) => {
-      if (dvStatusFilter === "done" && row.dvDone !== true) return false;
-      if (dvStatusFilter === "pending" && row.dvDone !== false) return false;
-      if (!term) return true;
-      return row.name.toLowerCase().includes(term) || row.hrId.toLowerCase().includes(term);
-    });
-  }, [data.probation, search, dvStatusFilter]);
+  const probationRows = useMemo(
+    () => filterProbationRows(data.probation, { dvStatusFilter, search }),
+    [data.probation, search, dvStatusFilter],
+  );
 
   const logSort = useSort<DoubleVisitReportRow, "date" | "visitor" | "role" | "visited" | "area" | "region" | "line" | "period" | "visits" | "kind">(
     logRows,
@@ -321,10 +297,37 @@ export function DoubleVisitReportWorkspace({
     setDvStatusFilter(ALL as "ALL");
   }
 
+  // Mirrors whatever is currently applied on screen (committed date range + active filters +
+  // tab) so the downloaded file always matches what the user is looking at.
+  function buildExportHref(format: "xlsx" | "pdf") {
+    const params = new URLSearchParams({ dateFrom: data.dateFrom, dateTo: data.dateTo, format, tab });
+    if (search.trim()) params.set("search", search.trim());
+    if (areaFilter !== ALL) params.set("areaFilter", areaFilter);
+    if (regionFilter !== ALL) params.set("regionFilter", regionFilter);
+    if (roleFilter !== ALL) params.set("roleFilter", roleFilter);
+    if (visitorFilter !== ALL) params.set("visitorFilter", visitorFilter);
+    if (visitKindFilter !== ALL) params.set("visitKindFilter", visitKindFilter);
+    if (periodFilter !== ALL) params.set("periodFilter", periodFilter);
+    if (flaggedOnly) params.set("flaggedOnly", "true");
+    if (dvStatusFilter !== ALL) params.set("dvStatusFilter", dvStatusFilter);
+    return `/api/employee-portals/double-visit-report/export?${params.toString()}`;
+  }
+
+  const downloadLinkClass =
+    "inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold uppercase tracking-wider text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 border border-slate-200 bg-white px-4 py-3">
         <DateRangeForm dateFrom={data.dateFrom} dateTo={data.dateTo} tab={tab} />
+        <div className="ml-auto flex items-center gap-2">
+          <a href={buildExportHref("xlsx")} className={downloadLinkClass}>
+            <Download className="h-3.5 w-3.5" /> Excel
+          </a>
+          <a href={buildExportHref("pdf")} className={downloadLinkClass}>
+            <Download className="h-3.5 w-3.5" /> PDF
+          </a>
+        </div>
       </div>
 
       <div className="flex gap-px bg-slate-200">

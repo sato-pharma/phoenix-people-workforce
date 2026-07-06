@@ -96,6 +96,12 @@ const nextConfig: NextConfig = {
   // watching/tracing a far larger — sometimes pathologically slow — file tree
   // than the actual app needs.
   outputFileTracingRoot: __dirname,
+  // pdfmake/pdfkit load their standard-14 font metrics (.afm files) from disk at runtime
+  // relative to their own package directory. Left to normal webpack bundling, those relative
+  // paths break (Next tries to resolve them as bundled "vendor-chunks" that don't exist).
+  // Marking them external makes API routes `require()` them natively from node_modules
+  // instead, so the on-disk .afm lookups keep working.
+  serverExternalPackages: ["pdfmake", "pdfkit"],
   experimental: {
     // Tree-shake large barrel imports so only the icons/charts a component
     // actually uses land in its client chunk (lucide-react alone is imported

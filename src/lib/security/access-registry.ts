@@ -364,6 +364,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/export", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employee-portals/double-visit-report/export", permission: { resource: "double_visit_analytics", action: "export" }, guard: "domain-helper" }),
   // Team Calendar rep-day visits drill-down. Role-checked in the handler (National Sales
   // Manager only) plus a per-line scope guard (isHrIdInNsmTeamScope) rather than a matrix
   // resource, so it registers as a domain-helper guard with no matrix permission.
