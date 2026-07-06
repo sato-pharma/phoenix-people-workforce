@@ -327,6 +327,8 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, excludedRoles: ["CEO"], exact: true },
       { href: "/admin/m-payroll", icon: ScrollText, label: "CEO Payroll View", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
+      { href: "/admin/payroll-copilot", icon: Sparkles, label: "Payroll Copilot", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
+      { href: "/admin/payroll-copilot/insurance-wages", icon: ReceiptText, label: "Insurance Wages", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
       { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin", "CEO"] },
       { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
     ],
