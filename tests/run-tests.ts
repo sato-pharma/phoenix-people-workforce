@@ -319,6 +319,7 @@ import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
+import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -655,6 +656,7 @@ await runTest("sales Head Office confidential lock (all surfaces)", runSalesHead
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
+await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
