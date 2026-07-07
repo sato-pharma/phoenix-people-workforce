@@ -928,12 +928,27 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       extra: { message: employeeDirectoryErrorMessage(error) },
     });
 
-    // Fallback if joined query fails due to schema/relationship issues
+    // Fallback if joined query fails due to schema/relationship issues.
+    // Only selects columns confirmed present in the employees table — do NOT add
+    // columns here that belong to a feature branch or migration that may be reverted.
+    const FALLBACK_EMPLOYEE_SELECT = `${baseEmployeeSelect},region_name,birth_date`;
     const fallbackParams = new URLSearchParams({
-      select: `${baseEmployeeSelect},region_name,birth_date`,
+      select: FALLBACK_EMPLOYEE_SELECT,
       order: "full_name.asc",
     });
-    employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
+    try {
+      employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
+    } catch (fallbackError) {
+      Sentry.captureException(fallbackError, {
+        tags: { component: "employee-directory", action: "fetchEmployeeDirectory-fallback" },
+        extra: { message: employeeDirectoryErrorMessage(fallbackError) },
+      });
+      // If a warm cache exists, serve stale data rather than crashing the page.
+      if (directoryCache) {
+        return directoryCache.data;
+      }
+      throw fallbackError;
+    }
   }
 
   const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
