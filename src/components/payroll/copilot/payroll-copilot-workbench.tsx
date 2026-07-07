@@ -17,7 +17,6 @@ type IconType = typeof Users;
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
 import { ExpensesTab } from "./tabs/expenses-tab";
-import { PayrollPreviewTab } from "./tabs/payroll-preview-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
 /** Same accent recipe as admin-command-center.tsx's KPI cards — gradient bg, glow, icon badge, hover lift. */
@@ -75,6 +74,18 @@ export type Flag = {
 
 export type EmployeeStatus = "green" | "answered" | "question" | "hold";
 
+export type RecommendationConfidence = "high" | "review" | "needs_input";
+
+/** The Copilot's one-click recommendation for a flagged row (mirrors recommend.ts).
+ * `action` is the full ProposedAction the server proposed — posted back verbatim
+ * to /actions when the CEO accepts, so every field (workedDays, reason, …) survives. */
+export type Recommendation = {
+  action: ({ kind: string; hrId: string } & Record<string, unknown>) | null;
+  actionLabel: string;
+  why: string;
+  confidence: RecommendationConfidence;
+};
+
 /** One row of the canonical payroll sheet — same column shape as SalaryReportTable (src/components/payroll/dashboard/), plus Copilot-only status/flags. */
 export type EmployeeRow = {
   hrId: string;
@@ -104,6 +115,7 @@ export type EmployeeRow = {
   paymentGroup: string;
   status: EmployeeStatus;
   flags: Flag[];
+  recommendation: Recommendation | null;
 };
 
 type RecurringApplied = { hrId: string; kind: string; amount: number; note: string | null };
@@ -299,6 +311,32 @@ export function PayrollCopilotWorkbench() {
     });
   }
 
+  /** Accept the Copilot's recommendation for one employee — applies its proposed action verbatim. */
+  async function acceptRecommendation(action: Record<string, unknown>) {
+    await run(async () => {
+      if (!view) return;
+      const data = (await postJson(`/api/payroll/copilot/${view.run.id}/actions`, {
+        actions: [action],
+      })) as unknown as RunView;
+      setView(data);
+    });
+  }
+
+  /** Accept EVERY high-confidence recommendation in one call — the headline "one click" for a clean run. */
+  async function acceptAllRecommendations() {
+    if (!view || !draft) return;
+    const actions = draft.employees
+      .filter((e) => e.recommendation?.confidence === "high" && e.recommendation.action)
+      .map((e) => e.recommendation!.action as Record<string, unknown>);
+    if (actions.length === 0) return;
+    await run(async () => {
+      const data = (await postJson(`/api/payroll/copilot/${view.run.id}/actions`, {
+        actions,
+      })) as unknown as RunView;
+      setView(data);
+    });
+  }
+
   /** Bulk-confirm — every employee sharing an identical open question, confirmed as correct in one call. */
   async function confirmGroup(hrIds: string[]) {
     await run(async () => {
@@ -444,6 +482,8 @@ export function PayrollCopilotWorkbench() {
             onHoldEmployee={holdEmployee}
             onConfirmGroup={confirmGroup}
             onReportIssueGroup={reportIssueGroup}
+            onAcceptRecommendation={acceptRecommendation}
+            onAcceptAllRecommendations={acceptAllRecommendations}
           />
         )}
       </div>
@@ -469,15 +509,20 @@ function RunWorkspace(props: {
   onHoldEmployee: (hrId: string, reason: string) => void;
   onConfirmGroup: (hrIds: string[]) => void;
   onReportIssueGroup: (hrIds: string[], text: string) => void;
+  onAcceptRecommendation: (action: Record<string, unknown>) => void;
+  onAcceptAllRecommendations: () => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
   const [activeTab, setActiveTab] = useState<
-    "negotiation" | "fingerprint" | "crm" | "vacation" | "expenses" | "preview"
-  >("negotiation");
+    "sheet" | "fingerprint" | "crm" | "vacation" | "expenses"
+  >("sheet");
   if (!draft) return null;
 
   const questionGroups = groupDuplicateQuestions(draft.employees);
   const groupedHrIds = new Set(questionGroups.flatMap((group) => group.hrIds));
+  const highRecommendationCount = draft.employees.filter(
+    (e) => e.recommendation?.confidence === "high" && e.recommendation.action,
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -501,7 +546,7 @@ function RunWorkspace(props: {
       <div className="flex gap-1 border-b border-slate-200">
         {(
           [
-            { key: "negotiation", label: "Negotiation", count: draft.flaggedOpenCount },
+            { key: "sheet", label: "Payroll Sheet", count: draft.flaggedOpenCount },
             {
               key: "fingerprint",
               label: "Fingerprint Deductions",
@@ -522,7 +567,6 @@ function RunWorkspace(props: {
               label: "Expenses",
               count: draft.otherTabsBlocking.find((tab) => tab.label === "Expenses")?.count ?? 0,
             },
-            { key: "preview", label: "Payroll Preview", count: 0 },
           ] as const
         ).map((tab) => (
           <button
@@ -563,17 +607,27 @@ function RunWorkspace(props: {
         <UnpaidVacationTab runId={view.run.id} />
       ) : activeTab === "expenses" ? (
         <ExpensesTab runId={view.run.id} />
-      ) : activeTab === "preview" ? (
-        <PayrollPreviewTab
-          employees={draft.employees}
-          groupedHrIds={groupedHrIds}
-          busy={busy}
-          onConfirmEmployee={props.onConfirmEmployee}
-          onReportIssue={props.onReportIssue}
-          onHoldEmployee={props.onHoldEmployee}
-        />
       ) : (
       <div className="space-y-6">
+        {highRecommendationCount > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border border-emerald-300 bg-emerald-50 px-4 py-3">
+            <p className="text-sm text-emerald-900">
+              <span className="font-semibold">{highRecommendationCount}</span> flagged employee(s) have a
+              safe, ready-to-apply recommendation (partial-month settlements, org-only changes, pending-governance
+              items). Review below, or accept them all at once.
+            </p>
+            <button
+              type="button"
+              onClick={props.onAcceptAllRecommendations}
+              disabled={busy || view.run.status === "drafted"}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-50"
+            >
+              <CheckCircle2 aria-hidden className="h-4 w-4" />
+              Accept all {highRecommendationCount} recommendations
+            </button>
+          </div>
+        ) : null}
+
         {questionGroups.length > 0 ? (
           <div className="border border-slate-200 bg-white">
             <SectionHeaderBar>Same question, {questionGroups.length} group(s) — bulk resolve</SectionHeaderBar>
@@ -598,6 +652,7 @@ function RunWorkspace(props: {
           onConfirmEmployee={props.onConfirmEmployee}
           onReportIssue={props.onReportIssue}
           onHoldEmployee={props.onHoldEmployee}
+          onAcceptRecommendation={props.onAcceptRecommendation}
         />
 
         <div className="border border-slate-200 bg-white p-4">
@@ -765,6 +820,17 @@ const STATUS_META: Record<EmployeeStatus, { label: string; className: string }> 
   hold: { label: "On Hold", className: "bg-rose-100 text-rose-700" },
 };
 
+const CONFIDENCE_ACCENT: Record<RecommendationConfidence, string> = {
+  high: "border-l-emerald-500",
+  review: "border-l-amber-500",
+  needs_input: "border-l-rose-500",
+};
+const CONFIDENCE_LABEL: Record<RecommendationConfidence, string> = {
+  high: "Recommended",
+  review: "Review",
+  needs_input: "Needs your input",
+};
+
 const STATUS_FILTERS: Array<{ key: "all" | EmployeeStatus; label: string }> = [
   { key: "all", label: "All" },
   { key: "question", label: "Questions" },
@@ -795,6 +861,7 @@ function PayrollSheetTable({
   onConfirmEmployee,
   onReportIssue,
   onHoldEmployee,
+  onAcceptRecommendation,
 }: {
   employees: EmployeeRow[];
   groupedHrIds: Set<string>;
@@ -802,6 +869,7 @@ function PayrollSheetTable({
   onConfirmEmployee: (hrId: string) => void;
   onReportIssue: (hrId: string, text: string) => void;
   onHoldEmployee: (hrId: string, reason: string) => void;
+  onAcceptRecommendation: (action: Record<string, unknown>) => void;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | EmployeeStatus>("all");
@@ -876,6 +944,7 @@ function PayrollSheetTable({
             <tbody className="divide-y divide-slate-100">
               {rows.map((employee) => {
                 const meta = STATUS_META[employee.status];
+                const rec = employee.recommendation;
                 return (
                   <Fragment key={employee.hrId}>
                     <tr className="hover:bg-slate-50">
@@ -926,14 +995,38 @@ function PayrollSheetTable({
                     {employee.status === "question" ? (
                       <tr className="bg-amber-50/40">
                         <td className="px-2 py-2" colSpan={COLUMN_COUNT}>
-                          {employee.flags.map((flag) => (
-                            <p
-                              key={flag.rule}
-                              className={`border-l-4 pl-2 text-sm text-slate-700 ${SEVERITY_STYLES[flag.severity]}`}
-                            >
-                              {flag.question}
-                            </p>
-                          ))}
+                          {rec ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p
+                                className={`border-l-4 pl-2 text-sm text-slate-700 ${
+                                  CONFIDENCE_ACCENT[rec.confidence]
+                                }`}
+                              >
+                                <span className="font-semibold">{CONFIDENCE_LABEL[rec.confidence]}:</span>{" "}
+                                {rec.why}
+                              </p>
+                              {rec.action ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => onAcceptRecommendation(rec.action as Record<string, unknown>)}
+                                  className="flex shrink-0 items-center gap-1 bg-gradient-to-r from-emerald-600 to-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-50"
+                                >
+                                  <Check aria-hidden className="h-3.5 w-3.5" />
+                                  {rec.actionLabel}
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            employee.flags.map((flag) => (
+                              <p
+                                key={flag.rule}
+                                className={`border-l-4 pl-2 text-sm text-slate-700 ${SEVERITY_STYLES[flag.severity]}`}
+                              >
+                                {flag.question}
+                              </p>
+                            ))
+                          )}
                         </td>
                       </tr>
                     ) : null}
