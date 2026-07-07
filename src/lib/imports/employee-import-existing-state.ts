@@ -143,22 +143,22 @@ async function loadEmployeeState(
 ) {
   let result = await supabase
     .from("employees")
-    .select("hr_id,crm_id,crm_username,employment_status,organogram_visible,payroll_eligible,job_title,region_name,region_code,line_id,area_id,position_id");
+    .select("hr_id,crm_id,crm_username,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
 
   if (
     result.error &&
     (result.error.message.toLowerCase().includes("organogram_visible") ||
       result.error.message.toLowerCase().includes("payroll_eligible"))
   ) {
-    result = await supabase.from("employees").select("hr_id,crm_id,crm_username,employment_status,job_title,region_name,region_code,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,crm_id,crm_username,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_username")) {
-    result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,region_name,region_code,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_id")) {
-    result = await supabase.from("employees").select("hr_id,employment_status,job_title,region_name,region_code,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error) {
@@ -177,7 +177,6 @@ async function loadEmployeeState(
     payroll_eligible?: boolean | null;
     position_id?: number | null;
     region_name?: string | null;
-    region_code?: string | null;
   }>;
   const crmIdToHrId = new Map<string, string>();
   const crmUsernameToHrId = new Map<string, string>();
@@ -204,7 +203,6 @@ async function loadEmployeeState(
         lineCode: typeof row.line_id === "number" ? lookups?.lineIdToCode.get(row.line_id) ?? null : null,
         positionCode: typeof row.position_id === "number" ? lookups?.positionIdToCode.get(row.position_id) ?? null : null,
         regionName: row.region_name ?? null,
-        regionCode: row.region_code ?? null,
       });
     }
   }
@@ -259,31 +257,6 @@ async function loadAreaState(supabase: SupabaseClient) {
   }
 
   return { areaCodeToId, areaCodes, areaIdToCode };
-}
-
-async function loadRegionCodeByLineArea(
-  supabase: SupabaseClient,
-  lineIdToCode: Map<number, string>,
-) {
-  const { data, error } = await supabase.from("line_area_region_map").select("line_id,area_code,region_code");
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const regionCodeByLineArea = new Map<string, string>();
-
-  for (const row of (data ?? []) as Array<{
-    line_id: number | null;
-    area_code: string | null;
-    region_code: string | null;
-  }>) {
-    const lineCode = typeof row.line_id === "number" ? lineIdToCode.get(row.line_id) : null;
-    if (!lineCode || !row.area_code || !row.region_code) continue;
-    regionCodeByLineArea.set(`${lineCode}|${row.area_code}`, row.region_code);
-  }
-
-  return regionCodeByLineArea;
 }
 
 async function loadTeamRows(supabase: SupabaseClient) {
@@ -373,10 +346,6 @@ export async function loadEmployeeImportExistingState(
     positionIdToCode: positionState.positionIdToCode,
   });
   const teamState = await loadTeamState(supabase, areaState.areaIdToCode);
-  const lineCodeToId = new Map<string, number>(
-    [...lineState.idToCode.entries()].map(([id, code]) => [code, id]),
-  );
-  const regionCodeByLineArea = await loadRegionCodeByLineArea(supabase, lineState.idToCode);
 
   return {
     ...employees,
@@ -386,8 +355,6 @@ export async function loadEmployeeImportExistingState(
     departmentCodeToName: activeDepartments.codeToName,
     departmentNameToCode: activeDepartments.nameToCode,
     lineCodes: lineState.codes,
-    lineCodeToId,
-    regionCodeByLineArea,
     positionCodes: positionState.positionCodes,
     ...teamState,
   };

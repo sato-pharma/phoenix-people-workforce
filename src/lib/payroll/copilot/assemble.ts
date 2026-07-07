@@ -107,6 +107,8 @@ type BuildRowInput = {
   approvedDeductions?: { crm: number; fingerPrint: number };
   /** Already-decided "deduct from salary" unpaid-vacation settlement amount for this employee this period (see vacation-settlement.ts). */
   settledUnpaidVacationSalaryDeduction?: number;
+  /** Already-"include" outstation expense decisions for this employee this period (see expense-review.ts). */
+  approvedExpenses?: number;
 };
 
 /**
@@ -159,7 +161,8 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   // below still layers on top for employees handled the older way.
   let unpaidVacations = roundCurrency(input.settledUnpaidVacationSalaryDeduction ?? 0);
   const incentive = 0;
-  const expenses = 0;
+  // Sum of already-"include" decisions from the Expenses tab (see expense-review.ts).
+  const expenses = roundCurrency(input.approvedExpenses ?? 0);
   // Sum of already-"Approved for Payroll" decisions from the Deductions
   // Governance tables (see the Fingerprint/CRM review tabs + deductions-review.ts).
   const crm = roundCurrency(input.approvedDeductions?.crm ?? 0);

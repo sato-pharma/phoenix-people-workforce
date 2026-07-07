@@ -283,13 +283,12 @@ export function runPayrollCopilotTests() {
           attendanceDeductionPending: false,
           leaverLastWorkingDate: null,
           unpaidDaysBeforeLastWorkingDate: 0,
-          pendingExpense: false,
         },
       }),
     ).includes("unpaid_leave"),
   );
 
-  // attendance conflict + pending expense
+  // attendance conflict
   const feederRules = rulesOf(
     evaluateEmployeeFlags({
       ...base,
@@ -301,12 +300,10 @@ export function runPayrollCopilotTests() {
         attendanceDeductionPending: true,
         leaverLastWorkingDate: null,
         unpaidDaysBeforeLastWorkingDate: 0,
-        pendingExpense: true,
       },
     }),
   );
   assert.ok(feederRules.includes("attendance_conflict"));
-  assert.ok(feederRules.includes("pending_unapproved"));
 
   // salary/role change
   assert.ok(
