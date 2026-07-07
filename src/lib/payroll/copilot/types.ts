@@ -5,9 +5,8 @@ export type CopilotPeriod = { month: number; year: number };
 
 export type CopilotRunStatus = "assembling" | "negotiating" | "drafted" | "cancelled";
 
-/** The eight "not green" rules. See flags.ts for the exact signal per rule. */
+/** The "not green" rules. See flags.ts for the exact signal per rule. */
 export type CopilotFlagRule =
-  | "pending_unapproved"
   | "joiner_leaver"
   | "attendance_conflict"
   | "salary_role_change"
@@ -127,7 +126,6 @@ export type EmployeeFeederState = {
   leaverLastWorkingDate: string | null;
   /** Unpaid-leave days overlapping [period start, leaverLastWorkingDate] only — resignation Rule 1. */
   unpaidDaysBeforeLastWorkingDate: number;
-  pendingExpense: boolean;
 };
 
 /** Minimal prior-period snapshot used for change/anomaly detection. */

@@ -111,16 +111,6 @@ export function evaluateEmployeeFlags(input: {
     });
   }
 
-  // 1. pending_unapproved (warn) — expense tied to this period not yet approved.
-  if (feeder?.pendingExpense) {
-    flags.push({
-      employeeHrId: row.hrId,
-      rule: "pending_unapproved",
-      severity: "warn",
-      question: `${name} has an expense for this period that is not yet HR-approved. Include it once approved, or defer to next month?`,
-    });
-  }
-
   // 4. salary_role_change (warn) — base/line/role differs from last month.
   // Skipped for a joiner/leaver: their base this month is a deliberate
   // settlement figure (Rule 1/2), already explained by the joiner_leaver flag
