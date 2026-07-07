@@ -260,6 +260,25 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.ok(guardCodes.includes("C-1"), "resolved employee still generates recommendations");
   assert.ok(!guardCodes.includes("C-2"), "unresolved employee generates NO recommendations (deduction money-safety guard)");
 
+  // --- SFE Manager guard: appears in leave/compliance review, never as a payroll deduction ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sfeArchive: any = {
+    archive: { id: "live:2026-06", monthKey: "2026-06", month: 6, year: 2026, employeeCount: 1, highSeverityCount: 0, reviewCandidateCount: 1, sheetName: "s", sourceFilename: "f", status: "archived", uploadedAt: "2026-07-01T00:00:00.000Z", uploadedBy: "test" },
+    preview: {
+      employees: [{ ...guardEmployee("S-1", "crm_id"), roleName: "SFE Manager" }],
+      errors: [], metadata: { dateRange: { start: "2026-06-01", end: "2026-06-30" } }, reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, warnings: [],
+    },
+  };
+  const sfeReport = buildFieldWorkforceRecommendationsReportFromArchive(sfeArchive, [], undefined);
+  assert.ok(
+    sfeReport.leaveRecommendations.some((rec) => rec.employeeCode === "S-1"),
+    "SFE Manager still appears in leave/compliance review",
+  );
+  assert.ok(
+    !sfeReport.payrollRecommendations.some((rec) => rec.employeeCode === "S-1"),
+    "SFE Manager NEVER generates a payroll-deduction recommendation, per eligibility.ts's promise",
+  );
+
   // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
   // Sourced from saveDate (crm_save_date) — NOT visitDate/visit_date_time, which is a fixed
   // midnight placeholder on every production row (verified 2026-07: 100% of 93,742 rows) and

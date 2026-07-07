@@ -1,6 +1,9 @@
 import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveDigestCycle, type DigestCycle } from "@/lib/attendance/digest-cycle";
 import { getDigestSettings } from "@/lib/attendance/digest-recipients";
+import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
+import { getAttendanceRoster } from "@/lib/attendance/roster";
 import { syncFieldWorkforceNoActivityCandidatesForLiveMonth } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import {
   listDeductionCandidates,
@@ -92,22 +95,70 @@ async function listCandidatesForSourceModule(
 }
 
 /**
+ * How many of the attendance roster (device-mapped, head-office employees) are
+ * actually "in scope" for the flexible-hours engine during this cycle — i.e.
+ * their resolved active policy has `required_minutes` set. Mirrors the exact
+ * scoping check `computeSettlementWeekDigests` uses (digest-service.ts:
+ * `if (!policy || policy.required_minutes == null) continue;`). Most policies
+ * today only carry the late-arrival side (flex_minutes) with no
+ * required_minutes, so this is usually a small subset of the roster — a
+ * second, independent reason (besides dry-run) this tab can show zero or very
+ * few candidates. Defensive: any failure here must never break the tab.
+ */
+async function countFlexibleHoursScope(cycle: DigestCycle): Promise<{ rosterCount: number; scopedCount: number }> {
+  const [roster, policies] = await Promise.all([
+    getAttendanceRoster({ dateFromIso: cycle.startIso, dateToIso: cycle.endIso }),
+    loadAttendanceFlexPolicyGroups({ activeOnly: true }),
+  ]);
+  let scopedCount = 0;
+  for (const employee of roster) {
+    const policy = resolveActiveAttendancePolicy(
+      { hr_id: employee.hrId, job_title: employee.jobTitle },
+      policies,
+      cycle.startIso,
+      cycle.endIso,
+    );
+    if (policy && policy.required_minutes != null) scopedCount += 1;
+  }
+  return { rosterCount: roster.length, scopedCount };
+}
+
+/**
  * Attendance-device deduction candidates for the resolved fingerprint cycle.
  * Also reports whether the attendance weekly-digest engine is currently in
  * dry-run mode (`attendance_digest_settings.dry_run`) — in dry-run, the
  * settlement flow that would push real rows into `deduction_candidates`
  * intentionally no-ops, so this tab is expected to show zero candidates.
  * `dryRun` lets the UI say that honestly instead of showing a bare "0".
+ * `rosterCount`/`scopedCount` additionally surface the (separate, more common)
+ * reason this tab under-counts even with dry-run off: most employees on the
+ * roster don't have a required_minutes policy configured yet.
  */
 export async function listFingerprintDeductionCandidates(
   access: AccessContext,
   period: CopilotPeriod,
-): Promise<{ cycle: DigestCycle; rows: DeductionInboxRow[]; dryRun: boolean }> {
+): Promise<{
+  cycle: DigestCycle;
+  rows: DeductionInboxRow[];
+  dryRun: boolean;
+  rosterCount: number | null;
+  scopedCount: number | null;
+}> {
   const [{ cycle, rows }, settings] = await Promise.all([
     listCandidatesForSourceModule(access, period, "ATTENDANCE_DEVICE"),
     getDigestSettings().catch(() => null),
   ]);
-  return { cycle, rows, dryRun: settings?.dryRun ?? false };
+  const scope = await countFlexibleHoursScope(cycle).catch((error) => {
+    console.error("[payroll-copilot:deductions-review] flexible-hours scope count failed:", error);
+    return null;
+  });
+  return {
+    cycle,
+    rows,
+    dryRun: settings?.dryRun ?? false,
+    rosterCount: scope?.rosterCount ?? null,
+    scopedCount: scope?.scopedCount ?? null,
+  };
 }
 
 /**

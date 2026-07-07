@@ -77,3 +77,15 @@ export function isFieldWorkforceComplianceEligibleTitle(
   }
   return false;
 }
+
+const SFE_MANAGER_TITLE = "sfe manager";
+
+/**
+ * The single source of truth for the SFE Manager deduction exclusion promised in the module
+ * comment above: SFE Manager appears in the Workforce Compliance report (it's in
+ * ELIGIBLE_TITLES) but must never generate a payroll-deduction recommendation. Callers building
+ * the no-activity -> payroll_deduction recommendation should skip it when this returns true.
+ */
+export function isSfeManagerTitle(...titles: Array<string | null | undefined>): boolean {
+  return titles.some((title) => normalizeTitle(title) === SFE_MANAGER_TITLE);
+}
