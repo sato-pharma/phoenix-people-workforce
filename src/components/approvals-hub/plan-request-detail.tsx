@@ -7,6 +7,7 @@ import { PlanDecisionActions } from "@/components/approvals-hub/plan-decision-ac
 import { PlanApproverContext } from "@/components/approvals-hub/plan-approver-context";
 import { PlanCompositionSummary, PlanPeriodBadge } from "@/components/approvals-hub/plan-summary";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
+import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 
 type Props = {
   detail: PlanApprovalDetail;
@@ -105,6 +106,10 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
             slaModule="plan"
             fallbackStatusLabel={`Status: ${detail.statusLabel}`}
           />
+
+          {/* Two-way conversation — same thread the submitter sees in their own
+              planner, so a return/edit-request is never a one-shot monologue. */}
+          <PlanConversationThread key={detail.planId} planId={detail.planId} />
 
           {!detail.readOnly ? (
             <PlanDecisionActions
