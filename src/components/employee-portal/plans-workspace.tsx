@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
@@ -1822,6 +1823,7 @@ export function PlansWorkspace({
         {messageBanner}
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
+        {plan ? <PlanConversationThread key={plan.id} planId={plan.id} /> : null}
 
         {validationWarning ? (
           <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
@@ -2113,6 +2115,7 @@ export function PlansWorkspace({
         {messageBanner}
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
+        {plan ? <PlanConversationThread key={plan.id} planId={plan.id} /> : null}
 
         {validationWarning ? (
           <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
