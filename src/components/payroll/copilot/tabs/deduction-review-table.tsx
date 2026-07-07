@@ -56,6 +56,8 @@ export function DeductionReviewTable({
 }) {
   const [rows, setRows] = useState<DeductionCandidate[] | null>(null);
   const [dryRun, setDryRun] = useState(false);
+  const [rosterCount, setRosterCount] = useState<number | null>(null);
+  const [scopedCount, setScopedCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
@@ -68,11 +70,15 @@ export function DeductionReviewTable({
       const data = (await res.json().catch(() => ({}))) as {
         candidates?: DeductionCandidate[];
         dryRun?: boolean;
+        rosterCount?: number | null;
+        scopedCount?: number | null;
         message?: string;
       };
       if (!res.ok) throw new Error(data.message ?? "Failed to load.");
       setRows(data.candidates ?? []);
       setDryRun(Boolean(data.dryRun));
+      setRosterCount(typeof data.rosterCount === "number" ? data.rosterCount : null);
+      setScopedCount(typeof data.scopedCount === "number" ? data.scopedCount : null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -116,6 +122,14 @@ export function DeductionReviewTable({
           Attendance deductions are currently in <strong>dry-run mode</strong> — the weekly-digest
           engine is computing recommendations but not yet pushing real candidates into payroll. Zero
           candidates here is expected until dry-run is turned off in Attendance settings.
+        </div>
+      ) : null}
+      {rosterCount != null && scopedCount != null && scopedCount < rosterCount ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Only <strong>{scopedCount} of {rosterCount}</strong> employees on the attendance roster have a
+          minimum-hours (required_minutes) policy configured this period — attendance deductions can
+          only ever apply to that smaller group until more employees are migrated onto a flexible-hours
+          policy in Attendance settings, even with dry-run off.
         </div>
       ) : null}
       {!rows ? (

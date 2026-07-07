@@ -14,6 +14,7 @@ import type {
   FieldWorkforceRecommendationType,
   FieldWorkforceSeverity,
 } from "@/lib/field-workforce-compliance/types";
+import { isSfeManagerTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -433,20 +434,26 @@ function generatedRecommendations(
         sourceType: "n_retroactive_candidate",
       }));
 
-      payrollRecommendations.push(buildRecommendation({
-        archive: archiveDetail.archive,
-        dates: normalNoActivityDates,
-        decisions,
-        ...hierarchy,
-        estimatedAmount: null,
-        existingCoverageStatus: "payroll_calculation_required",
-        holidayContext: null,
-        recommendation: "Review no-activity days for possible payroll deduction report. Amount requires payroll calculation.",
-        recommendationReason: "N means no activity candidate only. It is not an automatic payroll deduction.",
-        recommendationType: "payroll_deduction",
-        severity,
-        sourceType: "no_activity_candidate",
-      }));
+      // SFE Manager appears in the compliance report above (leaveRecommendations) but must
+      // never generate a payroll-deduction recommendation — see the ELIGIBLE_TITLES comment
+      // in eligibility.ts. This is the "enforced separately in the deductions-governance
+      // connector" half of that promise; it was previously undocumented-but-missing.
+      if (!isSfeManagerTitle(employee.roleName)) {
+        payrollRecommendations.push(buildRecommendation({
+          archive: archiveDetail.archive,
+          dates: normalNoActivityDates,
+          decisions,
+          ...hierarchy,
+          estimatedAmount: null,
+          existingCoverageStatus: "payroll_calculation_required",
+          holidayContext: null,
+          recommendation: "Review no-activity days for possible payroll deduction report. Amount requires payroll calculation.",
+          recommendationReason: "N means no activity candidate only. It is not an automatic payroll deduction.",
+          recommendationType: "payroll_deduction",
+          severity,
+          sourceType: "no_activity_candidate",
+        }));
+      }
     }
   }
 

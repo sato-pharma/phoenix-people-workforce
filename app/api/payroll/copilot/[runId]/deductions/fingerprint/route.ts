@@ -20,11 +20,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     assertCopilotAccess(access);
     const { runId } = await params;
     const period = await getRunPeriod(runId);
-    const { cycle, rows, dryRun } = await listFingerprintDeductionCandidates(access, period);
+    const { cycle, rows, dryRun, rosterCount, scopedCount } = await listFingerprintDeductionCandidates(access, period);
 
     return NextResponse.json({
       cycle,
       dryRun,
+      rosterCount,
+      scopedCount,
       candidates: rows.map((row) => ({
         id: row.id,
         employeeHrId: row.employeeCode,
