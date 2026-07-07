@@ -36,6 +36,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ArrowUpRight,
   ChevronRight,
   GripVertical,
   PanelLeftClose,
@@ -379,6 +380,11 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
 }
 
 // ── A single navigation entry ────────────────────────────────────────────────
+// `standalone` marks an item that IS its section (a section that collapsed to exactly
+// one visible entry — see the single-item branch in SortableSectionBlock below). It
+// skips the redundant section-header-plus-one-tab chrome and instead renders directly
+// as a button, with a tinted icon box + a small "opens a hub" arrow so it still reads
+// as different from an ordinary single-destination link.
 function NavRow({
   active,
   dark,
@@ -389,6 +395,7 @@ function NavRow({
   pinned = false,
   onTogglePin,
   rail,
+  standalone = false,
 }: {
   active: boolean;
   dark: boolean;
@@ -399,6 +406,7 @@ function NavRow({
   pinned?: boolean;
   onTogglePin?: () => void;
   rail: boolean;
+  standalone?: boolean;
 }) {
   const Icon = item.icon;
 
@@ -434,10 +442,14 @@ function NavRow({
             dark
               ? active
                 ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
-                : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
+                : standalone
+                  ? "bg-orange-500/15 text-[#F8B56B] ring-1 ring-orange-400/30 group-hover:ring-orange-400/50"
+                  : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
               : active
                 ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
-                : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
+                : standalone
+                  ? "bg-orange-50 text-[#F97316] ring-1 ring-orange-200 group-hover:ring-orange-300"
+                  : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -446,6 +458,12 @@ function NavRow({
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
+            {standalone && (
+              <ArrowUpRight
+                aria-hidden="true"
+                className={cn("h-3.5 w-3.5 shrink-0", dark ? "text-orange-400/70" : "text-orange-500/70")}
+              />
+            )}
             <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
           </span>
         )}
@@ -595,6 +613,42 @@ function SortableSectionBlock({
     const newIndex = itemHrefs.findIndex((h) => h === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     onItemReorder(arrayMove(itemHrefs, oldIndex, newIndex));
+  }
+
+  // A section that resolves to exactly one visible item (e.g. a module hub like
+  // "Admin Tools") IS that item — a collapsible header repeating the same label
+  // above a single tab reads as a redundant extra click. Skip the header/collapse
+  // chrome entirely and render just the item, styled via NavRow's `standalone`
+  // treatment so it still reads as different from an ordinary single-destination
+  // link. Section-level drag-to-reorder still works via the same overlay-on-hover
+  // grip handle SortableNavRow uses for items.
+  if (orderedItems.length === 1) {
+    const soleItem = orderedItems[0];
+    return (
+      <div ref={setNodeRef} style={sectionStyle} className={cn("group/single relative mt-4 px-1", isDragging && "opacity-40")}>
+        {isAdmin && !dragDisabled && (
+          <button
+            aria-label={`Drag to reorder ${section.label} section`}
+            className="absolute left-[10px] top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100"
+            type="button"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <NavRow
+          active={soleItem.href === activeHref}
+          dark={isAdmin}
+          item={soleItem}
+          onActivate={() => onActivate(soleItem)}
+          onTogglePin={() => onTogglePin(soleItem.href)}
+          pinned={pinnedSet.has(soleItem.href)}
+          rail={false}
+          standalone
+        />
+      </div>
+    );
   }
 
   return (

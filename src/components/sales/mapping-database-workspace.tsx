@@ -1,9 +1,9 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Database, Download, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Download, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
 import { WeeklyBranchMappingManager } from "@/components/sales/weekly/weekly-branch-mapping-manager";
@@ -386,13 +386,20 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
 
 export function MappingDatabaseWorkspace({ distributors, products, bricks }: Props) {
   return (
-    <div className="space-y-5">
-      <AdminPageHero
-        description="The single source of truth for every distributor's mappings. Edit one row at a time, or bulk import/export with the XLSX template — changes are live across upload, normalizer and missing-data instantly."
-        eyebrow="Sales · One connected module"
-        icon={<Database className="h-4 w-4" />}
-        title="Mapping Database"
-      />
+    <div className="space-y-5 p-4 sm:p-6">
+      {/* Header styled to match /sales/weekly exactly — same content as before, just re-skinned. */}
+      <header>
+        <div className="flex items-center gap-2">
+          <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+        </div>
+        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Mapping Database</h1>
+        <p className="mt-1 text-sm font-medium text-[#64748B]">
+          The single source of truth for every distributor&apos;s mappings. Edit one row at a time, or bulk
+          import/export with the XLSX template — changes are live across upload, normalizer and missing-data
+          instantly.
+        </p>
+      </header>
       <DistributorWorkspaceShell distributors={distributors}>
         {(selected) => <DistributorMapping bricks={bricks} products={products} selected={selected} />}
       </DistributorWorkspaceShell>

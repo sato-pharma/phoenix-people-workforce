@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Info, Loader2, Lock, ShieldCheck, Sparkles, Upload, UploadCloud, XCircle } from "lucide-react";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { UploadedSheetsPanel } from "@/components/sales/uploaded-sheets-panel";
@@ -1003,13 +1003,19 @@ function DistributorUpload({ selected, summary, productOptions, brickOptions }: 
 export function SalesUploadWorkspace({ distributors, summaries, batches, products, bricks }: Props) {
   const brickOptions: MapOption[] = bricks.map((b) => ({ code: b.id, name: b.name }));
   return (
-    <div className="space-y-5">
-      <AdminPageHero
-        description="The single upload hub. Pick a distributor, analyze its raw sheet, then import — the analyzer and the importer use the exact same engine, so what's recognized always imports."
-        eyebrow="Sales · One connected module"
-        icon={<UploadCloud className="h-4 w-4" />}
-        title="Sales Upload"
-      />
+    <div className="space-y-5 p-4 sm:p-6">
+      {/* Header styled to match /sales/weekly exactly — same content as before, just re-skinned. */}
+      <header>
+        <div className="flex items-center gap-2">
+          <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+        </div>
+        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Sales Upload</h1>
+        <p className="mt-1 text-sm font-medium text-[#64748B]">
+          The single upload hub. Pick a distributor, analyze its raw sheet, then import — the analyzer and the
+          importer use the exact same engine, so what&apos;s recognized always imports.
+        </p>
+      </header>
       <UploadedSheetsPanel batches={batches} distributors={distributors} />
       <DistributorWorkspaceShell distributors={distributors}>
         {(selected) => <DistributorUpload brickOptions={brickOptions} productOptions={products} selected={selected} summary={summaries[selected.code]} />}
