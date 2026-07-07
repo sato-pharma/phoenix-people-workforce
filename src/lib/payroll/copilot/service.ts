@@ -25,6 +25,7 @@ import {
   groupAdjustmentsByEmployee,
   indexRecurringByEmployee,
   isDeferred,
+  isOnHold,
   lookupSource,
 } from "./assemble.ts";
 import {
@@ -81,6 +82,7 @@ export type CopilotDraftEmployee = {
   flags: CopilotFlag[];
   openFlags: CopilotFlag[];
   hasAdjustment: boolean;
+  onHold: boolean;
   green: boolean;
 };
 
@@ -238,6 +240,7 @@ export async function assembleDraft(
       flags,
       openFlags,
       hasAdjustment,
+      onHold: isOnHold(empAdjustments),
       green: flags.length === 0,
     });
     rows.push(row);
@@ -431,6 +434,23 @@ async function finalizeRunView(run: CopilotRun, draft: CopilotDraftState): Promi
   };
 }
 
+export type CopilotEmployeeStatus = "green" | "answered" | "question" | "hold";
+
+function employeeStatus(e: CopilotDraftEmployee): CopilotEmployeeStatus {
+  if (e.openFlags.length > 0) return "question";
+  if (e.onHold) return "hold";
+  if (e.hasAdjustment) return "answered";
+  return "green";
+}
+
+/**
+ * One row per employee — the shape mirrors the canonical post-upload payroll
+ * sheet (`SalaryReportTable`, src/components/payroll/dashboard/) so the
+ * Copilot's table looks and sorts like the sheet HR already knows, instead of
+ * an invented layout. Replaces the old three-way split (flagged/resolved/
+ * green lists with three different shapes) with one consistent list plus a
+ * `status` field the UI can filter/badge on.
+ */
 export function serializeDraft(draft: CopilotDraftState) {
   return {
     period: draft.period,
@@ -440,22 +460,22 @@ export function serializeDraft(draft: CopilotDraftState) {
     openBlockCount: draft.openBlockCount,
     canMaterialize: draft.openBlockCount === 0 && draft.employeeCount > 0,
     recurringApplied: draft.recurringApplied,
-    flagged: draft.employees
-      .filter((e) => e.openFlags.length > 0)
-      .map((e) => ({
-        hrId: e.hrId,
-        fullName: e.fullName,
-        jobTitle: e.jobTitle,
-        line: e.line,
-        netSalary: e.netSalary,
-        flags: e.openFlags,
-      })),
-    resolved: draft.employees
-      .filter((e) => e.hasAdjustment)
-      .map((e) => ({ hrId: e.hrId, fullName: e.fullName, netSalary: e.netSalary, monthSalary: e.monthSalary })),
-    green: draft.employees
-      .filter((e) => e.green && !e.hasAdjustment)
-      .map((e) => ({ hrId: e.hrId, fullName: e.fullName, netSalary: e.netSalary, monthSalary: e.monthSalary })),
+    employees: draft.employees.map((e) => ({
+      hrId: e.hrId,
+      fullName: e.fullName,
+      hireDate: e.row.hireDate,
+      line: e.line,
+      area: e.row.area,
+      jobTitle: e.jobTitle,
+      totalAdditions: e.row.totalAdditions,
+      internalDeductions: e.row.totalDeductions - e.row.socialInsurance - e.row.employmentIncomeTax,
+      netSalary: e.netSalary,
+      firstPart: e.row.firstPart,
+      secondPart: e.row.secondPart,
+      monthSalary: e.monthSalary,
+      status: employeeStatus(e),
+      flags: e.openFlags,
+    })),
   };
 }
 
