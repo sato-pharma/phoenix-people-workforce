@@ -5,6 +5,7 @@ import { buildRowForEmployee } from "../src/lib/payroll/copilot/assemble.ts";
 import { evaluateEmployeeFlags } from "../src/lib/payroll/copilot/flags.ts";
 import { normalizeAction, parseDeterministic } from "../src/lib/payroll/copilot/llm.ts";
 import { recommendResolution } from "../src/lib/payroll/copilot/recommend.ts";
+import { buildAssistantContext, type AssistantEmployeeContext } from "../src/lib/payroll/copilot/assistant.ts";
 import { isRecurringActiveForPeriod } from "../src/lib/payroll/copilot/recurring.ts";
 import type {
   CopilotAdjustment,
@@ -454,4 +455,37 @@ export function runPayrollCopilotTests() {
   const holdNorm = normalizeAction({ kind: "hold", hrId: "B-100", reason: "under investigation" }, candidates);
   assert.equal(holdNorm?.kind, "hold");
   assert.equal(holdNorm && holdNorm.kind === "hold" ? holdNorm.reason : "", "under investigation");
+
+  // --- assistant context builder (the prose-Q&A grounding) --------------------
+  const asstEmp = (over: Partial<AssistantEmployeeContext>): AssistantEmployeeContext => ({
+    hrId: "B-1",
+    name: "Test",
+    status: "green",
+    netSalary: 0,
+    monthSalary: 0,
+    totalAdditions: 0,
+    totalDeductions: 0,
+    flags: [],
+    recommendation: null,
+    ...over,
+  });
+  const ctx = buildAssistantContext([
+    asstEmp({ hrId: "B-1", name: "Green One", status: "green" }),
+    asstEmp({ hrId: "B-2", name: "Green Two", status: "green" }),
+    asstEmp({
+      hrId: "B-3",
+      name: "Flagged Joiner",
+      status: "question",
+      monthSalary: 6400,
+      flags: [{ rule: "joiner_leaver", question: "joined mid-month" }],
+      recommendation: { why: "Partial month — accept settlement EGP 6,400.", confidence: "high" },
+    }),
+  ]);
+  // Green employees are summarised as a count, not listed line-by-line.
+  assert.ok(ctx.includes("3 (2 clean/green"), "green employees are summarised as a count");
+  assert.ok(!ctx.includes("Green One"), "clean employees are NOT listed individually");
+  // The flagged employee IS listed, with its flag + recommendation.
+  assert.ok(ctx.includes("B-3 Flagged Joiner"), "flagged employee is listed by id + name");
+  assert.ok(ctx.includes("joiner_leaver"), "flagged employee's flag rule is included");
+  assert.ok(ctx.includes("Partial month"), "flagged employee's recommendation is included");
 }

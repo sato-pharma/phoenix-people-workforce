@@ -40,6 +40,7 @@ import { evaluateEmployeeFlags } from "./flags.ts";
 import { buildHolidayBridgingSalaryTotals } from "./holiday-bridging.ts";
 import { parseCeoReply } from "./llm.ts";
 import { recommendResolution, type CopilotRecommendation } from "./recommend.ts";
+import { answerCeoQuestion } from "./assistant.ts";
 import { applyActions } from "./negotiation.ts";
 import { consumeRecurringForPeriod, listRecurringForPeriod } from "./recurring.ts";
 import { buildSettledSalaryDeductionTotals, listUnpaidVacationCandidates } from "./vacation-settlement.ts";
@@ -591,17 +592,47 @@ export async function getRunView(runId: string): Promise<CopilotRunView> {
   return finalizeRunView(run, draft);
 }
 
-/** Parse the CEO's chat message into proposed actions (no mutation). */
+/**
+ * Handle a CEO chat message. First try to parse it into proposed actions
+ * (a command like "give B-100 2000 bonus"). If nothing parses, treat it as a
+ * QUESTION ("why is Ahmed flagged?") and answer in prose from the draft — so
+ * the box stops dead-ending on anything that isn't a command. No mutation.
+ */
 export async function proposeFromMessage(
   runId: string,
   text: string,
-): Promise<{ proposedActions: ProposedAction[] }> {
+): Promise<{ proposedActions: ProposedAction[]; answer: string | null }> {
   const run = await requireRun(runId);
   const adjustments = await loadAdjustments(runId);
   const draft = await assembleDraft({ month: run.month, year: run.year }, adjustments);
   const candidates = draft.employees.map((e) => ({ hrId: e.hrId, name: e.fullName }));
   const proposedActions = await parseCeoReply(text, { candidates });
-  return { proposedActions };
+
+  let answer: string | null = null;
+  if (proposedActions.length === 0) {
+    answer = await answerCeoQuestion({
+      text,
+      periodLabel: `${MONTH_NAMES[run.month - 1]} ${run.year}`,
+      employees: draft.employees.map((e) => ({
+        hrId: e.hrId,
+        name: e.fullName,
+        status: employeeStatus(e),
+        netSalary: e.netSalary,
+        monthSalary: e.monthSalary,
+        totalAdditions: e.row.totalAdditions,
+        totalDeductions: e.row.totalDeductions,
+        flags: e.openFlags.map((flag) => ({ rule: flag.rule, question: flag.question })),
+        recommendation: e.recommendation
+          ? { why: e.recommendation.why, confidence: e.recommendation.confidence }
+          : null,
+      })),
+    }).catch((error) => {
+      console.error("[payroll-copilot:service] assistant answer failed:", error);
+      return null;
+    });
+  }
+
+  return { proposedActions, answer };
 }
 
 /** Apply confirmed actions deterministically, then return the refreshed view. */

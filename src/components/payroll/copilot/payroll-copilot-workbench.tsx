@@ -255,6 +255,7 @@ export function PayrollCopilotWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [chat, setChat] = useState("");
   const [proposals, setProposals] = useState<ProposedAction[] | null>(null);
+  const [answer, setAnswer] = useState<string | null>(null);
   const [materialized, setMaterialized] = useState<{ batchHref: string; importedRecords: number } | null>(null);
 
   const draft = view?.draft ?? null;
@@ -277,6 +278,7 @@ export function PayrollCopilotWorkbench() {
       const data = (await postJson("/api/payroll/copilot/start", { month, year })) as unknown as RunView;
       setView(data);
       setProposals(null);
+      setAnswer(null);
       setMaterialized(null);
     });
   }
@@ -286,6 +288,7 @@ export function PayrollCopilotWorkbench() {
     await run(async () => {
       const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: chat });
       setProposals((data.proposedActions as ProposedAction[]) ?? []);
+      setAnswer(typeof data.answer === "string" ? data.answer : null);
     });
   }
 
@@ -309,6 +312,7 @@ export function PayrollCopilotWorkbench() {
       const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: scoped });
       setChat(scoped);
       setProposals((data.proposedActions as ProposedAction[]) ?? []);
+      setAnswer(typeof data.answer === "string" ? data.answer : null);
     });
   }
 
@@ -358,6 +362,7 @@ export function PayrollCopilotWorkbench() {
       const data = await postJson(`/api/payroll/copilot/${view.run.id}/message`, { text: scoped });
       setChat(scoped);
       setProposals((data.proposedActions as ProposedAction[]) ?? []);
+      setAnswer(typeof data.answer === "string" ? data.answer : null);
     });
   }
 
@@ -381,6 +386,7 @@ export function PayrollCopilotWorkbench() {
       })) as unknown as RunView;
       setView(data);
       setProposals(null);
+      setAnswer(null);
       setChat("");
     });
   }
@@ -471,11 +477,15 @@ export function PayrollCopilotWorkbench() {
             busy={busy}
             chat={chat}
             proposals={proposals}
+            answer={answer}
             materialized={materialized}
             onChat={setChat}
             onSend={sendMessage}
             onConfirm={confirmProposals}
-            onDiscard={() => setProposals(null)}
+            onDiscard={() => {
+              setProposals(null);
+              setAnswer(null);
+            }}
             onMaterialize={materialize}
             onCancel={cancelRun}
             onConfirmEmployee={confirmEmployee}
@@ -498,6 +508,7 @@ function RunWorkspace(props: {
   busy: boolean;
   chat: string;
   proposals: ProposedAction[] | null;
+  answer: string | null;
   materialized: { batchHref: string; importedRecords: number } | null;
   onChat: (value: string) => void;
   onSend: () => void;
@@ -513,7 +524,7 @@ function RunWorkspace(props: {
   onAcceptRecommendation: (action: Record<string, unknown>) => void;
   onAcceptAllRecommendations: () => void;
 }) {
-  const { view, draft, busy, chat, proposals, materialized } = props;
+  const { view, draft, busy, chat, proposals, answer, materialized } = props;
   const [activeTab, setActiveTab] = useState<
     "sheet" | "fingerprint" | "crm" | "vacation" | "expenses" | "holiday-bridging"
   >("sheet");
@@ -661,10 +672,11 @@ function RunWorkspace(props: {
 
         <div className="border border-slate-200 bg-white p-4">
           <label className="text-sm font-semibold text-slate-700" htmlFor="copilot-chat">
-            Answer the Copilot
+            Ask or instruct the Copilot
           </label>
           <p className="mt-1 text-xs text-slate-500">
-            e.g. &quot;give B-100 a 2000 bonus, deduct 500 from B-142, loan B-155 1000 for 6 months&quot;
+            Ask a question — &quot;why is B-100 flagged?&quot;, &quot;who dropped in pay?&quot; — or give an
+            instruction — &quot;give B-100 a 2000 bonus, deduct 500 from B-142, loan B-155 1000 for 6 months&quot;.
           </p>
           <textarea
             id="copilot-chat"
@@ -680,11 +692,24 @@ function RunWorkspace(props: {
               disabled={busy || !chat.trim() || view.run.status === "drafted"}
               className="bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              Read my answer
+              {busy ? "Thinking…" : "Send"}
             </button>
           </div>
 
-          {proposals ? (
+          {/* A prose answer to a question (shown when the message wasn't a command). */}
+          {answer && (!proposals || proposals.length === 0) ? (
+            <div className="mt-4 border border-sky-200 bg-sky-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Copilot</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{answer}</p>
+            </div>
+          ) : proposals && proposals.length === 0 && !answer ? (
+            <div className="mt-4 border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+              I couldn&apos;t read that as an instruction. Try naming the employee and amount explicitly, or ask a
+              question about the run.
+            </div>
+          ) : null}
+
+          {proposals && proposals.length > 0 ? (
             <div className="mt-4 border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Proposed changes ({proposals.length}) — confirm to apply
