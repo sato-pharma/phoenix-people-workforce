@@ -196,13 +196,22 @@ function activityLabel(value: PlanningActivityValue) {
 }
 
 const planningActivityOptions: Array<{ label: string; value: PlanningActivityValue }> = [
-  // "Excuse" is auto-filled (locked) from approved excuse requests only — never
-  // manually selectable. "National Vacation" stays a manual choice.
+  // Leave is never hand-declared inside a plan. "Vacation" and "National Vacation"
+  // are injected (locked) from an approved vacation request / HR-confirmed national
+  // holiday, and "Excuse" from an approved excuse request — so an employee can only
+  // ever pick real work here. "Other" is dropped in favour of the explicit
+  // "Coaching" entry below (Coaching still persists as activity_type="Other").
   ...employeePlanActivityTypes
-    .filter((type) => type !== "Excuse")
+    .filter((type) => !(["Excuse", "Vacation", "National Vacation", "Other"] as readonly string[]).includes(type))
     .map((type) => ({ label: activityLabel(type), value: type })),
   { label: "Coaching", value: "Coaching" },
 ];
+
+// A plan the employee is still actively editing — the only statuses into which we
+// re-overlay cross-domain sync (approved leave, HR holidays, submitted weekly
+// plans). Deliberately excludes final_approved / hr_acknowledged so re-opening an
+// approved plan never silently rewrites it.
+const planSyncEditableStatuses = new Set<string>(["draft", "manager_returned", "ceo_returned"]);
 
 function activitySelectValue(row: Pick<DraftItem, "activityTitle" | "activityType">): PlanningActivityValue {
   return isCoachingActivity(row.activityType, row.activityTitle) ? "Coaching" : row.activityType;
@@ -1012,7 +1021,10 @@ export function PlansWorkspace({
     [dayGroups],
   );
   const submitValidationIssues = useMemo(
-    () => rows.flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions)),
+    // Locked rows come from a trusted source (approved leave, HR national holiday,
+    // or an authoritative submitted weekly plan) and are read-only, so they can
+    // never be "fixed" here — validating them would raise unfixable blockers.
+    () => rows.filter((row) => !row.locked).flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions)),
     [rows, workspace.medicalRepOptions],
   );
   // Client mirror of the server workday guard: every required working slot must
@@ -1108,10 +1120,13 @@ export function PlansWorkspace({
     };
   }, [period.periodEndDate, period.periodStartDate, sameLineBookingScopeKey, workspace.currentEmployee?.hrId]);
 
-  // Fetch cross-domain prefill (approved vacation/excuse + monthly weekly sync)
-  // whenever the active period changes, then overlay it onto a NEW draft only
-  // (never a saved plan being edited). mergePrefillIntoRows preserves user
-  // input, so re-running is safe. setRows here runs inside the async callback.
+  // Fetch cross-domain prefill (approved/pending leave, HR national holidays, and
+  // the monthly weekly sync) whenever the active period changes, then overlay it
+  // onto a brand-new draft OR an editable saved plan (draft / manager_returned /
+  // ceo_returned) so it re-syncs every time the editor opens — not just on a
+  // first-time draft. mergePrefillIntoRows preserves user input and locked rows
+  // always win, so re-running is safe (it can never blank the submitted week).
+  const selectedPlanStatusForSync = plan?.status ?? null;
   useEffect(() => {
     let active = true;
     if (!workspace.currentEmployee?.hrId) return () => {
@@ -1127,7 +1142,9 @@ export function PlansWorkspace({
         const items: PlanPrefillItem[] = payload.success ? payload.data.items ?? [] : [];
         const nationalHolidayDates: string[] = payload.success ? payload.data.nationalHolidayDates ?? [] : [];
         setPrefillState({ items, nationalHolidayDates, scopeKey });
-        if (!selectedPlan && items.length > 0) {
+        const mergeable = !selectedPlan
+          || (selectedPlanStatusForSync ? planSyncEditableStatuses.has(selectedPlanStatusForSync) : false);
+        if (mergeable && items.length > 0) {
           setRows((current) => mergePrefillIntoRows(current, items));
         }
       })
@@ -1137,7 +1154,7 @@ export function PlansWorkspace({
     return () => {
       active = false;
     };
-  }, [activeKind, anchorDate, prefillScopeKey, selectedPlan, workspace.currentEmployee?.hrId]);
+  }, [activeKind, anchorDate, prefillScopeKey, selectedPlan, selectedPlanStatusForSync, workspace.currentEmployee?.hrId]);
 
   // ---------------------------------------------------------------------------
   // F4 — Draft autosave / restore. Persists only the user-editable (unlocked)
@@ -1583,7 +1600,8 @@ export function PlansWorkspace({
   const weeklySyncCount = prefillState.scopeKey === prefillScopeKey
     ? prefillState.items.filter((item) => item.source === "weekly").length
     : 0;
-  const syncedBanner = !selectedPlan && (lockedSyncCount > 0 || weeklySyncCount > 0) ? (
+  const syncEligible = !selectedPlan || (plan ? planSyncEditableStatuses.has(plan.status) : false);
+  const syncedBanner = syncEligible && (lockedSyncCount > 0 || weeklySyncCount > 0) ? (
     <div className="flex flex-wrap items-center gap-2 border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs font-bold text-sky-800">
       <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
       <span className="whitespace-nowrap">Auto-synced into this plan:</span>

@@ -1797,6 +1797,36 @@ async function loadManagerApprovedVacations(
   }
 }
 
+// Submitted-but-not-yet-manager-approved vacations overlapping [start, end].
+// These reserve the day in the plan (so the employee is never forced to plan
+// work on a day they've already requested off) and are accepted by the submit
+// guard. Once the manager approves, the request instead surfaces via
+// loadManagerApprovedVacations (manager_decision='approved'); if it is rejected
+// it drops out on the next editor open. Degrades to [] if the table is absent.
+async function loadPendingVacations(
+  employeeHrId: string,
+  start: string,
+  end: string,
+): Promise<{ rows: ApprovedVacationRow[]; ready: boolean }> {
+  try {
+    const keys = hrIdLookupKeys(employeeHrId);
+    if (keys.length === 0) return { rows: [], ready: true };
+    const { data, error } = await getSupabaseAdmin()
+      .from("v2_vacation_requests")
+      .select("start_date,end_date,day_part,vacation_type,manager_decision,status")
+      .in("status", ["needs_assignment", "pending_manager", "submitted"])
+      .lte("start_date", end)
+      .gte("end_date", start)
+      .in("employee_hr_id", keys)
+      .limit(100);
+    if (error) throw error;
+    return { rows: (data ?? []) as ApprovedVacationRow[], ready: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { rows: [], ready: false };
+    throw error;
+  }
+}
+
 async function loadApprovedExcuses(
   employeeHrId: string,
   start: string,
@@ -1864,7 +1894,10 @@ async function loadWeeklySourcedItems(
       notes: row.notes ?? "",
       source: "weekly" as const,
       sourceLabel: "From weekly plan",
-      locked: false,
+      // Locked & authoritative: a submitted week is the source of truth for its
+      // days inside the monthly plan, re-synced on every open. The employee edits
+      // the weekly plan to change it — it can never silently go missing here.
+      locked: true,
     }));
     return { items, ready: true };
   } catch (error) {
@@ -1920,6 +1953,36 @@ export async function getPlanPrefill(
     }
   }
 
+  // Reserve pending (submitted-but-unapproved) vacation days so the employee is
+  // never forced to plan work on a day they have already requested off. Skips
+  // dates already covered by an approved vacation above.
+  const approvedVacationDates = new Set(
+    items.filter((item) => item.source === "vacation").map((item) => item.activityDate),
+  );
+  const pendingVacation = await loadPendingVacations(employee.hrId, start, end);
+  ready = ready && pendingVacation.ready;
+  for (const row of pendingVacation.rows) {
+    const slot = dayPartToSlot(row.day_part);
+    const clippedStart = row.start_date < start ? start : row.start_date;
+    const clippedEnd = !row.end_date || row.end_date > end ? end : row.end_date;
+    for (const date of eachDateInclusive(clippedStart, clippedEnd)) {
+      if (approvedVacationDates.has(date)) continue;
+      items.push({
+        activityDate: date,
+        slot,
+        activityType: "Vacation",
+        activityTitle: "Vacation",
+        area: null,
+        locationText: null,
+        objective: null,
+        notes: "",
+        source: "vacation",
+        sourceLabel: "Vacation — pending approval",
+        locked: true,
+      });
+    }
+  }
+
   const excuses = await loadApprovedExcuses(employee.hrId, start, end);
   ready = ready && excuses.ready;
   for (const row of excuses.rows) {
@@ -1945,6 +2008,30 @@ export async function getPlanPrefill(
   }
 
   const nationalHolidayDates = await loadNationalHolidayDates(start, end);
+
+  // Hardcode HR-confirmed national holidays as locked rows on the working days
+  // they land on, so the employee is never forced to hand-fill a public holiday
+  // (and can never accidentally plan work over one). Holidays on an off-day need
+  // no row. getConfirmedNationalHolidays (via loadNationalHolidayDates) already
+  // resolves any HR-postponed observed date, so this lands on the real day off.
+  const requiredSlotsForHolidays = planRequiredSlotsByDate(start, end, workweek);
+  for (const date of nationalHolidayDates) {
+    const requirement = requiredSlotsForHolidays.get(date);
+    if (!requirement) continue;
+    items.push({
+      activityDate: date,
+      slot: requirement === "am" ? "am" : "full",
+      activityType: "National Vacation",
+      activityTitle: "National Vacation",
+      area: null,
+      locationText: null,
+      objective: null,
+      notes: "",
+      source: "national_vacation",
+      sourceLabel: "National holiday (HR confirmed)",
+      locked: true,
+    });
+  }
 
   return { items, schemaReady: ready, nationalHolidayDates };
 }
@@ -2030,18 +2117,25 @@ async function assertSubmissionComplete(input: {
   const excuseItems = items.filter((item) => item.activityType === "Excuse");
   if (vacationItems.length === 0 && excuseItems.length === 0) return;
 
-  const [vacation, excuses] = await Promise.all([
+  const [vacation, pendingVacation, excuses] = await Promise.all([
     vacationItems.length > 0
       ? loadManagerApprovedVacations(input.employeeHrId, periodStartDate, periodEndDate)
+      : Promise.resolve({ rows: [] as ApprovedVacationRow[], ready: true }),
+    vacationItems.length > 0
+      ? loadPendingVacations(input.employeeHrId, periodStartDate, periodEndDate)
       : Promise.resolve({ rows: [] as ApprovedVacationRow[], ready: true }),
     excuseItems.length > 0
       ? loadApprovedExcuses(input.employeeHrId, periodStartDate, periodEndDate)
       : Promise.resolve({ rows: [] as ApprovedExcuseRow[], ready: true }),
   ]);
 
+  // A Vacation day is valid if covered by any live vacation request — approved OR
+  // still pending. Pending days are reserved in the editor; a later rejection
+  // simply drops them out on the next editor open.
+  const coveringVacations = [...vacation.rows, ...pendingVacation.rows];
   const vacationViolations: string[] = [];
   for (const item of vacationItems) {
-    const covered = vacation.rows.some((row) => {
+    const covered = coveringVacations.some((row) => {
       const endDate = row.end_date ?? row.start_date;
       return item.activityDate >= row.start_date && item.activityDate <= endDate;
     });
@@ -2049,7 +2143,7 @@ async function assertSubmissionComplete(input: {
   }
   if (vacationViolations.length > 0) {
     throw new Error(
-      `These days are marked Vacation but have no manager-approved vacation request — file (and get approval) first: ${vacationViolations.join(", ")}.`,
+      `These days are marked Vacation but have no vacation request on file — submit a vacation request first: ${vacationViolations.join(", ")}.`,
     );
   }
 

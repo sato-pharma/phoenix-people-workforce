@@ -12,7 +12,6 @@ import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
-import { sharedPlanningCalendarStatuses } from "@/lib/weekly-planning/calendar";
 import {
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
@@ -26,6 +25,7 @@ import {
   mapPrivateCalendarEmployee,
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
+  privateCalendarPlanStatuses,
   privateCalendarSources,
   resolvePrivateCalendarVisibleEmployees,
   summarizePrivateCalendarItems,
@@ -43,6 +43,7 @@ type VacationCalendarRow = {
   employee_name: string | null;
   end_date: string | null;
   id: string;
+  manager_decision: string | null;
   notes: string | null;
   paid_duration_days: number | string | null;
   payment_status: string | null;
@@ -218,8 +219,8 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
     let query = getSupabaseAdmin()
       .from("v2_vacation_requests")
-      .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,day_part,duration_days,paid_duration_days,payment_status,notes")
-      .eq("status", "approved")
+      .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
+      .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
       .lte("start_date", end)
       .gte("end_date", start)
       .order("start_date", { ascending: true })
@@ -227,7 +228,17 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
     query = query.in("employee_hr_id", employeeHrKeys);
     const { data, error } = await query;
     if (error) throw error;
-    return { items: ((data ?? []) as VacationCalendarRow[]).map(mapVacationRowToPrivateCalendarItem), ready: true };
+    // Covered = the manager has signed off (manager_decision='approved', which
+    // also implies status='pending_hr') or HR has recorded it (status='approved').
+    // Everything else is a live pending request: it reserves the day on the
+    // calendar (so attendance isn't flagged "missing") but renders as pending.
+    return {
+      items: ((data ?? []) as VacationCalendarRow[]).map((row) => {
+        const covered = row.manager_decision === "approved" || row.status === "approved";
+        return mapVacationRowToPrivateCalendarItem(row, { pending: !covered });
+      }),
+      ready: true,
+    };
   } catch (error) {
     if (schemaMissing(error, "v2_vacation_requests")) return { items: [], ready: false };
     throw error;
@@ -266,7 +277,7 @@ async function loadPlanItems(employeeHrIds: string[], start: string, end: string
     let headersQuery = supabase
       .from("employee_plan_headers")
       .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
-      .in("status", [...sharedPlanningCalendarStatuses])
+      .in("status", [...privateCalendarPlanStatuses])
       .lte("period_start_date", end)
       .gte("period_end_date", start)
       .order("period_start_date", { ascending: true })
@@ -366,11 +377,13 @@ export async function getPrivateCalendarWorkspace(input: {
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
-  // Suppress FP attendance on days where a DV or Single Visit plan exists — the
-  // field record is the authoritative attendance proof for that day.
+  // Suppress FP attendance on days where a Double Visit or any off-site/remote
+  // plan activity exists — that record is the authoritative attendance proof, and
+  // a fingerprint "late/absent" flag is meaningless when the employee was planned
+  // away from the office.
   const fieldVisitDates = new Set<string>();
   for (const item of allItems) {
-    if (item.source === "double_visit" || (item.source === "plan" && item.title.startsWith("Single Visit"))) {
+    if (item.source === "double_visit" || (item.source === "plan" && item.planCountsAsAttendance)) {
       fieldVisitDates.add(item.startDate);
     }
   }
