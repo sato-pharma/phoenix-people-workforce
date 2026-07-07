@@ -102,7 +102,6 @@ export type EmployeeDirectoryRow = {
   residenceLatitude: number | null;
   residenceLongitude: number | null;
   regionName: string | null;
-  regionCode: string | null;
   resignationDate: string | null;
   salaryDetails?: EmployeeSalaryDetail[] | null;
   socialInsurance: number | null;
@@ -195,7 +194,6 @@ export type EmployeeMutationInput = {
   residenceArea?: string | null;
   residenceCity?: string | null;
   regionName?: string | null;
-  regionCode?: string | null;
   salaryDetails?: EmployeeSalaryDetail[] | null;
   salaryPaymentMode?: string | null;
   socialInsurance?: number | null;
@@ -248,7 +246,6 @@ type EmployeeDbRow = {
   payment_mode?: string | null;
   position_id: number | null;
   region_name?: string | null;
-  region_code?: string | null;
   resignation_date?: string | null;
   residence_address?: string | null;
   residence_area?: string | null;
@@ -906,7 +903,6 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const joinedSelect = [
     baseEmployeeSelect,
     "region_name",
-    "region_code",
     "birth_date",
     `employee_compensation!employee_compensation_employee_hr_id_fkey(${compensationSelect()})`,
     "departments!employees_department_id_fkey(name)",
@@ -934,7 +930,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
     // Fallback if joined query fails due to schema/relationship issues
     const fallbackParams = new URLSearchParams({
-      select: `${baseEmployeeSelect},region_name,region_code,birth_date`,
+      select: `${baseEmployeeSelect},region_name,birth_date`,
       order: "full_name.asc",
     });
     employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
@@ -1069,7 +1065,6 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
-        regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
         socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1229,7 +1224,6 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
-        regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
         socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1348,7 +1342,6 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
-      regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
       socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1414,7 +1407,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
   const baseEmployeeSelect =
     "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
-    select: `${baseEmployeeSelect},region_name,region_code,birth_date`,
+    select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc,hr_id.asc",
   });
   let employeeRows: EmployeeDbRow[];
@@ -1511,7 +1504,6 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
-      regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? null,
       socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1778,7 +1770,6 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
     residence_area: compact(input.residenceArea),
     residence_city: compact(input.residenceCity),
     region_name: compact(input.regionName),
-    region_code: compact(input.regionCode),
     social_insurance: numberOrNull(input.socialInsurance),
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),

@@ -9,7 +9,6 @@ export const lineRules: Record<string, string> = {
   anti_infectious: "Anti Inf",
   anti_infective: "Anti Inf",
   cns: "CNS",
-  head_office: "Office",
   office: "Office",
   pedia: "Pedia",
   pediatrics: "Pedia",
