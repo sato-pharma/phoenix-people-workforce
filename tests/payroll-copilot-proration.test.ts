@@ -185,6 +185,28 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(resignRow.secondPart, 0);
   assert.equal(resignRow.monthSalary, 17700);
 
+  // --- D': leaver with an approved expense — the reimbursement must be PAID in
+  // the settlement, not just displayed. Regression for the bug where
+  // settlementAdditions excluded expenses, so a departing employee lost any
+  // approved outstation expense from their final pay. Same row as above (leaver
+  // 2026-06-20, net 18000, medical 300) plus an 800 approved expense.
+  const resignWithExpense = buildRowForEmployee({
+    employee: testEmployee({ medicalInsurance: 300 }),
+    source: testSource(),
+    recurring: [],
+    adjustments: [],
+    period: JUNE,
+    index: 1,
+    resignation: { lastWorkingDate: "2026-06-20", unpaidDaysInSpan: 2 },
+    approvedExpenses: 800,
+  });
+  assert.ok(resignWithExpense);
+  assert.equal(resignWithExpense.expenses, 800, "the approved expense shows on the leaver's row");
+  // total payable = 18000 net + 800 expense - 300 medical = 18500; basic anchor 21000 -> Part1 absorbs all
+  assert.equal(resignWithExpense.monthSalary, 18500, "leaver's expense is actually PAID, not dropped from the settlement");
+  assert.equal(resignWithExpense.firstPart, 18500);
+  assert.equal(resignWithExpense.secondPart, 0);
+
   // --- D full integration: resignation, after_25 branch, one_part mode -------
   const resignOnePart = buildRowForEmployee({
     employee: testEmployee({ medicalInsurance: 300 }),

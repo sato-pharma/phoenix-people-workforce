@@ -222,7 +222,14 @@ export async function buildApprovedDeductionTotals(
       listCandidatesForSourceModule(systemAccessContext, period, "ATTENDANCE_DEVICE"),
       listCandidatesForSourceModule(systemAccessContext, period, "FIELD_WORKFORCE"),
     ]);
-    for (const row of [...fingerprint.rows, ...crm.rows]) {
+    // Only deduct what the CRM review tab actually shows. listCrmDeductionCandidates
+    // filters FIELD_WORKFORCE to `no_activity`; a non-no_activity field-workforce row
+    // (e.g. a retroactive_leave row mistakenly approved-for-payroll) would otherwise be
+    // summed into the `crm` pay column here yet never appear in the review tab or the
+    // completeness gate — money deducted that was never reviewed. Filtering to the same
+    // set keeps "what's deducted" == "what's reviewed".
+    const crmReviewableRows = crm.rows.filter((row) => row.deductionType === "no_activity");
+    for (const row of [...fingerprint.rows, ...crmReviewableRows]) {
       if (row.decision?.decisionStatus !== "Approved for Payroll") continue;
       const key = compactHrKey(row.employeeHrIdCompact || row.employeeCode);
       if (!key) continue;
