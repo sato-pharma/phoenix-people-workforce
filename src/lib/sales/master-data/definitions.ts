@@ -1,4 +1,5 @@
 import type { AuditEntityType } from "@/lib/admin/audit";
+import { OFFICIAL_LINE_VALUES } from "@/lib/sales/access-scope";
 
 /**
  * Config-driven definitions for the Source of Sales "Database Mapping" console.
@@ -29,6 +30,11 @@ export type MasterColumn = {
   locked: boolean;
   required: boolean;
   type: MasterColumnType;
+  /** When set, an imported/entered value must resolve (case/whitespace-insensitive) to one
+   *  of these values; unrecognized values are blocked rather than saved verbatim. Used for
+   *  fields where a stray label would silently defeat a confidentiality check downstream
+   *  (e.g. Product Master "Line" — see access-scope.ts's Head Office strip). */
+  allowedValues?: readonly string[];
 };
 
 export type ParentRule = {
@@ -219,7 +225,7 @@ const PRODUCTS: MasterDefinition = {
     { key: "family", label: "Family", locked: true, required: true, type: "text" },
     { key: "family_code", label: "Family Code", locked: true, required: true, type: "code" },
     { key: "source", label: "Source", locked: true, required: true, type: "text" },
-    { key: "line", label: "Line", locked: false, required: true, type: "text" },
+    { key: "line", label: "Line", locked: false, required: true, type: "text", allowedValues: OFFICIAL_LINE_VALUES },
     { key: "factory_price", label: "Factory Price", locked: false, required: true, type: "number" },
   ],
   parents: [],
