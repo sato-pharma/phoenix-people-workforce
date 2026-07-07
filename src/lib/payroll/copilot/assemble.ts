@@ -236,7 +236,14 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   let effectiveNetSalary = netSalary;
   let resignationSettlement: ResignationSettlement | null = null;
 
-  const settlementAdditions = roundCurrency(overtime + bonus + otherAdditions);
+  // Expenses (reimbursement of money the employee already spent, e.g. approved
+  // outstation travel) and incentive must be part of a leaver's settlement too —
+  // a departing employee is still owed them. This mirrors the non-leaver path,
+  // which pays them via calculatePayrollParts({ secondPartAdditions: expenses +
+  // incentive, additions: expenses + incentive + ... }). Omitting them here
+  // previously underpaid any leaver who had an approved expense in their final
+  // month (incentive is 0 in the Copilot today, so the live impact was expenses).
+  const settlementAdditions = roundCurrency(expenses + incentive + overtime + bonus + otherAdditions);
   const settlementDeductions = roundCurrency(
     crm + fingerPrint + medicalInsurance + loans + otherDeductions + unpaidVacations,
   );
