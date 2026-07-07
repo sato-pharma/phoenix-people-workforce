@@ -1456,6 +1456,7 @@ export async function listPlanComments(
   access: AccessContext,
   planId: string,
 ): Promise<{ canComment: boolean; comments: EmployeePlanComment[]; schemaReady: boolean }> {
+  await assertPermission(access, "weekly_plans", "read");
   const plan = await loadPlanRow(planId);
   const employee = await currentEmployee(access);
   if (!canViewPlan(access, employee, plan)) {
@@ -1529,6 +1530,7 @@ export async function addPlanComment(access: AccessContext, planId: string, inpu
 }): Promise<EmployeePlanComment> {
   const body = String(input.body ?? "").trim();
   if (!body) throw new Error("Comment cannot be empty.");
+  await assertPermission(access, "weekly_plans", "update");
   const plan = await loadPlanRow(planId);
   const employee = await currentEmployee(access);
   if (!canViewPlan(access, employee, plan)) {
