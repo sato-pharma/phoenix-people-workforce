@@ -156,6 +156,28 @@ export function bridgeEmployeeLineToOfficial(lineName: string | null | undefined
   return OFFICIAL_LINE_BY_KEY[trimmed.toLowerCase()] ?? trimmed;
 }
 
+/**
+ * The full set of canonical Source-of-Sales official line values, derived from
+ * `OFFICIAL_LINE_BY_KEY` so it can never drift from the bridge map above. This is the
+ * write-time allow-list for any place a line label is typed in as free text (e.g. the
+ * Product Master import) — confidentiality (`isHeadOfficeLine`) is only as strong as this
+ * set staying exhaustive, since a product/rollup row with an unrecognized line label would
+ * silently bypass the Head Office strip instead of being caught.
+ */
+export const OFFICIAL_LINE_VALUES: readonly string[] = Array.from(new Set(Object.values(OFFICIAL_LINE_BY_KEY)));
+
+/** Resolve a free-text line label to its canonical official-line casing, or null if it
+ *  doesn't match any known official line (case/whitespace-insensitive). Unlike
+ *  `bridgeEmployeeLineToOfficial`, this does NOT pass unknown values through — it is the
+ *  write-time gate, where an unrecognized label should be rejected, not silently accepted. */
+export function resolveOfficialLineValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const key = trimmed.toLowerCase();
+  return OFFICIAL_LINE_BY_KEY[key] ?? OFFICIAL_LINE_VALUES.find((v) => v.toLowerCase() === key) ?? null;
+}
+
 /** Case/whitespace-insensitive key for comparing line names from different sources. */
 export function normalizeLineKey(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
