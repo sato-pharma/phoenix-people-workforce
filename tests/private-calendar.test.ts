@@ -126,6 +126,70 @@ export function runPrivateCalendarTests() {
   assert.equal(plan.source, "plan");
   assert.equal(plan.title, "Single Visit - Munufia 2");
   assert.equal(plan.sourceTable, "employee_plan_items");
+  assert.equal(plan.planCountsAsAttendance, true, "a Field/Single Visit plan self-proves attendance");
+
+  // An off-site planned activity (Meeting/Training/Travel/Double Visit/Coaching) —
+  // not just the literal "Single Visit" — must self-prove attendance, even while
+  // the plan is returned for edit. Otherwise a routine manager action re-flags the
+  // employee as absent (the reported bug).
+  const offSitePlan = mapPlanRowToPrivateCalendarItem({
+    activity_date: "2026-06-17",
+    activity_title: "Meeting",
+    activity_type: "Meeting",
+    area: null,
+    employee_hr_id: "E-1",
+    employee_name: "Employee One",
+    end_time: null,
+    id: "plan-mtg-1",
+    location_text: null,
+    notes: null,
+    plan_kind: "weekly",
+    start_time: null,
+    status: "manager_returned",
+  });
+  assert.equal(offSitePlan.planCountsAsAttendance, true, "an off-site plan activity self-proves attendance");
+  const offSiteExceptions = derivePrivateCalendarExceptions({
+    employees: [{ departmentName: null, fullName: "Employee One", hrId: "E-1", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
+    end: "2026-06-17",
+    isExpectedWorkday: () => true,
+    items: [offSitePlan],
+    start: "2026-06-17",
+    today: "2026-06-17",
+  });
+  assert.equal(
+    offSiteExceptions.filter((e) => e.title === "Missing attendance cover" || e.title === "Plan without attendance").length,
+    0,
+    "an off-site planned day must never be flagged as missing attendance",
+  );
+
+  // A desk plan (Office/Admin) with no punch still flags — but only once
+  // ("plan without attendance"), never also "missing attendance cover".
+  const deskPlan = mapPlanRowToPrivateCalendarItem({
+    activity_date: "2026-06-17",
+    activity_title: "Office",
+    activity_type: "Office",
+    area: null,
+    employee_hr_id: "E-2",
+    employee_name: "Employee Two",
+    end_time: null,
+    id: "plan-office-1",
+    location_text: null,
+    notes: null,
+    plan_kind: "weekly",
+    start_time: null,
+    status: "submitted",
+  });
+  assert.equal(deskPlan.planCountsAsAttendance, false, "a desk plan still requires a punch");
+  const deskExceptions = derivePrivateCalendarExceptions({
+    employees: [{ departmentName: null, fullName: "Employee Two", hrId: "E-2", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
+    end: "2026-06-17",
+    isExpectedWorkday: () => true,
+    items: [deskPlan],
+    start: "2026-06-17",
+    today: "2026-06-17",
+  });
+  assert.ok(deskExceptions.some((e) => e.title === "Plan without attendance"), "a desk plan with no punch flags plan-without-attendance");
+  assert.equal(deskExceptions.some((e) => e.title === "Missing attendance cover"), false, "a desk plan must not double-flag missing cover");
 
   const exceptions = derivePrivateCalendarExceptions({
     employees: [{
@@ -224,7 +288,7 @@ export function runPrivateCalendarTests() {
     "approved excuse calendar reads must not use uppercase-only HR_ID matching",
   );
   assert.match(serviceSource, /\.eq\("status", "approved"\)/, "vacation and excuse loaders must only read approved rows");
-  assert.match(serviceSource, /sharedPlanningCalendarStatuses/, "plan loader must use submitted-or-approved planning statuses");
+  assert.match(serviceSource, /privateCalendarPlanStatuses/, "plan loader must use the review-proof private-calendar plan statuses (submitted through returned/approved)");
   assert.match(serviceSource, /canReadPrivateCalendarEmployee/, "service must enforce server-side employee scope");
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
