@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
+import { ExpensesTab } from "./tabs/expenses-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
 type Flag = {
@@ -399,7 +400,9 @@ function RunWorkspace(props: {
   onReportIssueGroup: (hrIds: string[], text: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
-  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm" | "vacation">("negotiation");
+  const [activeTab, setActiveTab] = useState<
+    "negotiation" | "fingerprint" | "crm" | "vacation" | "expenses"
+  >("negotiation");
   if (!draft) return null;
 
   const questionGroups = groupDuplicateQuestions(draft.employees);
@@ -431,6 +434,7 @@ function RunWorkspace(props: {
             { key: "fingerprint", label: "Fingerprint Deductions" },
             { key: "crm", label: "CRM Deductions" },
             { key: "vacation", label: "Unpaid Vacation" },
+            { key: "expenses", label: "Expenses" },
           ] as const
         ).map((tab) => (
           <button
@@ -464,6 +468,8 @@ function RunWorkspace(props: {
         />
       ) : activeTab === "vacation" ? (
         <UnpaidVacationTab runId={view.run.id} />
+      ) : activeTab === "expenses" ? (
+        <ExpensesTab runId={view.run.id} />
       ) : (
       <div className="space-y-6">
         {questionGroups.length > 0 ? (
