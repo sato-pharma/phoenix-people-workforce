@@ -17,6 +17,7 @@ type IconType = typeof Users;
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
 import { ExpensesTab } from "./tabs/expenses-tab";
+import { HolidayBridgingTab } from "./tabs/holiday-bridging-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
 /** Same accent recipe as admin-command-center.tsx's KPI cards — gradient bg, glow, icon badge, hover lift. */
@@ -514,7 +515,7 @@ function RunWorkspace(props: {
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
   const [activeTab, setActiveTab] = useState<
-    "sheet" | "fingerprint" | "crm" | "vacation" | "expenses"
+    "sheet" | "fingerprint" | "crm" | "vacation" | "expenses" | "holiday-bridging"
   >("sheet");
   if (!draft) return null;
 
@@ -567,6 +568,7 @@ function RunWorkspace(props: {
               label: "Expenses",
               count: draft.otherTabsBlocking.find((tab) => tab.label === "Expenses")?.count ?? 0,
             },
+            { key: "holiday-bridging", label: "Holiday Bridging", count: 0 },
           ] as const
         ).map((tab) => (
           <button
@@ -607,6 +609,8 @@ function RunWorkspace(props: {
         <UnpaidVacationTab runId={view.run.id} />
       ) : activeTab === "expenses" ? (
         <ExpensesTab runId={view.run.id} />
+      ) : activeTab === "holiday-bridging" ? (
+        <HolidayBridgingTab runId={view.run.id} />
       ) : (
       <div className="space-y-6">
         {highRecommendationCount > 0 ? (

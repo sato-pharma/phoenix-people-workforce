@@ -17,6 +17,12 @@ import type { CopilotPeriod } from "./types.ts";
  *
  * Replaces the old vague "pending_unapproved" chat flag and the always-zero
  * `expenses` field in assemble.ts (see buildIncludedExpenseTotals below).
+ *
+ * EXPENSES LAG ONE MONTH (owner-dictated rule): a payroll period pays out
+ * the PRIOR calendar month's approved outstation expenses — June payroll
+ * settles May's approved trips, not June's. `sourceExpenseMonthBounds` below
+ * resolves that prior-month window; every query in this file filters on it,
+ * not on the payroll period's own month.
  */
 
 export type ExpenseCandidate = {
@@ -34,11 +40,20 @@ export type ExpenseCandidate = {
   existingDecision: { decision: "include" | "defer"; decidedAt: string } | null;
 };
 
-function periodBounds(period: CopilotPeriod): { start: string; end: string } {
-  const mm = String(period.month).padStart(2, "0");
-  const start = `${period.year}-${mm}-01`;
-  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
-  const end = `${period.year}-${mm}-${String(lastDay).padStart(2, "0")}`;
+/** The {month, year} immediately BEFORE the payroll period (exported for tests and for labeling exports/UI). */
+export function priorPeriod(period: CopilotPeriod): CopilotPeriod {
+  return period.month === 1
+    ? { month: 12, year: period.year - 1 }
+    : { month: period.month - 1, year: period.year };
+}
+
+/** The calendar month immediately BEFORE the payroll period — the month whose approved outstation expenses this payroll pays out (exported for tests). */
+export function sourceExpenseMonthBounds(period: CopilotPeriod): { start: string; end: string } {
+  const prior = priorPeriod(period);
+  const mm = String(prior.month).padStart(2, "0");
+  const start = `${prior.year}-${mm}-01`;
+  const lastDay = new Date(Date.UTC(prior.year, prior.month, 0)).getUTCDate();
+  const end = `${prior.year}-${mm}-${String(lastDay).padStart(2, "0")}`;
   return { start, end };
 }
 
@@ -54,7 +69,7 @@ async function loadExistingDecisions(
   period: CopilotPeriod,
 ): Promise<Map<string, { decision: "include" | "defer"; decidedAt: string }>> {
   const map = new Map<string, { decision: "include" | "defer"; decidedAt: string }>();
-  const { start, end } = periodBounds(period);
+  const { start, end } = sourceExpenseMonthBounds(period);
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("payroll_copilot_expense_decisions")
@@ -80,7 +95,7 @@ async function loadExistingDecisions(
 
 /** HR-approved outstation expense requests overlapping the period, with any already-decided include/defer choice. */
 export async function listExpenseCandidates(period: CopilotPeriod): Promise<ExpenseCandidate[]> {
-  const { start, end } = periodBounds(period);
+  const { start, end } = sourceExpenseMonthBounds(period);
   const supabase = getSupabaseAdmin();
 
   const [{ data: requests, error }, directory, existingDecisions] = await Promise.all([
@@ -140,7 +155,7 @@ export type IncludedExpenseTotals = Map<string, number>;
  */
 export async function buildIncludedExpenseTotals(period: CopilotPeriod): Promise<IncludedExpenseTotals> {
   const totals: IncludedExpenseTotals = new Map();
-  const { start, end } = periodBounds(period);
+  const { start, end } = sourceExpenseMonthBounds(period);
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("payroll_copilot_expense_decisions")

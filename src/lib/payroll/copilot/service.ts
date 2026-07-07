@@ -37,6 +37,7 @@ import {
 import { buildIncludedExpenseTotals, listExpenseCandidates } from "./expense-review.ts";
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
+import { buildHolidayBridgingSalaryTotals } from "./holiday-bridging.ts";
 import { parseCeoReply } from "./llm.ts";
 import { recommendResolution, type CopilotRecommendation } from "./recommend.ts";
 import { applyActions } from "./negotiation.ts";
@@ -168,6 +169,7 @@ export async function assembleDraft(
     approvedDeductions,
     settledVacationSalaryDeductions,
     includedExpenseTotals,
+    holidayBridgingSalaryDeductions,
   ] = await Promise.all([
       getEmployeeDirectory(),
       getPayrollSalarySourcesByHrId(period),
@@ -179,6 +181,7 @@ export async function assembleDraft(
       buildApprovedDeductionTotals(period),
       buildSettledSalaryDeductionTotals(period),
       buildIncludedExpenseTotals(period),
+      buildHolidayBridgingSalaryTotals(period),
     ]);
 
   const eligible = directory.employees.filter(
@@ -221,6 +224,7 @@ export async function assembleDraft(
         : null,
       approvedDeductions: approvedDeductions.get(compact),
       settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),
+      holidayBridgingSalaryDeduction: holidayBridgingSalaryDeductions.get(compact),
       approvedExpenses: includedExpenseTotals.get(compact),
     });
     if (!row) continue;

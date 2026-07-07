@@ -6,7 +6,7 @@ import {
   copilotErrorResponse,
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
-import { listExpenseCandidates, recordExpenseDecision } from "@/lib/payroll/copilot/expense-review";
+import { listExpenseCandidates, priorPeriod, recordExpenseDecision } from "@/lib/payroll/copilot/expense-review";
 import {
   buildExpenseReportWorkbook,
   formatPeriodLabel,
@@ -31,13 +31,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     if (new URL(request.url).searchParams.get("format") === "xlsx") {
       const buffer = await buildExpenseReportWorkbook({
         periodLabel: formatPeriodLabel(period),
+        sourceMonthLabel: formatPeriodLabel(priorPeriod(period)),
         rows: candidates,
         hireDates: await getHireDateMap(),
       });
       return xlsxResponse(buffer, `Outstation_Expenses_${periodFileSlug(period)}.xlsx`);
     }
 
-    return NextResponse.json({ candidates });
+    return NextResponse.json({ candidates, sourceMonthLabel: formatPeriodLabel(priorPeriod(period)) });
   } catch (error) {
     return copilotErrorResponse(error);
   }
