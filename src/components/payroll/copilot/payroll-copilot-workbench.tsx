@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
@@ -12,20 +12,24 @@ type Flag = {
   question: string;
 };
 
-type FlaggedEmployee = {
-  hrId: string;
-  fullName: string;
-  jobTitle: string;
-  line: string;
-  netSalary: number;
-  flags: Flag[];
-};
+type EmployeeStatus = "green" | "answered" | "question" | "hold";
 
-type SimpleEmployee = {
+/** One row of the canonical payroll sheet — same column shape as SalaryReportTable (src/components/payroll/dashboard/), plus Copilot-only status/flags. */
+type EmployeeRow = {
   hrId: string;
   fullName: string;
+  hireDate: string | null;
+  line: string;
+  area: string;
+  jobTitle: string;
+  totalAdditions: number;
+  internalDeductions: number;
   netSalary: number;
+  firstPart: number;
+  secondPart: number;
   monthSalary: number;
+  status: EmployeeStatus;
+  flags: Flag[];
 };
 
 type RecurringApplied = { hrId: string; kind: string; amount: number; note: string | null };
@@ -41,9 +45,7 @@ type Draft = {
   canMaterialize: boolean;
   otherTabsBlocking: OtherTabBlocking[];
   recurringApplied: RecurringApplied[];
-  flagged: FlaggedEmployee[];
-  resolved: SimpleEmployee[];
-  green: SimpleEmployee[];
+  employees: EmployeeRow[];
 };
 
 type Run = {
@@ -132,9 +134,10 @@ type QuestionGroup = {
 };
 
 /** Employees sharing the EXACT same (rule, question) — offered a single bulk-resolve action instead of N separate ones. */
-function groupDuplicateQuestions(flagged: FlaggedEmployee[]): QuestionGroup[] {
+function groupDuplicateQuestions(employees: EmployeeRow[]): QuestionGroup[] {
   const map = new Map<string, QuestionGroup>();
-  for (const employee of flagged) {
+  for (const employee of employees) {
+    if (employee.status !== "question") continue;
     for (const flag of employee.flags) {
       const key = `${flag.rule}::${flag.question}`;
       const existing = map.get(key);
@@ -399,7 +402,7 @@ function RunWorkspace(props: {
   const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm" | "vacation">("negotiation");
   if (!draft) return null;
 
-  const questionGroups = groupDuplicateQuestions(draft.flagged);
+  const questionGroups = groupDuplicateQuestions(draft.employees);
   const groupedHrIds = new Set(questionGroups.flatMap((group) => group.hrIds));
 
   return (
@@ -462,172 +465,117 @@ function RunWorkspace(props: {
       ) : activeTab === "vacation" ? (
         <UnpaidVacationTab runId={view.run.id} />
       ) : (
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="space-y-4">
-          {questionGroups.length > 0 ? (
-            <div className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-                Same question, {questionGroups.length} group(s) — bulk resolve
-              </div>
-              <div className="divide-y divide-slate-100">
-                {questionGroups.map((group) => (
-                  <GroupedQuestionRow
-                    key={group.key}
-                    group={group}
-                    busy={props.busy}
-                    onConfirmAll={() => props.onConfirmGroup(group.hrIds)}
-                    onReportIssueAll={(text) => props.onReportIssueGroup(group.hrIds, text)}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-
+      <div className="space-y-6">
+        {questionGroups.length > 0 ? (
           <div className="border border-slate-200 bg-white">
             <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-              Questions ({draft.flagged.length})
+              Same question, {questionGroups.length} group(s) — bulk resolve
             </div>
             <div className="divide-y divide-slate-100">
-              {draft.flagged.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-slate-500">
-                  Everyone is green — no questions. You can generate the sheet.
+              {questionGroups.map((group) => (
+                <GroupedQuestionRow
+                  key={group.key}
+                  group={group}
+                  busy={props.busy}
+                  onConfirmAll={() => props.onConfirmGroup(group.hrIds)}
+                  onReportIssueAll={(text) => props.onReportIssueGroup(group.hrIds, text)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <PayrollSheetTable
+          employees={draft.employees}
+          groupedHrIds={groupedHrIds}
+          busy={busy}
+          onConfirmEmployee={props.onConfirmEmployee}
+          onReportIssue={props.onReportIssue}
+          onHoldEmployee={props.onHoldEmployee}
+        />
+
+        <div className="border border-slate-200 bg-white p-4">
+          <label className="text-sm font-semibold text-slate-700" htmlFor="copilot-chat">
+            Answer the Copilot
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            e.g. &quot;give B-100 a 2000 bonus, deduct 500 from B-142, loan B-155 1000 for 6 months&quot;
+          </p>
+          <textarea
+            id="copilot-chat"
+            className="mt-2 h-24 w-full border border-slate-300 px-3 py-2 text-sm"
+            value={chat}
+            onChange={(event) => props.onChat(event.target.value)}
+            disabled={view.run.status === "drafted"}
+          />
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={props.onSend}
+              disabled={busy || !chat.trim() || view.run.status === "drafted"}
+              className="bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Read my answer
+            </button>
+          </div>
+
+          {proposals ? (
+            <div className="mt-4 border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Proposed changes ({proposals.length}) — confirm to apply
+              </p>
+              {proposals.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500">
+                  I couldn&apos;t turn that into a change. Try naming the employee and amount explicitly.
                 </p>
               ) : (
-                draft.flagged.map((employee) => (
-                  <div key={employee.hrId} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-900">
-                        {employee.fullName} <span className="text-slate-400">({employee.hrId})</span>
-                        {groupedHrIds.has(employee.hrId) ? (
-                          <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Grouped above
-                          </span>
-                        ) : null}
-                      </p>
-                      {employee.flags.map((flag) => (
-                        <p
-                          key={flag.rule}
-                          className={`mt-1 border-l-4 pl-2 text-slate-600 ${SEVERITY_STYLES[flag.severity]}`}
-                        >
-                          {flag.question}
-                        </p>
-                      ))}
-                    </div>
-                    <EmployeeRowActions
-                      busy={props.busy}
-                      onConfirm={() => props.onConfirmEmployee(employee.hrId)}
-                      onReportIssue={(text) => props.onReportIssue(employee.hrId, text)}
-                      onHold={(reason) => props.onHoldEmployee(employee.hrId, reason)}
-                    />
-                  </div>
-                ))
+                <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                  {proposals.map((action, index) => (
+                    <li key={index} className="border-l-2 border-l-orange-400 pl-2">
+                      {describeAction(action)}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-          </div>
-
-          <div className="border border-slate-200 bg-white p-4">
-            <label className="text-sm font-semibold text-slate-700" htmlFor="copilot-chat">
-              Answer the Copilot
-            </label>
-            <p className="mt-1 text-xs text-slate-500">
-              e.g. &quot;give B-100 a 2000 bonus, deduct 500 from B-142, loan B-155 1000 for 6 months&quot;
-            </p>
-            <textarea
-              id="copilot-chat"
-              className="mt-2 h-24 w-full border border-slate-300 px-3 py-2 text-sm"
-              value={chat}
-              onChange={(event) => props.onChat(event.target.value)}
-              disabled={view.run.status === "drafted"}
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={props.onSend}
-                disabled={busy || !chat.trim() || view.run.status === "drafted"}
-                className="bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                Read my answer
-              </button>
-            </div>
-
-            {proposals ? (
-              <div className="mt-4 border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Proposed changes ({proposals.length}) — confirm to apply
-                </p>
-                {proposals.length === 0 ? (
-                  <p className="mt-2 text-sm text-slate-500">
-                    I couldn&apos;t turn that into a change. Try naming the employee and amount explicitly.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1 text-sm text-slate-700">
-                    {proposals.map((action, index) => (
-                      <li key={index} className="border-l-2 border-l-orange-400 pl-2">
-                        {describeAction(action)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={props.onConfirm}
-                    disabled={busy || proposals.length === 0}
-                    className="bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
-                  >
-                    Confirm &amp; apply
-                  </button>
-                  <button
-                    type="button"
-                    onClick={props.onDiscard}
-                    disabled={busy}
-                    className="border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                  >
-                    Discard
-                  </button>
-                </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={props.onConfirm}
+                  disabled={busy || proposals.length === 0}
+                  className="bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+                >
+                  Confirm &amp; apply
+                </button>
+                <button
+                  type="button"
+                  onClick={props.onDiscard}
+                  disabled={busy}
+                  className="border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Discard
+                </button>
               </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <ListCard
-            title={`Auto-filled — green (${draft.green.length})`}
-            rows={draft.green}
-            emptyText="No fully-clean employees yet."
-            busy={busy}
-            onConfirmEmployee={props.onConfirmEmployee}
-            onReportIssue={props.onReportIssue}
-            onHoldEmployee={props.onHoldEmployee}
-          />
-          <ListCard
-            title={`Resolved by you (${draft.resolved.length})`}
-            rows={draft.resolved}
-            emptyText="No manual resolutions yet."
-            busy={busy}
-            onConfirmEmployee={props.onConfirmEmployee}
-            onReportIssue={props.onReportIssue}
-            onHoldEmployee={props.onHoldEmployee}
-          />
-          {draft.recurringApplied.length > 0 ? (
-            <div className="border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-                Recurring auto-applied ({draft.recurringApplied.length})
-              </div>
-              <ul className="divide-y divide-slate-100 text-sm">
-                {draft.recurringApplied.map((item, index) => (
-                  <li key={`${item.hrId}-${index}`} className="flex justify-between px-4 py-2">
-                    <span className="text-slate-700">
-                      {item.hrId} · {item.kind}
-                    </span>
-                    <span className="font-medium text-slate-900">{egp(item.amount)}</span>
-                  </li>
-                ))}
-              </ul>
             </div>
           ) : null}
-        </section>
+        </div>
+
+        {draft.recurringApplied.length > 0 ? (
+          <div className="border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+              Recurring auto-applied ({draft.recurringApplied.length})
+            </div>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {draft.recurringApplied.map((item, index) => (
+                <li key={`${item.hrId}-${index}`} className="flex justify-between px-4 py-2">
+                  <span className="text-slate-700">
+                    {item.hrId} · {item.kind}
+                  </span>
+                  <span className="font-medium text-slate-900">{egp(item.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
       )}
 
@@ -681,47 +629,170 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
   );
 }
 
-function ListCard({
-  title,
-  rows,
-  emptyText,
+const STATUS_META: Record<EmployeeStatus, { label: string; className: string }> = {
+  green: { label: "Green", className: "bg-emerald-100 text-emerald-700" },
+  answered: { label: "Answered", className: "bg-sky-100 text-sky-700" },
+  question: { label: "Question", className: "bg-amber-100 text-amber-700" },
+  hold: { label: "On Hold", className: "bg-rose-100 text-rose-700" },
+};
+
+const STATUS_FILTERS: Array<{ key: "all" | EmployeeStatus; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "question", label: "Questions" },
+  { key: "hold", label: "On Hold" },
+  { key: "answered", label: "Answered" },
+  { key: "green", label: "Green" },
+];
+
+function formatShortDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/**
+ * One page-wide table, adapted from the same column set the post-upload
+ * payroll dashboard uses (SalaryReportTable) — so this reads like the sheet
+ * HR already knows, instead of the old three-way split of separate boxes.
+ * A flagged employee renders as TWO rows: identity + status + actions, then
+ * a second row spanning the full width with their open question(s). Clean
+ * employees render as a single row.
+ */
+function PayrollSheetTable({
+  employees,
+  groupedHrIds,
   busy,
   onConfirmEmployee,
   onReportIssue,
   onHoldEmployee,
 }: {
-  title: string;
-  rows: SimpleEmployee[];
-  emptyText: string;
+  employees: EmployeeRow[];
+  groupedHrIds: Set<string>;
   busy: boolean;
   onConfirmEmployee: (hrId: string) => void;
   onReportIssue: (hrId: string, text: string) => void;
   onHoldEmployee: (hrId: string, reason: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | EmployeeStatus>("all");
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const rows = employees.filter((employee) => {
+    if (statusFilter !== "all" && employee.status !== statusFilter) return false;
+    if (!normalizedQuery) return true;
+    return (
+      employee.fullName.toLowerCase().includes(normalizedQuery) ||
+      employee.hrId.toLowerCase().includes(normalizedQuery)
+    );
+  });
+
+  const COLUMN_COUNT = 11;
+
   return (
     <div className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">{title}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-2">
+        <span className="text-sm font-semibold text-white">Payroll sheet ({employees.length})</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search name or HR ID…"
+            className="w-48 border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400"
+          />
+          <div className="flex overflow-hidden border border-slate-600 text-xs font-semibold">
+            {STATUS_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setStatusFilter(filter.key)}
+                className={`px-2 py-1 ${
+                  statusFilter === filter.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-slate-500">{emptyText}</p>
+        <p className="px-4 py-6 text-sm text-slate-500">
+          {employees.length === 0 ? "No employees in this draft." : "No employees match this search/filter."}
+        </p>
       ) : (
-        <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto text-sm">
-          {rows.map((employee) => (
-            <li key={employee.hrId} className="flex items-center justify-between gap-3 px-4 py-2">
-              <span className="min-w-0 truncate text-slate-700">
-                {employee.fullName} <span className="text-slate-400">({employee.hrId})</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-3">
-                <span className="font-medium text-slate-900">{egp(employee.monthSalary || employee.netSalary)}</span>
-                <EmployeeRowActions
-                  busy={busy}
-                  onConfirm={() => onConfirmEmployee(employee.hrId)}
-                  onReportIssue={(text) => onReportIssue(employee.hrId, text)}
-                  onHold={(reason) => onHoldEmployee(employee.hrId, reason)}
-                />
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-2">HR ID</th>
+                <th className="px-4 py-2">Full Name</th>
+                <th className="px-4 py-2">Hire Date</th>
+                <th className="px-4 py-2">Line</th>
+                <th className="px-4 py-2">Area</th>
+                <th className="px-4 py-2">Job Title</th>
+                <th className="px-4 py-2">Additions</th>
+                <th className="px-4 py-2">Deductions</th>
+                <th className="px-4 py-2">Net Salary</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((employee) => {
+                const meta = STATUS_META[employee.status];
+                return (
+                  <Fragment key={employee.hrId}>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-4 py-2 font-mono text-xs text-slate-500">{employee.hrId}</td>
+                      <td className="px-4 py-2 font-medium text-slate-900">
+                        {employee.fullName}
+                        {groupedHrIds.has(employee.hrId) ? (
+                          <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Grouped above
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2 text-slate-600">{formatShortDate(employee.hireDate)}</td>
+                      <td className="px-4 py-2 text-slate-600">{employee.line || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">{employee.area || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">{employee.jobTitle || "—"}</td>
+                      <td className="px-4 py-2 font-mono text-emerald-700">{egp(employee.totalAdditions)}</td>
+                      <td className="px-4 py-2 font-mono text-rose-700">{egp(employee.internalDeductions)}</td>
+                      <td className="px-4 py-2 font-mono font-semibold text-slate-900">{egp(employee.netSalary)}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-0.5 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <EmployeeRowActions
+                          busy={busy}
+                          onConfirm={() => onConfirmEmployee(employee.hrId)}
+                          onReportIssue={(text) => onReportIssue(employee.hrId, text)}
+                          onHold={(reason) => onHoldEmployee(employee.hrId, reason)}
+                        />
+                      </td>
+                    </tr>
+                    {employee.status === "question" ? (
+                      <tr className="bg-amber-50/40">
+                        <td className="px-4 py-2" colSpan={COLUMN_COUNT}>
+                          {employee.flags.map((flag) => (
+                            <p
+                              key={flag.rule}
+                              className={`border-l-4 pl-2 text-sm text-slate-700 ${SEVERITY_STYLES[flag.severity]}`}
+                            >
+                              {flag.question}
+                            </p>
+                          ))}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
