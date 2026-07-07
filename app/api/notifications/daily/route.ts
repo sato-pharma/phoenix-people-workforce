@@ -20,6 +20,7 @@ import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -52,27 +53,75 @@ async function runDailyNotifications(request: Request) {
     weeklyPlansDrift,
     rateLimitPrune,
   ] = await Promise.all([
-    runBirthdayNotifications(request),
-    runContractRenewalNotifications(request),
-    runHolidayConfirmationReminder(request),
-    runVacationSlaDaily(),
-    runMarketingSlaDaily(),
-    runRecruitmentDailyNotifications(),
-    runTelegramDailyHrDigest(),
-    runOutstationGeocodeWarmup(),
-    runOutstationHighRiskDigest(),
-    runFieldWorkforceComplianceDigest(),
-    runFieldWorkforceComplianceDeductionsAutoSync().catch((e: unknown) => ({ ok: false as const, months: [] as const, error: String(e) })),
-    runExcuseSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
-    runOutstationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
-    runResignationSlaDaily().catch((e) => ({ processed: 0, errors: 1, detail: String(e) })),
-    runWeeklyPlansDriftCheck().catch((e: unknown) => ({ ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) })),
-    pruneExpiredRateLimitBuckets().catch((e: unknown) => ({ deleted: 0, error: String(e) })),
+    runBirthdayNotifications(request).catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-birthday" } });
+      return NextResponse.json({ error: "birthday_notifications_failed", message: String(e) }, { status: 500 });
+    }),
+    runContractRenewalNotifications(request).catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-contract-renewals" } });
+      return NextResponse.json({ error: "contract_renewal_notifications_failed", message: String(e) }, { status: 500 });
+    }),
+    runHolidayConfirmationReminder(request).catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-holiday-confirmation" } });
+      return NextResponse.json({ error: "holiday_confirmation_failed", message: String(e) }, { status: 500 });
+    }),
+    runVacationSlaDaily().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-vacation-sla" } });
+      return { success: false, error: String(e) };
+    }),
+    runMarketingSlaDaily().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-marketing-sla" } });
+      return { success: false, error: String(e) };
+    }),
+    runRecruitmentDailyNotifications().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-recruitment-notifications" } });
+      return { success: false, error: String(e) };
+    }),
+    runTelegramDailyHrDigest().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-telegram-digest" } });
+      return { success: false, error: String(e) };
+    }),
+    runOutstationGeocodeWarmup().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
+      return { success: false, error: String(e) };
+    }),
+    runOutstationHighRiskDigest().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-outstation-high-risk-digest" } });
+      return { success: false, error: String(e) };
+    }),
+    runFieldWorkforceComplianceDigest().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-fwc-digest" } });
+      return { success: false, error: String(e) };
+    }),
+    runFieldWorkforceComplianceDeductionsAutoSync().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-fwc-deductions-sync" } });
+      return { ok: false as const, months: [] as const, error: String(e) };
+    }),
+    runExcuseSlaDaily().catch((e) => {
+      Sentry.captureException(e, { tags: { cron: "daily-excuse-sla" } });
+      return { processed: 0, errors: 1, detail: String(e) };
+    }),
+    runOutstationSlaDaily().catch((e) => {
+      Sentry.captureException(e, { tags: { cron: "daily-outstation-sla" } });
+      return { processed: 0, errors: 1, detail: String(e) };
+    }),
+    runResignationSlaDaily().catch((e) => {
+      Sentry.captureException(e, { tags: { cron: "daily-resignation-sla" } });
+      return { processed: 0, errors: 1, detail: String(e) };
+    }),
+    runWeeklyPlansDriftCheck().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-weekly-plans-drift" } });
+      return { ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) };
+    }),
+    pruneExpiredRateLimitBuckets().catch((e: unknown) => {
+      Sentry.captureException(e, { tags: { cron: "daily-rate-limit-prune" } });
+      return { deleted: 0, error: String(e) };
+    }),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
-    birthdayResponse.json(),
-    contractRenewalResponse.json(),
-    holidayConfirmationResponse.json(),
+    birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
+    contractRenewalResponse instanceof Response ? contractRenewalResponse.json() : contractRenewalResponse,
+    holidayConfirmationResponse instanceof Response ? holidayConfirmationResponse.json() : holidayConfirmationResponse,
   ]);
 
   return NextResponse.json({
