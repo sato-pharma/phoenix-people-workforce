@@ -38,6 +38,7 @@ import { buildIncludedExpenseTotals, listExpenseCandidates } from "./expense-rev
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
 import { parseCeoReply } from "./llm.ts";
+import { recommendResolution, type CopilotRecommendation } from "./recommend.ts";
 import { applyActions } from "./negotiation.ts";
 import { consumeRecurringForPeriod, listRecurringForPeriod } from "./recurring.ts";
 import { buildSettledSalaryDeductionTotals, listUnpaidVacationCandidates } from "./vacation-settlement.ts";
@@ -86,6 +87,8 @@ export type CopilotDraftEmployee = {
   hasAdjustment: boolean;
   onHold: boolean;
   green: boolean;
+  /** One-click resolution the Copilot recommends for this row (null when green). */
+  recommendation: CopilotRecommendation | null;
 };
 
 export type CopilotRecurringApplied = {
@@ -234,6 +237,22 @@ export async function assembleDraft(
     const hasAdjustment = empAdjustments.length > 0;
     const openFlags = hasAdjustment ? [] : flags;
 
+    // Deterministic one-click recommendation for this row (null when green or
+    // already resolved by an adjustment). Computed here where the feeder, prior
+    // snapshot, and row all coexist.
+    const recommendation =
+      openFlags.length > 0
+        ? recommendResolution({
+            hrId: employee.hrId,
+            openFlags,
+            row,
+            monthSalary: row.monthSalary,
+            unpaidLeaveDays: feeders.get(compact)?.unpaidLeaveDays ?? 0,
+            prior: priorMap.get(compact) ?? null,
+            period,
+          })
+        : null;
+
     employees.push({
       hrId: employee.hrId,
       fullName: row.fullName,
@@ -247,6 +266,7 @@ export async function assembleDraft(
       hasAdjustment,
       onHold: isOnHold(empAdjustments),
       green: flags.length === 0,
+      recommendation,
     });
     rows.push(row);
     index += 1;
@@ -502,6 +522,7 @@ export function serializeDraft(draft: CopilotDraftState) {
       paymentGroup: payrollPaymentModeLabel(e.row.paymentMode),
       status: employeeStatus(e),
       flags: e.openFlags,
+      recommendation: e.recommendation,
     })),
   };
 }
