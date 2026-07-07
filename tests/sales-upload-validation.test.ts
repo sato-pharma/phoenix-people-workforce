@@ -30,6 +30,7 @@ function result(rows: CodedRow[], over: { exceptions?: NormalizeException[]; ign
     exceptions,
     ignoredRows,
     blankCustomerRows,
+    customerBrickCorrections: [],
     summary: {
       brickResolved: fullyCoded, blankCustomerSkipped, fullyCoded, ignored,
       productResolved: fullyCoded, totalRows,

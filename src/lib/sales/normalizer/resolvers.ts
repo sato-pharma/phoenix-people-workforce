@@ -73,25 +73,21 @@ export function resolveProduct(rawValues: (string | null | undefined)[], maps: C
 
 export type BrickResolution = { areaCode: string; brickId: string; regionCode: string; source: string } | null;
 
-// Resolve the Phoenix Brick ID (and hence Area/Region). Priority:
-//  1. a customer code already mapped to a brick (most reliable),
-//  2. a direct Phoenix brick id the sheet already carries,
-//  3. a territory text (district/street/governorate) via the territory alias,
-//  4. an area text via the area alias (gives area+region, brick stays empty).
+// Resolve the Phoenix Brick ID (and hence Area/Region). Priority (owner rule, confirmed 2026-07-07):
+//  1. a direct Phoenix brick id the sheet already carries (most reliable — the sheet says so directly),
+//  2. a territory text (brick name / district / street / governorate) via the territory alias,
+//  3. an area text via the area alias (gives area+region, brick stays empty),
+//  4. a customer code already mapped to a brick — ONLY when the sheet itself gave no usable
+//     brick/territory signal for this row (blank cell, or text not yet a known alias).
+// The sheet's own brick/territory value ALWAYS wins over a previously-stored customer mapping; a
+// stored mapping never silently overrides what the current sheet says. See engine.ts's
+// customerBrickCorrections for the self-heal that keeps the stored mapping in sync when the sheet
+// disagrees with it.
 export function resolveBrick(
   input: { brickIdValues?: (string | null | undefined)[]; customerKey?: string | null; customerCanonicalKey?: string | null; territoryValues?: (string | null | undefined)[] },
   maps: Crosswalks,
 ): BrickResolution {
-  // 1) customer -> brick (exact key, then numeric-canonical fallback for leading-zero drift)
-  if (input.customerKey) {
-    const brickId = maps.customerBrickByKey.get(input.customerKey)
-      ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
-    if (brickId && maps.brickById.has(brickId)) {
-      const b = maps.brickById.get(brickId)!;
-      return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
-    }
-  }
-  // 2) direct brick id
+  // 1) direct brick id
   for (const raw of input.brickIdValues ?? []) {
     const id = normalizeCodeKey(raw);
     if (id && maps.brickById.has(id)) {
@@ -99,7 +95,7 @@ export function resolveBrick(
       return { areaCode: b.areaCode, brickId: id, regionCode: b.regionCode, source: "direct" };
     }
   }
-  // 3) territory text -> brick / area (via the territory alias)
+  // 2) territory text -> brick / area (via the territory alias)
   for (const raw of input.territoryValues ?? []) {
     const key = normalizeAliasKey(raw);
     if (!key) continue;
@@ -113,9 +109,18 @@ export function resolveBrick(
         if (a) return { areaCode: a.areaCode, brickId: "", regionCode: a.regionCode, source: "territory-area" };
       }
     }
-    // 4) area alias
+    // 3) area alias
     const areaHit = maps.areaAliasByKey.get(key);
     if (areaHit) return { areaCode: normalizeCodeKey(areaHit.areaCode), brickId: "", regionCode: normalizeCodeKey(areaHit.regionCode), source: "area" };
+  }
+  // 4) customer -> brick (fallback only — exact key, then numeric-canonical fallback for leading-zero drift)
+  if (input.customerKey) {
+    const brickId = maps.customerBrickByKey.get(input.customerKey)
+      ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
+    if (brickId && maps.brickById.has(brickId)) {
+      const b = maps.brickById.get(brickId)!;
+      return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
+    }
   }
   return null;
 }
