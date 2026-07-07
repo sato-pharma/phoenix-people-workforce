@@ -56,6 +56,7 @@
     "phase33:migration-history-reconciliation-gate": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase33-migration-history-reconciliation-gate.ts",
     "phase34:post-repair-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase34-post-repair-pending-migrations.ts",
     "phase36:post-apply-no-pending-migrations": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase36-post-apply-no-pending-migrations.ts",
+    "phase37:region-line-master-alignment-check": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/phase37-region-line-master-alignment-check.ts",
     "db:staging:executive-migration:reconcile": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/staging-executive-dashboard-migration-reconciliation.ts",
     "db:staging:executive-migration:repair-history": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/staging-executive-dashboard-migration-reconciliation.ts --repair-verified-history",
     "db:staging:executive-migration:apply": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/staging-executive-dashboard-migration-reconciliation.ts --apply-executive-migration --post-apply-verify",

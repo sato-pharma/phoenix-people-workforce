@@ -583,17 +583,16 @@ function resolveGlobalTeam(
     return null;
   }
 
-  if (candidates.length > 0 && areaCode) {
-    return {
-      rowNumber: record.rowNumber,
-      field: "team" as const,
-      code: "invalid_team_area",
-      message: `Team "${teamText}" exists under a different area. Use the matching Area or create a distinct team name.`,
-    };
-  }
-
+  // A team name that already exists under OTHER areas is not an error here. In this org a
+  // "team" is a region / DSM grouping that legitimately spans many area bricks (e.g. "Delta 1"
+  // covers a dozen areas, "Upper Egypt" nine). Placing such a team under a new area should
+  // create a fresh area-scoped team row — exactly as a brand-new team name already does below.
+  // (Previously this hard-blocked as `invalid_team_area`, which assumed one-area-per-team and
+  // wrongly rejected valid region teams whose (team, area) pair had not been imported yet.)
   if (areaCode) {
     record.codes.teamCode = createOrgCode(`${areaCode}_${normalizedTeamName}`);
+    record.teamName = teamText;
+    record.normalizedOrganizationNames.team = normalizedTeamName;
   }
 
   return null;
