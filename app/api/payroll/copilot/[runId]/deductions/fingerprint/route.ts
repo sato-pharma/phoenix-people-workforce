@@ -7,6 +7,14 @@ import {
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
 import { listFingerprintDeductionCandidates } from "@/lib/payroll/copilot/deductions-review";
+import {
+  buildDeductionReportWorkbook,
+  formatPeriodLabel,
+  getBaseSalaryMap,
+  getHireDateMap,
+  periodFileSlug,
+  xlsxResponse,
+} from "@/lib/payroll/copilot/report-exports";
 import { getRunPeriod } from "@/lib/payroll/copilot/service";
 import { recordCopilotDeductionDecision } from "@/lib/deductions-governance/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -21,6 +29,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     const { runId } = await params;
     const period = await getRunPeriod(runId);
     const { cycle, rows, dryRun, rosterCount, scopedCount } = await listFingerprintDeductionCandidates(access, period);
+    const hireDates = await getHireDateMap();
+
+    if (new URL(request.url).searchParams.get("format") === "xlsx") {
+      const baseSalaries = await getBaseSalaryMap();
+      const buffer = await buildDeductionReportWorkbook({
+        title: `Fingerprint Deductions — ${formatPeriodLabel(period)}`,
+        subtitle:
+          "Attendance-device missing-fingerprint days flagged for payroll deduction. Value = base salary / 30 x missing days (Approved once decided, otherwise an Estimate).",
+        qtyHeader: "Missing-Fingerprint Days",
+        rows,
+        hireDates,
+        baseSalaries,
+      });
+      return xlsxResponse(buffer, `Fingerprint_Deductions_${periodFileSlug(period)}.xlsx`);
+    }
 
     return NextResponse.json({
       cycle,
@@ -31,6 +54,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
         id: row.id,
         employeeHrId: row.employeeCode,
         employeeName: row.employeeName,
+        hireDate: hireDates.get(row.employeeHrIdCompact) ?? null,
         deductionType: row.deductionType,
         deductionUnit: row.deductionUnit,
         deductionValue: row.deductionValue,

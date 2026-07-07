@@ -7,6 +7,13 @@ import {
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
 import { listExpenseCandidates, recordExpenseDecision } from "@/lib/payroll/copilot/expense-review";
+import {
+  buildExpenseReportWorkbook,
+  formatPeriodLabel,
+  getHireDateMap,
+  periodFileSlug,
+  xlsxResponse,
+} from "@/lib/payroll/copilot/report-exports";
 import { getRunPeriod } from "@/lib/payroll/copilot/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -20,6 +27,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     const { runId } = await params;
     const period = await getRunPeriod(runId);
     const candidates = await listExpenseCandidates(period);
+
+    if (new URL(request.url).searchParams.get("format") === "xlsx") {
+      const buffer = await buildExpenseReportWorkbook({
+        periodLabel: formatPeriodLabel(period),
+        rows: candidates,
+        hireDates: await getHireDateMap(),
+      });
+      return xlsxResponse(buffer, `Outstation_Expenses_${periodFileSlug(period)}.xlsx`);
+    }
 
     return NextResponse.json({ candidates });
   } catch (error) {

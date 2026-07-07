@@ -6,11 +6,13 @@ type DeductionCandidate = {
   id: string;
   employeeHrId: string;
   employeeName: string | null;
+  hireDate: string | null;
   deductionType: string;
   deductionUnit: string;
   deductionValue: number;
   estimatedAmount: number | null;
   severity: string | null;
+  dates: string[];
   decisionStatus: string;
   appliedDeductionValue: number | null;
   appliedAmount: number | null;
@@ -18,6 +20,14 @@ type DeductionCandidate = {
 
 function egp(value: number): string {
   return `EGP ${Math.round(value).toLocaleString("en-US")}`;
+}
+
+/** Compact "MMM D" label for a flagged day, e.g. 2026-06-03 -> "Jun 3". */
+function shortDay(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])}`;
 }
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
@@ -58,6 +68,7 @@ export function DeductionReviewTable({
   const [dryRun, setDryRun] = useState(false);
   const [rosterCount, setRosterCount] = useState<number | null>(null);
   const [scopedCount, setScopedCount] = useState<number | null>(null);
+  const [autoApplies, setAutoApplies] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -73,6 +84,7 @@ export function DeductionReviewTable({
         dryRun?: boolean;
         rosterCount?: number | null;
         scopedCount?: number | null;
+        autoAppliesUnlessRejected?: boolean;
         message?: string;
       };
       if (!res.ok) throw new Error(data.message ?? "Failed to load.");
@@ -80,6 +92,7 @@ export function DeductionReviewTable({
       setDryRun(Boolean(data.dryRun));
       setRosterCount(typeof data.rosterCount === "number" ? data.rosterCount : null);
       setScopedCount(typeof data.scopedCount === "number" ? data.scopedCount : null);
+      setAutoApplies(Boolean(data.autoAppliesUnlessRejected));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -143,29 +156,45 @@ export function DeductionReviewTable({
           <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
           {title} {rows ? `(${rows.length})` : ""}
         </span>
-        {pendingCount > 0 ? (
-          <span className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={bulkBusy || busyId !== null}
-              onClick={() => decideAllPending("Approved for Payroll")}
-              className="bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              Approve all {pendingCount}
-            </button>
-            <button
-              type="button"
-              disabled={bulkBusy || busyId !== null}
-              onClick={() => decideAllPending("Do Not Take Action")}
-              className="border border-slate-500 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
-            >
-              Reject all {pendingCount}
-            </button>
-          </span>
-        ) : null}
+        <span className="flex items-center gap-2">
+          <a
+            href={`/api/payroll/copilot/${runId}/deductions/${endpoint}?format=xlsx`}
+            className="border border-slate-500 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+          >
+            Download xlsx
+          </a>
+          {pendingCount > 0 ? (
+            <>
+              <button
+                type="button"
+                disabled={bulkBusy || busyId !== null}
+                onClick={() => decideAllPending("Approved for Payroll")}
+                className="bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {autoApplies ? `Confirm all ${pendingCount}` : `Approve all ${pendingCount}`}
+              </button>
+              <button
+                type="button"
+                disabled={bulkBusy || busyId !== null}
+                onClick={() => decideAllPending("Do Not Take Action")}
+                className="border border-slate-500 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+              >
+                {autoApplies ? `Exclude all ${pendingCount}` : `Reject all ${pendingCount}`}
+              </button>
+            </>
+          ) : null}
+        </span>
       </div>
       {error ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{error}</div>
+      ) : null}
+      {autoApplies && pendingCount > 0 ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          No-activity deductions are <strong>mandatory</strong> and already count on the payroll sheet
+          using the estimated value below — you do not need to approve them for them to apply. Click{" "}
+          <strong>Exclude</strong> only for an employee who should NOT be deducted (e.g. a data/device
+          issue); click <strong>Confirm</strong> to lock in the exact days/value instead of the estimate.
+        </div>
       ) : null}
       {dryRun ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
@@ -206,20 +235,39 @@ export function DeductionReviewTable({
                 return (
                   <tr key={row.id}>
                     <td className="px-4 py-2 text-slate-700">
-                      {row.employeeName ?? row.employeeHrId}{" "}
-                      <span className="text-slate-400">({row.employeeHrId})</span>
+                      <div>
+                        {row.employeeName ?? row.employeeHrId}{" "}
+                        <span className="text-slate-400">({row.employeeHrId})</span>
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        Hired {row.hireDate ?? "—"}
+                      </div>
                     </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        step="0.5"
-                        className="w-20 border border-slate-300 px-2 py-1 text-xs"
-                        defaultValue={row.appliedDeductionValue ?? row.deductionValue}
-                        onChange={(event) =>
-                          setEditedValues((prev) => ({ ...prev, [row.id]: event.target.value }))
-                        }
-                      />{" "}
-                      {row.deductionUnit}
+                    <td className="px-4 py-2 align-top">
+                      <div>
+                        <input
+                          type="number"
+                          step="0.5"
+                          className="w-20 border border-slate-300 px-2 py-1 text-xs"
+                          defaultValue={row.appliedDeductionValue ?? row.deductionValue}
+                          onChange={(event) =>
+                            setEditedValues((prev) => ({ ...prev, [row.id]: event.target.value }))
+                          }
+                        />{" "}
+                        {row.deductionUnit}
+                      </div>
+                      {row.dates.length > 0 ? (
+                        <div className="mt-1 flex max-w-[16rem] flex-wrap gap-1">
+                          {row.dates.map((d) => (
+                            <span
+                              key={d}
+                              className="bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600"
+                            >
+                              {shortDay(d)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2 font-medium text-slate-900">
                       {amount != null ? egp(amount) : "—"}
@@ -232,6 +280,9 @@ export function DeductionReviewTable({
                       >
                         {row.decisionStatus}
                       </span>
+                      {autoApplies && row.decisionStatus === "Pending" ? (
+                        <div className="mt-0.5 text-[11px] font-normal text-amber-700">will deduct</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex gap-1">
@@ -241,7 +292,7 @@ export function DeductionReviewTable({
                           onClick={() => decide(row.id, "Approved for Payroll")}
                           className="bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          Approve
+                          {autoApplies ? "Confirm" : "Approve"}
                         </button>
                         <button
                           type="button"
@@ -249,7 +300,7 @@ export function DeductionReviewTable({
                           onClick={() => decide(row.id, "Do Not Take Action")}
                           className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                         >
-                          Reject
+                          {autoApplies ? "Exclude" : "Reject"}
                         </button>
                       </div>
                     </td>

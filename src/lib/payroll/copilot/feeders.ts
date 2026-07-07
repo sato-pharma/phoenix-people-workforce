@@ -24,6 +24,33 @@ export function compactHrKey(hrId: string | null | undefined): string {
   return String(hrId ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+/**
+ * Map of compact HR key -> base salary (> 0), for estimating a day-based
+ * deduction's value before it has a decided amount (governance candidates
+ * store no amount until approval). Shared by the payroll-sheet assembler
+ * (mandatory no-activity totals) and the deduction xlsx exports, so both
+ * always show the same estimate. Defensive: never throws.
+ */
+export async function getBaseSalaryMap(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from("employees").select("hr_id,base_salary");
+    if (error) {
+      console.error("[payroll-copilot:feeders] base-salary load failed:", error);
+      return map;
+    }
+    for (const row of (data ?? []) as Array<{ hr_id: string; base_salary: number | null }>) {
+      const key = compactHrKey(String(row.hr_id ?? ""));
+      const salary = Number(row.base_salary ?? 0);
+      if (key && Number.isFinite(salary) && salary > 0) map.set(key, salary);
+    }
+  } catch (error) {
+    console.error("[payroll-copilot:feeders] base-salary load threw:", error);
+  }
+  return map;
+}
+
 function periodBounds(period: CopilotPeriod): { start: string; end: string } {
   const mm = String(period.month).padStart(2, "0");
   const start = `${period.year}-${mm}-01`;

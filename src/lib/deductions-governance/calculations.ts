@@ -30,6 +30,27 @@ export function calculateDeductionAmountFromBaseSalary(input: {
   return Math.round((baseSalary / 30) * deductionDays * 100) / 100;
 }
 
+/**
+ * Resolves a day-based deduction candidate's payroll amount: the decided
+ * amount if one exists (`appliedAmount`, set on approval), otherwise an
+ * ESTIMATE from base salary (base / 30 x days) using whichever day count is
+ * authoritative (a possibly-edited `appliedDeductionValue`, else the
+ * original `deductionValue`). Used to keep "what's shown on the review tab
+ * / its xlsx export" and "what's actually deducted on the payroll sheet" in
+ * agreement for MANDATORY deductions (e.g. no-activity) that count toward
+ * payroll even before HR has explicitly decided them. Returns null only when
+ * there is no decided amount AND no base salary to estimate from.
+ */
+export function resolveDayBasedDeductionAmount(input: {
+  decision: { appliedDeductionValue?: number | null; appliedAmount?: number | null } | null | undefined;
+  deductionValue: number;
+  baseSalary: number | null | undefined;
+}): number | null {
+  if (input.decision?.appliedAmount != null) return input.decision.appliedAmount;
+  const days = input.decision?.appliedDeductionValue ?? input.deductionValue;
+  return calculateDeductionAmountFromBaseSalary({ baseSalary: input.baseSalary, deductionDays: days });
+}
+
 export function payrollColumnForDeduction(input: {
   deductionType: DeductionType;
   sourceModule: DeductionSourceModule;

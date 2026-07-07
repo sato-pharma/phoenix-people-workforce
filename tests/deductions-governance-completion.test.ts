@@ -4,6 +4,7 @@ import {
   calculateDeductionAmountFromBaseSalary,
   isDeductionsGovernanceDecisionActor,
   payrollColumnForDeduction,
+  resolveDayBasedDeductionAmount,
 } from "../src/lib/deductions-governance/calculations.ts";
 import { __attendanceDeviceConnectorTestables } from "../src/lib/deductions-governance/connectors/attendance-device.ts";
 import { __vacationDeductionConnectorTestables } from "../src/lib/deductions-governance/connectors/vacation.ts";
@@ -78,6 +79,40 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(calculateDeductionAmountFromBaseSalary({ baseSalary: 15000, deductionDays: 2 }), 1000);
     assert.equal(calculateDeductionAmountFromBaseSalary({ baseSalary: 15000, deductionDays: 0.25 }), 125);
     assert.equal(calculateDeductionAmountFromBaseSalary({ baseSalary: 0, deductionDays: 1 }), null);
+  }
+
+  // resolveDayBasedDeductionAmount: mandatory no-activity deductions must count
+  // toward payroll even before HR decides them (owner rule: "N must be deducted").
+  {
+    // Decided (approved) row: use the applied amount as-is, ignore base salary/days.
+    assert.equal(
+      resolveDayBasedDeductionAmount({
+        decision: { appliedDeductionValue: 2, appliedAmount: 850 },
+        deductionValue: 3,
+        baseSalary: 99999,
+      }),
+      850,
+    );
+    // Undecided (pending) row: estimate from base salary / 30 x the original days.
+    assert.equal(
+      resolveDayBasedDeductionAmount({ decision: null, deductionValue: 3, baseSalary: 9000 }),
+      900,
+    );
+    // Undecided row with an edited-but-not-yet-saved applied value is not possible here
+    // (appliedDeductionValue only exists once a decision exists) — falls back to deductionValue.
+    assert.equal(
+      resolveDayBasedDeductionAmount({
+        decision: { appliedDeductionValue: null, appliedAmount: null },
+        deductionValue: 2,
+        baseSalary: 9000,
+      }),
+      600,
+    );
+    // No base salary and no decided amount: null (undeductible, not zero — caller decides the zero fallback).
+    assert.equal(
+      resolveDayBasedDeductionAmount({ decision: null, deductionValue: 2, baseSalary: null }),
+      null,
+    );
   }
 
   // Decision actor gate: only Super Admin (HR governance) can write deduction decisions.
