@@ -44,6 +44,7 @@ async function postJson(url: string, body: unknown): Promise<Record<string, unkn
  */
 export function ExpensesTab({ runId }: { runId: string }) {
   const [rows, setRows] = useState<ExpenseCandidate[] | null>(null);
+  const [sourceMonthLabel, setSourceMonthLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -52,9 +53,14 @@ export function ExpensesTab({ runId }: { runId: string }) {
       const res = await fetch(`/api/payroll/copilot/${runId}/deductions/expenses`, {
         credentials: "same-origin",
       });
-      const data = (await res.json().catch(() => ({}))) as { candidates?: ExpenseCandidate[]; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        candidates?: ExpenseCandidate[];
+        sourceMonthLabel?: string;
+        message?: string;
+      };
       if (!res.ok) throw new Error(data.message ?? "Failed to load.");
       setRows(data.candidates ?? []);
+      setSourceMonthLabel(data.sourceMonthLabel ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -108,10 +114,18 @@ export function ExpensesTab({ runId }: { runId: string }) {
       {error ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{error}</div>
       ) : null}
+      {sourceMonthLabel ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Expenses lag one month: this payroll pays out HR-approved outstation requests from{" "}
+          <strong>{sourceMonthLabel}</strong>, not the payroll month itself.
+        </div>
+      ) : null}
       {!rows ? (
         <p className="px-4 py-6 text-sm text-slate-500">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-500">No HR-approved expense requests for this period.</p>
+        <p className="px-4 py-6 text-sm text-slate-500">
+          No HR-approved expense requests for {sourceMonthLabel ?? "the prior month"}.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-sm">

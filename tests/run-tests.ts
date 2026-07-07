@@ -328,6 +328,8 @@ import { runPayrollCopilotDeductionsReviewTests } from "./payroll-copilot-deduct
 import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
+import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
+import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -673,6 +675,8 @@ await runTest("payroll copilot deductions review (cycle window + month-key resol
 await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
 await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
+await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
+await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

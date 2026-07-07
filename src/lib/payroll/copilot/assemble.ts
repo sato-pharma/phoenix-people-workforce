@@ -107,6 +107,8 @@ type BuildRowInput = {
   approvedDeductions?: { crm: number; fingerPrint: number };
   /** Already-decided "deduct from salary" unpaid-vacation settlement amount for this employee this period (see vacation-settlement.ts). */
   settledUnpaidVacationSalaryDeduction?: number;
+  /** Mandatory national-holiday-bridging leave-day deductions for this employee this period, unless HR excluded them (see holiday-bridging.ts). */
+  holidayBridgingSalaryDeduction?: number;
   /** Already-"include" outstation expense decisions for this employee this period (see expense-review.ts). */
   approvedExpenses?: number;
 };
@@ -159,7 +161,9 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   // Seeded from any already-decided "deduct from salary" Unpaid Vacation tab
   // settlement (see vacation-settlement.ts); the chat-driven `prorate` case
   // below still layers on top for employees handled the older way.
-  let unpaidVacations = roundCurrency(input.settledUnpaidVacationSalaryDeduction ?? 0);
+  let unpaidVacations = roundCurrency(
+    (input.settledUnpaidVacationSalaryDeduction ?? 0) + (input.holidayBridgingSalaryDeduction ?? 0),
+  );
   const incentive = 0;
   // Sum of already-"include" decisions from the Expenses tab (see expense-review.ts).
   const expenses = roundCurrency(input.approvedExpenses ?? 0);

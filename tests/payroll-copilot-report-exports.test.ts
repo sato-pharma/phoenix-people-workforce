@@ -130,6 +130,7 @@ export async function runPayrollCopilotReportExportsTests() {
   // --- outstation-expenses report --------------------------------------------
   const ebuf = await buildExpenseReportWorkbook({
     periodLabel: "June 2026",
+    sourceMonthLabel: "May 2026",
     rows: [
       {
         employeeHrId: "B-1",
@@ -148,6 +149,9 @@ export async function runPayrollCopilotReportExportsTests() {
     hireDates: new Map([["b1", "2020-01-01"]]),
   });
   const ews = await loadSheet(ebuf);
+  // Title/subtitle must make the month-lag explicit: this is May's trips, paid in June's payroll.
+  assert.match(cellStr(ews, 1, 1), /May 2026 trips, paid in June 2026 payroll/);
+  assert.match(cellStr(ews, 2, 1), /May 2026.*not June 2026/);
   assert.equal(cellStr(ews, 3, 1), "HR ID");
   assert.equal(cellStr(ews, 4, 1), "B-1");
   assert.equal(cellStr(ews, 4, 3), "2020-01-01");

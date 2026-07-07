@@ -329,9 +329,16 @@ export type ExpenseExportRow = {
   existingDecision: { decision: "include" | "defer" } | null;
 };
 
-/** Outstation expenses report — the detail behind the payroll Expenses column. */
+/**
+ * Outstation expenses report — the detail behind the payroll Expenses
+ * column. Expenses lag one month (owner-dictated rule): a payroll period
+ * pays out the PRIOR month's approved outstation trips, so `sourceMonthLabel`
+ * (e.g. "May 2026") is what's actually queried and shown — deliberately
+ * distinct from `periodLabel` (e.g. "June 2026", the payroll this feeds).
+ */
 export async function buildExpenseReportWorkbook(input: {
   periodLabel: string;
+  sourceMonthLabel: string;
   rows: ExpenseExportRow[];
   hireDates: Map<string, string>;
 }): Promise<ArrayBuffer> {
@@ -371,10 +378,72 @@ export async function buildExpenseReportWorkbook(input: {
   });
   return buildReportWorkbook({
     sheetName: "Expenses",
-    title: `Outstation Expenses — ${input.periodLabel}`,
-    subtitle: "HR-approved outstation expense requests overlapping this payroll period. 'Include' amounts feed the payroll Expenses column (paid in Part 2).",
+    title: `Outstation Expenses — ${input.sourceMonthLabel} trips, paid in ${input.periodLabel} payroll`,
+    subtitle:
+      `Expenses lag one month: ${input.periodLabel} payroll pays out HR-approved outstation expense requests from ${input.sourceMonthLabel} (not ${input.periodLabel}). 'Include' amounts feed the payroll Expenses column (paid in Part 2).`,
     columns,
     rows,
     totals: ["TOTAL", "", "", "", "", "", "", "", "", round2(totalTravel), round2(totalAllowance), ""],
+  });
+}
+
+export type HolidayBridgingExportRow = {
+  employeeHrId: string;
+  employeeName: string | null;
+  vacationType: string;
+  bridgingDate: string;
+  adjacentTo: "before" | "after";
+  holidayName: string;
+  holidayStartDate: string;
+  holidayEndDate: string;
+  salaryDeductionAmount: number;
+  excluded: boolean;
+};
+
+/** National-holiday-bridging mandatory leave-deduction report — one row per (employee, bridging day). */
+export async function buildHolidayBridgingReportWorkbook(input: {
+  periodLabel: string;
+  rows: HolidayBridgingExportRow[];
+  hireDates: Map<string, string>;
+}): Promise<ArrayBuffer> {
+  const columns: ReportColumn[] = [
+    { header: "HR ID", width: 10 },
+    { header: "Name", width: 34 },
+    { header: "Hire Date", width: 13 },
+    { header: "Type", width: 12 },
+    { header: "Bridging Date", width: 14 },
+    { header: "Adjacent To", width: 12 },
+    { header: "Holiday", width: 22 },
+    { header: "Holiday Dates", width: 22 },
+    { header: "Value (EGP)", width: 15, money: true },
+    { header: "Status", width: 16 },
+  ];
+  let totalValue = 0;
+  const rows: ReportCell[][] = input.rows.map((r) => {
+    const value = round2(r.excluded ? 0 : r.salaryDeductionAmount);
+    totalValue += value;
+    const holidayDates =
+      r.holidayStartDate === r.holidayEndDate ? r.holidayStartDate : `${r.holidayStartDate} to ${r.holidayEndDate}`;
+    return [
+      r.employeeHrId,
+      r.employeeName ?? r.employeeHrId,
+      input.hireDates.get(compactHrKey(r.employeeHrId)) ?? "",
+      r.vacationType,
+      r.bridgingDate,
+      r.adjacentTo === "before" ? "Before holiday" : "After holiday",
+      r.holidayName,
+      holidayDates,
+      value,
+      r.excluded ? "Excluded" : "Mandatory",
+    ];
+  });
+  return buildReportWorkbook({
+    sheetName: "Holiday Bridging",
+    title: `National-Holiday Bridging Deductions — ${input.periodLabel}`,
+    subtitle:
+      "Leave taken directly before or after a national holiday is a mandatory salary deduction (base salary / calendar days x 1 day), regardless of vacation balance. Excluded rows do not count toward the payroll sheet.",
+    columns,
+    rows,
+    totals: ["TOTAL", "", "", "", "", "", "", "", round2(totalValue), ""],
   });
 }
