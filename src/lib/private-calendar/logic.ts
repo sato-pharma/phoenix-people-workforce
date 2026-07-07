@@ -1,6 +1,7 @@
 import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
+import type { EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 
 export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
@@ -18,6 +19,24 @@ export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> 
 };
 
 export const defaultPrivateCalendarGlobalHrIds = ["B-10", "admin-HR"] as const;
+
+// Plan statuses whose items appear on the private calendar. Deliberately broader
+// than the shared planning-calendar set: a plan keeps counting as attendance
+// proof while it is under review or was returned for edit (edit_requested /
+// details_requested / *_returned), so a routine manager action can never
+// re-flag the employee as "missing attendance". Only draft, rejected and
+// cancelled plans are excluded.
+export const privateCalendarPlanStatuses = [
+  "submitted",
+  "edit_requested",
+  "details_requested",
+  "manager_approved",
+  "manager_returned",
+  "ceo_approved",
+  "ceo_returned",
+  "final_approved",
+  "hr_acknowledged",
+] as const satisfies readonly EmployeePlanStatus[];
 
 export type PrivateCalendarEmployeeOption = {
   departmentName: string | null;
@@ -60,6 +79,11 @@ export type PrivateCalendarItem = {
   status: string | null;
   time: string | null;
   title: string;
+  // Only set on plan items: true when the planned activity is off-site or remote
+  // (Single/Double Visit, Coaching, Travel, Training, external Meeting/Event,
+  // Remote, or an injected leave day) and therefore self-proves attendance with
+  // no fingerprint punch. Desk activities (Office/Admin) leave this false.
+  planCountsAsAttendance?: boolean;
 };
 
 export type PrivateCalendarException = {
@@ -246,6 +270,16 @@ function planActivityLabel(activityType: string | null | undefined, activityTitl
   return title || type || "Plan activity";
 }
 
+// Desk activities are the only planned days that still require a fingerprint
+// punch (or an approved leave/excuse) to be considered "covered". Every other
+// planned activity is off-site or remote — the plan itself is the attendance
+// proof. A blank/unknown type is treated as desk (needs a punch), never as
+// self-proving.
+const deskPlanActivityTypes = new Set(["Office", "Admin", ""]);
+export function planActivityCountsAsAttendance(activityType: string | null | undefined) {
+  return !deskPlanActivityTypes.has(cleanText(activityType));
+}
+
 function planSlotLabel(startTime: string | null | undefined, endTime: string | null | undefined) {
   const start = cleanText(startTime).slice(0, 5);
   const end = cleanText(endTime).slice(0, 5);
@@ -327,12 +361,18 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
   };
 }
 
-export function mapVacationRowToPrivateCalendarItem(row: PrivateCalendarVacationRow): PrivateCalendarItem {
+export function mapVacationRowToPrivateCalendarItem(
+  row: PrivateCalendarVacationRow,
+  options?: { pending?: boolean },
+): PrivateCalendarItem {
   const type = displayEnum(row.vacation_type, "Vacation");
   const duration = cleanText(row.duration_days);
   const paid = cleanText(row.paid_duration_days);
+  const pending = Boolean(options?.pending);
   return {
-    approvalImpact: "Approved vacation appears on the employee private calendar and explains the covered attendance day.",
+    approvalImpact: pending
+      ? "A pending vacation request reserves the day on the private calendar until the manager approves or rejects it."
+      : "Approved vacation appears on the employee private calendar and explains the covered attendance day.",
     description: nullableText(row.notes),
     detailLines: [
       duration ? `Duration: ${duration} day(s)` : null,
@@ -349,16 +389,16 @@ export function mapVacationRowToPrivateCalendarItem(row: PrivateCalendarVacation
     exceptionFlags: [],
     id: `vacation-${row.id}`,
     managerName: null,
-    severity: "info",
+    severity: pending ? "warning" : "info",
     source: "vacation",
-    sourceLabel: "Approved vacation request",
+    sourceLabel: pending ? "Vacation request (pending approval)" : "Approved vacation request",
     sourceRecordId: row.id,
     sourceSystem: "Vacation workflow",
     sourceTable: "v2_vacation_requests",
     startDate: row.start_date,
     status: row.status,
     time: row.day_part && row.day_part !== "full_day" ? displayEnum(row.day_part) : "Full day",
-    title: `${type} Vacation`,
+    title: pending ? `${type} Vacation (pending)` : `${type} Vacation`,
   };
 }
 
@@ -423,6 +463,7 @@ export function mapPlanRowToPrivateCalendarItem(row: PrivateCalendarPlanRow): Pr
     status: row.status,
     time: planSlotLabel(row.start_time, row.end_time),
     title: area ? `${activity} - ${area}` : activity,
+    planCountsAsAttendance: planActivityCountsAsAttendance(row.activity_type),
   };
 }
 
@@ -538,6 +579,18 @@ function createException(input: Omit<PrivateCalendarException, "id">) {
   };
 }
 
+function todayInCairo() {
+  // Africa/Cairo local calendar date (the app's operating timezone). Using UTC
+  // here would slip the "up to today" cutoff a day for a few hours after local
+  // midnight and mis-flag the current day near month boundaries.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export function derivePrivateCalendarExceptions(input: {
   employees: PrivateCalendarEmployeeOption[];
   end: string;
@@ -546,7 +599,7 @@ export function derivePrivateCalendarExceptions(input: {
   start: string;
   today?: string;
 }) {
-  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const today = input.today ?? todayInCairo();
   const isExpectedWorkday = input.isExpectedWorkday ?? ((employee, date) => isAttendanceScheduledWorkingDay({
     dateIso: date,
     jobTitle: employee.jobTitle,
@@ -579,9 +632,18 @@ export function derivePrivateCalendarExceptions(input: {
       const plans = dayItems.filter((item) => item.source === "plan");
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
-      // Single Visit (plan with activityType="Field") or a Double Visit on this date
-      // satisfies the attendance requirement — the field record is the attendance proof.
-      const hasFieldVisit = plans.some((p) => p.title.startsWith("Single Visit")) || doubleVisits.length > 0;
+      // Any off-site/remote planned activity (see planActivityCountsAsAttendance)
+      // or a CRM Double Visit self-proves attendance for the day — no fingerprint
+      // needed. A desk-typed plan (Office/Admin) still expects a punch.
+      const hasSelfProvingPresence =
+        plans.some((p) => p.planCountsAsAttendance) || doubleVisits.length > 0;
+      const hasDeskPlan = plans.some((p) => !p.planCountsAsAttendance);
+      const isCovered =
+        attendance.length > 0 ||
+        vacations.length > 0 ||
+        excuses.length > 0 ||
+        holidays.length > 0 ||
+        hasSelfProvingPresence;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -612,37 +674,35 @@ export function derivePrivateCalendarExceptions(input: {
         }));
       }
 
-      if (plans.length > 0 && attendance.length === 0 && vacations.length === 0 && holidays.length === 0 && !hasFieldVisit) {
-        exceptions.push(createException({
-          code: "planned_day_without_attendance",
-          date,
-          description: `${employee.fullName} has a plan item but no fingerprint attendance for this date.`,
-          employeeHrId: employee.hrId,
-          employeeName: employee.fullName,
-          relatedItemIds: plans.map((item) => item.id),
-          severity: "warning",
-          title: "Plan without attendance",
-        }));
-      }
-
-      if (
-        isExpectedWorkday(employee, date) &&
-        attendance.length === 0 &&
-        vacations.length === 0 &&
-        excuses.length === 0 &&
-        holidays.length === 0 &&
-        !hasFieldVisit
-      ) {
-        exceptions.push(createException({
-          code: "missing_attendance_cover",
-          date,
-          description: `${employee.fullName} has no fingerprint attendance, approved vacation, approved excuse, or national vacation covering this workday.`,
-          employeeHrId: employee.hrId,
-          employeeName: employee.fullName,
-          relatedItemIds: [],
-          severity: "danger",
-          title: "Missing attendance cover",
-        }));
+      // Uncovered expected workday. If the day carried a desk-typed plan, surface
+      // the more specific "plan without attendance"; otherwise the generic missing
+      // cover. Mutually exclusive (never both), and never fires on an off-day or a
+      // day already covered by attendance, leave, excuse, holiday, or field/remote
+      // presence.
+      if (isExpectedWorkday(employee, date) && !isCovered) {
+        if (hasDeskPlan) {
+          exceptions.push(createException({
+            code: "planned_day_without_attendance",
+            date,
+            description: `${employee.fullName} has a desk plan item but no fingerprint attendance for this date.`,
+            employeeHrId: employee.hrId,
+            employeeName: employee.fullName,
+            relatedItemIds: plans.map((item) => item.id),
+            severity: "warning",
+            title: "Plan without attendance",
+          }));
+        } else {
+          exceptions.push(createException({
+            code: "missing_attendance_cover",
+            date,
+            description: `${employee.fullName} has no fingerprint attendance, approved vacation, approved excuse, or national vacation covering this workday.`,
+            employeeHrId: employee.hrId,
+            employeeName: employee.fullName,
+            relatedItemIds: [],
+            severity: "danger",
+            title: "Missing attendance cover",
+          }));
+        }
       }
     }
   }
