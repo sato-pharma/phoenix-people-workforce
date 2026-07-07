@@ -259,6 +259,23 @@ export type EmployeePlanDecision = {
   toStatus: EmployeePlanStatus;
 };
 
+// One message in the plan's two-way conversation (employee_plan_comments). Unlike
+// employee_plan_decisions (an append-only status-transition log) and
+// employee_plan_item_return_notes (approver-only, per-row), this is a genuine
+// thread: the submitter and any participant in the approval chain (manager, CEO,
+// HR/Super Admin) can post regardless of the plan's current status.
+export type EmployeePlanComment = {
+  authorHrId: string;
+  authorName: string | null;
+  authorRole: string | null;
+  body: string;
+  createdAt: string;
+  id: string;
+  itemId: string | null;
+  parentId: string | null;
+  planId: string;
+};
+
 export type EmployeePlan = {
   acknowledgements: Array<{
     acknowledgedAt: string;
@@ -1394,6 +1411,151 @@ async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: Emp
   } catch (error) {
     console.error(`[weekly-plans] failed to notify employee of ${action} for plan ${plan.id}`, error);
   }
+}
+
+// ===========================================================================
+// Two-way plan conversation (employee_plan_comments, migration 20260708010000).
+// Anyone who canViewPlan() may read and post — the submitter, the assigned
+// manager, the CEO, and HR/Super Admin at the final stages — independent of the
+// plan's current status, so a returned/edit-requested plan can still carry a
+// real back-and-forth instead of a one-shot decision comment.
+// ===========================================================================
+
+type PlanCommentRow = {
+  author_hr_id: string;
+  author_login_id: string | null;
+  author_role: string | null;
+  body: string;
+  created_at: string;
+  id: string;
+  item_id: string | null;
+  parent_id: string | null;
+  plan_id: string;
+};
+
+async function mapPlanComments(rows: PlanCommentRow[]): Promise<EmployeePlanComment[]> {
+  if (rows.length === 0) return [];
+  const directory = await getEmployeeDirectory();
+  const byHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+  return rows.map((row) => ({
+    authorHrId: row.author_hr_id,
+    authorName: byHrId.get(normalizeHrId(row.author_hr_id))?.fullName ?? null,
+    authorRole: row.author_role,
+    body: row.body,
+    createdAt: row.created_at,
+    id: row.id,
+    itemId: row.item_id,
+    parentId: row.parent_id,
+    planId: row.plan_id,
+  }));
+}
+
+const planCommentSelect = "id,plan_id,item_id,parent_id,author_hr_id,author_login_id,author_role,body,created_at";
+
+export async function listPlanComments(
+  access: AccessContext,
+  planId: string,
+): Promise<{ canComment: boolean; comments: EmployeePlanComment[]; schemaReady: boolean }> {
+  const plan = await loadPlanRow(planId);
+  const employee = await currentEmployee(access);
+  if (!canViewPlan(access, employee, plan)) {
+    throw new Error("Forbidden: you cannot view this plan's conversation.");
+  }
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employee_plan_comments")
+      .select(planCommentSelect)
+      .eq("plan_id", planId)
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (error) throw error;
+    const comments = await mapPlanComments((data ?? []) as PlanCommentRow[]);
+    return { canComment: true, comments, schemaReady: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { canComment: true, comments: [], schemaReady: false };
+    throw error;
+  }
+}
+
+// Fans a new comment out to every OTHER participant already engaged with this
+// plan: the submitter, the assigned manager, whoever has recorded a decision on
+// it (captures CEO/HR once they've actually acted), and everyone who has
+// already posted in the thread. Deliberately does NOT notify every CEO/HR
+// account by default — only those who have engaged — to avoid spamming
+// unrelated executives on every reply. Role-aware deep links reuse
+// planReviewActionUrl so each recipient lands in their own shell. Best-effort:
+// a notification failure never blocks the comment itself.
+async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComment) {
+  try {
+    const participantKeys = new Set<string>();
+    if (plan.employee_hr_id) participantKeys.add(normalizeHrId(plan.employee_hr_id));
+    if (plan.manager_hr_id) participantKeys.add(normalizeHrId(plan.manager_hr_id));
+    for (const decision of plan.employee_plan_decisions ?? []) {
+      if (decision.actor_hr_id) participantKeys.add(normalizeHrId(decision.actor_hr_id));
+    }
+    const { data: priorAuthors } = await getSupabaseAdmin()
+      .from("employee_plan_comments")
+      .select("author_hr_id")
+      .eq("plan_id", plan.id);
+    for (const row of (priorAuthors ?? []) as Array<{ author_hr_id: string }>) {
+      if (row.author_hr_id) participantKeys.add(normalizeHrId(row.author_hr_id));
+    }
+    participantKeys.delete(normalizeHrId(comment.authorHrId));
+    if (participantKeys.size === 0) return;
+
+    const truncatedBody = comment.body.length > 140 ? `${comment.body.slice(0, 140)}…` : comment.body;
+    await Promise.all(Array.from(participantKeys).map(async (hrId) => {
+      const actionUrl = hrIdsMatch(hrId, plan.employee_hr_id)
+        ? `/employee-portals/plans?plan=${plan.id}`
+        : await planReviewActionUrl(hrId, plan.id);
+      await notifyRecipients({
+        actionUrl,
+        eventType: "plan_comment",
+        message: `${comment.authorName ?? comment.authorHrId} commented on the ${plan.plan_kind} plan: "${truncatedBody}"`,
+        plan,
+        recipients: [{ hrId }],
+        title: `New comment on ${plan.plan_kind} plan`,
+      });
+    }));
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify participants of a new comment on plan ${plan.id}`, error);
+  }
+}
+
+export async function addPlanComment(access: AccessContext, planId: string, input: {
+  body: string;
+  itemId?: string | null;
+  parentId?: string | null;
+}): Promise<EmployeePlanComment> {
+  const body = String(input.body ?? "").trim();
+  if (!body) throw new Error("Comment cannot be empty.");
+  const plan = await loadPlanRow(planId);
+  const employee = await currentEmployee(access);
+  if (!canViewPlan(access, employee, plan)) {
+    throw new Error("Forbidden: you cannot comment on this plan.");
+  }
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_comments")
+    .insert({
+      author_hr_id: access.hrId,
+      author_login_id: access.loginId ?? null,
+      author_role: access.role,
+      body,
+      item_id: input.itemId ?? null,
+      parent_id: input.parentId ?? null,
+      plan_id: planId,
+    })
+    .select(planCommentSelect)
+    .single();
+  if (error) {
+    if (isSchemaMissing(error)) {
+      throw new Error("Plan conversation is not available yet — the database migration has not been applied.");
+    }
+    throw error;
+  }
+  const [mapped] = await mapPlanComments([data as PlanCommentRow]);
+  await notifyPlanComment(plan, mapped);
+  return mapped;
 }
 
 export async function getEmployeePlansWorkspace(access: AccessContext): Promise<EmployeePlansWorkspace> {
