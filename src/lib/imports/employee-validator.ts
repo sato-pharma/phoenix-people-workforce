@@ -32,10 +32,6 @@ import {
   type OrgMappingSample,
   type OrgMappingWarning,
 } from "@/lib/imports/org-rule-engine";
-import {
-  OFFICIAL_AREA_CODE_BY_SLUG,
-  OFFICIAL_LINE_CODE_BY_SLUG,
-} from "@/lib/imports/official-geography";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 
@@ -228,11 +224,7 @@ function buildRecord(
     },
     departmentName: organization.department.displayName,
     lineName: organization.line.displayName,
-    // region is no longer a typed-in column — it's derived from the resolved (line, area) via
-    // line_area_region_map once resolveGlobalLine/resolveGlobalArea run. Kept only as a
-    // display fallback for any row whose line/area didn't resolve.
     regionName: normalizeTextValue(valueFor(row, mapping, "region")),
-    regionCode: null,
     areaName: organization.area.displayName,
     teamName: organization.team.displayName,
     positionTitle: organization.position.displayName,
@@ -467,13 +459,13 @@ function normalizeSeatPart(value: string | null | undefined) {
 
 function employeeOrgSeatKey(record: Pick<
   EmployeeImportRecord,
-  "areaName" | "codes" | "jobTitle" | "lineName" | "normalizedOrganizationNames" | "positionTitle" | "regionCode" | "regionName"
+  "areaName" | "codes" | "jobTitle" | "lineName" | "normalizedOrganizationNames" | "positionTitle" | "regionName"
 >) {
   const line = record.codes.lineCode ?? record.normalizedOrganizationNames.line ?? normalizeSeatPart(record.lineName);
   const area = record.codes.areaCode ?? record.normalizedOrganizationNames.area ?? normalizeSeatPart(record.areaName);
   const position = record.codes.positionCode ?? record.normalizedOrganizationNames.position ?? normalizeSeatPart(record.positionTitle);
   const title = normalizeSeatPart(record.jobTitle ?? record.positionTitle);
-  const region = normalizeSeatPart(record.regionCode ?? record.regionName);
+  const region = normalizeSeatPart(record.regionName);
 
   if (!line || !area || !position || !title) {
     return null;
@@ -490,13 +482,13 @@ function employeeOrgSeatKey(record: Pick<
 
 function employeeOrgSeatLabel(record: Pick<
   EmployeeImportRecord,
-  "areaName" | "jobTitle" | "lineName" | "positionTitle" | "regionCode" | "regionName"
+  "areaName" | "jobTitle" | "lineName" | "positionTitle" | "regionName"
 >) {
   return [
     `Title: ${record.jobTitle ?? record.positionTitle ?? "-"}`,
     `Position: ${record.positionTitle ?? record.jobTitle ?? "-"}`,
     `Area: ${record.areaName ?? "-"}`,
-    `Region: ${record.regionCode ?? record.regionName ?? "-"}`,
+    `Region: ${record.regionName ?? "-"}`,
     `Line: ${record.lineName ?? "-"}`,
   ].join(", ");
 }
@@ -537,97 +529,6 @@ function resolveGlobalDepartment(
   record.normalizedOrganizationNames.department = normalizeDepartmentLookupKey(record.departmentName);
 
   return null;
-}
-
-/**
- * Line is a governed global lookup, same as department — an import must reference one of the
- * official codes (PD/CS/AF/HO), never auto-create a new line from a typo or unrecognized spelling.
- */
-function resolveGlobalLine(
-  record: EmployeeImportRecord,
-  options: EmployeeImportPlanOptions,
-) {
-  const rawLine = record.rawOrganizationValues.line ?? record.lineName;
-  const lineText = normalizeTextValue(rawLine);
-
-  if (!lineText) {
-    return null;
-  }
-
-  const slug = record.codes.lineCode;
-  const officialCode = slug ? OFFICIAL_LINE_CODE_BY_SLUG[slug] : undefined;
-  const knownCodes = options.existingState?.lineCodes;
-
-  if (!officialCode || (knownCodes && !knownCodes.has(officialCode))) {
-    record.codes.lineCode = null;
-    return {
-      rowNumber: record.rowNumber,
-      field: "line" as const,
-      code: "invalid_line",
-      message: `Line "${lineText}" is not one of the official lines (Pedia, CNS, Anti Infective, Head Office).`,
-    };
-  }
-
-  record.codes.lineCode = officialCode;
-  return null;
-}
-
-/**
- * Area is a governed global lookup, same as line — an import must reference an area that already
- * exists in the organogram (public.areas), never auto-create a new one from a typo or unrecognized
- * spelling. The 40-code Sales-geography reconciliation list is the PREFERRED mapping (it collapses
- * historical duplicates onto one canonical code), but it isn't exhaustive: some pre-unification
- * duplicate rows (e.g. "Alex - Behiera", "Delta (2)", "Head office") were deliberately left
- * unreconciled and are still assigned to real, active employees in the organogram today. Those must
- * still resolve — the organogram's own area table is the source of truth here, not the Sales
- * geography master, so fall back to the raw slug whenever it already matches a live organogram row.
- */
-function resolveGlobalArea(
-  record: EmployeeImportRecord,
-  options: EmployeeImportPlanOptions,
-) {
-  const rawArea = record.rawOrganizationValues.area ?? record.areaName;
-  const areaText = normalizeTextValue(rawArea);
-
-  if (!areaText) {
-    return null;
-  }
-
-  const slug = record.codes.areaCode;
-  const officialCode = slug ? OFFICIAL_AREA_CODE_BY_SLUG[slug] : undefined;
-  const knownCodes = options.existingState?.areaCodes;
-  const resolvedCode = officialCode ?? (slug && knownCodes?.has(slug) ? slug : undefined);
-
-  if (!resolvedCode || (knownCodes && !knownCodes.has(resolvedCode))) {
-    record.codes.areaCode = null;
-    return {
-      rowNumber: record.rowNumber,
-      field: "area" as const,
-      code: "invalid_area",
-      message: `Area "${areaText}" is not a recognized area in the organogram. Use the exact area name/code from the organogram's area master.`,
-    };
-  }
-
-  record.codes.areaCode = resolvedCode;
-  return null;
-}
-
-/** Once line + area resolve to official codes, region is ALWAYS derived from
- *  line_area_region_map — never typed in, so it can never drift from the (line, area) pair again. */
-function resolveRegionFromLineArea(
-  record: EmployeeImportRecord,
-  options: EmployeeImportPlanOptions,
-) {
-  const lineCode = record.codes.lineCode;
-  const areaCode = record.codes.areaCode;
-  if (!lineCode || !areaCode) {
-    return;
-  }
-
-  const regionCode = options.existingState?.regionCodeByLineArea?.get(`${lineCode}|${areaCode}`);
-  if (regionCode) {
-    record.regionCode = regionCode;
-  }
 }
 
 function resolveGlobalTeam(
@@ -790,18 +691,6 @@ export function validateEmployeeImportRows(
     if (departmentError) {
       validationErrors.push(departmentError);
     }
-
-    const lineError = resolveGlobalLine(record, options);
-    if (lineError) {
-      validationErrors.push(lineError);
-    }
-
-    const areaError = resolveGlobalArea(record, options);
-    if (areaError) {
-      validationErrors.push(areaError);
-    }
-
-    resolveRegionFromLineArea(record, options);
 
     const teamError = resolveGlobalTeam(record, options);
     if (teamError) {
@@ -1078,7 +967,6 @@ export function validateEmployeeImportRows(
       },
       positionTitle: null,
       regionName: seat.regionName,
-      regionCode: seat.regionCode,
     });
 
     if (seatKey) {

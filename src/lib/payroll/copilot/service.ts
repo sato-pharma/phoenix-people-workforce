@@ -33,6 +33,7 @@ import {
   listCrmDeductionCandidates,
   listFingerprintDeductionCandidates,
 } from "./deductions-review.ts";
+import { buildIncludedExpenseTotals, listExpenseCandidates } from "./expense-review.ts";
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
 import { parseCeoReply } from "./llm.ts";
@@ -162,6 +163,7 @@ export async function assembleDraft(
     insuranceWages,
     approvedDeductions,
     settledVacationSalaryDeductions,
+    includedExpenseTotals,
   ] = await Promise.all([
       getEmployeeDirectory(),
       getPayrollSalarySourcesByHrId(period),
@@ -172,6 +174,7 @@ export async function assembleDraft(
       loadInsuranceWages(),
       buildApprovedDeductionTotals(period),
       buildSettledSalaryDeductionTotals(period),
+      buildIncludedExpenseTotals(period),
     ]);
 
   const eligible = directory.employees.filter(
@@ -214,6 +217,7 @@ export async function assembleDraft(
         : null,
       approvedDeductions: approvedDeductions.get(compact),
       settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),
+      approvedExpenses: includedExpenseTotals.get(compact),
     });
     if (!row) continue;
 
@@ -388,22 +392,23 @@ export type CopilotRunView = {
 };
 
 /**
- * Pending-item counts for the Fingerprint/CRM/Unpaid Vacation tabs — folded
- * into `canMaterialize` so "Generate payroll sheet" can no longer be clicked
- * while those tabs still have real, undecided items sitting untouched. Before
- * this, `canMaterialize` only looked at the Negotiation tab's blocking flags;
- * a CEO could generate the sheet having never opened the other three tabs.
- * Defensive: never throws — a governance-data outage must not permanently
- * block payroll assembly, it just means this run's gate can't see that tab
- * (same failure posture as `buildApprovedDeductionTotals`).
+ * Pending-item counts for the Fingerprint/CRM/Unpaid Vacation/Expenses tabs —
+ * folded into `canMaterialize` so "Generate payroll sheet" can no longer be
+ * clicked while those tabs still have real, undecided items sitting
+ * untouched. Before this, `canMaterialize` only looked at the Negotiation
+ * tab's blocking flags; a CEO could generate the sheet having never opened
+ * the other tabs. Defensive: never throws — a governance-data outage must
+ * not permanently block payroll assembly, it just means this run's gate
+ * can't see that tab (same failure posture as `buildApprovedDeductionTotals`).
  */
 async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlocking[]> {
   const blocking: OtherTabBlocking[] = [];
   try {
-    const [fingerprint, crm, vacation] = await Promise.all([
+    const [fingerprint, crm, vacation, expenses] = await Promise.all([
       listFingerprintDeductionCandidates(systemAccessContext, period),
       listCrmDeductionCandidates(systemAccessContext, period),
       listUnpaidVacationCandidates(period),
+      listExpenseCandidates(period),
     ]);
     const fingerprintPending = fingerprint.rows.filter(
       (row) => (row.decision?.decisionStatus ?? "Pending") === "Pending",
@@ -415,6 +420,9 @@ async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlo
 
     const vacationPending = vacation.filter((candidate) => candidate.existingSettlement === null).length;
     if (vacationPending > 0) blocking.push({ label: "Unpaid Vacation", count: vacationPending });
+
+    const expensesPending = expenses.filter((candidate) => candidate.existingDecision === null).length;
+    if (expensesPending > 0) blocking.push({ label: "Expenses", count: expensesPending });
   } catch (error) {
     console.error("[payroll-copilot:service] other-tabs pending count failed:", error);
   }

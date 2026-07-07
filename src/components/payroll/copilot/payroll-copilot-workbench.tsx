@@ -1,9 +1,69 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Pause,
+  ShieldAlert,
+  Users,
+  X,
+} from "lucide-react";
+
+import { PremiumHero } from "@/components/ui/premium-hero";
+
+type IconType = typeof Users;
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
+import { ExpensesTab } from "./tabs/expenses-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
+
+/** Same accent recipe as admin-command-center.tsx's KPI cards — gradient bg, glow, icon badge, hover lift. */
+const ACCENT_STYLES = {
+  blue: {
+    bar: "from-sky-500 via-sky-400 to-sky-300",
+    glow: "bg-sky-400/25",
+    icon: "bg-gradient-to-br from-sky-100 to-sky-50 text-sky-700 ring-sky-200/70",
+    from: "from-white to-slate-50/60",
+    border: "border-slate-200",
+    text: "text-sky-700",
+  },
+  emerald: {
+    bar: "from-emerald-500 via-emerald-400 to-emerald-300",
+    glow: "bg-emerald-400/25",
+    icon: "bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-700 ring-emerald-200/70",
+    from: "from-emerald-50 to-white",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+  },
+  amber: {
+    bar: "from-amber-500 via-amber-400 to-amber-300",
+    glow: "bg-amber-400/25",
+    icon: "bg-gradient-to-br from-amber-100 to-amber-50 text-amber-700 ring-amber-200/70",
+    from: "from-amber-50 to-white",
+    border: "border-amber-200",
+    text: "text-amber-700",
+  },
+  rose: {
+    bar: "from-rose-500 via-rose-400 to-rose-300",
+    glow: "bg-rose-400/25",
+    icon: "bg-gradient-to-br from-rose-100 to-rose-50 text-rose-700 ring-rose-200/70",
+    from: "from-rose-50 to-white",
+    border: "border-rose-200",
+    text: "text-rose-700",
+  },
+} as const;
+
+/** Dark section header with the orange gradient accent bar — same recipe every premium admin page uses. */
+function SectionHeaderBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+      <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
+      {children}
+    </div>
+  );
+}
 
 type Flag = {
   employeeHrId: string;
@@ -298,13 +358,11 @@ export function PayrollCopilotWorkbench() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="border-l-4 border-l-orange-500 bg-slate-900 px-6 py-5 text-white">
-          <h1 className="text-xl font-bold tracking-tight">Payroll Copilot</h1>
-          <p className="mt-1 text-sm text-slate-300">
-            Assembles the monthly payroll from your modules, asks about anyone who isn&apos;t clean, and builds an
-            editable draft you can lock. Restricted to CEO &amp; Super Admin.
-          </p>
-        </header>
+        <PremiumHero
+          kicker="AI-Assisted Payroll"
+          title="Payroll Copilot"
+          subtitle="Assembles the monthly payroll from your modules, asks about anyone who isn't clean, and builds an editable draft you can lock. Restricted to CEO & Super Admin."
+        />
 
         {error ? (
           <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
@@ -347,7 +405,7 @@ export function PayrollCopilotWorkbench() {
                 type="button"
                 onClick={startRun}
                 disabled={busy}
-                className="bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+                className="bg-gradient-to-r from-orange-600 to-orange-500 px-5 py-2 text-sm font-semibold text-white hover:from-orange-700 hover:to-orange-600 disabled:opacity-50"
               >
                 {busy ? "Assembling…" : `Start ${MONTHS[month - 1]} payroll`}
               </button>
@@ -399,7 +457,9 @@ function RunWorkspace(props: {
   onReportIssueGroup: (hrIds: string[], text: string) => void;
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
-  const [activeTab, setActiveTab] = useState<"negotiation" | "fingerprint" | "crm" | "vacation">("negotiation");
+  const [activeTab, setActiveTab] = useState<
+    "negotiation" | "fingerprint" | "crm" | "vacation" | "expenses"
+  >("negotiation");
   if (!draft) return null;
 
   const questionGroups = groupDuplicateQuestions(draft.employees);
@@ -408,10 +468,10 @@ function RunWorkspace(props: {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Employees" value={draft.employeeCount} />
-        <Stat label="Green (auto)" value={draft.greenCount} tone="text-emerald-600" />
-        <Stat label="Need answers" value={draft.flaggedOpenCount} tone="text-amber-600" />
-        <Stat label="Blocking" value={draft.openBlockCount} tone="text-rose-600" />
+        <Stat accent="blue" icon={Users} label="Employees" value={draft.employeeCount} />
+        <Stat accent="emerald" icon={CheckCircle2} label="Green (auto)" value={draft.greenCount} />
+        <Stat accent="amber" icon={AlertTriangle} label="Need answers" value={draft.flaggedOpenCount} />
+        <Stat accent="rose" icon={ShieldAlert} label="Blocking" value={draft.openBlockCount} />
       </div>
 
       {materialized ? (
@@ -427,23 +487,45 @@ function RunWorkspace(props: {
       <div className="flex gap-1 border-b border-slate-200">
         {(
           [
-            { key: "negotiation", label: "Negotiation" },
-            { key: "fingerprint", label: "Fingerprint Deductions" },
-            { key: "crm", label: "CRM Deductions" },
-            { key: "vacation", label: "Unpaid Vacation" },
+            { key: "negotiation", label: "Negotiation", count: draft.flaggedOpenCount },
+            {
+              key: "fingerprint",
+              label: "Fingerprint Deductions",
+              count: draft.otherTabsBlocking.find((tab) => tab.label === "Fingerprint Deductions")?.count ?? 0,
+            },
+            {
+              key: "crm",
+              label: "CRM Deductions",
+              count: draft.otherTabsBlocking.find((tab) => tab.label === "CRM Deductions")?.count ?? 0,
+            },
+            {
+              key: "vacation",
+              label: "Unpaid Vacation",
+              count: draft.otherTabsBlocking.find((tab) => tab.label === "Unpaid Vacation")?.count ?? 0,
+            },
+            {
+              key: "expenses",
+              label: "Expenses",
+              count: draft.otherTabsBlocking.find((tab) => tab.label === "Expenses")?.count ?? 0,
+            },
           ] as const
         ).map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 text-sm font-semibold ${
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold ${
               activeTab === tab.key
                 ? "border-b-2 border-orange-500 text-slate-900"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
             {tab.label}
+            {tab.count > 0 ? (
+              <span className="bg-gradient-to-r from-orange-600 to-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {tab.count}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -464,13 +546,13 @@ function RunWorkspace(props: {
         />
       ) : activeTab === "vacation" ? (
         <UnpaidVacationTab runId={view.run.id} />
+      ) : activeTab === "expenses" ? (
+        <ExpensesTab runId={view.run.id} />
       ) : (
       <div className="space-y-6">
         {questionGroups.length > 0 ? (
           <div className="border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-              Same question, {questionGroups.length} group(s) — bulk resolve
-            </div>
+            <SectionHeaderBar>Same question, {questionGroups.length} group(s) — bulk resolve</SectionHeaderBar>
             <div className="divide-y divide-slate-100">
               {questionGroups.map((group) => (
                 <GroupedQuestionRow
@@ -542,7 +624,7 @@ function RunWorkspace(props: {
                   type="button"
                   onClick={props.onConfirm}
                   disabled={busy || proposals.length === 0}
-                  className="bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+                  className="bg-gradient-to-r from-orange-600 to-orange-500 px-4 py-2 text-sm font-semibold text-white hover:from-orange-700 hover:to-orange-600 disabled:opacity-50"
                 >
                   Confirm &amp; apply
                 </button>
@@ -561,9 +643,7 @@ function RunWorkspace(props: {
 
         {draft.recurringApplied.length > 0 ? (
           <div className="border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-              Recurring auto-applied ({draft.recurringApplied.length})
-            </div>
+            <SectionHeaderBar>Recurring auto-applied ({draft.recurringApplied.length})</SectionHeaderBar>
             <ul className="divide-y divide-slate-100 text-sm">
               {draft.recurringApplied.map((item, index) => (
                 <li key={`${item.hrId}-${index}`} className="flex justify-between px-4 py-2">
@@ -610,7 +690,7 @@ function RunWorkspace(props: {
             type="button"
             onClick={props.onMaterialize}
             disabled={busy || !draft.canMaterialize || view.run.status === "drafted"}
-            className="bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+            className="bg-gradient-to-r from-orange-600 to-orange-500 px-5 py-2 text-sm font-semibold text-white hover:from-orange-700 hover:to-orange-600 disabled:opacity-50"
           >
             {view.run.status === "drafted" ? "Sheet generated" : "Generate payroll sheet"}
           </button>
@@ -620,11 +700,34 @@ function RunWorkspace(props: {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+/** Same KPI-card recipe as admin-command-center.tsx: gradient bg, top accent bar, glow, icon badge, hover lift. */
+function Stat({
+  accent,
+  icon: Icon,
+  label,
+  value,
+}: {
+  accent: keyof typeof ACCENT_STYLES;
+  icon: IconType;
+  label: string;
+  value: number;
+}) {
+  const style = ACCENT_STYLES[accent];
   return (
-    <div className="border border-slate-200 bg-white px-4 py-3">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${tone ?? "text-slate-900"}`}>{value}</p>
+    <div
+      className={`group relative overflow-hidden border bg-gradient-to-br px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(15,23,42,0.12)] ${style.border} ${style.from}`}
+    >
+      <div aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.bar}`} />
+      <div aria-hidden="true" className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${style.glow}`} />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+          <p className={`mt-2 text-2xl font-black tracking-[-0.02em] ${style.text}`}>{value}</p>
+        </div>
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center shadow-sm ring-1 ${style.icon}`}>
+          <Icon aria-hidden className="h-5 w-5" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -692,7 +795,10 @@ function PayrollSheetTable({
   return (
     <div className="border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-2">
-        <span className="text-sm font-semibold text-white">Payroll sheet ({employees.length})</span>
+        <span className="flex items-center gap-2 text-sm font-semibold text-white">
+          <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
+          Payroll sheet ({employees.length})
+        </span>
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -708,7 +814,9 @@ function PayrollSheetTable({
                 type="button"
                 onClick={() => setStatusFilter(filter.key)}
                 className={`px-2 py-1 ${
-                  statusFilter === filter.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  statusFilter === filter.key
+                    ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 {filter.label}
@@ -962,18 +1070,20 @@ function EmployeeRowActions({
           disabled={busy}
           onClick={() => setMode("issue")}
           title="Report an issue"
-          className="bg-rose-100 px-2 py-1 text-rose-700 hover:bg-rose-200 disabled:opacity-50"
+          className="flex items-center gap-1 bg-rose-100 px-2 py-1 text-rose-700 hover:bg-rose-200 disabled:opacity-50"
         >
-          ✕
+          <X aria-hidden className="h-3.5 w-3.5" />
+          Issue
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={onConfirm}
           title="Confirm as correct"
-          className="bg-emerald-100 px-2 py-1 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+          className="flex items-center gap-1 bg-emerald-100 px-2 py-1 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
         >
-          ✓
+          <Check aria-hidden className="h-3.5 w-3.5" />
+          Confirm
         </button>
       </div>
       <button
@@ -981,8 +1091,9 @@ function EmployeeRowActions({
         disabled={busy}
         onClick={() => setMode("hold")}
         title="Put pay on hold"
-        className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+        className="flex items-center gap-1 border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
       >
+        <Pause aria-hidden className="h-3.5 w-3.5" />
         Hold
       </button>
     </div>

@@ -14,7 +14,9 @@ import type { CopilotPeriod, EmployeeFeederState } from "./types.ts";
  *                           specific settlement span — see the resignation Rule 1 pass below)
  *   deduction_candidates  → employee_hr_id_compact, month, year, superseded_at
  *   employee_resignations → employee_hr_id, last_working_date, exit_status
- *   payroll_expenses      → hr_id, payout_month, payout_year, hr_approved
+ *
+ * Expenses are NOT a feeder signal here — they're their own dedicated review
+ * tab (see expense-review.ts), reading outstation_expense_requests directly.
  */
 
 /** Lowercase alphanumeric key so all feeder ids match regardless of hyphen/case. */
@@ -73,7 +75,6 @@ function ensure(map: Map<string, EmployeeFeederState>, key: string): EmployeeFee
       attendanceDeductionPending: false,
       leaverLastWorkingDate: null,
       unpaidDaysBeforeLastWorkingDate: 0,
-      pendingExpense: false,
     };
     map.set(key, state);
   }
@@ -158,21 +159,6 @@ export async function buildFeederStates(
     const clip = overlapDays(row.startDate, row.endDate, start, lastWorkingDate);
     if (clip <= 0) continue;
     state.unpaidDaysBeforeLastWorkingDate += row.days * (clip / spanDays);
-  }
-
-  // Expenses tied to this payout period that are not yet HR-approved.
-  const pendingExpenses = await safeRows("pending_expenses", () =>
-    supabase
-      .from("payroll_expenses")
-      .select("hr_id,hr_approved,payout_month,payout_year")
-      .eq("payout_month", period.month)
-      .eq("payout_year", period.year)
-      .eq("hr_approved", false),
-  );
-  for (const row of pendingExpenses) {
-    const key = compactHrKey(String(row.hr_id ?? ""));
-    if (!key) continue;
-    ensure(states, key).pendingExpense = true;
   }
 
   return states;
