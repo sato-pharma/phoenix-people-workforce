@@ -1,19 +1,28 @@
 import { readFileSync } from "node:fs";
 
-import postgres from "postgres";
-
+import { getSupabaseAdmin } from "../src/lib/supabase/server.ts";
 import { bridgeEmployeeLineToOfficial, OFFICIAL_LINE_VALUES } from "../src/lib/sales/access-scope.ts";
 
 // Read-only early-warning tripwire for the area/region/line unification-revert incident
-// (2026-07-02 through 2026-07-07). Sales scope (District Manager / Regional Manager region
-// scoping, and every line-scoped role: NSM/PM/GPM/RM/DM/Marketing Manager) resolves geography
-// through free-text `region_name` / `lines.name` matched against master tables — by design, a
-// resolution failure fails CLOSED (empty dashboard), not open (a leak). That is the correct
-// security posture, but it means drift is SILENT: nobody sees an error, a manager just sees an
-// empty screen. This script catches that drift before a user reports it. It changes nothing —
-// pure read-only comparison against the same master tables/constants the runtime code uses.
+// (2026-07-02 through 2026-07-07). Sales scope (District Manager region scoping, and every
+// line-scoped role: NSM/PM/GPM/RM/DM/Marketing Manager) resolves geography through free-text
+// `region_name` / `lines.name` matched against master tables — by design, a resolution failure
+// fails CLOSED (empty dashboard), not open (a leak). That is the correct security posture, but
+// it means drift is SILENT: nobody sees an error, a manager just sees an empty screen. This
+// script catches that drift before a user reports it. It changes nothing — pure read-only
+// comparison against the same master tables/constants the runtime code uses.
+//
+// Uses the app's own Supabase admin client (service-role key) rather than a raw Postgres
+// connection — every table this script reads (employees, lines, app_auth_users,
+// source_of_sales_*) is a normal PostgREST-exposed table, so it needs only the same
+// NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY the app itself uses locally, not a
+// separate SUPABASE_DB_URL connection string.
 
 type Row = Record<string, unknown>;
+
+const IGNORED_LINE_SENTINELS = ["IGNORE"];
+const PAGE_SIZE = 1000;
+const SALES_LINE_CODES = ["anti_infective", "pedia", "cns"];
 
 function loadLocalEnv() {
   try {
@@ -34,132 +43,130 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-async function main() {
-  const dbUrl = process.env.SUPABASE_DB_URL?.trim();
-  if (!dbUrl) throw new Error("SUPABASE_DB_URL is required");
-
-  const sql = postgres(dbUrl, { max: 1, prepare: false, ssl: "require" });
-
-  try {
-    // ── 1. District Manager region_name → master (BLOCKING) ──────────────────────────────
-    // A DSM's OWN region_name IS the scope source (see access-scope.ts's `regionScoped`
-    // set) — a mismatch here silently empties that manager's Source-of-Sales dashboard
-    // today, with zero other symptom. Regional Manager is deliberately EXCLUDED: an RM's
-    // scope is resolved from his reporting subtree (resolveRegionalManagerRegionCodes), not
-    // his own region_name label — his own label is legitimately descriptive (e.g. "Alexandria
-    // + Delta" for a combined territory) and is reported informationally below, not as a
-    // failure, since this script can't cheaply re-derive subtree-based correctness.
-    const dsmMismatches = await sql<Row[]>`
-      select e.hr_id, e.full_name, au.role, e.region_name
-      from employees e
-      join app_auth_users au on lower(btrim(au.login_id)) = lower(btrim(e.hr_id))
-      where au.role = 'District Manager'
-        and lower(coalesce(e.employment_status, 'active')) in ('active', 'on_leave')
-        and (
-          e.region_name is null
-          or btrim(e.region_name) = ''
-          or not exists (
-            select 1 from source_of_sales_regions r
-            where r.active and lower(btrim(r.region_name)) = lower(btrim(e.region_name))
-          )
-        )
-      order by e.hr_id
-    `;
-
-    // Informational: Regional Managers whose own label doesn't match the master. Expected
-    // for a combined-territory RM (subtree resolution still works) — listed for visibility.
-    const rmOwnLabelGaps = await sql<Row[]>`
-      select e.hr_id, e.full_name, e.region_name
-      from employees e
-      join app_auth_users au on lower(btrim(au.login_id)) = lower(btrim(e.hr_id))
-      where au.role = 'Regional Manager'
-        and lower(coalesce(e.employment_status, 'active')) in ('active', 'on_leave')
-        and (
-          e.region_name is null
-          or btrim(e.region_name) = ''
-          or not exists (
-            select 1 from source_of_sales_regions r
-            where r.active and lower(btrim(r.region_name)) = lower(btrim(e.region_name))
-          )
-        )
-      order by e.hr_id
-    `;
-
-    // ── 2. Every org line bridges to a canonical official line (BLOCKING) ────────────────
-    // If a `lines.name` value doesn't bridge to one of the 4 canonical lines, every
-    // line-scoped role assigned to that line (NSM/PM/GPM/RM/DM) sees empty data for it.
-    const orgLines = await sql<{ name: string }[]>`select distinct name from lines where name is not null`;
-    const unbridgedLines = orgLines
-      .map((row) => ({ name: row.name, bridged: bridgeEmployeeLineToOfficial(row.name) }))
-      .filter((entry) => !entry.bridged || !OFFICIAL_LINE_VALUES.includes(entry.bridged));
-
-    // ── 3. Product Master `line` values are all canonical (BLOCKING) ─────────────────────
-    // Defense-in-depth alongside the write-time allow-list added to the Product Master
-    // importer: catches rows that predate the gate, or any direct-DB write that bypassed it.
-    // "IGNORE" is a deliberate code-defined sentinel (product_code=line='IGNORE', name
-    // "Ignored — not a Phoenix product" — see the normalizer_ignore_product_sentinel
-    // migration) marking a row as excluded from real sales, not a mislabeled line.
-    const IGNORED_LINE_SENTINELS = ["IGNORE"];
-    const productLines = await sql<{ line: string }[]>`
-      select distinct line from source_of_sales_products where active and line is not null
-    `;
-    const rogueProductLines = productLines
-      .map((row) => row.line)
-      .filter((line) => !OFFICIAL_LINE_VALUES.includes(line) && !IGNORED_LINE_SENTINELS.includes(line));
-
-    // ── 4. Rollup `official_line` values are all canonical (BLOCKING) ────────────────────
-    // This is exactly the column the Head Office confidentiality strip reads
-    // (isHeadOfficeLine) — an unrecognized value here is the actual leak scenario.
-    const rollupLines = await sql<{ official_line: string }[]>`
-      select distinct official_line from source_of_sales_fact_rollup where official_line is not null
-    `;
-    const rogueRollupLines = rollupLines
-      .map((row) => row.official_line)
-      .filter((line) => !OFFICIAL_LINE_VALUES.includes(line));
-
-    // ── 5. Informational only — NOT a failure ────────────────────────────────────────────
-    // NSM/PM/GPM/CEO/Marketing Manager don't region-scope (see access-scope.ts:272-274), so a
-    // region_name that doesn't match the master (e.g. "Egypt", "Head office") is expected and
-    // harmless for these roles. Reported for visibility only.
-    const nonRegionScopedGaps = await sql<Row[]>`
-      select e.hr_id, au.role, e.region_name, count(*) over (partition by au.role) as role_count
-      from employees e
-      join app_auth_users au on lower(btrim(au.login_id)) = lower(btrim(e.hr_id))
-      join lines l on l.id = e.line_id and l.code in ('anti_infective', 'pedia', 'cns')
-      where au.role not in ('District Manager', 'Regional Manager')
-        and lower(coalesce(e.employment_status, 'active')) in ('active', 'on_leave')
-        and (
-          e.region_name is null
-          or btrim(e.region_name) = ''
-          or not exists (
-            select 1 from source_of_sales_regions r
-            where r.active and lower(btrim(r.region_name)) = lower(btrim(e.region_name))
-          )
-        )
-      order by au.role, e.hr_id
-    `;
-
-    const checks = [
-      { details: dsmMismatches, label: "Every active District Manager's region_name matches the Source-of-Sales region master", ok: dsmMismatches.length === 0 },
-      { details: unbridgedLines, label: "Every org line bridges to a canonical official line", ok: unbridgedLines.length === 0 },
-      { details: rogueProductLines, label: "Every active Product Master line value is canonical (or a known sentinel)", ok: rogueProductLines.length === 0 },
-      { details: rogueRollupLines, label: "Every rollup official_line value is canonical (Head Office strip integrity)", ok: rogueRollupLines.length === 0 },
-    ];
-
-    console.log(JSON.stringify({
-      checks,
-      informational: {
-        non_region_scoped_gaps: nonRegionScopedGaps,
-        regional_manager_own_label_gaps: rmOwnLabelGaps,
-      },
-      note: "Informational entries are NOT failures — NSM/PM/GPM/CEO/MM don't region-scope by design, and an RM's own region_name is a descriptive label, not his scope source (subtree-resolved).",
-      source: "read-only comparison of employees/lines/source_of_sales_* against access-scope.ts's canonical constants",
-    }, null, 2));
-
-    if (checks.some((check) => !check.ok)) process.exitCode = 1;
-  } finally {
-    await sql.end({ timeout: 5 });
+/** Pages through a table with `.range()` so a table that grows past PostgREST's default
+ *  row cap is never silently truncated (the exact failure mode this script exists to catch
+ *  elsewhere — see the organogram-audit "PostgREST 1000-row cap" finding this session). */
+async function fetchAll(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  table: string,
+  select: string,
+  eqFilter?: { column: string; value: unknown },
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  let from = 0;
+  for (;;) {
+    let query = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1);
+    if (eqFilter) query = query.eq(eqFilter.column, eqFilter.value);
+    const { data, error } = await query;
+    if (error) throw new Error(`${table}: ${error.message}`);
+    rows.push(...((data ?? []) as unknown as Row[]));
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
   }
+  return rows;
+}
+
+function normalizeKey(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isActiveStatus(value: unknown): boolean {
+  const status = normalizeKey(value) || "active";
+  return status === "active" || status === "on_leave";
+}
+
+async function main() {
+  const supabase = getSupabaseAdmin();
+
+  const [authUsers, employees, regions, orgLines] = await Promise.all([
+    fetchAll(supabase, "app_auth_users", "login_id, role"),
+    fetchAll(supabase, "employees", "hr_id, full_name, employment_status, region_name, line_id"),
+    fetchAll(supabase, "source_of_sales_regions", "region_name", { column: "active", value: true }),
+    fetchAll(supabase, "lines", "id, code, name"),
+  ]);
+
+  // ── 3 & 4: rogue line labels — bounded existence queries, not full-table enumeration.
+  // These two source tables can be large (sales fact/product data); we only need to know IF
+  // an out-of-list value exists and see a few examples, not page through every row.
+  const excludedProductValues = [...OFFICIAL_LINE_VALUES, ...IGNORED_LINE_SENTINELS];
+  const { data: rogueProductRows, error: productError } = await supabase
+    .from("source_of_sales_products")
+    .select("line")
+    .eq("active", true)
+    .not("line", "is", null)
+    .not("line", "in", `(${excludedProductValues.join(",")})`)
+    .limit(50);
+  if (productError) throw new Error(`source_of_sales_products: ${productError.message}`);
+
+  const { data: rogueRollupRows, error: rollupError } = await supabase
+    .from("source_of_sales_fact_rollup")
+    .select("official_line")
+    .not("official_line", "is", null)
+    .not("official_line", "in", `(${OFFICIAL_LINE_VALUES.join(",")})`)
+    .limit(50);
+  if (rollupError) throw new Error(`source_of_sales_fact_rollup: ${rollupError.message}`);
+
+  const rogueProductLines = Array.from(new Set((rogueProductRows ?? []).map((row) => String(row.line))));
+  const rogueRollupLines = Array.from(new Set((rogueRollupRows ?? []).map((row) => String(row.official_line))));
+
+  // ── 2: every org line bridges to a canonical official line (BLOCKING) ──────────────────
+  const distinctOrgLineNames = Array.from(new Set(orgLines.map((row) => String(row.name ?? "")).filter(Boolean)));
+  const unbridgedLines = distinctOrgLineNames
+    .map((name) => ({ name, bridged: bridgeEmployeeLineToOfficial(name) }))
+    .filter((entry) => !entry.bridged || !OFFICIAL_LINE_VALUES.includes(entry.bridged));
+
+  const salesLineIds = new Set(
+    orgLines.filter((row) => SALES_LINE_CODES.includes(String(row.code))).map((row) => row.id),
+  );
+  const roleByHrKey = new Map(authUsers.map((row) => [normalizeKey(row.login_id), String(row.role)]));
+  const regionNameSet = new Set(regions.map((row) => normalizeKey(row.region_name)));
+
+  function regionMatchesMaster(regionName: unknown): boolean {
+    const key = normalizeKey(regionName);
+    return Boolean(key) && regionNameSet.has(key);
+  }
+
+  // ── 1: District Manager region_name → master (BLOCKING); Regional Manager and everyone
+  // else are informational only (see comments on the constants above). Single pass over
+  // employees, matching the semantics of the original SQL exactly.
+  const dsmMismatches: Row[] = [];
+  const rmOwnLabelGaps: Row[] = [];
+  const nonRegionScopedGaps: Row[] = [];
+
+  for (const emp of employees) {
+    if (!isActiveStatus(emp.employment_status)) continue;
+    const role = roleByHrKey.get(normalizeKey(emp.hr_id));
+    if (!role) continue;
+    if (regionMatchesMaster(emp.region_name)) continue;
+
+    const entry = { hr_id: emp.hr_id, full_name: emp.full_name, region_name: emp.region_name };
+    if (role === "District Manager") {
+      dsmMismatches.push(entry);
+    } else if (role === "Regional Manager") {
+      rmOwnLabelGaps.push(entry);
+    } else if (salesLineIds.has(emp.line_id)) {
+      nonRegionScopedGaps.push({ ...entry, role });
+    }
+  }
+
+  const checks = [
+    { details: dsmMismatches, label: "Every active District Manager's region_name matches the Source-of-Sales region master", ok: dsmMismatches.length === 0 },
+    { details: unbridgedLines, label: "Every org line bridges to a canonical official line", ok: unbridgedLines.length === 0 },
+    { details: rogueProductLines, label: "Every active Product Master line value is canonical (or a known sentinel)", ok: rogueProductLines.length === 0 },
+    { details: rogueRollupLines, label: "Every rollup official_line value is canonical (Head Office strip integrity)", ok: rogueRollupLines.length === 0 },
+  ];
+
+  console.log(JSON.stringify({
+    checks,
+    informational: {
+      non_region_scoped_gaps: nonRegionScopedGaps,
+      regional_manager_own_label_gaps: rmOwnLabelGaps,
+    },
+    note: "Informational entries are NOT failures — NSM/PM/GPM/CEO/MM don't region-scope by design, and an RM's own region_name is a descriptive label, not his scope source (subtree-resolved).",
+    source: "read-only comparison of employees/lines/source_of_sales_* against access-scope.ts's canonical constants, via the app's own Supabase admin client",
+  }, null, 2));
+
+  if (checks.some((check) => !check.ok)) process.exitCode = 1;
 }
 
 main().catch((error) => {
