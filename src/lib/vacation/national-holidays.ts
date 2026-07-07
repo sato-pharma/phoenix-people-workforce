@@ -452,8 +452,11 @@ export async function getConfirmedNationalHolidays(input: {
     // Range overlap: the confirmed observed period is observedDate..observedEndDate
     // (a multi-day national vacation, not just a single shifted day).
     if (override.observedEndDate < monthStart || override.observedDate > monthEnd) continue;
-    const alreadyPresent = withoutOverriddenOfficialDates.some((holiday) => holiday.startDate === override.observedDate);
-    if (alreadyPresent) continue;
+    // No "already present at this date" skip here: every holiday whose official
+    // date had a confirmed override was already dropped above, so this override's
+    // own raw entry can never collide with itself. Injecting unconditionally means
+    // two distinct holidays that happen to land on the same observed date both
+    // still show up, instead of one silently disappearing behind the other.
     injected.push({
       description: override.notes,
       durationDays: inclusiveDaysBetween(override.observedDate, override.observedEndDate),

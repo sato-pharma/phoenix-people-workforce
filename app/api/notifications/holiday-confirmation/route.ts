@@ -99,8 +99,18 @@ export async function runHolidayConfirmationReminder(request: Request) {
       });
       continue;
     }
-    await notifyRecipientsOfPendingHoliday(holiday, recipients, runDate);
-    results.push({ holiday, result: { recipientCount: recipients.length, sent: true } });
+    // Isolated per holiday: one bad send (e.g. a transient email/network error)
+    // must not abort the loop and skip every remaining holiday in this run —
+    // it will simply be retried on tomorrow's run since nothing gets confirmed.
+    try {
+      await notifyRecipientsOfPendingHoliday(holiday, recipients, runDate);
+      results.push({ holiday, result: { recipientCount: recipients.length, sent: true } });
+    } catch (error) {
+      results.push({
+        holiday,
+        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+      });
+    }
   }
 
   const processing = await runScheduledNotificationProcessing(10);
