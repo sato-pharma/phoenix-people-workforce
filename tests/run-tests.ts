@@ -327,6 +327,7 @@ import { runPayrollCopilotProrationTests } from "./payroll-copilot-proration.tes
 import { runPayrollCopilotDeductionsReviewTests } from "./payroll-copilot-deductions-review.test.ts";
 import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
+import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -671,6 +672,7 @@ await runTest("payroll copilot proration (resignation/joiner/unpaid-leave day-ra
 await runTest("payroll copilot deductions review (cycle window + month-key resolution)", runPayrollCopilotDeductionsReviewTests);
 await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
+await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

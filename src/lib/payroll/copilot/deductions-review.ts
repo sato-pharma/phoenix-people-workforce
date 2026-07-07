@@ -4,13 +4,14 @@ import { getDigestSettings } from "@/lib/attendance/digest-recipients";
 import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import { getAttendanceRoster } from "@/lib/attendance/roster";
+import { resolveDayBasedDeductionAmount } from "@/lib/deductions-governance/calculations";
 import { syncFieldWorkforceNoActivityCandidatesForLiveMonth } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import {
   listDeductionCandidates,
   type DeductionInboxRow,
 } from "@/lib/deductions-governance/service";
 
-import { compactHrKey } from "./feeders.ts";
+import { compactHrKey, getBaseSalaryMap } from "./feeders.ts";
 import type { CopilotPeriod } from "./types.ts";
 
 /**
@@ -201,11 +202,25 @@ export async function listCrmDeductionCandidates(
 export type ApprovedDeductionTotals = { crm: number; fingerPrint: number };
 
 /**
- * Per-employee totals of already-"Approved for Payroll" fingerprint + CRM
- * decisions for the period, keyed by compact HR id — wired into
- * `assemble.ts` so the Copilot draft reflects real decided amounts instead
- * of the previous hardcoded zero. Defensive: never throws, returns an empty
- * map on any failure so a governance-data outage can't block payroll assembly.
+ * Per-employee totals of fingerprint + CRM deductions for the period, keyed
+ * by compact HR id — wired into `assemble.ts` so the Copilot draft reflects
+ * real amounts instead of the previous hardcoded zero. Defensive: never
+ * throws, returns an empty map on any failure so a governance-data outage
+ * can't block payroll assembly.
+ *
+ * CRM no-activity (N) is MANDATORY per the owner's dictated payroll rule:
+ * "whoever has N days must be deducted" — no approval gate. Every no-activity
+ * candidate counts toward the sheet UNLESS HR has explicitly cleared it via
+ * "Do Not Take Action" (e.g. investigated and found to be a device/data
+ * issue). A row that hasn't been decided yet uses the same base-salary/30 x
+ * days ESTIMATE the CRM review tab and its xlsx export show (see
+ * report-exports.ts) — once HR approves it with a possibly-edited value, the
+ * decided `appliedAmount` takes over. This keeps the sheet, the review tab,
+ * and the downloaded report always in agreement.
+ *
+ * Fingerprint deductions are NOT covered by that unconditional rule — they
+ * stay approval-gated (must be explicitly "Approved for Payroll" on the
+ * Fingerprint tab before they reach the sheet).
  *
  * Called from deep inside `assembleDraft`, which has no request-scoped
  * `AccessContext` available — uses `systemAccessContext` the same way other
@@ -222,21 +237,37 @@ export async function buildApprovedDeductionTotals(
       listCandidatesForSourceModule(systemAccessContext, period, "ATTENDANCE_DEVICE"),
       listCandidatesForSourceModule(systemAccessContext, period, "FIELD_WORKFORCE"),
     ]);
-    // Only deduct what the CRM review tab actually shows. listCrmDeductionCandidates
-    // filters FIELD_WORKFORCE to `no_activity`; a non-no_activity field-workforce row
-    // (e.g. a retroactive_leave row mistakenly approved-for-payroll) would otherwise be
-    // summed into the `crm` pay column here yet never appear in the review tab or the
-    // completeness gate — money deducted that was never reviewed. Filtering to the same
-    // set keeps "what's deducted" == "what's reviewed".
-    const crmReviewableRows = crm.rows.filter((row) => row.deductionType === "no_activity");
-    for (const row of [...fingerprint.rows, ...crmReviewableRows]) {
+
+    for (const row of fingerprint.rows) {
       if (row.decision?.decisionStatus !== "Approved for Payroll") continue;
       const key = compactHrKey(row.employeeHrIdCompact || row.employeeCode);
       if (!key) continue;
-      const amount = row.decision.appliedAmount ?? 0;
       const existing = totals.get(key) ?? { crm: 0, fingerPrint: 0 };
-      if (row.decision.payrollColumn === "crm") existing.crm += amount;
-      else if (row.decision.payrollColumn === "finger_print") existing.fingerPrint += amount;
+      existing.fingerPrint += row.decision.appliedAmount ?? 0;
+      totals.set(key, existing);
+    }
+
+    // Only deduct what the CRM review tab actually shows. listCrmDeductionCandidates
+    // filters FIELD_WORKFORCE to `no_activity`; a non-no_activity field-workforce row
+    // (e.g. a retroactive_leave row) would otherwise be summed into the `crm` pay
+    // column here yet never appear in the review tab — money deducted that was never
+    // reviewable. Filtering to the same set keeps "what's deducted" == "what's shown".
+    const crmReviewableRows = crm.rows.filter((row) => row.deductionType === "no_activity");
+    const needsEstimate = crmReviewableRows.some(
+      (row) => row.decision?.decisionStatus !== "Approved for Payroll",
+    );
+    const baseSalaries = needsEstimate ? await getBaseSalaryMap() : new Map<string, number>();
+    for (const row of crmReviewableRows) {
+      if (row.decision?.decisionStatus === "Do Not Take Action") continue;
+      const key = compactHrKey(row.employeeHrIdCompact || row.employeeCode);
+      if (!key) continue;
+      const amount = resolveDayBasedDeductionAmount({
+        decision: row.decision,
+        deductionValue: row.deductionValue,
+        baseSalary: baseSalaries.get(key),
+      }) ?? 0;
+      const existing = totals.get(key) ?? { crm: 0, fingerPrint: 0 };
+      existing.crm += amount;
       totals.set(key, existing);
     }
   } catch (error) {

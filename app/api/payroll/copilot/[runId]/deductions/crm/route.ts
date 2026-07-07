@@ -7,7 +7,16 @@ import {
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
 import { listCrmDeductionCandidates, syncCrmLiveMonthCandidates } from "@/lib/payroll/copilot/deductions-review";
+import {
+  buildDeductionReportWorkbook,
+  formatPeriodLabel,
+  getBaseSalaryMap,
+  getHireDateMap,
+  periodFileSlug,
+  xlsxResponse,
+} from "@/lib/payroll/copilot/report-exports";
 import { getRunPeriod } from "@/lib/payroll/copilot/service";
+import { resolveDayBasedDeductionAmount } from "@/lib/deductions-governance/calculations";
 import { recordCopilotDeductionDecision } from "@/lib/deductions-governance/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -22,17 +31,43 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     const period = await getRunPeriod(runId);
     await syncCrmLiveMonthCandidates(period, resolveCopilotActor(access));
     const { cycle, rows } = await listCrmDeductionCandidates(access, period);
+    const hireDates = await getHireDateMap();
+    // No-activity is a mandatory deduction (see buildApprovedDeductionTotals) — every
+    // row without a decided amount already counts on the payroll sheet using this same
+    // base-salary/30 x days estimate, so the tab must show it too rather than "—".
+    const baseSalaries = await getBaseSalaryMap();
+
+    if (new URL(request.url).searchParams.get("format") === "xlsx") {
+      const buffer = await buildDeductionReportWorkbook({
+        title: `CRM / No-Activity Deductions — ${formatPeriodLabel(period)}`,
+        subtitle:
+          "Field-workforce no-activity (N) days flagged for payroll deduction. Value = base salary / 30 x no-activity days (Approved once decided, otherwise an Estimate).",
+        qtyHeader: "No-Activity Days",
+        rows,
+        hireDates,
+        baseSalaries,
+      });
+      return xlsxResponse(buffer, `CRM_Deductions_${periodFileSlug(period)}.xlsx`);
+    }
 
     return NextResponse.json({
       cycle,
+      autoAppliesUnlessRejected: true,
       candidates: rows.map((row) => ({
         id: row.id,
         employeeHrId: row.employeeCode,
         employeeName: row.employeeName,
+        hireDate: hireDates.get(row.employeeHrIdCompact) ?? null,
         deductionType: row.deductionType,
         deductionUnit: row.deductionUnit,
         deductionValue: row.deductionValue,
-        estimatedAmount: row.estimatedAmount,
+        estimatedAmount:
+          row.estimatedAmount ??
+          resolveDayBasedDeductionAmount({
+            decision: row.decision,
+            deductionValue: row.deductionValue,
+            baseSalary: baseSalaries.get(row.employeeHrIdCompact),
+          }),
         severity: row.severity,
         dates: row.dates,
         decisionStatus: row.decision?.decisionStatus ?? "Pending",

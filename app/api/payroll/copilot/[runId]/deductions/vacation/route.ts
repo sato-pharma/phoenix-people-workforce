@@ -6,6 +6,13 @@ import {
   copilotErrorResponse,
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
+import {
+  buildVacationReportWorkbook,
+  getHireDateMap,
+  periodFileSlug,
+  formatPeriodLabel,
+  xlsxResponse,
+} from "@/lib/payroll/copilot/report-exports";
 import { getRunPeriod } from "@/lib/payroll/copilot/service";
 import {
   listUnpaidVacationCandidates,
@@ -24,6 +31,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     const { runId } = await params;
     const period = await getRunPeriod(runId);
     const candidates = await listUnpaidVacationCandidates(period);
+
+    if (new URL(request.url).searchParams.get("format") === "xlsx") {
+      const buffer = await buildVacationReportWorkbook({
+        periodLabel: formatPeriodLabel(period),
+        rows: candidates,
+        hireDates: await getHireDateMap(),
+      });
+      return xlsxResponse(buffer, `Unpaid_Vacation_${periodFileSlug(period)}.xlsx`);
+    }
+
     return NextResponse.json({ candidates });
   } catch (error) {
     return copilotErrorResponse(error);
