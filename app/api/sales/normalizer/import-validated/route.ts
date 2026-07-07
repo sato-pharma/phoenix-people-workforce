@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
+import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { buildCodedBuffer, learnFromImportHistory } from "@/lib/sales/normalizer/service";
 
 export const runtime = "nodejs";
@@ -71,6 +72,13 @@ export async function POST(request: Request) {
         error: "The coded sheet did not pass validation — nothing was imported. Fix the blocking rows (e.g. map the missing bricks) and try again.",
         data: { blockingReasons: persisted.blockingReasons, failedRows: persisted.failedRows, warningRows: persisted.warningRows, status: persisted.status },
       }, { status: 400 });
+    }
+
+    // Self-heal the customer->brick crosswalk from what this CONFIRMED import's sheet itself
+    // resolved — only after persisted.batchId confirms the batch actually validated, never on a
+    // blocked/preview result.
+    if (result.customerBrickCorrections.length > 0) {
+      await applyCustomerBrickCorrections(result.customerBrickCorrections, { actorLoginId: access.loginId ?? access.hrId ?? "admin" });
     }
 
     // Fire-and-forget: mine the newly imported rows into the alias dictionary.

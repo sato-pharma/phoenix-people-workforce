@@ -13,6 +13,11 @@ import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 // product name="ITEMNAME" (dropped "OLDITEM"); IS/IS-S/IS-T qty="Quantity" (dropped "Total Quantity")
 // and customer="Client Code" (dropped "Main Customer Code"); PS-T product name="Item Description"
 // (dropped "Material"/"Short Description"); CP is brick-name-keyed (no customer code).
+//
+// territoryColumns confirmed by the owner 2026-07-07 for every distributor: this is the brick/area
+// text the sheet itself carries, and resolveBrick() now tries it BEFORE the stored customer→brick map
+// (see resolvers.ts). Customer code is the fallback for rows where the territory text is blank or not
+// yet a known alias — never the other way around.
 
 export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
@@ -29,6 +34,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Customer"],
     customerNameColumns: ["Customer Name"],
     customerAddressColumns: ["Customer Address"],
+    territoryColumns: ["Sal. Dist. Desc."],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Mat. Code", "Mat. Desc.", "Invoice Date"],
   },
@@ -46,6 +52,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
+    territoryColumns: ["Brick Name"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Item Code", "Client Code", "Quantity"],
   },
@@ -63,6 +70,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
+    territoryColumns: ["Brick Name"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Item Code", "Client Code"],
   },
@@ -79,6 +87,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME0013"],
+    customerAddressColumns: ["ADDRESSSHIP"],
+    territoryColumns: ["bricks"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
@@ -96,6 +106,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
     customerAddressColumns: ["CUSTOMER_ADDRESS"],
+    territoryColumns: ["MRKZ_N"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEM_CODE", "QTY_INVOICE", "INVOICE_DATE"],
   },
@@ -113,14 +124,16 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["AccountSerial"],
     customerNameColumns: ["AccountName"],
     customerAddressColumns: ["Address"],
+    territoryColumns: ["TerritoryName"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ProductSerial", "SalesOrReturnQty", "AccountSerial"],
   },
   {
     // EPDA-BULK (ساتو قطاع الجملة — SATO's own wholesale ERP export). RAW sheet: product resolved from
     // the alias dictionary by class_code/class_name (name-first, like the other distributors); geography
-    // from the customer→brick map by cust_code (the sheet carries no brick/territory column); value
-    // RECOMPUTED (no value column). Free goods (is_bonus=1) are skipped. Sales only — no returns.
+    // resolved from cust_name (territory-text alias) FIRST, falling back to the customer→brick map by
+    // cust_code when cust_name doesn't resolve; value RECOMPUTED (no value column). Free goods
+    // (is_bonus=1) are skipped. Sales only — no returns.
     // NOTE: dates are US-style MONTH-FIRST (M/D/YYYY, e.g. 5/31/2026 = 31 May) — unlike every other
     // (day-first) Egyptian distributor — so dateFormat is pinned to "month-first".
     distributorCode: "EP-BK",
@@ -136,6 +149,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
+    territoryColumns: ["cust_name"],
     bonusColumns: ["is_bonus"],
     fingerprintColumns: ["class_code", "cust_code", "qnt"],
   },
@@ -143,9 +157,10 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     // EPDA-Pharmacies (ساتو قطاع الصيدليات — SATO's own pharmacies/retail ERP export). BYTE-IDENTICAL
     // layout to EPDA-BULK (EP-BK): same SATO ERP columns, month-first dates (M/D/YYYY), sales only,
     // free goods (is_bonus=1) skipped, value recomputed, products via the alias dictionary, geography
-    // via the customer→brick map (cust_code). A SEPARATE code so wholesale vs pharmacy sales stay split.
-    // Because the headers are identical to EP-BK the two can't be auto-distinguished — the operator
-    // picks the right sector from the dropdown (recognition then runs against the picked profile).
+    // resolved from cust_name FIRST, falling back to the customer→brick map (cust_code). A SEPARATE
+    // code so wholesale vs pharmacy sales stay split. Because the headers are identical to EP-BK the
+    // two can't be auto-distinguished — the operator picks the right sector from the dropdown
+    // (recognition then runs against the picked profile).
     distributorCode: "EP-PHS",
     distributorName: "EPDA-Pharmacies",
     productCodeColumns: ["class_code"],
@@ -159,6 +174,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["cust_code"],
     customerNameColumns: ["cust_name"],
     customerAddressColumns: ["cust_address"],
+    territoryColumns: ["cust_name"],
     bonusColumns: ["is_bonus"],
     fingerprintColumns: ["class_code", "cust_code", "qnt"],
   },
@@ -176,6 +192,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["كود"],
     customerNameColumns: ["العميل"],
+    customerAddressColumns: ["address"],
+    territoryColumns: ["المنطقة"],
     discountColumns: ["خصم"],
     fingerprintColumns: ["دالصنف", "شهر", "الكمية"],
   },
@@ -194,6 +212,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
+    territoryColumns: ["منطقة"],
     discountColumns: ["خصم%"],
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
@@ -228,6 +247,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["TO_COMPANY_ENTITY_CODE"],
     customerNameColumns: ["TO_COMPANY_ENTITY_NAME"],
+    customerAddressColumns: ["TO_COMPANY_ENTITY_NAME3"],
+    territoryColumns: ["FROM_COMPANY_ENTITY_NAME"],
     discountColumns: ["Discount%"],
     blankCustomerBehavior: "error",
     fingerprintColumns: ["TO_COMPANY_ENTITY_CODE", "CARD_DATE", "ITEM_NAME_ENG"],
@@ -247,6 +268,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Client Code"],
     customerNameColumns: ["Client Name"],
     customerAddressColumns: ["Address_En", "Address_Ar"],
+    territoryColumns: ["Brick Name"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Item Code", "Client Code", "Quantity"],
   },
@@ -265,6 +287,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["Ship-To"],
     customerNameColumns: ["Ship-to party"],
     customerAddressColumns: ["address"],
+    territoryColumns: ["Ship-to party"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["Item Description", "Ship-To", "Delivery Date"],
   },
@@ -283,6 +306,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     customerCodeColumns: ["كود"],
     customerNameColumns: ["عميل"],
     customerAddressColumns: ["عنوان"],
+    territoryColumns: ["منطقة"],
     discountColumns: ["خصم%"],
     fingerprintColumns: ["ك.صنف", "صافى كمية", "تاريخ"],
   },
@@ -300,6 +324,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["ORDERACCOUNT"],
     customerNameColumns: ["CUSTOMERNAME0013"],
+    customerAddressColumns: ["CUSTOMERNAME00133"],
+    territoryColumns: ["ADDRESSSHIP"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEMIDE", "BILLINGDATE", "ORDERACCOUNT"],
   },
@@ -317,7 +343,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     dateFormat: "day-first",
     customerCodeColumns: ["CUSTOMER_CODE"],
     customerNameColumns: ["CUSTOMER_NAME"],
-    customerAddressColumns: ["CUSTOMER_ADDRESS"],
+    customerAddressColumns: ["CUSTOMER_NAME3"],
+    territoryColumns: ["MRKZ_N"],
     discountColumns: ["Discount%"],
     fingerprintColumns: ["ITEM_CODE", "QTY_INVOICE", "INVOICE_DATE"],
   },
