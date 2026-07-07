@@ -4,9 +4,13 @@ import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directo
 import { buildRowForEmployee } from "../src/lib/payroll/copilot/assemble.ts";
 import { evaluateEmployeeFlags } from "../src/lib/payroll/copilot/flags.ts";
 import { normalizeAction, parseDeterministic } from "../src/lib/payroll/copilot/llm.ts";
+import { recommendResolution } from "../src/lib/payroll/copilot/recommend.ts";
 import { isRecurringActiveForPeriod } from "../src/lib/payroll/copilot/recurring.ts";
 import type {
   CopilotAdjustment,
+  CopilotFlag,
+  CopilotFlagRule,
+  CopilotFlagSeverity,
   CopilotPeriod,
   RecurringAdjustment,
 } from "../src/lib/payroll/copilot/types.ts";
@@ -379,4 +383,75 @@ export function runPayrollCopilotTests() {
   assert.equal(isRecurringActiveForPeriod(rec({ startMonth: 6, startYear: 2026 }), { month: 5, year: 2026 }), false);
   assert.equal(isRecurringActiveForPeriod(rec({ remainingInstallments: 0 }), PERIOD), false);
   assert.equal(isRecurringActiveForPeriod(rec({ active: false }), PERIOD), false);
+
+  // --- recommendation engine (the one-click "AI") -----------------------------
+  const flag = (rule: CopilotFlagRule, severity: CopilotFlagSeverity, question = "q"): CopilotFlag => ({
+    employeeHrId: "B-1",
+    rule,
+    severity,
+    question,
+  });
+  const recInput = (openFlags: CopilotFlag[], extra: Partial<Parameters<typeof recommendResolution>[0]> = {}) => ({
+    hrId: "B-1",
+    openFlags,
+    row: makeRow(),
+    monthSalary: 0,
+    unpaidLeaveDays: 0,
+    prior: null,
+    period: PERIOD,
+    ...extra,
+  });
+
+  // green (no open flags) -> no recommendation
+  assert.equal(recommendResolution(recInput([])), null);
+
+  // missing_data -> no auto-action, needs manual entry
+  const recMissing = recommendResolution(recInput([flag("missing_data", "block")]));
+  assert.equal(recMissing?.action, null);
+  assert.equal(recMissing?.confidence, "needs_input");
+
+  // unpaid_leave -> prorate to worked days (June = 30 days; 5 unpaid -> 25 worked)
+  const recUnpaid = recommendResolution(recInput([flag("unpaid_leave", "block")], { unpaidLeaveDays: 5 }));
+  assert.equal(recUnpaid?.action?.kind, "prorate");
+  assert.equal(recUnpaid?.action && recUnpaid.action.kind === "prorate" ? recUnpaid.action.workedDays : -1, 25);
+  assert.equal(recUnpaid?.confidence, "high");
+
+  // joiner/leaver (warn, computed) -> accept the auto-settlement, high confidence
+  const recJoiner = recommendResolution(recInput([flag("joiner_leaver", "warn")], { monthSalary: 6400 }));
+  assert.equal(recJoiner?.action?.kind, "confirm");
+  assert.equal(recJoiner?.confidence, "high");
+  assert.ok(recJoiner?.why.includes("6,400"), "joiner recommendation states the computed settlement");
+
+  // joiner/leaver (block, unparseable date) -> needs a human to fix the date
+  const recJoinerBlock = recommendResolution(recInput([flag("joiner_leaver", "block")]));
+  assert.equal(recJoinerBlock?.action, null);
+  assert.equal(recJoinerBlock?.confidence, "needs_input");
+
+  // salary_role_change with a BASE move -> real money, mark review
+  const recBase = recommendResolution(
+    recInput([flag("salary_role_change", "warn")], {
+      row: makeRow({ baseSalary: 16500 }),
+      prior: { netSalary: 15000, baseSalary: 14000, line: "A", jobTitle: "MR" },
+    }),
+  );
+  assert.equal(recBase?.action?.kind, "confirm");
+  assert.equal(recBase?.confidence, "review");
+
+  // salary_role_change with ONLY a line/role move (org churn) -> safe to bulk-accept
+  const recLine = recommendResolution(
+    recInput([flag("salary_role_change", "warn")], {
+      row: makeRow({ baseSalary: 14000, line: "B" }),
+      prior: { netSalary: 15000, baseSalary: 14000, line: "A", jobTitle: "MR" },
+    }),
+  );
+  assert.equal(recLine?.confidence, "high");
+
+  // --- hold verb: now parseable AND normalizable (was accepted by the route but
+  //     unspeakable by the parser) --------------------------------------------
+  const holdParsed = parseDeterministic("hold B-100 salary, under investigation", { candidates });
+  assert.equal(holdParsed[0]?.kind, "hold");
+  assert.equal(holdParsed[0]?.hrId, "B-100");
+  const holdNorm = normalizeAction({ kind: "hold", hrId: "B-100", reason: "under investigation" }, candidates);
+  assert.equal(holdNorm?.kind, "hold");
+  assert.equal(holdNorm && holdNorm.kind === "hold" ? holdNorm.reason : "", "under investigation");
 }

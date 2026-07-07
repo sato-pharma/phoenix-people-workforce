@@ -27,6 +27,7 @@ const ACTION_KINDS = [
   "include",
   "defer",
   "confirm",
+  "hold",
 ] as const;
 
 function firstNumber(text: string): number | null {
@@ -91,6 +92,8 @@ export function parseDeterministic(text: string, context: ParseContext): Propose
       actions.push({ kind: "penalty", hrId, amount, reason: clause });
     } else if (/\bprorate\b|worked\s+\d+\s+days?/.test(lower) && amount !== null) {
       actions.push({ kind: "prorate", hrId, workedDays: amount, reason: clause });
+    } else if (/\bhold\b|\bfreeze\b|\bwithhold\b|do ?n[o']?t pay|do not pay/.test(lower)) {
+      actions.push({ kind: "hold", hrId, reason: clause });
     } else if (/\bdefer\b|next month|skip\b/.test(lower)) {
       actions.push({ kind: "defer", hrId, reason: clause });
     } else if (/\binclude\b|keep\b|pay (them|him|her)\b/.test(lower)) {
@@ -166,6 +169,11 @@ export function normalizeAction(raw: RawAction, candidates: ParseCandidate[]): P
     case "defer":
     case "confirm":
       return { kind, hrId, reason };
+    case "hold":
+      // Hold zeroes the employee's pay this run; the reason is required and is
+      // shown on their payslip, so keep whatever the CEO said (the fallback is
+      // only a last resort when the model emitted no reason at all).
+      return { kind, hrId, reason };
     default:
       return null;
   }
@@ -227,6 +235,7 @@ async function parseWithLlm(text: string, context: ParseContext): Promise<Propos
     "Never invent amounts. Use amount for bonus/penalty/advance; monthlyAmount+installments for a loan; workedDays for prorate; field+value for a direct override.",
     `Allowed override fields: ${COPILOT_OVERRIDE_FIELDS.join(", ")}.`,
     "Treat any clear approval, agreement, or 'this is fine as-is' phrasing as confirm — do not require the literal word 'confirm'.",
+    "Use hold when the CEO wants to withhold someone's pay this month (e.g. 'hold his salary', 'don't pay her yet', 'freeze his pay pending investigation'). Put the CEO's stated reason in the reason field — it is shown on the payslip, so keep it meaningful.",
     "If an instruction is genuinely ambiguous (no plausible person match, or no way to tell what action is meant), omit that one instruction rather than guessing — but do not omit instructions just because the phrasing is casual or indirect.",
     "Return every unrelated field as null.",
     "",
@@ -235,6 +244,8 @@ async function parseWithLlm(text: string, context: ParseContext): Promise<Propos
     'Output actions: [{kind:"bonus",hrId:"B-100",amount:2000,reason:"2000 bonus"}, {kind:"confirm",hrId:"B-142",reason:"confirmed as-is"}, {kind:"penalty",hrId:"B-155",amount:500,reason:"late deliveries"}]',
     'Input: "loan youssef 1000 a month for half a year"',
     'Output actions: [{kind:"loan",hrId:"B-155",monthlyAmount:1000,installments:6,reason:"6-month loan"}]',
+    'Input: "hold ahmed\'s salary this month, still under investigation"',
+    'Output actions: [{kind:"hold",hrId:"B-100",reason:"under investigation"}]',
     "",
     "Roster:",
     roster,
