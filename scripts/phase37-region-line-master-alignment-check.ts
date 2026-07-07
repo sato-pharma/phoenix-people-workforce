@@ -50,13 +50,13 @@ async function fetchAll(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
   select: string,
-  filter?: (query: any) => any,
+  eqFilter?: { column: string; value: unknown },
 ): Promise<Row[]> {
   const rows: Row[] = [];
   let from = 0;
   for (;;) {
     let query = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1);
-    if (filter) query = filter(query);
+    if (eqFilter) query = query.eq(eqFilter.column, eqFilter.value);
     const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
     rows.push(...((data ?? []) as unknown as Row[]));
@@ -81,7 +81,7 @@ async function main() {
   const [authUsers, employees, regions, orgLines] = await Promise.all([
     fetchAll(supabase, "app_auth_users", "login_id, role"),
     fetchAll(supabase, "employees", "hr_id, full_name, employment_status, region_name, line_id"),
-    fetchAll(supabase, "source_of_sales_regions", "region_name", (q: any) => q.eq("active", true)),
+    fetchAll(supabase, "source_of_sales_regions", "region_name", { column: "active", value: true }),
     fetchAll(supabase, "lines", "id, code, name"),
   ]);
 
