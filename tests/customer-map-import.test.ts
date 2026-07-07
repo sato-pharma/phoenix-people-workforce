@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { classifyCustomerMapRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
+import { classifyCustomerMapRow, parseReconciliationPreviewRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
 
 function makeCtx(): CustomerMapClassifyContext {
   return {
@@ -80,5 +80,35 @@ export function runCustomerMapImportTests() {
     const r = classifyCustomerMapRow({ brickId: " b1-2 ", customerCode: "C1", distributorCode: " Eg " }, makeCtx());
     assert.equal(r.kind, "ok");
     if (r.kind === "ok") assert.equal(r.payload.brick_id, "B1-2");
+  }
+
+  // parseReconciliationPreviewRow — pure transform of the sos_count_reconcilable_import_rows RPC row.
+  // No pre-existing mapping (RPC returns nulls/empties): nothing to reconcile.
+  {
+    const p = parseReconciliationPreviewRow({ affected_rows: 0, affected_batch_ids: [], current_bricks: {}, target_brick_id: null });
+    assert.equal(p.affectedRows, 0);
+    assert.deepEqual(p.affectedBatchIds, []);
+    assert.deepEqual(p.currentBricks, []);
+    assert.equal(p.targetBrickId, null);
+  }
+  // Real disagreement: 12 rows on B1, 3 on B2, both batches, target is B3 — sorted by count descending.
+  {
+    const p = parseReconciliationPreviewRow({
+      affected_rows: 15,
+      affected_batch_ids: ["batch-a", "batch-b"],
+      current_bricks: { B1: 12, B2: 3 },
+      target_brick_id: "B3",
+    });
+    assert.equal(p.affectedRows, 15);
+    assert.deepEqual(p.affectedBatchIds, ["batch-a", "batch-b"]);
+    assert.deepEqual(p.currentBricks, [{ brickId: "B1", count: 12 }, { brickId: "B2", count: 3 }]);
+    assert.equal(p.targetBrickId, "B3");
+  }
+  // Null/undefined row (RPC returned no result row at all) never throws — degrades to the empty shape.
+  {
+    const p = parseReconciliationPreviewRow(null);
+    assert.equal(p.affectedRows, 0);
+    assert.deepEqual(p.affectedBatchIds, []);
+    assert.equal(p.targetBrickId, null);
   }
 }

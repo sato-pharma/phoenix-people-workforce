@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 
 import { HEADER_SCAN_ROWS, normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
 import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
-import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
+import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type CustomerBrickCorrection, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
 export type HeaderValidationFailure = { label: string; expected: string[] };
 export type HeaderValidationResult = {
@@ -248,6 +248,9 @@ export function normalizeRows(
   let blankCustomerSkipped = 0;
   const blankCustomerRows: NormalizeIgnoredRow[] = [];
   let scannedDataRows = 0;
+  // Keyed by the same customerKey the resolver uses — last row for a given customer in this sheet
+  // wins, so one file never produces two conflicting corrections for the same customer.
+  const customerBrickCorrections = new Map<string, CustomerBrickCorrection>();
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
@@ -301,6 +304,22 @@ export function normalizeRows(
 
     if (productCode) productResolved += 1;
     if (hierarchy) brickResolved += 1;
+
+    // Self-heal detection: the sheet itself just told us this customer's brick (direct id or
+    // territory/brick-name text) — never via the stored crosswalk. If that disagrees with (or is
+    // absent from) the stored customer->brick map, queue a correction so the crosswalk catches up.
+    if (brick && brick.source !== "customer" && brick.brickId && customerKey) {
+      const stored = maps.customerBrickByKey.get(customerKey)
+        ?? (customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(customerCanonicalKey) : undefined);
+      if (stored !== brick.brickId) {
+        customerBrickCorrections.set(customerKey, {
+          distributorCode: profile.distributorCode,
+          customerCode,
+          brickId: brick.brickId,
+          previousBrickId: stored ?? null,
+        });
+      }
+    }
 
     if (!productCode || !hierarchy) {
       // Blank-customer check: no location data at all (no code, territory, or brick ID).
@@ -383,6 +402,7 @@ export function normalizeRows(
     exceptions,
     ignoredRows,
     blankCustomerRows,
+    customerBrickCorrections: [...customerBrickCorrections.values()],
     summary: { brickResolved, blankCustomerSkipped, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored + blankCustomerSkipped, scannedDataRows },
   };
 }
@@ -417,7 +437,7 @@ export async function normalizeRawWorkbook(
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = pickBestSheet(workbook, profile);
   if (!sheet) {
-    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0, scannedDataRows: 0 } };
+    return { coded: [], distributorCode: profile.distributorCode, exceptions: [], ignoredRows: [], blankCustomerRows: [], customerBrickCorrections: [], summary: { brickResolved: 0, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 0, scannedDataRows: 0 } };
   }
   return normalizeRows(sheet, profile, maps);
 }

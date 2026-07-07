@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { addCustomerMapRow, deleteCustomerMapRow, listCustomerMapPage } from "@/lib/sales/normalizer/customer-map";
+import {
+  addCustomerMapRow,
+  applyHistoricalReconciliation,
+  deleteCustomerMapRow,
+  listCustomerMapPage,
+  previewHistoricalReconciliation,
+} from "@/lib/sales/normalizer/customer-map";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +55,7 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
     const body = (await request.json().catch(() => ({}))) as {
-      action?: "upsert" | "delete";
+      action?: "upsert" | "delete" | "reconcile-preview" | "reconcile-apply";
       distributorCode?: string;
       customerCode?: string;
       customerName?: string;
@@ -61,6 +67,27 @@ export async function POST(request: Request) {
     if (body.action === "delete") {
       await deleteCustomerMapRow({ actorLoginId: actor(access), distributorCode, customerCode });
       return NextResponse.json({ success: true, message: "Mapping deleted." });
+    }
+    if (body.action === "reconcile-preview") {
+      // Read-only dry-run — no elevated permission needed beyond the sales:import already asserted above.
+      const preview = await previewHistoricalReconciliation({ distributorCode, customerCode });
+      return NextResponse.json({ success: true, preview });
+    }
+    if (body.action === "reconcile-apply") {
+      // This overwrites historical, already-reported sales rows across every batch that customer
+      // appears in — a bigger blast radius than a single mapping edit, so it's Super-Admin only,
+      // matching the gate on the Normalizer's own admin-only import routes.
+      if (access.role !== "Super Admin" && access.scope !== "system") {
+        return NextResponse.json({ success: false, error: "Forbidden: historical reconciliation is restricted to the admin account." }, { status: 403 });
+      }
+      const result = await applyHistoricalReconciliation({ distributorCode, customerCode, actorLoginId: actor(access) });
+      return NextResponse.json({
+        success: true,
+        message: result.updatedRows > 0
+          ? `${result.updatedRows} historical row(s) reconciled across ${result.refreshedBatches} batch(es).`
+          : "No historical rows needed reconciliation — everything already matches the current mapping.",
+        result,
+      });
     }
     const { backfilled } = await addCustomerMapRow({
       actorLoginId: actor(access),
