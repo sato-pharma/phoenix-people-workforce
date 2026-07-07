@@ -3,6 +3,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
+import { payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import {
   validateSalaryRows,
   type SalaryValidationIssue,
@@ -475,12 +476,30 @@ export function serializeDraft(draft: CopilotDraftState) {
       line: e.line,
       area: e.row.area,
       jobTitle: e.jobTitle,
+      baseSalary: e.row.baseSalary,
+      expenses: e.row.expenses,
+      incentive: e.row.incentive,
+      extraCostOfLiving: e.row.extraCostOfLiving,
+      fuelAllowance: e.row.fuelAllowance,
+      otherAdditions: e.row.otherAdditions,
       totalAdditions: e.row.totalAdditions,
-      internalDeductions: e.row.totalDeductions - e.row.socialInsurance - e.row.employmentIncomeTax,
+      crm: e.row.crm,
+      fingerPrint: e.row.fingerPrint,
+      unpaidVacations: e.row.unpaidVacations,
+      medicalInsurance: e.row.medicalInsurance,
+      loans: e.row.loans,
+      otherDeductions: e.row.otherDeductions,
+      // NOTE: totalDeductions on the row is already the internal-only sum
+      // (crm+fingerPrint+unpaidVacations+medicalInsurance+loans+otherDeductions) —
+      // it never included socialInsurance/employmentIncomeTax, so it must be
+      // used as-is here. A prior version of this mapping subtracted those two
+      // statutory fields from it a second time, understating this figure.
+      totalDeductions: e.row.totalDeductions,
       netSalary: e.netSalary,
       firstPart: e.row.firstPart,
       secondPart: e.row.secondPart,
       monthSalary: e.monthSalary,
+      paymentGroup: payrollPaymentModeLabel(e.row.paymentMode),
       status: employeeStatus(e),
       flags: e.openFlags,
     })),
