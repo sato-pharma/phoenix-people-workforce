@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -11,13 +11,13 @@ import {
   Sparkles,
   TriangleAlert,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   PortalDesktopTable,
   PortalEmptyState,
-  PortalMetricCard,
   PortalRecordCard,
   PortalRecordFields,
 } from "@/components/employee-portal/portal-primitives";
@@ -100,18 +100,50 @@ function planSearchText(item: PlanningCalendarPlanItem) {
 // aligned with the same activity semantics used in the List/Week agenda dots.
 function planTone(item: PlanningCalendarPlanItem) {
   if (item.conflictWarning) {
-    return "border-red-500 bg-red-50 text-red-800";
+    return "border-red-500 bg-red-100 text-red-900";
   }
   if (item.activityTitle === "Coaching") {
-    return "border-violet-500 bg-violet-50 text-violet-800";
+    return "border-violet-500 bg-violet-100 text-violet-900";
   }
   if (item.activityTitle === "Double Visit") {
-    return "border-blue-500 bg-blue-50 text-blue-800";
+    return "border-blue-500 bg-blue-100 text-blue-900";
   }
   if (item.activityTitle === "Training") {
-    return "border-amber-500 bg-amber-50 text-amber-800";
+    return "border-amber-500 bg-amber-100 text-amber-900";
   }
-  return "border-slate-400 bg-slate-50 text-slate-800";
+  return "border-slate-400 bg-slate-100 text-slate-900";
+}
+
+const statCardTones = {
+  emerald: { badge: "bg-emerald-600", border: "border-emerald-500", tint: "bg-emerald-50", value: "text-emerald-700" },
+  orange: { badge: "bg-orange-600", border: "border-orange-500", tint: "bg-orange-50", value: "text-orange-700" },
+  rose: { badge: "bg-rose-600", border: "border-rose-500", tint: "bg-rose-50", value: "text-rose-700" },
+  slate: { badge: "bg-slate-800", border: "border-slate-500", tint: "bg-slate-100", value: "text-slate-900" },
+} as const;
+
+function PlanningStatCard({
+  accent,
+  icon: Icon,
+  label,
+  value,
+}: {
+  accent: keyof typeof statCardTones;
+  icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+}) {
+  const tone = statCardTones[accent];
+  return (
+    <div className={`flex items-center gap-3 border-l-4 px-4 py-3.5 shadow-sm ${tone.border} ${tone.tint}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center text-white shadow-sm ${tone.badge}`}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+        <p className={`text-2xl font-black leading-none ${tone.value}`}>{value}</p>
+      </div>
+    </div>
+  );
 }
 
 function conflictForDay(conflicts: PlanningCalendarConflict[], date: string) {
@@ -369,11 +401,11 @@ export function PlanningCalendar({
             <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex border border-slate-200 bg-slate-50 p-0.5">
+            <div className="inline-flex border border-slate-200 bg-slate-100 p-0.5">
               {(["month", "week", "list"] as const).map((mode) => (
                 <button
                   className={`h-9 px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
-                    viewMode === mode ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"
+                    viewMode === mode ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-white"
                   }`}
                   key={mode}
                   onClick={() => setViewMode(mode)}
@@ -408,10 +440,10 @@ export function PlanningCalendar({
         </div>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-          <PortalMetricCard icon={CalendarDays} label="Plan entries" value={summary.planCount} accent="slate" />
-          <PortalMetricCard icon={Users} label="Planning owners" value={summary.submittedOwnerCount} accent="slate" />
-          <PortalMetricCard icon={ShieldAlert} label="Same-line warnings" value={summary.conflictCount} accent="rose" />
-          <PortalMetricCard icon={Sparkles} label="National vacations" value={summary.holidayCount} accent="emerald" />
+          <PlanningStatCard accent="orange" icon={CalendarDays} label="Plan entries" value={summary.planCount} />
+          <PlanningStatCard accent="slate" icon={Users} label="Planning owners" value={summary.submittedOwnerCount} />
+          <PlanningStatCard accent="rose" icon={ShieldAlert} label="Same-line warnings" value={summary.conflictCount} />
+          <PlanningStatCard accent="emerald" icon={Sparkles} label="National vacations" value={summary.holidayCount} />
         </div>
       </section>
 
@@ -526,9 +558,9 @@ export function PlanningCalendar({
         ) : (
         <>
         <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+          <div className="grid grid-cols-7 border-b-2 border-orange-500 bg-slate-900">
             {weekdays.map((weekday) => (
-              <div className="px-2 py-2 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-500" key={weekday}>
+              <div className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
                 {weekday}
               </div>
             ))}
@@ -537,7 +569,13 @@ export function PlanningCalendar({
             {weeks.flat().map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
-              const dayPlans = dayItems.filter(isPlanItem);
+              // National Vacation plan items are excluded from the month-grid block list:
+              // the holiday overlay below already shows the day is a national vacation for
+              // everyone, so a redundant per-person block reads as "still doing something
+              // that day" instead of correctly disappearing into the holiday. The plan row
+              // itself is untouched (still visible in List/Week views and the Selected-day
+              // detail table) — this only hides it from the compact month grid.
+              const dayPlans = dayItems.filter(isPlanItem).filter((item) => item.activityTitle !== "National Vacation");
               const dayHolidays = dayItems.filter((item) => item.source === "holiday");
               const dayConflicts = date ? conflictForDay(conflicts, date) : [];
               const isSelected = date === selectedDate;
@@ -545,7 +583,7 @@ export function PlanningCalendar({
               return (
                 <button
                   className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[150px] ${
-                    day.inMonth ? "bg-white" : "bg-slate-50"
+                    isToday ? "bg-orange-50" : day.inMonth ? "bg-white" : "bg-slate-50"
                   } ${isSelected ? "ring-2 ring-inset ring-orange-500" : "hover:bg-orange-50/40"}`}
                   disabled={!date}
                   key={date ?? `empty-${index}`}
@@ -570,7 +608,7 @@ export function PlanningCalendar({
                   <div className="mt-1.5 hidden space-y-1.5 sm:block">
                     {dayHolidays.slice(0, 1).map((holiday) => (
                       <div
-                        className="border-l-4 border-emerald-500 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800 shadow-sm"
+                        className="border-l-4 border-emerald-500 bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-900 shadow-sm"
                         key={holiday.id}
                       >
                         <p className="line-clamp-2 break-words leading-snug">{holiday.title}</p>
@@ -587,9 +625,9 @@ export function PlanningCalendar({
                         </p>
                       </div>
                     ))}
-                    {dayItems.length > 4 ? (
+                    {dayHolidays.length + dayPlans.length > 4 ? (
                       <div className="border-l-4 border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">
-                        +{dayItems.length - 4} more
+                        +{dayHolidays.length + dayPlans.length - 4} more
                       </div>
                     ) : null}
                   </div>
@@ -668,12 +706,12 @@ function AgendaDayBlock({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
       <button
-        className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+        className="flex w-full items-center justify-between gap-2 border-b-2 border-orange-500 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
         onClick={() => onSelectDate(date)}
         type="button"
       >
         <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
+        <span className="inline-flex whitespace-nowrap bg-orange-500 px-2 py-0.5 text-[11px] font-black text-white">
           {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
         </span>
       </button>
@@ -799,8 +837,8 @@ function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRo
       <div className="border border-slate-200 bg-white">
         <PortalDesktopTable className="text-xs" minWidth="1120px">
           <thead>
-            <tr className="bg-slate-950">
-              {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning", "Notes"].map((column) => (
+            <tr className="border-b-2 border-orange-500 bg-slate-950">
+              {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning"].map((column) => (
                 <th
                   className="border-r border-slate-800 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
@@ -825,11 +863,8 @@ function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRo
                       {row.status}
                     </span>
                   </td>
-                  <td className="max-w-[260px] border-r border-slate-100 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-red-800">
+                  <td className="max-w-[260px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-red-800">
                     <span className="whitespace-nowrap">{row.conflictWarning}</span>
-                  </td>
-                  <td className="max-w-[260px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-                    <span className="whitespace-nowrap">{row.notes}</span>
                   </td>
                 </tr>
               ))}
