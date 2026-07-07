@@ -60,6 +60,7 @@ export function DeductionReviewTable({
   const [scopedCount, setScopedCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
@@ -108,11 +109,60 @@ export function DeductionReviewTable({
     }
   }
 
+  /** Apply ONE decision to every still-pending row at once (respecting any per-row edited value). */
+  async function decideAllPending(decisionStatus: "Approved for Payroll" | "Do Not Take Action") {
+    const pending = (rows ?? []).filter((row) => row.decisionStatus === "Pending");
+    if (pending.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      await Promise.all(
+        pending.map((row) => {
+          const editedValue = editedValues[row.id];
+          return postJson(`/api/payroll/copilot/${runId}/deductions/${endpoint}`, {
+            candidateId: row.id,
+            decisionStatus,
+            appliedDeductionValue: editedValue?.trim() ? Number(editedValue) : undefined,
+          });
+        }),
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save decisions.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const pendingCount = (rows ?? []).filter((row) => row.decisionStatus === "Pending").length;
+
   return (
     <div className="border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-        <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
-        {title} {rows ? `(${rows.length})` : ""}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+        <span className="flex items-center gap-2">
+          <span aria-hidden="true" className="h-4 w-1 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
+          {title} {rows ? `(${rows.length})` : ""}
+        </span>
+        {pendingCount > 0 ? (
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkBusy || busyId !== null}
+              onClick={() => decideAllPending("Approved for Payroll")}
+              className="bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Approve all {pendingCount}
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy || busyId !== null}
+              onClick={() => decideAllPending("Do Not Take Action")}
+              className="border border-slate-500 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            >
+              Reject all {pendingCount}
+            </button>
+          </span>
+        ) : null}
       </div>
       {error ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">{error}</div>
