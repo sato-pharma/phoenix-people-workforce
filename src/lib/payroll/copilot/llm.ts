@@ -1,4 +1,4 @@
-import { createOpenAiResponseText, hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasOpenAiApiKey, resolveOpenAiCopilotModel } from "@/lib/ai/openai-client";
 
 import { COPILOT_OVERRIDE_FIELDS, type ProposedAction } from "./types.ts";
 
@@ -220,12 +220,21 @@ async function parseWithLlm(text: string, context: ParseContext): Promise<Propos
     .map((c) => `- ${c.hrId}: ${c.name}`)
     .join("\n");
   const instructions = [
-    "You convert a payroll manager's free-text instructions into structured actions.",
-    "Only reference employees from the roster below; map names to their exact HR_ID.",
+    "You are a sharp, literal-minded assistant reading a CEO's free-text instructions about this month's payroll, and converting them into structured actions.",
+    "The CEO writes the way a busy executive actually talks: casual phrasing, typos, nicknames, mixed Arabic/English names, several instructions run together in one message, implicit references ('him', 'the last one', 'same as Ahmed'), and approvals stated indirectly ('fine', 'that's correct', 'leave it', 'go ahead').",
+    "Resolve every person mention against the roster below by whatever means gets it right: exact HR_ID, full name, first name only, a nickname or partial name, or a fuzzy/misspelled match — pick the single best roster match. Only omit a person if there is genuinely no plausible match.",
+    "A single message can contain multiple unrelated instructions for different people — split them and return one action per instruction, in the order given.",
     "Never invent amounts. Use amount for bonus/penalty/advance; monthlyAmount+installments for a loan; workedDays for prorate; field+value for a direct override.",
     `Allowed override fields: ${COPILOT_OVERRIDE_FIELDS.join(", ")}.`,
-    "If an instruction is unclear or the employee is not on the roster, omit it.",
+    "Treat any clear approval, agreement, or 'this is fine as-is' phrasing as confirm — do not require the literal word 'confirm'.",
+    "If an instruction is genuinely ambiguous (no plausible person match, or no way to tell what action is meant), omit that one instruction rather than guessing — but do not omit instructions just because the phrasing is casual or indirect.",
     "Return every unrelated field as null.",
+    "",
+    "Examples (roster: B-100 Ahmed Sharaf, B-142 Mona Khalil, B-155 Youssef Adel):",
+    'Input: "give ahmed a 2000 bonus, mona is fine, deduct 500 from youssef for the late deliveries"',
+    'Output actions: [{kind:"bonus",hrId:"B-100",amount:2000,reason:"2000 bonus"}, {kind:"confirm",hrId:"B-142",reason:"confirmed as-is"}, {kind:"penalty",hrId:"B-155",amount:500,reason:"late deliveries"}]',
+    'Input: "loan youssef 1000 a month for half a year"',
+    'Output actions: [{kind:"loan",hrId:"B-155",monthlyAmount:1000,installments:6,reason:"6-month loan"}]',
     "",
     "Roster:",
     roster,
@@ -234,7 +243,9 @@ async function parseWithLlm(text: string, context: ParseContext): Promise<Propos
   const response = await createOpenAiResponseText({
     input: text,
     instructions,
+    model: resolveOpenAiCopilotModel(),
     purpose: "payroll_copilot_parse",
+    reasoning: { effort: "high" },
     text: actionsSchema,
   });
 
