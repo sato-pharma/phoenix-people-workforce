@@ -29,6 +29,9 @@
     },
     "app/api/cron/ireports360-visits-sync/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/notifications/daily/route.ts": {
+      "maxDuration": 300
     }
   }
 }

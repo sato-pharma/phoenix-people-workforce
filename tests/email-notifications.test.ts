@@ -83,4 +83,26 @@ export function runEmailNotificationTests() {
   assert.match(vacationEmailSource, /renderPhoenixEmailText/);
 
   assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/send-phoenix-email.ts"]);
+
+  // Verify daily dispatcher cron hardening
+  const dailyCronRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  assert.match(dailyCronRoute, /export const maxDuration = 300;/, "daily route must declare maxDuration of 300s");
+  assert.match(dailyCronRoute, /runBirthdayNotifications\(request\)\.catch\(/, "daily birthday run must have catch boundary");
+  assert.match(dailyCronRoute, /runContractRenewalNotifications\(request\)\.catch\(/, "daily contract renewal run must have catch boundary");
+  assert.match(dailyCronRoute, /runHolidayConfirmationReminder\(request\)\.catch\(/, "daily holiday confirmation run must have catch boundary");
+  assert.match(dailyCronRoute, /runVacationSlaDaily\(\)\.catch\(/, "daily vacation SLA run must have catch boundary");
+  assert.match(dailyCronRoute, /runMarketingSlaDaily\(\)\.catch\(/, "daily marketing SLA run must have catch boundary");
+  assert.match(dailyCronRoute, /runRecruitmentDailyNotifications\(\)\.catch\(/, "daily recruitment run must have catch boundary");
+  assert.match(dailyCronRoute, /runTelegramDailyHrDigest\(\)\.catch\(/, "daily telegram digest run must have catch boundary");
+  assert.match(dailyCronRoute, /runOutstationGeocodeWarmup\(\)\.catch\(/, "daily outstation geocode warmup must have catch boundary");
+  assert.match(dailyCronRoute, /runOutstationHighRiskDigest\(\)\.catch\(/, "daily outstation high risk digest must have catch boundary");
+  assert.match(dailyCronRoute, /runFieldWorkforceComplianceDigest\(\)\.catch\(/, "daily FWC digest must have catch boundary");
+  assert.match(dailyCronRoute, /runFieldWorkforceComplianceDeductionsAutoSync\(\)\.catch\(/, "daily deductions auto sync must have catch boundary");
+  assert.match(dailyCronRoute, /runExcuseSlaDaily\(\)\.catch\(/, "daily excuse SLA must have catch boundary");
+  assert.match(dailyCronRoute, /runOutstationSlaDaily\(\)\.catch\(/, "daily outstation SLA must have catch boundary");
+  assert.match(dailyCronRoute, /runResignationSlaDaily\(\)\.catch\(/, "daily resignation SLA must have catch boundary");
+  assert.match(dailyCronRoute, /runWeeklyPlansDriftCheck\(\)\.catch\(/, "daily weekly plans drift check must have catch boundary");
+  assert.match(dailyCronRoute, /pruneExpiredRateLimitBuckets\(\)\.catch\(/, "daily rate limit prune must have catch boundary");
+  assert.match(dailyCronRoute, /Sentry\.captureException\(e, \{ tags: \{ cron: "daily-birthday" \} \}\)/, "errors must be captured in Sentry with tags");
+  assert.match(dailyCronRoute, /Sentry\.captureException\(e, \{ tags: \{ cron: "daily-vacation-sla" \} \}\)/, "errors must be captured in Sentry with tags");
 }
