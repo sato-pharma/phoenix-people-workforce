@@ -17,6 +17,7 @@ type IconType = typeof Users;
 
 import { DeductionReviewTable } from "./tabs/deduction-review-table";
 import { ExpensesTab } from "./tabs/expenses-tab";
+import { PayrollPreviewTab } from "./tabs/payroll-preview-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
 /** Same accent recipe as admin-command-center.tsx's KPI cards — gradient bg, glow, icon badge, hover lift. */
@@ -65,29 +66,42 @@ function SectionHeaderBar({ children }: { children: React.ReactNode }) {
   );
 }
 
-type Flag = {
+export type Flag = {
   employeeHrId: string;
   rule: string;
   severity: "block" | "warn";
   question: string;
 };
 
-type EmployeeStatus = "green" | "answered" | "question" | "hold";
+export type EmployeeStatus = "green" | "answered" | "question" | "hold";
 
 /** One row of the canonical payroll sheet — same column shape as SalaryReportTable (src/components/payroll/dashboard/), plus Copilot-only status/flags. */
-type EmployeeRow = {
+export type EmployeeRow = {
   hrId: string;
   fullName: string;
   hireDate: string | null;
   line: string;
   area: string;
   jobTitle: string;
+  baseSalary: number;
+  expenses: number;
+  incentive: number;
+  extraCostOfLiving: number;
+  fuelAllowance: number;
+  otherAdditions: number;
   totalAdditions: number;
-  internalDeductions: number;
+  crm: number;
+  fingerPrint: number;
+  unpaidVacations: number;
+  medicalInsurance: number;
+  loans: number;
+  otherDeductions: number;
+  totalDeductions: number;
   netSalary: number;
   firstPart: number;
   secondPart: number;
   monthSalary: number;
+  paymentGroup: string;
   status: EmployeeStatus;
   flags: Flag[];
 };
@@ -136,7 +150,7 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-function egp(value: number): string {
+export function egp(value: number): string {
   return `EGP ${Math.round(value).toLocaleString("en-US")}`;
 }
 
@@ -179,7 +193,7 @@ function describeAction(action: ProposedAction): string {
   }
 }
 
-const SEVERITY_STYLES: Record<Flag["severity"], string> = {
+export const SEVERITY_STYLES: Record<Flag["severity"], string> = {
   block: "border-l-rose-500",
   warn: "border-l-amber-500",
 };
@@ -458,7 +472,7 @@ function RunWorkspace(props: {
 }) {
   const { view, draft, busy, chat, proposals, materialized } = props;
   const [activeTab, setActiveTab] = useState<
-    "negotiation" | "fingerprint" | "crm" | "vacation" | "expenses"
+    "negotiation" | "fingerprint" | "crm" | "vacation" | "expenses" | "preview"
   >("negotiation");
   if (!draft) return null;
 
@@ -508,6 +522,7 @@ function RunWorkspace(props: {
               label: "Expenses",
               count: draft.otherTabsBlocking.find((tab) => tab.label === "Expenses")?.count ?? 0,
             },
+            { key: "preview", label: "Payroll Preview", count: 0 },
           ] as const
         ).map((tab) => (
           <button
@@ -548,6 +563,15 @@ function RunWorkspace(props: {
         <UnpaidVacationTab runId={view.run.id} />
       ) : activeTab === "expenses" ? (
         <ExpensesTab runId={view.run.id} />
+      ) : activeTab === "preview" ? (
+        <PayrollPreviewTab
+          employees={draft.employees}
+          groupedHrIds={groupedHrIds}
+          busy={busy}
+          onConfirmEmployee={props.onConfirmEmployee}
+          onReportIssue={props.onReportIssue}
+          onHoldEmployee={props.onHoldEmployee}
+        />
       ) : (
       <div className="space-y-6">
         {questionGroups.length > 0 ? (
@@ -721,7 +745,9 @@ function Stat({
       <div aria-hidden="true" className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${style.glow}`} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+          <p className="overflow-hidden whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+            {label}
+          </p>
           <p className={`mt-2 text-2xl font-black tracking-[-0.02em] ${style.text}`}>{value}</p>
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center shadow-sm ring-1 ${style.icon}`}>
@@ -747,7 +773,7 @@ const STATUS_FILTERS: Array<{ key: "all" | EmployeeStatus; label: string }> = [
   { key: "green", label: "Green" },
 ];
 
-function formatShortDate(value: string | null): string {
+export function formatShortDate(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
@@ -831,20 +857,20 @@ function PayrollSheetTable({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2">HR ID</th>
-                <th className="px-4 py-2">Full Name</th>
-                <th className="px-4 py-2">Hire Date</th>
-                <th className="px-4 py-2">Line</th>
-                <th className="px-4 py-2">Area</th>
-                <th className="px-4 py-2">Job Title</th>
-                <th className="px-4 py-2">Additions</th>
-                <th className="px-4 py-2">Deductions</th>
-                <th className="px-4 py-2">Net Salary</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Actions</th>
+                <th className="w-[6%] px-2 py-2">HR ID</th>
+                <th className="w-[12%] px-2 py-2">Full Name</th>
+                <th className="w-[8%] px-2 py-2">Hire Date</th>
+                <th className="w-[8%] px-2 py-2">Line</th>
+                <th className="w-[8%] px-2 py-2">Area</th>
+                <th className="w-[9%] px-2 py-2">Job Title</th>
+                <th className="w-[8%] px-2 py-2">Additions</th>
+                <th className="w-[8%] px-2 py-2">Deductions</th>
+                <th className="w-[8%] px-2 py-2">Net Salary</th>
+                <th className="w-[5%] px-2 py-2">Status</th>
+                <th className="w-[20%] px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -853,26 +879,42 @@ function PayrollSheetTable({
                 return (
                   <Fragment key={employee.hrId}>
                     <tr className="hover:bg-slate-50">
-                      <td className="px-4 py-2 font-mono text-xs text-slate-500">{employee.hrId}</td>
-                      <td className="px-4 py-2 font-medium text-slate-900">
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-xs text-slate-500">
+                        {employee.hrId}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-medium text-slate-900">
                         {employee.fullName}
                         {groupedHrIds.has(employee.hrId) ? (
                           <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Grouped above
+                            Grouped
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">{formatShortDate(employee.hireDate)}</td>
-                      <td className="px-4 py-2 text-slate-600">{employee.line || "—"}</td>
-                      <td className="px-4 py-2 text-slate-600">{employee.area || "—"}</td>
-                      <td className="px-4 py-2 text-slate-600">{employee.jobTitle || "—"}</td>
-                      <td className="px-4 py-2 font-mono text-emerald-700">{egp(employee.totalAdditions)}</td>
-                      <td className="px-4 py-2 font-mono text-rose-700">{egp(employee.internalDeductions)}</td>
-                      <td className="px-4 py-2 font-mono font-semibold text-slate-900">{egp(employee.netSalary)}</td>
-                      <td className="px-4 py-2">
-                        <span className={`px-2 py-0.5 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
+                        {formatShortDate(employee.hireDate)}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
+                        {employee.line || "—"}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
+                        {employee.area || "—"}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
+                        {employee.jobTitle || "—"}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-emerald-700">
+                        {egp(employee.totalAdditions)}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-rose-700">
+                        {egp(employee.totalDeductions)}
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono font-semibold text-slate-900">
+                        {egp(employee.netSalary)}
+                      </td>
+                      <td className="px-2 py-2">
+                        <span className={`px-1.5 py-0.5 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
+                      </td>
+                      <td className="px-2 py-2">
                         <EmployeeRowActions
                           busy={busy}
                           onConfirm={() => onConfirmEmployee(employee.hrId)}
@@ -883,7 +925,7 @@ function PayrollSheetTable({
                     </tr>
                     {employee.status === "question" ? (
                       <tr className="bg-amber-50/40">
-                        <td className="px-4 py-2" colSpan={COLUMN_COUNT}>
+                        <td className="px-2 py-2" colSpan={COLUMN_COUNT}>
                           {employee.flags.map((flag) => (
                             <p
                               key={flag.rule}
@@ -998,7 +1040,7 @@ function GroupedQuestionRow({
  * chat parser scoped to this employee. A separate Hold action puts their pay
  * on temporary hold this run with a required comment shown on their payslip.
  */
-function EmployeeRowActions({
+export function EmployeeRowActions({
   busy,
   onConfirm,
   onReportIssue,
