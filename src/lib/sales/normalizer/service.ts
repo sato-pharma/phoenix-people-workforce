@@ -4,6 +4,7 @@ import { systemIdentity } from "@/config/system-settings";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
+import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { pickBestSheet } from "@/lib/sales/normalizer/engine";
 import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
@@ -418,6 +419,12 @@ export async function persistNormalizedBatch(input: {
     const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
     if (roiRefresh.error) throw roiRefresh.error;
     invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
+  }
+
+  // Self-heal the customer->brick crosswalk from what this CONFIRMED import's sheet itself resolved
+  // (see engine.ts's customerBrickCorrections) — only after the batch is validated, never on a preview.
+  if (input.result.customerBrickCorrections.length > 0) {
+    await applyCustomerBrickCorrections(input.result.customerBrickCorrections, { actorLoginId: input.uploadedBy });
   }
 
   return { batchId, period, importedRows: rows.length };

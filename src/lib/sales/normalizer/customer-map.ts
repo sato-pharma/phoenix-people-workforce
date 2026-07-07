@@ -1,11 +1,13 @@
 import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { BACKFILL_MAX_MAPPINGS, backfillCustomerRows } from "@/lib/sales/normalizer/mapping";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import type { CustomerBrickCorrection } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -468,4 +470,201 @@ export async function addCustomerMapRow(input: {
     ]);
   }
   return { backfilled };
+}
+
+// Self-heal the customer->brick crosswalk from a LIVE upload: the sheet itself just resolved a
+// customer's brick directly (direct id or territory/brick-name text, never via the stored crosswalk —
+// see engine.ts's customerBrickCorrections). When that disagrees with (or is missing from) the stored
+// mapping, this keeps the crosswalk in sync so future rows for that customer resolve correctly even
+// when the territory text is blank or not yet a known alias. Source is "sheet-verified" so it's
+// distinguishable in the Mapping Database from manual/admin-import/normalizer/auto entries. Called
+// only from a CONFIRMED import commit (persistNormalizedBatch), never from an Analyze/preview pass.
+export async function applyCustomerBrickCorrections(
+  corrections: CustomerBrickCorrection[],
+  options: { actorLoginId: string },
+): Promise<{ applied: number; skipped: number }> {
+  if (corrections.length === 0) return { applied: 0, skipped: 0 };
+
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const brickById = new Map<string, BrickRef>(
+    (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
+  );
+
+  const rows: Record<string, unknown>[] = [];
+  let skipped = 0;
+  for (const c of corrections) {
+    const brick = brickById.get(normalizeCodeKey(c.brickId));
+    const customerCode = String(c.customerCode ?? "").trim();
+    const distributorCode = normalizeCodeKey(c.distributorCode);
+    if (!brick || !customerCode || !distributorCode) { skipped += 1; continue; }
+    rows.push({
+      active: true,
+      area_code: brick.areaCode,
+      brick_id: brick.brickId,
+      customer_code: customerCode,
+      distributor_code: distributorCode,
+      mapped_by: options.actorLoginId,
+      region_code: brick.regionCode,
+      source: "sheet-verified",
+    });
+  }
+  if (rows.length === 0) return { applied: 0, skipped };
+
+  const supabase = getSupabaseAdmin();
+  const stamp = new Date().toISOString();
+  let { error } = await supabase
+    .from("source_of_sales_customer_map")
+    .upsert(rows.map((r) => ({ ...r, updated_at: stamp })), { onConflict: "distributor_code,customer_code" });
+  if (error && /confidence|mapped_by/i.test(error.message ?? "")) {
+    // Pre-migration deployment: retry without the provenance columns rather than failing the save.
+    const stripped = rows.map(({ mapped_by: _m, ...rest }) => rest);
+    ({ error } = await supabase
+      .from("source_of_sales_customer_map")
+      .upsert(stripped.map((r) => ({ ...r, updated_at: stamp })), { onConflict: "distributor_code,customer_code" }));
+  }
+  if (error) throw new SalesWorkflowError("persist_failed", error.message, 500);
+
+  await writeAuditLog({
+    actorLoginId: options.actorLoginId,
+    entityId: "source_of_sales_customer_map",
+    entityType: "sales_import_batch",
+    newValues: {
+      source: "sheet_verified_correction",
+      count: rows.length,
+      corrections: corrections.slice(0, 50).map((c) => ({
+        distributor: c.distributorCode,
+        customer: c.customerCode,
+        brick: c.brickId,
+        previousBrick: c.previousBrickId,
+      })),
+    },
+    summary: `Sheet-verified brick correction — ${rows.length} customer${rows.length === 1 ? "" : "s"} updated from live upload data.`,
+  });
+  for (const c of corrections) {
+    await writeMappingAudit({
+      entityType: "customer_map",
+      distributorCode: normalizeCodeKey(c.distributorCode),
+      entityKey: String(c.customerCode ?? "").trim(),
+      action: "edit",
+      before: c.previousBrickId ? { brick_id: c.previousBrickId } : null,
+      after: { brick_id: c.brickId },
+      actor: options.actorLoginId,
+    });
+  }
+
+  return { applied: rows.length, skipped };
+}
+
+// ── Historical reconciliation (explicit, admin-triggered — never automatic) ──
+// The self-heal above only ever corrects the STORED customer->brick mapping going forward; it never
+// touches historical rows already sitting in source_of_sales_import_rows. These two functions are a
+// SEPARATE, deliberate action for when an admin wants a customer's past rows brought in line with
+// their now-corrected mapping too. Always per-customer, always explicit (preview first, then apply),
+// never wired into a routine upload or run in bulk across the whole customer base.
+
+export type ReconciliationBrickCount = { brickId: string; count: number };
+export type ReconciliationPreview = {
+  affectedRows: number;
+  affectedBatchIds: string[];
+  currentBricks: ReconciliationBrickCount[];
+  targetBrickId: string | null;
+};
+
+// Pure transform of the RPC's row shape — kept separate from the DB call so it's unit-testable
+// without a live database, matching classifyCustomerMapRow's pattern elsewhere in this file.
+export function parseReconciliationPreviewRow(row: Record<string, unknown> | null | undefined): ReconciliationPreview {
+  const currentBricksObj = (row?.current_bricks ?? {}) as Record<string, unknown>;
+  const currentBricks = Object.entries(currentBricksObj)
+    .map(([brickId, count]) => ({ brickId, count: Number(count) }))
+    .filter((entry) => Number.isFinite(entry.count))
+    .sort((a, b) => b.count - a.count);
+  const rawBatchIds = row?.affected_batch_ids;
+  const affectedBatchIds = Array.isArray(rawBatchIds) ? rawBatchIds.map((id) => String(id)) : [];
+  return {
+    affectedRows: Number(row?.affected_rows ?? 0) || 0,
+    affectedBatchIds,
+    currentBricks,
+    targetBrickId: row?.target_brick_id ? String(row.target_brick_id) : null,
+  };
+}
+
+// Read-only dry-run — safe to call any time, no mutation. Shows an admin exactly what a reconcile
+// would change before they commit to it: how many rows, which bricks they're currently coded to, and
+// how many distinct historical batches (months) would be touched.
+export async function previewHistoricalReconciliation(input: {
+  distributorCode: string;
+  customerCode: string;
+}): Promise<ReconciliationPreview> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("sos_count_reconcilable_import_rows", {
+    p_distributor: normalizeCodeKey(input.distributorCode),
+    p_customer: String(input.customerCode ?? "").trim(),
+  });
+  if (error) throw new SalesWorkflowError("reconcile_preview_failed", error.message, 500);
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null | undefined;
+  return parseReconciliationPreviewRow(row);
+}
+
+// The actual mutation: overwrites brick/area/region on every historical row for this customer that
+// disagrees with the ACTIVE customer->brick mapping (not just NULL ones — see the migration comment).
+// Refreshes every affected batch's rollups so dashboards never go stale, and audits the correction
+// with a full before/after trail. Throws if any rollup refresh fails, so a partial, inconsistent
+// state is never silently left in place.
+export async function applyHistoricalReconciliation(input: {
+  distributorCode: string;
+  customerCode: string;
+  actorLoginId: string;
+}): Promise<{ updatedRows: number; refreshedBatches: number }> {
+  const distributorCode = normalizeCodeKey(input.distributorCode);
+  const customerCode = String(input.customerCode ?? "").trim();
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase.rpc("sos_reconcile_import_rows_from_customer_map", {
+    p_distributor: distributorCode,
+    p_customer: customerCode,
+  });
+  if (error) throw new SalesWorkflowError("reconcile_apply_failed", error.message, 500);
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null | undefined;
+  const updatedRows = Number(row?.updated_rows ?? 0) || 0;
+  const rawBatchIds = row?.affected_batch_ids;
+  const affectedBatchIds = Array.isArray(rawBatchIds) ? rawBatchIds.map((id) => String(id)) : [];
+
+  let refreshedBatches = 0;
+  for (const batchId of affectedBatchIds) {
+    const [fact, directory, roi] = await Promise.all([
+      supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
+      supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
+      supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
+    ]);
+    const rollupError = fact.error ?? directory.error ?? roi.error;
+    if (rollupError) {
+      throw new SalesWorkflowError(
+        "reconcile_rollup_refresh_failed",
+        `${updatedRows} historical row(s) were corrected, but rollup refresh failed for batch ${batchId}: ${rollupError.message}. Re-run the reconcile to retry the refresh.`,
+        500,
+      );
+    }
+    refreshedBatches += 1;
+  }
+
+  if (updatedRows > 0) {
+    invalidateSalesDashboardCache(`historical reconciliation — ${distributorCode}/${customerCode}`);
+    await writeAuditLog({
+      actorLoginId: input.actorLoginId,
+      entityId: "source_of_sales_import_rows",
+      entityType: "sales_import_batch",
+      newValues: { distributor_code: distributorCode, customer_code: customerCode, updated_rows: updatedRows, affected_batch_ids: affectedBatchIds },
+      summary: `Historical reconciliation — ${updatedRows} row(s) corrected for ${distributorCode} / ${customerCode} across ${affectedBatchIds.length} batch(es).`,
+    });
+    await writeMappingAudit({
+      entityType: "customer_map",
+      distributorCode,
+      entityKey: customerCode,
+      action: "edit",
+      after: { historical_rows_reconciled: updatedRows, batches_refreshed: affectedBatchIds.length },
+      actor: input.actorLoginId,
+    });
+  }
+
+  return { updatedRows, refreshedBatches };
 }

@@ -11,16 +11,24 @@ import type { Crosswalks, DistributorProfile, NormalizeException } from "../src/
 import { attachSkippedProductWarnings, productExceptionToWarningIssue, skippedProductRowsAdvisory } from "../src/lib/sales/source-of-sales-upload.ts";
 
 const maps: Crosswalks = {
-  brickById: new Map([["B1", { areaCode: "A1", areaName: "Area One", blockCode: "BL1", brickId: "B1", brickName: "Brick One", regionCode: "CA", regionName: "Cairo" }]]),
+  brickById: new Map([
+    ["B1", { areaCode: "A1", areaName: "Area One", blockCode: "BL1", brickId: "B1", brickName: "Brick One", regionCode: "CA", regionName: "Cairo" }],
+    ["B2", { areaCode: "A2", areaName: "Area Two", blockCode: "BL2", brickId: "B2", brickName: "Brick Two", regionCode: "CA", regionName: "Cairo" }],
+  ]),
   areaByCode: new Map([["A1", { areaCode: "A1", areaName: "Area One", regionCode: "CA", regionName: "Cairo" }]]),
   regionByCode: new Map([["CA", { regionCode: "CA", regionName: "Cairo" }]]),
   productByCode: new Map([["LA001", { productCode: "LA001", productName: "Lacto 1", factoryPrice: 10, line: "Pedia" }]]),
   // Product aliases are PER-DISTRIBUTOR: keyed `${distributor} ${normalized alias}` (profile is "IS").
   productAliasByKey: new Map([[`${normalizeCodeKey("IS")} ${normalizeAliasKey("لاكتو 1 لبن")}`, "LA001"], [`${normalizeCodeKey("IS")} ${normalizeAliasKey("VENOMOP")}`, "IGNORE"]]),
-  territoryAliasByKey: new Map([[normalizeAliasKey("الدقى/بين السريات"), { targetType: "brick", targetCode: "B1" }]]),
+  territoryAliasByKey: new Map([
+    [normalizeAliasKey("الدقى/بين السريات"), { targetType: "brick", targetCode: "B1" }],
+    [normalizeAliasKey("new brick text"), { targetType: "brick", targetCode: "B2" }],
+  ]),
   areaAliasByKey: new Map(),
   regionAliasByKey: new Map(),
-  customerBrickByKey: new Map([["IS C123", "B1"]]),
+  // "IS C123" and "IS CSTALE" are pre-existing stored mappings; CSTALE is deliberately stale (points
+  // at B1) so the priority-order + self-heal tests can prove the sheet's own territory text overrides it.
+  customerBrickByKey: new Map([["IS C123", "B1"], ["IS CSTALE", "B1"]]),
   customerBrickByCanonicalKey: new Map(),
   productByCanonicalCode: new Map(),
 };
@@ -60,13 +68,26 @@ export async function runSosNormalizerTests() {
   assert.equal(resolveProduct(["لاكتو 1 لبن"], maps), null); // no distributor → alias does not resolve
   assert.equal(resolveProduct(["ZZ-NOPE"], maps, "IS"), null);
 
-  // resolveBrick — priority customer > direct > territory; territory match across ya/alef variants.
+  // resolveBrick — priority (owner rule, 2026-07-07): direct > territory > area > customer (fallback
+  // only). Territory match across ya/alef variants. Customer-only input still resolves via the
+  // stored crosswalk when the sheet gives no brick/territory signal at all.
   assert.equal(resolveBrick({ customerKey: "IS C123" }, maps)?.source, "customer");
   assert.equal(resolveBrick({ brickIdValues: ["B1"] }, maps)?.source, "direct");
   const terr = resolveBrick({ territoryValues: ["الدقي/بين السريات"] }, maps);
   assert.equal(terr?.brickId, "B1");
   assert.equal(terr?.source, "territory");
   assert.equal(resolveBrick({ territoryValues: ["nowhere"] }, maps), null);
+
+  // The sheet's own brick/territory value ALWAYS wins over a stale stored customer mapping — never
+  // the reverse. "IS CSTALE" is stored as B1, but this row's sheet carries direct evidence for B2.
+  const override = resolveBrick({ customerKey: "IS CSTALE", brickIdValues: ["B2"] }, maps);
+  assert.equal(override?.brickId, "B2");
+  assert.equal(override?.source, "direct");
+  const overrideByTerritory = resolveBrick({ customerKey: "IS CSTALE", territoryValues: ["new brick text"] }, maps);
+  assert.equal(overrideByTerritory?.brickId, "B2");
+  assert.equal(overrideByTerritory?.source, "territory");
+  // With no sheet signal at all, the stored (stale) mapping is still the correct fallback.
+  assert.equal(resolveBrick({ customerKey: "IS CSTALE" }, maps)?.brickId, "B1");
 
   // deriveHierarchy — brick -> area + region (never typed).
   const h = deriveHierarchy(terr, maps);
@@ -95,6 +116,26 @@ export async function runSosNormalizerTests() {
   assert.equal(coded.invoiceDate, "2026-04");
   assert.equal(coded.clientCode, "C999");
   assert.equal(result.exceptions[0]!.reason, "product"); // brick resolved, product did not
+  // C999 has no pre-existing stored mapping, so the engine queues a fresh (previousBrickId: null)
+  // self-heal correction from the territory-resolved brick — never silently skipped.
+  const c999Correction = result.customerBrickCorrections.find((c) => c.customerCode === "C999");
+  assert.equal(c999Correction?.brickId, "B1");
+  assert.equal(c999Correction?.previousBrickId, null);
+  assert.equal(c999Correction?.distributorCode, "IS");
+
+  // ── self-heal: sheet's territory text overrides a STALE stored customer mapping ──
+  // "CSTALE" is stored as B1 (see maps fixture) but this row's sheet carries "new brick text" -> B2.
+  const staleBuffer = await buildRaw([
+    ["LA001", "لاكتو 1 لبن", 2, 0, 20, "2026/04/30", "CSTALE", "Stale Corp", "new brick text", ""],
+  ]);
+  const staleResult = await normalizeRawWorkbook(staleBuffer as unknown as ArrayBuffer, profile, maps);
+  assert.equal(staleResult.coded.length, 1);
+  assert.equal(staleResult.coded[0]!.brickId, "B2"); // sheet wins, not the stale B1 stored mapping
+  assert.equal(staleResult.customerBrickCorrections.length, 1);
+  const staleCorrection = staleResult.customerBrickCorrections[0]!;
+  assert.equal(staleCorrection.customerCode, "CSTALE");
+  assert.equal(staleCorrection.brickId, "B2");
+  assert.equal(staleCorrection.previousBrickId, "B1"); // proves it detected the disagreement
 
   // ── date format: DD-MM-YYYY with day <= 12 must NOT be misread as a month (the Sofico bug). The
   // column carries a value with day > 12 (30-04) so the engine detects day-first and parses ALL as April. ──

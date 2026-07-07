@@ -134,6 +134,18 @@ export type NormalizeException = {
 // alias FK is satisfied and it never appears in reports/dropdowns.
 export const IGNORE_PRODUCT_CODE = "IGNORE";
 
+// A customer whose brick, as resolved directly from THIS sheet (source !== "customer"), differs
+// from — or is missing from — the stored customer->brick crosswalk. The sheet's own brick always
+// wins for the row it came from; this list lets the caller self-heal the stored crosswalk so future
+// rows for this customer (even ones whose territory text is blank or unrecognized) resolve correctly
+// too, instead of the stale/absent stored mapping silently winning again next time.
+export type CustomerBrickCorrection = {
+  distributorCode: string;
+  customerCode: string;
+  brickId: string;
+  previousBrickId: string | null;
+};
+
 export type NormalizeResult = {
   coded: CodedRow[];
   distributorCode: string;
@@ -142,6 +154,8 @@ export type NormalizeResult = {
   // Rows skipped because they had no customer code, territory, or brick ID at all.
   // Non-blocking for most distributors (summary/total rows); hard error for EG-BR.
   blankCustomerRows: NormalizeIgnoredRow[];
+  // Deduped (last-row-wins per customer) sheet-verified brick corrections — see CustomerBrickCorrection.
+  customerBrickCorrections: CustomerBrickCorrection[];
   summary: {
     brickResolved: number;
     blankCustomerSkipped: number;
