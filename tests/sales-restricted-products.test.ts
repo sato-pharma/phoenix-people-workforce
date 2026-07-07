@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   computeSalesAccessScope,
+  isHeadOfficeLine,
   isRestrictedProductCode,
   normalizeProductNameKey,
+  OFFICIAL_LINE_VALUES,
+  resolveOfficialLineValue,
   RESTRICTED_PRODUCT_CODES,
   stripRestrictedMasterProductRows,
   stripRestrictedProductNames,
@@ -11,6 +14,7 @@ import {
   stripRestrictedRowsByName,
 } from "../src/lib/sales/access-scope.ts";
 import { resolveMarketingExcludeCodes } from "../src/lib/sales-marketing-intelligence/service.ts";
+import { MASTER_DEFINITIONS } from "../src/lib/sales/master-data/definitions.ts";
 
 // The confidential products LA003 / LA004 ("Lacto Basic 1 & 2") must be visible only to CEO /
 // Super Admin. The SoS pipeline keys products by CODE; the legacy pipeline keys them by NAME.
@@ -190,5 +194,35 @@ export async function runSalesRestrictedProductsTests() {
     [...(mmNoOverseen.allowedLineNames ?? [])],
     ["Head Office"],
     "without overseen lines the MM falls back to the (product-less) Head Office line — documents the bug",
+  );
+
+  // ── Head Office write-time backstop (Product Master "Line" allow-list) ──
+  // Confidentiality (isHeadOfficeLine) is a hardcoded key set with no DB-driven guarantee that
+  // every "Head Office" product actually carries that exact label. The write-time gate on the
+  // Product Master import is what closes that gap: this locks the canonical set and the wiring.
+  assert.deepEqual(
+    [...OFFICIAL_LINE_VALUES].sort(),
+    ["Anti infective", "CNS", "Head Office", "Pedia"],
+    "the canonical official-line set is exactly the 4 known lines",
+  );
+  for (const line of OFFICIAL_LINE_VALUES) {
+    assert.equal(isHeadOfficeLine(line) || line !== "Head Office", true, "sanity: only Head Office is HO");
+  }
+  assert.equal(resolveOfficialLineValue("head office"), "Head Office", "case-insensitive match resolves to canonical casing");
+  assert.equal(resolveOfficialLineValue("  CNS  "), "CNS", "whitespace-insensitive match");
+  assert.equal(resolveOfficialLineValue("office"), "Head Office", "legacy abbreviation still resolves");
+  assert.equal(resolveOfficialLineValue("H.O."), null, "an unrecognized label is rejected, not silently accepted");
+  assert.equal(resolveOfficialLineValue("Head-Office"), null, "a differently-punctuated label is rejected");
+  assert.equal(resolveOfficialLineValue(""), null, "empty resolves to null");
+
+  // The Product Master's "line" column is wired to this exact allow-list — if a future edit
+  // removes `allowedValues` from that column, this catches the regression (the write-time gate
+  // silently disappearing, re-opening the leak this backstop was added to close).
+  const lineColumn = MASTER_DEFINITIONS.products.columns.find((column) => column.key === "line");
+  assert.ok(lineColumn?.allowedValues, "Product Master 'line' column has an allow-list configured");
+  assert.deepEqual(
+    [...(lineColumn?.allowedValues ?? [])].sort(),
+    [...OFFICIAL_LINE_VALUES].sort(),
+    "Product Master 'line' allow-list matches the canonical official-line set (single source of truth)",
   );
 }

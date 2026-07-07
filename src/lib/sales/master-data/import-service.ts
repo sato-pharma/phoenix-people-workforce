@@ -113,6 +113,16 @@ function typeValue(column: MasterColumn, raw: string): string | number {
   return normalizeDisplay(raw);
 }
 
+/** Resolves a value against `column.allowedValues` (case/whitespace-insensitive), returning the
+ *  allow-listed value's canonical casing on a match or `undefined` if unrecognized. Columns with
+ *  no `allowedValues` are unrestricted (always undefined — caller should only treat that as a
+ *  block when `allowedValues` was actually set). */
+function matchAllowedValue(column: MasterColumn, value: string): string | undefined {
+  if (!column.allowedValues) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return column.allowedValues.find((allowed) => allowed.trim().toLowerCase() === normalized);
+}
+
 async function preloadKeyed(table: string, keyColumn: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from(table).select("*");
@@ -262,6 +272,15 @@ export async function importMasterWorkbook(input: {
           invalid = `${column.label} is required.`;
           break;
         }
+        if (column.allowedValues && typeof value === "string" && value !== "") {
+          const canonical = matchAllowedValue(column, value);
+          if (!canonical) {
+            invalid = `${column.label} "${value}" is not a recognized value. Use one of: ${column.allowedValues.join(", ")}.`;
+            break;
+          }
+          updatePayload[column.key] = canonical;
+          continue;
+        }
         updatePayload[column.key] = value;
       }
       if (invalid) {
@@ -291,6 +310,15 @@ export async function importMasterWorkbook(input: {
           invalid = `${column.label} is required to add a new row.`;
           break;
         }
+      }
+      if (column.allowedValues && typeof value === "string" && value !== "") {
+        const canonical = matchAllowedValue(column, value);
+        if (!canonical) {
+          invalid = `${column.label} "${value}" is not a recognized value. Use one of: ${column.allowedValues.join(", ")}.`;
+          break;
+        }
+        payload[column.key] = canonical;
+        continue;
       }
       // Omit empty optional columns so NOT NULL DEFAULT '' columns use their default.
       if (value !== "") payload[column.key] = value;
@@ -423,6 +451,15 @@ export async function addSingleMasterRow(input: {
         invalid = `${column.label} is required to add a new row.`;
         break;
       }
+    }
+    if (column.allowedValues && typeof value === "string" && value !== "") {
+      const canonical = matchAllowedValue(column, value);
+      if (!canonical) {
+        invalid = `${column.label} "${value}" is not a recognized value. Use one of: ${column.allowedValues.join(", ")}.`;
+        break;
+      }
+      payload[column.key] = canonical;
+      continue;
     }
     if (value !== "") payload[column.key] = value;
   }
