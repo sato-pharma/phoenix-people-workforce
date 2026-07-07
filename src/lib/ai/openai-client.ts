@@ -9,6 +9,18 @@ export const OPENAI_MAX_RETRIES = 1;
 export const OPENAI_ROUTE_BUDGET_MS = 60_000;
 export const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
 
+// Deliberately its OWN tier, not the email nano default: parsing a CEO's free-
+// text payroll instructions (resolving names against a 100+ person roster,
+// splitting compound clauses, inferring intent) is a much harder task than
+// drafting a short email, and this call happens a handful of times per
+// payroll run — not per-email volume — so accuracy is worth far more than
+// speed/cost here.
+export const OPENAI_COPILOT_DEFAULT_MODEL = "gpt-5.4";
+
+export function resolveOpenAiCopilotModel(env: OpenAiEnv = process.env) {
+  return env.OPENAI_COPILOT_MODEL?.trim() || env.OPENAI_MODEL?.trim() || OPENAI_COPILOT_DEFAULT_MODEL;
+}
+
 export type PhoenixOpenAiErrorCode =
   | "auth_failed"
   | "failed"
