@@ -356,12 +356,15 @@ export async function resolveSalesAccessScope(
   let viewerLineName: string | null = null;
   let viewerRegionName: string | null = null;
   if (currentHrId) {
-    const directory = await getEmployeeDirectory();
+    const [directory, regionNameByCode] = await Promise.all([
+      getEmployeeDirectory(),
+      getRegionNameByCode(),
+    ]);
     const viewer = directory.employees.find(
       (employee) => normalizeIdentity(employee.hrId) === normalizeIdentity(currentHrId),
     );
     viewerLineName = viewer?.lineName ?? null;
-    viewerRegionName = viewer?.regionName ?? null;
+    viewerRegionName = resolveViewerRegionName(viewer, regionNameByCode);
   }
 
   return computeSalesAccessScope({
@@ -377,6 +380,33 @@ export async function resolveSalesAccessScope(
 
 function normalizeIdentity(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Region-code -> region-name lookup. employees.region_code (resolved per-line from
+ * line_area_region_map, see the area/region/line unification migration) is now the reliable
+ * source for a viewer's region; this lets it feed the existing name-based scope pipeline
+ * (computeSalesAccessScope / regionCodesForNames) unchanged.
+ */
+async function getRegionNameByCode(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase.from("source_of_sales_regions").select("region_code,region_name");
+  return new Map(
+    ((data ?? []) as Array<{ region_code: string | null; region_name: string | null }>)
+      .filter((row): row is { region_code: string; region_name: string } => Boolean(row.region_code && row.region_name))
+      .map((row) => [row.region_code, row.region_name]),
+  );
+}
+
+/** Prefer the region name derived from the reliable region_code; fall back to the legacy
+ *  free-text region_name for any employee not yet backfilled. */
+function resolveViewerRegionName(
+  employee: { regionCode?: string | null; regionName?: string | null } | undefined,
+  regionNameByCode: Map<string, string>,
+): string | null {
+  if (!employee) return null;
+  const codeName = employee.regionCode ? regionNameByCode.get(employee.regionCode) : undefined;
+  return codeName ?? employee.regionName ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
