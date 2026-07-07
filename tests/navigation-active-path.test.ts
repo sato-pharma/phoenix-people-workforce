@@ -160,32 +160,35 @@ export function runNavigationActivePathTests() {
     "admin mode: excludedRoles also drops the item, emptying section b",
   );
 
+  // System Cleanup (and the other Super-Admin-only tools) moved behind the consolidated
+  // "Admin Tools" sidebar button — /admin/admin-tools is now the entry point that must stay
+  // robust to a stale/wrong permission-cache read, since it's role-gated (not permission-gated).
   const superAdminCleanupNav = getSections(
     adminNavigationSections,
     "admin",
-    { "system_cleanup:read": false },
+    { "admin:read": false },
     "Super Admin",
   );
   assert.equal(
     superAdminCleanupNav.some((navSection) =>
-      navSection.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+      navSection.items.some((navItem) => navItem.href === "/admin/admin-tools"),
     ),
     true,
-    "Super Admin must see the System Cleanup sidebar tab even if the dynamic permission cache is stale",
+    "Super Admin must see the Admin Tools sidebar tab even if the dynamic permission cache is stale",
   );
 
   const ceoCleanupNav = getSections(
     adminNavigationSections,
     "admin",
-    { "system_cleanup:read": true },
+    { "admin:read": true },
     "CEO",
   );
   assert.equal(
     ceoCleanupNav.some((navSection) =>
-      navSection.items.some((navItem) => navItem.href === "/admin/system-cleanup"),
+      navSection.items.some((navItem) => navItem.href === "/admin/admin-tools"),
     ),
     false,
-    "CEO must not see the System Cleanup sidebar tab even if a permission lookup grants system_cleanup",
+    "CEO must not see the Admin Tools sidebar tab even if a permission lookup grants admin",
   );
 
   const sensitiveHrHrefs = [

@@ -39,7 +39,7 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
 
   return (
     <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <Card className="h-fit overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white/95 p-0 shadow-[0_8px_22px_rgba(15,23,42,0.06)]">
+      <Card className="h-fit overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white p-0 shadow-sm">
         <div className="border-b border-[#E2E8F0] p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
@@ -88,7 +88,7 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
         {selected ? (
           children(selected)
         ) : (
-          <Card className="flex items-center gap-3 rounded-2xl border border-[#D8E0EA] bg-white/95 p-6 text-sm text-[#64748B]">
+          <Card className="flex items-center gap-3 rounded-[6px] border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
             <Store className="h-5 w-5 text-[#94A3B8]" />
             No distributors available.
           </Card>

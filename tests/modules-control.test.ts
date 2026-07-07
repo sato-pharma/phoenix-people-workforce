@@ -48,10 +48,14 @@ export function runModulesControlTests() {
     }
   }
 
-  const modulesControl = catalog.find((module) => module.href === "/admin/modules-control");
-  assert.ok(modulesControl, "Modules Control sidebar item must exist");
-  assert.deepEqual(modulesControl?.roles, ["Super Admin"]);
-  assert.deepEqual(modulesControl?.permissions, [{ action: "read", resource: "module_control" }]);
+  // Modules Control itself moved behind the consolidated "Admin Tools" sidebar button
+  // (system-navigation.ts) — it's still individually reachable/curatable via the hub page's
+  // own permission-filtered card list, but the catalog (and this single-module curation test
+  // below) now exercises the "Admin Tools" entry point rather than the individual tool.
+  const adminToolsEntry = catalog.find((module) => module.href === "/admin/admin-tools");
+  assert.ok(adminToolsEntry, "Admin Tools sidebar item must exist");
+  assert.deepEqual(adminToolsEntry?.roles, ["Super Admin"]);
+  assert.deepEqual(adminToolsEntry?.permissions, []);
 
   assert.equal(
     catalog.some((module) => module.href.startsWith("/workspace") && module.navigationMode === "employee-portal"),
@@ -161,14 +165,14 @@ export function runModulesControlTests() {
     "group assignment blocks atomically when one affected user fails validation",
   );
 
-  const modulesControlOnly = getSections(
+  const adminToolsOnly = getSections(
     adminNavigationSections,
     "admin",
     lookupForRole("Super Admin"),
     "Super Admin",
-    [modulesControl!.moduleId],
+    [adminToolsEntry!.moduleId],
   ).flatMap((section) => section.items.map((item) => item.href));
-  assert.deepEqual(modulesControlOnly, ["/admin/modules-control"], "database module IDs change rendered sidebar items after reload");
+  assert.deepEqual(adminToolsOnly, ["/admin/admin-tools"], "database module IDs change rendered sidebar items after reload");
 
   const defaultAdminHrefs = getSections(
     adminNavigationSections,
@@ -177,7 +181,7 @@ export function runModulesControlTests() {
     "Super Admin",
     null,
   ).flatMap((section) => section.items.map((item) => item.href));
-  assert.ok(defaultAdminHrefs.length > modulesControlOnly.length, "reset/no assignment returns to default sidebar behavior");
+  assert.ok(defaultAdminHrefs.length > adminToolsOnly.length, "reset/no assignment returns to default sidebar behavior");
 
   assert.ok(
     accessRegistry.some((entry) => entry.pattern === "/api/admin/modules-control" && entry.methods.includes("PATCH")),

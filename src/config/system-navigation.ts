@@ -47,6 +47,7 @@ import {
   TriangleAlert,
   Trash2,
   UsersRound,
+  Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -193,19 +194,22 @@ const adminNavigationSectionSeeds = [
   },
 
   // ── Tier 1b: Admin Tools ──────────────────────────────────────────────────────
+  // Collapsed to a single sidebar entry that opens the Admin Tools hub
+  // (app/(admin)/admin/admin-tools/page.tsx), which renders the individual tools
+  // below (`adminToolsPageItems`) as cards. The gate here is the least-restrictive
+  // of those tools' own gates so the button shows whenever any tool would be
+  // reachable; the hub page re-filters per-tool with the exact same permission/role
+  // fields, and every destination page still enforces its own access check
+  // server-side (sidebar/hub visibility is UX, never the security boundary).
   {
     id: "admin-tools",
     items: [
-      { href: "/admin/monitoring", icon: Radar, label: "Monitoring", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/logs", icon: ScrollText, label: "Audit Logs", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/error-monitor", icon: Bug, label: "Error Monitor", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/data-health", icon: Database, label: "Data Health", permissions: [{ resource: "admin" }], excludedRoles: ["CEO"] },
-      { href: "/admin/activity-control", icon: Activity, label: "Activity Control", permissions: [{ resource: "user_activity", action: "read" }], roles: ["Super Admin"] },
-      { href: "/admin/synthetic-journeys", icon: HeartPulse, label: "Synthetic Journeys", permissions: [{ resource: "synthetic_journeys" }], roles: ["Super Admin"] },
-      { href: "/admin/data-backup", icon: Download, label: "Data Backup", roles: ["Super Admin"] },
-      { href: "/admin/system-cleanup", icon: Trash2, label: "System Cleanup", roles: ["Super Admin"] },
-      { href: "/admin/modules-control", icon: Settings2, label: "Modules Control", permissions: [{ resource: "module_control", action: "read" }], roles: ["Super Admin"] },
-      { href: "/admin/workflow-control", icon: Settings2, label: "Workflow Control", permissions: [{ resource: "workflow_registry" }], roles: ["Super Admin"] },
+      // Hardcoded role (not permissions:[{resource:"admin"}]) — matches the strictest of the
+      // tools it replaces (System Cleanup/Data Backup/Modules Control/Workflow Control were
+      // always Super-Admin-only, never override-eligible) and keeps the entry point robust to
+      // a stale permission-cache read even without the isSystemAdministratorWorkspace bypass
+      // (see the "navigation active path" test suite).
+      { href: "/admin/admin-tools", icon: Wrench, label: "Admin Tools", roles: ["Super Admin"] },
     ],
     label: "Admin Tools",
   },
@@ -236,7 +240,6 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.marketing_requests.customer_validation.admin_marketing_requests_validation", roles: ["District Manager", "Super Admin"] },
       { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.marketing_requests.marketing_requests.admin_marketing_requests", roles: ["District Manager", "Super Admin"], exact: true },
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.marketing_requests.approval_inbox.admin_marketing_requests_inbox", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests/customer-database", icon: Database, label: "Customer Database", moduleId: "admin.marketing_requests.customer_database.admin_marketing_requests_customer_database", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/bulk-upload", icon: FileUp, label: "Bulk Upload", moduleId: "admin.marketing_requests.bulk_upload.admin_marketing_requests_bulk_upload", roles: ["Super Admin"] },
       { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", moduleId: "admin.marketing_requests.marketing_control.admin_marketing_requests_control", roles: systemAdministratorNavigationRoles },
     ],
@@ -378,8 +381,6 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/import", icon: FileSpreadsheet, label: "Sales Import (Advanced)", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/mapping-database", icon: Database, label: "SoS Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/database-mapping", icon: Database, label: "Master Database", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/customer-directory", icon: UsersRound, label: "Customer Directory", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/customer-mapping", icon: MapPinned, label: "Customer Mapping", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/distributor-profiles", icon: Tags, label: "Distributor Profiles", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/missing-data", icon: TriangleAlert, label: "Missing Data", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/normalizer", icon: Sparkles, label: "SoS Magic", permissions: [{ action: "import", resource: "sales" }] },
@@ -387,16 +388,16 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Source of Sales",
   },
+  // Two visible items: the Dashboard stays a direct link (primary daily-use page),
+  // while Upload/Mapping/Distributor Column Editor/Product Access collapse behind a
+  // second "Weekly Sales" button that opens a hub page (app/(admin)/sales/weekly-tools
+  // /page.tsx, items in `weeklySalesToolsPageItems` below) — same pattern as Admin
+  // Tools / Access & Communication above.
   {
     id: "sales-weekly-module",
     items: [
       { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/sales/weekly", icon: FileUp, label: "Weekly Sales Upload", permissions: [{ action: "import", resource: "weekly_sales" }] },
-      // Branch→Region, Product, Mapping Workbook, Missing Data and Missing Products are now tabs of
-      // the single Weekly Mapping workspace (old routes redirect here).
-      { href: "/sales/weekly/mapping", icon: Tags, label: "Weekly Mapping", permissions: [{ action: "update", resource: "weekly_sales" }] },
-      { href: "/sales/weekly/distributor-editor", icon: Columns3, label: "Weekly Distributor Column Editor", permissions: [{ action: "import", resource: "weekly_sales" }] },
-      { href: "/sales/weekly/assignments", icon: UsersRound, label: "Weekly Product Access", permissions: [{ action: "update", resource: "weekly_sales" }] },
+      { href: "/sales/weekly-tools", icon: Settings2, label: "Weekly Sales", permissions: [{ action: "import", resource: "weekly_sales" }, { action: "update", resource: "weekly_sales" }] },
     ],
     label: "Weekly Sales",
   },
@@ -433,24 +434,27 @@ const adminNavigationSectionSeeds = [
     id: "master-data",
     items: [
       { href: "/admin/customer-pharmacy-mapping", icon: Network, label: "Customer Pharmacy Mapping", roles: ["Super Admin", "CEO"] },
-      // Read-only Phase 1 candidate-review report — detects possible same-pharmacy duplicates
-      // across distributors. Suggestion-only; no merge/create/approve actions yet.
-      { href: "/admin/pharmacy-master", icon: Building2, label: "Pharmacy Master", roles: ["Super Admin", "CEO"] },
+      // Consolidated hub for the four customer/pharmacy reference-data surfaces (Customer
+      // Directory, Customer Mapping, Pharmacy Master, Marketing's Customer Database) — see
+      // customersDatabasePageItems below and app/(admin)/admin/customers-database/page.tsx.
+      // roles is the union of every card's own gate (sales:import → Super Admin + SFE Manager;
+      // Pharmacy Master → +CEO); the hub re-filters per-card with each card's real gate.
+      { href: "/admin/customers-database", icon: Building2, label: "Customers Database", roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Master Data",
   },
 
   // ── Tier 8: System administration ────────────────────────────────────────────
-  // Items ordered: access control → system config → communication tools
+  // Collapsed to a single sidebar entry that opens the Access & Communication hub
+  // (app/(admin)/admin/access-communication/page.tsx), which renders the individual
+  // tools below (`accessCommunicationPageItems`) as cards. Same pattern as Admin
+  // Tools above: the gate here is the least-restrictive of those tools' own gates,
+  // the hub re-filters per-tool with the exact same permission/role fields, and
+  // every destination page still enforces its own access check server-side.
   {
     id: "access-communication",
     items: [
-      { href: "/admin/access", icon: ShieldCheck, label: "Users & Access", permissions: [{ resource: "admin_access" }], excludedRoles: ["CEO"] },
-      { href: "/admin/scope-visibility", icon: ShieldAlert, label: "Scope & Visibility", roles: ["Super Admin"] },
-      { href: "/admin/email-reply-composer", icon: Mail, label: "Email Composer", permissions: [{ resource: "communication" }] },
-      { href: "/admin/email-templates", icon: BellRing, label: "Email Templates", permissions: [{ resource: "communication" }] },
-      { href: "/admin/notifications/telegram", icon: Send, label: "Telegram", permissions: [{ resource: "communication" }] },
-      { href: "/admin/notifications/telegram/templates", icon: MessageSquareText, label: "Telegram Templates", permissions: [{ resource: "communication" }] },
+      { href: "/admin/access-communication", icon: ShieldCheck, label: "Access & Communication", permissions: [{ resource: "admin_access" }, { resource: "communication" }], excludedRoles: ["CEO"] },
     ],
     label: "Access & Communication",
   },
@@ -634,3 +638,221 @@ export const employeePortalNavigationSections = withModuleIds("employee-portal",
 export function getNavigationSections(mode: NavigationMode): readonly NavigationSection[] {
   return mode === "employee-portal" ? employeePortalNavigationSections : adminNavigationSections;
 }
+
+// ── Admin Tools hub (app/(admin)/admin/admin-tools/page.tsx) ────────────────────
+// The tools formerly listed individually under the sidebar's "Admin Tools" section
+// (see adminNavigationSectionSeeds above, now collapsed to one link). The hub page
+// renders these as cards, filtered with the exact same permission/role/excludedRoles
+// fields the sidebar used to apply per item.
+export type AdminToolsPageItem = {
+  description: string;
+  excludedRoles?: readonly PhoenixRole[];
+  href: `/${string}`;
+  icon: LucideIcon;
+  label: string;
+  permissions?: readonly NavigationPermission[];
+  roles?: readonly PhoenixRole[];
+};
+
+export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/monitoring",
+    icon: Radar,
+    label: "Monitoring",
+    description: "Live system health, uptime, and service status monitoring.",
+    permissions: [{ resource: "admin" }],
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/logs",
+    icon: ScrollText,
+    label: "Audit Logs",
+    description: "Full audit trail of administrative actions across the platform.",
+    permissions: [{ resource: "admin" }],
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/error-monitor",
+    icon: Bug,
+    label: "Error Monitor",
+    description: "Runtime error tracking and exception triage, tagged by module.",
+    permissions: [{ resource: "admin" }],
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/data-health",
+    icon: Database,
+    label: "Data Health",
+    description: "Data integrity checks across core tables and pipelines.",
+    permissions: [{ resource: "admin" }],
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/activity-control",
+    icon: Activity,
+    label: "Activity Control",
+    description: "Employee activity monitoring center.",
+    permissions: [{ resource: "user_activity", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/synthetic-journeys",
+    icon: HeartPulse,
+    label: "Synthetic Journeys",
+    description: "Automated synthetic checks across critical user journeys.",
+    permissions: [{ resource: "synthetic_journeys" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/data-backup",
+    icon: Download,
+    label: "Data Backup",
+    description: "Trigger and manage database backups.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/system-cleanup",
+    icon: Trash2,
+    label: "System Cleanup",
+    description: "Bulk cleanup utilities for stale or orphaned data.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/modules-control",
+    icon: Settings2,
+    label: "Modules Control",
+    description: "Curate sidebar modules per user, role, position, or line.",
+    permissions: [{ resource: "module_control", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/workflow-control",
+    icon: Settings2,
+    label: "Workflow Control",
+    description: "Configure approval workflow statuses and transitions.",
+    permissions: [{ resource: "workflow_registry" }],
+    roles: ["Super Admin"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Access & Communication hub (app/(admin)/admin/access-communication/page.tsx) ─
+// The tools formerly listed individually under the sidebar's "Access & Communication"
+// section (see adminNavigationSectionSeeds above, now collapsed to one link). Reuses
+// the same AdminToolsPageItem shape — the hub page renders these as cards, filtered
+// with the exact same permission/role/excludedRoles fields the sidebar used to apply.
+export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/access",
+    icon: ShieldCheck,
+    label: "Users & Access",
+    description: "Manage user accounts, roles, and permission assignments.",
+    permissions: [{ resource: "admin_access" }],
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/scope-visibility",
+    icon: ShieldAlert,
+    label: "Scope & Visibility",
+    description: "Review role-based data scope and visibility rules.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/email-reply-composer",
+    icon: Mail,
+    label: "Email Composer",
+    description: "Compose and send ad-hoc emails to employees or groups.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/email-templates",
+    icon: BellRing,
+    label: "Email Templates",
+    description: "Manage the email templates used across notifications.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/notifications/telegram",
+    icon: Send,
+    label: "Telegram",
+    description: "Telegram bot notification settings and delivery.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/notifications/telegram/templates",
+    icon: MessageSquareText,
+    label: "Telegram Templates",
+    description: "Manage the Telegram message templates used across notifications.",
+    permissions: [{ resource: "communication" }],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Weekly Sales tools hub (app/(admin)/sales/weekly-tools/page.tsx) ────────────
+// The tools formerly listed individually under the sidebar's "Weekly Sales" section
+// (see adminNavigationSectionSeeds above). "Weekly Sales Dashboard" stays a direct
+// sidebar link; these four collapse behind the "Weekly Sales" hub button.
+export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/sales/weekly",
+    icon: FileUp,
+    label: "Weekly Sales Upload",
+    description: "Upload weekly distributor sell-out and stock files.",
+    permissions: [{ action: "import", resource: "weekly_sales" }],
+  },
+  {
+    href: "/sales/weekly/mapping",
+    icon: Tags,
+    label: "Weekly Mapping",
+    description: "Branch/region and product mapping, plus missing-data tools.",
+    permissions: [{ action: "update", resource: "weekly_sales" }],
+  },
+  {
+    href: "/sales/weekly/distributor-editor",
+    icon: Columns3,
+    label: "Weekly Distributor Column Editor",
+    description: "Edit distributor column layouts used during weekly import.",
+    permissions: [{ action: "import", resource: "weekly_sales" }],
+  },
+  {
+    href: "/sales/weekly/assignments",
+    icon: UsersRound,
+    label: "Weekly Product Access",
+    description: "Manage which products each distributor upload can access.",
+    permissions: [{ action: "update", resource: "weekly_sales" }],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Customers Database hub (app/(admin)/admin/customers-database/page.tsx) ──────
+// Four previously-scattered customer/pharmacy reference surfaces (Source of Sales'
+// Customer Directory + Customer Mapping, Master Data's Pharmacy Master, and
+// Marketing & ROI's Customer Database) consolidated behind one sidebar button
+// (see the "master-data" section above). Each card keeps its original gate.
+export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/sales/customer-directory",
+    icon: UsersRound,
+    label: "Customer Directory",
+    description: "Browse and filter every customer across all distributors.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/customer-mapping",
+    icon: MapPinned,
+    label: "Customer Mapping",
+    description: "Map raw distributor customer records to canonical customer/brick codes.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/admin/pharmacy-master",
+    icon: Building2,
+    label: "Pharmacy Master",
+    description: "Review pharmacies possibly duplicated across distributors under different names.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/marketing-requests/customer-database",
+    icon: Database,
+    label: "Customer Database",
+    description: "Validation view of customer, pharmacy, and distributor-code rows for marketing requests.",
+    roles: ["Super Admin"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
