@@ -11,7 +11,6 @@ import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getNsmDsmPerformance, normalizeTeamComparisonPeriods } from "@/lib/employee-portal/service";
 
 import {
-  TeamAchievementChart,
   TeamLeaderboardTable,
   TeamMembersBreakdown,
   TeamSalesVsTargetChart,
@@ -271,25 +270,16 @@ export default async function DsmsPerformancePage({
           </div>
         </Card>
 
-        {/* ── Charts (Achievement Ranking + Sales vs Target) ── */}
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
-            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
-              DSM Achievement Ranking
-            </h3>
-            <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
-              <TeamAchievementChart members={dsms} teamAchievementPercent={lineAchievementPercent} />
-            </WorkspaceErrorBoundary>
-          </Card>
-
-          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
-            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
+        {/* ── Charts (Sales vs Target) ── */}
+        <div className="grid gap-5 lg:grid-cols-1">
+          <div className="min-w-0 overflow-hidden rounded-[20px] border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-6 sm:p-8 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.05),0_8px_10px_-6px_rgba(0,0,0,0.05)]">
+            <h3 className="mb-6 break-words text-xl font-extrabold text-slate-900 tracking-tight border-b border-slate-100 pb-4">
               DSM Sales vs Target
             </h3>
             <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
               <TeamSalesVsTargetChart members={dsms} />
             </WorkspaceErrorBoundary>
-          </Card>
+          </div>
         </div>
 
         {/* ── Leaderboard Table ── */}
