@@ -1140,17 +1140,22 @@ async function notifyRecipients(input: {
   if (recipients.length === 0) return;
   const emailMode = input.emailMode ?? "primary_to_cc";
   const emailRefs = [
-    recipients[0],
-    ...(input.emailCcRecipients ?? recipients.slice(1)),
+    ...recipients,
+    ...(input.emailCcRecipients ?? []),
   ].filter((recipient): recipient is { email?: string | null; hrId: string | null; userId?: string | null } => Boolean(recipient?.hrId || recipient?.userId));
   const emailByHrId = await loadRecipientEmailMap(emailRefs);
   const emailFor = (recipient: { email?: string | null; hrId: string | null }) =>
     pickDeliverableEmail(recipient.email, emailByHrId.get(normalizeHrId(recipient.hrId)));
-  const primaryKey = normalizeHrId(recipients[0].hrId) || recipients[0].userId || "";
-  const primaryEmail = emailMode === "none" ? null : emailFor(recipients[0]);
+  // Prefer the first recipient who actually has a deliverable email as "primary" — a
+  // synthetic account (e.g. PHX-1) with no work_email must not silently swallow the
+  // whole email, including the cc'd real addresses, just by sorting first.
+  const primaryIndex = emailMode === "none" ? 0 : Math.max(0, recipients.findIndex((recipient) => Boolean(emailFor(recipient))));
+  const primaryRecipient = recipients[primaryIndex];
+  const primaryKey = normalizeHrId(primaryRecipient.hrId) || primaryRecipient.userId || "";
+  const primaryEmail = emailMode === "none" ? null : emailFor(primaryRecipient);
+  const ccSource = input.emailCcRecipients ?? recipients.filter((_, index) => index !== primaryIndex);
   const ccEmails = emailMode === "none" ? [] : Array.from(new Set(
-    emailRefs
-      .slice(1)
+    ccSource
       .map((recipient) => emailFor(recipient))
       .filter((email): email is string => Boolean(email)),
   ));

@@ -1743,6 +1743,11 @@ async function notifyRecipients(input: {
   metadata?: Record<string, unknown>;
   recipients: Array<string | null | undefined>;
   requestId: string;
+  // The vacation request's own employee — every vacation email is an "official workflow
+  // email" that requires a subject employee HR ID (see emailSubjectIdentityRequired in
+  // notifications/system.ts); omitting this trips that guard and silently skips the email
+  // for every recipient, not just the employee themselves.
+  subjectHrId?: string | null;
   title: string;
   type: string;
 }) {
@@ -1766,10 +1771,15 @@ async function notifyRecipients(input: {
         category: "vacation_request",
         eventType: input.type,
         message: input.message,
-        metadata: { ...(input.metadata ?? {}), idempotencyKey: `vacation:${input.requestId}:${input.type}:${recipientHrId}` },
+        metadata: {
+          ...(input.metadata ?? {}),
+          ...(input.subjectHrId ? { employeeHrId: input.subjectHrId } : {}),
+          idempotencyKey: `vacation:${input.requestId}:${input.type}:${recipientHrId}`,
+        },
         module: "vacation",
         priority: "high",
         recipientHrId,
+        subjectHrId: input.subjectHrId ?? undefined,
         title: input.title,
       }),
     ),
@@ -1984,6 +1994,7 @@ async function dispatchVacationManagerReview(input: {
       ...hrRecipients.map((recipient) => recipient.hrId),
     ],
     requestId: input.request.id,
+    subjectHrId: input.request.employeeHrId,
     title: sequential
       ? `${input.request.employeeName}'s vacation request needs HR acknowledgement`
       : `${input.request.employeeName}'s vacation request needs HR final decision`,
@@ -2055,6 +2066,7 @@ async function dispatchVacationNextManagerStep(input: {
     module: "vacation",
     priority: "high",
     recipientHrId: input.nextApproverHrId,
+    subjectHrId: input.request.employeeHrId,
     telegram: { buttons: [{ label: "Review Request", url: actionHref }] },
     title: `${input.request.employeeName}'s vacation request needs your approval`,
   });
@@ -2069,6 +2081,7 @@ async function dispatchVacationNextManagerStep(input: {
     },
     recipients: [input.request.employeeHrId],
     requestId: input.request.id,
+    subjectHrId: input.request.employeeHrId,
     title: "Your vacation request is progressing",
     type: "employee_step_approved",
   });
@@ -2123,6 +2136,7 @@ async function dispatchVacationDecision(input: {
       ...approvalRecipientHrIds,
     ],
     requestId: input.request.id,
+    subjectHrId: input.request.employeeHrId,
     title: `${input.request.employeeName}'s vacation request was ${input.decision === "approve" ? "approved" : "rejected"}`,
     type: `decision:${input.decision}`,
   });
@@ -5010,6 +5024,7 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
         },
         recipients,
         requestId: row.id,
+        subjectHrId: row.employeeHrId,
         title: "Vacation SLA overdue",
         type: `sla:${row.slaStatus.stage}`,
       });

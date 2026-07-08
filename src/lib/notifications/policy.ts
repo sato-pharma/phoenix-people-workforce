@@ -90,6 +90,12 @@ const defaultPolicy: NotificationPolicy = {
 };
 
 const policyTable: Record<string, Partial<NotificationPolicy>> = {
+  // Ops health alert, not a per-employee workflow notification — there is no employee
+  // subject to resolve "employee" against (the attendance.* wildcard below), so this
+  // exact-key override targets whichever admins the caller names explicitly via
+  // metadata.moduleOwnerHrIds (see runAttendanceIngestionAlert), bypassing the
+  // subject/org-scope matching permission_based normally requires.
+  "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "email"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
   "attendance.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
   "birthday.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
@@ -467,7 +473,11 @@ async function permissionBasedRecipients(input: ResolveNotificationRecipientsInp
       hasOrgScope(candidate, subject, "line") ||
       hasOrgScope(candidate, subject, "department") ||
       hasOrgScope(candidate, subject, "area") ||
-      hasOrgScope(candidate, subject, "team")
+      hasOrgScope(candidate, subject, "team") ||
+      // Company/system-scope roles (e.g. Super Admin, CEO) already see every
+      // employee — never require them to also match the subject's org chain.
+      context.scope === "company" ||
+      context.scope === "system"
     ) {
       output.push(candidate.recipient);
     }

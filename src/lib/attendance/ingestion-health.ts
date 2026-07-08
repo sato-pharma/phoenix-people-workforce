@@ -51,6 +51,22 @@ function agoLabel(hours: number | null): string {
   return `${Math.round(hours / 24)} d ago`;
 }
 
+// This is a system health alert, not a per-employee workflow notification — there is no
+// employee subject to resolve a recipient against (see the exact-key policy override in
+// notifications/policy.ts), so the active Super Admins are named explicitly here via
+// metadata.moduleOwnerHrIds, which permission_based honours without requiring a subject.
+async function activeSuperAdminHrIds(): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .eq("role", "Super Admin")
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null }>)
+    .map((row) => row.hr_id)
+    .filter((hrId): hrId is string => Boolean(hrId));
+}
+
 /**
  * Ingestion freshness of the fingerprint pipeline, derived from
  * attendance_raw_punches.ingested_at. Weekend/holiday aware: a device that is
@@ -170,6 +186,7 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
     const message =
       `The fingerprint attendance agent appears to be down: ${missedLabel}. ` +
       `Last successful sync: ${health.lastIngestedLabel}. Payroll attendance data is falling behind.`;
+    const superAdminHrIds = await activeSuperAdminHrIds();
 
     const result = await createSystemNotification({
       actionUrl: "/attendance/device-user-mapping",
@@ -195,6 +212,7 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
         idempotencyKey: `attendance-agent-ingestion:${cairoTodayIso()}`,
         lastIngestedAt: health.lastIngestedAt,
         missedWorkingDays: health.missedWorkingDays,
+        moduleOwnerHrIds: superAdminHrIds,
       },
       module: "attendance",
       priority: health.status === "attention" ? "high" : "normal",
