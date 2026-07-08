@@ -8,9 +8,11 @@ Phoenix Workforce uses Sentry on the free Developer plan for production error vi
 - `next.config.ts` wraps the app with `withSentryConfig`, allows Sentry ingest endpoints in CSP, and uploads source maps only when `SENTRY_AUTH_TOKEN` is configured.
 - `src/lib/observability/sentry.ts` centralizes free-tier sampling, release/environment resolution, and sensitive-data scrubbing.
 - `src/lib/admin/audit.ts` sends audit-persistence failures to Sentry.
-- Daily crons are wrapped with `Sentry.withMonitor`:
-  - `birthday-notifications` at `0 4 * * *` UTC.
-  - `contract-renewals` at `15 4 * * *` UTC.
+- All 4 Vercel crons (`vercel.json`) are wrapped with `Sentry.withMonitor` (heartbeat + timeout detection):
+  - `daily-notification-dispatcher` at `30 6 * * *` UTC (`/api/notifications/daily`).
+  - `notification-outbox-drain` at `*/30 * * * *` UTC (`/api/notifications/process`).
+  - `ireports360-visits-sync` at `0 9,12,19 * * *` UTC (`/api/cron/ireports360-visits-sync`).
+  - `ireports360-visits-reconcile` at `0 4 * * 0` UTC (`/api/cron/ireports360-visits-reconcile`).
 
 ## Activation
 

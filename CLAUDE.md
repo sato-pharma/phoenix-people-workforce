@@ -151,15 +151,20 @@ notifications). Transitions validate against the registry and write audit logs.
 ### Notifications & cron
 
 Notifications use an outbox model. The project runs on **Vercel Pro** (confirmed
-2026-07-02). `vercel.json` keeps two crons: `/api/notifications/daily`
+2026-07-02). `vercel.json` keeps four crons: `/api/notifications/daily`
 (`30 6 * * *`), which internally calls `runBirthdayNotifications` /
 `runContractRenewalNotifications` plus the other daily SLA/digest jobs (vacation,
 marketing, outstation, recruitment, resignations, weekly-plan drift, Telegram HR
-digest); and `/api/notifications/process?limit=50` (`*/30 * * * *`), which drains the
-notification outbox faster than once a day via
-`src/lib/notifications/scheduled-processing.ts`. Sub-daily cron schedules hard-fail
-deployment on Vercel Hobby — keep the account on Pro (or fold outbox draining back
-into the daily cron / an external scheduler) before ever downgrading.
+digest); `/api/notifications/process?limit=50` (`*/30 * * * *`), which drains the
+notification outbox, probation reminders, and deferred/Telegram delivery retries
+faster than once a day via `src/lib/notifications/scheduled-processing.ts`; and
+`/api/cron/ireports360-visits-sync` (`0 9,12,19 * * *`) / `/api/cron/ireports360-visits-reconcile`
+(`0 4 * * 0`), which sync and periodically wide-reconcile iReports360 CRM visit
+data. Every cron carries an explicit `maxDuration = 300` and a named
+`Sentry.withMonitor` heartbeat (see `docs/observability.md`). Sub-daily cron
+schedules hard-fail deployment on Vercel Hobby — keep the account on Pro (or fold
+outbox draining back into the daily cron / an external scheduler) before ever
+downgrading.
 
 ## Conventions
 

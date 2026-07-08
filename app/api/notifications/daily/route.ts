@@ -156,7 +156,11 @@ export async function GET(request: Request) {
       {
         schedule: { type: "crontab", value: "30 6 * * *" },
         checkinMargin: 60,
-        maxRuntime: 60,
+        // Minutes, not seconds — maxDuration (300s) + 1min margin, same convention used by the
+        // ireports360 crons and the notification-process cron for the identical 300s Vercel
+        // execution ceiling. Was 60 (12x looser), which meant a hard-killed run could take up to
+        // an hour to be flagged as timed out in Sentry instead of within ~6 minutes.
+        maxRuntime: 6,
         timezone: "Etc/UTC",
       },
     );

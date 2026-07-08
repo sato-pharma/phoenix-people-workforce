@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/nextjs";
+
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
 import { runAttendanceDigestScheduledProcessing } from "@/lib/attendance/digest-scheduler";
 import { getInactiveUsers, purgeOldActivityEvents } from "@/lib/activity/service";
@@ -10,10 +12,19 @@ import {
 import { processDeferredDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
+import { reapStaleIReports360SyncRuns } from "@/lib/visits-report/service";
 
 export async function runScheduledNotificationProcessing(limit = 10) {
+  // Never throws; internally catches and returns 0 on failure (see the function's own try/catch).
   const reaped = await reapStaleProcessingOutboxRows();
-  const probationReminders = await processDueProbationReminderEvents(limit);
+  // Never throws; internally catches and returns 0 on failure (see the function's own try/catch).
+  // Rides this cron because it's the most frequent one (every 30 min) — see the 2026-07-05
+  // ireports360-visits-reconcile incident this reaper exists to catch promptly next time.
+  const reapedVisitsSyncRuns = await reapStaleIReports360SyncRuns();
+  const probationReminders = await processDueProbationReminderEvents(limit).catch((e: unknown) => {
+    Sentry.captureException(e, { tags: { cron: "notification-process-probation-reminders" } });
+    return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, error: String(e) };
+  });
   // Never throws; per-day idempotency key prevents duplicate alerts across runs.
   const attendanceAgent = await runAttendanceIngestionAlert();
   // Never throws; draft/sent status guards + unique constraints make every
@@ -23,16 +34,27 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const exitedDeductions = await supersedeExitedEmployeeDeductionCandidates();
   // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
   const staleSosBatches = await cleanupStalePendingSosBatches();
-  const outbox = await processNotificationOutbox(limit);
-  const deferred = await processDeferredDeliveryRetries(limit);
-  const telegram = await processTelegramDeliveryRetries(limit);
+  const outbox = await processNotificationOutbox(limit).catch((e: unknown) => {
+    Sentry.captureException(e, { tags: { cron: "notification-process-outbox" } });
+    return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, skipped: 0, error: String(e) };
+  });
+  const deferred = await processDeferredDeliveryRetries(limit).catch((e: unknown) => {
+    Sentry.captureException(e, { tags: { cron: "notification-process-deferred" } });
+    return { attempted: 0, deferred: 0, sent: 0, skipped: 0, error: String(e) };
+  });
+  const telegram = await processTelegramDeliveryRetries(limit).catch((e: unknown) => {
+    Sentry.captureException(e, { tags: { cron: "notification-process-telegram" } });
+    return { attempted: 0, failed: 1, sent: 0, error: String(e) };
+  });
+  // Never throws; every step inside has its own internal try/catch (see cleanupOldNotificationData).
   const retention = await cleanupOldNotificationData();
-  // Activity Control Center retention: drop page-view events older than 90 days.
+  // Activity Control Center retention: drop page-view events older than 90 days. Never throws;
+  // has its own internal try/catch (see purgeOldActivityEvents).
   const activityRetention = await purgeOldActivityEvents(90);
   // Compute users inactive for 7+ days — logged for now; full alert notifications are a follow-up.
   const inactiveUsers = await getInactiveUsers(7).catch(() => []);
   if (inactiveUsers.length) {
     console.info(`[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`);
   }
-  return { activityRetention, attendanceAgent, attendanceDigest, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, retention, staleSosBatches, telegram };
+  return { activityRetention, attendanceAgent, attendanceDigest, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, reapedVisitsSyncRuns, retention, staleSosBatches, telegram };
 }

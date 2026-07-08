@@ -43,14 +43,16 @@ Application deploys are not complete until matching database migrations have bee
 
 ## Vercel Cron Jobs
 
-`vercel.json` keeps two crons (confirmed against the live Vercel project 2026-07-02):
+`vercel.json` keeps four crons:
 
 | Endpoint | Schedule | Purpose |
 |---|---|---|
 | /api/notifications/daily | 30 6 * * * (6:30 AM UTC) | Consolidated daily run: birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift check, Telegram HR digest, outstation geocode warm-up + high-risk digest |
-| /api/notifications/process?limit=50 | */30 * * * * (every 30 min) | Drains the notification outbox (`src/lib/notifications/scheduled-processing.ts`) faster than once a day |
+| /api/notifications/process?limit=50 | */30 * * * * (every 30 min) | Drains the notification outbox, probation reminders, and deferred/Telegram delivery retries (`src/lib/notifications/scheduled-processing.ts`) faster than once a day |
+| /api/cron/ireports360-visits-sync | 0 9,12,19 * * * (3x/day UTC) | Syncs iReports360 CRM visits (rolling 21-day lookback) + probation double-visit auto-tick |
+| /api/cron/ireports360-visits-reconcile | 0 4 * * 0 (weekly, Sunday) | Wide reconciliation over a rotating 30-day slice of a 120-day window |
 
-The 30-minute schedule requires Vercel Pro -- Hobby hard-fails deployment for any cron more frequent than daily. Do not add additional cron jobs, and do not downgrade the Vercel plan, without folding outbox draining back into the daily cron or moving it to an external scheduler.
+The 30-minute schedule requires Vercel Pro -- Hobby hard-fails deployment for any cron more frequent than daily. Every cron carries an explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat — see [Observability](observability.md). Do not add additional cron jobs, and do not downgrade the Vercel plan, without folding outbox draining back into the daily cron or moving it to an external scheduler.
 
 ## Environment Variables
 

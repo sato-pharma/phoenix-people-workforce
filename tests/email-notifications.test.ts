@@ -105,4 +105,27 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /pruneExpiredRateLimitBuckets\(\)\.catch\(/, "daily rate limit prune must have catch boundary");
   assert.match(dailyCronRoute, /Sentry\.captureException\(e, \{ tags: \{ cron: "daily-birthday" \} \}\)/, "errors must be captured in Sentry with tags");
   assert.match(dailyCronRoute, /Sentry\.captureException\(e, \{ tags: \{ cron: "daily-vacation-sla" \} \}\)/, "errors must be captured in Sentry with tags");
+  assert.match(
+    dailyCronRoute,
+    /maxRuntime: 6,/,
+    "the daily dispatcher's Sentry monitor maxRuntime must match maxDuration (300s) + 1min margin, not the old 60min value that let a hard-killed run go undetected for up to an hour",
+  );
+  assert.doesNotMatch(dailyCronRoute, /maxRuntime: 60,/, "must not regress back to the 12x-looser maxRuntime");
+
+  // Verify notification-outbox-drain cron hardening (drains every 30 min, so silent failures
+  // here are far more consequential than on the once-daily dispatcher above)
+  const processCronRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
+  assert.match(processCronRoute, /export const maxDuration = 300;/, "process route must declare maxDuration of 300s");
+  assert.match(processCronRoute, /Sentry\.withMonitor\(/, "process route GET must be wrapped in a Sentry cron monitor");
+  assert.match(processCronRoute, /"notification-outbox-drain"/, "process route must register a named Sentry cron monitor");
+  assert.match(processCronRoute, /schedule: \{ type: "crontab", value: "\*\/30 \* \* \* \*" \}/, "process route monitor schedule must match vercel.json's */30 cron");
+  assert.match(processCronRoute, /Sentry\.captureException\(error, \{ tags: \{ cron: "notification-outbox-drain" \} \}\)/, "process route errors must be captured in Sentry");
+
+  const scheduledProcessingSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
+  assert.match(scheduledProcessingSource, /processDueProbationReminderEvents\(limit\)\.catch\(/, "probation reminder processing must have catch boundary");
+  assert.match(scheduledProcessingSource, /processNotificationOutbox\(limit\)\.catch\(/, "outbox processing must have catch boundary");
+  assert.match(scheduledProcessingSource, /processDeferredDeliveryRetries\(limit\)\.catch\(/, "deferred delivery retries must have catch boundary");
+  assert.match(scheduledProcessingSource, /processTelegramDeliveryRetries\(limit\)\.catch\(/, "telegram delivery retries must have catch boundary");
+  assert.match(scheduledProcessingSource, /Sentry\.captureException\(e, \{ tags: \{ cron: "notification-process-outbox" \} \}\)/, "outbox errors must be captured in Sentry with tags");
+  assert.match(scheduledProcessingSource, /Sentry\.captureException\(e, \{ tags: \{ cron: "notification-process-telegram" \} \}\)/, "telegram retry errors must be captured in Sentry with tags");
 }

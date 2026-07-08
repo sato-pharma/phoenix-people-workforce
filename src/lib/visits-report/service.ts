@@ -508,6 +508,43 @@ export async function runWideIReports360Reconciliation(now: Date = new Date()) {
   return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });
 }
 
+// maxDuration is 300s on both the sync and reconcile crons; 15 minutes gives a 3x margin before
+// treating a "running" row as dead rather than merely slow.
+const staleSyncRunThresholdMinutes = 15;
+
+/**
+ * Reaps sync_runs rows the platform killed mid-flight before their own try/catch (in
+ * syncIReports360Visits) could mark them "failed" — see the 2026-07-06 doc comment above on
+ * runWideIReports360Reconciliation: the 2026-07-05 04:00 UTC run was killed by Vercel's
+ * maxDuration and sat at status="running" for ~17h until manually corrected, because nothing
+ * periodically checked for stuck rows. Mirrors reapStaleProcessingOutboxRows in
+ * notifications/email.ts. Never throws — a reaper failure must never break the cron that calls it.
+ */
+export async function reapStaleIReports360SyncRuns(): Promise<number> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const threshold = new Date();
+    threshold.setMinutes(threshold.getMinutes() - staleSyncRunThresholdMinutes);
+
+    const { data, error } = await supabase
+      .from(syncRunsTable)
+      .update({
+        completed_at: new Date().toISOString(),
+        error_message: "Reaped: run exceeded its expected duration, likely killed by the platform's execution timeout before its own catch block could run.",
+        status: "failed",
+      })
+      .eq("status", "running")
+      .lt("started_at", threshold.toISOString())
+      .select("id");
+
+    if (error) throw new Error(error.message);
+    return data?.length ?? 0;
+  } catch (error) {
+    console.error("[visits-report/reap] failed to reap stale sync runs:", error);
+    return 0;
+  }
+}
+
 /**
  * One-time (or periodic) retroactive fix: re-resolves agent_hr_id/double_hr_id for rows that
  * are currently unmapped, using the crm_username fallback against the already-stored
