@@ -1,4 +1,6 @@
-﻿import {
+﻿import * as Sentry from "@sentry/nextjs";
+
+import {
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
@@ -2946,7 +2948,8 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
           },
         });
         processed++;
-      } catch {
+      } catch (error) {
+        Sentry.captureException(error, { tags: { cron: "outstation-sla-reminder", recipientHrId: hrId } });
         errors++;
       }
     }

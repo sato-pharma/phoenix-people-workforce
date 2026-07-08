@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/nextjs";
+
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeLoginId, resolveStoredLoginId } from "@/lib/auth/credentials";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -70,7 +72,9 @@ export async function registerFailedLoginAttempt(input: {
     ip: input.ip,
     loginId,
     success: false,
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    Sentry.captureException(error, { tags: { component: "auth", context: "recordLoginAttempt.failed" } });
+  });
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -119,7 +123,9 @@ export async function clearFailedLoginState(input: {
     ip: input.ip,
     loginId,
     success: true,
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    Sentry.captureException(error, { tags: { component: "auth", context: "recordLoginAttempt.success" } });
+  });
 
   const supabase = getSupabaseAdmin();
   await supabase

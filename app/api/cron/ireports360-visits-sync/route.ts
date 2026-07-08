@@ -37,7 +37,9 @@ async function runSync() {
   // call). Never let a probation-tick failure mask an otherwise-successful visits sync.
   const dateTo = isoDaysAgo(0);
   const dateFrom = isoDaysAgo(DV_TICK_LOOKBACK_DAYS);
-  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch(() => undefined);
+  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
+    Sentry.captureException(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
+  });
   return NextResponse.json({ success: true, ...mirrorSync });
 }
 

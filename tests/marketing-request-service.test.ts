@@ -828,4 +828,24 @@ export async function runMarketingRequestServiceTests() {
     allowedProductCodes: b155AllowedCodes,
   });
   assert.equal(b155Submit.requestRow.line_id, 1, "B-155's Osteosat request is tagged with the product's line (Anti infective), not his own Pedia line");
+
+  // Deeper audit finding E: the "marketing request submitted" approver notification failure
+  // was swallowed with no logging — the approver could silently never learn a request needs
+  // their action. Now uses the shared logNotificationSendFailure helper (the same one PR #684
+  // used to fix 6 sibling instances of this exact defect class elsewhere in the codebase).
+  assert.match(
+    serviceSource,
+    /import \{ createSystemNotification, logNotificationSendFailure \} from "@\/lib\/notifications\/system";/,
+    "marketing-requests service must import the shared notification-failure logger",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /title:\s*"Marketing request submitted",\s*\}\)\.catch\(\(\) => undefined\);/,
+    "the request-submitted notification failure must not be swallowed without logging",
+  );
+  assert.match(
+    serviceSource,
+    /title:\s*"Marketing request submitted",\s*\}\)\.catch\(\(error: unknown\) => logNotificationSendFailure\("marketingRequests\.createMarketingRequestDraft\.submitted", error\)\);/,
+    "the request-submitted notification failure must be logged via the shared helper",
+  );
 }
