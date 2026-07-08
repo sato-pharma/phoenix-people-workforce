@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -416,7 +416,7 @@ export function PayrollCopilotWorkbench() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="w-full space-y-6">
         <PremiumHero
           kicker="AI-Assisted Payroll"
           title="Payroll Copilot"
@@ -875,13 +875,78 @@ export function formatShortDate(value: string | null): string {
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+type SheetColumn = {
+  key: string;
+  label: string;
+  width: number;
+  frozen?: boolean;
+  numeric?: boolean;
+  render: (employee: EmployeeRow) => React.ReactNode;
+};
+
 /**
- * One page-wide table, adapted from the same column set the post-upload
- * payroll dashboard uses (SalaryReportTable) — so this reads like the sheet
- * HR already knows, instead of the old three-way split of separate boxes.
- * A flagged employee renders as TWO rows: identity + status + actions, then
- * a second row spanning the full width with their open question(s). Clean
- * employees render as a single row.
+ * The full canonical payroll-sheet column set — every column the owner's
+ * real manual sheet has (Base Salary through Payment Group), not a
+ * lumped-sum summary. HR ID / Full Name / Hire Date are frozen (sticky-left)
+ * so identity stays visible while scrolling through the money columns.
+ */
+const SHEET_COLUMNS: SheetColumn[] = [
+  { key: "hrId", label: "HR ID", width: 100, frozen: true, render: (e) => (
+    <span className="font-mono text-xs text-slate-500">{e.hrId}</span>
+  ) },
+  { key: "fullName", label: "Full Name", width: 300, frozen: true, render: (e) => (
+    <span className="font-medium text-slate-900">{e.fullName}</span>
+  ) },
+  { key: "hireDate", label: "Hire Date", width: 115, frozen: true, render: (e) => formatShortDate(e.hireDate) },
+  { key: "jobTitle", label: "Job Title", width: 190, render: (e) => e.jobTitle || "—" },
+  { key: "line", label: "Line", width: 110, render: (e) => e.line || "—" },
+  { key: "area", label: "Area", width: 160, render: (e) => e.area || "—" },
+  { key: "baseSalary", label: "Base Salary", width: 120, numeric: true, render: (e) => egp(e.baseSalary) },
+  { key: "netSalary", label: "Net Salary", width: 120, numeric: true, render: (e) => egp(e.netSalary) },
+  { key: "expenses", label: "Expenses", width: 110, numeric: true, render: (e) => egp(e.expenses) },
+  { key: "incentive", label: "Incentive", width: 110, numeric: true, render: (e) => egp(e.incentive) },
+  { key: "extraCostOfLiving", label: "Extra COL", width: 110, numeric: true, render: (e) => egp(e.extraCostOfLiving) },
+  { key: "fuelAllowance", label: "Fuel Allowance", width: 120, numeric: true, render: (e) => egp(e.fuelAllowance) },
+  { key: "otherAdditions", label: "Other Additions", width: 130, numeric: true, render: (e) => egp(e.otherAdditions) },
+  { key: "totalAdditions", label: "Total Additions", width: 130, numeric: true, render: (e) => (
+    <span className="font-semibold text-emerald-700">{egp(e.totalAdditions)}</span>
+  ) },
+  { key: "crm", label: "CRM", width: 100, numeric: true, render: (e) => egp(e.crm) },
+  { key: "fingerPrint", label: "Finger Print", width: 110, numeric: true, render: (e) => egp(e.fingerPrint) },
+  { key: "unpaidVacations", label: "Unpaid Vacations", width: 130, numeric: true, render: (e) => egp(e.unpaidVacations) },
+  { key: "medicalInsurance", label: "Medical Insurance", width: 130, numeric: true, render: (e) => egp(e.medicalInsurance) },
+  { key: "loans", label: "Loans", width: 100, numeric: true, render: (e) => egp(e.loans) },
+  { key: "otherDeductions", label: "Other Deductions", width: 130, numeric: true, render: (e) => egp(e.otherDeductions) },
+  { key: "totalDeductions", label: "Total Deductions", width: 130, numeric: true, render: (e) => (
+    <span className="font-semibold text-rose-700">{egp(e.totalDeductions)}</span>
+  ) },
+  { key: "monthSalary", label: "Month Salary", width: 120, numeric: true, render: (e) => egp(e.monthSalary) },
+  { key: "firstPart", label: "First Part", width: 110, numeric: true, render: (e) => egp(e.firstPart) },
+  { key: "secondPart", label: "Second Part", width: 110, numeric: true, render: (e) => egp(e.secondPart) },
+  { key: "paymentGroup", label: "Payment Group", width: 130, render: (e) => e.paymentGroup },
+];
+
+/** Left offset (px) for each frozen column, computed from the running width of frozen columns before it. */
+function frozenOffset(columnKey: string): number {
+  let offset = 0;
+  for (const column of SHEET_COLUMNS) {
+    if (!column.frozen) break;
+    if (column.key === columnKey) return offset;
+    offset += column.width;
+  }
+  return offset;
+}
+
+const SHEET_TABLE_WIDTH =
+  SHEET_COLUMNS.reduce((sum, column) => sum + column.width, 0) + 100 /* Status */ + 240; /* Actions */
+
+/**
+ * One page-wide table showing the FULL canonical payroll-sheet columns (same
+ * set the owner's real manual sheet has) — not a lumped Additions/Deductions
+ * summary. HR ID/Full Name/Hire Date are frozen so identity stays visible
+ * while scrolling through the money columns. A flagged employee renders as
+ * TWO rows: identity + all columns + actions, then a second row spanning the
+ * full width with their open question(s). Clean employees render as a single row.
  */
 function PayrollSheetTable({
   employees,
@@ -903,6 +968,33 @@ function PayrollSheetTable({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | EmployeeStatus>("all");
 
+  // A second, thin horizontal scrollbar just under the header bar — the table
+  // can run 100+ rows deep, so the browser's native scrollbar (at the very
+  // bottom of the table) is unreachable without scrolling all the way down
+  // first. The two scroll positions are kept in sync in both directions; the
+  // syncing ref guards against the two onScroll handlers re-triggering each other.
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const syncingRef = useRef<"top" | "body" | null>(null);
+
+  function syncFromTop() {
+    if (syncingRef.current === "body") return;
+    syncingRef.current = "top";
+    if (bodyScrollRef.current && topScrollRef.current) {
+      bodyScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    syncingRef.current = null;
+  }
+
+  function syncFromBody() {
+    if (syncingRef.current === "top") return;
+    syncingRef.current = "body";
+    if (bodyScrollRef.current && topScrollRef.current) {
+      topScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+    }
+    syncingRef.current = null;
+  }
+
   const normalizedQuery = query.trim().toLowerCase();
   const rows = employees.filter((employee) => {
     if (statusFilter !== "all" && employee.status !== statusFilter) return false;
@@ -913,7 +1005,7 @@ function PayrollSheetTable({
     );
   });
 
-  const COLUMN_COUNT = 11;
+  const COLUMN_COUNT = SHEET_COLUMNS.length + 2; // + Status + Actions
 
   return (
     <div className="border border-slate-200 bg-white">
@@ -953,21 +1045,30 @@ function PayrollSheetTable({
           {employees.length === 0 ? "No employees in this draft." : "No employees match this search/filter."}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left text-sm">
+        <>
+          <div
+            ref={topScrollRef}
+            onScroll={syncFromTop}
+            className="overflow-x-auto overflow-y-hidden border-b border-slate-200"
+            style={{ height: 14 }}
+          >
+            <div style={{ width: SHEET_TABLE_WIDTH, height: 1 }} />
+          </div>
+          <div ref={bodyScrollRef} onScroll={syncFromBody} className="overflow-x-auto">
+          <table className="table-fixed text-left text-sm" style={{ width: SHEET_TABLE_WIDTH, minWidth: "100%" }}>
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="w-[6%] px-2 py-2">HR ID</th>
-                <th className="w-[12%] px-2 py-2">Full Name</th>
-                <th className="w-[8%] px-2 py-2">Hire Date</th>
-                <th className="w-[8%] px-2 py-2">Line</th>
-                <th className="w-[8%] px-2 py-2">Area</th>
-                <th className="w-[9%] px-2 py-2">Job Title</th>
-                <th className="w-[8%] px-2 py-2">Additions</th>
-                <th className="w-[8%] px-2 py-2">Deductions</th>
-                <th className="w-[8%] px-2 py-2">Net Salary</th>
-                <th className="w-[5%] px-2 py-2">Status</th>
-                <th className="w-[20%] px-2 py-2">Actions</th>
+                {SHEET_COLUMNS.map((column) => (
+                  <th
+                    key={column.key}
+                    className={`px-2 py-2 ${column.frozen ? "sticky z-20 bg-white" : ""} ${column.numeric ? "text-right" : ""}`}
+                    style={{ width: column.width, ...(column.frozen ? { left: frozenOffset(column.key) } : {}) }}
+                  >
+                    {column.label}
+                  </th>
+                ))}
+                <th className="px-2 py-2" style={{ width: 100 }}>Status</th>
+                <th className="px-2 py-2" style={{ width: 240 }}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -976,39 +1077,23 @@ function PayrollSheetTable({
                 const rec = employee.recommendation;
                 return (
                   <Fragment key={employee.hrId}>
-                    <tr className="hover:bg-slate-50">
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-xs text-slate-500">
-                        {employee.hrId}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-medium text-slate-900">
-                        {employee.fullName}
-                        {groupedHrIds.has(employee.hrId) ? (
-                          <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Grouped
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
-                        {formatShortDate(employee.hireDate)}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
-                        {employee.line || "—"}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
-                        {employee.area || "—"}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600">
-                        {employee.jobTitle || "—"}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-emerald-700">
-                        {egp(employee.totalAdditions)}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono text-rose-700">
-                        {egp(employee.totalDeductions)}
-                      </td>
-                      <td className="overflow-hidden whitespace-nowrap px-2 py-2 font-mono font-semibold text-slate-900">
-                        {egp(employee.netSalary)}
-                      </td>
+                    <tr className="group hover:bg-slate-50">
+                      {SHEET_COLUMNS.map((column) => (
+                        <td
+                          key={column.key}
+                          className={`overflow-hidden whitespace-nowrap px-2 py-2 text-slate-600 ${
+                            column.frozen ? "sticky z-10 bg-white group-hover:bg-slate-50" : ""
+                          } ${column.numeric ? "text-right font-mono" : ""}`}
+                          style={column.frozen ? { left: frozenOffset(column.key) } : undefined}
+                        >
+                          {column.render(employee)}
+                          {column.key === "fullName" && groupedHrIds.has(employee.hrId) ? (
+                            <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Grouped
+                            </span>
+                          ) : null}
+                        </td>
+                      ))}
                       <td className="px-2 py-2">
                         <span className={`px-1.5 py-0.5 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
                       </td>
@@ -1064,7 +1149,8 @@ function PayrollSheetTable({
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
