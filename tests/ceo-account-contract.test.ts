@@ -17,6 +17,7 @@ import { getSections, type PermissionLookup } from "../src/lib/navigation/active
 
 const ceoAllowedReadOnlyRoutes = [
   "/admin/ceo-command-center",
+  "/sales",
   "/attendance",
   "/admin/people-management",
   "/admin/payroll-management",
@@ -28,7 +29,6 @@ const ceoAllowedReadOnlyRoutes = [
 ] as const;
 
 const ceoBlockedRedirectRoutes = [
-  "/sales",
   "/sales/monthly-dashboard",
 ] as const;
 
