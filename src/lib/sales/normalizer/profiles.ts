@@ -235,6 +235,9 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
   {
     // EGD Branch (hospital/transfer export). Product identity is the English NAME; code kept as fallback.
     // Every row MUST have TO_COMPANY_ENTITY_CODE — a blank is a hard data error, not a summary row.
+    // Date is NOT required: some months' export carries a "CARD_DATE" column, others (from 2026-06)
+    // carry none at all — like CP, EG-BR's period comes from the upload picker either way, so a sheet
+    // with or without CARD_DATE is recognized the same (an extra CARD_DATE column is simply ignored).
     distributorCode: "EG-BR",
     distributorName: "EGD Branch",
     productCodeColumns: ["ITEM_CODE"],
@@ -243,8 +246,7 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     qtyColumns: ["QTY"],
     valueColumns: ["VALUE"],
     valueSource: "recompute",
-    dateColumns: ["CARD_DATE"],
-    dateFormat: "day-first",
+    dateColumns: [],
     customerCodeColumns: ["TO_COMPANY_ENTITY_CODE"],
     customerNameColumns: ["TO_COMPANY_ENTITY_NAME"],
     customerAddressColumns: ["TO_COMPANY_ENTITY_NAME3"],
