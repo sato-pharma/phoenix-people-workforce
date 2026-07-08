@@ -205,6 +205,60 @@ export function runNotificationGovernanceHardeningTests() {
     /subjectHrId:\s*input\.request\.employeeHrId/,
     "vacation approval fan-out must explicitly carry the requesting employee as subject",
   );
+
+  // Deeper audit finding B: 9 previously-silent vacation notification-send failures now log an
+  // auditable notification_failed vacation_event, matching the pattern already used by sibling
+  // call sites (e.g. dispatchVacationNextManagerStep) instead of a bare .catch(() => undefined).
+  assertNotContains(
+    vacationSource,
+    /reviewUrl:\s*absoluteReviewUrl,\s*\}\)\.catch\(\(\) => undefined\)/,
+    "the submit-time manager decision email must not swallow its failure silently",
+  );
+  assertContains(
+    vacationSource,
+    /reviewUrl:\s*absoluteReviewUrl,\s*\}\)\.catch\(async \(error\) => \{\s*await insertVacationEvent\(\{\s*actorHrId:\s*input\.request\.employeeHrId,/,
+    "the submit-time manager decision email failure must be logged via insertVacationEvent",
+  );
+  assertContains(
+    vacationSource,
+    /sendVacationSubmissionConfirmationEmail\(\{[\s\S]*?\}\)\.catch\(async \(error\) => \{/,
+    "the submission-confirmation email failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /sendVacationManagerStepResultEmail\(\{[\s\S]*?\}\)\.catch\(async \(error\) => \{/,
+    "the manager step-result email failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /title:\s*"Vacation request returned for revision",\s*type:\s*"return",\s*\}\)\.catch\(async \(error\) => \{/,
+    "the employee return notification failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /title:\s*`\$\{returned\.employeeName\}'s vacation request was returned for revision`,\s*type:\s*"return_hr_notice",\s*\}\)\.catch\(async \(error\) => \{/,
+    "the HR return notification failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /sendVacationReturnedEmail\(\{[\s\S]*?\}\)\.catch\(async \(error\) => \{/,
+    "the return email failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /title:\s*"Vacation request resubmitted",\s*type:\s*"resubmit",\s*\}\)\.catch\(async \(error\) => \{/,
+    "the manager resubmit notification failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /title:\s*"Your vacation request has been resubmitted",\s*type:\s*"employee_resubmit_confirm",\s*\}\)\.catch\(async \(error\) => \{/,
+    "the employee resubmit-confirmation notification failure must be logged, not silently swallowed",
+  );
+  assertContains(
+    vacationSource,
+    /sendVacationResubmitConfirmationEmail\(\{[\s\S]*?\}\)\.catch\(async \(error\) => \{/,
+    "the resubmit-confirmation email failure must be logged, not silently swallowed",
+  );
   assertNotContains(
     systemSource,
     /employeeHrId:\s*recipient\.hrId\s*\?\?\s*input\.email\?\.employeeHrId/,

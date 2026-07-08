@@ -88,4 +88,28 @@ export function runContractRenewalHardeningTests() {
   ]);
   const dailyCron = crons.find((cron) => cron.path === "/api/notifications/daily");
   assert.ok(dailyCron && !dailyCron.schedule.startsWith("*/"), "the daily dispatcher must stay daily");
+
+  // Deeper audit finding C: birthday and contract-renewal notification loops previously had no
+  // per-item isolation, unlike the sibling holiday-confirmation cron — one bad send would abort
+  // every remaining employee's notification for that day's run instead of just that one employee.
+  assert.match(
+    birthdaysRoute,
+    /for \(const event of birthdayEvents\) \{[\s\S]*?try \{[\s\S]*?const result = await createSystemNotification/,
+    "birthday notification loop must isolate each employee's send in its own try/catch",
+  );
+  assert.match(
+    birthdaysRoute,
+    /catch \(error\) \{\s*Sentry\.captureException\(error, \{ tags: \{ cron: "birthday-notifications", employeeHrId: employee\.hrId \} \}\);/,
+    "a failed birthday send must be captured in Sentry, tagged with the affected employee",
+  );
+  assert.match(
+    reminderRoute,
+    /for \(const row of candidates\) \{[\s\S]*?try \{[\s\S]*?const result = await createSystemNotification/,
+    "contract renewal notification loop must isolate each employee's send in its own try/catch",
+  );
+  assert.match(
+    reminderRoute,
+    /catch \(error\) \{\s*Sentry\.captureException\(error, \{ tags: \{ cron: "contract-renewals", employeeHrId: row\.hr_id \} \}\);/,
+    "a failed contract-renewal send must be captured in Sentry, tagged with the affected employee",
+  );
 }

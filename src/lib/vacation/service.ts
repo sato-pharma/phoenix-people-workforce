@@ -1838,7 +1838,14 @@ async function notifyVacationSubmittedByGovernance(input: {
         policyWarnings: input.policyWarnings,
         request: input.request,
         reviewUrl: absoluteReviewUrl,
-      }).catch(() => undefined)
+      }).catch(async (error) => {
+        await insertVacationEvent({
+          actorHrId: input.request.employeeHrId,
+          eventType: "notification_failed",
+          message: vacationErrorMessage(error),
+          requestId: input.request.id,
+        }).catch(() => undefined);
+      })
     : Promise.resolve(undefined);
 
   await Promise.allSettled([
@@ -1933,7 +1940,14 @@ async function dispatchVacationSubmitted(input: {
     void sendVacationSubmissionConfirmationEmail({
       employeeEmail: input.request.employeeWorkEmail,
       request: input.request,
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.request.employeeHrId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: input.request.id,
+      }).catch(() => undefined);
+    });
   }
 }
 
@@ -1995,7 +2009,14 @@ async function dispatchVacationManagerReview(input: {
       managerName: input.request.managerName ?? "Your manager",
       nextStep,
       request: input.request,
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.request.managerHrId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: input.request.id,
+      }).catch(() => undefined);
+    });
   }
 }
 
@@ -3081,7 +3102,15 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       requestId: returned.id,
       title: "Vacation request returned for revision",
       type: "return",
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: returned.id,
+      }).catch(() => undefined);
+    });
     // HR: in-app + Telegram so they know the request was sent back
     const hrRecipientsForReturn = await getHrRecipients(directory);
     void notifyRecipients({
@@ -3093,7 +3122,15 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       requestId: returned.id,
       title: `${returned.employeeName}'s vacation request was returned for revision`,
       type: "return_hr_notice",
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId: input.actorHrId,
+        actorLoginId: input.actorLoginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: returned.id,
+      }).catch(() => undefined);
+    });
     // Email the employee (CC: HR) — completes the 3-channel requirement
     if (returned.employeeWorkEmail) {
       const hrEmailsForReturn = hrRecipientsForReturn
@@ -3105,7 +3142,15 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
         employeeEmail: returned.employeeWorkEmail,
         managerName: actorName,
         request: returned,
-      }).catch(() => undefined);
+      }).catch(async (error) => {
+        await insertVacationEvent({
+          actorHrId: input.actorHrId,
+          actorLoginId: input.actorLoginId,
+          eventType: "notification_failed",
+          message: vacationErrorMessage(error),
+          requestId: returned.id,
+        }).catch(() => undefined);
+      });
     }
     invalidateExecutiveDashboardCache("leave request returned", ["leave"]);
     return returned;
@@ -3631,7 +3676,15 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
     requestId: resubmitted.id,
     title: "Vacation request resubmitted",
     type: "resubmit",
-  }).catch(() => undefined);
+  }).catch(async (error) => {
+    await insertVacationEvent({
+      actorHrId,
+      actorLoginId: access.loginId,
+      eventType: "notification_failed",
+      message: vacationErrorMessage(error),
+      requestId: resubmitted.id,
+    }).catch(() => undefined);
+  });
   // Employee resubmit confirmation — 3-channel requirement (previously zero channels for the employee).
   void notifyRecipients({
     channels: ["in_app", "telegram"],
@@ -3642,12 +3695,28 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
     requestId: resubmitted.id,
     title: "Your vacation request has been resubmitted",
     type: "employee_resubmit_confirm",
-  }).catch(() => undefined);
+  }).catch(async (error) => {
+    await insertVacationEvent({
+      actorHrId,
+      actorLoginId: access.loginId,
+      eventType: "notification_failed",
+      message: vacationErrorMessage(error),
+      requestId: resubmitted.id,
+    }).catch(() => undefined);
+  });
   if (resubmitted.employeeWorkEmail) {
     void sendVacationResubmitConfirmationEmail({
       employeeEmail: resubmitted.employeeWorkEmail,
       request: resubmitted,
-    }).catch(() => undefined);
+    }).catch(async (error) => {
+      await insertVacationEvent({
+        actorHrId,
+        actorLoginId: access.loginId,
+        eventType: "notification_failed",
+        message: vacationErrorMessage(error),
+        requestId: resubmitted.id,
+      }).catch(() => undefined);
+    });
   }
 
   invalidateExecutiveDashboardCache("leave request resubmitted", ["leave"]);

@@ -107,57 +107,68 @@ export async function runContractRenewalNotifications(request: Request) {
     const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId, hrApproverHrIds);
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
     const actionUrl = "/contracts/renewals";
-    const result = await createSystemNotification({
-      actionUrl,
-      actorId: "system",
-      email: {
-        employeeHrId: row.hr_id,
-        metrics: [
-          { label: "Employee", value: `${row.full_name} (${row.hr_id})` },
-          { label: "Renewal date", value: row.contract_renewal_date },
-          { label: "Reminder", value: dueText },
-          { label: "Run date", value: runDate },
-        ],
-        notificationType: "contract_renewal",
-        subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
-        summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
-        // The admin-edited contract_renewal template shows Area/Line/Position; this reminder
-        // only sent those values in `metadata`, so the cells rendered blank. Supply them.
-        templateContext: {
-          area: employee.areaName ?? "—",
-          jobTitle: employee.jobTitle ?? "—",
-          line: employee.lineName ?? row.line ?? "—",
-        },
-        title: "Contract Renewal Reminder - Pending Manager Recommendation",
-        tone: row.daysUntil <= 7 ? "danger" : "warning",
-      },
-      eventType: "renewal_reminder",
-      message: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
-      metadata: {
+    // Isolated per employee: one bad send (e.g. a transient email/network error) must not abort
+    // the loop and skip every remaining employee's contract-renewal reminder for today.
+    try {
+      const result = await createSystemNotification({
         actionUrl,
-        area: employee.areaName ?? null,
-        department: employee.departmentName ?? null,
-        directManagerHrId: cleanHrId(directManager?.hrId) || null,
-        employeeName: row.full_name,
-        employeeHrId: row.hr_id,
-        eventDate: runDate,
-        idempotencyKey: `contract-renewal-reminder:${row.hr_id}:${row.contract_renewal_date}:${runDate}`,
-        line: employee.lineName ?? row.line ?? null,
-        managerName: employee.managerName ?? directManager?.fullName ?? null,
-        managerOfManagerHrId: cleanHrId(managerOfManager?.hrId) || null,
-        renewalDate: row.contract_renewal_date,
-        requestUrl: actionUrl,
-        status: "Pending manager recommendation",
-        team: employee.teamName ?? null,
-        workflowApproverHrIds,
-      },
-      module: "contract_renewal",
-      priority: row.daysUntil <= 7 ? "critical" : "high",
-      subjectHrId: row.hr_id,
-      title: "Contract Renewal Reminder - Pending Manager Recommendation",
-    });
+        actorId: "system",
+        email: {
+          employeeHrId: row.hr_id,
+          metrics: [
+            { label: "Employee", value: `${row.full_name} (${row.hr_id})` },
+            { label: "Renewal date", value: row.contract_renewal_date },
+            { label: "Reminder", value: dueText },
+            { label: "Run date", value: runDate },
+          ],
+          notificationType: "contract_renewal",
+          subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
+          summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+          // The admin-edited contract_renewal template shows Area/Line/Position; this reminder
+          // only sent those values in `metadata`, so the cells rendered blank. Supply them.
+          templateContext: {
+            area: employee.areaName ?? "—",
+            jobTitle: employee.jobTitle ?? "—",
+            line: employee.lineName ?? row.line ?? "—",
+          },
+          title: "Contract Renewal Reminder - Pending Manager Recommendation",
+          tone: row.daysUntil <= 7 ? "danger" : "warning",
+        },
+        eventType: "renewal_reminder",
+        message: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+        metadata: {
+          actionUrl,
+          area: employee.areaName ?? null,
+          department: employee.departmentName ?? null,
+          directManagerHrId: cleanHrId(directManager?.hrId) || null,
+          employeeName: row.full_name,
+          employeeHrId: row.hr_id,
+          eventDate: runDate,
+          idempotencyKey: `contract-renewal-reminder:${row.hr_id}:${row.contract_renewal_date}:${runDate}`,
+          line: employee.lineName ?? row.line ?? null,
+          managerName: employee.managerName ?? directManager?.fullName ?? null,
+          managerOfManagerHrId: cleanHrId(managerOfManager?.hrId) || null,
+          renewalDate: row.contract_renewal_date,
+          requestUrl: actionUrl,
+          status: "Pending manager recommendation",
+          team: employee.teamName ?? null,
+          workflowApproverHrIds,
+        },
+        module: "contract_renewal",
+        priority: row.daysUntil <= 7 ? "critical" : "high",
+        subjectHrId: row.hr_id,
+        title: "Contract Renewal Reminder - Pending Manager Recommendation",
+      });
 
-    results.push({ daysUntil: row.daysUntil, employeeHrId: row.hr_id, result });
+      results.push({ daysUntil: row.daysUntil, employeeHrId: row.hr_id, result });
+    } catch (error) {
+      Sentry.captureException(error, { tags: { cron: "contract-renewals", employeeHrId: row.hr_id } });
+      results.push({
+        daysUntil: row.daysUntil,
+        employeeHrId: row.hr_id,
+        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+      });
+    }
   }
 
   const processing = await runScheduledNotificationProcessing(10);
