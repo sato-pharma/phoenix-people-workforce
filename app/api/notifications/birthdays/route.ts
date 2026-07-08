@@ -80,35 +80,45 @@ export async function runBirthdayNotifications(request: Request) {
 
   for (const event of birthdayEvents) {
     const employee = event.employee;
-    const result = await createSystemNotification({
-      actorId: "system",
-      email: {
-        employeeHrId: employee.hrId,
-        metrics: [
-          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
-          { label: "Birthday", value: today },
-          { label: "Year", value: year },
-        ],
-        notificationType: "birthday",
-        recipientMode: "employee",
-        subject: `Happy Birthday, ${employee.fullName}`,
-        summary: `Happy birthday wishes for ${employee.fullName}.`,
+    // Isolated per employee: one bad send (e.g. a transient email/network error) must not abort
+    // the loop and skip every remaining employee's birthday notification for today.
+    try {
+      const result = await createSystemNotification({
+        actorId: "system",
+        email: {
+          employeeHrId: employee.hrId,
+          metrics: [
+            { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+            { label: "Birthday", value: today },
+            { label: "Year", value: year },
+          ],
+          notificationType: "birthday",
+          recipientMode: "employee",
+          subject: `Happy Birthday, ${employee.fullName}`,
+          summary: `Happy birthday wishes for ${employee.fullName}.`,
+          title: "Happy Birthday",
+          tone: "neutral",
+        },
+        eventType: "birthday_today",
+        message: `Happy birthday wishes for ${employee.fullName}.`,
+        metadata: {
+          employeeHrId: employee.hrId,
+          idempotencyKey: `birthday:${employee.hrId}:${year}`,
+        },
+        module: "birthday",
+        priority: "normal",
+        recipientHrId: employee.hrId,
+        subjectHrId: employee.hrId,
         title: "Happy Birthday",
-        tone: "neutral",
-      },
-      eventType: "birthday_today",
-      message: `Happy birthday wishes for ${employee.fullName}.`,
-      metadata: {
+      });
+      results.push({ employeeHrId: employee.hrId, result });
+    } catch (error) {
+      Sentry.captureException(error, { tags: { cron: "birthday-notifications", employeeHrId: employee.hrId } });
+      results.push({
         employeeHrId: employee.hrId,
-        idempotencyKey: `birthday:${employee.hrId}:${year}`,
-      },
-      module: "birthday",
-      priority: "normal",
-      recipientHrId: employee.hrId,
-      subjectHrId: employee.hrId,
-      title: "Happy Birthday",
-    });
-    results.push({ employeeHrId: employee.hrId, result });
+        result: { error: error instanceof Error ? error.message : String(error), sent: false },
+      });
+    }
   }
 
   return NextResponse.json({
