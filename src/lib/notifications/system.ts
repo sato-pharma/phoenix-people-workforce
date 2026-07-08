@@ -462,10 +462,15 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
   }
 }
 
-/** "Dr. " for managerial/professional roles; "" for Medical Rep, Employee, and Super Admin. */
-function managerHonorific(role: string | null): string {
+/**
+ * "Dr. " for managerial/professional roles; "" for Medical Rep, Employee, and Super
+ * Admin. Also "" when the recipient's stored name already carries a "Dr" title, so the
+ * "Dear {{honorific}}{{recipientName}}" greeting never doubles up into "Dear Dr. Dr Name".
+ */
+function managerHonorific(role: string | null, name: string | null): string {
   if (!role) return "";
   if (role === "Employee" || role === "Medical Rep" || role === "Super Admin") return "";
+  if (/^dr\.?\s/i.test(cleanText(name))) return "";
   return "Dr. ";
 }
 
@@ -1304,7 +1309,7 @@ async function buildChannelEmailInput(
     templateContext: input.email?.templateContext,
     // The notification recipient's own name, so templated greetings address the person
     // receiving the email rather than the employee the notification is about.
-    recipientHonorific: managerHonorific(recipient.role),
+    recipientHonorific: managerHonorific(recipient.role, recipient.name),
     recipientName: input.email?.recipientName ?? recipient.name ?? undefined,
     recipientHrId: recipient.hrId ?? undefined,
     recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
