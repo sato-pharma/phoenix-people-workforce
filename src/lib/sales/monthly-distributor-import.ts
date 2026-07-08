@@ -6,7 +6,7 @@ import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
-import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 
 export type SalesDistributorOption = {
   code: string;
@@ -1767,8 +1767,8 @@ export async function loadSalesReferenceData(
       .order("distributor_name", { ascending: true }),
   ]);
 
-  if (productsResult.error) throw productsResult.error;
-  if (distributorsResult.error) throw distributorsResult.error;
+  if (productsResult.error) throw toQueryError(productsResult.error);
+  if (distributorsResult.error) throw toQueryError(distributorsResult.error);
 
   // Region names are joined from the regions master by code; the areas table does not carry
   // region_name in every Supabase project (schema drift across staging/prod).
@@ -1786,7 +1786,7 @@ export async function loadSalesReferenceData(
       .select("area_code,area_name,region_code,region_name")
       .eq("active", true)
       .order("region_code", { ascending: true });
-    if (legacyRegionsResult.error) throw legacyRegionsResult.error;
+    if (legacyRegionsResult.error) throw toQueryError(legacyRegionsResult.error);
     areas = (legacyRegionsResult.data ?? []).map((row) => ({
       areaCode: String(row.area_code ?? ""),
       areaName: String(row.area_name ?? ""),
@@ -3287,7 +3287,7 @@ export async function listMonthlyClosingLines(): Promise<string[]> {
     .select("line")
     .eq("active", true);
 
-  if (error) throw error;
+  if (error) throw toQueryError(error);
 
   const lines = new Set<string>();
   (data ?? []).forEach((row) => {
@@ -3310,7 +3310,7 @@ export async function listMonthlyClosingPeriods(): Promise<string[]> {
       .order("period", { ascending: false })
       .range(from, from + pageSize - 1);
 
-    if (error) throw error;
+    if (error) throw toQueryError(error);
 
     for (const row of data ?? []) {
       const period = String((row as Record<string, unknown>).period ?? "").trim();
@@ -3342,8 +3342,8 @@ async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
       .eq("active", true),
   ]);
 
-  if (areasResult.error) throw areasResult.error;
-  if (regionsResult.error) throw regionsResult.error;
+  if (areasResult.error) throw toQueryError(areasResult.error);
+  if (regionsResult.error) throw toQueryError(regionsResult.error);
 
   const regionNameByCode = buildRegionNameByCode(
     (regionsResult.data ?? []) as Array<Record<string, unknown>>,
@@ -3364,7 +3364,7 @@ async function listLineProductsForClosing(line: string): Promise<SalesProductRef
     .order("family", { ascending: true })
     .order("product_name", { ascending: true });
 
-  if (error) throw error;
+  if (error) throw toQueryError(error);
 
   return (data ?? []).map((row) => {
     const record = row as Record<string, unknown>;
