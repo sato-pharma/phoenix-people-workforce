@@ -148,6 +148,9 @@ export function xlsxResponse(buffer: ArrayBuffer, filename: string): Response {
     headers: {
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      // Prevent the browser from caching payroll exports — a stale cached file
+      // would silently show pre-decision data even after the CEO has made changes.
+      "Cache-Control": "no-store",
     },
   });
 }
