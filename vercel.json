@@ -32,6 +32,9 @@
     },
     "app/api/notifications/daily/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/notifications/process/route.ts": {
+      "maxDuration": 300
     }
   }
 }

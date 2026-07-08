@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -6,6 +7,7 @@ import { runScheduledNotificationProcessing } from "@/lib/notifications/schedule
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 function isCronAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -42,18 +44,29 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (!isCronAuthorized(request)) {
+    return NextResponse.json({ error: "unauthorized", message: "Notification processing run is not authorized." }, { status: 401 });
+  }
   try {
-    if (!isCronAuthorized(request)) {
-      return NextResponse.json({ error: "unauthorized", message: "Notification processing run is not authorized." }, { status: 401 });
-    }
-
     // The Vercel cron (every ~30 min, see vercel.json) passes ?limit= so a backlog can
     // drain faster than the once-daily Vercel cron. Vercel auto-attaches the CRON_SECRET
     // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
-    return await runNotificationOutbox(limit);
+    return await Sentry.withMonitor(
+      "notification-outbox-drain",
+      () => runNotificationOutbox(limit),
+      {
+        schedule: { type: "crontab", value: "*/30 * * * *" },
+        checkinMargin: 5,
+        // Minutes, not seconds — maxDuration (300s) + 1min margin, same convention used by the
+        // ireports360 crons for the identical 300s Vercel execution ceiling.
+        maxRuntime: 6,
+        timezone: "Etc/UTC",
+      },
+    );
   } catch (error) {
+    Sentry.captureException(error, { tags: { cron: "notification-outbox-drain" } });
     const message = error instanceof Error ? error.message : "Notification processing failed.";
     return NextResponse.json({ error: "notification_process_failed", message }, { status: 500 });
   }

@@ -183,4 +183,19 @@ export function runVisitsReportSyncTests() {
 
   const vercelConfig = readFileSync("vercel.json", "utf8");
   assert.match(vercelConfig, /ireports360-visits-reconcile/, "the new cron route must be scheduled in vercel.json");
+
+  // ── reapStaleIReports360SyncRuns: reaps sync_runs rows the platform killed mid-flight before
+  // their own catch block could mark them "failed" (2026-07-05 incident — a killed run sat at
+  // status="running" for ~17h until manually corrected). Mirrors reapStaleProcessingOutboxRows.
+  const serviceSource = readFileSync("src/lib/visits-report/service.ts", "utf8");
+  assert.match(serviceSource, /export async function reapStaleIReports360SyncRuns/, "a reaper for stuck sync runs must exist");
+  assert.match(serviceSource, /\.eq\("status", "running"\)/, "the reaper must only touch rows still marked running");
+  assert.match(serviceSource, /\.lt\("started_at", threshold\.toISOString\(\)\)/, "the reaper must only touch rows older than its staleness threshold, never an in-flight run");
+
+  const scheduledProcessingSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
+  assert.match(
+    scheduledProcessingSource,
+    /reapStaleIReports360SyncRuns\(\)/,
+    "the reaper must be wired into the every-30-min notification-process cron, the only one frequent enough to catch a stuck row promptly",
+  );
 }
