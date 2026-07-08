@@ -480,7 +480,10 @@ function weeklyPlanWeekOptions(anchorDate: string, workweek: PlanWorkweek = HEAD
   for (let index = 0; index < 12; index += 1) {
     starts.add(addDays(firstFutureWeek, index * 7));
   }
+  // The week currently in progress is itself missing otherwise — only used below as the
+  // anchor to step backward from — leaving a gap between "4 weeks ago" and "next week".
   const currentWeekStart = addDays(firstFutureWeek, -7);
+  starts.add(currentWeekStart);
   for (let index = 1; index <= HISTORICAL_PLAN_WEEKS_BACK; index += 1) {
     starts.add(addDays(currentWeekStart, -7 * index));
   }
