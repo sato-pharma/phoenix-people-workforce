@@ -12,6 +12,13 @@ const workingPreviewOrigin = systemDeployment.workingPreviewUrl;
 // Stable branch alias for codex/ceo-staging-rebuild-hardening (PR #24) preview.
 const stagingRebuildPreviewOrigin =
   "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app";
+// New production custom domain (phoenix-hr.satopharma.com). Added alongside the
+// legacy Vercel URL rather than replacing systemDeployment.productionUrl — the
+// latter also drives email CTA links (see src/lib/vacation/email.ts,
+// src/lib/sales/sos-report-delivery.ts), so a full domain cutover is a separate,
+// explicitly-approved decision. This entry only unblocks CSRF/origin checks for
+// the new domain while the old Vercel URL stays trusted.
+const customDomainOrigin = "https://phoenix-hr.satopharma.com";
 
 function normalizeLocalHostname(hostname: string) {
   const normalized = hostname
@@ -77,7 +84,7 @@ export function allowedPhoenixOrigins() {
     : null;
 
   return new Set(
-    [productionOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, vercelBranchUrl, ...configured]
+    [productionOrigin, customDomainOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, vercelBranchUrl, ...configured]
       .map((origin) => normalizeOrigin(origin))
       .filter((origin): origin is string => Boolean(origin)),
   );
