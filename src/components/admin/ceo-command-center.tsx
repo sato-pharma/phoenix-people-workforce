@@ -10,7 +10,9 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
+  Fingerprint,
   HeartPulse,
+  LayoutDashboard,
   MapPinned,
   Megaphone,
   ShieldCheck,
@@ -597,6 +599,13 @@ export function CeoCommandCenter({
             href="/admin/field-sales/med-reps-performance"
           />
           <QuickLinkCard
+            title="Sales Analytics"
+            icon={<LayoutDashboard className="h-3.5 w-3.5" />}
+            headline="SoS, closing & weekly BI in one hub"
+            sub="Open the Sales Analytics hub"
+            href="/admin/analytics"
+          />
+          <QuickLinkCard
             title="Double-Visit Intelligence"
             icon={<MapPinned className="h-3.5 w-3.5" />}
             headline="Coverage, AM/PM split, per-rep intensity"
@@ -609,6 +618,29 @@ export function CeoCommandCenter({
             headline="Company events, leave, plans, birthdays"
             sub="Open the company events calendar"
             href="/admin/company-calendar"
+          />
+        </div>
+      </SectionShell>
+
+      {/* ── Operations hubs — consolidated cross-module quick links ─────────── */}
+      <SectionShell
+        title="Operations hubs"
+        description="One click into every attendance module, or every marketing & ROI module."
+      >
+        <div className="grid divide-x divide-slate-200 sm:grid-cols-2">
+          <QuickLinkCard
+            title="Attendance Management"
+            icon={<Fingerprint className="h-3.5 w-3.5" />}
+            headline="Reports, reviews, policies & devices"
+            sub="Open the Attendance Management hub"
+            href="/attendance"
+          />
+          <QuickLinkCard
+            title="Marketing & ROI"
+            icon={<Megaphone className="h-3.5 w-3.5" />}
+            headline="Requests, ROI reports & coverage"
+            sub="Open the Marketing & ROI hub"
+            href="/admin/marketing-roi"
           />
         </div>
       </SectionShell>
