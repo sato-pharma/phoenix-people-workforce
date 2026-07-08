@@ -27,12 +27,14 @@ const checkinsTable = "ireports360_checkins";
 const syncRunsTable = "ireports360_visits_sync_runs";
 const resolutionsTable = "ireports360_crm_identity_resolutions";
 const upsertBatchSize = 500;
-// At the 21-day lookback, a full run chunks into ~26 visits requests + ~25 checkins requests.
-// Run one-at-a-time, each successive request measurably slows under sustained Supabase load
-// (observed 9.9s -> 15s per chunk in production), and the cumulative wall-clock was the actual
-// cause of the recurring "Supabase request timed out" cron failures — not per-row inserts, which
-// were already batched. Bounded concurrency (not full parallelism) keeps this from also
-// overwhelming Supabase's own connection pool.
+// At the (now-reverted, see runScheduledIReports360Sync's doc comment) 21-day lookback, a full
+// run chunked into ~26 visits requests + ~25 checkins requests. Run one-at-a-time, each
+// successive request measurably slows under sustained Supabase load (observed 9.9s -> 15s per
+// chunk in production), and the cumulative wall-clock was the actual cause of the recurring
+// "Supabase request timed out" cron failures — not per-row inserts, which were already batched.
+// Bounded concurrency (not full parallelism) keeps this from also overwhelming Supabase's own
+// connection pool. Kept even after the 10-day lookback revert: the sequential delete-
+// reconciliation loop further down turned out to still be a second bottleneck on its own.
 const upsertConcurrency = 4;
 const MAX_EXPORT_ROWS = 20000;
 
@@ -442,8 +444,19 @@ export async function syncIReports360Visits(input: {
   }
 }
 
-/** The recurring cron's window: always re-pulls the last N days so late CRM edits get caught. */
-export async function runScheduledIReports360Sync(lookbackDays = 21) {
+/**
+ * The recurring cron's window: always re-pulls the last N days so late CRM edits get caught.
+ *
+ * 2026-07-08: reverted 21 -> 10 (the pre-#796 value) after Sentry recorded 2 consecutive
+ * "ireports360-visits-sync" timeout check-ins (09:00 and 12:00 UTC), each exceeding the 300s
+ * maxDuration ceiling. The 21-day window (plus the delete-reconciliation #796 added on top of
+ * it) pushed the CRM fetch + upsert + reconcile wall-clock past what even the already-parallelized
+ * upsert path (#896) could recover. Safe to shorten: the weekly wide-reconciliation cron
+ * (0 4 * * 0, 120-day rotating window) already exists specifically to catch a visit CRM-edited
+ * longer ago than this window covers — an edit 10-21 days old is now caught within a week
+ * instead of same-day, not lost.
+ */
+export async function runScheduledIReports360Sync(lookbackDays = 10) {
   const dateTo = todayIso();
   const dateFrom = addDaysIso(dateTo, -lookbackDays);
   return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });

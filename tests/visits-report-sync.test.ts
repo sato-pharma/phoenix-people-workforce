@@ -122,7 +122,11 @@ export function runVisitsReportSyncTests() {
     "delete-reconciliation must have a sanity cap against a partial/truncated fetch masquerading as real deletions",
   );
   assert.match(service, /export async function runWideIReports360Reconciliation/, "wide reconciliation function must exist");
-  assert.match(service, /lookbackDays = 21/, "daily cron's lookback must be widened from the original 10 days");
+  // 2026-07-08: reverted 21 -> 10 (the pre-#796 value) after Sentry recorded 2 consecutive
+  // "ireports360-visits-sync" timeout check-ins in one morning — the weekly wide-reconciliation
+  // cron already exists to catch anything older than this window within a week, not lost.
+  assert.doesNotMatch(service, /lookbackDays = 21/, "the 21-day lookback that caused the 2026-07-08 timeout must not regress");
+  assert.match(service, /lookbackDays = 10/, "daily cron's lookback must be back at the pre-#796 10-day window");
   assert.equal(WIDE_RECONCILIATION_TOTAL_DAYS, 120, "wide reconciliation's total window must be materially larger than the daily cron's");
 
   // ── resolveWideReconciliationSlice: stateless weekly slice rotation (2026-07-06 timeout fix) ──
