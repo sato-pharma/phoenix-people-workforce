@@ -17,15 +17,22 @@ import { getSections, type PermissionLookup } from "../src/lib/navigation/active
 
 const ceoAllowedReadOnlyRoutes = [
   "/admin/ceo-command-center",
-  "/sales",
+  // The bare "/sales" (Source of Sales Dash) route is now a card inside the
+  // collapsed "Source of Sales" hub, not its own sidebar entry — CEO's
+  // sidebar href is the hub button itself; CEO still directly reaches the
+  // Dash card via the hub since it's no longer excluded for CEO.
+  "/sales/source-of-sales-tools",
   "/attendance",
   "/admin/people-management",
   "/admin/payroll-management",
   "/admin/outstation-expenses",
+  // /admin/analytics/source-sales and /admin/analytics/monthly-closing are no
+  // longer separate sidebar entries — the "Sales Analytics" section collapsed
+  // to one button (system-navigation.ts) and those two now live as cards on
+  // the /admin/analytics page itself (see salesAnalyticsPageItems below).
   "/admin/analytics",
-  "/admin/analytics/source-sales",
-  "/admin/analytics/monthly-closing",
   "/admin/marketing-roi",
+  "/leave-management",
 ] as const;
 
 const ceoBlockedRedirectRoutes = [

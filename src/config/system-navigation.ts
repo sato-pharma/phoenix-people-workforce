@@ -298,16 +298,16 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Attendance Management",
   },
+  // Collapsed to a single standalone sidebar button that opens the Leave
+  // Management hub (app/(admin)/leave-management/page.tsx, items in
+  // leaveManagementPageItems below) — same pattern as the other consolidated
+  // sections above. roles is the union of the three cards' own roles
+  // (hrAuthorityNavigationRoles ∪ ["Super Admin","CEO"]); the hub re-filters
+  // per-card with each card's real gate.
   {
     id: "leave-management",
     items: [
-      // Self-service vacation request/report for Super Admin + CEO. Admin-shell employee roles
-      // (SFE/Marketing/Finance/Talent Acquisition) use the identical /workspace/leave-management
-      // home instead, so listing them here too produced duplicate sidebar entries. HR controls
-      // below (vacation-control / action-center) keep their own role gating.
-      { href: "/leave-management/vacation-request", icon: CalendarDays, label: "Vacation Request", permissions: [{ resource: "leave", action: "create" }], roles: ["Super Admin", "CEO"] },
-      { href: "/leave-management/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave" }], roles: ["Super Admin", "CEO"] },
-      { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
+      { href: "/leave-management", icon: CalendarDays, label: "Leave Management", roles: ["Super Admin", "CEO", "Talent Acquisition"] },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
     ],
     label: "Leave Management",
@@ -377,17 +377,17 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dash", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
-      { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Achievement Dash", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"] },
-      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/import", icon: FileSpreadsheet, label: "Sales Import (Advanced)", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/mapping-database", icon: Database, label: "SoS Mapping", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/database-mapping", icon: Database, label: "Master Database", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/distributor-profiles", icon: Tags, label: "Distributor Profiles", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/missing-data", icon: TriangleAlert, label: "Missing Data", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/normalizer", icon: Sparkles, label: "SoS Magic", permissions: [{ action: "import", resource: "sales" }] },
-      { href: "/sales/diagnostics", icon: Stethoscope, label: "Sales Diagnostics", permissions: [{ action: "import", resource: "sales" }] },
+      // Collapsed to a single standalone sidebar button that opens the Source of
+      // Sales hub (app/(admin)/sales/source-of-sales-tools/page.tsx, items in
+      // sourceOfSalesPageItems below). permissions:[{resource:"sales"}] (default
+      // "read") is the broadest of the 11 cards' own gates. Marketing Manager
+      // lacks sales:import and is excluded from every card, so stays excluded
+      // here too. CEO now reaches "Source of Sales Dash" (its own excludedRoles
+      // no longer lists CEO) even though the other 10 cards still block CEO
+      // (Achievement Dash explicitly, the remaining 9 via requiring sales:import,
+      // which only Super Admin/SFE Manager hold) — so CEO must NOT be excluded
+      // at the button level, or they'd never reach the one card they can open.
+      { href: "/sales/source-of-sales-tools", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
     ],
     label: "Source of Sales",
   },
@@ -414,17 +414,13 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-analytics",
     items: [
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Analytics Hub", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/source-sales", icon: ChartColumnBig, label: "SoS Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/monthly-closing", icon: CalendarRange, label: "Closing Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] },
-      { href: "/admin/analytics/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Weekly Analytics", permissions: [{ resource: "weekly_sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
-      { href: "/admin/analytics/executive-comparison", icon: ChartColumnBig, label: "Executive Comparison", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/analytics/reconciliation", icon: ChartColumnBig, label: "Reconciliation", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      // Company-scope re-hosts of the portal field dashboards (NSM-parity views for executives).
-      { href: "/admin/field-sales/weekly-sales", icon: ChartNoAxesColumnIncreasing, label: "Field Weekly Sales", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/field-sales/source-of-sales", icon: ChartColumnBig, label: "Field Source of Sales", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/field-sales/dsm-performance", icon: ChartColumnBig, label: "DSM Performance", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/field-sales/med-reps-performance", icon: ChartNoAxesColumnIncreasing, label: "Med-Rep Performance", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO"] },
+      // Collapsed to a single standalone sidebar button. Unlike every other
+      // consolidated section, this one needs NO new hub page — "Analytics Hub"
+      // already pointed at /admin/analytics, a bespoke landing page with its own
+      // module-card grid (app/(admin)/admin/analytics/page.tsx). That page's
+      // MODULES list has been extended with the 4 field-dashboard cards and now
+      // filters cards per-role, so it doubles as this section's hub directly.
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
     ],
     label: "Sales Analytics",
   },
@@ -436,13 +432,14 @@ const adminNavigationSectionSeeds = [
   {
     id: "master-data",
     items: [
-      { href: "/admin/customer-pharmacy-mapping", icon: Network, label: "Customer Pharmacy Mapping", roles: ["Super Admin", "CEO"] },
-      // Consolidated hub for the four customer/pharmacy reference-data surfaces (Customer
-      // Directory, Customer Mapping, Pharmacy Master, Marketing's Customer Database) — see
-      // customersDatabasePageItems below and app/(admin)/admin/customers-database/page.tsx.
-      // roles is the union of every card's own gate (sales:import → Super Admin + SFE Manager;
-      // Pharmacy Master → +CEO); the hub re-filters per-card with each card's real gate.
-      { href: "/admin/customers-database", icon: Building2, label: "Customers Database", roles: ["Super Admin", "SFE Manager", "CEO"] },
+      // Collapsed to a single standalone sidebar button that opens the Master
+      // Data hub (app/(admin)/admin/master-data/page.tsx, items in
+      // masterDataPageItems below). One of its two cards ("Customers Database")
+      // is itself another consolidated hub (app/(admin)/admin/customers-
+      // database/page.tsx) — nesting a hub-card inside a hub is fine, it still
+      // navigates to that page's own real destination. roles is the union of
+      // both cards' own roles.
+      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Master Data",
   },
@@ -461,12 +458,15 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Access & Communication",
   },
+  // Collapsed to a single standalone sidebar button that opens the
+  // Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx, items
+  // in pharmacovigilancePageItems below). "Report It" has no restriction of its
+  // own, so the union of its gate with "Reports Dashboard" (Super Admin only)
+  // is "no gate" — every admin-shell viewer reaches the button and hub, and the
+  // hub re-filters per-card with each card's real gate.
   {
     id: "pharmacovigilance",
-    items: [
-      { href: "/admin/report-it", icon: ShieldAlert, label: "Reports Dashboard", roles: ["Super Admin"] },
-      { href: "/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
-    ],
+    items: [{ href: "/admin/pharmacovigilance", icon: ShieldAlert, label: "Pharmacovigilance" }],
     label: "Pharmacovigilance",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
@@ -656,6 +656,223 @@ export type AdminToolsPageItem = {
   permissions?: readonly NavigationPermission[];
   roles?: readonly PhoenixRole[];
 };
+
+// ── Leave Management hub (app/(admin)/leave-management/page.tsx) ────────────────
+// The tools formerly listed individually under the sidebar's "Leave Management"
+// section (see adminNavigationSectionSeeds above, now collapsed to one link).
+export const leaveManagementPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/leave-management/vacation-request",
+    icon: CalendarDays,
+    label: "Vacation Request",
+    description: "Submit a vacation request (self-service).",
+    permissions: [{ resource: "leave", action: "create" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/leave-management/vacation-report",
+    icon: FileSpreadsheet,
+    label: "Vacation Report",
+    description: "View vacation balances and history.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/leave-management/vacation-control",
+    icon: Settings2,
+    label: "Vacation Control",
+    description: "Configure vacation policy and entitlement rules.",
+    permissions: [{ resource: "leave", action: "update" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Source of Sales hub (app/(admin)/sales/source-of-sales-tools/page.tsx) ──────
+// The tools formerly listed individually under the sidebar's "Source of Sales"
+// section (see adminNavigationSectionSeeds above, now collapsed to one link).
+export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/sales",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Source of Sales Dash",
+    description: "Distributor invoice sell-out dashboard.",
+    permissions: [{ resource: "sales" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/sales/monthly-dashboard",
+    icon: CalendarRange,
+    label: "Achievement Dash",
+    description: "Monthly closing achievement dashboard.",
+    permissions: [{ resource: "sales" }],
+    excludedRoles: ["CEO", "Marketing Manager"],
+  },
+  {
+    href: "/sales/monthly-closing",
+    icon: ChartColumnBig,
+    label: "Monthly Closing",
+    description: "Enter and manage monthly closing sales data.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/upload",
+    icon: FileUp,
+    label: "Sales Upload",
+    description: "Upload distributor sales files.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/import",
+    icon: FileSpreadsheet,
+    label: "Sales Import (Advanced)",
+    description: "Advanced sales import tooling.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/mapping-database",
+    icon: Database,
+    label: "SoS Mapping",
+    description: "Manage Source of Sales mapping reference data.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/database-mapping",
+    icon: Database,
+    label: "Master Database",
+    description: "Manage master sales reference database.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/distributor-profiles",
+    icon: Tags,
+    label: "Distributor Profiles",
+    description: "Manage distributor profile records.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/missing-data",
+    icon: TriangleAlert,
+    label: "Missing Data",
+    description: "Review sales rows with missing or unresolved data.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/normalizer",
+    icon: Sparkles,
+    label: "SoS Magic",
+    description: "AI-assisted sales data normalization.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/diagnostics",
+    icon: Stethoscope,
+    label: "Sales Diagnostics",
+    description: "Diagnose Source of Sales pipeline issues.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Sales Analytics cards (app/(admin)/admin/analytics/page.tsx) ────────────────
+// The tools formerly listed individually under the sidebar's "Sales Analytics"
+// section (see adminNavigationSectionSeeds above, now collapsed to one link
+// pointing directly at the pre-existing /admin/analytics landing page — see the
+// comment there). "Analytics Hub" itself is omitted here since its destination
+// IS that page; this array exists purely so the command palette can still find
+// every module by name (see hubPageItemGroups below).
+export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/analytics/source-sales",
+    icon: ChartColumnBig,
+    label: "SoS Analytics",
+    description: "Source of Sales analytics dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+  },
+  {
+    href: "/admin/analytics/monthly-closing",
+    icon: CalendarRange,
+    label: "Closing Analytics",
+    description: "Monthly closing analytics dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"],
+  },
+  {
+    href: "/admin/analytics/weekly-sales",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Weekly Analytics",
+    description: "Weekly sales analytics dashboard.",
+    permissions: [{ resource: "weekly_sales" }],
+    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+  },
+  {
+    href: "/admin/analytics/executive-comparison",
+    icon: ChartColumnBig,
+    label: "Executive Comparison",
+    description: "Side-by-side executive KPI comparison.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/analytics/reconciliation",
+    icon: ChartColumnBig,
+    label: "Reconciliation",
+    description: "Cross-source sales reconciliation.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/field-sales/weekly-sales",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Field Weekly Sales",
+    description: "Company-scope re-host of the field weekly sales dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/field-sales/source-of-sales",
+    icon: ChartColumnBig,
+    label: "Field Source of Sales",
+    description: "Company-scope re-host of the field Source of Sales dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/field-sales/dsm-performance",
+    icon: ChartColumnBig,
+    label: "DSM Performance",
+    description: "Company-scope DSM performance dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/field-sales/med-reps-performance",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Med-Rep Performance",
+    description: "Company-scope Med-Rep performance dashboard.",
+    permissions: [{ resource: "sales" }],
+    roles: ["Super Admin", "CEO"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Master Data hub (app/(admin)/admin/master-data/page.tsx) ────────────────────
+// The tools formerly listed individually under the sidebar's "Master Data"
+// section (see adminNavigationSectionSeeds above, now collapsed to one link).
+export const masterDataPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/customer-pharmacy-mapping",
+    icon: Network,
+    label: "Customer Pharmacy Mapping",
+    description: "Company-wide customer ↔ pharmacy relationship oversight.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/customers-database",
+    icon: Building2,
+    label: "Customers Database",
+    description: "Customer directory, mapping, pharmacy master, and marketing's customer database — in one place.",
+    roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
 
 export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
   {
@@ -1372,3 +1589,46 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ action: "create", resource: "coaching" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx) ────────
+// The tools formerly listed individually under the admin sidebar's
+// "Pharmacovigilance" section (see adminNavigationSectionSeeds above, now
+// collapsed to one link).
+export const pharmacovigilancePageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/report-it",
+    icon: ShieldAlert,
+    label: "Reports Dashboard",
+    description: "Review submitted pharmacovigilance/adverse-event reports.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/report-it/new",
+    icon: ShieldAlert,
+    label: "Report It",
+    description: "Submit a new pharmacovigilance or adverse-event report.",
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// Every consolidated hub's card list, tagged with the hub's own sidebar label.
+// Consumed by the command palette (src/components/layout/command-palette.tsx)
+// so Cmd/Ctrl+K search still surfaces every module that used to have its own
+// sidebar row, not just the collapsed hub buttons that replaced them.
+export const hubPageItemGroups: readonly { label: string; items: readonly AdminToolsPageItem[] }[] = [
+  { items: leaveManagementPageItems, label: "Leave Management" },
+  { items: sourceOfSalesPageItems, label: "Source of Sales" },
+  { items: salesAnalyticsPageItems, label: "Sales Analytics" },
+  { items: masterDataPageItems, label: "Master Data" },
+  { items: adminToolsPageItems, label: "Admin Tools" },
+  { items: accessCommunicationPageItems, label: "Access & Communication" },
+  { items: weeklySalesToolsPageItems, label: "Weekly Sales" },
+  { items: customersDatabasePageItems, label: "Customers Database" },
+  { items: attendanceManagementPageItems, label: "Attendance Management" },
+  { items: payrollManagementPageItems, label: "Payroll Management" },
+  { items: marketingRoiPageItems, label: "Marketing & ROI" },
+  { items: recruitmentHiringPageItems, label: "Recruitment & Hiring" },
+  { items: peopleManagementPageItems, label: "People Management" },
+  { items: outstationExpensesPageItems, label: "Outstation Expenses" },
+  { items: fieldCoachingPageItems, label: "Field Coaching" },
+  { items: pharmacovigilancePageItems, label: "Pharmacovigilance" },
+] as const;

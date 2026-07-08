@@ -197,12 +197,10 @@ export function runNavigationActivePathTests() {
   // e.g. Finance Manager legitimately reaches the hub (for Other Approvals via
   // leave:read) even though Employees/Weekly Plans/HR Support Requests within
   // it stay Super-Admin/Talent-Acquisition-only via their own per-card gates.
-  const sensitiveHrHrefs = [
-    "/admin/recruitment-hiring",
-    "/leave-management/vacation-control",
-  ] as const;
-  // /admin/outstation-expenses moved off this list — it's shared with Finance
-  // Manager/CEO now (Outstation Expenses hub), not Super-Admin-exclusive.
+  const sensitiveHrHrefs = ["/admin/recruitment-hiring"] as const;
+  // /admin/outstation-expenses and /leave-management moved off this list — both
+  // are shared with Finance Manager/CEO now (Outstation Expenses / Leave
+  // Management hubs), not Super-Admin/Talent-Acquisition-exclusive.
   const systemAdministratorOnlyHrefs = ["/admin/admin-tools"] as const;
 
   const marketingManagerPortal = employeePortalHrefsFor("Marketing Manager");
@@ -246,7 +244,7 @@ export function runNavigationActivePathTests() {
   const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
   assertIncludesAll(
     talentAcquisitionAdmin,
-    ["/admin/people-management", "/admin/recruitment-hiring", "/leave-management/vacation-control"],
+    ["/admin/people-management", "/admin/recruitment-hiring", "/leave-management"],
     "Talent Acquisition must see HR-owned admin modules",
   );
   assertExcludesAll(talentAcquisitionAdmin, ["/employees", "/payroll"], "Talent Acquisition must not see non-owned company modules");
@@ -275,14 +273,15 @@ export function runNavigationActivePathTests() {
       "/admin/people-management",
       "/admin/outstation-expenses",
       "/admin/field-coaching",
+      "/leave-management",
     ],
     "Super Admin must see full governance modules",
   );
   assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");
   assertIncludesAll(
     superAdminAuthorityNav,
-    ["/sales/import"],
-    "Sales Import (Advanced) is intentionally visible alongside Sales Upload in the Source of Sales section",
+    ["/sales/source-of-sales-tools"],
+    "Source of Sales hub (which contains Sales Import (Advanced) alongside Sales Upload) must stay visible in sales navigation",
   );
 
   const employeeAdmin = adminHrefsFor("Employee");

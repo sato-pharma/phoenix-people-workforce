@@ -71,19 +71,23 @@ export function runModulesControlTests() {
     assert.equal(permissionMatrix[role].module_control?.includes("update") ?? false, false, `${role} must not update Modules Control`);
   }
 
-  const salesUpload = catalog.find((module) => module.label === "Sales Upload" && module.navigationMode === "admin");
-  assert.ok(salesUpload, "Sales Upload module exists");
+  // Sales Upload moved behind the consolidated "Source of Sales" sidebar button (system-
+  // navigation.ts) and is no longer individually assignable in Modules Control — the standalone
+  // "Sales Queue" module (never collapsed) exercises the exact same sales:import-required
+  // blocking path Medical Rep still lacks.
+  const salesQueue = catalog.find((module) => module.label === "Sales Queue" && module.navigationMode === "admin");
+  assert.ok(salesQueue, "Sales Queue module exists");
   assert.throws(
     () => validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,
-      moduleIds: [salesUpload!.moduleId],
+      moduleIds: [salesQueue!.moduleId],
       navigationMode: "admin",
       people: [person()],
       targetKey: "a-9",
       targetType: "user",
     }),
-    /Blocked: A-9 is Medical Rep\. Sales Upload requires sales:import\./,
+    /Blocked: A-9 is Medical Rep\. Sales Queue requires sales:import\./,
     "invalid drag/drop is blocked before any database write can be attempted",
   );
 
@@ -152,7 +156,7 @@ export function runModulesControlTests() {
     () => validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,
-      moduleIds: [salesUpload!.moduleId],
+      moduleIds: [salesQueue!.moduleId],
       navigationMode: "admin",
       people: [
         person({ hrId: "SA-1", loginId: "SA-1", role: "Super Admin" }),
