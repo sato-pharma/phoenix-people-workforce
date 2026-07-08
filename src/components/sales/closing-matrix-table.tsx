@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useRef } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { cn } from "@/lib/utils";
@@ -16,18 +16,11 @@ import type {
 // Shared, read-only render of the monthly closing matrix. Used by the admin
 // Source-of-Sales workspace and the employee-portal closing view so both surfaces
 // stay pixel-identical. Pure presentation — the caller pre-filters/scopes the matrix.
-//
-// Layout: one narrow table PER PRODUCT (plus one per multi-product family, plus a
-// final cross-product Grand Total table), stacked vertically — instead of one very
-// wide table with 6 columns per product side by side. Every table lists the same
-// areas/regions/totals as rows; nothing is hidden, it's just reorganized so no
-// individual table needs horizontal scrolling.
 
 type RowVariant = "area" | "subtotal" | "grand";
 
 const valueFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const BLANK = "—";
-const DIRECT_BG = "bg-[#CFE0FB]";
 
 function valueText(value: number) {
   return valueFormatter.format(value || 0);
@@ -96,14 +89,14 @@ function contrBgFor(variant: RowVariant) {
   return "";
 }
 
-// Stronger-orange tint for the Grand Total table.
+// Stronger-orange tint for the rightmost Grand Total block.
 function totalBgFor(variant: RowVariant) {
   if (variant === "area") return "bg-[#FBD8A6]";
   if (variant === "subtotal") return "bg-[#F4C078]";
   return "";
 }
 
-// Amber tint for the family summary table (display-only, not added to Grand Total).
+// Amber tint for the family summary columns (display-only, not added to Grand Total).
 function famBgFor(variant: RowVariant) {
   if (variant === "area") return "bg-amber-50";
   if (variant === "subtotal") return "bg-amber-100";
@@ -112,7 +105,7 @@ function famBgFor(variant: RowVariant) {
 
 // ── Column grouping ───────────────────────────────────────────────────────────
 // Consecutive columns that share the same family name are grouped. Multi-product
-// families (isMulti=true) get their own family-total table after their members.
+// families (isMulti=true) get a 3-column family summary block after their members.
 
 type ColumnGroup = { family: string; indices: number[]; isMulti: boolean };
 
@@ -133,17 +126,19 @@ function groupColumns(columns: MonthlyClosingColumn[]): ColumnGroup[] {
 // ── Cell renderers ────────────────────────────────────────────────────────────
 
 function ProductCells({
+  bandTint,
   cell,
   productTotal,
   rowBg,
   variant,
 }: {
+  bandTint: boolean;
   cell: MonthlyClosingCell;
   productTotal: number | null;
   rowBg?: string;
   variant: RowVariant;
 }) {
-  const bg = rowBg ?? "";
+  const bg = rowBg ?? (variant === "area" && bandTint ? "bg-orange-50/50" : "");
   const achBg = rowBg ?? achBgFor(variant);
   const contrBg = rowBg ?? contrBgFor(variant);
   const contrib =
@@ -213,316 +208,146 @@ function TotalCells({
   );
 }
 
-// ── Label cells (Area / Area Name — first two columns of every table) ────────
-
-function LabelCell({ children, className }: { children: React.ReactNode; className: string }) {
-  return <td className={cn("sticky left-0 z-10 whitespace-nowrap px-3 py-2.5 font-semibold", className)}>{children}</td>;
-}
-
-function NameCell({ children, className }: { children: React.ReactNode; className: string }) {
-  return <td className={cn("truncate px-3 py-2.5", className)}>{children}</td>;
-}
-
-function areaLabelClass(isDirect: boolean | undefined) {
-  return isDirect ? `${DIRECT_BG} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900";
-}
-
-function areaNameClass(isDirect: boolean | undefined) {
-  return isDirect ? `${DIRECT_BG} font-bold text-[#1D4ED8]` : "bg-white text-slate-600";
-}
-
 // ── Header helpers ─────────────────────────────────────────────────────────────
-// Each mini-table has a single sticky header row (no more two-row offset math).
-
-function AreaHeaderCells() {
-  return (
-    <>
-      <th className="sticky left-0 top-0 z-20 whitespace-nowrap px-3 py-2 text-left align-middle">Area</th>
-      <th className="sticky top-0 z-10 whitespace-nowrap px-3 py-2 text-left align-middle">Area Name</th>
-    </>
-  );
-}
 
 function MetricHeaders() {
-  const cell = "sticky top-0 z-10 whitespace-nowrap px-2 py-1.5 align-middle";
+  const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
-      <th className={cell}>Units</th>
-      <th className={cell}>Value</th>
-      <th className={`${cell} phx-contr`}>Contr %</th>
-      <th className={`${cell} font-normal opacity-60`}>Tgt Units</th>
-      <th className={`${cell} font-normal opacity-60`}>Tgt Value</th>
-      <th className={`${cell} phx-ach`}>Ach %</th>
+      <th className={cell} style={{ top: 44 }}>Units</th>
+      <th className={cell} style={{ top: 44 }}>Value</th>
+      <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Units</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Value</th>
+      <th className={`${cell} phx-ach`} style={{ top: 44 }}>Ach %</th>
     </>
   );
 }
 
-// Sub-headers for the family-total table: Value (amber) | Tgt Value (amber) | Contr % (dark-blue).
+// Sub-headers for the family summary block: Value (amber) | Tgt Value (amber) | Contr % (dark-blue).
 function FamilySubHeaders() {
-  const cell = "sticky top-0 z-10 whitespace-nowrap px-2 py-1.5 align-middle phx-family";
+  const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
-      <th className={cell}>Value</th>
-      <th className={`${cell} font-normal opacity-70`}>Tgt Value</th>
-      <th className="sticky top-0 z-10 whitespace-nowrap px-2 py-1.5 align-middle phx-contr">Contr %</th>
+      <th className={`${cell} phx-family`} style={{ top: 44 }}>Value</th>
+      <th className={`${cell} phx-family font-normal opacity-70`} style={{ top: 44 }}>Tgt Value</th>
+      <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
     </>
   );
 }
 
-// ── Product table (one per product — Area, Area Name, Units, Value, Contr %,
-//    Tgt Units, Tgt Value, Ach %) ────────────────────────────────────────────
+// ── Column widths ──────────────────────────────────────────────────────────────
 
-function ProductAreaRows({
-  idx,
-  productTotal,
+const COL = {
+  ach: 64, area: 92,
+  contr: 68,
+  gtAch: 64, gtContr: 68,
+  gtTgt: 96, gtValue: 110,
+  // Family summary block (3 columns, no Units/Ach axis)
+  famContr: 68, famTgt: 96, famValue: 102,
+  name: 196, tgtUnits: 66, tgtValue: 96, units: 70, value: 102,
+};
+const PRODUCT_GROUP_WIDTH = COL.units + COL.value + COL.contr + COL.tgtUnits + COL.tgtValue + COL.ach;
+const FAMILY_GROUP_WIDTH = COL.famValue + COL.famTgt + COL.famContr;
+const STICKY1 = "sticky left-0 z-20";
+const STICKY2 = "sticky z-20";
+
+// ── RegionBlock ────────────────────────────────────────────────────────────────
+
+function RegionBlock({
+  columnGroups,
+  grandTotalValue,
+  productTotals,
   region,
 }: {
-  idx: number;
-  productTotal: number | null;
+  columnGroups: ColumnGroup[];
+  grandTotalValue: number;
+  productTotals: number[];
   region: MonthlyClosingRegionGroup;
 }) {
   return (
     <>
-      {region.areas.map((area) => (
-        <tr className={area.isDirect ? undefined : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
-          <LabelCell className={areaLabelClass(area.isDirect)}>{area.isDirect ? "◆ Direct" : area.areaCode}</LabelCell>
-          <NameCell className={areaNameClass(area.isDirect)}>{area.isDirect ? "Direct orders (company)" : area.areaName}</NameCell>
-          <ProductCells cell={area.cells[idx]} productTotal={productTotal} rowBg={area.isDirect ? DIRECT_BG : undefined} variant="area" />
-        </tr>
-      ))}
-      <tr className="bg-[#FDEAD0]">
-        <LabelCell className="bg-[#FDEAD0] font-black uppercase tracking-wide text-slate-900">{region.regionCode}</LabelCell>
-        <NameCell className="bg-[#FDEAD0] font-black text-slate-900">{region.regionName}</NameCell>
-        <ProductCells cell={region.subtotal.cells[idx]} productTotal={productTotal} variant="subtotal" />
-      </tr>
-    </>
-  );
-}
-
-function ProductMatrixTable({
-  column,
-  idx,
-  matrix,
-  productTotal,
-}: {
-  column: MonthlyClosingColumn;
-  idx: number;
-  matrix: MonthlyClosingMatrix;
-  productTotal: number | null;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h3 className="truncate text-[13px] font-black text-slate-950">{column.productName}</h3>
-        <span className="text-[11px] font-medium text-slate-400">{column.productCode}</span>
-      </div>
-      <div className="overflow-x-auto border border-[#E2E8F0]">
-        <table className="phx-closing-grid w-full text-sm">
-          <thead>
-            <tr>
-              <AreaHeaderCells />
-              <MetricHeaders />
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.regions.map((region) => (
-              <ProductAreaRows idx={idx} key={region.regionCode} productTotal={productTotal} region={region} />
+      {region.areas.map((area) => {
+        const directBg = "bg-[#CFE0FB]";
+        return (
+          <tr className={area.isDirect ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
+            <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${area.isDirect ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{area.isDirect ? "◆ Direct" : area.areaCode}</td>
+            <td className={`${STICKY2} truncate px-3 py-2.5 ${area.isDirect ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{area.isDirect ? "Direct orders (company)" : area.areaName}</td>
+            {columnGroups.map((group, gi) => (
+              <Fragment key={gi}>
+                {group.indices.map((idx) => (
+                  <ProductCells
+                    bandTint={idx % 2 === 1}
+                    cell={area.cells[idx]}
+                    key={`${area.areaCode}-${idx}`}
+                    productTotal={productTotals[idx] ?? null}
+                    rowBg={area.isDirect ? directBg : undefined}
+                    variant="area"
+                  />
+                ))}
+                {group.isMulti && (
+                  <FamilyCells
+                    cells={area.cells}
+                    grandTotalValue={grandTotalValue}
+                    group={group}
+                    key={`fam-${area.areaCode}-${gi}`}
+                    rowBg={area.isDirect ? directBg : undefined}
+                    variant="area"
+                  />
+                )}
+              </Fragment>
             ))}
-            <tr className="bg-[#0B0B0B]">
-              <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-white">NAT</LabelCell>
-              <NameCell className="bg-[#0B0B0B] font-black text-white">National Grand Total</NameCell>
-              <ProductCells cell={matrix.grandTotal.cells[idx]} productTotal={productTotal} variant="grand" />
-            </tr>
-            {matrix.directNational ? (
-              <tr>
-                <LabelCell className={`${DIRECT_BG} uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</LabelCell>
-                <NameCell className={`${DIRECT_BG} font-black text-[#1E3A8A]`}>Direct – National</NameCell>
-                <ProductCells cell={matrix.directNational.cells[idx]} productTotal={productTotal} rowBg={DIRECT_BG} variant="subtotal" />
-              </tr>
-            ) : null}
-            {matrix.companyTotal ? (
-              <tr className="bg-[#0B0B0B]">
-                <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-[#FDBA74]">TOT</LabelCell>
-                <NameCell className="bg-[#0B0B0B] font-black text-[#FDBA74]">Grand Total (incl. Direct)</NameCell>
-                <ProductCells cell={matrix.companyTotal.cells[idx]} productTotal={productTotal} variant="grand" />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── Family-total table (one per multi-product family — Area, Area Name, Value,
-//    Tgt Value, Contr %) ──────────────────────────────────────────────────────
-
-function FamilyAreaRows({
-  grandTotalValue,
-  group,
-  region,
-}: {
-  grandTotalValue: number;
-  group: ColumnGroup;
-  region: MonthlyClosingRegionGroup;
-}) {
-  return (
-    <>
-      {region.areas.map((area) => (
-        <tr className={area.isDirect ? undefined : "transition-colors hover:bg-amber-50/40"} key={area.areaCode}>
-          <LabelCell className={areaLabelClass(area.isDirect)}>{area.isDirect ? "◆ Direct" : area.areaCode}</LabelCell>
-          <NameCell className={areaNameClass(area.isDirect)}>{area.isDirect ? "Direct orders (company)" : area.areaName}</NameCell>
-          <FamilyCells cells={area.cells} grandTotalValue={grandTotalValue} group={group} rowBg={area.isDirect ? DIRECT_BG : undefined} variant="area" />
-        </tr>
-      ))}
+            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} rowBg={area.isDirect ? directBg : undefined} variant="area" />
+          </tr>
+        );
+      })}
       <tr className="bg-[#FDEAD0]">
-        <LabelCell className="bg-[#FDEAD0] font-black uppercase tracking-wide text-slate-900">{region.regionCode}</LabelCell>
-        <NameCell className="bg-[#FDEAD0] font-black text-slate-900">{region.regionName}</NameCell>
-        <FamilyCells cells={region.subtotal.cells} grandTotalValue={grandTotalValue} group={group} variant="subtotal" />
-      </tr>
-    </>
-  );
-}
-
-function FamilyMatrixTable({
-  grandTotalValue,
-  group,
-  matrix,
-}: {
-  grandTotalValue: number;
-  group: ColumnGroup;
-  matrix: MonthlyClosingMatrix;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h3 className="truncate text-[13px] font-black text-amber-800">{group.family}</h3>
-        <span className="text-[11px] font-medium text-amber-700/70">Family Total</span>
-      </div>
-      <div className="overflow-x-auto border border-[#E2E8F0]">
-        <table className="phx-closing-grid w-full text-sm">
-          <thead>
-            <tr>
-              <AreaHeaderCells />
-              <FamilySubHeaders />
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.regions.map((region) => (
-              <FamilyAreaRows grandTotalValue={grandTotalValue} group={group} key={region.regionCode} region={region} />
+        <td className={`${STICKY1} whitespace-nowrap bg-[#FDEAD0] px-3 py-2.5 font-black uppercase tracking-wide text-slate-900`}>{region.regionCode}</td>
+        <td className={`${STICKY2} truncate bg-[#FDEAD0] px-3 py-2.5 font-black text-slate-900`} style={{ left: COL.area }}>{region.regionName}</td>
+        {columnGroups.map((group, gi) => (
+          <Fragment key={gi}>
+            {group.indices.map((idx) => (
+              <ProductCells
+                bandTint={idx % 2 === 1}
+                cell={region.subtotal.cells[idx]}
+                key={`sub-${region.regionCode}-${idx}`}
+                productTotal={productTotals[idx] ?? null}
+                variant="subtotal"
+              />
             ))}
-            <tr className="bg-[#0B0B0B]">
-              <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-white">NAT</LabelCell>
-              <NameCell className="bg-[#0B0B0B] font-black text-white">National Grand Total</NameCell>
-              <FamilyCells cells={matrix.grandTotal.cells} grandTotalValue={grandTotalValue} group={group} variant="grand" />
-            </tr>
-            {matrix.directNational ? (
-              <tr>
-                <LabelCell className={`${DIRECT_BG} uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</LabelCell>
-                <NameCell className={`${DIRECT_BG} font-black text-[#1E3A8A]`}>Direct – National</NameCell>
-                <FamilyCells cells={matrix.directNational.cells} grandTotalValue={grandTotalValue} group={group} rowBg={DIRECT_BG} variant="subtotal" />
-              </tr>
-            ) : null}
-            {matrix.companyTotal ? (
-              <tr className="bg-[#0B0B0B]">
-                <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-[#FDBA74]">TOT</LabelCell>
-                <NameCell className="bg-[#0B0B0B] font-black text-[#FDBA74]">Grand Total (incl. Direct)</NameCell>
-                <FamilyCells cells={matrix.companyTotal.cells} grandTotalValue={grandTotalValue} group={group} variant="grand" />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── Grand Total table (across ALL products — Area, Area Name, Value, Contr %,
-//    Tgt Value, Ach %) ────────────────────────────────────────────────────────
-
-function GrandTotalAreaRows({
-  grandTotalValue,
-  region,
-}: {
-  grandTotalValue: number;
-  region: MonthlyClosingRegionGroup;
-}) {
-  return (
-    <>
-      {region.areas.map((area) => (
-        <tr className={area.isDirect ? undefined : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
-          <LabelCell className={areaLabelClass(area.isDirect)}>{area.isDirect ? "◆ Direct" : area.areaCode}</LabelCell>
-          <NameCell className={areaNameClass(area.isDirect)}>{area.isDirect ? "Direct orders (company)" : area.areaName}</NameCell>
-          <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} rowBg={area.isDirect ? DIRECT_BG : undefined} variant="area" />
-        </tr>
-      ))}
-      <tr className="bg-[#FDEAD0]">
-        <LabelCell className="bg-[#FDEAD0] font-black uppercase tracking-wide text-slate-900">{region.regionCode}</LabelCell>
-        <NameCell className="bg-[#FDEAD0] font-black text-slate-900">{region.regionName}</NameCell>
+            {group.isMulti && (
+              <FamilyCells
+                cells={region.subtotal.cells}
+                grandTotalValue={grandTotalValue}
+                group={group}
+                key={`sub-fam-${region.regionCode}-${gi}`}
+                variant="subtotal"
+              />
+            )}
+          </Fragment>
+        ))}
         <TotalCells cell={region.subtotal.rowTotal} grandTotal={grandTotalValue} variant="subtotal" />
       </tr>
     </>
   );
 }
 
-function GrandTotalMatrixTable({
-  grandTotalValue,
-  matrix,
-}: {
-  grandTotalValue: number;
-  matrix: MonthlyClosingMatrix;
-}) {
-  const cell = "sticky top-0 z-10 whitespace-nowrap px-2 py-1.5 align-middle phx-gt";
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h3 className="text-[13px] font-black text-slate-950">Grand Total</h3>
-        <span className="text-[11px] font-medium text-slate-400">All products combined</span>
-      </div>
-      <div className="overflow-x-auto border border-[#E2E8F0]">
-        <table className="phx-closing-grid w-full text-sm">
-          <thead>
-            <tr>
-              <AreaHeaderCells />
-              <th className={cell}>Value</th>
-              <th className={`${cell} phx-contr`}>Contr %</th>
-              <th className={`${cell} font-normal opacity-60`}>Tgt Value</th>
-              <th className={`${cell} phx-ach`}>Ach %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.regions.map((region) => (
-              <GrandTotalAreaRows grandTotalValue={grandTotalValue} key={region.regionCode} region={region} />
-            ))}
-            <tr className="bg-[#0B0B0B]">
-              <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-white">NAT</LabelCell>
-              <NameCell className="bg-[#0B0B0B] font-black text-white">National Grand Total</NameCell>
-              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
-            </tr>
-            {matrix.directNational ? (
-              <tr>
-                <LabelCell className={`${DIRECT_BG} uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</LabelCell>
-                <NameCell className={`${DIRECT_BG} font-black text-[#1E3A8A]`}>Direct – National</NameCell>
-                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} rowBg={DIRECT_BG} variant="subtotal" />
-              </tr>
-            ) : null}
-            {matrix.companyTotal ? (
-              <tr className="bg-[#0B0B0B]">
-                <LabelCell className="bg-[#0B0B0B] font-black uppercase tracking-wide text-[#FDBA74]">TOT</LabelCell>
-                <NameCell className="bg-[#0B0B0B] font-black text-[#FDBA74]">Grand Total (incl. Direct)</NameCell>
-                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ── Main export ────────────────────────────────────────────────────────────────
 
 export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix }) {
+  const topRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const syncing = useRef(false);
+
+  function syncScroll(source: HTMLDivElement | null, target: HTMLDivElement | null) {
+    if (!source || !target || syncing.current) return;
+    syncing.current = true;
+    target.scrollLeft = source.scrollLeft;
+    requestAnimationFrame(() => {
+      syncing.current = false;
+    });
+  }
+
   if (matrix.columns.length === 0) {
     return (
       <div className="p-4 md:p-5">
@@ -535,16 +360,25 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
   }
 
   const columnGroups = groupColumns(matrix.columns);
+  const multiCount = columnGroups.filter((g) => g.isMulti).length;
 
   // Per-product national totals for contribution % — derived from the grand total row.
   const productTotals = matrix.grandTotal.cells.map((c) => c.salesValue ?? 0);
   const grandTotalValue = matrix.grandTotal.rowTotal.salesValue ?? 0;
 
+  const tableWidth =
+    COL.area + COL.name +
+    matrix.columns.length * PRODUCT_GROUP_WIDTH +
+    multiCount * FAMILY_GROUP_WIDTH +
+    COL.gtValue + COL.gtContr + COL.gtTgt + COL.gtAch;
+
+  const bandHeader = "whitespace-nowrap px-3 align-middle";
+
   return (
-    <div className="space-y-8 p-4 md:p-5">
-      {/* Solid black header band + crisp light-orange grid, shared by every stacked
-          table below via the phx-closing-grid class. Family headers use amber so
-          they read as a separate axis; Contr %/Ach % headers get their own tint. */}
+    <div className="p-4 md:p-5">
+      {/* Solid black header band + crisp light-orange grid.
+          Family block headers use amber (#78350f) so they read as a separate axis.
+          Scoped to this table with table-level specificity so sticky header covers rows. */}
       <style>{`
         table.phx-closing-grid th, table.phx-closing-grid td { border: 1px solid #F4B66E !important; }
         table.phx-closing-grid thead th { background-color: #0B0B0B !important; color: #F1F5F9 !important; box-shadow: inset 0 -2px 0 #F97316; }
@@ -552,24 +386,185 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
         table.phx-closing-grid .phx-contr { background-color: #0c3352 !important; }
       `}</style>
 
-      {columnGroups.map((group, gi) => (
-        <Fragment key={gi}>
-          {group.indices.map((idx) => (
-            <ProductMatrixTable
-              column={matrix.columns[idx]}
-              idx={idx}
-              key={idx}
-              matrix={matrix}
-              productTotal={productTotals[idx] ?? null}
-            />
-          ))}
-          {group.isMulti && (
-            <FamilyMatrixTable grandTotalValue={grandTotalValue} group={group} matrix={matrix} />
-          )}
-        </Fragment>
-      ))}
+      {/* Top horizontal scrollbar (synced proxy) */}
+      <div
+        className="overflow-x-auto overflow-y-hidden border-x border-t border-[#E2E8F0]"
+        onScroll={() => syncScroll(topRef.current, bodyRef.current)}
+        ref={topRef}
+        style={{ height: 14 }}
+      >
+        <div style={{ height: 1, width: tableWidth }} />
+      </div>
 
-      <GrandTotalMatrixTable grandTotalValue={grandTotalValue} matrix={matrix} />
+      <div
+        className="max-h-[72vh] overflow-auto border border-[#E2E8F0]"
+        onScroll={() => syncScroll(bodyRef.current, topRef.current)}
+        ref={bodyRef}
+      >
+        <table className="phx-closing-grid text-sm" style={{ tableLayout: "fixed", width: tableWidth }}>
+          <colgroup>
+            <col style={{ width: COL.area }} />
+            <col style={{ width: COL.name }} />
+            {columnGroups.flatMap((group, gi) => [
+              ...group.indices.flatMap((_, iInGroup) => [
+                <col key={`u-${gi}-${iInGroup}`} style={{ width: COL.units }} />,
+                <col key={`v-${gi}-${iInGroup}`} style={{ width: COL.value }} />,
+                <col key={`c-${gi}-${iInGroup}`} style={{ width: COL.contr }} />,
+                <col key={`tu-${gi}-${iInGroup}`} style={{ width: COL.tgtUnits }} />,
+                <col key={`tv-${gi}-${iInGroup}`} style={{ width: COL.tgtValue }} />,
+                <col key={`a-${gi}-${iInGroup}`} style={{ width: COL.ach }} />,
+              ]),
+              ...(group.isMulti ? [
+                <col key={`fv-${gi}`} style={{ width: COL.famValue }} />,
+                <col key={`ft-${gi}`} style={{ width: COL.famTgt }} />,
+                <col key={`fc-${gi}`} style={{ width: COL.famContr }} />,
+              ] : []),
+            ])}
+            <col style={{ width: COL.gtValue }} />
+            <col style={{ width: COL.gtContr }} />
+            <col style={{ width: COL.gtTgt }} />
+            <col style={{ width: COL.gtAch }} />
+          </colgroup>
+          <thead>
+            {/* Row 1: product names + family group banners + Grand Total */}
+            <tr>
+              <th className={`${bandHeader} ${STICKY1} top-0 z-40 h-11`} rowSpan={2}>Area</th>
+              <th className={`${bandHeader} ${STICKY2} top-0 z-40 h-11`} rowSpan={2} style={{ left: COL.area }}>Area Name</th>
+              {columnGroups.flatMap((group, gi) => [
+                ...group.indices.map((idx) => (
+                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={6} key={`ph-${gi}-${idx}`}>
+                    <span className="block truncate text-[12px] font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
+                    <span className="block text-[10px] font-normal" style={{ color: "#CBD5E1" }}>{matrix.columns[idx].productCode}</span>
+                  </th>
+                )),
+                ...(group.isMulti ? [
+                  <th className={`${bandHeader} phx-family sticky top-0 z-30 h-11`} colSpan={3} key={`fh-${gi}`}>
+                    <span className="block truncate text-[12px] font-black leading-tight">{group.family}</span>
+                    <span className="block text-[10px] font-normal opacity-70">Family Total</span>
+                  </th>,
+                ] : []),
+              ])}
+              <th className={`${bandHeader} phx-gt sticky top-0 z-30 h-11`} colSpan={4}>Grand Total</th>
+            </tr>
+            {/* Row 2: per-column metric sub-headers */}
+            <tr>
+              {columnGroups.flatMap((group, gi) => [
+                ...group.indices.map((idx) => (
+                  <MetricHeaders key={`mh-${gi}-${idx}`} />
+                )),
+                ...(group.isMulti ? [<FamilySubHeaders key={`fsh-${gi}`} />] : []),
+              ])}
+              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Value</th>
+              <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Contr %</th>
+              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: 44 }}>Tgt Value</th>
+              <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Ach %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.regions.map((region) => (
+              <RegionBlock
+                columnGroups={columnGroups}
+                grandTotalValue={grandTotalValue}
+                key={region.regionCode}
+                productTotals={productTotals}
+                region={region}
+              />
+            ))}
+
+            {/* National Grand Total — family columns shown here too but rowTotal is unchanged */}
+            <tr className="bg-[#0B0B0B]">
+              <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-white`}>NAT</td>
+              <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-white`} style={{ left: COL.area }}>National Grand Total</td>
+              {columnGroups.map((group, gi) => (
+                <Fragment key={gi}>
+                  {group.indices.map((idx) => (
+                    <ProductCells
+                      bandTint={idx % 2 === 1}
+                      cell={matrix.grandTotal.cells[idx]}
+                      key={`gt-${idx}`}
+                      productTotal={productTotals[idx] ?? null}
+                      variant="grand"
+                    />
+                  ))}
+                  {group.isMulti && (
+                    <FamilyCells
+                      cells={matrix.grandTotal.cells}
+                      grandTotalValue={grandTotalValue}
+                      group={group}
+                      key={`gt-fam-${gi}`}
+                      variant="grand"
+                    />
+                  )}
+                </Fragment>
+              ))}
+              {/* rowTotal is the unmodified sum of all individual products — no family duplication */}
+              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
+            </tr>
+
+            {matrix.directNational ? (
+              <tr>
+                <td className={`${STICKY1} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black text-[#1E3A8A]`} style={{ left: COL.area }}>Direct – National</td>
+                {columnGroups.map((group, gi) => (
+                  <Fragment key={gi}>
+                    {group.indices.map((idx) => (
+                      <ProductCells
+                        bandTint={idx % 2 === 1}
+                        cell={matrix.directNational!.cells[idx]}
+                        key={`dn-${idx}`}
+                        productTotal={productTotals[idx] ?? null}
+                        rowBg="bg-[#B6CEF8]"
+                        variant="subtotal"
+                      />
+                    ))}
+                    {group.isMulti && (
+                      <FamilyCells
+                        cells={matrix.directNational!.cells}
+                        grandTotalValue={grandTotalValue}
+                        group={group}
+                        key={`dn-fam-${gi}`}
+                        rowBg="bg-[#B6CEF8]"
+                        variant="subtotal"
+                      />
+                    )}
+                  </Fragment>
+                ))}
+                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} rowBg="bg-[#B6CEF8]" variant="subtotal" />
+              </tr>
+            ) : null}
+
+            {matrix.companyTotal ? (
+              <tr className="bg-[#0B0B0B]">
+                <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-[#FDBA74]`}>TOT</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-[#FDBA74]`} style={{ left: COL.area }}>Grand Total (incl. Direct)</td>
+                {columnGroups.map((group, gi) => (
+                  <Fragment key={gi}>
+                    {group.indices.map((idx) => (
+                      <ProductCells
+                        bandTint={idx % 2 === 1}
+                        cell={matrix.companyTotal!.cells[idx]}
+                        key={`ct-${idx}`}
+                        productTotal={productTotals[idx] ?? null}
+                        variant="grand"
+                      />
+                    ))}
+                    {group.isMulti && (
+                      <FamilyCells
+                        cells={matrix.companyTotal!.cells}
+                        grandTotalValue={grandTotalValue}
+                        group={group}
+                        key={`ct-fam-${gi}`}
+                        variant="grand"
+                      />
+                    )}
+                  </Fragment>
+                ))}
+                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
