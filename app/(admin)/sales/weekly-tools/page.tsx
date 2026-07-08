@@ -13,10 +13,12 @@ export const dynamic = "force-dynamic";
 export default async function WeeklySalesToolsPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Same bar as the individual tools it replaces (import for Upload/Distributor Editor,
-  // update for Mapping/Product Access) — a viewer with neither is sent to the dashboard,
-  // matching the sibling /sales/weekly/* pages' fallback convention.
-  if (!((await canAccess(access, "weekly_sales", "import")) || (await canAccess(access, "weekly_sales", "update")))) {
+  // weekly_sales:read is the broadest gate among this hub's cards (the Dashboard
+  // card only needs read; Upload/Distributor Editor need import; Mapping/Product
+  // Access need update) — a viewer with none of it is sent to the dashboard page
+  // itself, matching the sibling /sales/weekly/* pages' fallback convention (which
+  // will then correctly redirect them further if they truly have no access at all).
+  if (!(await canAccess(access, "weekly_sales", "read"))) {
     redirect("/sales/weekly/dashboard");
   }
 

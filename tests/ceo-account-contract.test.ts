@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-import { adminNavigationSections } from "../src/config/system-navigation.ts";
+import { adminNavigationSections, attendanceManagementPageItems } from "../src/config/system-navigation.ts";
 import { notificationHrefForViewerRole } from "../src/lib/notifications/hrefs.ts";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "../src/lib/payroll/links.ts";
 import {
@@ -17,17 +17,14 @@ import { getSections, type PermissionLookup } from "../src/lib/navigation/active
 
 const ceoAllowedReadOnlyRoutes = [
   "/admin/ceo-command-center",
-  "/attendance/analytics",
-  "/probation",
-  "/contracts",
-  "/resignations",
-  "/admin/m-payroll",
-  "/admin/payslips-center",
-  "/admin/outstation/expense-command",
+  "/attendance",
+  "/admin/people-management",
+  "/admin/payroll-management",
+  "/admin/outstation-expenses",
   "/admin/analytics",
   "/admin/analytics/source-sales",
   "/admin/analytics/monthly-closing",
-  "/admin/marketing-requests/roi-tracking",
+  "/admin/marketing-roi",
 ] as const;
 
 const ceoBlockedRedirectRoutes = [
@@ -41,10 +38,7 @@ const ceoBlockedHighRiskRoutes = [
   "/admin/data-health",
   "/attendance/device-user-mapping",
   "/attendance/policies",
-  "/recruitment",
-  "/cv-database",
-  "/offers",
-  "/hiring-documents",
+  "/admin/recruitment-hiring",
   "/payroll",
   "/admin/system-cleanup",
 ] as const;
@@ -126,15 +120,15 @@ export async function runCeoAccountContractTests() {
     /href: "\/admin\/ceo-command-center"[\s\S]{0,180}roles: \["CEO"\]/,
     "CEO sidebar command-center item must link directly to the dedicated CEO route",
   );
-  assert.match(
-    navigationSource,
-    /href: "\/attendance\/analytics"[\s\S]{0,120}permissions: \[\{ resource: "attendance", action: "read" \}\]/,
+  // Attendance Analytics now lives behind the "Attendance Management" hub (single
+  // sidebar entry at /attendance) rather than as its own top-level sidebar item —
+  // check its real gate on the exported card list instead of the raw source text.
+  const attendanceAnalyticsCard = attendanceManagementPageItems.find((item) => item.href === "/attendance/analytics");
+  assert.ok(attendanceAnalyticsCard, "Attendance Analytics hub card must exist");
+  assert.deepEqual(
+    attendanceAnalyticsCard?.permissions,
+    [{ resource: "attendance", action: "read" }],
     "Attendance Analytics navigation must be keyed by attendance:read, not employee-master access",
-  );
-  assert.doesNotMatch(
-    navigationSource,
-    /href: "\/attendance\/analytics"[\s\S]{0,120}resource: "employees"/,
-    "Attendance Analytics navigation must not depend on employees:read",
   );
 
   const usersRouteSource = readFileSync("app/api/admin/users/route.ts", "utf8");
