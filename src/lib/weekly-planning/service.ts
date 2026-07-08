@@ -602,6 +602,17 @@ function isOrgWidePlanningEmployee(employee: EmployeeDirectoryRow | null, fallba
   return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "Training Manager";
 }
 
+// National Sales Manager sits at the top of the sales chain, reporting directly to the CEO
+// with no "manager of manager" above them, so manager_hr_id may legitimately be unset.
+// createEmployeePlan uses this to let NSM submit without a manager on record instead of
+// hard-blocking; the manager stage itself is still a real CEO decision (see
+// assertManagerReviewer/notifyManager's null-manager fallbacks and decideEmployeePlan's
+// manager_approve -> ceo_approve cascade for the CEO).
+function isNationalSalesManagerEmployee(employee: EmployeeDirectoryRow | null, fallbackRole?: PhoenixRole) {
+  if (fallbackRole === "National Sales Manager") return true;
+  return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "National Sales Manager";
+}
+
 // Single Visit's region -> area cascade must show every area in the region,
 // including ones with no rep hired yet (it never assigns a rep). Double
 // Visit/Coaching need the opposite - only areas with a real same-line rep to
@@ -701,7 +712,18 @@ function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
 // else). Owner-confirmed rule: Super Admin cannot act on someone else's turn — his own place in
 // the chain is the final HR-acknowledge step (see acknowledgeEmployeePlan/isHrReviewer), not a
 // stand-in for the direct manager or CEO.
+//
+// Exception: a plan with no manager_hr_id at all (e.g. a National Sales Manager plan — NSM
+// reports directly to the CEO with no manager of manager, and createEmployeePlan allows them
+// to submit without a manager on record) has no one who could ever satisfy hrIdsMatch. The
+// CEO — NSM's real direct manager either way — decides this stage instead.
 async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow) {
+  if (!plan.manager_hr_id) {
+    if (access.role !== "CEO") {
+      throw new Error("Forbidden: only the direct manager can decide this plan.");
+    }
+    return;
+  }
   if (!hrIdsMatch(access.hrId, plan.manager_hr_id)) {
     throw new Error("Forbidden: only the direct manager can decide this plan.");
   }
@@ -1265,6 +1287,23 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
     }
   }
 
+  // Fallback 1b: National Sales Manager reports directly to the CEO — there is no
+  // "manager of manager" above them, so a plan with no manager_hr_id on record (and no
+  // skip-level resolved above) routes straight to the CEO rather than Super Admin. The
+  // CEO is NSM's real manager either way; see assertManagerReviewer's matching fallback.
+  if (managerRecipients.length === 0 && resolveJobFunctionRole(plan.employee_job_title) === "National Sales Manager") {
+    try {
+      const ceos = await authUsersByRole("CEO");
+      if (ceos.length > 0) {
+        managerRecipients = ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
+        console.error(`[weekly-plans] plan ${plan.id} has NULL manager_hr_id for an NSM — routing to CEO`);
+      }
+    } catch (lookupError) {
+      errored = true;
+      console.error(`[weekly-plans] CEO lookup failed for plan ${plan.id}`, lookupError);
+    }
+  }
+
   // Fallback 2: Super Admin
   if (managerRecipients.length === 0) {
     try {
@@ -1359,6 +1398,9 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
 
 // Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
 // Best-effort and isolated — a failure to reach HR must never block the manager alert.
+// National Sales Manager's "direct manager" is the CEO (see notifyManager's NSM fallback) —
+// the CEO still gets a real "needs manager review" alert and must make a real decision; the
+// double-click for the same person is avoided in decideEmployeePlan, not by skipping the review.
 async function notifyPlanSubmitted(plan: PlanHeaderRow) {
   const hrRecipients = (await hrAcknowledgementRecipients())
     .filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
@@ -1648,7 +1690,9 @@ export type ApproverPlanStage = "manager" | "ceo";
  * Pure authorization rule deciding which approval gate (if any) a plan in a given
  * status is awaiting from the caller. Mirrors the server-side guards enforced in
  * decideEmployeePlan (assertManagerReviewer / assertCeoReviewer):
- *   • submitted        → manager stage, only for the actual assigned manager.
+ *   • submitted        → manager stage, only for the actual assigned manager (or, when the
+ *     plan has no manager_hr_id at all, the CEO — see assertManagerReviewer's null-manager
+ *     fallback).
  *   • manager_approved → CEO stage, only for the actual CEO.
  * Super Admin has NO standing bypass here (owner-confirmed: he cannot act on someone else's
  * turn — only where he's personally the assigned manager, which hrIdsMatch already covers, or
@@ -1662,7 +1706,9 @@ export function resolveApproverPlanStage(
 ): ApproverPlanStage | null {
   const isCeo = access.role === "CEO";
   if (status === "submitted") {
-    return hrIdsMatch(access.hrId, managerHrId) ? "manager" : null;
+    if (hrIdsMatch(access.hrId, managerHrId)) return "manager";
+    if (!managerHrId && isCeo) return "manager";
+    return null;
   }
   if (status === "manager_approved") {
     return isCeo ? "ceo" : null;
@@ -2350,7 +2396,11 @@ export async function createEmployeePlan(access: AccessContext, input: {
   if (!employee || !canSubmitFromEmployee(employee, access.role)) {
     throw new Error("Forbidden: this position is not eligible to submit weekly/monthly plans.");
   }
-  if (!employee.managerHrId) {
+  // NSM has no manager of manager above them — allow submitting without a manager on
+  // record instead of hard-blocking; the CEO decides the manager stage either way (see
+  // assertManagerReviewer/notifyManager's null-manager fallbacks).
+  const managerOptional = isNationalSalesManagerEmployee(employee, access.role);
+  if (!employee.managerHrId && !managerOptional) {
     throw new Error("Direct manager is missing from employee profile.");
   }
   if (!isActiveEmployee(employee)) {
@@ -2591,14 +2641,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     returnNotes: input.returnNotes,
   });
 
-  const updated = await loadPlanRow(planId);
-  if (input.action === "manager_approve") await notifyCeo(updated);
-  if (input.action === "ceo_approve") {
-    await notifyHr(await loadPlanRow(planId));
-  }
-  if (input.action.includes("return") || input.action.includes("reject")) {
-    await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null);
-  }
+  let updated = await loadPlanRow(planId);
   await writeAuditLog({
     actorLoginId: access.loginId,
     entityId: planId,
@@ -2607,7 +2650,44 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     oldValues: { status: plan.status },
     summary: `${updated.plan_kind} plan decision: ${input.action}`,
   });
-  return mapPlan(await loadPlanRow(planId));
+
+  // National Sales Manager reports directly to the CEO with no manager of manager above
+  // them, so the CEO is both the manager-stage and CEO-stage reviewer for their plans (see
+  // assertManagerReviewer's null-manager fallback, and the manager_hr_id-is-the-CEO
+  // convention). Their manager-stage approval is still a real decision the CEO must make —
+  // it just shouldn't also require a separate, purely-formal second click to re-approve
+  // their own decision, so it cascades straight into ceo_approve in the same request,
+  // recorded as the CEO's own second real decision.
+  if (input.action === "manager_approve" && access.role === "CEO") {
+    await assertPermission(access, "weekly_plans", "approve");
+    const beforeCeoApprove = updated;
+    await rpcDecidePlan({
+      access,
+      action: "ceo_approve",
+      comment: null,
+      expectedRevision: updated.revision,
+      planId,
+      returnNotes: [],
+    });
+    updated = await loadPlanRow(planId);
+    await writeAuditLog({
+      actorLoginId: access.loginId,
+      entityId: planId,
+      entityType: "weekly_plan",
+      newValues: { status: "final_approved" },
+      oldValues: { status: beforeCeoApprove.status },
+      summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from the CEO's manager approval)`,
+    });
+    await notifyHr(updated);
+  } else if (input.action === "manager_approve") {
+    await notifyCeo(updated);
+  } else if (input.action === "ceo_approve") {
+    await notifyHr(updated);
+  }
+  if (input.action.includes("return") || input.action.includes("reject")) {
+    await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null);
+  }
+  return mapPlan(updated);
 }
 
 export async function acknowledgeEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
