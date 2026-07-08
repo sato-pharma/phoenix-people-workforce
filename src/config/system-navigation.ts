@@ -736,6 +736,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "workflow_registry" }],
     roles: ["Super Admin"],
   },
+  {
+    href: "/admin/notifications/email",
+    icon: MailCheck,
+    label: "Email Delivery",
+    description: "See which notification emails have sent vs. not sent, and why.",
+    permissions: [{ resource: "communication" }],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Access & Communication hub (app/(admin)/admin/access-communication/page.tsx) ─
@@ -785,13 +792,6 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     icon: MessageSquareText,
     label: "Telegram Templates",
     description: "Manage the Telegram message templates used across notifications.",
-    permissions: [{ resource: "communication" }],
-  },
-  {
-    href: "/admin/notifications/email",
-    icon: MailCheck,
-    label: "Email Delivery",
-    description: "See which notification emails have sent vs. not sent, and why.",
     permissions: [{ resource: "communication" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
