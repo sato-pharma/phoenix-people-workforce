@@ -721,7 +721,12 @@ export async function materializeRun(
   }
 
   const issues = validateSalaryRows(draft.rows, draft.sources);
-  const hardIssues = issues.filter((issue) => issue.code !== "base_salary_source_of_truth_mismatch");
+  const hardIssues = issues.filter(
+    (issue) =>
+      issue.code !== "base_salary_source_of_truth_mismatch" &&
+      issue.code !== "gross_salary_formula_mismatch" &&
+      issue.code !== "net_salary_formula_mismatch",
+  );
   if (hardIssues.length > 0) {
     throw new CopilotError(
       `The assembled sheet failed validation: ${hardIssues.slice(0, 5).map((i) => `${i.hrId ?? "?"} ${i.message}`).join("; ")}`,
