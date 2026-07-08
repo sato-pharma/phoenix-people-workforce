@@ -100,6 +100,9 @@ export function runSalesSourceOfTruthTests() {
   assert.match(portalSosPageSource, /getPortalSosDashboard/);
 
   const medRepsPerformancePageSource = readFileSync("app/employee-portals/med-reps-performance/page.tsx", "utf8");
-  assert.match(medRepsPerformancePageSource, /buildSalesManagerPerformanceGroups/);
+  // Page was rebuilt to mirror the flat dsm-performance/dsms-performance layout (snapshot ->
+  // achievement bar -> flat charts -> leaderboard -> product depth), so it no longer groups
+  // members per district via buildSalesManagerPerformanceGroups. Still guard against the naive
+  // double-counting pattern that helper was originally introduced to avoid.
   assert.doesNotMatch(medRepsPerformancePageSource, /members\.reduce\(\(sum, member\) => sum \+ member\.totalSales/);
 }
