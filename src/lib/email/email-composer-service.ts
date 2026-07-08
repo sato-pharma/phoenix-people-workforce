@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-import { systemIdentity } from "@/config/system-settings";
+import { systemIdentity, systemDeployment } from "@/config/system-settings";
 import { invalidCommunicationEmails, splitCommunicationEmailList } from "@/lib/communication/metrics";
 import {
   assertReachableEmailImage,
@@ -421,6 +421,7 @@ function publicAssetUrl(publicPath: string, requestUrl: string) {
     process.env.HR_EMAIL_ASSET_BASE_URL ||
     process.env.NOTIFICATION_DASHBOARD_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
+    systemDeployment.productionUrl ||
     process.env.VERCEL_PROJECT_PRODUCTION_URL ||
     process.env.VERCEL_URL ||
     new URL(requestUrl).origin;

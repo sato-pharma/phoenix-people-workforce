@@ -71,7 +71,7 @@ registry-key alias, and route/app-shell ownership rules — are documented in
 
 - `main` is production-only. Do not edit it directly.
 - A long-lived working branch holds active development and feature work.
-- Production public domain: `https://phoenix-workforce.vercel.app`
+- Production public domain: `https://phoenix-hr.satopharma.com`
 - Vercel keeps only two active deployments: production (`main`) and the working-branch preview.
 - The exact public production domain must be checked after every production deploy because Vercel workspace aliases and public aliases can point to different deployments.
 - The working-branch name, preview URL, and deployment mapping are documented in [current-operating-state.md](current-operating-state.md).

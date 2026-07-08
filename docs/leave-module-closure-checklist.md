@@ -90,7 +90,7 @@ Use this checklist before closing the leave management hardening work, before st
 - [ ] Staging preview smoke test completed.
 - [ ] Production migration approved.
 - [ ] Production deployment approved.
-- [ ] Production URL verified: `https://phoenix-workforce.vercel.app`.
+- [ ] Production URL verified: `https://phoenix-hr.satopharma.com`.
 
 ## Stop Conditions
 

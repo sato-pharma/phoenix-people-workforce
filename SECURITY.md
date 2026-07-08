@@ -132,7 +132,7 @@ Key principles:
 - **Preview environments** enforce a read-only guard via the
   `PHOENIX_PREVIEW_READ_ONLY` environment variable, preventing accidental
   mutations against production data from preview deployments.
-- The production domain (`https://phoenix-workforce.vercel.app`) must be
+- The production domain (`https://phoenix-hr.satopharma.com`) must be
   verified after every production deploy -- workspace aliases can diverge
   from the public alias.
 - Only two active Vercel deployments are maintained: production (`main`) and

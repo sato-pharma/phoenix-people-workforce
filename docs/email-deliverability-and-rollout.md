@@ -21,7 +21,7 @@ name (`select conname, pg_get_constraintdef(oid) from pg_constraint where conrel
 | Var | Set to | Why |
 |---|---|---|
 | `PHOENIX_EMAIL_FORCE_TESTING` | `false` | **P0** — stop redirecting all mail to the test inboxes. Verify with `/api/health/email` (must read `forceTesting:false`, `status:healthy`). |
-| `NOTIFICATION_DASHBOARD_URL` | `https://phoenix-workforce.vercel.app` | needed to mint the HTTPS one-click unsubscribe URL |
+| `NOTIFICATION_DASHBOARD_URL` | `https://phoenix-hr.satopharma.com` | needed to mint the HTTPS one-click unsubscribe URL |
 | `PHOENIX_AUTH_SECRET` | (already set for sessions) | also signs unsubscribe tokens — confirm present |
 
 Before broad enablement, send one `POST /api/notifications/test {"to":["a-controlled-inbox"]}`
@@ -34,7 +34,7 @@ In the repo settings → Secrets and variables → Actions, add:
 | Secret | Value |
 |---|---|
 | `CRON_SECRET` | the SAME value as Vercel's `CRON_SECRET` |
-| `NOTIFICATION_DRAIN_URL` | `https://phoenix-workforce.vercel.app/api/notifications/process?limit=50` |
+| `NOTIFICATION_DRAIN_URL` | `https://phoenix-hr.satopharma.com/api/notifications/process?limit=50` |
 
 The workflow (`.github/workflows/notification-drain.yml`) then drains every ~5 min. The
 daily Vercel cron remains the guaranteed backstop, so this is purely latency reduction.

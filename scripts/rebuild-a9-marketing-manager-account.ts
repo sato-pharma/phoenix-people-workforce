@@ -24,7 +24,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const targetHrId = "A-9";
 const targetRole = "Marketing Manager";
 const productionSupabaseRef = "ozucdzovmcqvepbozvqf";
-const productionAppUrl = "https://phoenix-workforce.vercel.app";
+const productionAppUrl = "https://phoenix-hr.satopharma.com";
 const outputBase = path.join("outputs", "account-rebuild");
 const actorLoginId = process.env.PHOENIX_ACCOUNT_REBUILD_ACTOR ?? "system";
 const passwordSetupExpiryMs = 48 * 60 * 60 * 1000;

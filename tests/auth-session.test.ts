@@ -381,11 +381,11 @@ export async function runAuthSessionTests() {
   try {
     process.env.PHOENIX_ALLOWED_ORIGINS = "https://builder.io";
 
-    const builderLoginRequest = new NextRequest("https://phoenix-workforce.vercel.app/api/auth/login", {
+    const builderLoginRequest = new NextRequest("https://phoenix-hr.satopharma.com/api/auth/login", {
       headers: {
         origin: "https://builder.io",
         referer: "https://builder.io/app/projects/0ae41ba2cad449c8bf70/vast-cruiser-5ct7suka",
-        "x-forwarded-host": "phoenix-workforce.vercel.app",
+        "x-forwarded-host": "phoenix-hr.satopharma.com",
         "x-forwarded-proto": "https",
       },
       method: "POST",
@@ -410,7 +410,7 @@ export async function runAuthSessionTests() {
     );
 
     process.env.PHOENIX_ALLOWED_ORIGINS = "https://builder.io";
-    const builderHeartbeatRequest = new NextRequest("https://phoenix-workforce.vercel.app/api/auth/heartbeat", {
+    const builderHeartbeatRequest = new NextRequest("https://phoenix-hr.satopharma.com/api/auth/heartbeat", {
       headers: { origin: "https://builder.io" },
       method: "POST",
     });

@@ -33,7 +33,7 @@ Never push directly to main. All changes go through the working branch and are p
 ## Production Verification
 
 Always verify the exact public production domain after deployment:
-https://phoenix-workforce.vercel.app
+https://phoenix-hr.satopharma.com
 
 Do not rely solely on Vercel workspace aliases, as they can diverge from the public domain.
 

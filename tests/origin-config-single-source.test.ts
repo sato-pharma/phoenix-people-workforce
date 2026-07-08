@@ -12,7 +12,7 @@ function source(path: string) {
  * Architecture cleanup (Finding 5): the production URL must have a single edit point.
  *
  * The security CSRF/CORS allowlist (`src/lib/security/origins.ts`) used to hardcode
- * `https://phoenix-workforce.vercel.app` separately from `systemDeployment.productionUrl`,
+ * `https://phoenix-hr.satopharma.com` separately from `systemDeployment.productionUrl`,
  * so a domain change needed two edits and could silently drift. These tests pin the
  * allowlist to the deploy config so the two can never diverge again.
  */
