@@ -28,6 +28,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   Mail,
+  MailCheck,
   MapPinned,
   Megaphone,
   MessageSquareText,
@@ -784,6 +785,13 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     icon: MessageSquareText,
     label: "Telegram Templates",
     description: "Manage the Telegram message templates used across notifications.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/notifications/email",
+    icon: MailCheck,
+    label: "Email Delivery",
+    description: "See which notification emails have sent vs. not sent, and why.",
     permissions: [{ resource: "communication" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];

@@ -10,6 +10,7 @@ import { runNotificationGovernanceHardeningTests } from "./notification-governan
 import { runUnifiedNotificationsTests } from "./unified-notifications.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
+import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
 import { runTelegramTemplateManagementTests } from "./telegram-template-management.test.ts";
 import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
@@ -359,6 +360,7 @@ await runTest("notification governance hardening", runNotificationGovernanceHard
 await runTest("unified notifications", runUnifiedNotificationsTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
+await runTest("email admin control center", runEmailAdminControlCenterTests);
 await runTest("telegram template management", runTelegramTemplateManagementTests);
 await runTest("telegram hardening", runTelegramHardeningTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
