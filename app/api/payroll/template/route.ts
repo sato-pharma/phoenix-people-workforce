@@ -16,7 +16,7 @@ import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy"
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { calculatePayrollParts, payrollPaymentModeLabel, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
-import { getLatestSalaryExpenseTotalsBefore } from "@/lib/payroll/service";
+import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1430,7 +1430,56 @@ async function buildReadyRows(
   month: number,
   year: number,
   accessContext: AccessContext,
+  batchId?: string | null,
 ): Promise<PayrollTemplateRow[]> {
+  if (batchId) {
+    const exportData = await getSalaryBatchExport(batchId, accessContext);
+    if (exportData) {
+      return exportData.records.map((record) => {
+        return {
+          arabicName: record.nameAr,
+          area: record.area,
+          bankAccount: "", // Not stored in SalaryRecord, typically blank in batch
+          bankName: "", // Not stored in SalaryRecord
+          baseSalary: record.baseSalary ?? 0,
+          bonus: record.bonus ?? 0,
+          comment: record.payrollComment ?? "",
+          crm: record.crm ?? 0,
+          employeeCode: record.hrId,
+          employmentIncomeTax: record.employmentIncomeTax ?? 0,
+          expenses: record.expenses ?? 0,
+          extraCostOfLiving: record.extraCostOfLiving ?? 0,
+          fingerPrint: record.fingerPrint ?? 0,
+          firstPart: record.firstPart ?? 0,
+          fuelAllowance: record.fuelAllowance ?? 0,
+          fullName: record.fullName,
+          governmentalDeductions: record.governmentalDeductions ?? 0,
+          grossSalary: record.grossSalary ?? 0,
+          hireDate: record.hireDate,
+          incentive: record.incentive ?? 0,
+          jobTitle: record.jobTitle,
+          lastWorkingDate: null,
+          line: record.line,
+          loans: record.loans ?? 0,
+          medicalInsurance: record.medicalInsurance ?? 0,
+          month,
+          monthSalary: record.monthSalary ?? 0,
+          netSalary: record.netSalary ?? 0,
+          otherAdditions: record.otherAdditions ?? 0,
+          otherDeductions: record.otherDeductions ?? 0,
+          overtime: record.overtime ?? 0,
+          paymentMode: payrollPaymentModeLabel((record.paymentMode as "one_part" | "two_parts") || "two_parts"),
+          secondPart: record.secondPart ?? 0,
+          socialInsurance: record.socialInsurance ?? 0,
+          totalAdditions: record.totalAdditions ?? 0,
+          totalDeductions: record.totalDeductions ?? 0,
+          unpaidVacations: record.unpaidVacations ?? 0,
+          year,
+        };
+      });
+    }
+  }
+
   const [payrollEmployees, previousExpensesByEmployee, approvedExpenseTotals] = await Promise.all([
     getPayrollTemplateEmployees(month, year),
     getLatestSalaryExpenseTotalsBefore(month, year),
@@ -1580,12 +1629,13 @@ async function buildStyledTemplate(
   year: number,
   ready: boolean,
   accessContext: AccessContext,
+  batchId?: string | null,
 ) {
   const workbook = await loadPayrollTemplateWorkbook();
   const sheet = workbook.worksheets[0] ?? workbook.addWorksheet("Payroll Upload");
   const bodyStyles = captureBodyStyles(sheet);
   const totalsStyle = captureRowStyle(sheet, templateDataEndRow + 1);
-  const rows = ready ? await buildReadyRows(month, year, accessContext) : [];
+  const rows = ready ? await buildReadyRows(month, year, accessContext, batchId) : [];
   const displayRows = ready ? rows : [];
   const rowsToKeep = ready ? displayRows.length : 25;
   const totalsRow = prepareTemplateRows(sheet, rowsToKeep);
@@ -1621,6 +1671,7 @@ export async function GET(request: Request) {
     const upload = url.searchParams.get("upload") === "1";
     const month = numberParam(url.searchParams.get("month"), now.getMonth() + 1);
     const year = numberParam(url.searchParams.get("year"), now.getFullYear());
+    const batchId = url.searchParams.get("batchId");
 
     if (upload) {
       if (getPayrollScope(access) !== "COMPANY") {
@@ -1671,8 +1722,8 @@ export async function GET(request: Request) {
     }
 
     const workbook = ready
-      ? await createFallbackWorkbook(await buildReadyRows(month, year, access), month, year, { formulas: true })
-      : await buildStyledTemplate(month, year, ready, access);
+      ? await createFallbackWorkbook(await buildReadyRows(month, year, access, batchId), month, year, { formulas: true })
+      : await buildStyledTemplate(month, year, ready, access, batchId);
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = ready
       ? `phoenix-ready-payroll-${year}-${String(month).padStart(2, "0")}.xlsx`

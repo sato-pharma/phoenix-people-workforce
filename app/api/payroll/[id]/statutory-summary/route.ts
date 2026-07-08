@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildStatutorySummaryRows } from "@/lib/payroll/exports/statutory-summary";
+import { autoSizeColumns, MONEY_FMT, PHOENIX_ORANGE, styleDataRow, styleHeaderRow } from "@/lib/payroll/exports/excel-style";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 
@@ -39,14 +40,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Statutory Summary");
-    sheet.addRow(HEADERS);
-    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-    sheet.getRow(1).fill = { fgColor: { argb: "FFFF6B00" }, pattern: "solid", type: "pattern" };
+    
+    // Add headers and style them
+    const headerRow = sheet.addRow(HEADERS);
+    styleHeaderRow(headerRow, PHOENIX_ORANGE);
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.columns = HEADERS.map((header) => ({ header, key: header, width: Math.max(header.length + 4, 16) }));
 
     for (const row of rows) {
-      sheet.addRow([
+      const dataRow = sheet.addRow([
         row.hrId,
         row.fullName,
         row.subjectWage,
@@ -55,6 +56,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         row.totalSi,
         row.incomeTax,
       ]);
+      styleDataRow(dataRow);
+      // Format number columns (3 to 7) as money
+      for (let c = 3; c <= 7; c++) {
+        dataRow.getCell(c).numFmt = MONEY_FMT;
+      }
     }
 
     const totalRow = sheet.addRow([
@@ -66,7 +72,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       totals.totalSi,
       totals.incomeTax,
     ]);
-    totalRow.font = { bold: true };
+    styleDataRow(totalRow, true);
+    for (let c = 4; c <= 7; c++) {
+      totalRow.getCell(c).numFmt = MONEY_FMT;
+    }
+
+    autoSizeColumns(sheet);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;
