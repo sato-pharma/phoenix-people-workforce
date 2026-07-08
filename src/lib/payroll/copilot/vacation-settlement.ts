@@ -35,12 +35,21 @@ export type UnpaidVacationCandidate = {
   endDate: string;
   unpaidDays: number;
   salaryDeductionAmount: number;
-  /** True only when settling the FULL unpaid amount against balance would still leave the employee non-negative. */
+  /** True when the employee has at least 1 day of vacation balance — partial coverage is allowed. */
   balanceAvailable: boolean;
-  /** The employee's actual remaining vacation-balance days as of this request — shown inline so a disabled "deduct from balance" reads as a real number, not a silent toggle. */
+  /** The employee's actual remaining vacation-balance days as of this request. */
   balanceDaysAvailable: number;
+  /**
+   * Balance days that will actually be consumed (= Math.min(balanceDaysAvailable, unpaidDays)).
+   * Equals unpaidDays when fully covered; less when partially covered.
+   */
+  balanceDaysToConsume: number;
+  /** Days not covered by balance — these are deducted from salary. 0 when fully covered. */
+  remainingSalaryDays: number;
+  /** EGP salary deduction for the remaining days (dailyRate × remainingSalaryDays). 0 when fully covered. */
+  remainingSalaryDeductionAmount: number;
   existingSettlement: {
-    method: "salary" | "balance";
+    method: "salary" | "balance" | "partial_balance" | "defer_to_balance";
     decidedAt: string;
   } | null;
 };
@@ -55,8 +64,8 @@ function periodBounds(period: CopilotPeriod): { start: string; end: string } {
 
 async function loadExistingSettlements(
   period: CopilotPeriod,
-): Promise<Map<string, { method: "salary" | "balance"; decidedAt: string }>> {
-  const map = new Map<string, { method: "salary" | "balance"; decidedAt: string }>();
+): Promise<Map<string, { method: "salary" | "balance" | "partial_balance" | "defer_to_balance"; decidedAt: string }>> {
+  const map = new Map<string, { method: "salary" | "balance" | "partial_balance" | "defer_to_balance"; decidedAt: string }>();
   const { start, end } = periodBounds(period);
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -71,10 +80,16 @@ async function loadExistingSettlements(
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const key = `${String(row.employee_hr_id_compact ?? "")}:${String(row.start_date ?? "")}`;
-      map.set(key, {
-        method: row.settlement_method === "balance" ? "balance" : "salary",
-        decidedAt: String(row.decided_at ?? ""),
-      });
+      const rawMethod = String(row.settlement_method ?? "");
+      const method: "salary" | "balance" | "partial_balance" | "defer_to_balance" =
+        rawMethod === "balance"
+          ? "balance"
+          : rawMethod === "partial_balance"
+            ? "partial_balance"
+            : rawMethod === "defer_to_balance"
+              ? "defer_to_balance"
+              : "salary";
+      map.set(key, { method, decidedAt: String(row.decided_at ?? "") });
     }
   } catch (error) {
     console.error("[payroll-copilot:vacation-settlement] existing settlements load threw:", error);
@@ -132,11 +147,18 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
         startDate,
         vacationType,
       });
-      balanceAvailable = snapshot.paymentStatus === "paid";
       balanceDaysAvailable = snapshot.balanceBeforeDays;
+      // Enable the balance button whenever the employee has ANY balance days —
+      // partial coverage is allowed (remaining days are deducted from salary).
+      balanceAvailable = balanceDaysAvailable > 0;
     } catch (balanceError) {
       console.error("[payroll-copilot:vacation-settlement] balance check failed:", balanceError);
     }
+
+    // How many days will actually be consumed from balance (capped at unpaidDays).
+    const balanceDaysToConsume = roundCurrency(Math.min(balanceDaysAvailable, unpaidDays));
+    const remainingSalaryDays = roundCurrency(Math.max(0, unpaidDays - balanceDaysToConsume));
+    const remainingSalaryDeductionAmount = roundCurrency(dailyRate(baseSalary, period) * remainingSalaryDays);
 
     candidates.push({
       requestId: String(row.id ?? ""),
@@ -149,6 +171,9 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
       salaryDeductionAmount,
       balanceAvailable,
       balanceDaysAvailable,
+      balanceDaysToConsume,
+      remainingSalaryDays,
+      remainingSalaryDeductionAmount,
       existingSettlement: existingSettlements.get(`${compact}:${startDate}`) ?? null,
     });
   }
@@ -168,10 +193,12 @@ export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): 
   const totals: ApprovedVacationSalaryTotals = new Map();
   const { start, end } = periodBounds(period);
   try {
+    // Include both full-salary settlements and partial-balance settlements —
+    // both carry a salary_deduction_amount that must reach the payroll sheet.
     const { data, error } = await getSupabaseAdmin()
       .from("payroll_copilot_vacation_settlements")
       .select("employee_hr_id_compact,salary_deduction_amount")
-      .eq("settlement_method", "salary")
+      .in("settlement_method", ["salary", "partial_balance"])
       .is("superseded_at", null)
       .gte("start_date", start)
       .lte("start_date", end);
@@ -200,7 +227,7 @@ export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): 
 export async function recordVacationSettlementDecision(input: {
   runId: string;
   candidate: UnpaidVacationCandidate;
-  method: "salary" | "balance" | "reject";
+  method: "salary" | "balance" | "partial_balance" | "defer_to_balance" | "reject";
   decidedBy: string;
 }): Promise<void> {
   const supabase = getSupabaseAdmin();
@@ -218,6 +245,24 @@ export async function recordVacationSettlementDecision(input: {
 
   if (input.method === "reject") return;
 
+  const isBalance = input.method === "balance";
+  const isPartial = input.method === "partial_balance";
+  const isDefer = input.method === "defer_to_balance";
+
+  let salaryAmount: number | null = null;
+  let balanceConsumed: number | null = null;
+
+  if (isBalance || isDefer) {
+    salaryAmount = null;
+    balanceConsumed = input.candidate.unpaidDays;
+  } else if (input.method === "salary") {
+    salaryAmount = input.candidate.salaryDeductionAmount;
+    balanceConsumed = null;
+  } else if (isPartial) {
+    salaryAmount = input.candidate.remainingSalaryDeductionAmount;
+    balanceConsumed = input.candidate.balanceDaysToConsume;
+  }
+
   const { data, error } = await supabase
     .from("payroll_copilot_vacation_settlements")
     .insert({
@@ -228,15 +273,15 @@ export async function recordVacationSettlementDecision(input: {
       start_date: input.candidate.startDate,
       unpaid_days: input.candidate.unpaidDays,
       settlement_method: input.method,
-      salary_deduction_amount: input.method === "salary" ? input.candidate.salaryDeductionAmount : null,
-      balance_days_consumed: input.method === "balance" ? input.candidate.unpaidDays : null,
+      salary_deduction_amount: salaryAmount,
+      balance_days_consumed: balanceConsumed,
       decided_by: input.decidedBy,
     })
     .select("id")
     .single();
   if (error) throw error;
 
-  if (input.method === "balance") {
+  if (isBalance || isPartial) {
     await sendBalanceSettlementEmailSafely(input.candidate);
     await supabase
       .from("payroll_copilot_vacation_settlements")

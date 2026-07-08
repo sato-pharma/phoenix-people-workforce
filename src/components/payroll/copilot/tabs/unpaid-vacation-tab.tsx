@@ -13,7 +13,10 @@ type UnpaidVacationCandidate = {
   salaryDeductionAmount: number;
   balanceAvailable: boolean;
   balanceDaysAvailable: number;
-  existingSettlement: { method: "salary" | "balance"; decidedAt: string } | null;
+  balanceDaysToConsume: number;
+  remainingSalaryDays: number;
+  remainingSalaryDeductionAmount: number;
+  existingSettlement: { method: "salary" | "balance" | "partial_balance" | "defer_to_balance"; decidedAt: string } | null;
 };
 
 function egp(value: number): string {
@@ -66,7 +69,7 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
     void load();
   }, [load]);
 
-  async function decide(candidate: UnpaidVacationCandidate, method: "salary" | "balance" | "reject") {
+  async function decide(candidate: UnpaidVacationCandidate, method: "salary" | "balance" | "partial_balance" | "defer_to_balance" | "reject") {
     setBusyId(candidate.requestId);
     setError(null);
     try {
@@ -79,6 +82,10 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
         vacationType: candidate.vacationType,
         salaryDeductionAmount: candidate.salaryDeductionAmount,
         balanceAvailable: candidate.balanceAvailable,
+        balanceDaysAvailable: candidate.balanceDaysAvailable,
+        balanceDaysToConsume: candidate.balanceDaysToConsume,
+        remainingSalaryDays: candidate.remainingSalaryDays,
+        remainingSalaryDeductionAmount: candidate.remainingSalaryDeductionAmount,
         method,
       });
       await load();
@@ -87,6 +94,11 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
     } finally {
       setBusyId(null);
     }
+  }
+
+  /** Determines the correct method: full balance, partial balance, or salary. */
+  function balanceMethod(candidate: UnpaidVacationCandidate): "balance" | "partial_balance" {
+    return candidate.balanceDaysToConsume >= candidate.unpaidDays ? "balance" : "partial_balance";
   }
 
   return (
@@ -156,22 +168,47 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
                         </button>
                         <button
                           type="button"
-                          disabled={busy || !row.balanceAvailable}
-                          onClick={() => decide(row, "balance")}
+                          disabled={busy || row.balanceDaysAvailable === 0}
+                          onClick={() => decide(row, balanceMethod(row))}
                           className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
-                            current === "balance"
+                            current === "balance" || current === "partial_balance"
                               ? "bg-emerald-600 text-white"
                               : "border border-slate-300 text-slate-700 hover:bg-slate-100"
                           }`}
                         >
                           Deduct from vacation balance
                         </button>
-                        {!row.balanceAvailable ? (
+                        {row.balanceDaysAvailable === 0 ? (
                           <p className="px-2 text-[11px] text-slate-500">
-                            Only {row.balanceDaysAvailable} of {row.unpaidDays} day(s) available in balance — not
-                            enough to cover this request.
+                            No vacation balance available for this employee.
+                          </p>
+                        ) : row.remainingSalaryDays > 0 ? (
+                          <p className="px-2 text-[11px] text-amber-700">
+                            Partial: {row.balanceDaysToConsume} day(s) from balance +{" "}
+                            {egp(row.remainingSalaryDeductionAmount)} ({row.remainingSalaryDays} day(s)) from salary.
                           </p>
                         ) : null}
+
+                        {row.balanceDaysAvailable < row.unpaidDays && (
+                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => decide(row, "defer_to_balance")}
+                              className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
+                                current === "defer_to_balance"
+                                  ? "bg-emerald-600 text-white"
+                                  : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              Defer to future balance
+                            </button>
+                            <p className="px-2 text-[11px] text-amber-700">
+                              {row.balanceDaysToConsume > 0 ? `${row.balanceDaysToConsume} day(s) now, ` : ""}
+                              {row.unpaidDays - row.balanceDaysToConsume} day(s) will be deferred to future balance.
+                            </p>
+                          </div>
+                        )}
                         <button
                           type="button"
                           disabled={busy}

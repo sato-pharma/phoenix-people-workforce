@@ -32,6 +32,7 @@ import { getConfirmedNationalHolidays, type EgyptianNationalHoliday } from "@/li
 import {
   calculateVacationDurationDays,
   calculateVacationPayment,
+  compareDateOnly,
   getAnnualVacationMinimumStartDate,
   getVacationPolicyToday,
   getVacationPolicyWarnings,
@@ -2178,7 +2179,7 @@ async function balanceSettledDaysInPeriod(input: {
       .from("payroll_copilot_vacation_settlements")
       .select("balance_days_consumed")
       .eq("employee_hr_id_compact", compactHrId)
-      .eq("settlement_method", "balance")
+      .in("settlement_method", ["balance", "partial_balance", "defer_to_balance"])
       .is("superseded_at", null)
       .gte("start_date", input.periodStart)
       .lt("start_date", input.periodEnd);
@@ -2245,6 +2246,36 @@ async function approvedPaidDaysInPeriod(input: {
   return requestDays + settledDays;
 }
 
+async function getDeferredDebtFromPreviousPeriods(input: {
+  employeeHrId: string;
+  hireDate: string;
+  currentPeriodStart: string;
+}): Promise<number> {
+  if (compareDateOnly(input.currentPeriodStart, input.hireDate) <= 0) return 0;
+
+  let currentDebt = 0;
+  let periodStart = input.hireDate;
+  
+  let iterations = 0;
+  while (compareDateOnly(periodStart, input.currentPeriodStart) < 0 && iterations < 50) {
+    iterations++;
+    const period = getVacationBalancePeriod({ hireDate: input.hireDate, referenceDate: periodStart });
+    if (!period) break;
+
+    const usedPaidDays = await approvedPaidDaysInPeriod({
+      employeeHrId: input.employeeHrId,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      vacationType: "annual",
+    });
+
+    currentDebt = Math.max(0, currentDebt + usedPaidDays - period.entitlementDays);
+    periodStart = period.periodEnd;
+  }
+
+  return currentDebt;
+}
+
 /**
  * Exported so other domains (Payroll Copilot's Unpaid Vacation review tab)
  * can ask "does this employee currently have enough balance for N days" the
@@ -2281,8 +2312,17 @@ export async function calculatePaymentForRequest(input: {
     vacationType: input.vacationType,
   });
 
+  let carriedOverDebtDays = 0;
+  if (input.vacationType === "annual" && period?.periodStart && input.hireDate) {
+    carriedOverDebtDays = await getDeferredDebtFromPreviousPeriods({
+      employeeHrId: input.employeeHrId,
+      hireDate: input.hireDate,
+      currentPeriodStart: period.periodStart,
+    });
+  }
+
   return calculateVacationPayment({
-    approvedPaidDaysInPeriod: usedPaidDays,
+    approvedPaidDaysInPeriod: usedPaidDays + carriedOverDebtDays,
     durationDays: input.durationDays,
     hireDate: input.hireDate,
     startDate: input.startDate,
