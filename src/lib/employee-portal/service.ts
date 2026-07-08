@@ -4156,7 +4156,7 @@ export function resolveNsmVacantDsmSeat(
 
 export async function getDsmTeamPerformance(
   access: AccessContext,
-  options: { period?: string | null } = {},
+  options: { period?: string | string[] | null } = {},
 ): Promise<DsmTeamPerformanceData | null> {
   try {
     const currentUser = await resolvePortalCurrentUser(access);
@@ -4207,7 +4207,7 @@ async function buildTeamPerformanceForScope(input: {
   mode: "dsm-direct" | "nsm-line";
   /** Canonical anchor: the DSM (dsm-direct) or the line's NSM (nsm-line); null when the NSM seat is vacant. */
   anchorCanonical: string | null;
-  period?: string | null;
+  period?: string | string[] | null;
 }): Promise<DsmTeamPerformanceData> {
   // Local aliases keep the body below byte-identical to the pre-refactor implementation.
   const { directory, lineScope } = input;
@@ -4313,10 +4313,11 @@ async function buildTeamPerformanceForScope(input: {
     const periods = Array.from(new Set(allRecords.map((r) => r.period).filter(Boolean)))
       .sort((a, b) => b.localeCompare(a));
 
-    // Filter records by period in memory if requested
-    const selectedPeriod = normalizeTeamComparisonPeriod(input.period ?? null);
-    const records = selectedPeriod
-      ? allRecords.filter((r) => r.period === selectedPeriod)
+    // Filter records by period in memory if requested. Supports a single period, several
+    // comma-separated periods, or none (all periods) — mirrors buildDsmPerformanceForLineScope.
+    const selectedPeriods = normalizeTeamComparisonPeriods(input.period ?? null);
+    const records = selectedPeriods.length > 0
+      ? allRecords.filter((r) => selectedPeriods.includes(r.period))
       : allRecords;
 
     // Pass 1 — accumulate sales and build deduplicated target keys
@@ -4501,7 +4502,7 @@ export type CompanyMedRepPerformanceData = {
  */
 export async function getCompanyMedRepPerformance(
   access: AccessContext,
-  options: { period?: string | null } = {},
+  options: { period?: string | string[] | null } = {},
 ): Promise<CompanyMedRepPerformanceData | null> {
   try {
     if (access.scope !== "company") return null;
