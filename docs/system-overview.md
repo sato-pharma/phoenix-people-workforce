@@ -16,7 +16,7 @@ Current operating state: see [Current Operating State](F:/Phoenix%20Workforce/ph
 
 - `main` is production-only and should stay aligned with the live production deployment.
 - A long-lived working branch holds new edits, feature work, and function changes.
-- Production is served at `https://phoenix-workforce.vercel.app`.
+- Production is served at `https://phoenix-hr.satopharma.com`.
 - Vercel keeps only two active deployments: production (`main`) and the working-branch preview.
 - The working-branch name, preview URL, and deployment mapping are documented in [current-operating-state.md](current-operating-state.md).
 - `.vercel/` is local Vercel CLI metadata and is intentionally ignored.

@@ -114,7 +114,8 @@ function isLoopbackBaseUrl() {
 function isTrustedPhoenixBaseUrl() {
   try {
     const hostname = new URL(baseUrl).hostname.toLowerCase();
-    return hostname === "phoenix-workforce.vercel.app" ||
+    return hostname === "phoenix-hr.satopharma.com" ||
+           hostname === "phoenix-workforce.vercel.app" ||
       (hostname.startsWith("phoenix-workforce-") && hostname.endsWith(".vercel.app"));
   } catch {
     return false;

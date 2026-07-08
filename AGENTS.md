@@ -24,7 +24,7 @@
 
 ## Stable Environment Facts
 
-- Production application: `https://phoenix-workforce.vercel.app`
+- Production application: `https://phoenix-hr.satopharma.com`
 - Vercel project: `phoenix-workforce`
 - Vercel scope: `phoenix-hr-workspace-s-projects`
 - Staging Supabase project ref: `izhmxvgiktiafqusolot`
@@ -157,7 +157,7 @@ git diff --cached
 - Use `vercel ls phoenix-workforce --scope phoenix-hr-workspace-s-projects` when the CLI is available, or use the authoritative Vercel integration.
 - A PR is merge-ready only when required CI passes, the relevant preview is Ready, changed workflows pass smoke testing, and required staging migrations are verified.
 - When a page fails, capture the visible error, browser console, relevant network/API response, deployment logs, and database/RLS evidence before proposing a fix.
-- After a runtime-impacting production deployment, verify `https://phoenix-workforce.vercel.app`, smoke-test the changed workflow, and inspect production logs.
+- After a runtime-impacting production deployment, verify `https://phoenix-hr.satopharma.com`, smoke-test the changed workflow, and inspect production logs.
 
 ## Supabase And Data Safety
 

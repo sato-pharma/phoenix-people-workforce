@@ -196,7 +196,7 @@ keys used by their respective domains.
 
 - `main` is **production-only — never edit directly.**
 - `codex/work-from-production` is the active working branch for edits/features.
-- Production: `https://phoenix-workforce.vercel.app` (verify this exact public domain
+- Production: `https://phoenix-hr.satopharma.com` (verify this exact public domain
   after every production deploy — workspace aliases can diverge from the public alias).
 - Keep only two active Vercel deployments: production `main` and the working preview.
 - `.vercel/` is local CLI metadata and stays uncommitted.

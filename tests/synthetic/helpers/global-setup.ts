@@ -1,6 +1,6 @@
 import type { FullConfig } from "@playwright/test";
 
-const PRODUCTION_HOST = "phoenix-workforce.vercel.app";
+const PRODUCTION_HOST = "phoenix-hr.satopharma.com";
 
 /**
  * Runs once before any journey opens a browser. Aborts the whole run with a

@@ -116,7 +116,7 @@ New production work must follow this flow:
 2. Validate with typecheck, tests, build, and audit when code or dependencies change.
 3. Test the Vercel preview deployment.
 4. Promote or merge only after approval.
-5. Verify `https://phoenix-workforce.vercel.app` after production deployment.
+5. Verify `https://phoenix-hr.satopharma.com` after production deployment.
 
 Do not use old Vercel deployments for validation. The project should keep only the production (`main`) and working-branch preview deployments active.
 

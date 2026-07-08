@@ -13,7 +13,7 @@ affects the other.
 
 - **Read-only by default.** Every journey only navigates and asserts —
   no mutations.
-- **Refuses to run against production** (`phoenix-workforce.vercel.app`)
+- **Refuses to run against production** (`phoenix-hr.satopharma.com`)
   unless `SYNTHETIC_ALLOW_PRODUCTION=true` is set. Even then, journeys stay
   read-only.
 - **Never enables staging on its own** — you point it at whatever
@@ -32,7 +32,7 @@ affects the other.
 | `SYNTHETIC_BASE_URL` | yes | URL of the environment to test, e.g. `http://localhost:3000`. |
 | `SYNTHETIC_ADMIN_HR_ID` | yes | HR_ID of a Super Admin test account (Phoenix Workforce login is HR_ID + password — there is no email login). |
 | `SYNTHETIC_ADMIN_PASSWORD` | yes | Password for that account. |
-| `SYNTHETIC_ALLOW_PRODUCTION` | no | Set to `true` to allow `SYNTHETIC_BASE_URL` to point at `phoenix-workforce.vercel.app`. Unset/anything else refuses to run. |
+| `SYNTHETIC_ALLOW_PRODUCTION` | no | Set to `true` to allow `SYNTHETIC_BASE_URL` to point at `phoenix-hr.satopharma.com`. Unset/anything else refuses to run. |
 | `SYNTHETIC_ALLOW_MUTATION` | no | Reserved for future mutating journeys. Has no effect today — none of the current journeys mutate data. |
 
 If any of the three required variables are missing, or `SYNTHETIC_BASE_URL`
@@ -150,7 +150,7 @@ Full report: tests/synthetic/report/latest.md
 - **"Missing required env var SYNTHETIC_BASE_URL" / HR_ID / PASSWORD** — set
   the missing variable(s) and re-run; nothing ran yet.
 - **"SYNTHETIC_BASE_URL points at production. Refusing to run."** — you're
-  targeting `phoenix-workforce.vercel.app`. Only set
+  targeting `phoenix-hr.satopharma.com`. Only set
   `SYNTHETIC_ALLOW_PRODUCTION=true` if you explicitly intend a read-only
   smoke run against production.
 - **The `setup` project (authenticate as synthetic admin) fails/times out**

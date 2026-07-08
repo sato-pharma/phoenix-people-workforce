@@ -88,7 +88,7 @@ function estimateRunWindow(results: JourneyResult[], meta: IngestSyntheticJourne
 function environmentFromBaseUrl(baseUrl: string): string | null {
   try {
     const host = new URL(baseUrl).host;
-    if (host === "phoenix-workforce.vercel.app") return "production";
+    if (host === "phoenix-hr.satopharma.com" || host === "phoenix-workforce.vercel.app") return "production";
     if (host.includes("localhost") || host.includes("127.0.0.1")) return "local";
     return "preview";
   } catch {

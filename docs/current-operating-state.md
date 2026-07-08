@@ -25,7 +25,7 @@ The project should keep only two active Vercel deployments:
 
 | Purpose | Branch | URL |
 | --- | --- | --- |
-| Production | `main` | https://phoenix-workforce.vercel.app |
+| Production | `main` | https://phoenix-hr.satopharma.com |
 | Working preview | `codex/work-from-production` | https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app |
 
 Old Vercel deployments were intentionally removed to reduce confusion. The working preview URL above is the stable branch alias; the underlying deployment-specific URL changes after each branch push. Do not delete the active production deployment or the latest active preview deployment unless explicitly replacing them with newer deployments for the same purpose.
@@ -40,13 +40,13 @@ Production deploy rule:
 2. Validate locally.
 3. Push the branch and test the Vercel preview.
 4. Merge or apply the approved change to `main`.
-5. Deploy or verify production at `https://phoenix-workforce.vercel.app`.
+5. Deploy or verify production at `https://phoenix-hr.satopharma.com`.
 6. Confirm the public production domain points to the newest production deployment, not only the workspace alias.
 
 Always verify the exact public domain:
 
 ```text
-https://phoenix-workforce.vercel.app
+https://phoenix-hr.satopharma.com
 ```
 
 Do not rely only on the workspace Vercel alias:

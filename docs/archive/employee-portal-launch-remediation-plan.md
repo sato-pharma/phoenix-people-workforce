@@ -266,7 +266,7 @@ Drive via dev-auth (`GET /api/dev-auth?role=...`, `NODE_ENV=development`). Use t
 - **[github-cli]** GitHub CI: green on the working-branch HEAD today; re-confirm `gh run list --branch <working-branch>` is `success` on the commit that carries the launch changes before promote.
 - `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`. **[repo]** `npm run check:harden` exists (lint+typecheck+test+build) — run it; if it were missing, define it as that chain.
 - **[vercel]** preview smoke (all recent builds `READY`); if a build fails, pull Vercel build logs.
-- Production alias smoke **only after promotion** — verify `https://phoenix-workforce.vercel.app` directly.
+- Production alias smoke **only after promotion** — verify `https://phoenix-hr.satopharma.com` directly.
 
 ---
 
