@@ -198,4 +198,19 @@ export function runVisitsReportSyncTests() {
     /reapStaleIReports360SyncRuns\(\)/,
     "the reaper must be wired into the every-30-min notification-process cron, the only one frequent enough to catch a stuck row promptly",
   );
+
+  // Deeper audit finding D: the probation DV auto-tick failure was fully swallowed with no
+  // logging (even though the route already has an outer Sentry.captureException, it never got
+  // a chance to fire since the inner catch always absorbed the error first).
+  const syncRouteSource = readFileSync("app/api/cron/ireports360-visits-sync/route.ts", "utf8");
+  assert.doesNotMatch(
+    syncRouteSource,
+    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(\) => undefined\);/,
+    "the DV-tick failure must not be swallowed without logging",
+  );
+  assert.match(
+    syncRouteSource,
+    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(error: unknown\) => \{\s*Sentry\.captureException\(error, \{ tags: \{ cron: "ireports360-visits-sync-dv-tick" \} \}\);\s*\}\);/,
+    "a failed DV-tick must still be reported to Sentry, isolated from the otherwise-successful visits sync",
+  );
 }

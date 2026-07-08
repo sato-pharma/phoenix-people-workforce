@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/nextjs";
+
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
@@ -1636,7 +1638,8 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
           },
         });
         processed++;
-      } catch {
+      } catch (error) {
+        Sentry.captureException(error, { tags: { cron: "resignation-sla-reminder", recipientHrId: hrId } });
         errors++;
       }
     }

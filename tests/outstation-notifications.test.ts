@@ -86,4 +86,16 @@ export function runOutstationNotificationsTests() {
     /sensitivity: "payroll"/,
     "outstation notifications must not be flagged payroll-sensitive",
   );
+
+  // Deeper audit finding F: the SLA reminder loop counted failures (errors++) but never
+  // reported them to Sentry — a systemic failure was only visible as a number buried in the
+  // daily cron's JSON response body, with nothing that would ever alert anyone.
+  assert.match(service, /import \* as Sentry from "@sentry\/nextjs";/, "outstation service must import Sentry");
+  const slaSlice = functionSlice(service, "export async function runOutstationSlaDaily");
+  assert.doesNotMatch(slaSlice, /\}\s*catch\s*\{\s*errors\+\+;\s*\}/, "the SLA reminder loop must not swallow errors without reporting them");
+  assert.match(
+    slaSlice,
+    /catch \(error\) \{\s*Sentry\.captureException\(error, \{ tags: \{ cron: "outstation-sla-reminder", recipientHrId: hrId \} \}\);\s*errors\+\+;\s*\}/,
+    "a failed SLA reminder send must be captured in Sentry, tagged with the affected recipient",
+  );
 }

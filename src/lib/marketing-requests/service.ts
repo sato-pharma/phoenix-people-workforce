@@ -20,7 +20,7 @@ import {
   assertMarketingWorkflowTransition,
   toMarketingRequestWorkflowStatus,
 } from "@/lib/marketing-requests/workflow";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -3850,7 +3850,7 @@ export async function createMarketingRequestDraft(
       recordId: request.id,
       subjectHrId: request.requesterHrId,
       title: "Marketing request submitted",
-    }).catch(() => undefined);
+    }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
 
     return draftDetail;
   } catch (error) {
