@@ -133,6 +133,20 @@ export function getSupabaseUserClient(): SupabaseClient {
  *
  * Pass a stable `orderBy` (a unique key) so any fallback pages don't overlap or skip.
  */
+// supabase-js reports network-level query failures (timeouts, aborts, DNS errors) as a
+// plain { message, details, hint, code } object rather than a PostgrestError instance,
+// so an `error instanceof Error` check downstream silently discards the real message and
+// falls back to a generic one. Normalize before throwing so callers always get a real Error.
+export function toQueryError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const shape = error as { code?: string; details?: string; hint?: string; message?: string } | null;
+  const normalized = new Error(shape?.message || "Unknown Supabase query error");
+  if (shape?.code) Object.assign(normalized, { code: shape.code });
+  if (shape?.details) Object.assign(normalized, { details: shape.details });
+  if (shape?.hint) Object.assign(normalized, { hint: shape.hint });
+  return normalized;
+}
+
 export async function rpcAll<T = Record<string, unknown>>(
   client: SupabaseClient,
   fn: string,
@@ -142,7 +156,7 @@ export async function rpcAll<T = Record<string, unknown>>(
   let head = client.rpc(fn, args, { count: "exact" });
   for (const column of orderBy) head = head.order(column, { ascending: true });
   const first = await head;
-  if (first.error) throw first.error;
+  if (first.error) throw toQueryError(first.error);
   const rows = (first.data ?? []) as T[];
   const total = typeof first.count === "number" ? first.count : rows.length;
   // Uncapped: a single execution returned everything.
@@ -156,7 +170,7 @@ export async function rpcAll<T = Record<string, unknown>>(
     let page = client.rpc(fn, args).range(from, from + pageSize - 1);
     for (const column of orderBy) page = page.order(column, { ascending: true });
     const next = await page;
-    if (next.error) throw next.error;
+    if (next.error) throw toQueryError(next.error);
     const pageRows = (next.data ?? []) as T[];
     all.push(...pageRows);
     if (pageRows.length === 0) break;
