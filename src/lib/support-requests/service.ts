@@ -142,7 +142,11 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
     const subcategory = request.subcategory ? ` / ${request.subcategory}` : "";
     const title = `New HR support request: ${request.subject}`;
     const message = `${request.employeeName} (${request.hrId}) opened a support request — ${request.category}${subcategory}.`;
-    const primaryRecipient = recipients[0];
+    // Prefer the first recipient who actually has a deliverable email as "primary" — a
+    // synthetic account (e.g. PHX-1) with no work_email must not silently swallow the
+    // whole email, including the cc'd real addresses, just by sorting first.
+    const primaryIndex = Math.max(0, recipients.findIndex((recipient) => Boolean(pickDeliverableEmail(recipient.email))));
+    const primaryRecipient = recipients[primaryIndex];
     const primaryKey = normalizeHrId(primaryRecipient.hrId) || primaryRecipient.userId || "";
     const primaryEmail = pickDeliverableEmail(primaryRecipient.email);
     const ccEmails = Array.from(new Set(

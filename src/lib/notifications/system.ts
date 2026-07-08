@@ -151,6 +151,11 @@ const workflowEmailEnvelopeModules = new Set([
   "weekly_planning",
 ]);
 
+// Aggregate digests (many employees rolled into one email) live in a
+// per-employee workflow module but have no single subject by design — exempt
+// them by event type so the module-level identity guard doesn't fail them.
+const aggregateDigestEventTypes = new Set(["high_risk_digest"]);
+
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
 }
@@ -177,6 +182,7 @@ function employeeMetricHrId(metrics: NotificationEmailInput["metrics"]) {
 
 function emailSubjectIdentityRequired(input: CreateSystemNotificationInput, hasSubjectCandidate: boolean) {
   if (hasSubjectCandidate) return true;
+  if (aggregateDigestEventTypes.has(cleanText(input.eventType).toLowerCase())) return false;
   return employeeSubjectWorkflowModules.has(cleanText(input.module).toLowerCase());
 }
 
@@ -1489,8 +1495,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         continue;
       }
       const result = await safeSendNotificationEmail(emailInput);
-      const status = result.skipped ? "failed" : "sent";
-      const error = result.skipped ? result.reason : undefined;
+      // "skipped" here bundles genuine policy/guard skips together with a handoff to the
+      // outbox for retry — mirror processDeferredDeliveryRetries' handling of the exact
+      // same union (system.ts, "Deterministic skip (policy disabled, no recipients, …)"
+      // vs. "handed off to outbox... mark this row done"): a retry handoff is delegated
+      // delivery, not a failure, so it counts as sent; everything else is a deterministic
+      // skip, never a "failed" (there is no send attempt to have failed here).
+      const handedOffToOutbox = result.skipped && result.reason.startsWith("Queued for retry:");
+      const status = !result.skipped || handedOffToOutbox ? "sent" : "skipped";
+      const error = result.skipped && !handedOffToOutbox ? result.reason : undefined;
       await upsertDelivery({
         channel,
         eventId,
@@ -1503,7 +1516,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         recipientAddress: recipient.email,
         status,
       });
-      await audit(status === "sent" ? "delivery sent" : "delivery failed", input, eventId, { channel, error });
+      await audit(status === "sent" ? "delivery sent" : "delivery skipped", input, eventId, { channel, error });
       deliveries.push({ channel, error, idempotencyKey, status });
       continue;
     }
@@ -1646,10 +1659,15 @@ async function createWorkflowEmailEnvelopeNotification(
   recipients: NotificationRecipient[],
   baseIdempotencyKey: string,
 ): Promise<SystemNotificationResult | null> {
-  const primary = recipients[0];
-  if (!primary) return null;
+  if (recipients.length === 0) return null;
 
-  const ccRecipients = recipients.slice(1);
+  // Prefer the first recipient who actually has a deliverable email as "primary" — a
+  // synthetic account (e.g. PHX-1, which has no work_email) landing first in the list
+  // must not silently swallow the whole envelope email, cc'd real addresses included.
+  const primaryIndex = Math.max(0, recipients.findIndex((recipient) => Boolean(pickDeliverableEmail(recipient.email))));
+  const primary = recipients[primaryIndex];
+
+  const ccRecipients = recipients.filter((_, index) => index !== primaryIndex);
   const primaryEmail = pickDeliverableEmail(primary.email);
   const cc = deliverableAddresses(ccRecipients);
   const primaryKey = recipientKey(primary);
