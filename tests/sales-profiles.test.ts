@@ -53,6 +53,16 @@ function chimipharmPivotHasNoDateColumn() {
   assert.equal(cp!.valueSource, "recompute", "CP value is recomputed from master price");
 }
 
+// EGD Branch (EG-BR): the distributor's export sometimes carries "CARD_DATE", sometimes none at all
+// (from 2026-06) — like CP, its period comes from the upload picker either way. Regression guard for
+// the bug where a required CARD_DATE column rejected the dateless month's file outright.
+function egdBranchHasNoRequiredDateColumn() {
+  const egbr = RAW_DISTRIBUTOR_PROFILES.find((p) => p.distributorCode.toUpperCase() === "EG-BR");
+  assert.ok(egbr, "EG-BR profile must exist");
+  assert.equal((egbr!.dateColumns ?? []).length, 0, "EG-BR must not require a date column");
+  assert.ok((egbr!.customerCodeColumns ?? []).includes("TO_COMPANY_ENTITY_CODE"), "EG-BR resolves location via customer code");
+}
+
 function retiredDistributorCodesStayOutOfCodePaths() {
   const retiredCodes = ["EP" + "-S", "EP" + "-R"];
   const profileCodes = new Set(RAW_DISTRIBUTOR_PROFILES.map((p) => p.distributorCode.trim().toUpperCase()));
@@ -77,5 +87,6 @@ export function runSalesProfilesTests() {
   profileInvariants();
   weeklyDistributorsHaveProfiles();
   chimipharmPivotHasNoDateColumn();
+  egdBranchHasNoRequiredDateColumn();
   retiredDistributorCodesStayOutOfCodePaths();
 }
