@@ -103,7 +103,7 @@ export async function AppShell({
               <div
                 className={`w-full ${
                   contentWidth !== "full"
-                    ? "mx-auto max-w-[1480px]"
+                    ? "mx-auto max-w-[1760px]"
                     : "max-w-none"
                 }`}
               >

@@ -59,7 +59,7 @@ export function Topbar({
           ? "border-b border-[#1a1a1a] bg-[#000000]"
           : "border-b border-[#E2E8F0]/80 bg-white/82"
       }`}>
-        <div className="mx-auto flex min-h-14 w-full max-w-[1480px] items-center gap-2 sm:min-h-16 sm:gap-4">
+        <div className="mx-auto flex min-h-14 w-full max-w-[1760px] items-center gap-2 sm:min-h-16 sm:gap-4">
         <button
           aria-label="Open menu"
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded lg:hidden ${
