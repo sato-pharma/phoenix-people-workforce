@@ -721,12 +721,23 @@ export async function materializeRun(
   }
 
   const issues = validateSalaryRows(draft.rows, draft.sources);
-  const hardIssues = issues.filter(
-    (issue) =>
-      issue.code !== "base_salary_source_of_truth_mismatch" &&
-      issue.code !== "gross_salary_formula_mismatch" &&
-      issue.code !== "net_salary_formula_mismatch",
-  );
+  const hardIssues = issues.filter((issue) => {
+    if (
+      issue.code === "base_salary_source_of_truth_mismatch" ||
+      issue.code === "gross_salary_formula_mismatch" ||
+      issue.code === "net_salary_formula_mismatch"
+    ) {
+      const hrId = issue.hrId || "";
+      const row = draft.rows.find((r) => r.hrId === hrId);
+      const source = draft.sources.get(compactHrKey(hrId));
+
+      const isProratedOrLegacy = !source || !source.baseSalary || (row && row.baseSalary !== source.baseSalary);
+      if (isProratedOrLegacy) {
+        return false;
+      }
+    }
+    return true;
+  });
   if (hardIssues.length > 0) {
     throw new CopilotError(
       `The assembled sheet failed validation: ${hardIssues.slice(0, 5).map((i) => `${i.hrId ?? "?"} ${i.message}`).join("; ")}`,

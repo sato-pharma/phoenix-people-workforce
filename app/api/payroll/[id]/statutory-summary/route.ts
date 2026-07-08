@@ -42,7 +42,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const sheet = workbook.addWorksheet("Statutory Summary");
     
     // Add headers and style them
-    const headerRow = sheet.addRow(HEADERS);
+    sheet.columns = HEADERS.map((h) => ({ header: h, key: h }));
+    const headerRow = sheet.getRow(1);
     styleHeaderRow(headerRow, PHOENIX_ORANGE);
     sheet.views = [{ state: "frozen", ySplit: 1 }];
 
