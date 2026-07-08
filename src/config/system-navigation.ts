@@ -376,7 +376,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-source-of-sales",
     items: [
-      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dash", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"], exact: true },
+      { href: "/sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales Dash", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"], exact: true },
       { href: "/sales/monthly-dashboard", icon: CalendarRange, label: "Achievement Dash", moduleId: "admin.sales_operations.monthly_closing", permissions: [{ resource: "sales" }], excludedRoles: ["CEO", "Marketing Manager"] },
       { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ action: "import", resource: "sales" }] },
       { href: "/sales/upload", icon: FileUp, label: "Sales Upload", permissions: [{ action: "import", resource: "sales" }] },
