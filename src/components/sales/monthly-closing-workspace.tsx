@@ -143,7 +143,10 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      if (!response.ok) throw new Error("Export failed");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(payload?.error ?? payload?.message ?? "Export failed.");
+      }
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const match = /filename="(.+?)"/.exec(disposition);
