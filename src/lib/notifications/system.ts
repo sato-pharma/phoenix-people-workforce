@@ -1408,6 +1408,14 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           continue;
         }
         deferredMetadata.emailInput = emailInput;
+      } else if (channel === "email") {
+        // Email is disabled for this recipient — skip immediately rather than writing a
+        // payload-less pending row that the deferred-drain cron can never re-dispatch.
+        // Set emailAttempted so downstream Telegram fallback logic treats email as handled.
+        emailAttempted = true;
+        await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "Email disabled by preference.", recipient, status: "skipped" });
+        deliveries.push({ channel, idempotencyKey, reason: "Email notifications are disabled for this user.", status: "skipped" });
+        continue;
       }
       if (channel === "telegram") {
         // Mirror the live branch: a broken saved template must degrade to a skipped
