@@ -63,7 +63,7 @@ The production cron setup (`vercel.json`) is:
 
 - `/api/notifications/daily` at `30 6 * * *` -- consolidated daily run (birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift check, Telegram HR digest, outstation geocode warm-up + high-risk digest)
 - `/api/notifications/process?limit=50` at `*/30 * * * *` -- drains the notification outbox faster than once a day, plus probation reminders, deferred/Telegram delivery retries, and misc housekeeping (stale-run reaping, retention)
-- `/api/cron/ireports360-visits-sync` at `0 9,12,19 * * *` -- syncs iReports360 CRM visits (rolling 21-day lookback) + probation double-visit auto-tick
+- `/api/cron/ireports360-visits-sync` at `0 9,12,19 * * *` -- syncs iReports360 CRM visits (rolling 10-day lookback) + probation double-visit auto-tick
 - `/api/cron/ireports360-visits-reconcile` at `0 4 * * 0` -- weekly wide reconciliation over a rotating 30-day slice of a 120-day window
 
 The `*/30 * * * *` schedule is only possible because the account is Pro -- Vercel Hobby hard-fails deployment for any cron more frequent than daily. Notification outbox and probation reminder processing run through:
