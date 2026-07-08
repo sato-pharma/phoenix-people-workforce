@@ -7,9 +7,9 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, u
 
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
-import { getNavigationSections } from "@/config/system-navigation";
+import { getNavigationSections, hubPageItemGroups } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
-import { getSections } from "@/lib/navigation/active-path";
+import { getSections, permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
 
 /** Custom event the topbar (or anything else) can dispatch to open the palette. */
 export const COMMAND_PALETTE_EVENT = "phoenix:command-palette";
@@ -39,21 +39,43 @@ export function CommandPalette({
   const openRef = useRef(false);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
-  const items = useMemo<PaletteItem[]>(
-    () =>
-      getSections(
-        getNavigationSections(navigationMode),
-        navigationMode,
-        permissionLookup,
-        currentRole,
-        effectiveModuleIds,
-        isSystemAdministratorWorkspace,
-      )
-        .flatMap((section) =>
-          section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
-        ),
-    [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, navigationMode, permissionLookup],
-  );
+  const items = useMemo<PaletteItem[]>(() => {
+    const sidebarItems = getSections(
+      getNavigationSections(navigationMode),
+      navigationMode,
+      permissionLookup,
+      currentRole,
+      effectiveModuleIds,
+      isSystemAdministratorWorkspace,
+    ).flatMap((section) =>
+      section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
+    );
+
+    // The sidebar collapses most admin sections into a single hub button, so a
+    // search bar built only from `sidebarItems` would surface hub buttons but
+    // hide every module they lead to. Fold each hub's own card list back in
+    // (filtered by the same permission/role gates the hub page itself applies)
+    // so Cmd/Ctrl+K can still jump directly to any module, not just what's
+    // currently rendered in the collapsed sidebar.
+    const seenHrefs = new Set(sidebarItems.map((item) => item.href));
+    const hubItems: PaletteItem[] =
+      navigationMode === "admin"
+        ? hubPageItemGroups.flatMap((group) =>
+            group.items
+              .filter(
+                (item) =>
+                  isSystemAdministratorWorkspace ||
+                  (permissionAllowed(permissionLookup, item.permissions) &&
+                    roleAllowed(currentRole, item.roles) &&
+                    roleNotExcluded(currentRole, item.excludedRoles)),
+              )
+              .filter((item) => !seenHrefs.has(item.href))
+              .map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: group.label })),
+          )
+        : [];
+
+    return [...sidebarItems, ...hubItems];
+  }, [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, navigationMode, permissionLookup]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

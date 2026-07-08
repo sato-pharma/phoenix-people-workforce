@@ -1,13 +1,22 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight } from "lucide-react";
+import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight, MapPinned, ChartColumnBig } from "lucide-react";
 
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
 export const dynamic = "force-dynamic";
+
+const SALES_ANALYTICS_BROAD_ROLES = [
+  "Super Admin",
+  "CEO",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "SFE Manager",
+] as const satisfies readonly PhoenixRole[];
 
 const MODULES = [
   {
@@ -19,6 +28,7 @@ const MODULES = [
       "Compare distributors, channels, and periods.",
     badge: "SoS",
     accent: "#2563EB",
+    roles: SALES_ANALYTICS_BROAD_ROLES,
   },
   {
     href: "/admin/analytics/monthly-closing",
@@ -29,6 +39,7 @@ const MODULES = [
       "manager hierarchy, and territory drill-down.",
     badge: "Closing",
     accent: "#059669",
+    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] as const satisfies readonly PhoenixRole[],
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -39,6 +50,7 @@ const MODULES = [
       "Trend and cover analysis.",
     badge: "Weekly",
     accent: "#F97316",
+    roles: SALES_ANALYTICS_BROAD_ROLES,
   },
   {
     href: "/admin/analytics/executive-comparison",
@@ -49,6 +61,7 @@ const MODULES = [
       "Growth %, contribution %, and ranking tables.",
     badge: "Exec",
     accent: "#7C3AED",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
   },
   {
     href: "/admin/analytics/reconciliation",
@@ -59,6 +72,46 @@ const MODULES = [
       "Identify gaps between the three pipelines.",
     badge: "Recon",
     accent: "#DC2626",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+  },
+  // Company-scope re-hosts of the portal field dashboards (NSM-parity views for
+  // executives) — moved here from their own sidebar rows when the "Sales
+  // Analytics" section collapsed to a single button (see system-navigation.ts).
+  {
+    href: "/admin/field-sales/weekly-sales",
+    icon: TrendingUp,
+    label: "Field Weekly Sales",
+    description: "Company-scope re-host of the field weekly sales dashboard.",
+    badge: "Field",
+    accent: "#0EA5E9",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+  },
+  {
+    href: "/admin/field-sales/source-of-sales",
+    icon: BarChart3,
+    label: "Field Source of Sales",
+    description: "Company-scope re-host of the field Source of Sales dashboard.",
+    badge: "Field",
+    accent: "#0EA5E9",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+  },
+  {
+    href: "/admin/field-sales/dsm-performance",
+    icon: ChartColumnBig,
+    label: "DSM Performance",
+    description: "Company-scope DSM performance dashboard.",
+    badge: "Field",
+    accent: "#0EA5E9",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+  },
+  {
+    href: "/admin/field-sales/med-reps-performance",
+    icon: MapPinned,
+    label: "Med-Rep Performance",
+    description: "Company-scope Med-Rep performance dashboard.",
+    badge: "Field",
+    accent: "#0EA5E9",
+    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
   },
 ] as const;
 
@@ -69,6 +122,10 @@ export default async function AnalyticsHubPage() {
   }
   await assertPermission(access, "sales", "read");
   const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
+  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
+  const visibleModules = isSystemAdministratorWorkspace
+    ? MODULES
+    : MODULES.filter((mod) => (mod.roles as readonly string[]).includes(access.role));
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -88,7 +145,7 @@ export default async function AnalyticsHubPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MODULES.map((mod) => (
+        {visibleModules.map((mod) => (
           <Link
             key={mod.href}
             href={mod.href}
