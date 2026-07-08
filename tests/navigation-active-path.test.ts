@@ -191,21 +191,19 @@ export function runNavigationActivePathTests() {
     "CEO must not see the Admin Tools sidebar tab even if a permission lookup grants admin",
   );
 
+  // Note: /admin/people-management deliberately isn't in this list — unlike the
+  // other consolidated hubs, several of its cards (Other Approvals, Contract
+  // Renewal, Resignations, Workforce Compliance) have no role restriction, so
+  // e.g. Finance Manager legitimately reaches the hub (for Other Approvals via
+  // leave:read) even though Employees/Weekly Plans/HR Support Requests within
+  // it stay Super-Admin/Talent-Acquisition-only via their own per-card gates.
   const sensitiveHrHrefs = [
-    "/employees",
-    "/admin/support-requests",
-    "/recruitment",
-    "/cv-database",
-    "/offers",
-    "/hiring-documents",
+    "/admin/recruitment-hiring",
     "/leave-management/vacation-control",
   ] as const;
-  const systemAdministratorOnlyHrefs = [
-    "/attendance/exceptions",
-    "/payroll/expenses/dashboard",
-    "/payroll/expenses",
-    "/admin/marketing-requests/control",
-  ] as const;
+  // /admin/outstation-expenses moved off this list — it's shared with Finance
+  // Manager/CEO now (Outstation Expenses hub), not Super-Admin-exclusive.
+  const systemAdministratorOnlyHrefs = ["/admin/admin-tools"] as const;
 
   const marketingManagerPortal = employeePortalHrefsFor("Marketing Manager");
   // Marketing Manager works from the employee portal like PM/GPM, not the admin workspace shell.
@@ -248,20 +246,20 @@ export function runNavigationActivePathTests() {
   const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
   assertIncludesAll(
     talentAcquisitionAdmin,
-    ["/admin/support-requests", "/recruitment", "/cv-database", "/offers", "/hiring-documents", "/leave-management/vacation-control"],
+    ["/admin/people-management", "/admin/recruitment-hiring", "/leave-management/vacation-control"],
     "Talent Acquisition must see HR-owned admin modules",
   );
   assertExcludesAll(talentAcquisitionAdmin, ["/employees", "/payroll"], "Talent Acquisition must not see non-owned company modules");
   assertExcludesAll(talentAcquisitionAdmin, systemAdministratorOnlyHrefs, "Talent Acquisition must not see system-administrator-only modules");
 
   const financeAdmin = adminHrefsFor("Finance Manager");
-  assertIncludesAll(financeAdmin, ["/payroll"], "Finance Manager must see payroll ownership");
+  assertIncludesAll(financeAdmin, ["/admin/payroll-management"], "Finance Manager must see payroll ownership");
   assertExcludesAll(financeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "Finance Manager must not see HR-owned or owner-only modules");
 
   const ceoAdmin = adminHrefsFor("CEO");
   assertIncludesAll(
     ceoAdmin,
-    ["/attendance/analytics", "/probation", "/contracts", "/resignations", "/admin/m-payroll"],
+    ["/attendance", "/admin/people-management", "/admin/payroll-management"],
     "CEO must keep read-only executive module access",
   );
   assertExcludesAll(ceoAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "CEO must not see HR-owned or owner-only modules");
@@ -269,7 +267,15 @@ export function runNavigationActivePathTests() {
   const superAdminAuthorityNav = adminHrefsFor("Super Admin");
   assertIncludesAll(
     superAdminAuthorityNav,
-    [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"],
+    [
+      ...sensitiveHrHrefs,
+      ...systemAdministratorOnlyHrefs,
+      "/admin/payroll-management",
+      "/admin/marketing-roi",
+      "/admin/people-management",
+      "/admin/outstation-expenses",
+      "/admin/field-coaching",
+    ],
     "Super Admin must see full governance modules",
   );
   assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");

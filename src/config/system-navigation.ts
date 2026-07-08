@@ -215,99 +215,85 @@ const adminNavigationSectionSeeds = [
   },
 
   // ── Tier 3: Role-specific workspaces (Marketing Manager / SFE / Finance) ────
+  // Collapsed to a single standalone sidebar button that opens the Marketing &
+  // ROI hub (app/(admin)/admin/marketing-roi/page.tsx, items in
+  // marketingRoiPageItems below) — same pattern as the other consolidated
+  // sections above. roles is the union of every card's own role (none of these
+  // items had a permissions field, only roles); the hub re-filters per-card.
   {
     id: "workspace-marketing-requests",
     items: [
-      // Real ROI Dashboard — the Marketing ROI & Customer Intelligence BI dashboard
-      // (spend vs. realized sales, coverage gaps, customer impact). Scoped to roles that operate
-      // in the admin shell; PM/GPM/Marketing Manager reach it via /employee-portals/roi instead.
-      { href: "/admin/sales-marketing-intelligence", icon: ChartColumnBig, label: "ROI Dashboard", moduleId: "admin.workspace.roi_dashboard_mm", roles: ["Super Admin", "CEO", "SFE Manager"] },
-      // Merged in from the former standalone "Marketing Requests" section (org-wide admin
-      // module for District Manager + Super Admin). moduleId pinned to the original
-      // auto-generated value so existing Modules Control assignments keep working.
-      // ROI Tracking is a READ-ONLY executive report (filter/audit individual marketing
-      // requests) — also surfaces to CEO for oversight.
-      { href: "/admin/marketing-requests/roi-tracking", icon: ChartColumnBig, label: "ROI Tracking", moduleId: "admin.marketing_requests.roi_dashboard.admin_marketing_requests_roi_tracking", roles: ["Super Admin", "CEO"] },
-      // Standalone, business-friendly ROI report (browse by requester/customer) — deliberately
-      // separate from ROI Tracking above; same read-only access as that report.
-      { href: "/admin/marketing-roi-report", icon: ClipboardList, label: "Marketing ROI Report", moduleId: "admin.marketing_requests.roi_business_report.admin_marketing_roi_report", roles: ["Super Admin", "CEO"] },
-      // Hierarchy-scoped drill-down: filter requests, see premium KPI totals, expand any
-      // request to its target pharmacies (incl. zero-sales) with a Super-Admin-only link to
-      // each pharmacy's full sales history. Broadly open to the whole marketing/sales
-      // hierarchy — admin shell stays narrow (mirrors ROI Tracking's own precedent); every
-      // other eligible role reaches it via the employee-portal shell instead.
-      { href: "/admin/marketing-requests/coverage-report", icon: MapPinned, label: "Marketing Coverage Report", moduleId: "admin.marketing_requests.coverage_report.admin_marketing_requests_coverage_report", roles: ["Super Admin", "CEO"] },
-      { href: "/admin/marketing-requests/validation", icon: ShieldCheck, label: "Customer Validation", moduleId: "admin.marketing_requests.customer_validation.admin_marketing_requests_validation", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests", icon: Megaphone, label: "Marketing Requests", moduleId: "admin.marketing_requests.marketing_requests.admin_marketing_requests", roles: ["District Manager", "Super Admin"], exact: true },
-      { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Approval Inbox", moduleId: "admin.marketing_requests.approval_inbox.admin_marketing_requests_inbox", roles: ["District Manager", "Super Admin"] },
-      { href: "/admin/marketing-requests/bulk-upload", icon: FileUp, label: "Bulk Upload", moduleId: "admin.marketing_requests.bulk_upload.admin_marketing_requests_bulk_upload", roles: ["Super Admin"] },
-      { href: "/admin/marketing-requests/control", icon: Settings2, label: "Marketing Control", moduleId: "admin.marketing_requests.marketing_control.admin_marketing_requests_control", roles: systemAdministratorNavigationRoles },
+      { href: "/admin/marketing-roi", icon: Megaphone, label: "Marketing & ROI", roles: ["Super Admin", "CEO", "SFE Manager", "District Manager"] },
     ],
     label: "Marketing & ROI",
   },
 
   // ── Tier 4: HR & People ───────────────────────────────────────────────────────
   // Items ordered: time-sensitive actions → headcount records → lifecycle events → compliance
+  // Collapsed to a single standalone sidebar button that opens the People
+  // Management hub (app/(admin)/admin/people-management/page.tsx, items in
+  // peopleManagementPageItems below) — same pattern as the other consolidated
+  // sections above. permissions is the union of every card's own gate; the
+  // pending-count navBadge from "Other Approvals" moves to the button itself
+  // (it would otherwise be silently lost — the badge polls independently of
+  // which item it's attached to).
   {
     id: "people-management",
     items: [
-      // Residual combined inbox — vacation & excuse now live in the dedicated Approvals Hub
-      // section above; this keeps the cross-module inbox for resignation/outstation/contract/plan
-      // until those migrate. Renamed to avoid a duplicate "Approvals Hub" label.
-      { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
-      { href: "/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees" }], roles: ["Super Admin"] },
-      // Organogram/Probation/Vacancies Report duplicate the workspace-team-operations
-      // /workspace/organogram, /workspace/probation, /workspace/vacancies entries for the
-      // admin-shell-employee Marketing Manager (same underlying report, different href).
-      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
-      { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
-      // Org-wide plans review for Super Admin only. CEO uses the Company Calendar + Private Calendars.
-      { href: "/admin/weekly-plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["Super Admin"] },
-      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
-      { href: "/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }], roles: hrAuthorityNavigationRoles },
+      {
+        href: "/admin/people-management",
+        icon: UsersRound,
+        label: "People Management",
+        navBadge: "approvals-hub-pending",
+        permissions: [
+          { resource: "leave", action: "read" },
+          { resource: "employees" },
+          { resource: "organogram" },
+          { resource: "vacancies" },
+          { resource: "probation" },
+          { resource: "contracts" },
+          { resource: "resignations" },
+          { resource: "weekly_plans" },
+          { resource: "hr_calendar" },
+          { resource: "support_requests" },
+        ],
+      },
     ],
     label: "People Management",
   },
+  // Collapsed to a single standalone sidebar button that opens the Recruitment &
+  // Hiring hub (app/(admin)/admin/recruitment-hiring/page.tsx, items in
+  // recruitmentHiringPageItems below) — same pattern as the other consolidated
+  // sections above. All four items share the exact same roles, so the button's
+  // gate is just that same role list.
   {
     id: "recruitment-hiring",
     items: [
-      { href: "/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }], roles: hrAuthorityNavigationRoles },
-      { href: "/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }], roles: hrAuthorityNavigationRoles },
-      { href: "/offers", icon: IdCard, label: "Offer Lifecycle", permissions: [{ resource: "offers" }], roles: hrAuthorityNavigationRoles },
-      { href: "/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: hrAuthorityNavigationRoles },
+      { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", roles: hrAuthorityNavigationRoles },
     ],
     label: "Recruitment & Hiring",
   },
-  // Items ordered: reporting views → calendar references → admin config
+  // Collapsed to a single sidebar entry that opens the Attendance Management hub
+  // (app/(admin)/attendance/page.tsx), which renders the individual tools below
+  // (attendanceManagementPageItems) as cards — same pattern as Admin Tools /
+  // Access & Communication / Weekly Sales / Customers Database above. permissions
+  // is the union of every card's own gate (employees:read/update, attendance:read,
+  // hr_calendar:read) so the button shows whenever any card would be reachable;
+  // the hub re-filters per-card with each card's real gate.
   {
     id: "attendance-management",
     items: [
-      { href: "/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }] },
-      { href: "/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
-      { href: "/attendance/analytics", icon: ChartColumnBig, label: "Attendance Analytics", permissions: [{ resource: "attendance", action: "read" }] },
-      { href: "/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
-      // Admin host of the portal events calendar (events, holidays, leave, birthdays) for executives.
-      // attendance/read (not hr_calendar): CEO's effective matrix lacks hr_calendar — same
-      // permission pattern as the CEO-visible Private Calendars entry below.
-      { href: "/admin/company-calendar", icon: CalendarDays, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
-      { href: "/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["CEO", "Super Admin"] },
-      { href: "/attendance/exceptions", icon: ShieldCheck, label: "Attendance Exceptions", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
-      { href: "/attendance/settlement-dashboard", icon: ChartColumnBig, label: "Settlement Dashboard", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
-      { href: "/attendance/digest-review", icon: ShieldAlert, label: "Weekly Digest Review", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
-      { href: "/attendance/disputes", icon: ShieldCheck, label: "Dispute Review", permissions: [{ resource: "attendance", action: "read" }], roles: systemAdministratorNavigationRoles },
-      // No role restriction: the standing verifier (e.g. an Office Coordinator)
-      // and the CEO are both real steps in this chain and neither is
-      // "Super Admin" — the page itself scopes safely (empty list for anyone
-      // not the current step's authorized actor), so broad visibility is fine.
-      { href: "/attendance/missing-punch", icon: ShieldCheck, label: "Missing-Punch Verification", permissions: [{ resource: "attendance", action: "read" }] },
-      { href: "/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
-      { href: "/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
-      { href: "/attendance/holiday-calendar", icon: CalendarClock, label: "Holiday Calendar", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
-      { href: "/attendance/passport", icon: IdCard, label: "Attendance Passport", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
-      { href: "/attendance/hr-pattern-insights", icon: Sparkles, label: "HR Pattern Insights", permissions: [{ resource: "employees", action: "read" }], roles: systemAdministratorNavigationRoles },
+      {
+        href: "/attendance",
+        icon: Fingerprint,
+        label: "Attendance Management",
+        permissions: [
+          { resource: "employees" },
+          { resource: "employees", action: "update" },
+          { resource: "attendance", action: "read" },
+          { resource: "hr_calendar" },
+        ],
+      },
     ],
     label: "Attendance Management",
   },
@@ -325,46 +311,62 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Leave Management",
   },
+  // Collapsed to a single standalone sidebar button that opens the Payroll
+  // Management hub (app/(admin)/admin/payroll-management/page.tsx, items in
+  // payrollManagementPageItems below) — same pattern as the other consolidated
+  // sections above. No roles field here (unlike Admin Tools) because Deductions
+  // Governance has no role restriction of its own; permissions is the union of
+  // every card's own gate so the button shows whenever any card would be
+  // reachable, and the hub re-filters per-card with each card's real gate.
+  // Employee-portal payroll (Payslips/Deductions under employeePortalNavigation
+  // SectionSeeds) is a separate, unrelated section and is intentionally untouched.
   {
     id: "payroll",
     items: [
-      { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Report", permissions: [{ resource: "payroll" }], roles: companyPayrollNavigationRoles, excludedRoles: ["CEO"], exact: true },
-      { href: "/admin/m-payroll", icon: ScrollText, label: "CEO Payroll View", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
-      { href: "/admin/payroll-copilot", icon: Sparkles, label: "Payroll Copilot", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
-      { href: "/admin/payroll-copilot/insurance-wages", icon: ReceiptText, label: "Insurance Wages", permissions: [{ resource: "payroll" }], roles: ["CEO", "Super Admin"] },
-      { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips" }], roles: ["Super Admin", "CEO"] },
-      { href: "/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
+      {
+        href: "/admin/payroll-management",
+        icon: FileSpreadsheet,
+        label: "Payroll Management",
+        permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }],
+      },
     ],
     label: "Payroll Management",
   },
 
   // ── Tier 5: Field operations ──────────────────────────────────────────────────
   // Items ordered: overview → active queue → data entry → historical → config
+  // Collapsed to a single standalone sidebar button that opens the Outstation
+  // Expenses hub (app/(admin)/admin/outstation-expenses/page.tsx, items in
+  // outstationExpensesPageItems below) — same pattern as the other consolidated
+  // sections above. All six items shared roles drawn from the same three-role
+  // set (Super Admin / Finance Manager / CEO), so the button's gate is that union.
   {
     id: "expenses-outstation",
     items: [
-      { href: "/admin/outstation/expense-command", icon: Radar, label: "Expense Command Center", permissions: [{ resource: "outstation", action: "read" }], roles: ["Super Admin", "Finance Manager", "CEO"] },
-      { href: "/admin/outstation/expense-command?tab=queue", icon: MapPinned, label: "Expense Requests", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager"], activeTab: "queue" },
-      { href: "/admin/outstation/expense-command?tab=queue&action=create-manager-expense", icon: PlusCircle, label: "Add Manual Expense", permissions: [{ resource: "outstation", action: "approve" }], roles: ["Super Admin", "Finance Manager"], activeTab: "create-manager-expense" },
-      { href: "/payroll/expenses/dashboard", icon: ChartColumnBig, label: "Outstation Expenses", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles },
-      { href: "/payroll/expenses", icon: FileSpreadsheet, label: "Historical Upload", permissions: [{ resource: "expenses" }], roles: systemAdministratorNavigationRoles, exact: true },
-      { href: "/admin/outstation/policy", icon: CalendarClock, label: "Outstation Policy", permissions: [{ resource: "outstation", action: "update" }], roles: ["Super Admin", "Finance Manager"] },
+      { href: "/admin/outstation-expenses", icon: Radar, label: "Outstation Expenses", roles: ["Super Admin", "Finance Manager", "CEO"] },
     ],
     label: "Outstation Expenses",
   },
+  // Collapsed to a single standalone sidebar button that opens the Field
+  // Coaching hub (app/(admin)/admin/field-coaching/page.tsx, items in
+  // fieldCoachingPageItems below) — same pattern as the other consolidated
+  // sections above. permissions is the union of every card's own gate (coaching
+  // read/create, double_visit_analytics:read); the Super-Admin-only cards
+  // (Double Visit Data Integrity, Visits Report, CRM Integrity) still gate
+  // themselves via their own roles field on the hub.
   {
     id: "field-coaching",
     items: [
-      { href: "/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
-      // Coaching Analytics / Double Visit Analytics duplicate the workspace-sales-intelligence
-      // entries (same href) for the admin-shell-employee Marketing Manager.
-      { href: "/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-analytics", icon: Activity, label: "Double Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Data Integrity", roles: ["Super Admin"] },
-      { href: "/admin/visits-report", icon: FileSpreadsheet, label: "Visits Report", roles: ["Super Admin"] },
-      { href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity", roles: ["Super Admin"] },
-      { href: "/coaching/import", icon: FileUp, label: "Import History", permissions: [{ action: "create", resource: "coaching" }] },
-      { href: "/coaching/archived", icon: Archive, label: "Resigned Evaluations", permissions: [{ action: "create", resource: "coaching" }] },
+      {
+        href: "/admin/field-coaching",
+        icon: ClipboardCheck,
+        label: "Field Coaching",
+        permissions: [
+          { resource: "coaching" },
+          { resource: "coaching", action: "create" },
+          { resource: "double_visit_analytics", action: "read" },
+        ],
+      },
     ],
     label: "Field Coaching",
   },
@@ -388,16 +390,16 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Source of Sales",
   },
-  // Two visible items: the Dashboard stays a direct link (primary daily-use page),
-  // while Upload/Mapping/Distributor Column Editor/Product Access collapse behind a
-  // second "Weekly Sales" button that opens a hub page (app/(admin)/sales/weekly-tools
-  // /page.tsx, items in `weeklySalesToolsPageItems` below) — same pattern as Admin
-  // Tools / Access & Communication above.
+  // Collapsed to a single standalone sidebar button that opens the Weekly Sales
+  // hub (app/(admin)/sales/weekly-tools/page.tsx, items in
+  // weeklySalesToolsPageItems below), which now includes the Dashboard as its
+  // first card alongside Upload/Mapping/Distributor Column Editor/Product Access.
+  // permissions/excludedRoles here matches the Dashboard's original (broadest)
+  // gate — the hub re-filters per-card with each card's real gate.
   {
     id: "sales-weekly-module",
     items: [
-      { href: "/sales/weekly/dashboard", icon: ChartNoAxesColumnIncreasing, label: "Weekly Sales Dashboard", permissions: [{ resource: "weekly_sales" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/sales/weekly-tools", icon: Settings2, label: "Weekly Sales", permissions: [{ action: "import", resource: "weekly_sales" }, { action: "update", resource: "weekly_sales" }] },
+      { href: "/sales/weekly-tools", icon: Settings2, label: "Weekly Sales", permissions: [{ resource: "weekly_sales" }], excludedRoles: ["Marketing Manager"] },
     ],
     label: "Weekly Sales",
   },
@@ -788,9 +790,16 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
 
 // ── Weekly Sales tools hub (app/(admin)/sales/weekly-tools/page.tsx) ────────────
 // The tools formerly listed individually under the sidebar's "Weekly Sales" section
-// (see adminNavigationSectionSeeds above). "Weekly Sales Dashboard" stays a direct
-// sidebar link; these four collapse behind the "Weekly Sales" hub button.
+// (see adminNavigationSectionSeeds above), now fully collapsed behind one button.
 export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/sales/weekly/dashboard",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Weekly Sales Dashboard",
+    description: "Weekly distributor sell-out and stock position dashboard.",
+    permissions: [{ resource: "weekly_sales" }],
+    excludedRoles: ["Marketing Manager"],
+  },
   {
     href: "/sales/weekly",
     icon: FileUp,
@@ -854,5 +863,504 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     label: "Customer Database",
     description: "Validation view of customer, pharmacy, and distributor-code rows for marketing requests.",
     roles: ["Super Admin"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Attendance Management hub (app/(admin)/attendance/page.tsx) ─────────────────
+// The tools formerly listed individually under the sidebar's "Attendance
+// Management" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link). The hub page renders these as cards, filtered with the exact same
+// permission/role/excludedRoles fields the sidebar used to apply per item.
+export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/attendance/fingerprint-report",
+    icon: FileSpreadsheet,
+    label: "Fingerprint Report",
+    description: "Raw fingerprint clock-in/clock-out punches per employee.",
+    permissions: [{ resource: "employees" }],
+  },
+  {
+    href: "/attendance/monthly-summary",
+    icon: CalendarCheck,
+    label: "Monthly Summary",
+    description: "Monthly attendance summary and totals per employee.",
+    permissions: [{ resource: "employees" }],
+  },
+  {
+    href: "/attendance/analytics",
+    icon: ChartColumnBig,
+    label: "Attendance Analytics",
+    description: "Attendance trends and patterns across the organization.",
+    permissions: [{ resource: "attendance", action: "read" }],
+  },
+  {
+    href: "/hr-calendar",
+    icon: CalendarDays,
+    label: "Company Calendar",
+    description: "Company-wide events, holidays, and leave calendar.",
+    permissions: [{ resource: "hr_calendar" }],
+  },
+  {
+    href: "/admin/company-calendar",
+    icon: CalendarDays,
+    label: "Events Calendar",
+    description: "Admin host of the portal events calendar — events, holidays, leave, and birthdays.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: ["CEO", "Super Admin"],
+  },
+  {
+    href: "/admin/private-calendars",
+    icon: CalendarDays,
+    label: "Private Calendars",
+    description: "Executive private calendar management.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: ["CEO", "Super Admin"],
+  },
+  {
+    href: "/attendance/exceptions",
+    icon: ShieldCheck,
+    label: "Attendance Exceptions",
+    description: "Review and resolve attendance exception cases.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/settlement-dashboard",
+    icon: ChartColumnBig,
+    label: "Settlement Dashboard",
+    description: "Attendance settlement processing dashboard.",
+    permissions: [{ resource: "employees", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/digest-review",
+    icon: ShieldAlert,
+    label: "Weekly Digest Review",
+    description: "Review the weekly attendance digest before it sends.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/disputes",
+    icon: ShieldCheck,
+    label: "Dispute Review",
+    description: "Review and resolve employee attendance disputes.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/missing-punch",
+    icon: ShieldCheck,
+    label: "Missing-Punch Verification",
+    description: "Verify and resolve missing fingerprint punches.",
+    permissions: [{ resource: "attendance", action: "read" }],
+  },
+  {
+    href: "/attendance/device-user-mapping",
+    icon: Fingerprint,
+    label: "Device User Mapping",
+    description: "Map fingerprint device users to employee records.",
+    permissions: [{ resource: "employees", action: "update" }],
+  },
+  {
+    href: "/attendance/policies",
+    icon: CalendarClock,
+    label: "Attendance Policies",
+    description: "Configure attendance policies and rules.",
+    permissions: [{ resource: "employees", action: "update" }],
+  },
+  {
+    href: "/attendance/holiday-calendar",
+    icon: CalendarClock,
+    label: "Holiday Calendar",
+    description: "Manage the company holiday calendar.",
+    permissions: [{ resource: "employees", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/passport",
+    icon: IdCard,
+    label: "Attendance Passport",
+    description: "Individual employee attendance passport and history record.",
+    permissions: [{ resource: "employees", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/hr-pattern-insights",
+    icon: Sparkles,
+    label: "HR Pattern Insights",
+    description: "AI-surfaced attendance pattern insights for HR.",
+    permissions: [{ resource: "employees", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Payroll Management hub (app/(admin)/admin/payroll-management/page.tsx) ──────
+// The tools formerly listed individually under the admin sidebar's "Payroll
+// Management" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link). Employee-portal payroll (Payslips/Deductions) is unrelated and
+// untouched.
+export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/payroll",
+    icon: FileSpreadsheet,
+    label: "Payroll Report",
+    description: "Company payroll report — gross, net, and deductions per employee.",
+    permissions: [{ resource: "payroll" }],
+    roles: companyPayrollNavigationRoles,
+    excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/m-payroll",
+    icon: ScrollText,
+    label: "CEO Payroll View",
+    description: "Executive read-only payroll console.",
+    permissions: [{ resource: "payroll" }],
+    roles: ["CEO", "Super Admin"],
+  },
+  {
+    href: "/admin/payroll-copilot",
+    icon: Sparkles,
+    label: "Payroll Copilot",
+    description: "AI-assisted payroll assembly, review, and deduction recommendations.",
+    permissions: [{ resource: "payroll" }],
+    roles: ["CEO", "Super Admin"],
+  },
+  {
+    href: "/admin/payroll-copilot/insurance-wages",
+    icon: ReceiptText,
+    label: "Insurance Wages",
+    description: "Manage insurance wage bases used in statutory calculations.",
+    permissions: [{ resource: "payroll" }],
+    roles: ["CEO", "Super Admin"],
+  },
+  {
+    href: "/admin/payslips-center",
+    icon: ScrollText,
+    label: "Payslips Center",
+    description: "Generate and manage employee payslips.",
+    permissions: [{ resource: "payslips" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/deductions-governance",
+    icon: ShieldCheck,
+    label: "Deductions Governance",
+    description: "Review and govern payroll deduction decisions.",
+    permissions: [{ resource: "deductions", action: "read" }],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Marketing & ROI hub (app/(admin)/admin/marketing-roi/page.tsx) ──────────────
+// The tools formerly listed individually under the admin sidebar's "Marketing &
+// ROI" section (see adminNavigationSectionSeeds above, now collapsed to one
+// link). Employee-portal marketing/ROI navigation (Marketing Manager/PM/GPM's
+// own workspace) is a separate, unrelated section and is untouched.
+export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/sales-marketing-intelligence",
+    icon: ChartColumnBig,
+    label: "ROI Dashboard",
+    description: "Marketing ROI & Customer Intelligence BI dashboard — spend vs. realized sales, coverage gaps, customer impact.",
+    roles: ["Super Admin", "CEO", "SFE Manager"],
+  },
+  {
+    href: "/admin/marketing-requests/roi-tracking",
+    icon: ChartColumnBig,
+    label: "ROI Tracking",
+    description: "Read-only executive report to filter and audit individual marketing requests.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/marketing-roi-report",
+    icon: ClipboardList,
+    label: "Marketing ROI Report",
+    description: "Business-friendly ROI report, browsable by requester or customer.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/marketing-requests/coverage-report",
+    icon: MapPinned,
+    label: "Marketing Coverage Report",
+    description: "Hierarchy-scoped drill-down into requests, target pharmacies, and coverage KPIs.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/marketing-requests/validation",
+    icon: ShieldCheck,
+    label: "Customer Validation",
+    description: "Validate customer/pharmacy records tied to marketing requests.",
+    roles: ["District Manager", "Super Admin"],
+  },
+  {
+    href: "/admin/marketing-requests",
+    icon: Megaphone,
+    label: "Marketing Requests",
+    description: "Submit and manage marketing requests.",
+    roles: ["District Manager", "Super Admin"],
+  },
+  {
+    href: "/admin/marketing-requests/inbox",
+    icon: Inbox,
+    label: "Approval Inbox",
+    description: "Approve or reject pending marketing requests.",
+    roles: ["District Manager", "Super Admin"],
+  },
+  {
+    href: "/admin/marketing-requests/bulk-upload",
+    icon: FileUp,
+    label: "Bulk Upload",
+    description: "Bulk import marketing request data.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/marketing-requests/control",
+    icon: Settings2,
+    label: "Marketing Control",
+    description: "Configure marketing request module settings.",
+    roles: systemAdministratorNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Recruitment & Hiring hub (app/(admin)/admin/recruitment-hiring/page.tsx) ────
+// The tools formerly listed individually under the admin sidebar's "Recruitment
+// & Hiring" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link). All four shared the same roles (hrAuthorityNavigationRoles).
+export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/recruitment",
+    icon: BriefcaseBusiness,
+    label: "Recruitment",
+    description: "Manage open positions and the recruitment pipeline.",
+    permissions: [{ resource: "recruitment" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/cv-database",
+    icon: FileSpreadsheet,
+    label: "CV Database",
+    description: "Browse and search the candidate CV database.",
+    permissions: [{ resource: "vacancies" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/offers",
+    icon: IdCard,
+    label: "Offer Lifecycle",
+    description: "Track job offers from draft through acceptance.",
+    permissions: [{ resource: "offers" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/hiring-documents",
+    icon: FileCheck2,
+    label: "Hiring Documents",
+    description: "Manage hiring-related employee documents.",
+    permissions: [{ resource: "employee_documents" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── People Management hub (app/(admin)/admin/people-management/page.tsx) ────────
+// The tools formerly listed individually under the admin sidebar's "People
+// Management" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link).
+export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/approvals-hub",
+    icon: Inbox,
+    label: "Other Approvals",
+    description: "Combined approval inbox for resignation, outstation, contract, and plan requests.",
+    permissions: [{ resource: "leave", action: "read" }],
+  },
+  {
+    href: "/employees",
+    icon: UsersRound,
+    label: "Employees",
+    description: "Full employee directory and records.",
+    permissions: [{ resource: "employees" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/organogram",
+    icon: Network,
+    label: "Organogram",
+    description: "Company organizational chart and reporting lines.",
+    permissions: [{ resource: "organogram" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/reports/vacancies",
+    icon: BriefcaseBusiness,
+    label: "Vacancies Report",
+    description: "Open and vacant position report.",
+    permissions: [{ resource: "vacancies" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/probation",
+    icon: Hourglass,
+    label: "Probation",
+    description: "Track and manage employee probation periods.",
+    permissions: [{ resource: "probation" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/contracts",
+    icon: CalendarClock,
+    label: "Contract Renewal",
+    description: "Manage upcoming and expiring employment contracts.",
+    permissions: [{ resource: "contracts" }],
+  },
+  {
+    href: "/resignations",
+    icon: FileSpreadsheet,
+    label: "Resignations",
+    description: "Track and process employee resignations.",
+    permissions: [{ resource: "resignations" }],
+  },
+  {
+    href: "/admin/weekly-plans",
+    icon: CalendarDays,
+    label: "Weekly / Monthly Plans",
+    description: "Org-wide review of weekly and monthly field plans.",
+    permissions: [{ resource: "weekly_plans" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/field-workforce-compliance",
+    icon: ClipboardCheck,
+    label: "Workforce Compliance",
+    description: "Field workforce attendance and compliance tracking.",
+    permissions: [{ resource: "hr_calendar" }],
+  },
+  {
+    href: "/admin/support-requests",
+    icon: LifeBuoy,
+    label: "HR Support Requests",
+    description: "Employee HR support ticket queue.",
+    permissions: [{ resource: "support_requests" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Outstation Expenses hub (app/(admin)/admin/outstation-expenses/page.tsx) ────
+// The tools formerly listed individually under the admin sidebar's "Outstation
+// Expenses" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link). Expense Requests / Add Manual Expense are query-string views of
+// the same Expense Command Center page, preserved exactly as before.
+export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/outstation/expense-command",
+    icon: Radar,
+    label: "Expense Command Center",
+    description: "Outstation expense command center — overview of activity and queues.",
+    permissions: [{ resource: "outstation", action: "read" }],
+    roles: ["Super Admin", "Finance Manager", "CEO"],
+  },
+  {
+    href: "/admin/outstation/expense-command?tab=queue",
+    icon: MapPinned,
+    label: "Expense Requests",
+    description: "Review and approve pending outstation expense requests.",
+    permissions: [{ resource: "outstation", action: "approve" }],
+    roles: ["Super Admin", "Finance Manager"],
+  },
+  {
+    href: "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
+    icon: PlusCircle,
+    label: "Add Manual Expense",
+    description: "Manually add an outstation expense on behalf of an employee.",
+    permissions: [{ resource: "outstation", action: "approve" }],
+    roles: ["Super Admin", "Finance Manager"],
+  },
+  {
+    href: "/payroll/expenses/dashboard",
+    icon: ChartColumnBig,
+    label: "Outstation Expenses",
+    description: "Outstation expenses dashboard and reporting.",
+    permissions: [{ resource: "expenses" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/payroll/expenses",
+    icon: FileSpreadsheet,
+    label: "Historical Upload",
+    description: "Upload historical outstation expense data.",
+    permissions: [{ resource: "expenses" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/admin/outstation/policy",
+    icon: CalendarClock,
+    label: "Outstation Policy",
+    description: "Configure outstation expense policy rules.",
+    permissions: [{ resource: "outstation", action: "update" }],
+    roles: ["Super Admin", "Finance Manager"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Field Coaching hub (app/(admin)/admin/field-coaching/page.tsx) ──────────────
+// The tools formerly listed individually under the admin sidebar's "Field
+// Coaching" section (see adminNavigationSectionSeeds above, now collapsed to
+// one link).
+export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/coaching",
+    icon: ClipboardCheck,
+    label: "Field Coaching",
+    description: "Submit and review field coaching evaluations.",
+    permissions: [{ resource: "coaching" }],
+  },
+  {
+    href: "/coaching/analytics",
+    icon: ChartColumnBig,
+    label: "Coaching Analytics",
+    description: "Coaching trends and analytics across the field team.",
+    permissions: [{ resource: "coaching" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/admin/double-visit-analytics",
+    icon: Activity,
+    label: "Double Visit Analytics",
+    description: "Double-visit compliance and performance analytics.",
+    permissions: [{ resource: "double_visit_analytics", action: "read" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
+    href: "/admin/double-visit-data-integrity",
+    icon: TriangleAlert,
+    label: "Double Visit Data Integrity",
+    description: "Data integrity checks for double-visit records.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/visits-report",
+    icon: FileSpreadsheet,
+    label: "Visits Report",
+    description: "Field visit activity report.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/crm-integrity",
+    icon: MapPinned,
+    label: "CRM Integrity",
+    description: "CRM data integrity and correlation checks.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/coaching/import",
+    icon: FileUp,
+    label: "Import History",
+    description: "History of coaching evaluation imports.",
+    permissions: [{ action: "create", resource: "coaching" }],
+  },
+  {
+    href: "/coaching/archived",
+    icon: Archive,
+    label: "Resigned Evaluations",
+    description: "Archived coaching evaluations for resigned employees.",
+    permissions: [{ action: "create", resource: "coaching" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
