@@ -54,12 +54,22 @@ export default function MedRepsPerformanceLoading() {
           </div>
         </Card>
 
+        {/* Charts skeleton */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+              <Pulse className="mb-4 h-4 w-44" />
+              <Pulse className="h-52 w-full" />
+            </Card>
+          ))}
+        </div>
+
         {/* Leaderboard skeleton */}
         <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
           <Pulse className="h-3.5 w-24" />
-          <Pulse className="mt-2 h-6 w-52" />
+          <Pulse className="mt-2 h-6 w-44" />
           <div className="mt-5 space-y-3">
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3">
                 <Pulse className="h-6 w-6 shrink-0" />
                 <Pulse className="h-4 flex-1" />
@@ -72,37 +82,33 @@ export default function MedRepsPerformanceLoading() {
           </div>
         </Card>
 
-        {/* District section skeleton */}
+        {/* Section divider skeleton */}
         <div className="flex items-center gap-3 px-1">
           <div className="h-px flex-1 bg-gray-200" />
           <Pulse className="h-3 w-52" />
           <div className="h-px flex-1 bg-gray-200" />
         </div>
 
-        {/* DSM group skeleton */}
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="space-y-4">
-            <Card className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:px-5">
-              <div className="flex items-center gap-3">
-                <Pulse className="h-10 w-1" />
-                <div className="flex-1">
-                  <Pulse className="h-5 w-40" />
-                  <Pulse className="mt-1 h-3.5 w-48" />
+        {/* Product breakdown skeleton */}
+        <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+          <Pulse className="h-3.5 w-28" />
+          <Pulse className="mt-2 h-5 w-48" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-slate-100 p-4">
+                <div className="flex items-center gap-3">
+                  <Pulse className="h-9 w-9 shrink-0" />
+                  <div className="flex-1">
+                    <Pulse className="h-4 w-32" />
+                    <Pulse className="mt-1.5 h-3 w-20" />
+                  </div>
+                  <Pulse className="h-6 w-14" />
                 </div>
+                <Pulse className="mt-3 h-2 w-full" />
               </div>
-            </Card>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-                <Pulse className="mb-4 h-4 w-44" />
-                <Pulse className="h-48 w-full" />
-              </Card>
-              <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-                <Pulse className="mb-4 h-4 w-40" />
-                <Pulse className="h-48 w-full" />
-              </Card>
-            </div>
+            ))}
           </div>
-        ))}
+        </Card>
       </div>
     </div>
   );

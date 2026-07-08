@@ -9,7 +9,6 @@ import { assertPermission, isNationalSalesManager, resolveNavigationMode } from 
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
-import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
 
 import {
   TeamAchievementChart,
@@ -42,14 +41,6 @@ function achievementColor(pct: number): string {
   if (pct >= 90) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
-}
-
-/** Returns a Tailwind bg-color class for achievement zone indicators. */
-function achievementBg(pct: number): string {
-  if (pct >= 100) return "bg-emerald-500";
-  if (pct >= 90) return "bg-emerald-400";
-  if (pct >= 70) return "bg-amber-400";
-  return "bg-red-400";
 }
 
 /** Thin left-border color per stat context. */
@@ -107,7 +98,6 @@ export default async function MedRepsPerformancePage({
   const validPeriod =
     requestedPeriod && periods.includes(requestedPeriod) ? requestedPeriod : null;
   const eligibleCount = members.filter((m) => m.achievementPercent >= 90).length;
-  const dsmGroups = buildSalesManagerPerformanceGroups(members);
 
   /* Achievement distribution zones */
   const zoneExcellent = members.filter((m) => m.achievementPercent >= 100).length;
@@ -147,7 +137,7 @@ export default async function MedRepsPerformancePage({
           <div className="mb-4 grid gap-4 sm:mb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="min-w-0">
               <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
-                Line-wide performance
+                Medical Reps View
               </span>
               <h2 className="mt-3 break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
                 Line Snapshot
@@ -155,9 +145,7 @@ export default async function MedRepsPerformancePage({
               <p className="mt-1.5 max-w-2xl text-sm font-medium text-slate-500">
                 {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
                 {" | "}
-                {teamMemberCount > 0
-                  ? `${teamMemberCount} medical reps in line`
-                  : "No data"}
+                {teamMemberCount > 0 ? `${teamMemberCount} medical reps in line` : "No data"}
               </p>
             </div>
 
@@ -267,6 +255,27 @@ export default async function MedRepsPerformancePage({
           </div>
         </Card>
 
+        {/* ── Charts (Achievement Ranking + Sales vs Target) ── */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
+              Medical Reps Achievement Ranking
+            </h3>
+            <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
+              <TeamAchievementChart members={members} teamAchievementPercent={teamAchievementPercent} />
+            </WorkspaceErrorBoundary>
+          </Card>
+
+          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
+            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
+              Medical Reps Sales vs Target
+            </h3>
+            <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
+              <TeamSalesVsTargetChart members={members} />
+            </WorkspaceErrorBoundary>
+          </Card>
+        </div>
+
         {/* ── Leaderboard Table ── */}
         <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4 min-w-0 sm:mb-5">
@@ -280,91 +289,29 @@ export default async function MedRepsPerformancePage({
           <TeamLeaderboardTable members={members} />
         </Card>
 
-        {/* ── District-Wise Performance Section Divider ── */}
+        {/* ── Product Depth Section Divider ── */}
         <div className="flex items-center gap-3 px-1">
           <div className="h-px flex-1 bg-gray-200" />
           <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            District-Wise Performance ({dsmGroups.length} districts)
+            Medical Reps Product Breakdown ({teamMemberCount} reps)
           </p>
           <div className="h-px flex-1 bg-gray-200" />
         </div>
 
-        {/* ── DSM Groups ── */}
-        {dsmGroups.map((group) => (
-          <section
-            className="min-w-0 space-y-4 print:break-inside-avoid"
-            key={group.managerName}
-          >
-            {/* DSM group header */}
-            <div className="grid gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:px-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-              <div className="flex min-w-0 items-center gap-3">
-                <div
-                  className={`h-10 w-1 rounded-sm ${achievementBg(group.achievementPercent)}`}
-                />
-                <div className="min-w-0">
-                  <h2 className="break-words text-base font-bold text-slate-900 sm:text-lg">
-                    {group.managerName}
-                  </h2>
-                  <p className="mt-0.5 text-sm font-medium text-slate-500">
-                    District:{" "}
-                    <span className={`font-bold ${achievementColor(group.achievementPercent)}`}>
-                      {group.achievementPercent.toFixed(1)}%
-                    </span>
-                    {" | "}
-                    {group.members.length} reps
-                  </p>
-                </div>
-              </div>
-              <div className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-left md:w-auto md:text-right">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  District sales
-                </p>
-                <p className="mt-0.5 text-sm font-bold text-slate-900">
-                  {egp(group.totalSales)}
-                </p>
-              </div>
-            </div>
-
-            {/* Charts with error boundaries */}
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5 print:shadow-none">
-                <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
-                  District Achievement Ranking
-                </h3>
-                <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
-                  <TeamAchievementChart
-                    members={group.members}
-                    teamAchievementPercent={group.achievementPercent}
-                  />
-                </WorkspaceErrorBoundary>
-              </Card>
-
-              <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5 print:shadow-none">
-                <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
-                  District Sales vs Target
-                </h3>
-                <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
-                  <TeamSalesVsTargetChart members={group.members} />
-                </WorkspaceErrorBoundary>
-              </Card>
-            </div>
-
-            {/* Product breakdown */}
-            <Card className="min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 print:shadow-none">
-              <div className="mb-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
-                  Product depth
-                </p>
-                <h3 className="mt-1 break-words text-sm font-semibold text-slate-900">
-                  Medical Reps Product Breakdown
-                </h3>
-              </div>
-              <WorkspaceErrorBoundary fallbackTitle="Product breakdown failed to render">
-                <TeamMembersBreakdown members={group.members} />
-              </WorkspaceErrorBoundary>
-            </Card>
-          </section>
-        ))}
+        {/* ── Product Comparison ── */}
+        <Card className="min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 print:shadow-none print:break-inside-avoid">
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
+              Product depth
+            </p>
+            <h3 className="mt-1 break-words text-sm font-semibold text-slate-900">
+              Medical Reps Product Comparison
+            </h3>
+          </div>
+          <WorkspaceErrorBoundary fallbackTitle="Product breakdown failed to render">
+            <TeamMembersBreakdown members={members} />
+          </WorkspaceErrorBoundary>
+        </Card>
       </div>
     </EmployeePortalPageShell>
   );
