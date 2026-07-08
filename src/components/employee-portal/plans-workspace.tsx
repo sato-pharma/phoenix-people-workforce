@@ -469,12 +469,20 @@ function normalizeAnchorForKind(kind: EmployeePlanKind, value: string, workweek:
   return kind === "weekly" ? period.periodStartDate : value;
 }
 
+// How many already-elapsed weeks back a user can pick from the Plan week dropdown, to enter
+// a historical plan (e.g. pasting in past activity) the same way as any other week.
+const HISTORICAL_PLAN_WEEKS_BACK = 4;
+
 function weeklyPlanWeekOptions(anchorDate: string, workweek: PlanWorkweek = HEAD_OFFICE_WORKWEEK) {
   const starts = new Set<string>();
   starts.add(buildEmployeePlanPeriod("weekly", anchorDate, workweek).periodStartDate);
   const firstFutureWeek = nextWeeklyPlanStart(today(), workweek);
   for (let index = 0; index < 12; index += 1) {
     starts.add(addDays(firstFutureWeek, index * 7));
+  }
+  const currentWeekStart = addDays(firstFutureWeek, -7);
+  for (let index = 1; index <= HISTORICAL_PLAN_WEEKS_BACK; index += 1) {
+    starts.add(addDays(currentWeekStart, -7 * index));
   }
   return Array.from(starts).sort();
 }
