@@ -262,7 +262,11 @@ export type VacationExportRow = {
   balanceDaysAvailable: number;
   salaryDeductionAmount: number;
   balanceAvailable: boolean;
-  existingSettlement: { method: "salary" | "balance" } | null;
+  /** Present when partial-balance settlement is possible — not used by the xlsx builder itself. */
+  balanceDaysToConsume?: number;
+  remainingSalaryDays?: number;
+  remainingSalaryDeductionAmount?: number;
+  existingSettlement: { method: "salary" | "balance" | "partial_balance" | "defer_to_balance" } | null;
 };
 
 /** Unpaid-vacation (no-balance) report — days, remaining balance, salary deduction. */
@@ -286,10 +290,23 @@ export async function buildVacationReportWorkbook(input: {
   let totalDays = 0;
   let totalDeduction = 0;
   const rows: ReportCell[][] = input.rows.map((r) => {
+    let actualDeduction = r.salaryDeductionAmount;
+    if (r.existingSettlement?.method === "balance" || r.existingSettlement?.method === "defer_to_balance") {
+      actualDeduction = 0;
+    } else if (r.existingSettlement?.method === "partial_balance") {
+      actualDeduction = r.remainingSalaryDeductionAmount ?? 0;
+    }
+
     totalDays += r.unpaidDays;
-    totalDeduction += round2(r.salaryDeductionAmount);
+    totalDeduction += round2(actualDeduction);
     const settled = r.existingSettlement
-      ? r.existingSettlement.method === "balance" ? "From balance" : "From salary"
+      ? r.existingSettlement.method === "balance"
+        ? "From balance"
+        : r.existingSettlement.method === "partial_balance"
+          ? "Partial (balance + salary)"
+          : r.existingSettlement.method === "defer_to_balance"
+            ? "Deferred to future balance"
+            : "From salary"
       : r.balanceAvailable ? "Pending (balance available)" : "Pending (no balance)";
     return [
       r.employeeHrId,
@@ -300,7 +317,7 @@ export async function buildVacationReportWorkbook(input: {
       r.endDate,
       r.unpaidDays,
       round2(r.balanceDaysAvailable),
-      round2(r.salaryDeductionAmount),
+      round2(actualDeduction),
       settled,
     ];
   });

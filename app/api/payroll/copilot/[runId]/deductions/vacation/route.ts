@@ -65,12 +65,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
       vacationType?: string;
       salaryDeductionAmount?: number;
       balanceAvailable?: boolean;
+      balanceDaysAvailable?: number;
+      balanceDaysToConsume?: number;
+      remainingSalaryDays?: number;
+      remainingSalaryDeductionAmount?: number;
       method?: string;
     };
 
-    if (body.method !== "salary" && body.method !== "balance" && body.method !== "reject") {
+    if (
+      body.method !== "salary" &&
+      body.method !== "balance" &&
+      body.method !== "partial_balance" &&
+      body.method !== "defer_to_balance" &&
+      body.method !== "reject"
+    ) {
       return NextResponse.json(
-        { error: "invalid_request", message: "method must be 'salary', 'balance', or 'reject'." },
+        { error: "invalid_request", message: "method must be 'salary', 'balance', 'partial_balance', 'defer_to_balance', or 'reject'." },
         { status: 400 },
       );
     }
@@ -80,12 +90,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     if (!requestId || !employeeHrId || !startDate) {
       return NextResponse.json(
         { error: "invalid_request", message: "requestId, employeeHrId, and startDate are required." },
-        { status: 400 },
-      );
-    }
-    if (body.method === "balance" && !body.balanceAvailable) {
-      return NextResponse.json(
-        { error: "invalid_request", message: "Insufficient vacation balance to settle this against balance." },
         { status: 400 },
       );
     }
@@ -102,7 +106,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
         unpaidDays: Number(body.unpaidDays ?? 0),
         salaryDeductionAmount: Number(body.salaryDeductionAmount ?? 0),
         balanceAvailable: Boolean(body.balanceAvailable),
-        balanceDaysAvailable: 0,
+        balanceDaysAvailable: Number(body.balanceDaysAvailable ?? 0),
+        balanceDaysToConsume: Number(body.balanceDaysToConsume ?? 0),
+        remainingSalaryDays: Number(body.remainingSalaryDays ?? 0),
+        remainingSalaryDeductionAmount: Number(body.remainingSalaryDeductionAmount ?? 0),
         existingSettlement: null,
       },
       method: body.method,

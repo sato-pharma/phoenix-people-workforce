@@ -61,7 +61,7 @@ function addMonthsToDateOnly(value: string | null | undefined, months: number) {
   return toDateOnlyString(date);
 }
 
-function compareDateOnly(left: string, right: string) {
+export function compareDateOnly(left: string, right: string) {
   const leftDate = dateOnlyOrNull(left);
   const rightDate = dateOnlyOrNull(right);
   if (!leftDate || !rightDate) return 0;
