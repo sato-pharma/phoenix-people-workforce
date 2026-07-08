@@ -184,12 +184,22 @@ export async function assembleDraft(
       buildHolidayBridgingSalaryTotals(period),
     ]);
 
+  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
+  const periodEndStr = `${period.year}-${String(period.month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
   const eligible = directory.employees.filter(
-    (employee: EmployeeDirectoryRow) =>
-      !isPayrollIneligibleEmployee({
+    (employee: EmployeeDirectoryRow) => {
+      if (isPayrollIneligibleEmployee({
         employmentStatus: employee.employmentStatus,
         payrollEligible: employee.payrollEligible,
-      }),
+      })) {
+        return false;
+      }
+      if (employee.hireDate && employee.hireDate.substring(0, 10) > periodEndStr) {
+        return false;
+      }
+      return true;
+    }
   );
 
   const priorMap = priorSnapshotMap(priorRecords);

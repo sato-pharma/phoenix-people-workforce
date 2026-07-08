@@ -2313,7 +2313,7 @@ export async function calculatePaymentForRequest(input: {
   });
 
   let carriedOverDebtDays = 0;
-  if (input.vacationType === "annual" && period?.periodStart && input.hireDate) {
+  if ((input.vacationType === "annual" || input.vacationType === "emergency") && period?.periodStart && input.hireDate) {
     carriedOverDebtDays = await getDeferredDebtFromPreviousPeriods({
       employeeHrId: input.employeeHrId,
       hireDate: input.hireDate,
