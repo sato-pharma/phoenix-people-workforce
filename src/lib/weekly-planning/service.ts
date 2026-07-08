@@ -613,14 +613,14 @@ function isNationalSalesManagerEmployee(employee: EmployeeDirectoryRow | null, f
   return resolveJobFunctionRole(employeeTitle(employee, fallbackRole)) === "National Sales Manager";
 }
 
-// Single Visit's region -> area cascade must show every area in the region,
-// including ones with no rep hired yet (it never assigns a rep). Double
-// Visit/Coaching need the opposite - only areas with a real same-line rep to
-// auto-assign. Rather than two data sources, we fold open Medical Rep
-// position_vacancies (already loaded via getEmployeeDirectory().lookups) into
-// the same options array with a "Vacant" fullName, so areasForRegion's
-// existing requireAssignedRep filter (keyed off isVacantMedicalRep) naturally
-// includes them for Single Visit and excludes them for Double Visit/Coaching.
+// Region -> area cascade shows every area in the region for every activity type, including
+// ones whose Medical Rep seat is currently vacant (or never hired) — Single Visit never
+// assigns a rep at all, and Double Visit/Coaching now allow picking such an area too, simply
+// auto-assigning no rep (see areaHasAssignableRep/autoMedicalRepForArea). Rather than two data
+// sources, we fold open Medical Rep position_vacancies (already loaded via
+// getEmployeeDirectory().lookups) into the same options array with a "Vacant" fullName, so
+// isVacantMedicalRepOption can tell a real rep apart from an open seat wherever a caller
+// needs to (auto-assign, submit validation), without a second lookup.
 function vacantMedicalRepOptionsForEmployee(
   vacancies: EmployeeDirectoryData["lookups"]["medicalRepVacancies"],
   employee: EmployeeDirectoryRow,
@@ -772,6 +772,16 @@ function autoMedicalRepForArea(options: PlanningMedicalRepOption[], area: string
   return candidates.length === 1 ? candidates[0] : null;
 }
 
+// Whether an area has any real (non-vacant) rep at all, regardless of line disambiguation —
+// used to tell "this area genuinely has no medical rep" (submittable with no rep attached)
+// apart from "a rep exists here but couldn't be auto-resolved" (still a required gap).
+function areaHasAssignableRep(options: PlanningMedicalRepOption[], area: string | null) {
+  if (!area) return false;
+  return options.some(
+    (rep) => normalizedName(rep.areaName) === normalizedName(area) && !isVacantMedicalRepOption(rep),
+  );
+}
+
 function validActivityType(value: string): EmployeePlanActivityType {
   if (value === "Coaching") return "Other";
   if (value === "Single Visit") return "Field";
@@ -880,7 +890,10 @@ function normalizeItem(
   if (options.submit && requiresGeography && !area) {
     throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an area.`);
   }
-  if (options.submit && requiresRep && !selectedRepHrId) {
+  // An area with no real rep at all (vacant seat or none) is a valid, submittable choice —
+  // it's only a real gap when a rep does exist for the area but couldn't be resolved (e.g.
+  // an org-wide caller submitting without picking the disambiguating line).
+  if (options.submit && requiresRep && !selectedRepHrId && areaHasAssignableRep(medicalRepOptions, area)) {
     throw new Error(`${isCoaching ? "Coaching" : "Double Visit"} requires an assigned same-line Medical Rep for the selected area.`);
   }
   if (
