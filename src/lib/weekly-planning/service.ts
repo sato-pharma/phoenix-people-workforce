@@ -1468,6 +1468,27 @@ async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: Emp
   }
 }
 
+// The submitter previously heard nothing between submit and the final HR-acknowledge (or a
+// return/reject) — a manager approval is real, useful news, so confirm it back to them too.
+// eventType is the raw action ("manager_approve"), NOT "plan_manager_approved" — that string is
+// reserved for the CEO's own actionable copy in ACTIONABLE_APPROVAL_NOTIFICATIONS
+// (src/lib/notifications/in-app.ts); reusing it here would get this FYI copy auto-archived the
+// instant the plan moves past manager_approved, same instant it's created.
+async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
+  try {
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      eventType: "manager_approve",
+      message: `${plan.manager_name ?? "Your manager"} approved your ${plan.plan_kind} plan for ${plan.period_key}.`,
+      plan,
+      recipients: [{ hrId: plan.employee_hr_id }],
+      title: `Your ${plan.plan_kind} plan was approved by your manager`,
+    });
+  } catch (error) {
+    console.error(`[weekly-plans] failed to notify employee of manager approval for plan ${plan.id}`, error);
+  }
+}
+
 // ===========================================================================
 // Two-way plan conversation (employee_plan_comments, migration 20260708010000).
 // Anyone who canViewPlan() may read and post — the submitter, the assigned
@@ -2696,6 +2717,9 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     await notifyCeo(updated);
   } else if (input.action === "ceo_approve") {
     await notifyHr(updated);
+  }
+  if (input.action === "manager_approve") {
+    await notifyEmployeeManagerApproved(updated);
   }
   if (input.action.includes("return") || input.action.includes("reject")) {
     await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null);
