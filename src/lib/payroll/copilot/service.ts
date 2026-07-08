@@ -31,7 +31,6 @@ import {
 } from "./assemble.ts";
 import {
   buildApprovedDeductionTotals,
-  listCrmDeductionCandidates,
   listFingerprintDeductionCandidates,
 } from "./deductions-review.ts";
 import { buildIncludedExpenseTotals, listExpenseCandidates } from "./expense-review.ts";
@@ -430,9 +429,13 @@ export type CopilotRunView = {
 async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlocking[]> {
   const blocking: OtherTabBlocking[] = [];
   try {
-    const [fingerprint, crm, vacation, expenses] = await Promise.all([
+    // CRM no-activity is intentionally excluded from this gate: it is a MANDATORY
+    // deduction (autoAppliesUnlessRejected). Every pending row already counts toward
+    // the payroll sheet using the base-salary estimate — the CEO only needs to act
+    // on a row to EXCLUDE it, not to include it. Requiring explicit approval on all
+    // CRM rows would permanently block the button for normal months.
+    const [fingerprint, vacation, expenses] = await Promise.all([
       listFingerprintDeductionCandidates(systemAccessContext, period),
-      listCrmDeductionCandidates(systemAccessContext, period),
       listUnpaidVacationCandidates(period),
       listExpenseCandidates(period),
     ]);
@@ -440,9 +443,6 @@ async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlo
       (row) => (row.decision?.decisionStatus ?? "Pending") === "Pending",
     ).length;
     if (fingerprintPending > 0) blocking.push({ label: "Fingerprint Deductions", count: fingerprintPending });
-
-    const crmPending = crm.rows.filter((row) => (row.decision?.decisionStatus ?? "Pending") === "Pending").length;
-    if (crmPending > 0) blocking.push({ label: "CRM Deductions", count: crmPending });
 
     const vacationPending = vacation.filter((candidate) => candidate.existingSettlement === null).length;
     if (vacationPending > 0) blocking.push({ label: "Unpaid Vacation", count: vacationPending });
