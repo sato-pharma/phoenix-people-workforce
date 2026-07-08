@@ -713,7 +713,14 @@ function validateDraftRow(row: DraftItem, medicalRepOptions: MedicalRepOption[] 
   }
   if (rule.requiresRep && needsLineSelection(medicalRepOptions) && !String(row.lineFilter ?? "").trim()) {
     issues.push(`${label}: ${rule.label} needs a line selected first.`);
-  } else if (rule.requiresRep && !autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter)) {
+  } else if (
+    rule.requiresRep &&
+    !autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) &&
+    areaHasAssignableRep(medicalRepOptions, row.area ?? "")
+  ) {
+    // Only a real gap (a rep exists here but couldn't be resolved) blocks submission — an
+    // area with no rep at all (vacant seat or none) is a valid, submittable choice; see
+    // areaHasAssignableRep and the matching server-side relaxation in normalizeItem.
     issues.push(`${label}: ${rule.label} needs an assigned Medical Rep for the selected area.`);
   }
   return issues;
@@ -742,6 +749,15 @@ function statusTone(status: EmployeePlanStatus) {
 function isVacantMedicalRep(rep: MedicalRepOption) {
   const text = `${rep.fullName ?? ""} ${rep.hrId ?? ""}`.toLowerCase();
   return /\bvacan(t|cy)\b/.test(text);
+}
+
+// Whether an area has any real (non-vacant) rep at all, regardless of line
+// disambiguation — used to tell "this area genuinely has no medical rep"
+// (fine to submit, just nothing to show) apart from "a rep exists here but
+// couldn't be resolved yet" (needs a line pick, still a real gap to fix).
+function areaHasAssignableRep(options: MedicalRepOption[], area: string): boolean {
+  if (!area) return false;
+  return options.some((rep) => rep.areaName?.toLowerCase() === area.toLowerCase() && !isVacantMedicalRep(rep));
 }
 
 // Line is a client-only disambiguation axis (see DraftItem.lineFilter): most
@@ -782,13 +798,15 @@ function needsLineSelection(options: MedicalRepOption[]): boolean {
   return lineOptionsFromReps(options).length > 1;
 }
 
-function areasForRegion(options: MedicalRepOption[], region: string, requireAssignedRep = false): string[] {
+// Every area in the region is listed for every activity type, including areas whose only
+// Medical Rep seat is currently vacant — Double Visit/Coaching no longer hide those (see
+// areaHasAssignableRep for the "no rep" display/validation handling once one is picked).
+function areasForRegion(options: MedicalRepOption[], region: string): string[] {
   const targetRegion = canonicalRegion(region);
   if (!targetRegion) return [];
   const seen = new Set<string>();
   const result: string[] = [];
   for (const rep of options) {
-    if (requireAssignedRep && isVacantMedicalRep(rep)) continue;
     if (canonicalRegion(rep.regionName) === targetRegion && rep.areaName) {
       const k = rep.areaName.toLowerCase();
       if (!seen.has(k)) {
@@ -2265,7 +2283,7 @@ export function PlansWorkspace({
                       <Fragment key={group.activityDate}>
                         {group.rows.map((row, slotIndex) => {
                           const rule = activityRule(row.activityType, row.activityTitle);
-                          const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "", rule.requiresRep);
+                          const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "");
                           const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter) : null;
                           const currentRegionOptions = regionOptions(row.locationText);
                           const showLineSelect = tableNeedsLine && rule.showRep;
@@ -2430,7 +2448,7 @@ export function PlansWorkspace({
                                       ? "Select area first"
                                       : showLineSelect && !row.lineFilter
                                         ? "Select line first"
-                                        : autoRep?.fullName ?? "No assigned rep"}
+                                        : autoRep?.fullName ?? "This area has no medical rep currently"}
                                   </DisabledFieldText>
                                 ) : (
                                   <DisabledFieldText>Not required</DisabledFieldText>
@@ -2709,7 +2727,11 @@ function MobileDayCard({
   const selectedRep = medicalRepOptions.find((rep) => hrIdsMatch(rep.hrId, row.doubleVisitMedicalRepHrId));
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const repName = row.doubleVisitMedicalRepName || selectedRep?.fullName || autoRep?.fullName || "";
-  const needsRep = rule.requiresRep && !autoRep;
+  // A selected area with no rep at all (vacant seat or none) is a valid, submittable
+  // choice — show it as plain info, not the "fix this" warning used for an unresolved
+  // pick (missing line, etc.). See areaHasAssignableRep.
+  const areaHasNoRep = Boolean(row.area) && !autoRep && !areaHasAssignableRep(medicalRepOptions, row.area ?? "");
+  const needsRep = rule.requiresRep && !autoRep && !areaHasNoRep;
   const hasReturnNotes = Boolean(row.returnNotes?.length);
   const region = canonicalRegion(row.locationText) || row.locationText || "";
   const geographySummary = rule.showTrainingFormat
@@ -2780,6 +2802,8 @@ function MobileDayCard({
                   <TriangleAlert className="h-3.5 w-3.5" />
                   Coaching needs an assigned Medical Rep
                 </p>
+              ) : areaHasNoRep ? (
+                <p className="text-xs font-semibold text-slate-500">Coaching - this area has no medical rep currently</p>
               ) : (
                 <p className="text-xs font-semibold text-violet-700">Coaching - {repName}</p>
               )
@@ -2789,6 +2813,8 @@ function MobileDayCard({
                 <TriangleAlert className="h-3.5 w-3.5" />
                 Double Visit - select a Medical Rep
               </p>
+            ) : areaHasNoRep ? (
+              <p className="text-xs font-semibold text-slate-500">Double Visit - this area has no medical rep currently</p>
             ) : (
               <p className="text-xs font-semibold text-violet-700">Double Visit - {repName}</p>
             )
@@ -2840,7 +2866,7 @@ function RowEditSheet({
   row: DraftItem;
 }) {
   const rule = activityRule(row.activityType, row.activityTitle);
-  const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "", rule.requiresRep);
+  const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "");
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const currentRegionOptions = regionOptions(row.locationText);
   const lineOptions = lineOptionsFromReps(medicalRepOptions);
@@ -2999,7 +3025,7 @@ function RowEditSheet({
                   ? "Select area first"
                   : showLine && !row.lineFilter
                     ? "Select line first"
-                    : autoRep?.fullName ?? "No assigned rep"}
+                    : autoRep?.fullName ?? "This area has no medical rep currently"}
               </DisabledFieldText>
             </Field>
           ) : null}
