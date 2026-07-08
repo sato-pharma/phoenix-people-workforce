@@ -13,7 +13,7 @@ const salaryImportSource = readFileSync(
 export function runReadyPayrollTemplateFormulaTests() {
   assert.match(
     templateRouteSource,
-    /createFallbackWorkbook\(await buildReadyRows\(month, year, access\), month, year, \{ formulas: true \}\)/,
+    /createFallbackWorkbook\(await buildReadyRows\(month, year, access(?:, batchId)?\), month, year, \{ formulas: true \}\)/,
     "Ready payroll download must create the workbook with Excel formulas enabled.",
   );
 

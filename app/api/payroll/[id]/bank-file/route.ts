@@ -9,6 +9,7 @@ import {
   buildBankFileRows,
   type EmployeeBankInfo,
 } from "@/lib/payroll/exports/bank-file";
+import { autoSizeColumns, MONEY_FMT, PHOENIX_ORANGE, styleDataRow, styleHeaderRow } from "@/lib/payroll/exports/excel-style";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 
 export const runtime = "nodejs";
@@ -40,15 +41,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Bank Transfer");
-    sheet.addRow(HEADERS);
-    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-    sheet.getRow(1).fill = { fgColor: { argb: "FFFF6B00" }, pattern: "solid", type: "pattern" };
+    
+    // Add headers and style them
+    const headerRow = sheet.addRow(HEADERS);
+    styleHeaderRow(headerRow, PHOENIX_ORANGE);
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.columns = HEADERS.map((header) => ({ header, key: header, width: Math.max(header.length + 4, 18) }));
 
     for (const row of rows) {
-      sheet.addRow([row.hrId, row.fullName, row.bankName, row.bankAccount, row.amount, row.missingBank ? "YES" : ""]);
+      const dataRow = sheet.addRow([row.hrId, row.fullName, row.bankName, row.bankAccount, row.amount, row.missingBank ? "YES" : ""]);
+      styleDataRow(dataRow);
+      // Format the amount column as money
+      dataRow.getCell(5).numFmt = MONEY_FMT;
     }
+
+    autoSizeColumns(sheet);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const period = `${exportData.batch.year}-${String(exportData.batch.month).padStart(2, "0")}`;

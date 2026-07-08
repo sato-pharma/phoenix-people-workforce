@@ -4209,10 +4209,16 @@ export function PayrollDashboard({
             actions={(
               salaryReportBatch ? (
                 <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/api/payroll/template?ready=1&month=${salaryReportBatch.month}&year=${salaryReportBatch.year}&batchId=${salaryReportBatch.id}`}>
+                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Ready payroll
+                    </Button>
+                  </Link>
                   <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
                     <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
                       <Download className="mr-2 h-3.5 w-3.5" />
-                      Download
+                      Flat export
                     </Button>
                   </Link>
                   <Link href={`/api/payroll/${salaryReportBatch.id}/bank-file`}>

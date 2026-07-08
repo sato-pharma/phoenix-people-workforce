@@ -96,6 +96,7 @@ const nextConfig: NextConfig = {
   // watching/tracing a far larger — sometimes pathologically slow — file tree
   // than the actual app needs.
   outputFileTracingRoot: __dirname,
+  output: "standalone",
   // pdfmake/pdfkit load their standard-14 font metrics (.afm files) from disk at runtime
   // relative to their own package directory. Left to normal webpack bundling, those relative
   // paths break (Next tries to resolve them as bundled "vendor-chunks" that don't exist).
@@ -103,6 +104,12 @@ const nextConfig: NextConfig = {
   // instead, so the on-disk .afm lookups keep working.
   serverExternalPackages: ["pdfmake", "pdfkit"],
   experimental: {
+    serverActions: {
+      allowedOrigins: [
+        "phoenix-hr-897559113412.us-central1.run.app",
+        "phoenix-hr.satopharma.com",
+      ],
+    },
     // Tree-shake large barrel imports so only the icons/charts a component
     // actually uses land in its client chunk (lucide-react alone is imported
     // across 240+ files). "radix-ui" was removed: audited 2026-07-03, zero
@@ -168,7 +175,7 @@ export default withSentryConfig(nextConfig, {
     // See the following for more information:
     // https://docs.sentry.io/product/crons/
     // https://vercel.com/docs/cron-jobs
-    automaticVercelMonitors: true,
+    automaticVercelMonitors: false,
 
     // Tree-shaking options for reducing bundle size
     treeshake: {
