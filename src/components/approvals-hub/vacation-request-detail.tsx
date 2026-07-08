@@ -5,6 +5,7 @@ import type { VacationApprovalDetail } from "@/lib/approvals-hub/service";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
 import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-attachment-links";
+import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
 
 type Props = {
   detail: VacationApprovalDetail;
@@ -82,6 +83,17 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
             <div className="border-t border-slate-100 px-4 py-3">
               <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">Evidence</p>
               <VacationAttachmentLinks canReviewAttachments={detail.canReviewAttachments} row={r} />
+              {detail.canReviewEvidence ? (
+                <VacationEvidenceReviewActions
+                  evidenceType={r.vacationType === "compensatory" ? "compensatory" : "sick"}
+                  existingReview={
+                    r.evidenceReviews.find(
+                      (review) => review.evidenceType === (r.vacationType === "compensatory" ? "compensatory" : "sick"),
+                    ) ?? null
+                  }
+                  requestId={r.id}
+                />
+              ) : null}
             </div>
           ) : null}
         </section>

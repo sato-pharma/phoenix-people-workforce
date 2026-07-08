@@ -361,6 +361,9 @@ export type VacationApprovalDetail = {
   // Mirrors the widened server-side gate in createVacationAttachmentReviewUrl: HR/Super Admin
   // always, OR the caller is the currently assigned, active-turn approver for this request.
   canReviewAttachments: boolean;
+  // Stricter than canReviewAttachments: reviewVacationEvidence (accept/reject/needs-follow-up)
+  // is HR/Super Admin only, even during a non-HR approver's active turn.
+  canReviewEvidence: boolean;
 };
 
 function readOnlyReasonForStatus(status: VacationRequestStatus): string {
@@ -422,6 +425,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
           ? null
           : row.stageLabel ?? "This request is waiting on another approver.",
       canReviewAttachments: isAllVacationVisibility(access) || (actionable && !own),
+      canReviewEvidence: isAllVacationVisibility(access),
     };
   }
 
@@ -440,6 +444,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       readOnly: true,
       readOnlyReason: null,
       canReviewAttachments: false,
+      canReviewEvidence: false,
     };
   }
   const own = hrIdsMatch(record.employeeHrId, hrId);
@@ -456,6 +461,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     // Decided/terminal/out-of-turn case: only HR/Super Admin retains attachment access here — the
     // turn-based widening only applies while it's genuinely the viewer's active turn (branch above).
     canReviewAttachments: isAllVacationVisibility(access),
+    canReviewEvidence: isAllVacationVisibility(access),
   };
 }
 
