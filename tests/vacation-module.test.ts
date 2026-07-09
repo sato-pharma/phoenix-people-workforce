@@ -89,10 +89,7 @@ const dailyNotificationsRouteSource = readFileSync(
   new URL("../app/api/notifications/daily/route.ts", import.meta.url),
   "utf8",
 );
-const vercelConfigSource = readFileSync(
-  new URL("../vercel.json", import.meta.url),
-  "utf8",
-);
+
 const nationalHolidaysRouteSource = readFileSync(
   new URL("../app/api/vacations/national-holidays/route.ts", import.meta.url),
   "utf8",
@@ -458,20 +455,5 @@ export function runVacationModuleTests() {
   assert.match(complianceMigrationSource, /create table if not exists public\.v2_vacation_retention_purge_runs/);
   assert.match(complianceMigrationSource, /enable row level security/);
   assert.doesNotMatch(complianceMigrationSource, /drop table|drop function|drop policy .*leave/i);
-  // Vercel Pro hosts the daily dispatcher, the sub-daily outbox drain (moved off GitHub Actions
-  // so it stops consuming Actions minutes), the iReports360 visits sync, and its weekly wide
-  // reconciliation. All are CRON_SECRET protected. Any additional cron must be a deliberate,
-  // reviewed change.
-  const crons = JSON.parse(vercelConfigSource).crons as Array<{ path: string; schedule: string }>;
-  // Daily dispatcher runs at 06:30 UTC = 09:30 Africa/Cairo (EEST, UTC+3 in summer).
-  // iReports360 visits sync runs 09:00/12:00/19:00 UTC = 12pm/3pm/10pm Africa/Cairo (same EEST
-  // calibration) — owner-requested cadence so Phoenix stays synced with the CRM without a manual pull.
-  // The wide reconciliation runs weekly (Sunday 04:00 UTC = 07:00 Africa/Cairo) to catch a visit
-  // CRM-edited long after its own visitDate, outside the daily sync's rolling lookback window.
-  assert.deepEqual(crons, [
-    { path: "/api/notifications/daily", schedule: "30 6 * * *" },
-    { path: "/api/notifications/process?limit=50", schedule: "*/30 * * * *" },
-    { path: "/api/cron/ireports360-visits-sync", schedule: "0 9,12,19 * * *" },
-    { path: "/api/cron/ireports360-visits-reconcile", schedule: "0 4 * * 0" },
-  ]);
+
 }

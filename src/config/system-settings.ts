@@ -59,7 +59,7 @@ export const systemEmail = {
  * "production" | "preview" | "development"; Node sets NODE_ENV.
  */
 export function isProductionRuntime(): boolean {
-  const env = String(process.env.VERCEL_ENV || process.env.NODE_ENV || "").toLowerCase();
+  const env = String(process.env.APP_ENV || process.env.VERCEL_ENV || process.env.NODE_ENV || "").toLowerCase();
   return env === "production";
 }
 

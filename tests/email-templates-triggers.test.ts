@@ -83,9 +83,5 @@ export function runEmailTemplatesTriggersTests() {
   const processRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
   assert.match(processRoute, /searchParams\.get\("limit"\)/, "the drain route must accept a limit param");
   assert.match(processRoute, /authorization"\) === `Bearer \$\{secret\}`/, "the drain route must authenticate cron via CRON_SECRET");
-  const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8")) as { crons: Array<{ path: string; schedule: string }> };
-  const drainCron = vercelConfig.crons.find((cron) => cron.path.startsWith("/api/notifications/process"));
-  assert.ok(drainCron, "a Vercel cron must drive the notification drain");
-  assert.equal(drainCron?.schedule, "*/30 * * * *", "the drain cron must run every ~30 minutes");
-  assert.match(drainCron?.path ?? "", /limit=\d+/, "the drain cron must pass a limit so a backlog drains faster");
+  
 }

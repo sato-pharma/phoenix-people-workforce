@@ -363,6 +363,7 @@ export const accessRegistry = [
   // Manual on-demand trigger that emails the same workbook to CEO / Super Admin — same hard
   // role gate as the export route above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/sos-dashboard/email-report", permission: { resource: "sales", action: "export" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-dashboard/export", permission: { resource: "sales", action: "export" } }),
   sessionApi({
     audit: { classification: "mutation", required: true },
     methods: ["POST"],

@@ -192,17 +192,23 @@ export async function provisionSupabaseAuthIdentity(
     try {
       return await updateSupabaseAuthUser(input, input.authUserId);
     } catch (error) {
-      if (options?.hotPath) throw error;
+      const is404 = typeof error === "object" && error !== null && "status" in error && (error as Record<string, unknown>).status === 404;
+      // Fail fast on the hot path to avoid slow fallbacks during transient bridge outages (e.g. 5xx/timeout).
+      // However, a 404 means the bridge is up and the user is definitively missing or stale, so we MUST recover.
+      if (options?.hotPath && !is404) throw error;
       const recoveredAuthUserId = await findAuthUserIdByEmail(authEmail);
       if (recoveredAuthUserId) {
         return updateSupabaseAuthUser(input, recoveredAuthUserId);
       }
     }
+  } else if (options?.hotPath) {
+    // If they have no authUserId, we must check if they exist by email before creating them.
+    // In the non-hot path, createUser failing handles this, but on the hot path we'd prefer not to
+    // blindly assume they don't exist if we can avoid an error-driven flow. Still, createUser is fast.
   }
 
-  if (options?.hotPath) {
-    throw new Error("Supabase auth identity update failed on the login hot path.");
-  }
+  // If we reach here on the hot path, we know the bridge is likely healthy (we didn't fail-fast above)
+  // but the user is missing (either no authUserId initially, or they 404'd). We must allow createUser.
 
   if (!input.password) {
     throw new Error("Password is required to provision a new Supabase auth user.");

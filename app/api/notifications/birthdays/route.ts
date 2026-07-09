@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
@@ -113,7 +112,7 @@ export async function runBirthdayNotifications(request: Request) {
       });
       results.push({ employeeHrId: employee.hrId, result });
     } catch (error) {
-      Sentry.captureException(error, { tags: { cron: "birthday-notifications", employeeHrId: employee.hrId } });
+      console.error(error, { tags: { cron: "birthday-notifications", employeeHrId: employee.hrId } });
       results.push({
         employeeHrId: employee.hrId,
         result: { error: error instanceof Error ? error.message : String(error), sent: false },
@@ -140,7 +139,7 @@ export async function GET(request: Request) {
     // would raise false missed-run alerts. The dispatcher owns the cron monitor.
     return await runBirthdayNotifications(request);
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "birthday-notifications" } });
+    console.error(error, { tags: { cron: "birthday-notifications" } });
     const message = error instanceof Error ? error.message : "Birthday notification run failed.";
     return NextResponse.json({ error: "birthday_notifications_failed", message }, { status: 500 });
   }

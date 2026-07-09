@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
 import { runAttendanceDigestScheduledProcessing } from "@/lib/attendance/digest-scheduler";
@@ -22,7 +21,7 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   // ireports360-visits-reconcile incident this reaper exists to catch promptly next time.
   const reapedVisitsSyncRuns = await reapStaleIReports360SyncRuns();
   const probationReminders = await processDueProbationReminderEvents(limit).catch((e: unknown) => {
-    Sentry.captureException(e, { tags: { cron: "notification-process-probation-reminders" } });
+    console.error(e, { tags: { cron: "notification-process-probation-reminders" } });
     return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, error: String(e) };
   });
   // Never throws; per-day idempotency key prevents duplicate alerts across runs.
@@ -35,15 +34,15 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
   const staleSosBatches = await cleanupStalePendingSosBatches();
   const outbox = await processNotificationOutbox(limit).catch((e: unknown) => {
-    Sentry.captureException(e, { tags: { cron: "notification-process-outbox" } });
+    console.error(e, { tags: { cron: "notification-process-outbox" } });
     return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, skipped: 0, error: String(e) };
   });
   const deferred = await processDeferredDeliveryRetries(limit).catch((e: unknown) => {
-    Sentry.captureException(e, { tags: { cron: "notification-process-deferred" } });
+    console.error(e, { tags: { cron: "notification-process-deferred" } });
     return { attempted: 0, deferred: 0, sent: 0, skipped: 0, error: String(e) };
   });
   const telegram = await processTelegramDeliveryRetries(limit).catch((e: unknown) => {
-    Sentry.captureException(e, { tags: { cron: "notification-process-telegram" } });
+    console.error(e, { tags: { cron: "notification-process-telegram" } });
     return { attempted: 0, failed: 1, sent: 0, error: String(e) };
   });
   // Never throws; every step inside has its own internal try/catch (see cleanupOldNotificationData).

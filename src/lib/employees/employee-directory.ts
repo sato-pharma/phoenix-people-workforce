@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { getRequiredEnv } from "@/lib/env";
 import {
   normalizePayrollPaymentMode,
@@ -774,7 +773,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
       message.includes("salary_details") ||
       message.includes("schema cache")
     ) {
-      Sentry.captureMessage("Employee compensation payment_mode/salary_details column missing, retrying without it (schema cache)", {
+      console.log("Employee compensation payment_mode/salary_details column missing, retrying without it (schema cache)", {
         level: "warning",
         tags: { component: "employee-directory", action: "loadCompensationByHrId" },
         extra: { message: employeeDirectoryErrorMessage(error) },
@@ -922,7 +921,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   try {
     employeeRows = await supabaseRest<JoinedEmployeeDbRow[]>(`employees?${employeeParams}`);
   } catch (error) {
-    Sentry.captureMessage("Employee directory joined select failed, using fallback (schema cache / PostgREST)", {
+    console.log("Employee directory joined select failed, using fallback (schema cache / PostgREST)", {
       level: "warning",
       tags: { component: "employee-directory", action: "fetchEmployeeDirectory" },
       extra: { message: employeeDirectoryErrorMessage(error) },
@@ -939,7 +938,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     try {
       employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
     } catch (fallbackError) {
-      Sentry.captureException(fallbackError, {
+      console.error(fallbackError, {
         tags: { component: "employee-directory", action: "fetchEmployeeDirectory-fallback" },
         extra: { message: employeeDirectoryErrorMessage(fallbackError) },
       });

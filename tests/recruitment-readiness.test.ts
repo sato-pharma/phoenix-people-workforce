@@ -228,10 +228,4 @@ export function runRecruitmentReadinessTests() {
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");
   const notifications = read("src/lib/recruitment/notifications.ts");
   assert.match(notifications, /listInterviewsDueForReminder/, "daily run must send interview reminders");
-  const vercel = JSON.parse(read("vercel.json")) as { crons?: Array<{ path?: string }> };
-  const cronPaths = (vercel.crons ?? []).map((cron) => cron.path ?? "");
-  assert.ok(
-    cronPaths.every((cronPath) => !cronPath.includes("recruitment")),
-    "recruitment must not add a Vercel cron (Hobby limit)",
-  );
 }

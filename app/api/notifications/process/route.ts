@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -53,20 +52,9 @@ export async function GET(request: Request) {
     // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
-    return await Sentry.withMonitor(
-      "notification-outbox-drain",
-      () => runNotificationOutbox(limit),
-      {
-        schedule: { type: "crontab", value: "*/30 * * * *" },
-        checkinMargin: 5,
-        // Minutes, not seconds — maxDuration (300s) + 1min margin, same convention used by the
-        // ireports360 crons for the identical 300s Vercel execution ceiling.
-        maxRuntime: 6,
-        timezone: "Etc/UTC",
-      },
-    );
+    return await runNotificationOutbox(limit);
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "notification-outbox-drain" } });
+    console.error(error, { tags: { cron: "notification-outbox-drain" } });
     const message = error instanceof Error ? error.message : "Notification processing failed.";
     return NextResponse.json({ error: "notification_process_failed", message }, { status: 500 });
   }

@@ -199,7 +199,7 @@ export async function POST(request: Request) {
     // CI's preview-smoke job runs -- so a NODE_ENV check would be dead code that always
     // resolves to false and would silently break that smoke test.
     const ciSmokeMode =
-      process.env.VERCEL_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true";
+      process.env.APP_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true";
     const originRejection = rejectUntrustedForwardedOrigin(request);
 
     if (originRejection) {

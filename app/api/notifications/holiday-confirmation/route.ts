@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { systemAdministratorRoles } from "@/lib/auth/permissions";
@@ -135,7 +134,7 @@ export async function GET(request: Request) {
     // The dispatcher owns the cron monitor.
     return await runHolidayConfirmationReminder(request);
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "holiday-confirmation" } });
+    console.error(error, { tags: { cron: "holiday-confirmation" } });
     const message = error instanceof Error ? error.message : "Holiday confirmation reminder run failed.";
     return NextResponse.json({ error: "holiday_confirmation_reminder_failed", message }, { status: 500 });
   }

@@ -1,6 +1,5 @@
 import crypto from "crypto";
 
-import * as Sentry from "@sentry/nextjs";
 
 import {
   renderGeneralNotificationEmailHtml,
@@ -1372,7 +1371,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   }
   const identity = validateNotificationEmailIdentity(input);
   if (!identity.ok) {
-    Sentry.captureMessage("Email identity guard blocked notification", {
+    console.log("Email identity guard blocked notification", {
       level: "error",
       tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
       extra: identity.metadata,
@@ -1564,7 +1563,7 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
   // A row that has exhausted every retry is a notification that was never delivered.
   // Surface it individually (the batch-level warning only says "something failed").
   if (terminal) {
-    Sentry.captureMessage("Email outbox row terminally failed", {
+    console.log("Email outbox row terminally failed", {
       level: "error",
       tags: { component: "email", cron: "outbox-processing", notificationType: row.payload.notificationType ?? "unknown" },
       extra: { id: row.id, attempts, last_error: errorMessage },
@@ -1735,7 +1734,7 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
     const identity = validateNotificationEmailIdentity(claimed.payload);
     if (!identity.ok) {
       await markNotificationOutboxSkipped(claimed, identity.reason, "unsafe_identity");
-      Sentry.captureMessage("Email outbox row blocked by identity guard", {
+      console.log("Email outbox row blocked by identity guard", {
         level: "error",
         tags: {
           component: "email",
@@ -1754,7 +1753,7 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
       if (classification.terminal) {
         await markNotificationOutboxSkipped(claimed, result.reason, classification.code);
         if (classification.sentryEscalate) {
-          Sentry.captureMessage("High-priority notification dropped: no recipients resolved", {
+          console.log("High-priority notification dropped: no recipients resolved", {
             level: "warning",
             tags: {
               component: "email",
@@ -1811,7 +1810,7 @@ export async function processNotificationOutbox(limit = notificationOutboxBatchS
   }
 
   if (failed > 0) {
-    Sentry.captureMessage("Email outbox processing had failures", {
+    console.log("Email outbox processing had failures", {
       level: "warning",
       tags: { component: "email", cron: "outbox-processing" },
       extra: { attempted, failed, sent, skipped },
@@ -1825,7 +1824,7 @@ export async function safeSendNotificationEmail(input: NotificationEmailInput) {
   try {
     const identity = validateNotificationEmailIdentity(input);
     if (!identity.ok) {
-      Sentry.captureMessage("Email identity guard blocked enqueue", {
+      console.log("Email identity guard blocked enqueue", {
         level: "error",
         tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
         extra: identity.metadata,
@@ -1856,7 +1855,7 @@ export async function safeSendNotificationEmail(input: NotificationEmailInput) {
     if (notificationSchemaMissing(error)) {
       return sendNotificationEmailDirect(input);
     }
-    Sentry.captureException(error, {
+    console.error(error, {
       tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
     });
     console.error("Email notification failed", error);

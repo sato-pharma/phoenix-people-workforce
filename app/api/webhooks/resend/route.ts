@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import {
@@ -40,7 +39,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ duplicate: true, ok: true });
     }
     // A genuine transient DB error → 503 so Resend retries; tag it so it is not silent.
-    Sentry.captureException(error, {
+    console.error(error, {
       tags: { component: "email", webhook: "resend", eventType: event.event_type },
     });
     return NextResponse.json({ message: "Temporary error recording webhook." }, { status: 503 });

@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { runWideIReports360Reconciliation } from "@/lib/visits-report/service";
@@ -33,21 +32,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "iReports360 wide reconciliation is not authorized." }, { status: 401 });
   }
   try {
-    return await Sentry.withMonitor(
-      "ireports360-visits-reconcile",
-      runReconcile,
-      {
-        schedule: { type: "crontab", value: "0 4 * * 0" },
-        checkinMargin: 30,
-        // Minutes, not seconds — was 180 (3h), which is why the 2026-07-05 timeout (route killed
-        // by Vercel's maxDuration=300s hard limit) took until 07:00 UTC to surface in Sentry
-        // instead of within minutes of the actual failure. 6 = maxDuration (300s) + 1min margin.
-        maxRuntime: 6,
-        timezone: "Etc/UTC",
-      },
-    );
+    return await runReconcile();
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "ireports360-visits-reconcile" } });
+    console.error(error, { tags: { cron: "ireports360-visits-reconcile" } });
     const message = error instanceof Error ? error.message : "iReports360 wide reconciliation failed.";
     return NextResponse.json({ error: "ireports360_visits_reconcile_failed", message }, { status: 500 });
   }

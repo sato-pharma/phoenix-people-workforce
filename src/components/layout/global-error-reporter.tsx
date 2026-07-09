@@ -3,12 +3,11 @@
 import { useEffect } from "react";
 
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
-import { sentryIgnoredErrors } from "@/lib/observability/sentry";
+
 
 const extensionUrlPattern = /extensions\/|^(chrome|moz)-extension:\/\//i;
 
 function isIgnorable(message: string, source?: string | null): boolean {
-  if (sentryIgnoredErrors.some((pattern) => message.includes(pattern))) return true;
   if (source && extensionUrlPattern.test(source)) return true;
   return false;
 }

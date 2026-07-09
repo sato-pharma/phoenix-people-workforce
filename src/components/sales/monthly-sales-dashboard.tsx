@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Trophy,
   Users,
+  Download,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -528,19 +529,30 @@ export function MonthlySalesDashboard({
               </span>
             ) : null}
           </div>
-          {activeFilterCount > 0 ? (
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
-                setFilters(EMPTY_FILTERS);
-                setPeriodMode("include");
-                setProductMode("include");
+                window.location.href = `/api/sales/monthly-dashboard/export?${queryKey}`;
               }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:text-orange-600"
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-emerald-300 hover:text-emerald-700"
             >
-              <RotateCcw className="h-3.5 w-3.5" /> Reset all
+              <Download className="h-3.5 w-3.5" /> Export
             </button>
-          ) : null}
+            {activeFilterCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilters(EMPTY_FILTERS);
+                  setPeriodMode("include");
+                  setProductMode("include");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-orange-300 hover:text-orange-600"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Reset all
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           <MultiSelectFilter

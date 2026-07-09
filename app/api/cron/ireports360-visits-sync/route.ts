@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
@@ -38,7 +37,7 @@ async function runSync() {
   const dateTo = isoDaysAgo(0);
   const dateFrom = isoDaysAgo(DV_TICK_LOOKBACK_DAYS);
   await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
-    Sentry.captureException(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
+    console.error(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
   });
   return NextResponse.json({ success: true, ...mirrorSync });
 }
@@ -51,20 +50,9 @@ export async function GET(request: Request) {
     // 09:00/12:00/19:00 UTC = 12pm/3pm/10pm Africa/Cairo (EEST, UTC+3 in summer) — matches the
     // existing daily dispatcher's UTC+3 calibration. Vercel cron has no DST awareness, so this
     // drifts an hour off in winter (EET, UTC+2), same known tradeoff as that existing cron.
-    return await Sentry.withMonitor(
-      "ireports360-visits-sync",
-      runSync,
-      {
-        schedule: { type: "crontab", value: "0 9,12,19 * * *" },
-        checkinMargin: 30,
-        // Minutes, not seconds — same mismatch fixed on ireports360-visits-reconcile.
-        // 6 = maxDuration (300s) + 1min margin.
-        maxRuntime: 6,
-        timezone: "Etc/UTC",
-      },
-    );
+    return await runSync();
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "ireports360-visits-sync" } });
+    console.error(error, { tags: { cron: "ireports360-visits-sync" } });
     const message = error instanceof Error ? error.message : "iReports360 visits sync failed.";
     return NextResponse.json({ error: "ireports360_visits_sync_failed", message }, { status: 500 });
   }

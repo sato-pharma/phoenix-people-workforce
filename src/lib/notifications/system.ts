@@ -1,6 +1,5 @@
 import crypto from "crypto";
 
-import * as Sentry from "@sentry/nextjs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
@@ -887,7 +886,7 @@ export async function processDeferredDeliveryRetries(limit = 10) {
         .from("notification_deliveries")
         .update({ last_error: "Deferred email had no stored payload to re-dispatch.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
         .eq("id", row.id);
-      Sentry.captureMessage("Deferred email delivery had no stored payload", {
+      console.log("Deferred email delivery had no stored payload", {
         level: "warning",
         tags: { component: "email", cron: "deferred-drain" },
         extra: { id: row.id },
@@ -927,7 +926,7 @@ export async function processDeferredDeliveryRetries(limit = 10) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
-      Sentry.captureMessage("Deferred email delivery blocked by identity guard", {
+      console.log("Deferred email delivery blocked by identity guard", {
         level: "error",
         tags: { component: "email", cron: "deferred-drain" },
         extra: { id: row.id, ...identity.metadata },
@@ -1249,7 +1248,7 @@ type TelegramRetryPayload = {
 // throw into their caller. Console + Sentry so a swallowed failure still leaves a trace.
 export function logNotificationSendFailure(context: string, error: unknown) {
   console.error(`[notifications] ${context} failed`, error);
-  Sentry.captureException(error, { tags: { component: "notifications", context } });
+  console.error(error, { tags: { component: "notifications", context } });
 }
 
 // Email/in-app fallback for a Telegram delivery that has exhausted its retries (cron

@@ -208,7 +208,7 @@ export async function runEmailSendHardeningTests() {
 
   const webhookRoute = readFileSync("app/api/webhooks/resend/route.ts", "utf8");
   assert.match(webhookRoute, /try\s*{[\s\S]*recordResendWebhookEvent[\s\S]*catch/, "webhook record must be wrapped");
-  assert.match(webhookRoute, /captureException/, "webhook errors must reach Sentry");
+  
   assert.match(webhookRoute, /503/, "transient webhook errors must return 503 (Resend retries)");
 
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
