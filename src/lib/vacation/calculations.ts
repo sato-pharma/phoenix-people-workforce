@@ -18,6 +18,18 @@ const firstYearAnnualEntitlementDays = 15;
 const standardAnnualEntitlementDays = 21;
 const emergencyAnnualEntitlementDays = 6;
 const monthsInYear = 12;
+
+/**
+ * Employees whose annual/emergency leave balance resets on the calendar year
+ * (Jan 1) instead of their hire anniversary. This is a per-employee exception,
+ * not a policy change — added for A-7 per explicit owner instruction on
+ * 2026-07-09. Every other employee keeps the hire-anniversary reset below.
+ */
+const calendarYearVacationResetHrIds = new Set(["a-7"]);
+
+function usesCalendarYearVacationReset(employeeHrId: string | null | undefined) {
+  return calendarYearVacationResetHrIds.has(String(employeeHrId ?? "").trim().toLowerCase());
+}
 const emergencyCutoffHour = 10;
 const vacationPolicyTimeZone = "Africa/Cairo";
 
@@ -163,12 +175,22 @@ function calculateMonthlyAccruedEntitlement(input: {
 }
 
 export function getVacationBalancePeriod(input: {
+  employeeHrId?: string | null;
   hireDate: string | null | undefined;
   referenceDate: string;
 }) {
   const hireDate = toDateOnlyString(input.hireDate);
   const referenceDate = toDateOnlyString(input.referenceDate);
   if (!hireDate || !referenceDate) return null;
+
+  if (usesCalendarYearVacationReset(input.employeeHrId)) {
+    const year = Number(referenceDate.slice(0, 4));
+    return {
+      entitlementDays: standardAnnualEntitlementDays,
+      periodEnd: `${year + 1}-01-01`,
+      periodStart: `${year}-01-01`,
+    };
+  }
 
   const firstAnniversary = addYearsToDateOnly(hireDate, 1);
   if (!firstAnniversary) return null;
@@ -288,6 +310,7 @@ export function getVacationPolicyWarnings(input: {
 export function calculateVacationPayment(input: {
   approvedPaidDaysInPeriod: number;
   durationDays: number;
+  employeeHrId?: string | null;
   hireDate: string | null | undefined;
   startDate: string;
   vacationType?: VacationType;
@@ -331,12 +354,12 @@ export function calculateVacationPayment(input: {
 
   const sixMonthAnniversary = addMonthsToDateOnly(hireDate, 6);
   if (sixMonthAnniversary && compareDateOnly(input.startDate, sixMonthAnniversary) < 0) {
-    const period = getVacationBalancePeriod({ hireDate, referenceDate: input.startDate });
+    const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate, referenceDate: input.startDate });
     return defaultUnpaid("first_six_months", period);
   }
 
   if (vacationType === "emergency") {
-    const period = getVacationBalancePeriod({ hireDate, referenceDate: input.startDate });
+    const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate, referenceDate: input.startDate });
     if (!period) {
       return defaultUnpaid("missing_hire_date");
     }
@@ -353,7 +376,7 @@ export function calculateVacationPayment(input: {
     });
   }
 
-  const period = getVacationBalancePeriod({ hireDate, referenceDate: input.startDate });
+  const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate, referenceDate: input.startDate });
   if (!period) {
     return defaultUnpaid("missing_hire_date");
   }

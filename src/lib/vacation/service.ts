@@ -685,6 +685,7 @@ function buildEmployeeEligibilityRows(input: {
     .filter((employee) => employeeEligibilityFilterMatches(employee, input.filters))
     .map((employee) => {
       const period = getVacationBalancePeriod({
+        employeeHrId: employee.hrId,
         hireDate: employee.hireDate,
         referenceDate: input.today,
       });
@@ -698,6 +699,7 @@ function buildEmployeeEligibilityRows(input: {
       const annualBalance = calculateVacationPayment({
         approvedPaidDaysInPeriod: usedPaidDays,
         durationDays: 0,
+        employeeHrId: employee.hrId,
         hireDate: employee.hireDate,
         startDate: input.today,
         vacationType: "annual",
@@ -2259,7 +2261,7 @@ async function getDeferredDebtFromPreviousPeriods(input: {
   let iterations = 0;
   while (compareDateOnly(periodStart, input.currentPeriodStart) < 0 && iterations < 50) {
     iterations++;
-    const period = getVacationBalancePeriod({ hireDate: input.hireDate, referenceDate: periodStart });
+    const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: periodStart });
     if (!period) break;
 
     const usedPaidDays = await approvedPaidDaysInPeriod({
@@ -2294,6 +2296,7 @@ export async function calculatePaymentForRequest(input: {
     return calculateVacationPayment({
       approvedPaidDaysInPeriod: 0,
       durationDays: input.durationDays,
+      employeeHrId: input.employeeHrId,
       hireDate: input.hireDate,
       startDate: input.startDate,
       vacationType: input.vacationType,
@@ -2301,6 +2304,7 @@ export async function calculatePaymentForRequest(input: {
   }
 
   const period = getVacationBalancePeriod({
+    employeeHrId: input.employeeHrId,
     hireDate: input.hireDate,
     referenceDate: input.startDate,
   });
@@ -2324,6 +2328,7 @@ export async function calculatePaymentForRequest(input: {
   return calculateVacationPayment({
     approvedPaidDaysInPeriod: usedPaidDays + carriedOverDebtDays,
     durationDays: input.durationDays,
+    employeeHrId: input.employeeHrId,
     hireDate: input.hireDate,
     startDate: input.startDate,
     vacationType: input.vacationType,
