@@ -1,21 +1,10 @@
-// Next.js instrumentation hook. Loads the correct Sentry config per runtime and
-// forwards server-side request errors (App Router) to Sentry, and to our own
-// self-hosted app_error_events table (see src/lib/error-monitor/service.ts) so
-// crashes stay queryable by HR ID/module without depending on Sentry's quota.
-import * as Sentry from "@sentry/nextjs";
+// Next.js instrumentation hook. Forwards server-side request errors (App Router)
+// to our own self-hosted app_error_events table (see src/lib/error-monitor/service.ts)
+// so crashes stay queryable by HR ID/module.
 
 export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    await import("./sentry.server.config");
-  }
-
-  if (process.env.NEXT_RUNTIME === "edge") {
-    await import("./sentry.edge.config");
-  }
+  // Edge and Node configs can go here if needed in the future
 }
-
-type RequestErrorRequest = Parameters<typeof Sentry.captureRequestError>[1];
-type RequestErrorContext = Parameters<typeof Sentry.captureRequestError>[2];
 
 // Deliberately avoids importing any server-only module (session/crypto code
 // lives behind resolveAccessContext, which needs Node's crypto — unavailable
@@ -30,16 +19,16 @@ function firstHeaderValue(value: string | string[] | undefined): string | undefi
 
 async function forwardServerErrorToIngestion(
   error: unknown,
-  request: RequestErrorRequest,
-  context: RequestErrorContext,
+  request: { headers?: Record<string, string | string[] | undefined>; path?: string },
+  context: { routeType?: string },
 ) {
   try {
-    const host = firstHeaderValue(request.headers.host) || firstHeaderValue(request.headers["x-forwarded-host"]);
+    const host = firstHeaderValue(request.headers?.host) || firstHeaderValue(request.headers?.["x-forwarded-host"]);
     if (!host) return;
 
     const protocol =
-      firstHeaderValue(request.headers["x-forwarded-proto"]) || (host.startsWith("localhost") ? "http" : "https");
-    const cookie = firstHeaderValue(request.headers.cookie);
+      firstHeaderValue(request.headers?.["x-forwarded-proto"]) || (host.startsWith("localhost") ? "http" : "https");
+    const cookie = firstHeaderValue(request.headers?.cookie);
     const origin = `${protocol}://${host}`;
 
     // The app-wide CSRF guard (src/lib/security/csrf.ts) rejects any mutation
@@ -52,7 +41,7 @@ async function forwardServerErrorToIngestion(
     await fetch(`${origin}/api/errors/client`, {
       body: JSON.stringify({
         message: error instanceof Error ? error.message : String(error),
-        route: request.path,
+        route: request.path || null,
         routeType: context?.routeType ?? null,
         source: "server",
         stack: error instanceof Error ? (error.stack ?? null) : null,
@@ -67,14 +56,11 @@ async function forwardServerErrorToIngestion(
 }
 
 // Captures errors thrown in nested React Server Components / route handlers —
-// forwards to Sentry (unchanged) and, in parallel, to our own error table.
+// forwards to our own error table.
 export async function onRequestError(
   error: unknown,
-  request: RequestErrorRequest,
-  context: RequestErrorContext,
+  request: { headers?: Record<string, string | string[] | undefined>; path?: string },
+  context: { routeType?: string },
 ) {
-  await Promise.all([
-    Sentry.captureRequestError(error, request, context),
-    forwardServerErrorToIngestion(error, request, context),
-  ]);
+  await forwardServerErrorToIngestion(error, request, context);
 }

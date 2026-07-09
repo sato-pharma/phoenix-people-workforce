@@ -4,12 +4,6 @@ import { readFileSync } from "node:fs";
 export function runLoginPageHardeningTests() {
   const loginPage = readFileSync("src/components/auth/premium-login-page.tsx", "utf8");
   const loginRoute = readFileSync("app/api/auth/login/route.ts", "utf8");
-  const browserSentry = readFileSync("instrumentation-client.ts", "utf8");
-  const serverSentry = readFileSync("sentry.server.config.ts", "utf8");
-  const edgeSentry = readFileSync("sentry.edge.config.ts", "utf8");
-  const sentryHelper = readFileSync("src/lib/observability/sentry.ts", "utf8");
-  const nextConfig = readFileSync("next.config.ts", "utf8");
-  const gitignore = readFileSync(".gitignore", "utf8");
 
   assert.match(loginPage, /const maxLoginIdLength = 120/);
   assert.match(loginPage, /const maxPasswordLength = 1024/);
@@ -33,38 +27,4 @@ export function runLoginPageHardeningTests() {
   assert.match(loginRoute, /remember !== undefined && typeof remember !== "boolean"/);
   assert.match(loginRoute, /error: "invalid_request"/);
 
-  for (const source of [browserSentry, serverSentry, edgeSentry]) {
-    assert.match(source, /sendDefaultPii:\s*false/);
-    assert.match(source, /beforeSend:\s*scrubSentryErrorEvent/);
-    assert.match(source, /beforeBreadcrumb:\s*scrubSentryBreadcrumb/);
-    assert.match(source, /tracesSampleRate:\s*parseSentrySampleRate/);
-    assert.doesNotMatch(source, /enableLogs:\s*true/);
-  }
-
-  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_ENABLED === "true"/);
-  assert.match(browserSentry, /Sentry\.replayIntegration/);
-  assert.match(browserSentry, /blockAllMedia:\s*true/);
-  assert.match(browserSentry, /maskAllText:\s*true/);
-  assert.match(browserSentry, /replaysSessionSampleRate:\s*replayEnabled/);
-  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_SESSION_SAMPLE_RATE,\s*0/);
-  assert.match(browserSentry, /replaysOnErrorSampleRate:\s*replayEnabled/);
-  assert.match(browserSentry, /NEXT_PUBLIC_SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,\s*1/);
-  assert.doesNotMatch(serverSentry, /replayIntegration/);
-  assert.doesNotMatch(edgeSentry, /replayIntegration/);
-
-  assert.match(sentryHelper, /sensitiveKeyPattern/);
-  assert.match(sentryHelper, /delete mutable\.user/);
-  assert.match(sentryHelper, /delete sanitized\.cookies/);
-  assert.match(sentryHelper, /delete sanitized\.data/);
-  assert.match(sentryHelper, /breadcrumb\.category === "console"/);
-  assert.match(nextConfig, /telemetry:\s*false/);
-  assert.match(nextConfig, /const nextConfig:\s*NextConfig\s*=/);
-  assert.match(nextConfig, /authToken:\s*process\.env\.SENTRY_AUTH_TOKEN/);
-  assert.match(nextConfig, /deleteSourcemapsAfterUpload:\s*true/);
-  assert.match(nextConfig, /disable:\s*!process\.env\.SENTRY_AUTH_TOKEN/);
-  assert.match(nextConfig, /removeDebugLogging:\s*true/);
-  assert.match(nextConfig, /worker-src 'self' blob:/);
-  assert.doesNotMatch(nextConfig, /disableLogger:\s*true/);
-  assert.match(gitignore, /app\/api\/sentry-example-api\//);
-  assert.match(gitignore, /app\/sentry-example-page\//);
 }

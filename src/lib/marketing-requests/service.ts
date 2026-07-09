@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import * as Sentry from "@sentry/nextjs";
 
 import {
   canSeeHrScopedRecord,
@@ -1792,7 +1791,7 @@ async function notifyMarketingWorkflow(params: {
     title: params.title,
   }).catch((error) => {
     // Best-effort, but no longer silent — surface so a broken marketing notification is visible.
-    Sentry.captureException(error, {
+    console.error(error, {
       tags: { component: "marketing-requests", eventType: params.eventType },
       extra: { requestId: params.request.id },
     });
@@ -1902,7 +1901,7 @@ export async function runMarketingSlaDaily(): Promise<{
       }
     }
   } catch (error) {
-    Sentry.captureException(error, { tags: { component: "marketing-requests", cron: "marketing-sla" } });
+    console.error(error, { tags: { component: "marketing-requests", cron: "marketing-sla" } });
     errors.push({ message: error instanceof Error ? error.message : "Marketing SLA scan failed.", requestId: "scan" });
   }
   return { errors, escalations, overdue, reminders, runDate: today, scanned };

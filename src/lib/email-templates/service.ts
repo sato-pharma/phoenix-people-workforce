@@ -1,6 +1,5 @@
 import crypto from "crypto";
 
-import * as Sentry from "@sentry/nextjs";
 
 import {
   renderEmailParagraphs,
@@ -1354,7 +1353,7 @@ async function recordTemplateHistory(input: {
       // tableMissing also matches a transient PostgREST schema-cache miss, so a publish
       // could mutate the live template with no version/audit record. Surface it instead
       // of swallowing fully silently.
-      Sentry.captureMessage("Email template history not recorded (table missing / schema cache)", {
+      console.log("Email template history not recorded (table missing / schema cache)", {
         level: "warning",
         tags: { component: "email-templates", action: input.action },
         extra: { templateKey: input.template.templateKey },
@@ -1378,7 +1377,7 @@ async function recordTemplateHistory(input: {
 
   if (inserted.error) {
     if (tableMissing(inserted.error)) {
-      Sentry.captureMessage("Email template history insert skipped (table missing / schema cache)", {
+      console.log("Email template history insert skipped (table missing / schema cache)", {
         level: "warning",
         tags: { component: "email-templates", action: input.action },
         extra: { templateKey: input.template.templateKey },

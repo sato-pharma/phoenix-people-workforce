@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
@@ -162,7 +161,7 @@ export async function runContractRenewalNotifications(request: Request) {
 
       results.push({ daysUntil: row.daysUntil, employeeHrId: row.hr_id, result });
     } catch (error) {
-      Sentry.captureException(error, { tags: { cron: "contract-renewals", employeeHrId: row.hr_id } });
+      console.error(error, { tags: { cron: "contract-renewals", employeeHrId: row.hr_id } });
       results.push({
         daysUntil: row.daysUntil,
         employeeHrId: row.hr_id,
@@ -194,7 +193,7 @@ export async function GET(request: Request) {
     // schedule never matched reality). The dispatcher owns the cron monitor.
     return await runContractRenewalNotifications(request);
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "contract-renewals" } });
+    console.error(error, { tags: { cron: "contract-renewals" } });
     const message = error instanceof Error ? error.message : "Contract renewal notification run failed.";
     return NextResponse.json({ error: "contract_renewal_notifications_failed", message }, { status: 500 });
   }

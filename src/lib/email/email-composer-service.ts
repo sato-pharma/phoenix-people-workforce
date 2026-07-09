@@ -420,10 +420,9 @@ function publicAssetUrl(publicPath: string, requestUrl: string) {
   const configuredBase =
     process.env.HR_EMAIL_ASSET_BASE_URL ||
     process.env.NOTIFICATION_DASHBOARD_URL ||
+    process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     systemDeployment.productionUrl ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
     new URL(requestUrl).origin;
   const base = /^https?:\/\//i.test(configuredBase) ? configuredBase : `https://${configuredBase}`;
 

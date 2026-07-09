@@ -92,3 +92,9 @@ _wt-*/
 .vercel
 
 .env*
+
+env.yaml
+generate-cron-secret.js
+
+.env*
+.vercel

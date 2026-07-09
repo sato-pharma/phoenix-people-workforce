@@ -1,0 +1,49 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: phoenix-workforce-498619
+  REGION: us-central1
+  SERVICE_NAME: phoenix-hr
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # You will need to create a Workload Identity Provider in GCP
+          # and add it to your GitHub Secrets as WIF_PROVIDER.
+          # We also need WIF_SERVICE_ACCOUNT (the compute engine service account)
+          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          # The env-vars-file won't exist in CI since it's gitignored.
+          # Cloud Run will automatically retain the environment variables we already uploaded manually!
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --cpu-boost \
+            --set-build-env-vars=NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }} \
+            --update-env-vars ^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com^

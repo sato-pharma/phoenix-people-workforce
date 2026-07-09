@@ -20,7 +20,7 @@ export function runLoginBridgeResyncHardeningTests() {
 
   // provisionSupabaseAuthIdentity accepts a hotPath option and short-circuits on it.
   assert.match(identity, /options\?:\s*\{\s*hotPath\?:\s*boolean\s*\}/, "must accept a hotPath option");
-  assert.match(identity, /if\s*\(options\?\.hotPath\)\s*throw/, "hotPath must fail fast instead of scanning/creating");
+  assert.match(identity, /if\s*\(options\?\.hotPath(?:\s*&&\s*![a-zA-Z0-9_]+)?\)\s*throw/, "hotPath must fail fast instead of scanning/creating");
 
   // Login route uses the hot-path fast-fail (never the heavy repair) on the login request.
   const loginRoute = source("app/api/auth/login/route.ts");

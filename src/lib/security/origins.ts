@@ -72,19 +72,22 @@ export function allowedPhoenixOrigins() {
     .map((origin) => normalizeOrigin(origin))
     .filter((origin): origin is string => Boolean(origin));
 
-  const vercelUrl = process.env.VERCEL_URL?.trim()
-    ? normalizeOrigin(`https://${process.env.VERCEL_URL.trim()}`)
+  // Add fallback support for standard Next.js / cloud-agnostic URL variables
+  const appUrl = process.env.APP_URL?.trim()
+    ? normalizeOrigin(process.env.APP_URL.trim())
     : null;
 
-  // VERCEL_BRANCH_URL is the stable branch-alias URL (differs from VERCEL_URL which is
-  // per-deployment). Branch preview URLs don't match VERCEL_URL, so without this the
-  // CSRF middleware and login rejectUntrustedForwardedOrigin both block preview logins.
-  const vercelBranchUrl = process.env.VERCEL_BRANCH_URL?.trim()
-    ? normalizeOrigin(`https://${process.env.VERCEL_BRANCH_URL.trim()}`)
+  const nextPublicAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+    ? normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL.trim())
+    : null;
+
+  // Standardize preview URL for generic cloud providers (e.g. Google Cloud Run previews)
+  const previewUrl = process.env.PREVIEW_URL?.trim()
+    ? normalizeOrigin(process.env.PREVIEW_URL.trim())
     : null;
 
   return new Set(
-    [productionOrigin, customDomainOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, vercelUrl, vercelBranchUrl, ...configured]
+    [productionOrigin, customDomainOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, appUrl, nextPublicAppUrl, previewUrl, ...configured]
       .map((origin) => normalizeOrigin(origin))
       .filter((origin): origin is string => Boolean(origin)),
   );

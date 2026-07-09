@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 
 import { getOperationalAuditLogs } from "@/lib/operations/events";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -126,7 +125,7 @@ export async function writeAuditLog(input: AuditLogInput) {
       event: "audit_persistence_failed",
       summary: input.summary,
     }));
-    Sentry.captureException(error, {
+    console.error(error, {
       level: "error",
       tags: { event: "audit_persistence_failed", entityType: input.entityType },
       extra: { summary: input.summary, entityId: input.entityId ?? null },
@@ -147,7 +146,7 @@ export async function writeRequiredAuditLog(input: AuditLogInput) {
       summary: input.summary,
     }));
     // Critical: a required audit row could not be written. Page this loudly.
-    Sentry.captureException(error, {
+    console.error(error, {
       level: "fatal",
       tags: { event: "critical_audit_persistence_failed", entityType: input.entityType },
       extra: { summary: input.summary, entityId: input.entityId ?? null },

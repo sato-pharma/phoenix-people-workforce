@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
@@ -74,7 +73,7 @@ export function guardAttachments(
   for (const att of attachments) {
     const bytes = Math.ceil((att.content.length * 3) / 4); // base64 → bytes
     if (total + bytes > maxAttachmentBytes) {
-      Sentry.captureMessage("Email attachment exceeds size budget; dropped", {
+      console.log("Email attachment exceeds size budget; dropped", {
         level: "warning",
         tags: { component: "email" },
         extra: { filename: att.filename, bytes },
@@ -112,14 +111,9 @@ function resolveTestingRecipients() {
   // fact that real recipients never received mail. Always leave a breadcrumb, and in
   // production raise a warning (a redirect in prod almost always means a forgotten
   // PHOENIX_EMAIL_FORCE_TESTING=false and real employees/candidates are not being reached).
-  Sentry.addBreadcrumb({
-    category: "email",
-    level: "warning",
-    message: "Email delivery redirected to testing recipients",
-    data: { count: redirectTo.length, reason: forceTesting ? "force_testing" : "delivery_mode" },
-  });
+
   if (isProductionRuntime()) {
-    Sentry.captureMessage("Email redirected to testing recipients in production", {
+    console.log("Email redirected to testing recipients in production", {
       level: "warning",
       tags: { component: "email", redirect: "testing" },
       extra: { reason: forceTesting ? "force_testing" : "delivery_mode" },
@@ -211,7 +205,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   try {
     await assertReachablePhoenixEmailImage();
   } catch (imageError) {
-    Sentry.captureMessage("Signature image unreachable; sending email anyway", {
+    console.log("Signature image unreachable; sending email anyway", {
       level: "warning",
       tags: { component: "email" },
       extra: { reason: imageError instanceof Error ? imageError.message : "unknown" },

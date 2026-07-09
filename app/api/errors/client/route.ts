@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { logAppError } from "@/lib/error-monitor/service";
-import { resolveSentryEnvironment, resolveSentryRelease } from "@/lib/observability/sentry";
+
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,13 +38,13 @@ export async function POST(request: Request) {
 
       await logAppError({
         digest: typeof body?.digest === "string" ? body.digest : null,
-        environment: resolveSentryEnvironment(process.env.VERCEL_ENV),
+        environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
         hrId: access.hrId,
         loginId: access.loginId,
         message,
         moduleKey: activityModule.key,
         moduleLabel: activityModule.label,
-        release: resolveSentryRelease(process.env.VERCEL_GIT_COMMIT_SHA),
+        release: process.env.COMMIT_SHA || process.env.K_REVISION || "unknown",
         role: access.role,
         route,
         routeType: typeof body?.routeType === "string" ? body.routeType : null,

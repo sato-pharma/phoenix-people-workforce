@@ -75,10 +75,10 @@ export function runEmailP0TestingTrapTests() {
   );
 
   const sendSource = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
-  assert.match(sendSource, /addBreadcrumb/, "a redirect must leave a Sentry breadcrumb (never silent)");
+  assert.match(sendSource, /console\.log\(/, "a redirect must log a trail (never silent)");
   assert.match(
     sendSource,
     /redirected to testing recipients in production/,
-    "a redirect in production must raise a Sentry warning",
+    "a redirect in production must raise a logged warning",
   );
 }

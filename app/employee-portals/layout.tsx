@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalServerShell } from "@/components/employee-portal/employee-portal-server-shell";
-import { SentryUserIdentity } from "@/components/layout/sentry-user-identity";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export default async function EmployeePortalLayout({
@@ -16,8 +15,7 @@ export default async function EmployeePortalLayout({
 
   return (
     <EmployeePortalServerShell access={access}>
-      <SentryUserIdentity hrId={access.hrId} role={access.role} />
-      {children}
+            {children}
     </EmployeePortalServerShell>
   );
 }

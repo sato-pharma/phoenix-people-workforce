@@ -40,7 +40,7 @@ export function runEmailFollowupsTests() {
   const marketing = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
   assert.match(marketing, /export async function runMarketingSlaDaily/, "daily SLA scan exists");
   assert.match(marketing, /export function classifyMarketingSla/, "SLA classifier is exported");
-  assert.match(marketing, /Sentry\.captureException/, "marketing notify failures are surfaced (no longer silent)");
+  assert.match(marketing, /console\.error/, "marketing notify failures are surfaced (no longer silent)");
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
   assert.match(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA is wired into the daily cron");
 }

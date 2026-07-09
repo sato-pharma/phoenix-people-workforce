@@ -87,7 +87,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@node-projects/excelforge": "3.6.0",
-    "@sentry/nextjs": "^10.60.0",
     "@supabase/supabase-js": "^2.105.1",
     "@tanstack/react-virtual": "^3.14.4",
     "@types/pdfmake": "^0.3.3",

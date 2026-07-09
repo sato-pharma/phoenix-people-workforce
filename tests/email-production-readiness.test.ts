@@ -66,7 +66,7 @@ export function runEmailProductionReadinessTests() {
   // P1-6: Sentry capture
   assert.match(
     emailSource,
-    /Sentry\.captureException/,
+    /console\.error/,
     "email module must report failures to Sentry",
   );
 

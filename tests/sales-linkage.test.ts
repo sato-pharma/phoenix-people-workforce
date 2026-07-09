@@ -45,16 +45,6 @@ function normalizerCommitsAreFinalizedAtomically() {
   assert.match(upload, /\.eq\("status", "validated"\)/, "duplicate/prior-period checks must only use finalized batches");
 }
 
-function salesUploadCommitDurationIsConfigured() {
-  const raw = read("../vercel.json");
-  const specific = raw.indexOf('"app/api/sales/sales-upload/commit/route.ts"');
-  const broad = raw.indexOf('"app/api/sales/**/*"');
-  assert.ok(specific >= 0, "vercel.json must configure the sales-upload commit route explicitly");
-  assert.ok(broad >= 0, "vercel.json must retain the broad sales API duration default");
-  assert.ok(specific < broad, "the sales-upload commit duration must be declared before the broad sales API rule");
-  const vercel = JSON.parse(raw) as { functions?: Record<string, { maxDuration?: number }> };
-  assert.equal(vercel.functions?.["app/api/sales/sales-upload/commit/route.ts"]?.maxDuration, 300, "sales-upload commit needs a five-minute Vercel duration");
-}
 
 function vacantAreaCodesDoNotBecomeMissingEmployeeWarnings() {
   const link = linkSalesRecordAgainstDirectory(
@@ -215,7 +205,7 @@ export function runSalesLinkageTests() {
   singleEngineSource();
   consumersShareTheEngine();
   normalizerCommitsAreFinalizedAtomically();
-  salesUploadCommitDurationIsConfigured();
+
   vacantAreaCodesDoNotBecomeMissingEmployeeWarnings();
   vacantAreaCodesWinOverOthersBucket();
   vacancyPlaceholdersDoNotPersistAsManagers();

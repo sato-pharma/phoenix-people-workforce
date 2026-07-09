@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
@@ -54,67 +53,67 @@ async function runDailyNotifications(request: Request) {
     rateLimitPrune,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-birthday" } });
+      console.error(e, { tags: { cron: "daily-birthday" } });
       return NextResponse.json({ error: "birthday_notifications_failed", message: String(e) }, { status: 500 });
     }),
     runContractRenewalNotifications(request).catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-contract-renewals" } });
+      console.error(e, { tags: { cron: "daily-contract-renewals" } });
       return NextResponse.json({ error: "contract_renewal_notifications_failed", message: String(e) }, { status: 500 });
     }),
     runHolidayConfirmationReminder(request).catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-holiday-confirmation" } });
+      console.error(e, { tags: { cron: "daily-holiday-confirmation" } });
       return NextResponse.json({ error: "holiday_confirmation_failed", message: String(e) }, { status: 500 });
     }),
     runVacationSlaDaily().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-vacation-sla" } });
+      console.error(e, { tags: { cron: "daily-vacation-sla" } });
       return { success: false, error: String(e) };
     }),
     runMarketingSlaDaily().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-marketing-sla" } });
+      console.error(e, { tags: { cron: "daily-marketing-sla" } });
       return { success: false, error: String(e) };
     }),
     runRecruitmentDailyNotifications().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-recruitment-notifications" } });
+      console.error(e, { tags: { cron: "daily-recruitment-notifications" } });
       return { success: false, error: String(e) };
     }),
     runTelegramDailyHrDigest().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-telegram-digest" } });
+      console.error(e, { tags: { cron: "daily-telegram-digest" } });
       return { success: false, error: String(e) };
     }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
+      console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
       return { success: false, error: String(e) };
     }),
     runOutstationHighRiskDigest().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-outstation-high-risk-digest" } });
+      console.error(e, { tags: { cron: "daily-outstation-high-risk-digest" } });
       return { success: false, error: String(e) };
     }),
     runFieldWorkforceComplianceDigest().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-fwc-digest" } });
+      console.error(e, { tags: { cron: "daily-fwc-digest" } });
       return { success: false, error: String(e) };
     }),
     runFieldWorkforceComplianceDeductionsAutoSync().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-fwc-deductions-sync" } });
+      console.error(e, { tags: { cron: "daily-fwc-deductions-sync" } });
       return { ok: false as const, months: [] as const, error: String(e) };
     }),
     runExcuseSlaDaily().catch((e) => {
-      Sentry.captureException(e, { tags: { cron: "daily-excuse-sla" } });
+      console.error(e, { tags: { cron: "daily-excuse-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
     }),
     runOutstationSlaDaily().catch((e) => {
-      Sentry.captureException(e, { tags: { cron: "daily-outstation-sla" } });
+      console.error(e, { tags: { cron: "daily-outstation-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
     }),
     runResignationSlaDaily().catch((e) => {
-      Sentry.captureException(e, { tags: { cron: "daily-resignation-sla" } });
+      console.error(e, { tags: { cron: "daily-resignation-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
     }),
     runWeeklyPlansDriftCheck().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-weekly-plans-drift" } });
+      console.error(e, { tags: { cron: "daily-weekly-plans-drift" } });
       return { ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) };
     }),
     pruneExpiredRateLimitBuckets().catch((e: unknown) => {
-      Sentry.captureException(e, { tags: { cron: "daily-rate-limit-prune" } });
+      console.error(e, { tags: { cron: "daily-rate-limit-prune" } });
       return { deleted: 0, error: String(e) };
     }),
   ]);
@@ -150,22 +149,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
   try {
-    return await Sentry.withMonitor(
-      "daily-notification-dispatcher",
-      () => runDailyNotifications(request),
-      {
-        schedule: { type: "crontab", value: "30 6 * * *" },
-        checkinMargin: 60,
-        // Minutes, not seconds — maxDuration (300s) + 1min margin, same convention used by the
-        // ireports360 crons and the notification-process cron for the identical 300s Vercel
-        // execution ceiling. Was 60 (12x looser), which meant a hard-killed run could take up to
-        // an hour to be flagged as timed out in Sentry instead of within ~6 minutes.
-        maxRuntime: 6,
-        timezone: "Etc/UTC",
-      },
-    );
+    return await runDailyNotifications(request);
   } catch (error) {
-    Sentry.captureException(error, { tags: { cron: "daily-notification-dispatcher" } });
+    console.error(error, { tags: { cron: "daily-notification-dispatcher" } });
     const message = error instanceof Error ? error.message : "Daily notification run failed.";
     return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
   }
