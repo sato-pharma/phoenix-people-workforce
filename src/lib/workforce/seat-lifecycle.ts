@@ -1,3 +1,5 @@
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+
 export type WorkforceSeatInput = {
   areaId?: number | null;
   areaName?: string | null;
@@ -38,8 +40,7 @@ function cleanLower(value: unknown) {
 }
 
 export function normalizeWorkforceHrId(value: unknown) {
-  const text = clean(value).toUpperCase();
-  return text || null;
+  return canonicalHrIdForDisplay(clean(value));
 }
 
 function sameNumber(left: unknown, right: unknown) {

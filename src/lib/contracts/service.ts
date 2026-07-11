@@ -7,6 +7,7 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
 import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
@@ -97,7 +98,7 @@ function cleanText(value: string | null | undefined) {
 }
 
 function cleanHrId(value: string | null | undefined) {
-  return cleanText(value)?.toUpperCase() ?? null;
+  return canonicalHrIdForDisplay(value);
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -284,7 +285,8 @@ export async function getContractRenewalDashboardData(access?: AccessContext): P
   }
 
   const rows = employees.map((employee) => {
-    const contract = contractsByHrId.get(employee.hrId.toUpperCase());
+    const employeeHrId = cleanHrId(employee.hrId);
+    const contract = contractsByHrId.get(employeeHrId ?? "");
     const renewalDate = renewalDateForEmployee(employee, contract);
     const renewalDay = parseDateOnly(renewalDate)?.getDate() ?? 0;
 
@@ -300,7 +302,7 @@ export async function getContractRenewalDashboardData(access?: AccessContext): P
       line: employee.lineName ?? "Unassigned",
       manager_hr_id: employee.managerHrId,
       renewal_day: renewalDay,
-      workflow: requestsByHrId.get(employee.hrId.toUpperCase()) ?? null,
+      workflow: requestsByHrId.get(employeeHrId ?? "") ?? null,
     };
   });
 
@@ -365,14 +367,14 @@ export async function createContractRenewalRequest(
   if (!employeeHrId) throw new ContractRenewalValidationError("Employee HR ID is required.");
 
   const directory = await getEmployeeDirectoryRows();
-  const employee = directory.find((row) => row.hrId.toUpperCase() === employeeHrId);
+  const employee = directory.find((row) => cleanHrId(row.hrId) === employeeHrId);
   if (!employee) throw new ContractRenewalValidationError("Employee was not found in the active employee directory.");
 
   const contractsByHrId = await getContractRowsByHrId().catch((error) => {
     if (isContractRenewalSchemaMissing(error)) return new Map<string, ContractDbRow>();
     throw error;
   });
-  const currentContract = contractsByHrId.get(employee.hrId.toUpperCase());
+  const currentContract = contractsByHrId.get(cleanHrId(employee.hrId) ?? "");
   const dates = validateCreateInput(employee, currentContract, input);
   await assertContractWorkflowTransition({
     access,

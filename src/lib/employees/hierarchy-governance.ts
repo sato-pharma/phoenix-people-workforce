@@ -1,7 +1,9 @@
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+
 const managerOptionalHrIds = new Set(["AA", "ADMIN-HR"]);
 
 export function normalizeGovernanceHrId(value: string | null | undefined) {
-  return String(value ?? "").trim().toUpperCase();
+  return canonicalHrIdForDisplay(value) ?? "";
 }
 
 export function isManagerOptionalHrId(value: string | null | undefined) {

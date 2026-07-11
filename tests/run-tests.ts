@@ -201,6 +201,7 @@ import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
+import { runHrIdAliasNormalizationTests } from "./hrid-alias-normalization.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
 import { runOfferLifecycleHardeningTests } from "./offer-lifecycle-hardening.test.ts";
@@ -556,6 +557,7 @@ await runTest("position vacancy status integrity", runPositionVacancyStatusInteg
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
+await runTest("HR_ID alias normalization (legacy AAA -> AA)", runHrIdAliasNormalizationTests);
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
