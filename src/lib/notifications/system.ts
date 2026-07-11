@@ -1298,6 +1298,7 @@ async function buildChannelEmailInput(
   const identity = resolvedEmailIdentity(input, recipient);
   return {
     bcc: input.email?.bcc,
+    candidateEmail: input.email?.candidateEmail ?? null,
     cc: input.email?.cc,
     ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",

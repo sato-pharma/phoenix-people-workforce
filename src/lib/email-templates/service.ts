@@ -44,11 +44,13 @@ export const emailTemplateKeys = [
   "coaching_report",
   "payroll_update",
   "attendance_digest",
+  "attendance_workflow",
   "general",
 ] as const;
 
 export const EMAIL_TEMPLATE_KEYS = {
   ATTENDANCE_DIGEST: "attendance_digest",
+  ATTENDANCE_WORKFLOW: "attendance_workflow",
   BIRTHDAY: "birthday",
   COACHING_REPORT: "coaching_report",
   EXCUSE_DECISION: "excuse_decision",
@@ -424,6 +426,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
   payroll_update: emptyRules(["admin"], ["finance"]),
   attendance_digest: emptyRules(["employee"]),
+  attendance_workflow: emptyRules(["employee"], ["hr_manager", "admin"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
@@ -828,6 +831,19 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "resignation_workflow",
     templateName: "Resignation",
   },
+  attendance_workflow: {
+    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{status}}",
+    closingText: "Open the attendance module to review or respond.",
+    description:
+      "Attendance workflow notices other than the weekly digest itself: review requests, auto-confirmations, disputes submitted/resolved, plan/punch mismatches, and missing-punch verification steps.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Phoenix Workforce attendance update.",
+    subject: "{{subject}}",
+    templateKey: "attendance_workflow",
+    templateName: "Attendance Workflow",
+  },
   user_created: {
     bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to complete account setup.</p>",
     bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to complete account setup.",
@@ -862,6 +878,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   coaching_report: "Employee Lifecycle",
   payroll_update: "General",
   attendance_digest: "General",
+  attendance_workflow: "General",
   weekly_plans: "General",
   outstation: "General",
   interview_feedback: "Recruitment",

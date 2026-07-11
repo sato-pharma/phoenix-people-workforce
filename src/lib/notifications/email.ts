@@ -1146,6 +1146,14 @@ function migratedTemplateKeyForNotification(input: NotificationEmailInput) {
     if (moduleLabel === "excuse" || moduleLabel === "excuses") {
       return EMAIL_TEMPLATE_KEYS.EXCUSE_REQUEST;
     }
+    if (moduleLabel === "attendance") {
+      // notifyDigestSent pins an explicit templateKey ("attendance_digest") and is handled
+      // by the `explicit` branch above, before we ever reach this switch. Everything else in
+      // the attendance module (review requests, auto-confirm, disputes, plan/punch
+      // mismatches, missing-punch steps) is a workflow-status notice, not a digest table, so
+      // it gets its own dedicated admin-editable template instead of falling to GENERAL.
+      return EMAIL_TEMPLATE_KEYS.ATTENDANCE_WORKFLOW;
+    }
     if (moduleLabel === "coaching") {
       return EMAIL_TEMPLATE_KEYS.COACHING_REPORT;
     }

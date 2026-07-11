@@ -23,6 +23,16 @@ export function runContractRenewalHardeningTests() {
   assert.match(service, /action === "cancel"/);
   assert.doesNotMatch(service, /action === "reopen"/);
 
+  // Regression guard: without an explicit templateContext, {{status}} in the
+  // contract_renewal email template falls back to notificationMetricStatus() — a raw
+  // "Label: value | Label: value | ..." dump of every metric, duplicating the
+  // employeeName/employeeHrId/endDate tokens the template already renders separately.
+  assert.match(
+    service,
+    /notifyContractWorkflow[\s\S]{0,1600}templateContext:\s*\{[\s\S]{0,200}status:\s*record\.status\.replace/,
+    "notifyContractWorkflow must supply an explicit templateContext.status instead of relying on the raw metric-dump fallback",
+  );
+
   const migration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260517035419_contract_renewal_stabilization.sql", "utf8");
   assert.match(migration, /create or replace function public\.phx_create_contract_renewal_request/);
   assert.match(migration, /create or replace function public\.phx_apply_contract_renewal_workflow/);

@@ -166,6 +166,13 @@ export async function POST(request: Request) {
         notificationType: "general",
         subject: `Phoenix Payroll upload imported - ${month}/${year}`,
         summary: "A payroll salary upload was validated and imported successfully. Review governance warnings before approval.",
+        // Explicit context so {{status}} in the payroll_update template renders cleanly
+        // instead of the generic "Label: value | Label: value | ..." metric dump.
+        templateContext: {
+          status: result.governanceWarnings > 0
+            ? `Imported with ${result.governanceWarnings} governance warning(s) (${month}/${year})`
+            : `Imported cleanly, no governance warnings (${month}/${year})`,
+        },
         title: "Payroll Upload Imported",
         tone: result.governanceWarnings > 0 ? "warning" : "success",
       },
