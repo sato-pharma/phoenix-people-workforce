@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   candidateMatchKeys,
@@ -54,4 +55,46 @@ export function runRecruitmentCandidateMatchingTests() {
 
   // Empty keys never match (e.g., a blank candidate row).
   assert.equal(findMatchingCandidate(pool, { nationalIdNorm: null, emailNorm: null, phoneNorm: null }), null);
+
+  // ---- Audit finding M17 ----
+  // importCandidatesWorkbook previously called createCandidate() once per spreadsheet row, and
+  // createCandidate itself re-ran loadMatchKeys() (a full, unfiltered recruitment_candidates scan)
+  // on every call — an N-row import did up to N full-table scans sequentially. The bulk path now
+  // loads the dedup key list ONCE and reuses a shared matchOrInsertCandidate helper that mutates
+  // that list in place, so a later row in the same file can still match an earlier row in the same
+  // file, without re-querying the database each time. The single-candidate creation path
+  // (createCandidate) is unaffected — it still loads a fresh key list per call, correct for a
+  // one-row-per-request API with no batching to do.
+  const candidatesSource = readFileSync("src/lib/recruitment/candidates.ts", "utf8");
+  assert.match(
+    candidatesSource,
+    /async function matchOrInsertCandidate\(\s*input: CreateCandidateInput,\s*access: AccessContext,\s*existingKeys: MatchableCandidate\[\],\s*\)/,
+    "the shared match-or-insert helper accepts a caller-provided key list instead of loading its own",
+  );
+  const importFunctionSource = candidatesSource.slice(candidatesSource.indexOf("export async function importCandidatesWorkbook("));
+  assert.match(
+    importFunctionSource,
+    /const existingKeys = await loadMatchKeys\(\);/,
+    "the bulk import loads the dedup key list exactly once, before the row loop",
+  );
+  assert.match(
+    importFunctionSource,
+    /await matchOrInsertCandidate\(input, access, existingKeys\)/,
+    "each row reuses the single shared key list instead of calling createCandidate (which would reload it)",
+  );
+  assert.doesNotMatch(
+    importFunctionSource,
+    /await createCandidate\(input, access\)/,
+    "the N+1 per-row createCandidate call (and its implicit per-row full-table scan) is gone",
+  );
+
+  const createCandidateSource = candidatesSource.slice(
+    candidatesSource.indexOf("export async function createCandidate("),
+    candidatesSource.indexOf("export const candidateImportHeaders"),
+  );
+  assert.match(
+    createCandidateSource,
+    /const existingKeys = await loadMatchKeys\(\);\s*return matchOrInsertCandidate\(input, access, existingKeys\);/,
+    "the single-candidate API still loads a fresh key list per call — correct for one row per request",
+  );
 }

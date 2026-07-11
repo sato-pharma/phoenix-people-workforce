@@ -234,16 +234,18 @@ export async function deleteCandidate(access: AccessContext, id: string): Promis
 }
 
 // Create-or-attach: dedupes on National ID, else email, else phone.
-export async function createCandidate(
+// Shared by createCandidate (single-row API, always loads a fresh key list) and the bulk import
+// loop (loads the key list ONCE up front and keeps it updated in-memory as rows are processed —
+// see importCandidatesWorkbook). existingKeys is mutated in place so a later row in the same
+// batch can match a candidate created by an earlier row in that same batch. The DB partial-unique
+// index remains the race-safety net for true concurrent requests (e.g. two overlapping uploads);
+// that fallback re-queries fresh on a 23505 conflict regardless of caller.
+async function matchOrInsertCandidate(
   input: CreateCandidateInput,
   access: AccessContext,
+  existingKeys: MatchableCandidate[],
 ): Promise<CandidateUpsertResult> {
-  if (!String(input.fullName ?? "").trim()) {
-    throw new Error("Candidate full name is required.");
-  }
-
   const keys = candidateMatchKeys(input);
-  const existingKeys = await loadMatchKeys();
   const match = findMatchingCandidate(existingKeys, keys);
   if (match) {
     return { candidate: await fetchById(match.id), created: false, matchReason: match.reason };
@@ -267,7 +269,21 @@ export async function createCandidate(
     throw error;
   }
 
-  return { candidate: mapCandidate(data as CandidateDbRow), created: true };
+  const candidate = mapCandidate(data as CandidateDbRow);
+  existingKeys.push({ id: candidate.id, ...keys });
+  return { candidate, created: true };
+}
+
+export async function createCandidate(
+  input: CreateCandidateInput,
+  access: AccessContext,
+): Promise<CandidateUpsertResult> {
+  if (!String(input.fullName ?? "").trim()) {
+    throw new Error("Candidate full name is required.");
+  }
+
+  const existingKeys = await loadMatchKeys();
+  return matchOrInsertCandidate(input, access, existingKeys);
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +340,12 @@ export async function importCandidatesWorkbook(
   const rows = excelWorksheetToJsonRows(worksheet, 1);
   const summary: CandidateImportSummary = { total: 0, created: 0, matched: 0, failed: 0, errors: [] };
 
+  // Load the dedup key list ONCE for the whole batch (was previously reloaded — a full
+  // recruitment_candidates scan — inside createCandidate on every single row). Mutated in place
+  // by matchOrInsertCandidate as rows are created, so a later row in this same file can still
+  // match an earlier row in the same file.
+  const existingKeys = await loadMatchKeys();
+
   let rowNumber = 1; // header is row 1
   for (const row of rows) {
     rowNumber += 1;
@@ -331,7 +353,7 @@ export async function importCandidatesWorkbook(
     if (!String(input.fullName ?? "").trim()) continue; // skip blank lines
     summary.total += 1;
     try {
-      const result = await createCandidate(input, access);
+      const result = await matchOrInsertCandidate(input, access, existingKeys);
       if (result.created) summary.created += 1;
       else summary.matched += 1;
     } catch (error) {
