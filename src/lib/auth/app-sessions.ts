@@ -1,5 +1,6 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import type { SessionPayload } from "@/lib/auth/session";
+import { isProductionRuntime } from "@/config/system-settings";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const defaultAbsoluteTimeoutSeconds = 12 * 60 * 60;
@@ -49,7 +50,10 @@ export function shouldBlockLoginWhenSupabaseBridgeUnavailable(role: PhoenixRole)
   if (!isSupabaseBridgeRequiredForRole(role)) return false;
   if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "true") return true;
   if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "false") return false;
-  return process.env.VERCEL_ENV === "production";
+  // Was `VERCEL_ENV === "production"`, which is never set on Cloud Run and silently
+  // relaxed this gate after the GCP migration. isProductionRuntime() reads
+  // APP_ENV/VERCEL_ENV/NODE_ENV, so it stays true under Cloud Run (NODE_ENV=production).
+  return isProductionRuntime();
 }
 
 export function sessionAbsoluteTimeoutSecondsForRole(role: PhoenixRole) {
