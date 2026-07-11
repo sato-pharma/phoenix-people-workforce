@@ -827,6 +827,7 @@ function anomalyInsights(records: ScopedRecord[]) {
 export async function getSalesDashboard(
   filters: SalesDashboardFilters = {},
   accessContext?: AccessContext | null,
+  options?: { transactionLimit?: number },
 ): Promise<SalesDashboardData> {
   const supabase = getSupabaseAdmin();
 
@@ -1128,7 +1129,7 @@ export async function getSalesDashboard(
         achievementRate: performanceMetric(record.salesValue, record.targetValue),
       };
     })
-    .slice(0, SALES_DASHBOARD_TRANSACTION_LIMIT);
+    .slice(0, options?.transactionLimit ?? SALES_DASHBOARD_TRANSACTION_LIMIT);
 
   const linkageStats = {
     linked: companyRecords.filter((record) => record.linkStatus === "linked").length,
