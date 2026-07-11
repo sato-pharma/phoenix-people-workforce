@@ -45,3 +45,22 @@ Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notificati
 ## Cloud Run runtime signals
 
 Built-in Cloud Run metrics (no code needed): request count/latency by response code, instance count, CPU/memory utilization, billable instance time. `min-instances=1` keeps one instance warm (no cold starts).
+
+## System Issues dashboard (`/admin/system-issues`, Super Admin + CEO)
+
+Two tabs, gated by direct role check (not the `admin` permission resource, which is
+hard-locked to Super Admin — see `isRolePermissionWithinHardBoundary` in
+`src/lib/auth/permissions.ts`):
+
+- **Issues & Errors** — merges `app_error_events` (self-hosted, app-level) with live
+  Cloud Logging entries (`src/lib/observability/gcp-logs.ts`, severity ≥ WARNING for
+  the Cloud Run service, last 24h) so infra-level failures that never reach application
+  code (container crash, OOM kill, cold-start failure) are also visible. Requires env
+  `GCP_PROJECT_ID` (and optionally `GCP_CLOUD_RUN_SERVICE`, defaults to `phoenix-hr`) and
+  `roles/logging.viewer` granted to the Cloud Run runtime service account — without it,
+  the tab shows an explicit "not connected" banner rather than a misleading empty list.
+- **Per-User Attempts** — aggregates `app_error_events` + failed `auth_login_attempts`
+  grouped by HR ID + module/route, computed in application code (`getUserAttemptSummary`
+  in `src/lib/error-monitor/service.ts`), not a DB view/RPC — no migration required.
+  Row-capped per source at 20,000 (paged in 1,000-row batches); hitting the cap sets
+  `truncated: true` in the response, surfaced as a banner rather than a silent drop.
