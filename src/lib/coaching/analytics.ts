@@ -58,7 +58,9 @@ function average(total: number, count: number) {
   return round(total / count);
 }
 
-const completedReportStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
+// Exported so every coaching analytics surface shares one definition of "completed" instead of
+// each independently re-declaring the same status set (audit finding M14).
+export const completedReportStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
 const coachingMonthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
 export type CoachingReportAnalyticsSummary = {

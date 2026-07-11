@@ -704,6 +704,53 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
   };
 }
 
+// Batched equivalent of calling getCoachingReportById once per id: 3 queries total (report +
+// scores + summary, each fetched once with .in(ids)) plus one cached directory read, instead of
+// up to 3N queries. Same fail-together semantics as Promise.all(ids.map(getCoachingReportById)) —
+// a missing report or an access-scope violation on any id throws and aborts the whole batch.
+export async function getCoachingReportsByIds(ids: string[], access: AccessContext): Promise<CoachingReportDetail[]> {
+  if (ids.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const [reportsResult, scoresResult, summariesResult, directory] = await Promise.all([
+    supabase.from("coaching_reports").select("*").in("id", ids),
+    supabase.from("coaching_score_items").select("*").in("report_id", ids).order("display_order", { ascending: true }),
+    supabase.from("coaching_reports_summary").select("*").in("report_id", ids),
+    getEmployeeDirectoryRows(),
+  ]);
+  if (reportsResult.error) throw reportsResult.error;
+  if (scoresResult.error) throw scoresResult.error;
+  if (summariesResult.error) throw summariesResult.error;
+
+  const reportsById = new Map((reportsResult.data as CoachingReportRow[]).map((row) => [row.id, row]));
+  const scoresByReportId = new Map<string, CoachingScoreItemRow[]>();
+  for (const row of (scoresResult.data ?? []) as CoachingScoreItemRow[]) {
+    const list = scoresByReportId.get(row.report_id) ?? [];
+    list.push(row);
+    scoresByReportId.set(row.report_id, list);
+  }
+  const summaryByReportId = new Map((summariesResult.data as CoachingSummaryDbRow[]).map((row) => [row.report_id, row]));
+
+  return ids.map((id) => {
+    const report = reportsById.get(id);
+    if (!report) throw new Error("Coaching report was not found.");
+
+    const medicalRep = findEmployee(directory, report.medical_rep_hr_id);
+    if (!medicalRep) throw new Error("Medical Rep was not found in employees.");
+    assertCanAccessEmployee(access, medicalRep, directory, findEmployee(directory, report.coach_hr_id));
+
+    const scores = (scoresByReportId.get(id) ?? []).slice().sort((a, b) => a.display_order - b.display_order);
+    const scoreResult = scores.length === 20 ? calculateCoachingScore(scoreInputFromRows(scores)) : null;
+    const summary = summaryByReportId.get(id);
+
+    return {
+      report,
+      scoreResult,
+      scores,
+      summary: summary ? mapSummary(summary) : null,
+    };
+  });
+}
+
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
   if (access.scope === "system" || coachingOversightRoles.has(access.role)) return rows;
   const directory = await getEmployeeDirectoryRows();

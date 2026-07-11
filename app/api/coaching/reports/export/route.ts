@@ -14,8 +14,8 @@ import {
   generateCoachingReportsWorkbook,
 } from "@/lib/coaching/excel-export";
 import {
-  getCoachingReportById,
   getCoachingReports,
+  getCoachingReportsByIds,
 } from "@/lib/coaching/service";
 import type { CoachingReportFilters } from "@/lib/coaching/types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -71,9 +71,7 @@ export async function GET(request: Request) {
     const employeeByHrId = new Map(
       employees.map((employee) => [normalizeHrId(employee.hrId), employee]),
     );
-    const details = await Promise.all(
-      reports.map((report) => getCoachingReportById(report.reportId, access)),
-    );
+    const details = await getCoachingReportsByIds(reports.map((report) => report.reportId), access);
     const detailById = new Map(details.map((detail) => [detail.report.id, detail]));
     const exportedBy = access.hrId
       ? employeeByHrId.get(normalizeHrId(access.hrId))?.fullName ?? access.hrId
