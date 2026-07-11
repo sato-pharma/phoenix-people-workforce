@@ -6,6 +6,7 @@ import {
   recordResendWebhookEvent,
   verifyResendWebhookSignature,
 } from "@/lib/email/resend-webhook-events";
+import { logWarning } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +14,18 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) {
+    logWarning("Resend webhook received but RESEND_WEBHOOK_SECRET is not configured", {
+      labels: { event: "webhook_misconfigured", webhook: "resend" },
+    });
     return NextResponse.json({ message: "RESEND_WEBHOOK_SECRET is not configured." }, { status: 500 });
   }
 
   const body = await request.text();
   if (!verifyResendWebhookSignature({ body, headers: request.headers, secret })) {
+    // A spike here means forged/misconfigured webhook traffic — surface for alerting.
+    logWarning("Rejected Resend webhook with an invalid signature", {
+      labels: { event: "webhook_signature_invalid", webhook: "resend" },
+    });
     return NextResponse.json({ message: "Invalid Resend webhook signature." }, { status: 401 });
   }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
+import { logCronUnauthorized, logError } from "@/lib/observability/log";
 
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
@@ -17,6 +18,7 @@ import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
+import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +54,7 @@ async function runDailyNotifications(request: Request) {
     resignationSla,
     weeklyPlansDrift,
     rateLimitPrune,
+    errorEventsPrune,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-birthday" } });
@@ -117,6 +120,10 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-rate-limit-prune" } });
       return { deleted: 0, error: String(e) };
     }),
+    pruneOldAppErrorEvents().catch((e: unknown) => {
+      logError("app_error_events retention prune failed", { labels: { event: "cron_failed", job: "error-events-prune" }, error: e });
+      return { deleted: null, error: String(e) };
+    }),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -136,6 +143,7 @@ async function runDailyNotifications(request: Request) {
     outstationHighRisk,
     outstationSla,
     rateLimitPrune,
+    errorEventsPrune,
     recruitment,
     resignationSla,
     success: true,
@@ -147,12 +155,13 @@ async function runDailyNotifications(request: Request) {
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
+    logCronUnauthorized("notifications/daily", request);
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
   try {
     return await runDailyNotifications(request);
   } catch (error) {
-    console.error(error, { tags: { cron: "daily-notification-dispatcher" } });
+    logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
     const message = error instanceof Error ? error.message : "Daily notification run failed.";
     return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
   }
