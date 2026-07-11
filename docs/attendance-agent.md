@@ -12,7 +12,7 @@ The local attendance agent is a separate .NET application that integrates with Z
 
 1. ZKTeco device records fingerprint punches locally
 2. The .NET agent reads punch logs from the device
-3. Agent posts batches to the Phoenix API (`/api/attendance/sync`)
+3. Agent posts batches to the Phoenix API (`/api/attendance/raw-punches`, bearer-authed with `ATTENDANCE_AGENT_TOKEN`)
 4. Phoenix maps `device_user_id` to employee `HR_ID` using the device-user-mapping table
 5. Only mapped, active employees have their punches stored in `attendance_raw_punches`
 

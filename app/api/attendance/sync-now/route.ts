@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { ApiError, toApiError } from "@/lib/http/api-errors";
-import { attendanceAgentToken, attendanceAgentUrl, ensureLocalAttendanceAgent } from "@/lib/attendance/local-agent";
+import {
+  attendanceAgentToken,
+  attendanceAgentUrl,
+  canManageLocalAttendanceAgent,
+  ensureLocalAttendanceAgent,
+  LocalAttendanceAgentUnsupportedError,
+} from "@/lib/attendance/local-agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +44,16 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");
+
+    if (!canManageLocalAttendanceAgent()) {
+      // On Linux/Cloud Run production there is no localhost PowerShell agent to trigger;
+      // ingestion is push-based via /api/attendance/raw-punches. Fail clearly (501),
+      // never attempt to spawn powershell.exe.
+      return NextResponse.json(
+        { error: "attendance_agent_unsupported", message: new LocalAttendanceAgentUnsupportedError().message },
+        { status: 501 },
+      );
+    }
 
     try {
       attendanceAgentToken();

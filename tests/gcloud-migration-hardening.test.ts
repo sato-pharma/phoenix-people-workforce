@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { trustedOriginForRedirect } from "../src/lib/security/origins.ts";
+import { isAllowedPhoenixOrigin, trustedOriginForRedirect } from "../src/lib/security/origins.ts";
 import { systemDeployment } from "../src/config/system-settings.ts";
 
 /**
@@ -87,5 +87,40 @@ export function runGcloudMigrationHardeningTests() {
     syntheticSource,
     /\.run\.app/,
     "synthetic-journey environment detection must recognise the Cloud Run host as production",
+  );
+
+  // --- Wave 1: legacy Vercel origins removed from the trust set ---
+  for (const legacy of [
+    "https://phoenix-workforce-team.vercel.app",
+    "https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app",
+    "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app",
+  ]) {
+    assert.equal(
+      isAllowedPhoenixOrigin(legacy),
+      false,
+      `legacy Vercel origin must no longer be trusted: ${legacy}`,
+    );
+  }
+
+  // Preview-read-only behaviour must be platform-neutral (APP_ENV), not keyed on VERCEL_ENV.
+  const proxySource = readFileSync("proxy.ts", "utf8");
+  assert.match(proxySource, /APP_ENV === "preview"/, "preview gate must use APP_ENV");
+  assert.doesNotMatch(proxySource, /VERCEL_ENV/, "preview gate must not depend on VERCEL_ENV");
+
+  // Cron auth must not depend on the Vercel presence flag anymore.
+  const cronSource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  assert.doesNotMatch(cronSource, /process\.env\.VERCEL\b/, "cron auth must not read process.env.VERCEL");
+
+  // Attendance agent PowerShell spawn must be guarded (never runs on Linux/Cloud Run).
+  const localAgentSource = readFileSync("src/lib/attendance/local-agent.ts", "utf8");
+  assert.match(
+    localAgentSource,
+    /canManageLocalAttendanceAgent[\s\S]*process\.platform === "win32"/,
+    "local attendance agent spawn must be gated to a Windows, non-production host",
+  );
+  assert.match(
+    localAgentSource,
+    /if \(!canManageLocalAttendanceAgent\(\)\)/,
+    "startLocalAttendanceAgent must refuse to spawn when unsupported",
   );
 }

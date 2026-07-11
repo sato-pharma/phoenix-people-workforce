@@ -20,16 +20,11 @@ export function runOriginConfigSingleSourceTests() {
   const origins = source("../src/lib/security/origins.ts");
   const nextConfig = source("../next.config.ts");
 
-  // The allowlist must DERIVE the production + working-preview origins from system-settings.
+  // The allowlist must DERIVE the production origin from system-settings (single edit point).
   assert.match(
     origins,
     /systemDeployment\.productionUrl/,
     "origins.ts must derive the production origin from systemDeployment.productionUrl",
-  );
-  assert.match(
-    origins,
-    /systemDeployment\.workingPreviewUrl/,
-    "origins.ts must derive the working-preview origin from systemDeployment.workingPreviewUrl",
   );
 
   // ...and must NOT re-hardcode the production URL literal.
@@ -45,11 +40,6 @@ export function runOriginConfigSingleSourceTests() {
     isAllowedPhoenixOrigin(systemDeployment.productionUrl),
     true,
     "the configured production URL must be an allowed Phoenix origin",
-  );
-  assert.equal(
-    isAllowedPhoenixOrigin(systemDeployment.workingPreviewUrl),
-    true,
-    "the configured working-preview URL must be an allowed Phoenix origin",
   );
 
   assert.match(

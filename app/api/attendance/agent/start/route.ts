@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { checkAttendanceAgentHealth, startLocalAttendanceAgent } from "@/lib/attendance/local-agent";
+import {
+  canManageLocalAttendanceAgent,
+  checkAttendanceAgentHealth,
+  LocalAttendanceAgentUnsupportedError,
+  startLocalAttendanceAgent,
+} from "@/lib/attendance/local-agent";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
@@ -24,6 +29,13 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employees", "update");
+
+    if (!canManageLocalAttendanceAgent()) {
+      return NextResponse.json(
+        { error: "attendance_agent_unsupported", message: new LocalAttendanceAgentUnsupportedError().message },
+        { status: 501 },
+      );
+    }
 
     const before = await checkAttendanceAgentHealth(2500);
     if (before.reachable) {

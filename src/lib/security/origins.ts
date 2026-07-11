@@ -5,18 +5,15 @@ import { systemDeployment } from "@/config/system-settings";
 // hardcoded here drifted from systemDeployment; keep them derived.
 // See docs/workflow-and-route-architecture.md § Route categories.
 const productionOrigin = systemDeployment.productionUrl;
-// Stable team alias used for shared Phoenix Workforce access. Security-only alias,
-// intentionally not part of the deploy config.
-const teamPreviewOrigin = "https://phoenix-workforce-team.vercel.app";
-const workingPreviewOrigin = systemDeployment.workingPreviewUrl;
-// Stable branch alias for codex/ceo-staging-rebuild-hardening (PR #24) preview.
-const stagingRebuildPreviewOrigin =
-  "https://phoenix-workforce-git-codex-41bc50-phoenix-workspace-s-projects.vercel.app";
-// Production custom domain. As of the GCP migration, systemDeployment.productionUrl
-// IS this domain (it drives email CTA links too), so this constant is now the same
-// origin — kept as an explicit belt-and-suspenders entry so CSRF/origin checks trust
-// the custom domain even if productionUrl is ever repointed.
+// Production custom domain. Since the GCP migration, systemDeployment.productionUrl IS
+// this domain (it also drives email CTA links); kept as an explicit belt-and-suspenders
+// entry so CSRF/origin checks trust the custom domain even if productionUrl is repointed.
 const customDomainOrigin = "https://phoenix-hr.satopharma.com";
+// The legacy Vercel preview origins (team alias, working-branch preview, staging-rebuild
+// preview) were REMOVED from the CSRF/redirect trust set after the Vercel -> Cloud Run
+// migration — no production traffic uses them. If a temporary preview origin is ever
+// needed for rollback, add it narrowly via the PHOENIX_ALLOWED_ORIGINS env var (parsed
+// in allowedPhoenixOrigins) rather than hardcoding a broadly-trusted host.
 
 function normalizeLocalHostname(hostname: string) {
   const normalized = hostname
@@ -85,7 +82,7 @@ export function allowedPhoenixOrigins() {
     : null;
 
   return new Set(
-    [productionOrigin, customDomainOrigin, teamPreviewOrigin, workingPreviewOrigin, stagingRebuildPreviewOrigin, appUrl, nextPublicAppUrl, previewUrl, ...configured]
+    [productionOrigin, customDomainOrigin, appUrl, nextPublicAppUrl, previewUrl, ...configured]
       .map((origin) => normalizeOrigin(origin))
       .filter((origin): origin is string => Boolean(origin)),
   );

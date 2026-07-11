@@ -1,11 +1,14 @@
 name: Deploy to Google Cloud Run
 
+# Deploy only AFTER the CI workflow succeeds for the same commit on main (never in
+# parallel with a red build), or on a manual dispatch. The new revision is deployed
+# with NO traffic + a SHA tag, smoke-tested in isolation, and only then promoted to
+# 100% — a failing revision can never take production traffic.
 on:
-  push:
-    branches:
-      - main
-  # Allow a manual "Run workflow" trigger (Actions tab) so a redeploy can be
-  # kicked off on demand without an empty commit.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -15,6 +18,8 @@ env:
 
 jobs:
   deploy:
+    # Gate: only proceed when the triggering CI run succeeded (or on manual dispatch).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
@@ -22,25 +27,35 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Deploy the exact commit CI validated (workflow_run), else the dispatched ref.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Validate production env (pass/fail only, never prints values)
+        env:
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: node scripts/validate-env.mjs
 
       - name: Authenticate to Google Cloud
         id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          # You will need to create a Workload Identity Provider in GCP
-          # and add it to your GitHub Secrets as WIF_PROVIDER.
-          # We also need WIF_SERVICE_ACCOUNT (the compute engine service account)
           workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
           service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
 
-      - name: Deploy to Cloud Run
+      - name: Deploy new revision (no traffic) with a commit-SHA tag
+        id: deploy
         run: |
-          # The env-vars-file won't exist in CI since it's gitignored.
-          # Cloud Run will automatically retain the environment variables we already uploaded manually!
+          set -euo pipefail
+          RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
+          echo "Deploying tag $SHA_TAG (no traffic)"
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --source . \
             --region ${{ env.REGION }} \
@@ -48,5 +63,29 @@ jobs:
             --allow-unauthenticated \
             --memory 1Gi \
             --cpu-boost \
+            --no-traffic \
+            --tag "$SHA_TAG" \
             --set-build-env-vars=NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} \
             --update-env-vars ^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com^
+          TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
+            | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
+          echo "Tag URL: $TAG_URL"
+          test -n "$TAG_URL"
+          echo "tag_url=$TAG_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Post-deploy smoke test (isolated new revision, before routing traffic)
+        run: |
+          set -euo pipefail
+          URL="${{ steps.deploy.outputs.tag_url }}"
+          fail() { echo "SMOKE FAILED: $1"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/login"); echo "GET /login -> $code"; [ "$code" = "200" ] || fail "login not 200"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/webhooks/resend" -H "content-type: application/json" -d '{}'); echo "POST /api/webhooks/resend -> $code"; [ "$code" = "401" ] || fail "webhook not 401"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"
+          echo "Smoke passed."
+
+      - name: Promote validated revision to 100% traffic
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --to-latest

@@ -38,8 +38,11 @@ function isPreviewEmailTemplateMutationPath(pathname: string) {
 }
 
 function isPreviewReadOnlyEnabled() {
+  // Platform-neutral preview detection (previously used a Vercel-only env var that is
+  // never set on Cloud Run). A preview deployment must set APP_ENV=preview AND opt in
+  // with PHOENIX_PREVIEW_READ_ONLY=true.
   return (
-    process.env.VERCEL_ENV === "preview" &&
+    process.env.APP_ENV === "preview" &&
     process.env.PHOENIX_PREVIEW_READ_ONLY === "true"
   );
 }

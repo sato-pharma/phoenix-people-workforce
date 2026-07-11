@@ -24,7 +24,6 @@ export const systemDeployment = {
   productionBranch: "main",
   workingBranch: "codex/work-from-production",
   productionUrl: "https://phoenix-hr.satopharma.com",
-  workingPreviewUrl: "https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app",
 } as const;
 
 export const systemEditingPolicy = {
