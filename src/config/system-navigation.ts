@@ -900,6 +900,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["CEO"],
   },
   {
+    href: "/admin/system-issues",
+    icon: TriangleAlert,
+    label: "System Issues",
+    description: "Supabase + GCP Cloud Logging errors, and per-employee error/failed-login attempt counts.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
     href: "/admin/data-health",
     icon: Database,
     label: "Data Health",
