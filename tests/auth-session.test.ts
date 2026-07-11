@@ -344,15 +344,18 @@ export async function runAuthSessionTests() {
     true,
     "production origin must be trusted by default (derived from systemDeployment.productionUrl)",
   );
-  assert.match(
-    originsSource,
-    /https:\/\/phoenix-workforce-team\.vercel\.app/,
-    "team preview alias must be trusted by default",
+  // Post-migration: the legacy *.vercel.app preview origins are NO LONGER trusted for
+  // CSRF/redirect. They must be rejected, and login redirects from them must fall back
+  // to the canonical production origin rather than staying on the vercel alias.
+  assert.equal(
+    isAllowedPhoenixOrigin("https://phoenix-workforce-team.vercel.app"),
+    false,
+    "legacy team preview alias must NOT be trusted after the Vercel -> Cloud Run migration",
   );
   assert.equal(
-    isAllowedPhoenixOrigin(systemDeployment.workingPreviewUrl),
-    true,
-    "working preview origin must be trusted by default (derived from systemDeployment.workingPreviewUrl)",
+    isAllowedPhoenixOrigin("https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app"),
+    false,
+    "legacy working-preview vercel origin must NOT be trusted",
   );
   assert.match(originsSource, /rejectUntrustedForwardedOrigin/, "unknown origins and forwarded hosts must be rejected");
   assert.match(csrfSource, /isAllowedPhoenixOrigin/, "CSRF expected origins must be allowlist-filtered");
@@ -366,20 +369,15 @@ export async function runAuthSessionTests() {
       "x-forwarded-proto": "https",
     },
   });
-  assert.equal(
-    isAllowedPhoenixOrigin("https://phoenix-workforce-team.vercel.app"),
-    true,
-    "team preview alias must pass the runtime origin allow-list",
-  );
-  assert.equal(
+  assert.deepEqual(
     rejectUntrustedForwardedOrigin(teamAliasRequest),
-    null,
-    "team preview alias must not be rejected as an untrusted login origin",
+    { origin: "https://phoenix-workforce-team.vercel.app", reason: "untrusted_forwarded_host" },
+    "a login attempt from the legacy vercel alias must now be rejected as an untrusted origin",
   );
   assert.equal(
     trustedOriginForRedirect(teamAliasRequest),
-    "https://phoenix-workforce-team.vercel.app",
-    "login redirects from the team preview alias must stay on that alias",
+    systemDeployment.productionUrl,
+    "login redirects from an untrusted vercel alias must fall back to the canonical production origin",
   );
 
   const originalBuilderAllowedOrigins = process.env.PHOENIX_ALLOWED_ORIGINS;

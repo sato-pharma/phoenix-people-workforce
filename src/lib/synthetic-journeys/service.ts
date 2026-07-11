@@ -89,13 +89,10 @@ function environmentFromBaseUrl(baseUrl: string): string | null {
   try {
     const host = new URL(baseUrl).host;
     // Canonical custom domain and the Cloud Run service host both mean production.
-    // (The legacy *.vercel.app host is kept for backward-compatible classification of
-    // any historical run rows; it is no longer the deployment target.)
     if (
       host === "phoenix-hr.satopharma.com" ||
       host === "phoenix-hr-897559113412.us-central1.run.app" ||
-      host.endsWith(".run.app") ||
-      host === "phoenix-workforce.vercel.app"
+      host.endsWith(".run.app")
     ) {
       return "production";
     }

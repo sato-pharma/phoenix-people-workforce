@@ -61,15 +61,15 @@ export function runContractRenewalHardeningTests() {
   const birthdaysRoute = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
   const cronAuthRoutes = { birthdaysRoute, dailyRoute, processRoute, reminderRoute };
   for (const [name, source] of Object.entries(cronAuthRoutes)) {
-    assert.doesNotMatch(
-      source,
-      /if \(!secret\) return process\.env\.NODE_ENV === "development";/,
-      `${name} cron auth must not fail open on NODE_ENV alone`,
-    );
     assert.match(
       source,
-      /if \(!secret\) return !process\.env\.VERCEL && process\.env\.NODE_ENV === "development";/,
-      `${name} cron auth must fail closed on every Vercel environment missing CRON_SECRET`,
+      /if \(!secret\) return !isProductionRuntime\(\);/,
+      `${name} cron auth must fail closed in production runtime (platform-neutral)`,
+    );
+    assert.doesNotMatch(
+      source,
+      /process\.env\.VERCEL\b/,
+      `${name} cron auth must not depend on Vercel-specific env vars`,
     );
   }
 

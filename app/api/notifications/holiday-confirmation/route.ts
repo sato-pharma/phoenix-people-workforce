@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isProductionRuntime } from "@/config/system-settings";
 
 import { systemAdministratorRoles } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -18,7 +19,7 @@ function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
   // real local machine without it may bypass an unset CRON_SECRET during development.
-  if (!secret) return !process.env.VERCEL && process.env.NODE_ENV === "development";
+  if (!secret) return !isProductionRuntime();
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 

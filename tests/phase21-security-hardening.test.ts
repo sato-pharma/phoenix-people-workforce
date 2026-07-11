@@ -33,7 +33,8 @@ export function runPhase21SecurityHardeningTests() {
   assert.match(probationWorkflowRoute, /assertPermission\(access, "probation", action === "pass" \|\| action === "terminate" \? "approve" : "update"\)/);
 
   assert.match(proxySource, /PHOENIX_PREVIEW_READ_ONLY/);
-  assert.match(proxySource, /VERCEL_ENV === "preview"/);
+  assert.match(proxySource, /APP_ENV === "preview"/);
+  assert.doesNotMatch(proxySource, /VERCEL_ENV/);
   assert.match(proxySource, /preview_read_only/);
   assert.match(proxySource, /\/api\/auth\/login/);
   assert.match(proxySource, /\/api\/auth\/logout/);

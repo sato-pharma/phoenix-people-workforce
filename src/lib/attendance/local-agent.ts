@@ -1,7 +1,34 @@
 import { spawn } from "node:child_process";
 
+import { isProductionRuntime } from "@/config/system-settings";
+
 const defaultAgentUrl = "http://127.0.0.1:8787";
 const defaultStartScript = "local-attendance-agent\\start-agent.ps1";
+
+/**
+ * Thrown when code tries to launch the on-prem PowerShell attendance agent on a host
+ * that cannot run it (Linux / Cloud Run production). Routes map this to HTTP 501.
+ */
+export class LocalAttendanceAgentUnsupportedError extends Error {
+  constructor() {
+    super(
+      "On-demand local attendance agent control is unavailable on this deployment. " +
+        "Attendance ingestion here is push-based: the on-prem Windows agent posts punches " +
+        "to /api/attendance/raw-punches. Start or check the agent on the on-prem host.",
+    );
+    this.name = "LocalAttendanceAgentUnsupportedError";
+  }
+}
+
+/**
+ * The local attendance agent is a localhost Windows process launched via PowerShell.
+ * It can only be spawned from a Windows, non-production host — never from a Linux/Cloud
+ * Run production container (there is no `powershell.exe` and the process would be killed
+ * after the response anyway).
+ */
+export function canManageLocalAttendanceAgent() {
+  return process.platform === "win32" && !isProductionRuntime();
+}
 
 export function attendanceAgentBaseUrl() {
   return process.env.ATTENDANCE_AGENT_LOCAL_URL?.trim() || defaultAgentUrl;
@@ -46,6 +73,10 @@ export async function checkAttendanceAgentHealth(timeoutMs = 5000) {
 }
 
 export function startLocalAttendanceAgent() {
+  if (!canManageLocalAttendanceAgent()) {
+    // Never attempt to spawn powershell.exe on Linux/Cloud Run production.
+    throw new LocalAttendanceAgentUnsupportedError();
+  }
   const scriptPath = process.env.ATTENDANCE_AGENT_START_SCRIPT?.trim() || defaultStartScript;
   const workingDirectory = process.env.ATTENDANCE_AGENT_WORKING_DIRECTORY?.trim() || "local-attendance-agent";
 
