@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { removeSalesUploadObject, resolveUploadedSpreadsheet } from "@/lib/sales/monthly-import-request";
 import { commitMonthlyUpload } from "@/lib/sales/sales-upload";
@@ -37,7 +38,10 @@ export async function POST(request: Request) {
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
     const uploadedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy });
+    // Confidential products (LA003/LA004/SS001) must never appear in the blocked-commit preview
+    // either — a blocked commit still returns a raw row sample, same rule as analyze.
+    const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+    const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, excludeProductCodes });
     if (result.status === "blocked") {
       return NextResponse.json({
         success: false,

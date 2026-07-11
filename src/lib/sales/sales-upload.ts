@@ -217,7 +217,7 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
     const aiExplanation = await explainHeaderMismatch({ distributorName: rec.distributorName, observedHeaders: rec.observedHeaders, missingGroups: rec.missingGroups });
     return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning, aiExplanation };
   }
-  const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products);
+  const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products, excludeProductCodes);
   const reconciliation = buildReconciliation(rec.result);
   // Per-product/region/brick/line breakdown for the Validate step. Confidential products are
   // excluded for non-CEO/Super-Admin viewers (excludeProductCodes) so the tables never leak them.
@@ -244,7 +244,12 @@ export async function commitMonthlyUpload(input: {
   file: File;
   periodOverride?: string;
   uploadedBy: string;
+  // Confidential products (LA003/LA004/SS001) to strip from the returned preview when the commit is
+  // blocked (unmapped rows / validation failure) and nothing is persisted — same rule analyze already
+  // applies, since a blocked commit still returns a raw row sample to the caller.
+  excludeProductCodes?: readonly string[];
 }): Promise<CommitResult> {
+  const excludeProductCodes = input.excludeProductCodes ?? [];
   // Office channel: pivot allocation — always needs a period.
   if (normalizeCodeKey(input.distributorCode) === normalizeCodeKey(OFFICE_DISTRIBUTOR_CODE)) {
     return commitOfficeChannel(input.distributorCode, input.file, String(input.periodOverride ?? "").trim(), input.uploadedBy);
@@ -266,7 +271,7 @@ export async function commitMonthlyUpload(input: {
   // Only brick/customer/both/blank_customer exceptions block — the operator must fix those mappings.
   const blockingExceptions = result.exceptions.filter((e) => e.reason !== "product");
   if (blockingExceptions.length > 0) {
-    return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products) };
+    return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products, excludeProductCodes) };
   }
 
   const decision = resolveUploadPeriod(result.coded.map((r) => r.invoiceDate), String(input.periodOverride ?? "").trim());
@@ -293,7 +298,7 @@ export async function commitMonthlyUpload(input: {
   const crossCheck = await buildDistributorCrossCheck(input.distributorCode, rec.distributorName, input.file);
   const validation = await runStrictValidation(input.distributorCode, rec, stamped, period, crossCheck);
   if (!validation.ok) {
-    return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products), validation };
+    return { status: "blocked_validation", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products, excludeProductCodes), validation };
   }
 
   // Replace-not-double-count: persistNormalizedBatch supersedes any prior batch for this

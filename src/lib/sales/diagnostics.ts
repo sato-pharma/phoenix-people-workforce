@@ -17,7 +17,13 @@ export type DiagnosticsResult = {
   analyze: AnalyzeResult | null;
 };
 
-export async function diagnoseWorkbook(file: File, distributorOverride?: string): Promise<DiagnosticsResult> {
+export async function diagnoseWorkbook(
+  file: File,
+  distributorOverride?: string,
+  // Confidential products (LA003/LA004/SS001) to strip from the analyze breakdown/preview — this
+  // reuses the real analyze path, so it must apply the same viewer-based exclusion analyze does.
+  excludeProductCodes: readonly string[] = [],
+): Promise<DiagnosticsResult> {
   const buffer = await file.arrayBuffer();
   const detection = await detectDistributorFromBuffer(buffer);
   const chosen = normalizeCodeKey(distributorOverride || detection.best?.distributorCode || "");
@@ -25,7 +31,7 @@ export async function diagnoseWorkbook(file: File, distributorOverride?: string)
   let analyze: AnalyzeResult | null = null;
   if (chosen) {
     profileSummary = await getDistributorProfileSummary(chosen);
-    analyze = await analyzeMonthlyUpload(chosen, file);
+    analyze = await analyzeMonthlyUpload(chosen, file, "", excludeProductCodes);
   }
   return { detection, chosenDistributor: chosen || null, profileSummary, analyze };
 }
