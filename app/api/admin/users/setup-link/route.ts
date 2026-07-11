@@ -5,32 +5,19 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { sendPasswordSetupLink } from "@/lib/auth/password-setup";
 import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { trustedOriginForRedirect } from "@/lib/security/origins";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function firstForwardedValue(value: string | null) {
-  return value?.split(",")[0]?.trim() || null;
-}
-
+// The origin used to build the emailed password-setup/reset link MUST be an
+// allow-listed Phoenix origin — never the raw X-Forwarded-Host. A forged
+// forwarded host would otherwise poison the highest-value email link (host-header
+// injection). trustedOriginForRedirect validates every candidate against
+// allowedPhoenixOrigins() and falls back to the canonical production URL, exactly
+// like the login redirect path.
 function requestPublicOrigin(request: Request) {
-  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
-  const forwardedProto = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? "https";
-
-  if (forwardedHost) {
-    return new URL("/", `${forwardedProto}://${forwardedHost}`).origin;
-  }
-
-  const origin = request.headers.get("origin");
-  if (origin) {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      // Fall back to request.url below.
-    }
-  }
-
-  return new URL(request.url).origin;
+  return trustedOriginForRedirect(request);
 }
 
 export async function POST(request: Request) {
