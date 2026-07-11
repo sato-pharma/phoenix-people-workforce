@@ -1,6 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import type { SessionPayload } from "@/lib/auth/session";
-import { isProductionRuntime } from "@/config/system-settings";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const defaultAbsoluteTimeoutSeconds = 12 * 60 * 60;
@@ -48,12 +47,14 @@ export function isSupabaseBridgeRequiredForRole(role: PhoenixRole) {
 
 export function shouldBlockLoginWhenSupabaseBridgeUnavailable(role: PhoenixRole) {
   if (!isSupabaseBridgeRequiredForRole(role)) return false;
-  if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "true") return true;
-  if (process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "false") return false;
-  // Was `VERCEL_ENV === "production"`, which is never set on Cloud Run and silently
-  // relaxed this gate after the GCP migration. isProductionRuntime() reads
-  // APP_ENV/VERCEL_ENV/NODE_ENV, so it stays true under Cloud Run (NODE_ENV=production).
-  return isProductionRuntime();
+  // Strict enforcement is OPT-IN only. The Supabase auth bridge (GoTrue sign-in) is
+  // best-effort on Cloud Run and currently fails there, so blocking privileged logins
+  // when it is unavailable would lock out Super Admin/CEO/Finance/SFE/NSM. Login already
+  // falls back to a fully-functional Phoenix-only session. A previous attempt gated this
+  // on the production runtime, which locked those roles out (incident 2026-07-11) — do
+  // NOT reintroduce that. Set PHOENIX_STRICT_SUPABASE_BRIDGE=true only once the bridge is
+  // confirmed working in the target environment.
+  return process.env.PHOENIX_STRICT_SUPABASE_BRIDGE === "true";
 }
 
 export function sessionAbsoluteTimeoutSecondsForRole(role: PhoenixRole) {

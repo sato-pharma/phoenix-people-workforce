@@ -276,20 +276,25 @@ export async function runAuthSessionTests() {
     /"Super Admin"[\s\S]*"CEO"[\s\S]*"Finance Manager"[\s\S]*"SFE Manager"[\s\S]*"National Sales Manager"/,
     "privileged bridge enforcement must cover all specified roles",
   );
-  assert.match(appSessionsSource, /shouldBlockLoginWhenSupabaseBridgeUnavailable/, "privileged bridge strictness must be environment-aware");
-  assert.match(appSessionsSource, /VERCEL_ENV === "production"/, "production must remain strict when privileged bridge is unavailable");
+  assert.match(appSessionsSource, /shouldBlockLoginWhenSupabaseBridgeUnavailable/, "privileged bridge strictness must be gated");
+  assert.match(appSessionsSource, /PHOENIX_STRICT_SUPABASE_BRIDGE === "true"/, "strict bridge enforcement must be opt-in via PHOENIX_STRICT_SUPABASE_BRIDGE");
 
   const originalVercelEnv = process.env.VERCEL_ENV;
   const originalStrictBridge = process.env.PHOENIX_STRICT_SUPABASE_BRIDGE;
   try {
+    // Strict enforcement is OPT-IN. Default (unset) must NOT block privileged login even
+    // in production: the Supabase bridge is best-effort on Cloud Run and login falls back
+    // to a Phoenix-only session. Gating this on the production runtime locked out admins
+    // (incident 2026-07-11) — the default must stay non-blocking.
     delete process.env.PHOENIX_STRICT_SUPABASE_BRIDGE;
     process.env.VERCEL_ENV = "production";
-    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), true, "production privileged bridge failure must block login");
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), false, "default (unset) must not block privileged login, even in production");
     assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Employee"), false, "non-privileged bridge failure must not block login");
-    process.env.VERCEL_ENV = "preview";
-    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), false, "preview privileged bridge failure may fall back to Phoenix session");
+    process.env.PHOENIX_STRICT_SUPABASE_BRIDGE = "false";
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), false, "explicit false must not block privileged login");
     process.env.PHOENIX_STRICT_SUPABASE_BRIDGE = "true";
     assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Super Admin"), true, "explicit strict bridge env must force blocking");
+    assert.equal(shouldBlockLoginWhenSupabaseBridgeUnavailable("Employee"), false, "strict mode still must not block non-privileged roles");
   } finally {
     if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = originalVercelEnv;
