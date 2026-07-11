@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { diagnoseWorkbook } from "@/lib/sales/diagnostics";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -26,7 +27,10 @@ export async function POST(request: Request) {
     });
     if (!validation.ok) return NextResponse.json({ success: false, error: validation.message, code: validation.error }, { status: validation.status });
 
-    const result = await diagnoseWorkbook(file, distributor || undefined);
+    // Confidential products (LA003/LA004/SS001) are stripped from the diagnostic breakdown/preview
+    // for every role except CEO / Super Admin — this troubleshooting tool must not leak them either.
+    const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+    const result = await diagnoseWorkbook(file, distributor || undefined, excludeProductCodes);
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });

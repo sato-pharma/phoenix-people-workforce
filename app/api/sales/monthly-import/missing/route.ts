@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { normalizeUploadedFile, summarizePreview } from "@/lib/sales/normalizer/service";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -63,7 +64,10 @@ export async function POST(request: Request) {
     }
 
     const { result, distributorName, products } = normalized;
-    return NextResponse.json({ success: true, data: summarizePreview(distributorCode, distributorName, result, products) });
+    // Confidential products (LA003/LA004/SS001) must never appear in this raw row sample for a
+    // viewer who isn't cleared to see them.
+    const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+    return NextResponse.json({ success: true, data: summarizePreview(distributorCode, distributorName, result, products, excludeProductCodes) });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });

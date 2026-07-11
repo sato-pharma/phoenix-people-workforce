@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { stripRestrictedRows } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
@@ -129,7 +130,13 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
 // Backwards-compatible alias for the canonical recognizer (kept for existing call sites).
 export const normalizeUploadedFile = recognizeDistributorWorkbook;
 
-export function summarizePreview(distributorCode: string, distributorName: string, result: NormalizeResult, products: ProductRef[]): NormalizePreview {
+export function summarizePreview(
+  distributorCode: string,
+  distributorName: string,
+  result: NormalizeResult,
+  products: ProductRef[],
+  excludeProductCodes: readonly string[] = [],
+): NormalizePreview {
   const periodCounts = new Map<string, number>();
   result.coded.forEach((r) => { if (r.invoiceDate) periodCounts.set(r.invoiceDate, (periodCounts.get(r.invoiceDate) ?? 0) + 1); });
   const distinct = distinctUnknowns(result.exceptions, products);
@@ -159,7 +166,10 @@ export function summarizePreview(distributorCode: string, distributorName: strin
     distributorName,
     period: dominantPeriod(result.coded),
     periods: [...periodCounts.entries()].map(([period, rows]) => ({ period, rows })).sort((a, b) => a.period.localeCompare(b.period)),
-    sampleCoded: result.coded.slice(0, 50),
+    // Confidential products (LA003/LA004/SS001) are stripped before sampling — this preview is a raw
+    // row sample (product/customer identity included), so it must never leak a restricted product the
+    // same way buildPreviewBreakdowns already protects the aggregated tables.
+    sampleCoded: stripRestrictedRows(result.coded, excludeProductCodes).slice(0, 50),
     summary: result.summary,
     unknownCustomers: distinct.customers.slice(0, 500),
     unknownProducts: distinct.products.slice(0, 500),

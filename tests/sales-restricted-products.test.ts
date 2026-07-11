@@ -15,6 +15,8 @@ import {
 } from "../src/lib/sales/access-scope.ts";
 import { resolveMarketingExcludeCodes } from "../src/lib/sales-marketing-intelligence/service.ts";
 import { MASTER_DEFINITIONS } from "../src/lib/sales/master-data/definitions.ts";
+import { summarizePreview } from "../src/lib/sales/recognize.ts";
+import type { CodedRow, NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
 
 // The confidential products LA003 / LA004 ("Lacto Basic 1 & 2") must be visible only to CEO /
 // Super Admin. The SoS pipeline keys products by CODE; the legacy pipeline keys them by NAME.
@@ -224,5 +226,61 @@ export async function runSalesRestrictedProductsTests() {
     [...(lineColumn?.allowedValues ?? [])].sort(),
     [...OFFICIAL_LINE_VALUES].sort(),
     "Product Master 'line' allow-list matches the canonical official-line set (single source of truth)",
+  );
+
+  // ── summarizePreview must never leak a restricted product via its raw row sample (sampleCoded) ──
+  // Regression test for the confirmed leak: sampleCoded is a raw row sample (product + customer
+  // identity included), so it needs the same stripping buildPreviewBreakdowns already applies to
+  // the aggregated tables — a viewer who can't see LA003/LA004/SS001 must never see them here either.
+  function makeCodedRow(overrides: Partial<CodedRow>): CodedRow {
+    return {
+      areaCode: "A1", areaName: "Area 1", brickId: "B1", brickName: "Brick 1", bonusQty: 0,
+      clientCode: "C1", clientName: "Client One", clientAddress: null, discount: 0,
+      distributorCode: "SF", invoiceDate: "2026-07-01", invoiceNumber: null, isDirect: false,
+      officialLine: "CNS", productCode: "LA001", productName: "Lacto Advanced 1", qty: 10,
+      rawRowNumber: 1, regionCode: "R1", regionName: "Region 1", value: 1000,
+      ...overrides,
+    };
+  }
+  const mixedResult: NormalizeResult = {
+    coded: [
+      makeCodedRow({ rawRowNumber: 1, productCode: "LA001", productName: "Lacto Advanced 1" }),
+      makeCodedRow({ rawRowNumber: 2, productCode: "LA003", productName: "Lacto Basic 1", clientName: "Confidential Client" }),
+      makeCodedRow({ rawRowNumber: 3, productCode: "SS001", productName: "Satoslim" }),
+    ],
+    distributorCode: "SF",
+    exceptions: [],
+    ignoredRows: [],
+    blankCustomerRows: [],
+    customerBrickCorrections: [],
+    summary: { brickResolved: 3, blankCustomerSkipped: 0, fullyCoded: 3, ignored: 0, productResolved: 3, totalRows: 3 },
+  };
+  const products = [{ code: "LA001", name: "Lacto Advanced 1" }, { code: "LA003", name: "Lacto Basic 1" }, { code: "SS001", name: "Satoslim" }];
+
+  const restrictedViewerPreview = summarizePreview("SF", "Sofico", mixedResult, products, [...RESTRICTED_PRODUCT_CODES]);
+  assert.deepEqual(
+    restrictedViewerPreview.sampleCoded.map((r) => r.productCode),
+    ["LA001"],
+    "a non-privileged viewer's sampleCoded never contains a restricted-product row",
+  );
+  assert.equal(
+    restrictedViewerPreview.sampleCoded.some((r) => r.clientName === "Confidential Client"),
+    false,
+    "the confidential row's customer identity is not exposed either",
+  );
+
+  const privilegedViewerPreview = summarizePreview("SF", "Sofico", mixedResult, products, []);
+  assert.deepEqual(
+    privilegedViewerPreview.sampleCoded.map((r) => r.productCode),
+    ["LA001", "LA003", "SS001"],
+    "CEO / Super Admin (empty exclude list) still see every row",
+  );
+
+  const defaultCallPreview = summarizePreview("SF", "Sofico", mixedResult, products);
+  assert.deepEqual(
+    defaultCallPreview.sampleCoded.map((r) => r.productCode),
+    ["LA001", "LA003", "SS001"],
+    "omitting excludeProductCodes defaults to no stripping (callers must opt in) — every existing " +
+      "call site was updated to pass a role-derived list",
   );
 }
