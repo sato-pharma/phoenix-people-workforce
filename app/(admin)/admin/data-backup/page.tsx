@@ -4,6 +4,7 @@ import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { ALL_BACKUP_TABLES, MODULE_META } from "@/lib/admin/data-backup";
 import { DataBackupResetSection } from "@/components/admin/data-backup-reset-section";
+import { AsyncBackupDownload } from "@/components/admin/async-backup-download";
 
 export const dynamic = "force-dynamic";
 
@@ -51,19 +52,15 @@ export default async function AdminDataBackupPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a
-            className="inline-block bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600"
-            href="/api/admin/data-backup?scope=all&format=xlsx"
-          >
-            Download XLSX — All Modules
-          </a>
-          <a
-            className="inline-block border border-slate-600 px-5 py-2 text-sm font-semibold text-slate-300 hover:border-slate-400 hover:text-white"
-            href="/api/admin/data-backup?scope=all&format=json"
-          >
-            Download JSON — All Modules
-          </a>
+          {/* The full all-modules export runs as a durable background job (built into
+              Storage) so it never risks the Cloud Run request timeout / OOM on large data. */}
+          <AsyncBackupDownload format="xlsx" label="XLSX — All Modules" variant="primary" />
+          <AsyncBackupDownload format="json" label="JSON — All Modules" variant="secondary" />
         </div>
+        <p className="mt-2 text-xs text-slate-500">
+          The complete backup is generated in the background — keep this page open; a download
+          link appears when it&apos;s ready.
+        </p>
       </div>
 
       {/* Per-module download cards */}
