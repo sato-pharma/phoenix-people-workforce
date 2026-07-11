@@ -5,6 +5,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { enqueueBackgroundJob } from "@/lib/background-jobs/service";
+import { DATA_BACKUP_EXPORT_JOB } from "@/lib/background-jobs/worker";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -84,6 +86,47 @@ export async function GET(request: NextRequest) {
     if (message.includes("Forbidden")) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
+    return NextResponse.json({ error: "server_error", message }, { status: 500 });
+  }
+}
+
+// Async export: enqueue a durable background job (built by the worker, stored in
+// Supabase Storage) instead of building the workbook inside this request. Returns 202
+// with a jobId; the client polls /status/:jobId and downloads via /download/:jobId. This
+// keeps large "all"-scope exports off the request path (no Cloud Run timeout / OOM risk).
+export async function POST(request: NextRequest) {
+  try {
+    const access = await resolveAccessContext(request);
+    if (!access.loginId && !access.hrId) {
+      return NextResponse.json({ error: "unauthenticated", message: "Not authenticated." }, { status: 401 });
+    }
+    assertSystemAdministratorWorkspaceAccess(access, "data-backup");
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:data-backup" });
+
+    const body = (await request.json().catch(() => ({}))) as { scope?: string; format?: string };
+    const scope = normalizeScope(typeof body.scope === "string" ? body.scope : null);
+    const format = normalizeFormat(typeof body.format === "string" ? body.format : null);
+
+    const job = await enqueueBackgroundJob({
+      jobType: DATA_BACKUP_EXPORT_JOB,
+      params: { scope, format },
+      requestedBy: access.loginId ?? access.hrId ?? "system",
+    });
+    return NextResponse.json({ jobId: job.id, status: job.status }, { status: 202 });
+  } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message },
+        { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+      );
+    }
+    if (isForbiddenError(error)) {
+      return NextResponse.json(
+        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
+        { status: 403 },
+      );
+    }
+    const message = error instanceof Error ? error.message : "Failed to enqueue data backup.";
     return NextResponse.json({ error: "server_error", message }, { status: 500 });
   }
 }
