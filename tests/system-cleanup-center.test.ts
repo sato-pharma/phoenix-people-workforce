@@ -23,7 +23,7 @@ export function runSystemCleanupCenterTests() {
   const page = source("../app/(admin)/admin/system-cleanup/page.tsx");
   const center = source("../src/components/admin/system-cleanup-center.tsx");
   const migrationPath = new URL(
-    "../supabase/migrations/20260612093625_admin_system_cleanup_center.sql",
+    "../supabase/_migrations_archive/pre-baseline-2026-07-11/20260612093625_admin_system_cleanup_center.sql",
     import.meta.url,
   );
   const migration = readFileSync(migrationPath, "utf8");

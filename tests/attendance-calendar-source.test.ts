@@ -291,7 +291,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(monthlySummarySource, /attendanceMonthlyCycleNote/);
   assert.match(monthlySummaryExportSource, /attendanceMonthlyCycleNote/);
 
-  const a3AllTimeMigrationSource = readFileSync("supabase/migrations/20260615082501_a3_office_calendar_all_time.sql", "utf8");
+  const a3AllTimeMigrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260615082501_a3_office_calendar_all_time.sql", "utf8");
   assert.match(a3AllTimeMigrationSource, /date '1900-01-01'/, "A-3 custom office policy must be all-time, not June-only");
 
   const calendarPageSource = readFileSync("app/(admin)/hr-calendar/page.tsx", "utf8");

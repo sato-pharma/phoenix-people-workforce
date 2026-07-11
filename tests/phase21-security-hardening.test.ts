@@ -8,11 +8,11 @@ export function runPhase21SecurityHardeningTests() {
   const emailReplyRoute = readFileSync("app/api/admin/email-reply/send/route.ts", "utf8");
   const probationRoute = readFileSync("app/api/probation/route.ts", "utf8");
   const probationWorkflowRoute = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
-  const publicViewsMigration = readFileSync("supabase/migrations/20260527150831_secure_public_views_security_invoker.sql", "utf8");
-  const criticalRlsMigration = readFileSync("supabase/migrations/20260527152621_critical_public_rls_closure.sql", "utf8");
-  const triggerExecuteMigration = readFileSync("supabase/migrations/20260527153731_revoke_terminal_vacancy_trigger_execute.sql", "utf8");
-  const remainingAdvisorMigration = readFileSync("supabase/migrations/20260527154608_harden_remaining_supabase_advisors.sql", "utf8");
-  const performanceAdvisorMigration = readFileSync("supabase/migrations/20260527155803_cleanup_supabase_performance_advisors.sql", "utf8");
+  const publicViewsMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527150831_secure_public_views_security_invoker.sql", "utf8");
+  const criticalRlsMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527152621_critical_public_rls_closure.sql", "utf8");
+  const triggerExecuteMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527153731_revoke_terminal_vacancy_trigger_execute.sql", "utf8");
+  const remainingAdvisorMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527154608_harden_remaining_supabase_advisors.sql", "utf8");
+  const performanceAdvisorMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527155803_cleanup_supabase_performance_advisors.sql", "utf8");
   const seedFile = readFileSync("supabase/seed.sql", "utf8");
   const gitignore = readFileSync(".gitignore", "utf8");
   const githubSecretsExample = readFileSync(".env.github-secrets.example", "utf8");

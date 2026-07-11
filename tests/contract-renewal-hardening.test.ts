@@ -23,7 +23,7 @@ export function runContractRenewalHardeningTests() {
   assert.match(service, /action === "cancel"/);
   assert.doesNotMatch(service, /action === "reopen"/);
 
-  const migration = readFileSync("supabase/migrations/20260517035419_contract_renewal_stabilization.sql", "utf8");
+  const migration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260517035419_contract_renewal_stabilization.sql", "utf8");
   assert.match(migration, /create or replace function public\.phx_create_contract_renewal_request/);
   assert.match(migration, /create or replace function public\.phx_apply_contract_renewal_workflow/);
   assert.match(migration, /contract_renewal_requests_one_active_idx/);

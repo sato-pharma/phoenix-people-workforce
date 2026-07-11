@@ -14,43 +14,43 @@ const navigationSource = readFileSync(
   "utf8",
 );
 const migrationSource = readFileSync(
-  new URL("../supabase/migrations/20260517040154_v2_vacation_management.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260517040154_v2_vacation_management.sql", import.meta.url),
   "utf8",
 );
 const policyMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260519203733_vacation_request_policy_updates.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260519203733_vacation_request_policy_updates.sql", import.meta.url),
   "utf8",
 );
 const hrFinalDecisionMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260521093411_vacation_hr_final_decision_policy_warnings.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260521093411_vacation_hr_final_decision_policy_warnings.sql", import.meta.url),
   "utf8",
 );
 const weeklyOffControlMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260521105458_vacation_weekly_off_control.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260521105458_vacation_weekly_off_control.sql", import.meta.url),
   "utf8",
 );
 const compensatoryMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260521114136_vacation_compensatory_day.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260521114136_vacation_compensatory_day.sql", import.meta.url),
   "utf8",
 );
 const partialPaidMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260521115439_vacation_partial_paid_balance.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260521115439_vacation_partial_paid_balance.sql", import.meta.url),
   "utf8",
 );
 const integrityMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260523220000_vacation_integrity_hardening.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260523220000_vacation_integrity_hardening.sql", import.meta.url),
   "utf8",
 );
 const governanceMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260531172108_vacation_enterprise_governance.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260531172108_vacation_enterprise_governance.sql", import.meta.url),
   "utf8",
 );
 const complianceMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260531202329_vacation_leave_governance_compliance.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260531202329_vacation_leave_governance_compliance.sql", import.meta.url),
   "utf8",
 );
 const parallelApprovalMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260606091523_vacation_parallel_approval_steps.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260606091523_vacation_parallel_approval_steps.sql", import.meta.url),
   "utf8",
 );
 const typesSource = readFileSync(

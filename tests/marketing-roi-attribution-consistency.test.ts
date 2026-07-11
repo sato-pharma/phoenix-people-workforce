@@ -12,7 +12,7 @@ const FALLBACK_CTE_RE = /\b(fallback_bricks|fallback_hits)\s+as\b/i;
 const BRICK_JOIN_RE = /\br\.brick_id\s*=\s*(fb|tp)\.brick_id\b/i;
 
 function migrationsDirUrl() {
-  return new URL("../supabase/migrations/", import.meta.url);
+  return new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
 }
 
 function allMigrationFiles(): string[] {

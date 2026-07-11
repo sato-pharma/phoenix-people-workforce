@@ -13,8 +13,8 @@ function readSource(rel: string): string {
 // this pins the exact (parameter -> column) pairing for every filter param so a future
 // edit that breaks the pairing fails this test instead of shipping silently.
 export function runAnalyticsFilterIndependenceTests() {
-  const helpers = readSource("../supabase/migrations/20260625156000_analytics_rpc_helpers.sql");
-  const filtersV2 = readSource("../supabase/migrations/20260625160000_analytics_rpc_filters_v2.sql");
+  const helpers = readSource("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260625156000_analytics_rpc_helpers.sql");
+  const filtersV2 = readSource("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260625160000_analytics_rpc_filters_v2.sql");
   const combined = `${helpers}\n${filtersV2}`;
 
   // (sql file content, [parameter, column it must — and only it must — constrain])

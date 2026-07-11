@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export function runWeeklyPlansDriftCheckTests() {
   const driftSrc = readFileSync("src/lib/weekly-planning/drift-check.ts", "utf8");
   const migrationSrc = readFileSync(
-    "supabase/migrations/20260617120000_weekly_plans_drift_rpc.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260617120000_weekly_plans_drift_rpc.sql",
     "utf8",
   );
   const dailySrc = readFileSync("app/api/notifications/daily/route.ts", "utf8");

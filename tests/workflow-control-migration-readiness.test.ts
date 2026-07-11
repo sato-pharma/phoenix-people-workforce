@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
 
 export function runWorkflowControlMigrationReadinessTests() {
-  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const migrationsDir = new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
   const all = readdirSync(migrationsDir);
   const wc = all.filter((n) => /workflow_control_phase3/.test(n));
   assert.equal(wc.length, 1, "exactly one workflow_control_phase3 migration draft exists");

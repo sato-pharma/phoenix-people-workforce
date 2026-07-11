@@ -20,7 +20,7 @@ export function runEmailFollowupsTests() {
 
   // --- W1: migration guard (source-pattern) ----------------------------------------
   const migration = readFileSync(
-    "supabase/migrations/20260609000000_notification_outbox_add_skipped_status.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260609000000_notification_outbox_add_skipped_status.sql",
     "utf8",
   );
   assert.match(migration, /information_schema\.columns/, "migration must guard on column existence");

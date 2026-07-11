@@ -60,9 +60,9 @@ export function runWeeklyMonthlyPlansV1Tests() {
 
   const serviceSource = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   const telegramSource = readFileSync("src/lib/notifications/telegram.ts", "utf8");
-  const migrationSource = readFileSync("supabase/migrations/20260606125715_weekly_monthly_plans_v1.sql", "utf8");
-  const calendarAuthRemovalMigrationSource = readFileSync("supabase/migrations/20260607120000_remove_weekly_plan_google_calendar_auth.sql", "utf8");
-  const followUpMigrationSource = readFileSync("supabase/migrations/20260606133000_employee_plan_followup_enhancements.sql", "utf8");
+  const migrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260606125715_weekly_monthly_plans_v1.sql", "utf8");
+  const calendarAuthRemovalMigrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260607120000_remove_weekly_plan_google_calendar_auth.sql", "utf8");
+  const followUpMigrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260606133000_employee_plan_followup_enhancements.sql", "utf8");
   const pageSource = readFileSync("app/employee-portals/plans/page.tsx", "utf8");
   const navSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   const accessRegistrySource = readFileSync("src/lib/security/access-registry.ts", "utf8");

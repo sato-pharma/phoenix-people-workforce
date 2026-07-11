@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 const MIGRATION_PATH =
-  "supabase/migrations/20260531120000_contract_non_renewal_terminal_lifecycle.sql";
+  "supabase/_migrations_archive/pre-baseline-2026-07-11/20260531120000_contract_non_renewal_terminal_lifecycle.sql";
 
 const FORBIDDEN_PROD_PROJECT_REF = "ozucdzovmcqvepbozvqf";
 

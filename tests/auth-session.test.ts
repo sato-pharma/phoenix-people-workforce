@@ -251,7 +251,7 @@ export async function runAuthSessionTests() {
     "utf8",
   );
   const migrationSource = readFileSync(
-    new URL("../supabase/migrations/20260601195242_auth_session_hardening.sql", import.meta.url),
+    new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260601195242_auth_session_hardening.sql", import.meta.url),
     "utf8",
   );
 

@@ -117,7 +117,7 @@ export function runWorkflowControlGovernanceTests() {
   }
 
   // At most one Phase 3 workflow_control migration draft on disk.
-  const migrations = readdirSync(new URL("../supabase/migrations/", import.meta.url));
+  const migrations = readdirSync(new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url));
   const wc = migrations.filter((n) => /workflow_control_phase3/.test(n));
   assert.ok(wc.length <= 1, "at most one workflow_control_phase3 migration draft");
   for (const file of wc) {

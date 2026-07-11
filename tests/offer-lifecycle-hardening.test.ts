@@ -6,8 +6,8 @@ function source(path: string) {
 }
 
 export function runOfferLifecycleHardeningTests() {
-  const migration = source("supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql");
-  const completionMigration = source("supabase/migrations/20260601175811_offer_lifecycle_10_10_completion.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql");
+  const completionMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260601175811_offer_lifecycle_10_10_completion.sql");
   assert.match(migration, /create schema if not exists private/i);
   assert.match(migration, /private\.phx_approve_accepted_offer_v2/i);
   assert.match(migration, /security definer/i);

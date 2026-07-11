@@ -8,11 +8,11 @@ const importSource = readFileSync(
   "utf8",
 );
 const backfillSource = readFileSync(
-  new URL("../supabase/migrations/20260611141000_sos_invoice_date_backfill.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260611141000_sos_invoice_date_backfill.sql", import.meta.url),
   "utf8",
 );
 const columnSource = readFileSync(
-  new URL("../supabase/migrations/20260611140000_sos_invoice_date.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260611140000_sos_invoice_date.sql", import.meta.url),
   "utf8",
 );
 

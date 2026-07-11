@@ -200,7 +200,7 @@ export function runModulesControlTests() {
     "Admin-shell employee workspace routes are registered",
   );
 
-  const migration = readFileSync("supabase/migrations/20260619000713_modules_control_sidebar_assignments.sql", "utf8");
+  const migration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260619000713_modules_control_sidebar_assignments.sql", "utf8");
   assert.match(migration, /create table if not exists public\.sidebar_module_assignments/);
   assert.match(migration, /enable row level security/);
   assert.match(migration, /revoke all on table public\.sidebar_module_assignments from anon, authenticated/);

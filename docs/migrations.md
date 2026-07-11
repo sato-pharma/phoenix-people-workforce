@@ -1,11 +1,26 @@
 # Migration Policy
 
+## Baseline Model (post 2026-07-11)
+
+On 2026-07-11, migration history before `20260711135352` was superseded by a single
+baseline-snapshot migration (`20260711135352_phoenix_production_schema_baseline.sql`) capturing
+production's verified live schema. The prior 450 files live in
+`supabase/_migrations_archive/pre-baseline-2026-07-11/` for historical reference only — they are
+not part of the automated migration pipeline and must never be re-applied or re-timestamped. See
+the `README.md` and `production-only-versions.md` in that folder for why this was necessary
+(production's applied history had drifted from what was committed to the repo) and what to do if
+you believe an archived file represents still-needed work.
+
+A brand-new project now bootstraps from the baseline file (plus
+`20260711134651_bootstrap_custom_infra_roles.sql`, which it depends on) plus anything committed
+after them. All guidance below applies to migrations written from this point forward.
+
 ## File Location
 
 All database migrations live in supabase/migrations/ with timestamped filenames:
 YYYYMMDDHHMMSS_description.sql
 
-The supabase/ root also contains historical hardening scripts and operational patches. These are reference material, not part of the automated migration pipeline.
+The supabase/ root also contains historical hardening scripts and operational patches. These are reference material, not part of the automated migration pipeline (same principle as the pre-baseline archive above — kept for reference, never re-applied).
 
 ## Creating Migrations
 
@@ -30,7 +45,9 @@ The repository includes a phased migration validation pipeline (phase25 through 
 
 - Each migration should be designed to be rollback-safe where possible
 - Document rollback SQL in comments or companion files
-- For complex migrations, create a backup migration first (see 20260512235939_backup_leave_domain_before_rebuild.sql as an example)
+- For complex migrations, create a backup migration first (see the archived
+  `20260512235939_backup_leave_domain_before_rebuild.sql` under
+  `supabase/_migrations_archive/pre-baseline-2026-07-11/` as an example of the pattern)
 
 ## Loose SQL Files
 

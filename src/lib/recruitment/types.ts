@@ -3,8 +3,8 @@
 // The status/stage/action constants below are the single source of truth shared
 // by the service layer, the DB CHECK constraints, and the workflow-registry seed.
 // Keep them in sync with:
-//   supabase/migrations/20260605014225_recruitment_phase1_schema.sql
-//   supabase/migrations/20260605014350_recruitment_workflow_registry_module.sql
+//   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014225_recruitment_phase1_schema.sql
+//   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014350_recruitment_workflow_registry_module.sql
 
 export const RECRUITMENT_MODULE_KEY = "recruitment" as const;
 

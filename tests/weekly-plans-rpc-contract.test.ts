@@ -6,7 +6,7 @@ function source(path: string) {
 }
 
 export function runWeeklyPlansRpcContractTests() {
-  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const migrationsDir = new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
   const migrations = readdirSync(migrationsDir);
   const atomicMigration = migrations.find((file) => /weekly_plans_atomic_rpcs\.sql$/.test(file));
   const itemMigration = migrations.find((file) => /weekly_plans_atomic_item_replace\.sql$/.test(file));

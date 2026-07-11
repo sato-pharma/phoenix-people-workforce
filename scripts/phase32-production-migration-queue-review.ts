@@ -1,3 +1,9 @@
+// RETIRED 2026-07-11: this script implemented a production-migration approval gate built
+// around one specific pre-baseline migration, which is now archived under
+// supabase/_migrations_archive/pre-baseline-2026-07-11/. That gate concept is superseded by
+// the baseline-snapshot model — see docs/migrations.md ("Baseline Model") for the current
+// approach. Left in place for history/reference; not part of the active migration pipeline.
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 

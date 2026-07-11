@@ -6,7 +6,7 @@ export function runStagingSafeRebuildTests() {
   const packageJson = readFileSync("package.json", "utf8");
   const gitignore = readFileSync(".gitignore", "utf8");
 
-  assert.match(script, /currentStagingRef = "oaifhavixhdtwmseshff"/);
+  assert.match(script, /currentStagingRef = "izhmxvgiktiafqusolot"/);
   assert.match(script, /productionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(script, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
   assert.match(script, /YES_STAGING_ONLY/);

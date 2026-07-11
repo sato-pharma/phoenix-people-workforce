@@ -8,7 +8,7 @@ function source(path: string) {
 
 export function runPositionVacancyStatusIntegrityTests() {
   // ── Migration carries the canonical enum + backfills + drops the dead table ──────
-  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const migrationsDir = new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
   const migrations = readdirSync(migrationsDir);
   const integrityMigration = migrations.find((file) =>
     /^20260616120000_/.test(file),
@@ -58,7 +58,7 @@ export function runPositionVacancyStatusIntegrityTests() {
 
   // ── Bootstrap migration retains the canonical CHECK definition (sanity) ──────────
   const bootstrap = source(
-    "supabase/migrations/20260501000000_phoenix_core_schema_bootstrap.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260501000000_phoenix_core_schema_bootstrap.sql",
   );
   assert.match(
     bootstrap,

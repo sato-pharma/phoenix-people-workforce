@@ -24,7 +24,13 @@ type CliResult = {
 
 const localEnvPath = ".env.staging.rls.local";
 const outputRoot = path.join("supabase-export", "staging-rebuild");
-const currentStagingRef = "oaifhavixhdtwmseshff";
+// 2026-07-11: staging moved again, to a new Pro-org project (cifwmndunmlxjhyjugxa) after this
+// ref's free-tier project hit its storage quota and went read-only during a full production
+// clone. This constant now points at that now-archived, no-longer-active project so the script's
+// "current" mode still resolves to a real project instead of the original oaifhavixhdtwmseshff
+// sandbox ref. The live staging target is tracked in AGENTS.md and .env.staging.rls.local, not here
+// — this script's current/new split is a historical rebuild tool, not the source of truth.
+const currentStagingRef = "izhmxvgiktiafqusolot";
 const productionRef = "ozucdzovmcqvepbozvqf";
 const executiveMigrationVersion = "20260602082351";
 const oldStagingArchiveConfirmName = "PHOENIX_CONFIRM_OLD_STAGING_ARCHIVE_ONLINE";

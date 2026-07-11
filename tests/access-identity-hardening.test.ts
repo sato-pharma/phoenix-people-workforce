@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const migrationSource = readFileSync(
-  new URL("../supabase/migrations/20260601221112_access_identity_integrity_hardening.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260601221112_access_identity_integrity_hardening.sql", import.meta.url),
   "utf8",
 );
 const accessControlSource = readFileSync(new URL("../src/lib/admin/access-control.ts", import.meta.url), "utf8");

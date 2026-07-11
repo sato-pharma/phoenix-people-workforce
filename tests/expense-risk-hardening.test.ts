@@ -62,7 +62,7 @@ export function runExpenseRiskHardeningTests() {
   assert.match(reportsRoute, /status:\s*409/);
   assert.match(reportsRoute, /"payroll_expense_lock_schema_not_ready"/);
 
-  const migration = source("supabase/migrations/20260527052440_outstation_expense_payroll_locks.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527052440_outstation_expense_payroll_locks.sql");
   assert.match(migration, /add column if not exists imported_payroll_batch_id uuid/i);
   assert.match(migration, /add column if not exists imported_to_payroll_at timestamptz/i);
   assert.match(migration, /payroll_expenses_imported_payroll_batch_id_fkey/i);
@@ -71,11 +71,11 @@ export function runExpenseRiskHardeningTests() {
   assert.match(migration, /'locked_expenses'/i);
   assert.match(migration, /migration_backfill/i);
 
-  const manualApprovalMigrationName = readdirSync("supabase/migrations").find((name) =>
+  const manualApprovalMigrationName = readdirSync("supabase/_migrations_archive/pre-baseline-2026-07-11").find((name) =>
     name.includes("manual_expense_approval_gate"),
   );
   assert.ok(manualApprovalMigrationName, "Manual expense approval gate migration must exist.");
-  const manualApprovalMigration = source(`supabase/migrations/${manualApprovalMigrationName}`);
+  const manualApprovalMigration = source(`supabase/_migrations_archive/pre-baseline-2026-07-11/${manualApprovalMigrationName}`);
   assert.match(manualApprovalMigration, /approved_at is not null/i);
   assert.match(manualApprovalMigration, /approved_by is not null/i);
   assert.match(manualApprovalMigration, /revoke all on function public\.phx_import_approved_expenses_to_payroll/i);

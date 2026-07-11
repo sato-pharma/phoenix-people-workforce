@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export function runPhase29ProductionMigrationPreapplyReviewTests() {
   const script = readFileSync("scripts/phase29-production-migration-preapply-review.ts", "utf8");
   const migration = readFileSync(
-    "supabase/migrations/20260519102840_phase28_production_schema_parity_readiness.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260519102840_phase28_production_schema_parity_readiness.sql",
     "utf8",
   );
 
