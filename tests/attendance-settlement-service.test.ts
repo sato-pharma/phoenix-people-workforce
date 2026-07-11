@@ -102,7 +102,7 @@ export function runAttendanceSettlementServiceTests() {
 
   // 7. The DB schema itself must enforce the same invariant the service
   //    assumes: one settlement row per digest line, ever.
-  const digestTables = readFileSync("supabase/migrations/20260703190000_attendance_weekly_digest_tables.sql", "utf8");
+  const digestTables = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260703190000_attendance_weekly_digest_tables.sql", "utf8");
   assert.match(
     digestTables,
     /digest_line_id\s+bigint\s+not null unique references public\.attendance_digest_lines\(id\)/,

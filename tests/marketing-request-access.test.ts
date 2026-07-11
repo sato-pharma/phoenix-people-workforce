@@ -36,7 +36,7 @@ function allowedRolesOf(actionObjectLine: string): string {
 
 export function runMarketingRequestAccessTests() {
   const liveModulesMigration = readFileSync(
-    "supabase/migrations/20260527091104_workflow_registry_live_modules.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260527091104_workflow_registry_live_modules.sql",
     "utf8",
   );
 

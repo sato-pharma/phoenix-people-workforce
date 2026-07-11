@@ -43,7 +43,7 @@ export function runMarketingBulkImportAtomicityTests() {
   assert.doesNotMatch(bulkImport, /expected_value:/, "product expected_value is GENERATED — must not be sent");
 
   // The migration that defines the RPC must exist with the right security posture.
-  const migrationDir = "supabase/migrations";
+  const migrationDir = "supabase/_migrations_archive/pre-baseline-2026-07-11";
   const migrationFile = readdirSync(migrationDir).find((name) =>
     name.includes("marketing_request_atomic_bulk_import"),
   );

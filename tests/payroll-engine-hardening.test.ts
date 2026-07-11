@@ -2,32 +2,32 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const migrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513100643_payroll_two_part_workflow.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513100643_payroll_two_part_workflow.sql", import.meta.url),
   "utf8",
 );
 
 const payrollTenMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513091853_payroll_engine_10_10_hardening.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513091853_payroll_engine_10_10_hardening.sql", import.meta.url),
   "utf8",
 );
 
 const payrollAdminDeleteMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513154219_payroll_admin_delete_uploads.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513154219_payroll_admin_delete_uploads.sql", import.meta.url),
   "utf8",
 );
 
 const payrollResignationCandidatesMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513180426_payroll_resignation_candidates.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513180426_payroll_resignation_candidates.sql", import.meta.url),
   "utf8",
 );
 
 const payrollMissingHrIdMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513182207_payroll_salary_records_allow_missing_employee_hr_ids.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513182207_payroll_salary_records_allow_missing_employee_hr_ids.sql", import.meta.url),
   "utf8",
 );
 
 const payslipUploadedSheetMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260513184233_payroll_payslip_uploaded_sheet_fields.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513184233_payroll_payslip_uploaded_sheet_fields.sql", import.meta.url),
   "utf8",
 );
 

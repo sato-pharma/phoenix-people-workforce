@@ -46,19 +46,19 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(payrollExpenses, /actionKey: "add_to_payroll"/);
   assert.match(payrollExpenses, /actionKey: "delete_before_payroll"/);
 
-  const retireRoleMigration = source("supabase/migrations/20260612042046_retire_hr_specialist_role.sql");
+  const retireRoleMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260612042046_retire_hr_specialist_role.sql");
   assert.match(retireRoleMigration, /module_key in \('recruitment', 'offers'\)/);
   assert.match(retireRoleMigration, /"Talent Acquisition"/);
   assert.match(retireRoleMigration, /where role_value <> to_jsonb\('HR Specialist'::text\)/);
 
-  const alignmentMigration = source("supabase/migrations/20260527085038_workflow_registry_runtime_alignment.sql");
+  const alignmentMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527085038_workflow_registry_runtime_alignment.sql");
   assert.match(alignmentMigration, /where module_key = 'outstation_expenses'/);
   assert.match(alignmentMigration, /where module_key = 'payroll_batches'/);
   assert.match(alignmentMigration, /"key":"mark_part1_ready"/);
   assert.match(alignmentMigration, /"key":"reopen"/);
   assert.match(alignmentMigration, /"key":"mark_review"/);
 
-  const liveModulesMigration = source("supabase/migrations/20260527091104_workflow_registry_live_modules.sql");
+  const liveModulesMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527091104_workflow_registry_live_modules.sql");
   for (const moduleKey of [
     "outstation_expenses",
     "leave_requests",

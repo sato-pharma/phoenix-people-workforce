@@ -11,7 +11,7 @@ function readSource(rel: string): string {
 // (phx_finalize_sos_batch) instead of 5+ separate round trips — so a failure partway through can
 // never leave the old good batch deleted and the new one incomplete.
 export function runSosAtomicFinalizeTests() {
-  const migration = readSource("../supabase/migrations/20260625180000_sos_atomic_finalize.sql");
+  const migration = readSource("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260625180000_sos_atomic_finalize.sql");
   assert.match(migration, /create or replace function public\.phx_finalize_sos_batch/,
     "atomic finalize function is defined");
   assert.match(migration, /pg_try_advisory_xact_lock\(hashtextextended\(p_distributor_code \|\| ':' \|\| p_period, 0\)\)/,

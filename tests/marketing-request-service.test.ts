@@ -607,7 +607,7 @@ export async function runMarketingRequestServiceTests() {
 
   // ROI actuals must match by exact CUSTOMER CODE ONLY — the brick/geography fallback was removed
   // (owner directive). This guards the live behaviour, so it reads the latest migration that defines it.
-  const roiMigration = source("supabase/migrations/20260620140000_marketing_roi_customer_code_only.sql");
+  const roiMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260620140000_marketing_roi_customer_code_only.sql");
   const marketingTypesSource = source("src/lib/marketing-requests/types.ts");
   // The ROI workspace was rebuilt as the filter-engine; attribution is now surfaced via the
   // per-row result status + attribution-gap reason rather than a standalone badge.
@@ -650,11 +650,11 @@ export async function runMarketingRequestServiceTests() {
   assert.match(source("app/api/marketing-requests/[id]/route.ts"), /getMarketingRequestDetail/, "request detail route must call the service");
 
   // Migration reshape tokens.
-  const chainMigration = source("supabase/migrations/20260606180000_marketing_workflow_chain_reshape.sql");
+  const chainMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260606180000_marketing_workflow_chain_reshape.sql");
   for (const token of ["step_kind", "chain_target_role", "cc_roles", "terminal_status", "allow_reject", "manager_chain", "sfe_validation", "marketing_review", "ceo_approval", "finance_execution"]) {
     assert.match(chainMigration, new RegExp(token), `chain reshape migration must define ${token}`);
   }
-  const sfeValidateMigration = source("supabase/migrations/20260621130000_marketing_chain_sfe_validate_no_finance.sql");
+  const sfeValidateMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260621130000_marketing_chain_sfe_validate_no_finance.sql");
   assert.match(
     sfeValidateMigration,
     /UPDATE marketing_request_approval_steps[\s\S]*allow_return = false[\s\S]*assigned_role = 'SFE Manager'[\s\S]*step_code = 'sfe_validation'/,

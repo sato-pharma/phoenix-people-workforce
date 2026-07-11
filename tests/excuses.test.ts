@@ -308,7 +308,7 @@ export async function runExcusesTests() {
     "portal Action Center must route employee-owned deep links to My requests",
   );
 
-  const migrationSource = readFileSync("supabase/migrations/20260624154818_excuse_returned_to_employee_status.sql", "utf8");
+  const migrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260624154818_excuse_returned_to_employee_status.sql", "utf8");
   assert.match(
     migrationSource,
     /returned_to_employee/,

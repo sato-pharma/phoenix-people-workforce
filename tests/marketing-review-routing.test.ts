@@ -100,7 +100,7 @@ export async function runMarketingReviewRoutingTests() {
   assert.match(draftsSource, /MarketingAdvisoryCommentBox/, "the request detail view renders the advisory comment box");
 
   // ── Migration: routing seed + finance re-point ──────────────────────────────────────────────
-  const migration = source("supabase/migrations/20260619130000_marketing_review_product_routing.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260619130000_marketing_review_product_routing.sql");
   assert.match(migration, /create table if not exists public\.marketing_review_routing/);
   for (const lineName of ["Anti Inf", "CNS", "Pedia"]) {
     assert.match(migration, new RegExp(`'${lineName}'`), `routing seeds the ${lineName} line`);

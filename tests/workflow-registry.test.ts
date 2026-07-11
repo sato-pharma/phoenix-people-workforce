@@ -6,7 +6,7 @@ function source(path: string) {
 }
 
 export function runWorkflowRegistryTests() {
-  const migration = source("supabase/migrations/20260527083111_workflow_registry.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527083111_workflow_registry.sql");
   const permissions = source("src/lib/auth/permissions.ts");
   const navigation = source("src/config/system-navigation.ts");
   const service = source("src/lib/workflow-registry/service.ts");

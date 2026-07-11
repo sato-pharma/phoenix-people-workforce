@@ -26,8 +26,8 @@ export function runUnifiedNotificationsTests() {
   const templatesSource = source("src/lib/notifications/templates.ts");
   const inAppSource = source("src/lib/notifications/in-app.ts");
   const bellSource = source("src/components/layout/in-app-notifications-bell.tsx");
-  const phase2Migration = source("supabase/migrations/20260605201000_notification_engine_phase2_center.sql");
-  const migration = source("supabase/migrations/20260605050234_unified_notification_engine_phase1.sql");
+  const phase2Migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605201000_notification_engine_phase2_center.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605050234_unified_notification_engine_phase1.sql");
   const recipientsSource = source("src/lib/notifications/recipients.ts");
   const configSource = source("src/config/system-settings.ts");
 

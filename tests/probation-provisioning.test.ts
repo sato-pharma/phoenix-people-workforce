@@ -29,6 +29,6 @@ export function runProbationProvisioningTests() {
   assert.match(provisioning, /from\("employees"\)[\s\S]*?probation_end_date/, "mirror employees.probation_end_date");
 
   // The tested hire RPC must NOT be modified to create probation (app-layer only).
-  const rpc = source("supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql");
+  const rpc = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql");
   assert.doesNotMatch(rpc, /employee_probation/i, "hire RPC must not create probation");
 }

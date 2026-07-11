@@ -10,7 +10,7 @@ type SupersededBatch = {
   status: unknown;
 };
 
-// Calls phx_finalize_sos_batch (supabase/migrations/20260625180000_sos_atomic_finalize.sql), the
+// Calls phx_finalize_sos_batch (supabase/_migrations_archive/pre-baseline-2026-07-11/20260625180000_sos_atomic_finalize.sql), the
 // single atomic transaction that supersedes any other batch for this distributor + period,
 // promotes this batch to validated, and refreshes every dependent rollup — then audit-logs
 // whatever the RPC superseded. The RPC itself, not this function, is what makes the supersede +

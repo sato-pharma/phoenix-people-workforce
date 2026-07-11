@@ -132,7 +132,7 @@ export function runWorkflowControlApiRoutesTests() {
   assert.equal(/\bfetch\s*\(/.test(editorSrc), false, "draft editor must not call fetch() yet");
 
   // The migration is still draft-only (single file).
-  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const migrationsDir = new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
   const wc = readdirSync(migrationsDir).filter((n) => /workflow_control_phase3/.test(n));
   assert.equal(wc.length, 1, "exactly one workflow_control_phase3 migration draft on disk");
 }

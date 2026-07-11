@@ -14,7 +14,7 @@ const templateServiceSource = readFileSync(
   "utf8",
 );
 const coachingEmailMigrationSource = readFileSync(
-  new URL("../supabase/migrations/20260619153900_coaching_report_email_score_table.sql", import.meta.url),
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260619153900_coaching_report_email_score_table.sql", import.meta.url),
   "utf8",
 );
 

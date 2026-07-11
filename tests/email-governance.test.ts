@@ -270,19 +270,19 @@ export async function runEmailGovernanceTests() {
   assert.match(composerSendRouteSource, /resolveComposerRecipients/);
   assert.match(composerSendRouteSource, /recordManualEmailSendAudit/);
 
-  const migration = readFileSync("supabase/migrations/20260531110416_email_template_governance_history.sql", "utf8");
+  const migration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531110416_email_template_governance_history.sql", "utf8");
   assert.match(migration, /create table if not exists public\.email_template_history/);
   assert.match(migration, /enable row level security/);
   assert.match(migration, /revoke all on public\.email_template_history from anon, authenticated/);
   assert.match(migration, /to service_role/);
 
-  const manualAuditMigration = readFileSync("supabase/migrations/20260531130610_manual_email_send_audit.sql", "utf8");
+  const manualAuditMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531130610_manual_email_send_audit.sql", "utf8");
   assert.match(manualAuditMigration, /create table if not exists public\.manual_email_send_audit/);
   assert.match(manualAuditMigration, /enable row level security/);
   assert.match(manualAuditMigration, /revoke all on public\.manual_email_send_audit from anon, authenticated/);
   assert.match(manualAuditMigration, /to service_role/);
 
-  const designerUpgradeMigration = readFileSync("supabase/migrations/20260531164447_email_template_designer_upgrades.sql", "utf8");
+  const designerUpgradeMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531164447_email_template_designer_upgrades.sql", "utf8");
   assert.match(designerUpgradeMigration, /create table if not exists public\.email_template_drafts/);
   assert.match(designerUpgradeMigration, /enable row level security/);
   assert.match(designerUpgradeMigration, /revoke all on public\.email_template_drafts from anon, authenticated/);

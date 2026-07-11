@@ -122,7 +122,7 @@ export function runWorkforceLifecycleSeatTests() {
   assert.doesNotMatch(offerSource, /await closeVacancyForOffer\(\{[\s\S]*vacancy_id: offer\.vacancy_id/);
   assert.match(offerSource, /manager_name\?: string \| null/);
   assert.match(offerSource, /normalizeManagerName\(vacancy\.manager_name\) === resolvedManagerName/);
-  const offerHardeningMigration = readFileSync("supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql", "utf8");
+  const offerHardeningMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql", "utf8");
   assert.match(offerHardeningMigration, /filled_by_hr_id = v_employee_hr_id/);
   assert.match(offerHardeningMigration, /replacement_for_hr_id = null/);
 

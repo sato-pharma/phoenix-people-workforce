@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export function runPhase32ProductionMigrationQueueReviewTests() {
   const script = readFileSync("scripts/phase32-production-migration-queue-review.ts", "utf8");
   const phase21 = readFileSync(
-    "supabase/migrations/20260518232733_phase21_security_access_governance_hardening.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260518232733_phase21_security_access_governance_hardening.sql",
     "utf8",
   );
 

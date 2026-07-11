@@ -6,7 +6,7 @@ function read(rel: string): string {
 }
 
 export function runCustomerDirectoryRollupTests() {
-  const migration = read("../supabase/migrations/20260621260000_customer_directory_rollup.sql");
+  const migration = read("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260621260000_customer_directory_rollup.sql");
   assert.match(
     migration,
     /create table if not exists public\.source_of_sales_customer_directory_rollup/,

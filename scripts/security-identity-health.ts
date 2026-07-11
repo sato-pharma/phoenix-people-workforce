@@ -1,8 +1,14 @@
+// RETIRED 2026-07-11: this script implemented a production-migration approval gate built
+// around one specific pre-baseline migration, which is now archived under
+// supabase/_migrations_archive/pre-baseline-2026-07-11/. That gate concept is superseded by
+// the baseline-snapshot model — see docs/migrations.md ("Baseline Model") for the current
+// approach. Left in place for history/reference; not part of the active migration pipeline.
+
 import { readFileSync } from "node:fs";
 
 import { createSecurityPreflightResult, type SecurityPreflightResult } from "../src/lib/security/access-registry.ts";
 
-const migration = readFileSync("supabase/migrations/20260601221112_access_identity_integrity_hardening.sql", "utf8");
+const migration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260601221112_access_identity_integrity_hardening.sql", "utf8");
 const requiredPatterns = [
   /user_access_profiles_active_auth_user_uidx/i,
   /user_access_profiles_active_login_id_uidx/i,

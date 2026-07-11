@@ -523,7 +523,7 @@ export function runOrganogramHardeningTests() {
   const vacancyReportSource = readFileSync("src/lib/reports/vacancies.ts", "utf8");
   const resignationServiceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
   const terminalVacancyGuardMigration = readFileSync(
-    "supabase/migrations/20260527064308_terminal_employee_vacancy_guard.sql",
+    "supabase/_migrations_archive/pre-baseline-2026-07-11/20260527064308_terminal_employee_vacancy_guard.sql",
     "utf8",
   );
 

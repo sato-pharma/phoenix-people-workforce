@@ -31,7 +31,7 @@ export function runLoginBridgeResyncHardeningTests() {
   );
 
   // The one-time re-sync migration exists and is scoped + reversible.
-  const migrationDir = "supabase/migrations";
+  const migrationDir = "supabase/_migrations_archive/pre-baseline-2026-07-11";
   const migrationFile = readdirSync(migrationDir).find((name) =>
     name.includes("resync_gotrue_password_hashes"),
   );

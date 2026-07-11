@@ -47,7 +47,7 @@ export function runVacationPaidApprovalAtomicTests() {
   }
 
   // ---- Migration shape: lock + CAS + period sum + split + server-only grant. ----
-  const migration = source("supabase/migrations/20260615080500_vacation_paid_approval_atomic.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260615080500_vacation_paid_approval_atomic.sql");
   assert.match(migration, /create or replace function public\.phx_apply_vacation_paid_approval/);
   assert.match(migration, /security definer/);
   assert.match(migration, /pg_advisory_xact_lock\(hashtext\(lower\(v_employee_hr_id\)\)\)/);

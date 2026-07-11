@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const migrationSource = readFileSync("supabase/migrations/20260518203241_phase16_production_schema_gap_burndown.sql", "utf8");
-const terminalRpcMigrationSource = readFileSync("supabase/migrations/20260518204301_phase16_terminal_flag_rpc_repair.sql", "utf8");
-const terminalRestoreDropSource = readFileSync("supabase/migrations/20260518204724_phase16_drop_terminal_visibility_restore.sql", "utf8");
+const migrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260518203241_phase16_production_schema_gap_burndown.sql", "utf8");
+const terminalRpcMigrationSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260518204301_phase16_terminal_flag_rpc_repair.sql", "utf8");
+const terminalRestoreDropSource = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260518204724_phase16_drop_terminal_visibility_restore.sql", "utf8");
 const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
 const auditSource = readFileSync("src/lib/admin/audit.ts", "utf8");
 const phase16SmokeSource = readFileSync("scripts/phase16-disposable-fixture-smoke.ts", "utf8");

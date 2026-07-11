@@ -25,7 +25,7 @@ export function runSalesRoiBatchDedupTests() {
 
   // ── Migration keystone: the partial unique index must exist with the exact dedup predicate ─────
   const migrationPath = fileURLToPath(
-    new URL("../supabase/migrations/20260620120000_sales_one_validated_batch_per_period.sql", import.meta.url),
+    new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260620120000_sales_one_validated_batch_per_period.sql", import.meta.url),
   );
   const sql = readFileSync(migrationPath, "utf8").toLowerCase();
   assert.ok(

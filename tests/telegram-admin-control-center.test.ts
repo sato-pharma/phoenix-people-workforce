@@ -6,7 +6,7 @@ function source(path: string) {
 }
 
 export function runTelegramAdminControlCenterTests() {
-  const migration = source("supabase/migrations/20260605114952_telegram_admin_control_center.sql");
+  const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605114952_telegram_admin_control_center.sql");
   const governance = source("src/lib/notifications/telegram-governance.ts");
   const adminService = source("src/lib/notifications/telegram-admin.ts");
   const templateService = source("src/lib/notifications/telegram-templates.ts");

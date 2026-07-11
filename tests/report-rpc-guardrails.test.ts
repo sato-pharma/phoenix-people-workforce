@@ -16,7 +16,7 @@ function source(path: string) {
 export function runReportRpcGuardrailTests() {
   // ── (a) statement_timeout regression guards ──────────────────────────────────────────────
   // The ROI attribution RPCs get their 45s via a dedicated ALTER migration.
-  const roiTimeout = source("supabase/migrations/20260622100000_marketing_roi_rpc_statement_timeout.sql");
+  const roiTimeout = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260622100000_marketing_roi_rpc_statement_timeout.sql");
   for (const rpc of [
     "phx_marketing_request_roi_actuals_v2",
     "phx_marketing_request_roi_actuals",
@@ -30,7 +30,7 @@ export function runReportRpcGuardrailTests() {
   }
 
   // The remaining live report RPCs (vacation report + monthly closing + the ROI "as-of" badge).
-  const followups = source("supabase/migrations/20260622130000_report_rpc_statement_timeout_followups.sql");
+  const followups = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260622130000_report_rpc_statement_timeout_followups.sql");
   for (const rpc of [
     "phx_vacation_report_rows",
     "phx_monthly_closing_matrix",
@@ -46,19 +46,19 @@ export function runReportRpcGuardrailTests() {
 
   // The executive-report timeout/perf migration must not silently lose its timeout config.
   assert.match(
-    source("supabase/migrations/20260608010000_exec_report_rpc_timeout_and_perf.sql"),
+    source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260608010000_exec_report_rpc_timeout_and_perf.sql"),
     /set statement_timeout/i,
     "the executive-report timeout/perf migration must keep its statement_timeout",
   );
 
   // ── (b) ROI region is brick-authoritative, never the requester ──────────────────────────
   assert.match(
-    source("supabase/migrations/20260620140000_marketing_roi_customer_code_only.sql"),
+    source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260620140000_marketing_roi_customer_code_only.sql"),
     /source_of_sales_customer_map/,
     "ROI dashboard region must come from the customer map (brick), not be inferred",
   );
   assert.match(
-    source("supabase/migrations/20260621230000_marketing_roi_dashboard_line_from_requester.sql"),
+    source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260621230000_marketing_roi_dashboard_line_from_requester.sql"),
     /region must never come from the requester|brick is the authoritative geography/i,
     "the locked brick-authoritative region rule must stay documented (it was nearly removed)",
   );

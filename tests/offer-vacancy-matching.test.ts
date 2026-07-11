@@ -86,7 +86,7 @@ export function runOfferVacancyMatchingTests() {
 
   // -- Wiring: offer approval is now handled atomically in SQL and must use department-safe vacancy matching.
   const hardeningMigration = readFileSync(
-    new URL("../supabase/migrations/20260531235753_offer_lifecycle_10_10_hardening.sql", import.meta.url),
+    new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql", import.meta.url),
     "utf8",
   );
   assert.match(hardeningMigration, /pv\.department_id = v_offer\.department_id/, "offer approval must match vacancy department");
