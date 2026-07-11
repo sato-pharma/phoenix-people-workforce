@@ -47,14 +47,35 @@ export function runTelegramHardeningTests() {
   // ── Module governance: unknown modules FAIL SAFE (disabled), sensitive ones gated ──
   assert.equal(defaultTelegramPolicyFor("totally_unknown_module_xyz").enabled, false, "Unknown module must default to disabled");
   assert.equal(defaultTelegramPolicyFor("offers").enabled, false, "offers must be disabled by default (sensitive)");
-  assert.equal(defaultTelegramPolicyFor("deductions").enabled, false, "deductions must be disabled by default (sensitive)");
+  // "deductions" has no real caller (verified 2026-07-11: no createSystemNotification call in
+  // the codebase uses this module string) and was removed from the default list; it still
+  // resolves disabled via the unknown-module fail-safe, so this behavior is unchanged.
+  assert.equal(defaultTelegramPolicyFor("deductions").enabled, false, "deductions falls through to the fail-safe default (no real caller, entry removed)");
   assert.equal(defaultTelegramPolicyFor("coaching").genericOnly, true, "coaching must be generic-only");
   assert.equal(defaultTelegramPolicyFor("resignations").enabled, false, "resignations stay disabled (unchanged)");
   assert.equal(defaultTelegramPolicyFor("payroll").genericOnly, true, "payroll stays generic-only (unchanged)");
-  // The newly-added modules are present in the default policy list.
+  // Regression guard (2026-07-11 audit): the real module string every birthday
+  // createSystemNotification call uses is singular "birthday" (app/api/notifications/birthdays/route.ts),
+  // not plural "birthdays" — the old policy entry never matched a real send.
+  assert.equal(defaultTelegramPolicyFor("birthday").enabled, true, "birthday (singular, the real module string) must be enabled");
+  // attendance and field_workforce_compliance are real, live Telegram senders (verified via
+  // createSystemNotification call sites in src/lib/attendance/ and
+  // src/lib/field-workforce-compliance/) that previously had NO policy row at all, so they
+  // fail-closed by the unknown-module safety net regardless of any template card.
+  assert.equal(defaultTelegramPolicyFor("attendance").enabled, true, "attendance must have an explicit enabled policy");
+  assert.equal(defaultTelegramPolicyFor("field_workforce_compliance").enabled, true, "field_workforce_compliance must have an explicit enabled policy");
+  // The modules with real live callers are present in the default policy list.
   const moduleNames = new Set(defaultTelegramModulePolicies().map((policy) => policy.module));
-  for (const expected of ["offers", "deductions", "coaching", "coaching_report", "outstation", "weekly_plans", "birthdays", "anniversary"]) {
+  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance"]) {
     assert.ok(moduleNames.has(expected), `default policies should include ${expected}`);
+  }
+  // Orphaned entries with zero real callers under ANY spelling (verified by grepping every
+  // createSystemNotification call site) must not linger — they only make future audits slower.
+  // NOTE: "excuses" (plural) is also a zero-caller orphan by that same test, but
+  // tests/excuses.test.ts explicitly pins it as deliberate defensive coverage from a prior
+  // session, so it is intentionally NOT in this removal list.
+  for (const removed of ["payslip", "payslips", "contracts", "leave", "deductions", "coaching_report", "anniversary", "birthdays"]) {
+    assert.ok(!moduleNames.has(removed), `orphaned policy "${removed}" must be removed (no real caller uses this exact module string)`);
   }
 
   // ── Centralised payslip redaction string ───────────────────────────────────────

@@ -1,4 +1,5 @@
 import { isProductionRuntime } from "@/config/system-settings";
+import { telegramEnvironmentStatus } from "@/lib/notifications/telegram";
 
 // Non-fatal notification-config drift detection.
 //
@@ -24,9 +25,39 @@ export const NOTIFICATION_DRIFT_ENV = [
   "RESEND_WEBHOOK_SECRET",
 ] as const;
 
-export function notificationConfigWarnings(): string[] {
+function unsetInProduction(names: readonly string[]) {
   if (!isProductionRuntime()) return [];
-  return NOTIFICATION_DRIFT_ENV.filter(
-    (name) => process.env[name] === undefined || process.env[name]?.trim() === "",
-  ).map((name) => `${name} is unset in production (notification drift — email may be silently disabled)`);
+  return names.filter((name) => process.env[name] === undefined || process.env[name]?.trim() === "");
+}
+
+// Same failure shape, Telegram side, read via the notifications module's own env-status
+// helper (this file must not read Telegram env vars directly — see
+// tests/unified-notifications.test.ts's "modules must not call Telegram directly" guard).
+// A missing bot token means sendTelegramNotification silently skips every send; a missing
+// webhook secret means the inbound webhook fails closed (500 on every update: replies,
+// connect/link /start commands) — the second of the two real failures on 2026-07-11,
+// alongside a charset bug in the same variable (fixed separately). Telegram's global enable
+// switch lives in the DB (notification_channel_settings), not an env var, so unlike
+// EMAIL_NOTIFICATIONS_ENABLED there is no legitimate "intentionally unset" reading here — a
+// missing bot token or webhook secret in production is always drift, pilot phase or not.
+function telegramDriftWarnings(): string[] {
+  if (!isProductionRuntime()) return [];
+  const status = telegramEnvironmentStatus();
+  const warnings: string[] = [];
+  if (!status.telegramBotToken) {
+    warnings.push("TELEGRAM_BOT_TOKEN is unset in production (notification drift — Telegram sends may be silently broken)");
+  }
+  if (!status.notificationWebhookSecret) {
+    warnings.push("NOTIFICATION_WEBHOOK_SECRET is unset in production (notification drift — Telegram sends/webhook may be silently broken)");
+  }
+  return warnings;
+}
+
+export function notificationConfigWarnings(): string[] {
+  return [
+    ...unsetInProduction(NOTIFICATION_DRIFT_ENV).map(
+      (name) => `${name} is unset in production (notification drift — email may be silently disabled)`,
+    ),
+    ...telegramDriftWarnings(),
+  ];
 }

@@ -114,13 +114,24 @@ export function runUnifiedNotificationsTests() {
   ].filter((file) => /\.(ts|tsx)$/.test(file));
 
   const forbidden = sourceFiles
-    .map((file) => ({ file, text: readFileSync(file, "utf8") }))
-    .filter(({ file }) => !relative(rootPath, file).replace(/\\/g, "/").startsWith("src/lib/notifications/"))
-    .filter(({ file }) => !relative(rootPath, file).replace(/\\/g, "/").startsWith("app/api/integrations/telegram/"))
-    .filter(({ text }) => /api\.telegram\.org|TELEGRAM_BOT_TOKEN/.test(text))
-    .map(({ file }) => relative(rootPath, file).replace(/\\/g, "/"));
+    .map((file) => ({ file: relative(rootPath, file).replace(/\\/g, "/"), text: readFileSync(file, "utf8") }))
+    .filter(({ file }) => !file.startsWith("src/lib/notifications/"))
+    .filter(({ file }) => !file.startsWith("app/api/integrations/telegram/"))
+    // Actually calling the Telegram HTTP API is forbidden everywhere else, no exceptions.
+    .filter(({ file, text }) => /api\.telegram\.org/.test(text) ||
+      // Reading TELEGRAM_BOT_TOKEN's presence (not its value, and not calling the API with
+      // it) is allowed for src/lib/observability/config-drift.ts's operator-facing drift
+      // warning — it only calls the notifications module's own telegramEnvironmentStatus()
+      // boolean helper, never touches process.env.TELEGRAM_BOT_TOKEN or the API directly.
+      (/TELEGRAM_BOT_TOKEN/.test(text) && file !== "src/lib/observability/config-drift.ts"))
+    .map(({ file }) => file);
 
   assert.deepEqual(forbidden, [], "modules must not call Telegram directly");
+  assert.match(
+    source("src/lib/observability/config-drift.ts"),
+    /telegramEnvironmentStatus/,
+    "the one allowed TELEGRAM_BOT_TOKEN mention outside notifications/ must go through the module's own boolean status helper, not a raw env read",
+  );
 
   const webhookSource = source("app/api/integrations/telegram/webhook/route.ts");
   assert.match(webhookSource, /x-telegram-bot-api-secret-token/i, "Telegram webhook must validate the secret token header");

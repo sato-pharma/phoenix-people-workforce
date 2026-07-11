@@ -17,17 +17,21 @@ export function runConfigDriftTests() {
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NOTIFICATION_EMAIL_FROM: process.env.NOTIFICATION_EMAIL_FROM,
     RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    NOTIFICATION_WEBHOOK_SECRET: process.env.NOTIFICATION_WEBHOOK_SECRET,
   };
   try {
     // Force production runtime via APP_ENV (isProductionRuntime prefers it).
     process.env.APP_ENV = "production";
     delete process.env.VERCEL_ENV;
 
-    // All four notification vars unset ⇒ all flagged.
+    // All six notification vars unset ⇒ all flagged.
     delete process.env.EMAIL_NOTIFICATIONS_ENABLED;
     delete process.env.RESEND_API_KEY;
     delete process.env.NOTIFICATION_EMAIL_FROM;
     delete process.env.RESEND_WEBHOOK_SECRET;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.NOTIFICATION_WEBHOOK_SECRET;
     let warnings = notificationConfigWarnings();
     assert.ok(
       warnings.some((w) => w.includes("EMAIL_NOTIFICATIONS_ENABLED")),
@@ -42,12 +46,24 @@ export function runConfigDriftTests() {
       warnings.some((w) => w.includes("RESEND_WEBHOOK_SECRET")),
       "prod + unset RESEND_WEBHOOK_SECRET must warn (the resend webhook 500s on every delivery-event callback without it)",
     );
+    assert.ok(
+      warnings.some((w) => w.includes("TELEGRAM_BOT_TOKEN")),
+      "prod + unset TELEGRAM_BOT_TOKEN must warn (every Telegram send silently skips without it)",
+    );
+    assert.ok(
+      warnings.some((w) => w.includes("NOTIFICATION_WEBHOOK_SECRET")),
+      "prod + unset NOTIFICATION_WEBHOOK_SECRET must warn (the inbound Telegram webhook 500s on every update without it)",
+    );
 
     // Explicit "false" is a legitimate pause switch, NOT drift ⇒ no warning for that var.
+    // Telegram has no such switch (its enable/disable lives in the DB), so both its vars
+    // must simply be present to clear.
     process.env.EMAIL_NOTIFICATIONS_ENABLED = "false";
     process.env.RESEND_API_KEY = "re_something";
     process.env.NOTIFICATION_EMAIL_FROM = "Phoenix HR <phoenix@send.satopharma.com>";
     process.env.RESEND_WEBHOOK_SECRET = "whsec_something";
+    process.env.TELEGRAM_BOT_TOKEN = "123:abc";
+    process.env.NOTIFICATION_WEBHOOK_SECRET = "some-secret";
     warnings = notificationConfigWarnings();
     assert.equal(warnings.length, 0, "explicit false / present vars ⇒ no drift warnings");
 
@@ -61,6 +77,8 @@ export function runConfigDriftTests() {
     delete process.env.RESEND_API_KEY;
     delete process.env.NOTIFICATION_EMAIL_FROM;
     delete process.env.RESEND_WEBHOOK_SECRET;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.NOTIFICATION_WEBHOOK_SECRET;
     assert.equal(notificationConfigWarnings().length, 0, "non-production must never warn");
   } finally {
     for (const [k, v] of Object.entries(saved)) {

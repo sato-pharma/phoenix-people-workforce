@@ -98,10 +98,20 @@ export function runTelegramTemplateManagementTests() {
   assert.match(service, /templateKey: "general_admin_test"/);
   assert.match(service, /eventType: "\*"/, "workflow templates must be module-wide");
   assert.match(service, /contentPlaceholders = \["title", "message"\]/, "templates must expose the event wording placeholders");
-  // Phantom cards that matched no live send are gone (birthday/anniversary/payroll).
-  assert.doesNotMatch(service, /templateKey: "birthday"/);
+  // Regression guard (2026-07-11 audit): "birthday" was long treated as a phantom card
+  // because the June audit found no matching governance policy — but the real bug was a
+  // module-name mismatch (governance said "birthdays", every real send uses singular
+  // "birthday"), not the absence of a caller. birthday now has both a fixed governance
+  // entry and a real card. anniversary/payslip remain genuine phantoms: no code anywhere
+  // sends a notification for either.
+  assert.match(service, /templateKey: "birthday"/, "birthday has a real live caller (app/api/notifications/birthdays/route.ts) and must have a card");
   assert.doesNotMatch(service, /templateKey: "anniversary"/);
   assert.doesNotMatch(service, /payslip_available/);
+  // Coverage added by the same audit: real live senders that previously fell back to
+  // hard-coded wording because no admin-editable card existed for their module.
+  for (const key of ["excuse", "recruitment", "internal_messages", "support_requests", "attendance", "field_workforce_compliance", "holiday_confirmation"]) {
+    assert.match(service, new RegExp(`templateKey: "${key}"`), `${key} must have a Telegram template card`);
+  }
   assert.match(service, /recipientName/);
   assert.match(service, /requesterName/);
   assert.match(service, /department/);

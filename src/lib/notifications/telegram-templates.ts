@@ -20,6 +20,14 @@ export type TelegramTemplateWorkflowKey =
   | "marketing_requests"
   | "contract_renewal"
   | "probation"
+  | "excuse"
+  | "recruitment"
+  | "internal_messages"
+  | "support_requests"
+  | "attendance"
+  | "field_workforce_compliance"
+  | "birthday"
+  | "holiday_confirmation"
   | "general_admin_test";
 
 export type TelegramTemplateButton = {
@@ -259,6 +267,158 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
       title: "Probation feedback required",
     },
     templateKey: "probation",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Excuse Telegram event (manager alert, employee decision, SLA reminders).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "excuse",
+    name: "Excuse",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/excuses",
+      message: "Module: Excuse\nAhmed Hassan submitted a Morning excuse for 2026-06-16.",
+      title: "Excuse request submitted",
+    },
+    templateKey: "excuse",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Recruitment Telegram event (interview scheduled/rescheduled/cancelled, reminders).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "recruitment",
+    name: "Recruitment",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/recruitment",
+      message: "Module: Recruitment\nHiring manager interview with Ahmed Hassan for Medical Representative — 16 Jun 2026, 10:30 AM.",
+      title: "Interview scheduled",
+    },
+    templateKey: "recruitment",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Internal Message Telegram event.
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "internal_messages",
+    name: "Internal Messages",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals",
+      message: "Module: Internal message\nOmar Nabil sent you a message: \"Please review the Q3 territory plan today.\"",
+      title: "New internal message",
+    },
+    templateKey: "internal_messages",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Support Request Telegram event (HR alerted when an employee opens a ticket).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "support_requests",
+    name: "Support Requests",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/contact-hr-support",
+      message: "Module: Support request\nAhmed Hassan opened a support ticket: \"Cannot access payslip for May.\"",
+      title: "New support request",
+    },
+    templateKey: "support_requests",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Attendance Telegram event other than the weekly
+    // digest itself (digest review, auto-confirm, disputes, plan/punch mismatches, missing-punch steps).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "attendance",
+    name: "Attendance",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/employee-portals/attendance",
+      message: "Module: Attendance\nAhmed Hassan disputed an attendance record for 2026-06-14: \"Late due to field visit approved by manager.\"",
+      title: "Attendance dispute submitted",
+    },
+    templateKey: "attendance",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches EVERY Field Workforce Compliance Telegram event (monthly digest).
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "field_workforce_compliance",
+    name: "Field Workforce Compliance",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/attendance/fingerprint-report",
+      message: "Module: Field workforce compliance\nMonthly compliance digest for Jun 2026 is ready for review.",
+      title: "Monthly compliance digest",
+    },
+    templateKey: "field_workforce_compliance",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches the daily Birthday Telegram event.
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "birthday",
+    name: "Birthday",
+    recommendedPlaceholders: ["title", "message"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      message: "Module: Birthday\nHappy birthday wishes for Ahmed Hassan.",
+      title: "Happy Birthday",
+    },
+    templateKey: "birthday",
+  },
+  {
+    allowedPlaceholders: [...globalPlaceholders],
+    defaultMessage: "{{message}}",
+    defaultTitle: "{{title}}",
+    // Module-wide template: "*" matches the National Holiday confirmation reminder Telegram event.
+    // {{title}}/{{message}} are filled per event by the workflow, so the default reproduces
+    // today's output exactly until the admin reshapes it.
+    eventType: "*",
+    module: "holiday_confirmation",
+    name: "Holiday Confirmation",
+    recommendedPlaceholders: ["title", "message", "actionUrl"],
+    sampleVariables: {
+      ...baseSampleVariables,
+      actionUrl: "/admin/attendance/holiday-calendar",
+      message: "Module: Holiday confirmation\nJune 30 Revolution Day is officially dated 2026-06-30 (in 5 days). Confirm the observed day off.",
+      title: "National holiday needs confirmation",
+    },
+    templateKey: "holiday_confirmation",
   },
   {
     allowedPlaceholders: [...globalPlaceholders],
