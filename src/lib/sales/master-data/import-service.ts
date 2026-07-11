@@ -16,6 +16,7 @@ import {
   type MasterDefinition,
   type MasterKey,
 } from "./definitions";
+import { selectAllRows } from "./list";
 
 export type MasterImportBlockedRow = { key: string; reason: string; row: number };
 
@@ -124,13 +125,11 @@ function matchAllowedValue(column: MasterColumn, value: string): string | undefi
 }
 
 async function preloadKeyed(table: string, keyColumn: string) {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from(table).select("*");
-  if (error) throw error;
+  const rows = await selectAllRows(table);
   const map = new Map<string, Record<string, unknown>>();
-  for (const row of data ?? []) {
-    const key = normalizeCode((row as Record<string, unknown>)[keyColumn]);
-    if (key) map.set(key, row as Record<string, unknown>);
+  for (const row of rows) {
+    const key = normalizeCode(row[keyColumn]);
+    if (key) map.set(key, row);
   }
   return map;
 }
