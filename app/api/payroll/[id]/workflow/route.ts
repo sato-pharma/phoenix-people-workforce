@@ -8,9 +8,59 @@ import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Payslips first become visible the moment a batch is approved (publishedPayslipStatuses in
+// payslip-center.ts / app/api/payroll/[id]/payslips/route.ts includes "approved" and "locked",
+// and "approve" is the transition that first enters that set). The "payroll.payslip_available"
+// notification type (src/lib/notifications/policy.ts) was defined but never fired anywhere —
+// employees had no signal their payslip was ready. Best-effort: a failure here must never block
+// the payroll workflow response, matching createSystemNotification's own non-throwing contract.
+async function notifyEmployeesPayslipAvailable(batchId: string) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("salary_records")
+      .select("hr_id")
+      .eq("batch_id", batchId);
+    if (error) throw error;
+
+    const hrIds = Array.from(
+      new Set((data ?? []).map((row) => String((row as { hr_id: string | null }).hr_id ?? "").trim()).filter(Boolean)),
+    );
+
+    await Promise.all(hrIds.map((hrId) => createSystemNotification({
+      actionUrl: "/payslips",
+      email: {
+        ctaHref: "/payslips",
+        ctaLabel: "View your payslip",
+        notificationType: "general",
+        subject: "Your payslip is ready",
+        summary: "Your payslip for this payroll period is now available to view.",
+        title: "Payslip Available",
+        tone: "success",
+      },
+      eventType: "payslip_available",
+      message: "Your payslip is now available to view.",
+      metadata: {
+        batchId,
+        idempotencyKey: `payroll-payslip-available:${batchId}:${hrId}`,
+        sensitivity: "payroll",
+      },
+      module: "payroll",
+      priority: "high",
+      recipientHrId: hrId,
+      recordId: batchId,
+      subjectHrId: hrId,
+      title: "Payslip Available",
+    })));
+  } catch (error) {
+    console.error("[payroll-workflow] failed to send payslip-available notifications", error);
+  }
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -92,6 +142,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       recordId: String(updated.id),
       title: "Payroll Workflow Updated",
     });
+
+    // Payslips first become visible to employees the moment a batch is approved (see the
+    // publishedPayslipStatuses gate in payslip-center.ts / app/api/payroll/[id]/payslips/route.ts).
+    // Notify each employee in the batch individually — this was previously a defined-but-never-fired
+    // notification type (payroll.payslip_available), so employees had no signal their payslip was ready.
+    if (action === "approve") {
+      await notifyEmployeesPayslipAvailable(updated.id);
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
