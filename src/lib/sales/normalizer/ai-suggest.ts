@@ -119,35 +119,61 @@ function isQuotaExhausted(rawBody: string): boolean {
   } catch { return false; }
 }
 
+// Transient per-minute rate limits (not the quota-exhausted case, which retrying never fixes)
+// clear on their own within a few seconds — retry automatically instead of forcing the user to
+// notice the failure and manually re-click "AI suggest" for every affected batch.
+const MAX_RATE_LIMIT_RETRIES = 3;
+// Base backoff delay (doubles each attempt: 1x, 2x, 4x). Read fresh on every call (not a
+// module-level constant) so it's overridable at runtime — the retry test suite sets this env var
+// before calling aiSuggest, so it doesn't have to burn real wall-clock time (1s+2s+4s = 7s)
+// waiting out production-realistic delays. A module-level constant would capture whatever the env
+// var was at import time, before any test had a chance to set it.
+function rateLimitRetryBaseMs(): number {
+  return Math.max(0, Number(process.env.AI_SUGGEST_RETRY_BASE_MS) || 1000);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
 // so the UI surfaces it instead of a misleading "no matches".
 async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<string> {
-  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-    body: JSON.stringify({
-      messages: [
-        { content: systemPrompt(kind), role: "system" },
-        { content: userPrompt(unknowns, candidates, kind, referenceAliases), role: "user" },
-      ],
-      model: provider.model,
-      response_format: { type: "json_object" },
-      temperature: 0,
-    }),
-    headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
-    method: "POST",
+  const body_ = JSON.stringify({
+    messages: [
+      { content: systemPrompt(kind), role: "system" },
+      { content: userPrompt(unknowns, candidates, kind, referenceAliases), role: "user" },
+    ],
+    model: provider.model,
+    response_format: { type: "json_object" },
+    temperature: 0,
   });
-  if (res.ok) {
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return json.choices?.[0]?.message?.content ?? "{}";
-  }
-  const body = await res.text().catch(() => "");
-  if (res.status === 429) {
-    if (isQuotaExhausted(body)) {
+
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      body: body_,
+      headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (res.ok) {
+      const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      return json.choices?.[0]?.message?.content ?? "{}";
+    }
+    const respBody = await res.text().catch(() => "");
+    if (res.status === 429 && !isQuotaExhausted(respBody)) {
+      if (attempt < MAX_RATE_LIMIT_RETRIES) {
+        // Exponential backoff with jitter: base, 2x base, 4x base (+ up to 250ms jitter).
+        await delay(2 ** attempt * rateLimitRetryBaseMs() + Math.floor(Math.random() * 250));
+        continue;
+      }
+      throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+    }
+    if (res.status === 429) {
       throw new Error("AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.");
     }
-    throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+    if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
+    throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(respBody)}`);
   }
-  if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
-  throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(body)}`);
 }
 
 // Returns best-guess {raw, code} pairs. Validates every returned code against the candidate set, so the
