@@ -11,7 +11,18 @@ import { isProductionRuntime } from "@/config/system-settings";
 // We flag only the UNSET/absent case in production. An explicit EMAIL_NOTIFICATIONS_ENABLED
 // =false is a legitimate pause/containment switch (see DR runbook §6), NOT drift, so it is
 // intentionally not warned on.
-export const NOTIFICATION_DRIFT_ENV = ["EMAIL_NOTIFICATIONS_ENABLED", "RESEND_API_KEY"] as const;
+//
+// NOTIFICATION_EMAIL_FROM and RESEND_WEBHOOK_SECRET are the same failure shape as the
+// original incident var: read directly with no code fallback on the paths that matter
+// (sendNotificationEmailDirect skips ALL outbox mail if NOTIFICATION_EMAIL_FROM is unset;
+// the Resend delivery webhook 500s on every callback if RESEND_WEBHOOK_SECRET is unset), so
+// their silent absence must be just as loud here.
+export const NOTIFICATION_DRIFT_ENV = [
+  "EMAIL_NOTIFICATIONS_ENABLED",
+  "RESEND_API_KEY",
+  "NOTIFICATION_EMAIL_FROM",
+  "RESEND_WEBHOOK_SECRET",
+] as const;
 
 export function notificationConfigWarnings(): string[] {
   if (!isProductionRuntime()) return [];

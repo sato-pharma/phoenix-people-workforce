@@ -49,15 +49,31 @@ export function runEmailTemplatesTriggersTests() {
     ["coaching", "COACHING_REPORT"],
     ["payroll", "PAYROLL_UPDATE"],
     ["recruitment", "RECRUITMENT_UPDATE"],
+    ["attendance", "ATTENDANCE_WORKFLOW"],
   ] as const) {
     assert.match(
       emailSource,
-      new RegExp(`moduleLabel === "${expectation[0]}"[\\s\\S]{0,420}EMAIL_TEMPLATE_KEYS\\.${expectation[1]}`),
+      new RegExp(`moduleLabel === "${expectation[0]}"[\\s\\S]{0,700}EMAIL_TEMPLATE_KEYS\\.${expectation[1]}`),
       `${expectation[0]} module emails must render via ${expectation[1]}`,
     );
   }
   // Domains may pin a template explicitly; unknown keys must fall through, not drop mail.
   assert.match(emailSource, /input\.templateKey/, "the hub must honor an explicit per-send templateKey");
+
+  // --- Candidate-audience gate must actually receive candidateEmail ----------------
+  // Regression guard: migratedTemplateKeyForNotification's candidate gate (above) is only
+  // effective if createSystemNotification actually plumbs `email.candidateEmail` through to
+  // the NotificationEmailInput it builds. It previously did not — every candidate-addressed
+  // offer/recruitment send routed through createSystemNotification (offer accepted/rejected
+  // confirmations, interview cancellation notices) silently landed on the STAFF template
+  // (OFFER_STATUS / RECRUITMENT_UPDATE) instead of GENERAL, because the gate always saw
+  // candidateEmail as undefined.
+  const systemSource = readFileSync("src/lib/notifications/system.ts", "utf8");
+  assert.match(
+    systemSource,
+    /candidateEmail:\s*input\.email\?\.candidateEmail/,
+    "buildChannelEmailInput must copy email.candidateEmail through so the candidate-audience gate can see it",
+  );
 
   // --- Vacation manager-stage email wired (dead code removed) ----------------------
   const vacationSource = readFileSync("src/lib/vacation/service.ts", "utf8");

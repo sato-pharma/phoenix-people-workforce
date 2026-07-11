@@ -64,6 +64,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           action === "reject"
             ? `Payroll workflow was rejected. Reason: ${rejectedReason ?? "No reason provided."}`
             : `Payroll workflow action "${action}" was completed by ${actorIdentity}.`,
+        // Explicit context so {{status}} in the payroll_update template renders the clean new
+        // status instead of the generic "Label: value | Label: value | ..." dump of every
+        // metric above (notificationMetricStatus in src/lib/notifications/email.ts).
+        templateContext: {
+          status: action === "reject"
+            ? `Rejected — ${rejectedReason ?? "no reason provided"}`
+            : `${updated.status.replace(/_/g, " ")} (${updated.month}/${updated.year})`,
+        },
         title: "Payroll Workflow Updated",
         tone: action === "approve" || action === "lock" || action === "mark_part1_paid" ? "success" : action === "reject" ? "danger" : "warning",
       },

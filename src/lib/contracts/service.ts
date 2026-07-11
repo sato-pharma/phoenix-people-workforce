@@ -430,6 +430,15 @@ async function notifyContractWorkflow(
       notificationType: "contract_renewal",
       subject: `Phoenix ${title} - ${record.employeeName}`,
       summary: `Contract renewal workflow for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      // Explicit context so {{status}} renders the clean workflow status instead of the
+      // generic "Label: value | Label: value | ..." dump every metric above would otherwise
+      // produce (notificationMetricStatus in src/lib/notifications/email.ts).
+      templateContext: {
+        employeeHrId: record.employeeHrId,
+        employeeName: record.employeeName,
+        endDate: record.requestedRenewalDate,
+        status: record.status.replace(/_/g, " "),
+      },
       title,
       tone,
     },

@@ -14,7 +14,14 @@ export async function GET() {
   const checks = [
     { name: "RESEND_API_KEY", present: Boolean(process.env.RESEND_API_KEY?.trim()) },
     { name: "EMAIL_NOTIFICATIONS_ENABLED", present: truthy(process.env.EMAIL_NOTIFICATIONS_ENABLED) },
-    { name: "NOTIFICATION_EMAIL_FROM", present: Boolean(process.env.NOTIFICATION_EMAIL_FROM || systemEmail.defaultFromEmail) },
+    // Deliberately NOT OR'd with systemEmail.defaultFromEmail: that constant only backstops
+    // the standalone send-phoenix-email helper's own path. The notification outbox — which
+    // sends nearly all automated mail — reads process.env.NOTIFICATION_EMAIL_FROM directly with no
+    // fallback and silently skips every send if it's unset (src/lib/notifications/email.ts).
+    // Falling back to the code default here previously made this check report healthy while
+    // that path was dead — the same failure shape as the 2026-07-11 EMAIL_NOTIFICATIONS_ENABLED
+    // outage, just undetected.
+    { name: "NOTIFICATION_EMAIL_FROM", present: Boolean(process.env.NOTIFICATION_EMAIL_FROM?.trim()) },
     { name: "NOTIFICATION_REPLY_TO", present: Boolean(process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo) },
     { name: "RESEND_WEBHOOK_SECRET", present: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()) },
     { name: "CRON_SECRET", present: Boolean(process.env.CRON_SECRET?.trim()) },
