@@ -2913,10 +2913,12 @@ export async function updateVacationRequestAsAdmin(access: AccessContext, input:
     .from(vacationRequestsTable)
     .update(payload)
     .eq("id", existing.id)
+    .eq("status", existing.status)
     .select("*")
     .single();
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
   const request = mapVacationRow(data as VacationRequestDbRow);
 
   await insertVacationEvent({
@@ -3443,6 +3445,26 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   });
   if (!step) {
     throw new Error("Forbidden: only assigned pending vacation approvers can decide this request.");
+  }
+
+  // Enforce the runtime-overridable workflow-registry role authority on the direct-manager step,
+  // same as the sequential flow's pending_manager decision. This does NOT cover the "hr" step:
+  // Sick leave is a parallel flow whose overall status stays "pending_manager" for its entire
+  // lifecycle (it never transitions to "pending_hr" the way the sequential flow does), but the
+  // registry's hr_approve/hr_reject actions are only defined `from: ["pending_hr"]` — calling them
+  // here would incorrectly reject every legitimate Sick HR decision. Wiring the HR step in requires
+  // a registry-seed migration adding Sick-specific actions (e.g. an hr_approve variant with
+  // `from: ["pending_manager"]`), tracked separately rather than guessed at here.
+  if (input.access && step.stepKey === "direct_manager") {
+    const { actionKey } = vacationDecisionAction({
+      decision: input.decision,
+      status: input.request.status,
+    });
+    await assertLeaveWorkflowTransition({
+      access: input.access,
+      actionKey,
+      status: input.request.status,
+    });
   }
 
   if (step.stepKey === "hr" && input.decision === "approve") {

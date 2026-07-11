@@ -226,4 +226,37 @@ export function runVacationApprovalFlowTests() {
   const reportSource = readFileSync(new URL("../src/components/vacation/vacation-report.tsx", import.meta.url), "utf8");
   assert.match(reportSource, /dynamicStatusLabel/, "employee tracking uses dynamic role-aware stage labels");
   assert.match(reportSource, /Recorded by HR/, "approved sequential leave shows 'Recorded by HR'");
+
+  // ---- Audit findings M4 + M5 ----
+
+  // M4: the legacy (Sick) parallel path's direct-manager step now goes through the same
+  // runtime-overridable workflow-registry role check the sequential path already uses for its
+  // pending_manager decision. The HR step is deliberately NOT covered here (see the inline
+  // comment in service.ts) — the registry's hr_approve/hr_reject actions are seeded
+  // `from: ["pending_hr"]` only, and Sick's overall status never leaves "pending_manager", so
+  // wiring the HR step in would require a registry-seed migration, not an app-code change.
+  const legacyFunctionSource = serviceSource.slice(serviceSource.indexOf("async function applyVacationDecisionLegacy("));
+  assert.match(
+    legacyFunctionSource,
+    /if \(input\.access && step\.stepKey === "direct_manager"\) \{\s*const \{ actionKey \} = vacationDecisionAction\(\{/,
+    "Sick leave's direct-manager decision is now gated by the workflow registry, matching the sequential flow's pending_manager check",
+  );
+
+  // M5: updateVacationRequestAsAdmin previously wrote without a compare-and-swap status guard,
+  // unlike every other status-changing write in this file (which all use .eq("id", ...).eq("status",
+  // expectedStatus) so a concurrent admin edit can't silently clobber a concurrently-decided status).
+  const adminUpdateSource = serviceSource.slice(
+    serviceSource.indexOf("export async function updateVacationRequestAsAdmin("),
+    serviceSource.indexOf("export async function deleteVacationRequestAsAdmin("),
+  );
+  assert.match(
+    adminUpdateSource,
+    /\.eq\("id", existing\.id\)\s*\.eq\("status", existing\.status\)/,
+    "admin update now uses the same compare-and-swap guard as every other vacation status write",
+  );
+  assert.match(
+    adminUpdateSource,
+    /if \(!data\) throw new Error\("Vacation request was updated by another user\. Refresh and try again\."\);/,
+    "a lost race surfaces a clear conflict error instead of silently returning stale/undefined data",
+  );
 }
