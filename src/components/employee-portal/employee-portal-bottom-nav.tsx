@@ -28,16 +28,18 @@ function isActiveHref(pathname: string, href: string) {
  */
 export function EmployeePortalBottomNav({
   activePathOverride,
+  effectiveModuleIds,
   visibility,
 }: {
   activePathOverride?: string;
+  effectiveModuleIds?: string[] | null;
   visibility: EmployeePortalNavVisibility;
 }) {
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
   const [selected] = useBottomNavPreference();
 
-  const visibleHrefs = new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
+  const visibleHrefs = new Set(visiblePortalNavEntries(visibility, effectiveModuleIds).map((entry) => entry.href));
 
   // User-pinned shortcuts (kept only if still visible), else the role defaults.
   const pinned = selected.filter((href) => visibleHrefs.has(href));
