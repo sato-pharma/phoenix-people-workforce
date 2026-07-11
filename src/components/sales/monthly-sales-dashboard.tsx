@@ -8,10 +8,12 @@ import {
   BarChart3,
   Boxes,
   CalendarRange,
+  Download,
   Filter,
   Gauge,
   Layers,
   Lightbulb,
+  Loader2,
   Minus,
   PackageSearch,
   RotateCcw,
@@ -19,7 +21,6 @@ import {
   TrendingUp,
   Trophy,
   Users,
-  Download,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -275,6 +276,7 @@ export function MonthlySalesDashboard({
   const [data, setData] = useState<SalesDashboardData | null>(initialData);
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [periodMode, setPeriodMode] = useState<MultiSelectFilterMode>("include");
   const [productMode, setProductMode] = useState<MultiSelectFilterMode>("include");
@@ -341,6 +343,32 @@ export function MonthlySalesDashboard({
       .finally(() => setLoading(false));
     return () => controller.abort();
   }, [queryKey]);
+
+  const handleExport = async () => {
+    setDownloading(true);
+    try {
+      const response = await fetch(`/api/sales/monthly-dashboard/export?${queryKey}`, { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(payload?.message ?? payload?.error ?? "Export failed.");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "phoenix-monthly-sales-dashboard.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Export failed.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const summary = (data?.summary ?? {}) as Record<string, number | string>;
   const trend = useMemo(
@@ -492,6 +520,18 @@ export function MonthlySalesDashboard({
         icon={<CalendarRange className="h-4 w-4" />}
         title="Achievement Dashboard"
         description="Approved Source of Sales data — targets, channel mix, territories and trends, fully filterable across every dimension."
+        actions={
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={downloading || loading || !hasData}
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+            title="Download a detailed multi-sheet Excel workbook with the current filters applied"
+          >
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {downloading ? "Preparing…" : "Export Detailed XLSX"}
+          </button>
+        }
         badges={
           <>
             <AdminInsightChip tone="orange">
@@ -530,15 +570,6 @@ export function MonthlySalesDashboard({
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = `/api/sales/monthly-dashboard/export?${queryKey}`;
-              }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-emerald-300 hover:text-emerald-700"
-            >
-              <Download className="h-3.5 w-3.5" /> Export
-            </button>
             {activeFilterCount > 0 ? (
               <button
                 type="button"
