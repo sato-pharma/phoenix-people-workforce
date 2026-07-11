@@ -125,6 +125,8 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/negotiate", reason: "Candidate offer negotiation request uses a secure offer token; write-only, flags the offer for HR." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/recruitment/apply/:token", reason: "Public job application submission protected by the posting token and IP rate limit; write-only, exposes no data." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/health/email", reason: "Unauthenticated health check; reports env-var presence only, no secrets or PII." }),
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/healthz", reason: "Unauthenticated Cloud Run liveness probe; returns status/revision only, no data or secrets." }),
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/readyz", reason: "Unauthenticated readiness probe; returns dependency booleans + missing-env NAMES only, never values." }),
   tokenApi({ authMode: "public-token", methods: ["GET", "POST"], pattern: "/api/email/unsubscribe/:token", reason: "RFC 8058 one-click unsubscribe protected by a signed, expiring HMAC token; write-only suppression action, exposes no data." }),
 
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/users/**", permission: [{ resource: "admin_access", action: "read" }, { resource: "user_admin", action: "update" }] }),

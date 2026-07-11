@@ -4,6 +4,31 @@ export type ErrorEventSource = "server" | "client";
 
 const MAX_TEXT_LENGTH = 4000;
 const MAX_USER_AGENT_LENGTH = 500;
+const DEFAULT_ERROR_EVENT_RETENTION_DAYS = 90;
+
+/**
+ * Retention/cleanup for app_error_events so the table cannot grow unbounded on Cloud Run.
+ * Deletes events older than the retention window (default 90 days, overridable via
+ * PHOENIX_ERROR_EVENT_RETENTION_DAYS). Best-effort — never throws; returns the row count
+ * where the driver reports it. Intended to be called from the daily cron.
+ */
+export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null; error?: string }> {
+  try {
+    const configured = Number(process.env.PHOENIX_ERROR_EVENT_RETENTION_DAYS);
+    const retentionDays = Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : DEFAULT_ERROR_EVENT_RETENTION_DAYS;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error, count } = await getSupabaseAdmin()
+      .from("app_error_events")
+      .delete({ count: "exact" })
+      .lt("created_at", cutoff);
+
+    if (error) return { deleted: null, error: error.message };
+    return { deleted: count ?? null };
+  } catch (error) {
+    return { deleted: null, error: error instanceof Error ? error.message : "prune failed" };
+  }
+}
 
 function truncate(value: string | null | undefined, max: number): string | null {
   if (!value) return null;

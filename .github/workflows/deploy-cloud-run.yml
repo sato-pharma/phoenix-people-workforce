@@ -78,6 +78,7 @@ jobs:
           set -euo pipefail
           URL="${{ steps.deploy.outputs.tag_url }}"
           fail() { echo "SMOKE FAILED: $1"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/healthz"); echo "GET /api/healthz -> $code"; [ "$code" = "200" ] || fail "healthz not 200"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/login"); echo "GET /login -> $code"; [ "$code" = "200" ] || fail "login not 200"
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/webhooks/resend" -H "content-type: application/json" -d '{}'); echo "POST /api/webhooks/resend -> $code"; [ "$code" = "401" ] || fail "webhook not 401"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"

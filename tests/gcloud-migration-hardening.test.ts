@@ -123,4 +123,40 @@ export function runGcloudMigrationHardeningTests() {
     /if \(!canManageLocalAttendanceAgent\(\)\)/,
     "startLocalAttendanceAgent must refuse to spawn when unsupported",
   );
+
+  // --- Wave 2: deliberate host posture (canonical vs .run.app vs unknown) ---
+  const runAppHost = "https://phoenix-hr-897559113412.us-central1.run.app";
+  const savedAllowed = process.env.PHOENIX_ALLOWED_ORIGINS;
+  try {
+    // Default posture (no PHOENIX_ALLOWED_ORIGINS): only the canonical domain is trusted;
+    // the raw .run.app host, unknown hosts, and forged forwarded hosts are NOT.
+    delete process.env.PHOENIX_ALLOWED_ORIGINS;
+    assert.equal(isAllowedPhoenixOrigin(canonical), true, "canonical host must be trusted");
+    assert.equal(isAllowedPhoenixOrigin(runAppHost), false, "raw .run.app must not be trusted by default");
+    assert.equal(isAllowedPhoenixOrigin("https://attacker.example"), false, "unknown host must not be trusted");
+    assert.equal(isAllowedPhoenixOrigin(""), false, "empty host must not be trusted");
+
+    // A request arriving on the .run.app host must still produce a CANONICAL redirect
+    // origin — sensitive links must never carry the .run.app hostname.
+    const runAppRequest = new Request(`${runAppHost}/api/auth/login`, {
+      headers: { "x-forwarded-host": "phoenix-hr-897559113412.us-central1.run.app", "x-forwarded-proto": "https" },
+    });
+    assert.equal(
+      trustedOriginForRedirect(runAppRequest),
+      canonical,
+      "redirect/link origin from the .run.app host must fall back to the canonical domain",
+    );
+
+    // The .run.app host is trusted ONLY when explicitly opted-in via PHOENIX_ALLOWED_ORIGINS
+    // (what the deploy workflow sets in production) — never implicitly.
+    process.env.PHOENIX_ALLOWED_ORIGINS = runAppHost;
+    assert.equal(
+      isAllowedPhoenixOrigin(runAppHost),
+      true,
+      "the .run.app host is trusted only when explicitly configured via PHOENIX_ALLOWED_ORIGINS",
+    );
+  } finally {
+    if (savedAllowed === undefined) delete process.env.PHOENIX_ALLOWED_ORIGINS;
+    else process.env.PHOENIX_ALLOWED_ORIGINS = savedAllowed;
+  }
 }
