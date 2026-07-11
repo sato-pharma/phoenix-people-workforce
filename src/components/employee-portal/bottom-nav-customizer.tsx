@@ -13,8 +13,14 @@ import {
 } from "./employee-portal-nav-registry";
 import { useBottomNavPreference } from "./use-bottom-nav-preference";
 
-export function BottomNavCustomizer({ visibility }: { visibility: EmployeePortalNavVisibility }) {
-  const entries = visiblePortalNavEntries(visibility);
+export function BottomNavCustomizer({
+  effectiveModuleIds,
+  visibility,
+}: {
+  effectiveModuleIds?: string[] | null;
+  visibility: EmployeePortalNavVisibility;
+}) {
+  const entries = visiblePortalNavEntries(visibility, effectiveModuleIds);
   const [selected, setSelected] = useBottomNavPreference();
 
   const validHrefs = new Set(entries.map((entry) => entry.href));

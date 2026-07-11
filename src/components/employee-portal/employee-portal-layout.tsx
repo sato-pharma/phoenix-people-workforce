@@ -51,6 +51,7 @@ import { RouteTransitionProvider } from "@/components/layout/route-transition-pr
 import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+import { isEmployeePortalHrefCurated } from "@/lib/employee-portal/module-curation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
 import { systemAssets } from "@/config/system-settings";
 
@@ -105,6 +106,10 @@ type EmployeePortalNavProps = {
   activePathOverride?: string;
   data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
+  // Modules Control override for this person, resolved server-side by
+  // getEffectiveSidebarModuleIds. null = no override configured — every
+  // destination below stays visible, matching pre-curation behavior exactly.
+  effectiveModuleIds?: string[] | null;
   visibility: EmployeePortalNavVisibility;
 };
 
@@ -309,6 +314,25 @@ function buildEmployeePortalSections({
   ].filter((section) => section.items.length > 0);
 }
 
+/**
+ * Applies an admin-configured Modules Control curation on top of the role-driven
+ * sections above. `effectiveModuleIds` null (the common case — no override
+ * configured) is a no-op; this only trims items when an admin has explicitly
+ * restricted this person's/role's/line's employee-portal sidebar.
+ */
+function applyModuleCuration(
+  sections: EmployeePortalNavSection[],
+  effectiveModuleIds: string[] | null | undefined,
+): EmployeePortalNavSection[] {
+  if (!effectiveModuleIds) return sections;
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => isEmployeePortalHrefCurated(item.href, effectiveModuleIds)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
 function dispatchEmployeePortalRoutePending(href: string) {
   window.dispatchEvent(new CustomEvent(EMPLOYEE_ROUTE_PENDING_EVENT, { detail: { href } }));
 }
@@ -472,6 +496,7 @@ export function EmployeePortalTopNav({
   activePathOverride,
   data,
   disableSessionGuard = false,
+  effectiveModuleIds,
   visibility,
 }: EmployeePortalNavProps) {
   const currentPathname = usePathname();
@@ -486,7 +511,7 @@ export function EmployeePortalTopNav({
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
 
-  const menuSections = buildEmployeePortalSections(visibility);
+  const menuSections = applyModuleCuration(buildEmployeePortalSections(visibility), effectiveModuleIds);
   const searchTerm = searchQuery.trim().toLowerCase();
   const searchMatches = searchTerm
     ? menuSections
@@ -742,9 +767,11 @@ export function EmployeePortalTopNav({
 
 export function EmployeePortalSidebar({
   activePathOverride,
+  effectiveModuleIds,
   visibility,
 }: {
   activePathOverride?: string;
+  effectiveModuleIds?: string[] | null;
   visibility: EmployeePortalNavVisibility;
 }) {
   const currentPathname = usePathname();
@@ -759,7 +786,7 @@ export function EmployeePortalSidebar({
   const [fallbackCollapsed, setFallbackCollapsed] = useState<boolean | null>(null);
   const collapsed = fallbackCollapsed ?? persistedCollapsed;
 
-  const sections = buildEmployeePortalSections(visibility);
+  const sections = applyModuleCuration(buildEmployeePortalSections(visibility), effectiveModuleIds);
   const activeSectionTitle = sections.find((section) =>
     section.items.some((item) => isEmployeePortalNavItemActive(pathname, item.href)),
   )?.title;
@@ -902,12 +929,14 @@ export function EmployeePortalChrome({
   children,
   data,
   disableSessionGuard = false,
+  effectiveModuleIds,
   visibility,
 }: {
   activePathOverride?: string;
   children: ReactNode;
   data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
+  effectiveModuleIds?: string[] | null;
   visibility: EmployeePortalNavVisibility;
 }) {
   return (
@@ -921,15 +950,16 @@ export function EmployeePortalChrome({
           activePathOverride={activePathOverride}
           data={data}
           disableSessionGuard={disableSessionGuard}
+          effectiveModuleIds={effectiveModuleIds}
           visibility={visibility}
         />
         <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
-          <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
+          <EmployeePortalSidebar activePathOverride={activePathOverride} effectiveModuleIds={effectiveModuleIds} visibility={visibility} />
           <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
             <PageTransition>{children}</PageTransition>
           </main>
         </div>
-        <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
+        <EmployeePortalBottomNav activePathOverride={activePathOverride} effectiveModuleIds={effectiveModuleIds} visibility={visibility} />
       </div>
     </RouteTransitionProvider>
   );

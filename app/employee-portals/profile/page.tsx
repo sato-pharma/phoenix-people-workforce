@@ -25,6 +25,7 @@ import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
+import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { formatDateOnly } from "@/lib/date-only";
@@ -106,6 +107,7 @@ export default async function EmployeePortalProfilePage() {
   const hasDeviceMapping = access.hrId
     ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
     : false;
+  const effectiveModuleIds = await getEffectiveSidebarModuleIds(access, "employee-portal").catch(() => null);
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,
@@ -189,7 +191,7 @@ export default async function EmployeePortalProfilePage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <BottomNavCustomizer visibility={navVisibility} />
+          <BottomNavCustomizer effectiveModuleIds={effectiveModuleIds} visibility={navVisibility} />
 
           <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
             <div className="mb-4 flex items-center gap-2">
