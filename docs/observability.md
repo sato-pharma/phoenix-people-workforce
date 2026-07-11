@@ -1,55 +1,47 @@
-# Observability - Error Monitoring and Cron Alerting
+# Observability
 
-Phoenix Workforce uses Sentry on the free Developer plan for production error visibility, audit-failure alerting, and daily-cron health alerting. The integration is dormant until a DSN is configured, so local development, CI, and unconfigured deployments behave normally.
+_Phoenix Workforce runs on GCP Cloud Run. **Sentry has been fully removed** — do not reintroduce `@sentry/*`, `withSentryConfig`, or `sentry.*.config.ts`. Observability is native GCP + a self-hosted error table._
 
-## What Is Wired
+## Error capture
 
-- `instrumentation.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, and `instrumentation-client.ts` initialize Sentry for server, edge, and browser runtimes.
-- `next.config.ts` wraps the app with `withSentryConfig`, allows Sentry ingest endpoints in CSP, and uploads source maps only when `SENTRY_AUTH_TOKEN` is configured.
-- `src/lib/observability/sentry.ts` centralizes free-tier sampling, release/environment resolution, and sensitive-data scrubbing.
-- `src/lib/admin/audit.ts` sends audit-persistence failures to Sentry.
-- All 4 Vercel crons (`vercel.json`) are wrapped with `Sentry.withMonitor` (heartbeat + timeout detection):
-  - `daily-notification-dispatcher` at `30 6 * * *` UTC (`/api/notifications/daily`).
-  - `notification-outbox-drain` at `*/30 * * * *` UTC (`/api/notifications/process`).
-  - `ireports360-visits-sync` at `0 9,12,19 * * *` UTC (`/api/cron/ireports360-visits-sync`).
-  - `ireports360-visits-reconcile` at `0 4 * * 0` UTC (`/api/cron/ireports360-visits-reconcile`).
+- **Server errors:** `instrumentation.ts` `onRequestError` forwards to `/api/errors/client` (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table (`src/lib/error-monitor/service.ts`). Fields include route, module, hr_id, message, stack, `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
+- **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → same endpoint.
+- **Retention:** `pruneOldAppErrorEvents()` runs in the daily cron (default 90 days, `PHOENIX_ERROR_EVENT_RETENTION_DAYS`).
+- **Access:** the table is service-role only (RLS-enabled, no policies); the admin error dashboard reads it via the admin client with an application permission check.
 
-## Activation
+## Structured logging
 
-1. Create a Sentry project using the Next.js platform.
-2. Copy the project DSN from Sentry project settings.
-3. Add environment variables in Vercel for Preview and Production:
-   - `NEXT_PUBLIC_SENTRY_DSN=<project DSN>`
-   - Optional: `SENTRY_DSN=<same DSN>` for server-only runtime config.
-4. Optional source maps:
-   - `SENTRY_AUTH_TOKEN=<Sentry auth token>`
-   - `SENTRY_ORG=<org slug>`
-   - `SENTRY_PROJECT=<project slug>`
-5. Redeploy.
+`src/lib/observability/log.ts` emits single-line JSON that Cloud Logging parses into a structured entry: top-level `severity` + `logging.googleapis.com/labels` (searchable labels). Use it for anything that should drive a log-based metric/alert. Current stable labels:
 
-## Free-Tier Defaults
+- `event=cron_unauthorized` — a cron/worker endpoint hit without a valid `CRON_SECRET`.
+- `event=webhook_signature_invalid` / `webhook_misconfigured` — Resend webhook rejections.
+- `event=cron_failed` / `background_job_failed` — job execution failures.
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SENTRY_DSN` | Required to activate browser monitoring. | unset = disabled |
-| `SENTRY_DSN` | Optional server/edge DSN override. | falls back to `NEXT_PUBLIC_SENTRY_DSN` |
-| `SENTRY_TRACES_SAMPLE_RATE` | Server/edge performance trace sample rate. | `0.02` |
-| `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` | Browser performance trace sample rate. | `0.02` |
-| `SENTRY_ERROR_SAMPLE_RATE` | Server/edge error event sample rate. | `1` |
-| `NEXT_PUBLIC_SENTRY_ERROR_SAMPLE_RATE` | Browser error event sample rate. | `1` |
-| `NEXT_PUBLIC_SENTRY_REPLAY_ENABLED` | Enables browser Session Replay. Set only for Preview until masking is verified. | unset = disabled |
-| `NEXT_PUBLIC_SENTRY_REPLAY_SESSION_SAMPLE_RATE` | Normal session replay sample rate when Replay is enabled. | `0` |
-| `NEXT_PUBLIC_SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE` | Error-session replay sample rate when Replay is enabled. | `1` |
-| `SENTRY_AUTH_TOKEN` | Enables source-map upload during build. | unset = upload skipped |
-| `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload destination. | Phoenix defaults |
+Query in Cloud Logging: `resource.type="cloud_run_revision" resource.labels.service_name="phoenix-hr" labels.event="cron_unauthorized"`.
 
-## Privacy Posture
+## Health probes
 
-- `sendDefaultPii` is always `false`.
-- Session Replay is disabled unless `NEXT_PUBLIC_SENTRY_REPLAY_ENABLED=true`.
-- Session Replay masks all text and blocks all media.
-- Normal Session Replay sampling defaults to 0%; error-session sampling defaults to 100% only in environments where Replay is explicitly enabled.
-- Console and input breadcrumbs are dropped.
-- Request bodies, cookies, query strings, auth headers, tokens, passwords, HR IDs, login IDs, emails, phone numbers, salaries, payroll fields, payslip fields, GPS/location fields, and image/evidence fields are scrubbed before events leave the app.
-- Source maps are deleted after upload and are uploaded only when the auth token is available.
-- Sentry wizard sample routes are ignored and must not be shipped.
+- **`/api/healthz`** — liveness: static 200, no dependencies. Used by the deploy smoke test and the uptime check.
+- **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values.
+
+## Metrics & alerting (GCP Monitoring)
+
+Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notification channel = owner email.
+
+| Alert | Source |
+|---|---|
+| Cloud Run 5xx rate | `run.googleapis.com/request_count` (response_code_class=5xx) |
+| Cloud Run p95 latency | `run.googleapis.com/request_latencies` |
+| Uptime failure | uptime check on `/api/healthz` |
+| Cloud Scheduler job failure | log-based metric `phoenix_scheduler_failures` |
+| App auth/cron/webhook failure spike | log-based metric `phoenix_app_auth_failures` |
+
+**Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
+
+## Synthetic journeys
+
+`src/lib/synthetic-journeys/` is a Playwright smoke suite (`npm run synthetic:test`) that walks key routes and records pass/fail to `synthetic_journey_runs`. It is **not yet scheduled** — to use it as active monitoring it needs (a) a scheduled runner (Cloud Scheduler → ingest, or a GH Actions cron) and (b) safe test credentials. Environment classification treats `phoenix-hr.satopharma.com` and the `*.run.app` host as production.
+
+## Cloud Run runtime signals
+
+Built-in Cloud Run metrics (no code needed): request count/latency by response code, instance count, CPU/memory utilization, billable instance time. `min-instances=1` keeps one instance warm (no cold starts).
