@@ -15,7 +15,19 @@
 //   node scripts/setup-telegram-bot.mjs          # validate token + set webhook + profile
 //   node scripts/setup-telegram-bot.mjs --status # read-only: print getMe + webhook info
 
+import { createHash } from "node:crypto";
+
 const TIMEOUT_MS = Number.parseInt(process.env.TELEGRAM_SEND_TIMEOUT_MS ?? "8000", 10) || 8000;
+
+// Mirror telegramWebhookSecretToken() in src/lib/notifications/telegram.ts: Telegram's
+// setWebhook secret_token allows only [A-Za-z0-9_-]. Pass a compliant secret through
+// untouched, else use its SHA-256 hex so this script registers the SAME token the app's
+// inbound validator expects (otherwise the webhook would 403).
+function webhookSecretToken() {
+  const raw = (process.env.NOTIFICATION_WEBHOOK_SECRET ?? "").trim();
+  if (!raw) return "";
+  return /^[A-Za-z0-9_-]{1,256}$/.test(raw) ? raw : createHash("sha256").update(raw).digest("hex");
+}
 
 function appUrl() {
   return (process.env.PHOENIX_APP_URL || process.env.NOTIFICATION_DASHBOARD_URL || process.env.NEXT_PUBLIC_APP_URL || "")
@@ -79,7 +91,7 @@ async function main() {
     allowed_updates: ["message"],
     drop_pending_updates: true,
     max_connections: 40,
-    secret_token: secret || undefined,
+    secret_token: webhookSecretToken() || undefined,
     url: webhookUrl,
   });
   console.log(`✓ Webhook set: ${webhookUrl}${secret ? " (secret-protected)" : " (NO secret — set NOTIFICATION_WEBHOOK_SECRET)"}`);

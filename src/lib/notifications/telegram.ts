@@ -49,6 +49,21 @@ export function telegramWebhookSecret() {
   return process.env.NOTIFICATION_WEBHOOK_SECRET?.trim() || null;
 }
 
+// Telegram's setWebhook `secret_token` accepts ONLY [A-Za-z0-9_-], 1-256 chars. A raw
+// NOTIFICATION_WEBHOOK_SECRET that contains other characters (e.g. base64 "+/=") makes
+// setWebhook fail ("secret token contains unallowed characters"), so the webhook never
+// registers and every inbound update fails signature validation (HTTP 403). Derive a
+// stable, always-compliant token: pass the secret through untouched when it already
+// complies (backward compatible), else use its SHA-256 hex (64 chars, guaranteed valid).
+// Both setWebhook and the inbound validator MUST use this same helper so the registered
+// token and the expected token match.
+export function telegramWebhookSecretToken() {
+  const raw = telegramWebhookSecret();
+  if (!raw) return null;
+  if (/^[A-Za-z0-9_-]{1,256}$/.test(raw)) return raw;
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
 export function hashTelegramToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -374,7 +389,9 @@ export async function provisionTelegramBot(input?: { dropPendingUpdates?: boolea
     max_connections: 40,
     // Empty string explicitly CLEARS a previously-set secret on Telegram's side when
     // NOTIFICATION_WEBHOOK_SECRET is removed (passing undefined would leave it stale).
-    secret_token: secret ?? "",
+    // Use the sanitized token (telegramWebhookSecretToken) so a secret containing
+    // Telegram-disallowed characters still registers instead of failing setWebhook.
+    secret_token: telegramWebhookSecretToken() ?? "",
     url: expectedUrl,
   });
   steps.push({
