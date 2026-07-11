@@ -954,12 +954,12 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
     throw new Error(`Forbidden: ${access.role} cannot create probation evaluations.`);
   }
 
-  const employeeHrId = cleanText(input.employeeHrId)?.toUpperCase();
+  const employeeHrId = normalizeHrId(input.employeeHrId);
   if (!employeeHrId) throw new Error("Employee HR ID is required.");
 
   const employees = await getEmployeeDirectoryRows();
   const viewer = employees.find((row) => normalizeHrId(row.hrId) === normalizeHrId(access.hrId)) ?? null;
-  const employee = employees.find((row) => row.hrId.toUpperCase() === employeeHrId);
+  const employee = employees.find((row) => normalizeHrId(row.hrId) === employeeHrId);
   if (!employee) throw new Error("Employee was not found in the directory.");
   if (!canReadProbationEmployee(access, employee, viewer, employees)) {
     throw new Error("Forbidden: employee is outside your probation scope.");

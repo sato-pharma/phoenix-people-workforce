@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { isManagerOptionalHrId, isMissingRequiredManager, normalizeGovernanceHrId } from "../src/lib/employees/hierarchy-governance.ts";
+import { normalizeWorkforceHrId, workforceSeatsMatch } from "../src/lib/workforce/seat-lifecycle.ts";
+
+// Regression suite for the "raw HR_ID comparison bypasses the canonical alias table" bug class
+// (audit finding M13). src/lib/hr-id.ts documents a real legacy alias: uploads sometimes used
+// "AAA" for the CEO's HR_ID, but the live employee master uses "AA". Several files normalized
+// HR_IDs with a hand-rolled `.trim().toUpperCase()` instead of routing through
+// canonicalHrIdKey/hrIdsMatch, so a record carrying the legacy "AAA" spelling would silently fail
+// to match against the canonical "AA" — e.g. the CEO getting wrongly flagged as "missing manager".
+// This file behaviorally verifies the two pure, directly-testable fixes; the four DB-backed
+// service files (contracts, offers, probation, hiring-documents) are covered by source-text
+// assertions further down, matching those files' existing test convention.
+
+export function runHrIdAliasNormalizationTests() {
+  // ── hierarchy-governance.ts ──
+  assert.equal(normalizeGovernanceHrId("aaa"), "AA", "the legacy AAA alias resolves to the canonical AA");
+  assert.equal(normalizeGovernanceHrId(" AAA "), "AA", "alias resolution is whitespace-insensitive");
+  assert.equal(isManagerOptionalHrId("AAA"), true, "a record carrying the legacy AAA spelling is still recognized as manager-optional (was previously missed)");
+  assert.equal(isManagerOptionalHrId("AA"), true, "the canonical form still matches directly");
+  assert.equal(isManagerOptionalHrId("A-9"), false, "an unrelated HR_ID is never treated as manager-optional");
+  assert.equal(
+    isMissingRequiredManager({ hrId: "AAA", managerHrId: null }),
+    false,
+    "the CEO (stored/entered as AAA) is not wrongly flagged as missing a required manager",
+  );
+  assert.equal(
+    isMissingRequiredManager({ hrId: "A-9", managerHrId: null }),
+    true,
+    "an ordinary employee with no manager is still correctly flagged",
+  );
+
+  // ── workforce/seat-lifecycle.ts ──
+  assert.equal(normalizeWorkforceHrId("aaa"), "AA", "seat-lifecycle HR_ID normalization also resolves the legacy alias");
+  assert.equal(normalizeWorkforceHrId(""), null, "an empty value still normalizes to null");
+  assert.equal(
+    workforceSeatsMatch(
+      { areaName: "Nasr City", lineName: "Pedia", managerHrId: "AAA", positionTitle: "Medical Representative" },
+      { areaName: "Nasr City", lineName: "Pedia", managerHrId: "AA", positionTitle: "Medical Representative" },
+    ),
+    true,
+    "two seats whose managerHrId differs only by the legacy alias are still recognized as the same seat",
+  );
+
+  // ── contracts/service.ts, offers/service.ts, probation/service.ts, hiring-documents/service.ts ──
+  // These four are DB-backed and not directly unit-testable without a live/mocked Supabase client
+  // (matching the existing test convention for these files — see contract-renewal-hardening.test.ts,
+  // offer-lifecycle-hardening.test.ts). Source-text assertions confirm each now routes through the
+  // canonical helper instead of a raw .toUpperCase()/.toLowerCase() comparison.
+  const contractsSource = readFileSync("src/lib/contracts/service.ts", "utf8");
+  assert.match(contractsSource, /function cleanHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "cleanHrId delegates to the canonical alias-aware helper");
+  assert.doesNotMatch(contractsSource, /employee\.hrId\.toUpperCase\(\)/, "no remaining raw .toUpperCase() HR_ID comparison against the contract/request maps");
+
+  const offersSource = readFileSync("src/lib/offers/service.ts", "utf8");
+  assert.match(offersSource, /!hrIdsMatch\(selectedManager, vacancyManager\)/, "the offer/vacancy manager match uses the alias-aware hrIdsMatch helper");
+
+  const probationSource = readFileSync("src/lib/probation/service.ts", "utf8");
+  assert.match(probationSource, /const employee = employees\.find\(\(row\) => normalizeHrId\(row\.hrId\) === employeeHrId\)/, "probation evaluation employee lookup uses the alias-aware normalizeHrId helper");
+
+  const hiringDocumentsSource = readFileSync("src/lib/hiring-documents/service.ts", "utf8");
+  assert.match(hiringDocumentsSource, /function normalizeHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "hiring-documents normalizeHrId delegates to the canonical alias-aware helper");
+  assert.doesNotMatch(hiringDocumentsSource, /\.hr_id\.toUpperCase\(\)|\.employee_hr_id\.toUpperCase\(\)|manager_hr_id\.toUpperCase\(\)/, "no remaining raw .toUpperCase() HR_ID comparisons in the hiring-documents dashboard build");
+}

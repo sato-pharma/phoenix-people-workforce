@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { getRequiredEnv } from "@/lib/env";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { formatHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { sendJobOfferEmail } from "@/lib/offers/email";
@@ -1243,7 +1243,7 @@ async function validateSelectedOfferVacancy(input: OfferLifecycleInput) {
 
   const selectedManager = compact(input.managerHrId);
   const vacancyManager = compact(vacancy.manager_hr_id);
-  if (selectedManager && vacancyManager && selectedManager.toLowerCase() !== vacancyManager.toLowerCase()) {
+  if (selectedManager && vacancyManager && !hrIdsMatch(selectedManager, vacancyManager)) {
     throw new Error("Selected vacancy does not match the manager.");
   }
 }

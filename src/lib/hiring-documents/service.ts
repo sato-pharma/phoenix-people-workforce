@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
 import type {
   CreateHiringDocumentDefinitionInput,
@@ -64,7 +65,7 @@ function cleanText(value: string | null | undefined) {
 }
 
 function normalizeHrId(value: string | null | undefined) {
-  return cleanText(value)?.toUpperCase() ?? null;
+  return canonicalHrIdForDisplay(value);
 }
 
 function normalizeStatus(value: string | null | undefined) {
@@ -129,7 +130,7 @@ async function loadManagerNames(managerHrIds: string[]) {
   if (error) throw new Error(error.message);
 
   return new Map((data as Array<{ full_name: string | null; hr_id: string }>).map((row) => [
-    row.hr_id.toUpperCase(),
+    normalizeHrId(row.hr_id) ?? "",
     row.full_name ?? "",
   ]));
 }
@@ -183,7 +184,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   if (employeeError) throw new Error(employeeError.message);
 
   const employeeRows = (employeeData as EmployeeDbRow[]).filter(isVisibleEmployee);
-  const employeeHrIds = employeeRows.map((row) => row.hr_id.toUpperCase());
+  const employeeHrIds = employeeRows.map((row) => normalizeHrId(row.hr_id) ?? "").filter(Boolean);
   const [lineNames, managerNames] = await Promise.all([
     loadLines(employeeRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number")),
     loadManagerNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
@@ -210,7 +211,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   const documentIds = new Set(documents.map((document) => document.id));
   const statusByEmployee = new Map<string, Record<string, HiringDocumentEntry>>();
   for (const row of statusData.data as HiringDocumentStatusDbRow[]) {
-    const hrId = row.employee_hr_id.toUpperCase();
+    const hrId = normalizeHrId(row.employee_hr_id) ?? "";
     if (!documentIds.has(row.document_id)) continue;
     const status = row.status && validDocumentStatuses.has(row.status) ? row.status : "pending";
     const entries = statusByEmployee.get(hrId) ?? {};
@@ -225,11 +226,11 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   }
 
   const notesByEmployee = new Map(
-    (noteData.data as HiringDocumentEmployeeNoteDbRow[]).map((row) => [row.employee_hr_id.toUpperCase(), row.notes]),
+    (noteData.data as HiringDocumentEmployeeNoteDbRow[]).map((row) => [normalizeHrId(row.employee_hr_id) ?? "", row.notes]),
   );
 
   const employees = employeeRows.map((row) => {
-    const hrId = row.hr_id.toUpperCase();
+    const hrId = normalizeHrId(row.hr_id) ?? "";
     const documentsById: Record<string, HiringDocumentEntry> = {};
     for (const document of documents) {
       documentsById[document.id] = statusByEmployee.get(hrId)?.[document.id] ?? defaultEntry(document.id);
@@ -244,7 +245,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
       jobTitle: row.job_title,
       lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
       managerHrId: row.manager_hr_id,
-      managerName: row.manager_hr_id ? managerNames.get(row.manager_hr_id.toUpperCase()) ?? null : null,
+      managerName: row.manager_hr_id ? managerNames.get(normalizeHrId(row.manager_hr_id) ?? "") ?? null : null,
       notes: notesByEmployee.get(hrId) ?? null,
     };
   });
