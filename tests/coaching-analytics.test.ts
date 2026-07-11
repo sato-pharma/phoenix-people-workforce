@@ -5,6 +5,7 @@ import {
   buildCoachingReportAnalytics,
   buildCoachingScoreAnalytics,
   buildTrainingManagerCoachingComparison,
+  completedReportStatuses,
   filterCoachingQuarterlySummaryByReports,
   type CoachingScoreAnalyticsInputRow,
 } from "../src/lib/coaching/analytics.ts";
@@ -234,4 +235,54 @@ export function runCoachingAnalyticsTests() {
     /coachingReportBase = pathname\?\.startsWith\("\/employee-portals"\) \? "\/employee-portals\/coaching" : "\/coaching"/,
   );
   assert.match(dashboardSource, /SelectField/);
+
+  // ---- Audit findings M14 + M16 ----
+
+  // M14: employee-coaching-list.tsx previously re-declared its own "completed" status set and
+  // its own score-color threshold function, independently of analytics.ts / landing-insights.ts —
+  // a silent-drift risk if the thresholds ever changed in one place but not the other. Both are
+  // now imported from the shared modules instead of being redeclared locally.
+  assert.ok(
+    completedReportStatuses.has("locked") && completedReportStatuses.has("submitted") && completedReportStatuses.has("reviewed_by_employee"),
+    "the shared completed-status set covers the same three statuses every coaching analytics surface expects",
+  );
+  const employeeCoachingListSource = readFileSync("src/components/coaching/employee-coaching-list.tsx", "utf8");
+  assert.match(
+    employeeCoachingListSource,
+    /import \{ completedReportStatuses as completedStatuses \} from "@\/lib\/coaching\/analytics";/,
+    "the employee coaching list imports the shared completed-status set instead of redeclaring it",
+  );
+  assert.match(
+    employeeCoachingListSource,
+    /import \{ getCoachingScoreColor as getScoreColor \} from "@\/lib\/coaching\/landing-insights";/,
+    "the employee coaching list imports the shared score-color function instead of redeclaring it",
+  );
+  assert.doesNotMatch(
+    employeeCoachingListSource,
+    /const completedStatuses = new Set</,
+    "no local re-declaration of the completed-status set remains",
+  );
+  assert.doesNotMatch(
+    employeeCoachingListSource,
+    /function getScoreColor\(score: number\)/,
+    "no local re-declaration of the score-color function remains",
+  );
+
+  // M16: the coaching report export route previously fetched each report's detail with a
+  // separate getCoachingReportById call inside Promise.all — up to ~3N queries for N reports.
+  // getCoachingReportsByIds batches the same 3 queries (report + scores + summary) into one
+  // .in(ids) call each, with identical fail-together semantics.
+  const coachingServiceSource = readFileSync("src/lib/coaching/service.ts", "utf8");
+  assert.match(coachingServiceSource, /export async function getCoachingReportsByIds\(ids: string\[\], access: AccessContext\)/);
+  assert.match(coachingServiceSource, /\.from\("coaching_reports"\)\.select\("\*"\)\.in\("id", ids\)/);
+  assert.match(coachingServiceSource, /\.from\("coaching_score_items"\)\.select\("\*"\)\.in\("report_id", ids\)/);
+  assert.match(coachingServiceSource, /\.from\("coaching_reports_summary"\)\.select\("\*"\)\.in\("report_id", ids\)/);
+
+  const exportRouteSource = readFileSync("app/api/coaching/reports/export/route.ts", "utf8");
+  assert.match(exportRouteSource, /getCoachingReportsByIds/, "the export route uses the batched fetch");
+  assert.doesNotMatch(
+    exportRouteSource,
+    /Promise\.all\(\s*reports\.map\(\(report\) => getCoachingReportById/,
+    "the N+1 per-report Promise.all fetch is gone",
+  );
 }

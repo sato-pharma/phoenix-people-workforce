@@ -39,6 +39,8 @@ import type {
   CoachingReportStatus,
   CoachingReportSummaryRow,
 } from "@/lib/coaching/types";
+import { completedReportStatuses as completedStatuses } from "@/lib/coaching/analytics";
+import { getCoachingScoreColor as getScoreColor } from "@/lib/coaching/landing-insights";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -90,8 +92,6 @@ const monthNames = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const completedStatuses = new Set<CoachingReportStatus>(["submitted", "reviewed_by_employee", "locked"]);
-
 /* ━━━━━━━━━━━━━━━━━━ Utilities ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 function formatDate(value: string | null | undefined) {
@@ -106,15 +106,6 @@ function formatPct(value: number) {
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
-}
-
-/** Returns a degrading color from red → amber → green → blue based on score */
-function getScoreColor(score: number): string {
-  if (score >= 90) return "#0369a1";
-  if (score >= 80) return "#059669";
-  if (score >= 65) return "#d97706";
-  if (score >= 50) return "#dc2626";
-  return "#b91c1c";
 }
 
 /* ━━━━━━━━━━━━━━━━━━ Analytics Helpers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
