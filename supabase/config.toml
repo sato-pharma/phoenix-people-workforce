@@ -367,7 +367,11 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = true
+# Disabled: this project has no supabase/functions/ directory and no code that
+# calls Supabase Edge Functions (Next.js API routes are used instead). Leaving
+# this enabled with no functions to serve makes the container start then exit
+# immediately (code 255) on every `supabase start`.
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
