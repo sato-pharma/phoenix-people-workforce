@@ -88,7 +88,10 @@ async function main() {
 
   const secret = (process.env.NOTIFICATION_WEBHOOK_SECRET ?? "").trim();
   await callTelegram(token, "setWebhook", {
-    allowed_updates: ["message"],
+    // Match the webhook handler and provisionTelegramBot() (src/lib/notifications/telegram.ts),
+    // which both read message + edited_message. Re-provisioning via this script must not
+    // silently narrow what the bot receives.
+    allowed_updates: ["message", "edited_message"],
     drop_pending_updates: true,
     max_connections: 40,
     secret_token: webhookSecretToken() || undefined,

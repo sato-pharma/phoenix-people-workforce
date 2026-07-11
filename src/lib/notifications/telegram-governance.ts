@@ -16,16 +16,18 @@ export type TelegramGovernanceDecision = {
   reason?: string;
 };
 
+// Module strings here must match the literal `module` value each domain actually passes to
+// createSystemNotification (verified 2026-07-11 by grepping every call site in src/ and
+// app/) — not a guessed or pluralized name. Two real bugs from that audit: "birthdays" was
+// enabled here but every real send uses singular "birthday", so birthday Telegram messages
+// silently never fired; "attendance" and "field_workforce_compliance" had no policy row at
+// all despite being live senders, so they fail-closed by the unknown-module safety net below.
 const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: true, module: "payroll", notes: "Sensitive payroll Telegram messages must be generic only.", optional: false },
-  { enabled: true, genericOnly: true, module: "payslip", notes: "Payslip Telegram messages must only say the payslip is available.", optional: false },
-  { enabled: true, genericOnly: true, module: "payslips", notes: "Payslip Telegram messages must only say the payslip is available.", optional: false },
   { enabled: false, genericOnly: false, module: "resignations", notes: "Disabled by default due resignation sensitivity.", optional: false },
   { enabled: true, genericOnly: false, module: "probation", notes: "Allowed only after governed recipient resolution.", optional: false },
   { enabled: true, genericOnly: false, module: "contract_renewal", notes: "Allowed for governed contract renewal recipients.", optional: false },
-  { enabled: true, genericOnly: false, module: "contracts", notes: "Allowed for governed contract recipients.", optional: false },
   { enabled: true, genericOnly: false, module: "vacation", notes: "Allowed for direct manager governed vacation workflows.", optional: false },
-  { enabled: true, genericOnly: false, module: "leave", notes: "Allowed for governed leave workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "marketing_requests", notes: "Allowed only for assigned approvers/request owners resolved by policy.", optional: false },
   { enabled: true, genericOnly: false, module: "recruitment", notes: "Allowed for governed recruitment notifications.", optional: false },
   { enabled: true, genericOnly: false, module: "internal_messages", notes: "Optional Telegram channel for internal messages.", optional: true },
@@ -33,16 +35,21 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // Additional modules that emit notifications. Sensitive ones are disabled or
   // generic-only by default so the unknown-module fail-safe never silently leaks them.
   { enabled: false, genericOnly: false, module: "offers", notes: "Disabled by default; offer/candidate data is sensitive.", optional: false },
-  { enabled: false, genericOnly: false, module: "deductions", notes: "Disabled by default; payroll-adjacent deduction data is sensitive.", optional: false },
   { enabled: true, genericOnly: true, module: "coaching", notes: "Generic only; coaching feedback is sensitive performance data.", optional: false },
-  { enabled: true, genericOnly: true, module: "coaching_report", notes: "Generic only; coaching feedback is sensitive performance data.", optional: false },
   { enabled: true, genericOnly: false, module: "excuse", notes: "Allowed for governed excuse/leave workflows.", optional: false },
+  // "excuses" (plural) has no real caller under the current codebase (verified 2026-07-11 —
+  // every excuses/service.ts call uses singular "excuse"), but an existing test
+  // (tests/excuses.test.ts) explicitly pins this alias as intentional defensive coverage.
+  // Kept rather than removed: unlike the other orphans cleaned up in this same audit, this
+  // one is a documented, deliberate decision from a prior session, not accidental cruft.
   { enabled: true, genericOnly: false, module: "excuses", notes: "Allowed for governed excuse/leave workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "outstation", notes: "Allowed for governed outstation expense workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "weekly_plans", notes: "Allowed for governed weekly plan notifications.", optional: false },
   { enabled: true, genericOnly: false, module: "support_requests", notes: "Allowed so the HR team is alerted when an employee opens a support ticket.", optional: false },
-  { enabled: true, genericOnly: false, module: "birthdays", notes: "Non-sensitive celebratory reminders.", optional: true },
-  { enabled: true, genericOnly: false, module: "anniversary", notes: "Non-sensitive celebratory reminders.", optional: true },
+  { enabled: true, genericOnly: false, module: "birthday", notes: "Non-sensitive celebratory reminders. (Real module string is singular; see note above.)", optional: true },
+  { enabled: true, genericOnly: false, module: "attendance", notes: "Attendance digest, disputes, and missing-punch workflow alerts.", optional: false },
+  { enabled: true, genericOnly: false, module: "field_workforce_compliance", notes: "Monthly field workforce compliance digest to compliance reviewers.", optional: false },
+  { enabled: false, genericOnly: false, module: "holiday_confirmation", notes: "Disabled by default; low-volume admin confirmation reminder, email is sufficient today.", optional: true },
 ];
 
 function cleanModule(value: unknown) {
