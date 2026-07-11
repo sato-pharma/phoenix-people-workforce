@@ -7,4 +7,24 @@ README.md
 .env.development.local
 .env.test.local
 .env.production.local
+.env
+.env.*
 .DS_Store
+
+# Never bake secret-bearing env exports or their generators into the image.
+# (gcloud derives .gcloudignore from .gitignore, but COPY . . must be safe regardless.)
+env.yaml
+cloud-run-env.yaml
+cloud-run-env-all.yaml
+generate-env.js
+generate-cron-secret.js
+
+# Build/test/scratch dirs that never belong in the runtime image
+.github
+tests
+docs
+supabase
+local-attendance-agent
+_wt-*
+.codex-worktrees
+.claude
