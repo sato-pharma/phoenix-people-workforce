@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { notificationConfigWarnings } from "@/lib/observability/config-drift";
+import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Readiness probe: verifies the process can actually serve requests — required config is
@@ -19,6 +21,14 @@ const REQUIRED_ENV = [
 
 export async function GET() {
   const missingEnv = REQUIRED_ENV.filter((name) => !process.env[name]?.trim());
+  const warnings = notificationConfigWarnings();
+  // Only when there IS drift — keeps healthy readiness checks silent, makes drift loud/alertable.
+  if (warnings.length > 0) {
+    logWarning("Notification config drift detected on readiness check", {
+      labels: { event: "config_drift" },
+      context: { warnings },
+    });
+  }
 
   let databaseOk = false;
   let databaseError: string | null = null;
@@ -48,6 +58,9 @@ export async function GET() {
         database: databaseOk,
         databaseError: databaseOk ? null : databaseError,
       },
+      // Non-fatal notification-config drift (email flag / Resend key unset in prod). Present
+      // so an operator or synthetic monitor can catch a silent-email regression early.
+      warnings,
       revision: process.env.K_REVISION ?? null,
       time: new Date().toISOString(),
     },

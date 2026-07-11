@@ -13,6 +13,7 @@ import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-cen
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
 import { runTelegramTemplateManagementTests } from "./telegram-template-management.test.ts";
 import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
+import { runConfigDriftTests } from "./config-drift.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
@@ -365,6 +366,7 @@ await runTest("telegram admin control center", runTelegramAdminControlCenterTest
 await runTest("email admin control center", runEmailAdminControlCenterTests);
 await runTest("telegram template management", runTelegramTemplateManagementTests);
 await runTest("telegram hardening", runTelegramHardeningTests);
+await runTest("notification config drift guard", runConfigDriftTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
