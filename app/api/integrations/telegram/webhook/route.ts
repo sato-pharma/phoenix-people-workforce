@@ -3,7 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
 import { linkTelegramConnection } from "@/lib/notifications/settings";
-import { telegramWebhookSecret } from "@/lib/notifications/telegram";
+import { telegramWebhookSecretToken } from "@/lib/notifications/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,9 @@ function isPermanentTokenError(error: unknown) {
 }
 
 export async function POST(request: Request) {
-  const expectedSecret = telegramWebhookSecret();
+  // Must match the token registered with Telegram in provisionTelegramBot's setWebhook —
+  // both derive from NOTIFICATION_WEBHOOK_SECRET via telegramWebhookSecretToken().
+  const expectedSecret = telegramWebhookSecretToken();
   // Fail-closed in production: no secret configured ⇒ refuse to accept webhooks.
   // In development the secret may be unset for local testing (documented exception).
   if (!expectedSecret && process.env.NODE_ENV !== "development") {
