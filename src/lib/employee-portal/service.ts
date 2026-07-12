@@ -1844,6 +1844,7 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     fuelAllowance: null,
     grossSalary: null,
     hasBankAccount: null,
+    hasPhoto: false,
     hireDate: null,
     hrId,
     jobTitle: access.role,

@@ -6,7 +6,8 @@ import {
 } from "@/lib/payroll/policy";
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { generateNextHrIdForLine } from "./hr-id-helper";
@@ -70,6 +71,10 @@ export type EmployeeDirectoryRow = {
   fuelAllowance: number | null;
   grossSalary: number | null;
   hasBankAccount: string | null;
+  // Whether this employee has an uploaded profile photo (from the cached photo
+  // map, see src/lib/employees/employee-photo.ts) — lets avatar UI skip the
+  // /api/employees/[hrId]/photo request entirely when there's nothing to fetch.
+  hasPhoto: boolean;
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
@@ -951,9 +956,10 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   }
 
   const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
-  const [residenceByHrId, pendingReplacementByHrId] = await Promise.all([
+  const [residenceByHrId, pendingReplacementByHrId, photoMap] = await Promise.all([
     loadResidenceByHrId(employeeHrIds),
     loadPendingManagerReplacementByHrId(employeeHrIds),
+    getEmployeePhotoMap(),
   ]);
 
   // Check if we got joined data
@@ -1050,6 +1056,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+        hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1209,6 +1216,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         fuelAllowance: row.fuel_allowance ?? comp?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+        hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1327,6 +1335,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
       grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+      hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -1455,6 +1464,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
   const pendingReplacementByHrId = await loadPendingManagerReplacementByHrId(
     uniqueTextValues(employeeRows, "hr_id"),
   );
+  const photoMap = await getEmployeePhotoMap();
 
   return employeeRows.map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
@@ -1487,6 +1497,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       fuelAllowance: row.fuel_allowance ?? null,
       grossSalary: row.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+      hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,

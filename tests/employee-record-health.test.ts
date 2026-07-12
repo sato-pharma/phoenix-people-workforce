@@ -31,6 +31,7 @@ const completeEmployee: EmployeeDirectoryRow = {
   gender: "male",
   grossSalary: 1200,
   hasBankAccount: "yes",
+  hasPhoto: false,
   hireDate: "2024-01-01",
   hrId: "EMP-1",
   jobTitle: "Medical Representative",
