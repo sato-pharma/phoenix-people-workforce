@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { decumulateRows, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
+import { decumulateRows, weekHasDecumulationGap, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
 
 // Build a cumulative row with sensible defaults.
 function row(p: Partial<DecumulableRow> & { weekStart: string; weekNumber: number | null }): DecumulableRow {
@@ -98,4 +99,30 @@ export function runWeeklyDecumulationTests() {
     const w2 = real.find((r) => r.weekNumber === 2)!;
     assert.ok(w2.salesValue < 0, "boundary mis-tag yields a visible negative week");
   }
+
+  // ── M6: decumulation-gap detection ──
+  // The first present week of a cycle never spans a gap (nothing before it).
+  assert.equal(weekHasDecumulationGap(null, 1), false, "first present week is not a gap");
+  // Adjacent weeks (W2 after W1) are contiguous — no gap.
+  assert.equal(weekHasDecumulationGap(1, 2), false, "W2 immediately after W1 is contiguous");
+  assert.equal(weekHasDecumulationGap(3, 4), false, "W4 immediately after W3 is contiguous");
+  // The core case: weeks [1, 3, 4] uploaded (W2 missing). W3's previous PRESENT week is W1, so W3's
+  // de-cumulated figure spans the missing W2 — flag it.
+  assert.equal(weekHasDecumulationGap(1, 3), true, "W3 after a missing W2 spans the gap");
+  // A two-week gap (only W1 then W4) also flags.
+  assert.equal(weekHasDecumulationGap(1, 4), true, "W4 after missing W2+W3 spans the gap");
+
+  // The dashboard computes spansGap via this helper against the previous present week in the cycle.
+  const serviceSource = readFileSync("src/lib/sales/weekly/service.ts", "utf8");
+  assert.match(serviceSource, /spansGap: weekHasDecumulationGap\(prev\?\.weekNumber \?\? null, w\.weekNumber\)/, "weekComparison flags spansGap via the shared helper");
+
+  // ── M7: logical-week (cycle_month + week_number + template) duplicate guard ──
+  // persistWeeklyUpload adds a second SELECT pre-check on the logical week slot and maps the unique
+  // index's 23505 to a friendly 409 (the week_start-only guard missed a re-upload of the same cycle
+  // week carrying a different week_start).
+  assert.match(serviceSource, /\.eq\("cycle_month", result\.cycleMonth\)\s*\.eq\("week_number", result\.weekNumber\)\s*\.eq\("template_key", result\.templateKey\)/, "persist pre-checks the logical-week slot");
+  assert.match(serviceSource, /if \(isPostgresUniqueViolation\(batchInsert\.error\)\) \{[\s\S]*?"duplicate_week"/, "batch-insert unique violation maps to a duplicate_week 409");
+  const m7Migration = readFileSync("supabase/migrations/20260712020000_weekly_sales_batches_cycle_week_unique.sql", "utf8");
+  assert.match(m7Migration, /create unique index if not exists weekly_sales_batches_validated_cycle_week_tmpl_uidx/, "the logical-week unique index migration exists");
+  assert.match(m7Migration, /\(distributor_code, cycle_month, week_number, template_key\)/, "the index keys on the full logical-week slot including template_key");
 }

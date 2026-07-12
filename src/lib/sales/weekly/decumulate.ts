@@ -81,3 +81,18 @@ export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
   }
   return out;
 }
+
+// M6: within a (distributor, cycle_month), de-cumulation subtracts each week against the PREVIOUS
+// PRESENT week, not the calendar-adjacent one. If an earlier week of the cycle was never uploaded,
+// the current week's real figure silently spans that missing week (its delta = cumulative-now minus
+// cumulative-of-the-last-present-week). The month total stays correct via telescoping, but the single
+// week is inflated. This returns true when a gap exists immediately before `currWeekNumber`, i.e. the
+// previous present week number is more than one behind it. prevWeekNumber === null means this is the
+// first present week of the cycle (nothing to span). Pure + trivially unit-testable.
+export function weekHasDecumulationGap(
+  prevWeekNumber: number | null,
+  currWeekNumber: number,
+): boolean {
+  if (prevWeekNumber == null) return false;
+  return currWeekNumber - prevWeekNumber > 1;
+}

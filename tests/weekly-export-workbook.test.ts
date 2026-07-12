@@ -71,8 +71,8 @@ function sampleDashboard(empty = false): WeeklyDashboard {
     { weekStart: "2026-05-11", weekNumber: 2, cycleMonth: "2026-05-01", salesValue: 6000, salesUnits: 60, stockUnits: 0, byDistributor: [] },
   ];
   const weekComparison = empty ? [] : [
-    { cycleMonth: "2026-05-01", weekNumber: 1, weekStart: "2026-05-04", salesValue: 5000, salesUnits: 50, stockUnits: 0, deltaValuePct: null },
-    { cycleMonth: "2026-05-01", weekNumber: 2, weekStart: "2026-05-11", salesValue: 6000, salesUnits: 60, stockUnits: 0, deltaValuePct: 0.2 },
+    { cycleMonth: "2026-05-01", weekNumber: 1, weekStart: "2026-05-04", salesValue: 5000, salesUnits: 50, stockUnits: 0, deltaValuePct: null, spansGap: false },
+    { cycleMonth: "2026-05-01", weekNumber: 2, weekStart: "2026-05-11", salesValue: 6000, salesUnits: 60, stockUnits: 0, deltaValuePct: 0.2, spansGap: false },
   ];
   return {
     weekStart: null, priorWeekStart: null, availableWeeks: [], weekGroupMembers: {},

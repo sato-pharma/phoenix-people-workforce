@@ -417,8 +417,18 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
               <tr className="border-t border-[#FFE8D6]" key={`${row.cycleMonth}-${row.weekNumber}`}>
                 <td className="px-3 py-2 font-semibold text-[#0F172A]">{monthLabelClient(row.cycleMonth)}</td>
                 <td className="px-3 py-2">
-                  <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
-                    W{row.weekNumber}
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                      W{row.weekNumber}
+                    </span>
+                    {row.spansGap ? (
+                      <span
+                        className="inline-flex items-center rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]"
+                        title="An earlier week of this month was never uploaded, so this week's figure spans the missing week(s) — it is not a true single-week value."
+                      >
+                        Spans gap
+                      </span>
+                    ) : null}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-[#64748B] tabular-nums">{row.weekStart ?? "—"}</td>

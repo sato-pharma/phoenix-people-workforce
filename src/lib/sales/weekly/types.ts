@@ -335,6 +335,14 @@ export type WeeklyDashboard = {
     stockUnits: number;
     /** % change vs the previous week number in the same month-cycle; null when no prior week */
     deltaValuePct: number | null;
+    /**
+     * True when the immediately-preceding week number in this cycle was NOT uploaded (a gap in the
+     * upload history). De-cumulation subtracts against the previous PRESENT week, so this week's
+     * figure silently spans every missing week between them (audit finding M6 — the month total stays
+     * correct via telescoping, but this single week is inflated). The UI badges it so the number is
+     * not read as a true single-week value.
+     */
+    spansGap: boolean;
   }[];
   /** the validated source sheets this report was built from (powers the export's "Report Sources" block) */
   sources: {
