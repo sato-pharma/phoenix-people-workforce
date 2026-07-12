@@ -40,6 +40,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { extractKnownPlace } from "@/lib/utils/places";
+import { canonicalizeTransport, resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -284,10 +285,24 @@ function normalizeCityName(value: string) {
     .join(" ");
 }
 
-function extractDestination(to: string, fallback: string) {
-  const fromTo = normalizeCityName(extractRoutePart(to || "", "to") || to || "");
-  const fromFallback = normalizeCityName(fallback || "");
-  return fromTo || fromFallback || "Unknown";
+function extractDestination(to: string, fallback: string, description: string) {
+  // Resolve the DESTINATION governorate from RECORDED data only: the trip's "to"
+  // part first, then the location column, then the free-text description. We do NOT
+  // guess/infer a destination (e.g. from the rep's territory) — a trip whose
+  // destination was never recorded returns "" and is quarantined into the
+  // "Unresolved" tab, kept out of every KPI/chart/map until it's actually resolved.
+  const toPart = extractRoutePart(to || "", "to") || to || "";
+  return resolveGovernorate(toPart) || resolveGovernorate(fallback || "") || resolveGovernorate(description || "") || "";
+}
+
+/**
+ * A trip is "unresolved" when it is a real journey whose destination was never
+ * recorded. Meetings are excluded — a meeting legitimately has no destination and
+ * still belongs in the dashboard. Unresolved trips are quarantined into their own tab
+ * and never counted in the analytics until their destination is resolved upstream.
+ */
+function isUnresolvedRow(trip: ExpenseRow): boolean {
+  return trip.destinationCity === "" && !/meeting/i.test(trip.requestType);
 }
 
 function extractRoutePart(value: string, endpoint: "from" | "to") {
@@ -596,6 +611,70 @@ const printStyles = `
 `;
 
 /* ------------------------------------------------------------------ */
+/*  Unresolved trips panel                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Quarantine view for trips whose destination was never recorded. They are held
+ * here — out of every KPI, chart, map, and the main trip table — and no location is
+ * ever guessed for them. They rejoin the dashboard automatically once a destination
+ * is recorded at the source.
+ */
+function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
+  const total = trips.reduce((sum, trip) => sum + trip.total, 0);
+  return (
+    <Card className={`overflow-hidden border border-amber-200 p-0 ${cardShadow}`}>
+      <div className="border-b border-amber-200 bg-amber-50/70 px-4 py-3">
+        <h3 className="text-sm font-bold text-amber-900">Unresolved trips</h3>
+        <p className="mt-0.5 max-w-2xl text-[12px] text-amber-800">
+          These trips have no destination recorded, so they are kept out of every KPI, chart,
+          and the map until a destination is added at the source. No location is ever guessed.
+        </p>
+        <p className="mt-1 text-[12px] font-semibold text-amber-900">
+          {trips.length} trip{trips.length === 1 ? "" : "s"} · {formatMoney(total)} pending resolution
+        </p>
+      </div>
+      {trips.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-500">
+          Nothing to resolve — every visible trip has a recorded destination.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-[12px]">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Trip</th>
+                <th className="px-3 py-2 font-semibold">Date</th>
+                <th className="px-3 py-2 font-semibold">Employee</th>
+                <th className="px-3 py-2 font-semibold">Type</th>
+                <th className="px-3 py-2 font-semibold">Origin (home)</th>
+                <th className="px-3 py-2 font-semibold">Transport</th>
+                <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {trips.map((trip) => (
+                <tr className="hover:bg-slate-50" key={`${trip.tripId}-${trip.date}-unresolved`}>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] font-bold text-slate-600">{trip.tripId || "N/A"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDate(trip.date)}</td>
+                  <td className="px-3 py-2 text-slate-800">{trip.ownerName || "Employee"}</td>
+                  <td className="px-3 py-2 text-slate-700">{trip.requestType || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500">{trip.fromCity || trip.from || "—"}</td>
+                  <td className="px-3 py-2 text-slate-700">{trip.transportationType || "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
+                  <td className="px-3 py-2"><StatusPill category={mapStatusCategory(trip.status)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -625,14 +704,14 @@ export function PersonalExpenseWorkloadDashboard({
       fromCity: compactTripPlace(expense.from || "", expense.to || "", "from"),
       to: normalizeString(expense.to),
       toCity: compactTripPlace(expense.to || "", expense.from || "", "to", expense.location),
-      destinationCity: extractDestination(expense.to || "", expense.location),
+      destinationCity: extractDestination(expense.to || "", expense.location, expense.description || ""),
       status: normalizeString(expense.status),
       travelCost: Number(expense.travelCost ?? 0),
       meetingAmount: Number(expense.meetingAmount ?? 0),
       allowance: Number(expense.allowance ?? 0),
       total: Number(expense.total ?? 0),
       km: Number(expense.km ?? 0),
-      transportationType: normalizeString(expense.transportationType || expense.requestType),
+      transportationType: canonicalizeTransport(expense.transportationType) ?? "",
       amWorkload: Number(expense.amWorkload ?? 0),
       pmWorkload: Number(expense.pmWorkload ?? 0),
       description: normalizeString(expense.description),
@@ -672,6 +751,7 @@ export function PersonalExpenseWorkloadDashboard({
   const [transportationFilter, setTransportationFilter] = useState("All");
   const [destinationFilter, setDestinationFilter] = useState("All");
   const [showCostByTransportation, setShowCostByTransportation] = useState(false);
+  const [activeView, setActiveView] = useState<"overview" | "unresolved">("overview");
   const [page, setPage] = useState(1);
   const [searchSortField, setSearchSortField] = useState<SortField>("date");
   const [searchSortDirection, setSearchSortDirection] = useState<SortDirection>("desc");
@@ -733,7 +813,7 @@ export function PersonalExpenseWorkloadDashboard({
     [],
   );
 
-  const filteredTrips = useMemo(() => {
+  const matchingTrips = useMemo(() => {
     const lowerSearch = searchTerm.trim().toLowerCase();
     return rows.filter((trip) => {
       const category = mapStatusCategory(trip.status);
@@ -767,6 +847,13 @@ export function PersonalExpenseWorkloadDashboard({
     destinationFilter,
     searchTerm,
   ]);
+
+  // Split the filter result: RESOLVED trips (a recorded destination, or a meeting that
+  // needs none) feed the whole dashboard; UNRESOLVED trips (a non-meeting trip whose
+  // destination was never recorded) are quarantined into the "Unresolved" tab and kept
+  // out of every KPI, chart, map, and the trip table until their destination is fixed.
+  const filteredTrips = useMemo(() => matchingTrips.filter((trip) => !isUnresolvedRow(trip)), [matchingTrips]);
+  const unresolvedTrips = useMemo(() => matchingTrips.filter(isUnresolvedRow), [matchingTrips]);
 
   const sortedTrips = useMemo(() => {
     const mutableTrips = [...filteredTrips];
@@ -956,7 +1043,8 @@ export function PersonalExpenseWorkloadDashboard({
   const transportationSummary = useMemo(() => {
     const grouped = new Map<string, { trips: number; total: number }>();
     filteredTrips.forEach((trip) => {
-      const key = normalizeString(trip.transportationType) || "Other";
+      const key = normalizeString(trip.transportationType);
+      if (!key) return; // meetings / non-travel rows have no transport mode — excluded from this chart
       const existing = grouped.get(key) ?? { trips: 0, total: 0 };
       grouped.set(key, { trips: existing.trips + 1, total: existing.total + trip.total });
     });
@@ -968,7 +1056,8 @@ export function PersonalExpenseWorkloadDashboard({
   const destinationSummary = useMemo(() => {
     const grouped = new Map<string, { trips: number; total: number }>();
     filteredTrips.forEach((trip) => {
-      const city = trip.destinationCity || "Unknown";
+      const city = trip.destinationCity;
+      if (!city) return; // unresolved destination — kept in KPIs/map, omitted from the city chart (no "Unknown")
       const existing = grouped.get(city) ?? { trips: 0, total: 0 };
       grouped.set(city, { trips: existing.trips + 1, total: existing.total + trip.total });
     });
@@ -1210,6 +1299,37 @@ export function PersonalExpenseWorkloadDashboard({
         </span>
       </Link>
 
+      {/* ---- Tabs: Overview vs Unresolved ---- */}
+      <div className="flex items-center gap-1 border-b border-slate-200 print:hidden" role="tablist">
+        <button
+          aria-selected={activeView === "overview"}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${activeView === "overview" ? "border-orange-500 text-orange-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          onClick={() => setActiveView("overview")}
+          role="tab"
+          type="button"
+        >
+          Overview
+        </button>
+        <button
+          aria-selected={activeView === "unresolved"}
+          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition ${activeView === "unresolved" ? "border-orange-500 text-orange-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          onClick={() => setActiveView("unresolved")}
+          role="tab"
+          type="button"
+        >
+          Unresolved
+          {unresolvedTrips.length > 0 && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">
+              {unresolvedTrips.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeView === "unresolved" ? (
+        <UnresolvedTripsPanel trips={unresolvedTrips} />
+      ) : (
+      <>
       {/* ---- KPI Stat Cards ---- */}
       <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-3 xl:grid-cols-5">
@@ -2156,6 +2276,8 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
         </Card>
       </section>
+      </>
+      )}
     </div>
   );
 }

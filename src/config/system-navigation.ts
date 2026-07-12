@@ -182,6 +182,24 @@ const adminNavigationSectionSeeds = [
     label: "Command Center",
   },
 
+  // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
+  // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
+  // employee_profile:read (held broadly, incl. managers/HR); the page itself
+  // enforces per-row visibility via canSeeEmployee, so a manager only opens their
+  // own reports and Super Admin/CEO see their scope — sidebar visibility is UX only.
+  {
+    id: "employee-360",
+    items: [
+      {
+        href: "/employee-360",
+        icon: IdCard,
+        label: "Employee 360",
+        permissions: [{ resource: "employee_profile", action: "read" }],
+      },
+    ],
+    label: "Employee 360",
+  },
+
   // ── Approvals Hub: consolidated per-module approval surfaces (near the top —
   // responding to approvals is frequent daily work). Phase 1: Vacation + Excuse.
   {
