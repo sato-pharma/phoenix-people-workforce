@@ -11,6 +11,7 @@ import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
+import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
@@ -45,6 +46,7 @@ async function runDailyNotifications(request: Request) {
     marketingSla,
     recruitment,
     telegramDigest,
+    weeklySystemHealthDigest,
     outstationGeocodeWarmup,
     outstationHighRisk,
     fieldWorkforceComplianceDigest,
@@ -83,6 +85,10 @@ async function runDailyNotifications(request: Request) {
     runTelegramDailyHrDigest().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-telegram-digest" } });
       return { success: false, error: String(e) };
+    }),
+    runWeeklySystemHealthDigest().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "weekly-system-health-digest" } });
+      return { delivered: 0, skipped: true, error: String(e), sourceWarnings: [] };
     }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
@@ -148,6 +154,7 @@ async function runDailyNotifications(request: Request) {
     resignationSla,
     success: true,
     telegramDigest,
+    weeklySystemHealthDigest,
     vacationSla,
     weeklyPlansDrift,
   });

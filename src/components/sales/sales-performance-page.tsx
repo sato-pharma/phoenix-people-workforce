@@ -50,6 +50,7 @@ import type {
   SalesTrendPoint,
 } from "@/lib/sales/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
 
 
 /* ─── Error Boundary ──────────────────────────────────────────────────── */
@@ -77,6 +78,7 @@ class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBo
     if (typeof window !== "undefined" && window.console) {
       window.console.error("[ChartErrorBoundary]", error, info.componentStack);
     }
+    reportClientError({ error, componentStack: info.componentStack });
   }
 
   render() {

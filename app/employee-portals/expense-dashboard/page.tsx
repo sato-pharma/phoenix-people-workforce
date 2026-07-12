@@ -16,6 +16,13 @@ export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalExpenseDashboardPage() {
   const access = await resolveAccessContextFromPage();
+  // A session that expired between the layout's own auth check and this page's client-side
+  // navigation resolves to the guest fallback (role "Employee", hrId null) — without this,
+  // assertPermission below throws a misleading "Forbidden: Employee cannot read expenses"
+  // instead of sending the user back to sign in.
+  if (!access.loginId && !access.hrId) {
+    redirect("/login");
+  }
   if (canonicalHrIdKey(access.hrId) === "a-3") {
     redirect("/employee-portals");
   }

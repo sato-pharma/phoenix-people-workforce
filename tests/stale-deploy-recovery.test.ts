@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   isStaleDeployChunkError,
+  isTransientRouterMountError,
   recoverFromStaleDeployOnce,
 } from "../src/lib/utils/stale-deploy-recovery.ts";
 
@@ -24,10 +25,30 @@ export function runStaleDeployRecoveryTests() {
     true,
   );
   assert.equal(isStaleDeployChunkError(new Error("Importing a module script failed")), true);
+  // Webpack's own runtime symptom of a missing/stale module factory — seen in production
+  // (app_error_events, module=command_center) going unrecovered before this was added.
+  assert.equal(
+    isStaleDeployChunkError(new TypeError("Cannot read properties of undefined (reading 'call')")),
+    true,
+  );
 
   // ── isStaleDeployChunkError: does not swallow unrelated application errors ──
   assert.equal(isStaleDeployChunkError(new Error("Forbidden: cannot read payroll")), false);
   assert.equal(isStaleDeployChunkError(new TypeError("Cannot read properties of undefined")), false);
+  // Same "Cannot read properties of undefined" prefix but a different property — must stay
+  // unmatched, since only "(reading 'call')" is the specific webpack-chunk signature.
+  assert.equal(
+    isStaleDeployChunkError(new TypeError("Cannot read properties of undefined (reading 'email')")),
+    false,
+  );
+
+  // ── isTransientRouterMountError: matches the App Router mount-race invariant ─
+  assert.equal(
+    isTransientRouterMountError(new Error("invariant expected layout router to be mounted")),
+    true,
+  );
+  assert.equal(isTransientRouterMountError(new Error("Forbidden: cannot read payroll")), false);
+  assert.equal(isStaleDeployChunkError(new Error("invariant expected layout router to be mounted")), false);
 
   // ── recoverFromStaleDeployOnce: reloads once and sets a guard timestamp ─────
   let reloadCount = 0;

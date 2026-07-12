@@ -17,6 +17,7 @@ import {
   writeAuthAudit,
 } from "@/lib/auth/audit";
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
+import { isIpBlocked } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
   createSessionToken,
@@ -252,6 +253,26 @@ export async function POST(request: Request) {
           entityId: loginId || null,
           newValues: { ip, reason: "too_many_failures" },
           summary: "Login rate limited",
+        }).catch(() => undefined);
+
+        return loginFailureResponse(
+          request,
+          payload,
+          "rate_limited",
+          "Too many failed login attempts. Please try again later.",
+          429,
+        );
+      }
+
+      // Admin-managed IP blocklist (System Issues security lens). Fail-open (isIpBlocked
+      // never throws), and returns the SAME generic rate-limited response so a blocked
+      // attacker gets no signal that their IP specifically is denied.
+      if (await isIpBlocked(ip)) {
+        await writeAuthAudit({
+          actorLoginId: loginId || null,
+          entityId: loginId || null,
+          newValues: { ip, reason: "ip_blocked" },
+          summary: "Login blocked: IP on blocklist",
         }).catch(() => undefined);
 
         return loginFailureResponse(

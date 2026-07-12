@@ -3,6 +3,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, RefreshCcw } from "lucide-react";
 
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
+
 type Props = {
   children: ReactNode;
   fallbackTitle?: string;
@@ -30,6 +32,9 @@ export class WorkspaceErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[WorkspaceErrorBoundary]", error, errorInfo);
+    // Forward the component stack so the System Issues dashboard can show which
+    // component tree threw, not just a minified JS stack.
+    reportClientError({ error, componentStack: errorInfo.componentStack });
   }
 
   render() {

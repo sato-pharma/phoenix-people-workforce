@@ -9,15 +9,24 @@ export type ReportClientErrorInput = {
   error: unknown;
   route?: string | null;
   digest?: string | null;
+  // React error boundaries provide errorInfo.componentStack (which component tree threw).
+  // window.onerror/unhandledrejection cannot, so this is optional.
+  componentStack?: string | null;
 };
 
-export function reportClientError({ error, route, digest }: ReportClientErrorInput): void {
+export function reportClientError({ error, route, digest, componentStack }: ReportClientErrorInput): void {
   try {
     const message = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? (error.stack ?? null) : null;
     const resolvedRoute = route ?? (typeof window !== "undefined" ? window.location.pathname : null);
 
-    const payload = JSON.stringify({ digest: digest ?? null, message, route: resolvedRoute, stack });
+    const payload = JSON.stringify({
+      componentStack: componentStack ?? null,
+      digest: digest ?? null,
+      message,
+      route: resolvedRoute,
+      stack,
+    });
 
     void fetch("/api/errors/client", {
       body: payload,
