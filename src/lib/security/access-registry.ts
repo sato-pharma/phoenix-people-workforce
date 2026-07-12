@@ -451,6 +451,12 @@ export const accessRegistry = [
   { ...sessionApi({ methods: readOnly, pattern: "/admin/private-calendars", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/marketing-requests/control", permission: null, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/double-visit-analytics", permission: { resource: "double_visit_analytics", action: "read" }, guard: "domain-helper" }), surface: "page" },
+  // Employee 360 — consolidated per-employee profile (visits/check-ins in v1). Gated by
+  // employee_profile:read; the page enforces per-row visibility via canSeeEmployee. Lives at
+  // /employee-360 (the (admin) route group adds no URL segment), so it matches neither the
+  // /admin/** nor /employee-portals/** catch-alls and needs its own explicit entries.
+  { ...sessionApi({ methods: readOnly, pattern: "/employee-360", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }), surface: "page" },
+  { ...sessionApi({ methods: readOnly, pattern: "/employee-360/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/workspace/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/**", permission: { resource: "admin", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/employee-portals/**", permission: { resource: "employee_profile", action: "read" } }), surface: "page" },

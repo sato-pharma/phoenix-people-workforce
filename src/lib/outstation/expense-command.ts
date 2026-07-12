@@ -18,6 +18,7 @@ import { listOutstationRequests } from "@/lib/outstation/service";
 import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { normalizeDestinationKey, resolveDestinationCoords } from "@/lib/outstation/destination-geocode";
+import { canonicalizeLocation } from "@/lib/employee-360/egypt-locations";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type {
   ExpenseCommandFilters,
@@ -32,6 +33,19 @@ import type {
 
 const LEADERBOARD_LIMIT = 10;
 const OUTSTATION_TRIP_PREFIX = "OUTSTATION-";
+
+// The "by type" dimension is trip_type (Return same day / Overnight stay), but
+// meetings / misc rows have no trip_type. Fall back to request_type (Meeting /
+// Other / Traveling / Outstation) so they are labelled correctly instead of the
+// meaningless "Unspecified".
+function expenseTypeLabel(row: { tripType?: string | null; requestType?: string | null }): string {
+  // tripType is pre-normalized to the literal "Unspecified" for blank trip types
+  // (meetings/misc have no travel trip_type), so treat that as empty and fall back
+  // to request_type (Meeting / Other / Traveling / Outstation).
+  const t = (row.tripType ?? "").trim();
+  if (t && t !== "Unspecified") return t;
+  return row.requestType || "Other";
+}
 
 function resolveScope(access: AccessContext): ExpenseCommandScope {
   if (access.scope === "system" || access.scope === "company") return "company";
@@ -249,14 +263,20 @@ export async function getOutstationExpenseCommandData(
         })
       : false;
 
+    // Canonicalise the free-text destination (English/Arabic variants + full
+    // addresses all fold to one governorate, e.g. "الإسكندرية…" and "Alexandria")
+    // so the ledger and heatmap dedupe instead of scattering the same place.
+    const rawDestination = expense.to || expense.location || "";
+    const canonicalDestination = rawDestination ? canonicalizeLocation(rawDestination) : expense.to;
+    const isRejected = String(expense.status ?? "").toLowerCase().includes("reject");
+
     return {
       ...expense,
-      // Single source of truth for "approved" across the whole dashboard: derive the
-      // displayed status from hr_approved so the "Approved spend" KPI, the By Status
-      // chart, the Status filter, and the ledger table all agree. (Historical Excel
-      // uploads store `status` text independently from hr_approved; using HR approval
-      // as the canonical signal mirrors what HR actually signed off.)
-      status: expense.hrApproved ? "Approved" : "Pending",
+      to: canonicalDestination,
+      // Approval is 3-state. hr_approved stays the canonical "approved" signal (so
+      // the Approved-spend KPI is unchanged); the rest split into Rejected (from raw
+      // status) vs Pending, so Rejected is no longer hidden inside Pending.
+      status: expense.hrApproved ? "Approved" : isRejected ? "Rejected" : "Pending",
       source,
       region,
       line,
@@ -299,7 +319,7 @@ export async function getOutstationExpenseCommandData(
       visibleEnriched.some((row) => row.source === source),
     ),
     transportationTypes: distinctSorted(visibleEnriched.map((row) => row.transportationType)),
-    expenseTypes: distinctSorted(visibleEnriched.map((row) => row.tripType)),
+    expenseTypes: distinctSorted(visibleEnriched.map((row) => expenseTypeLabel(row))),
   };
 
   // Apply the active filters (single pass, in-memory).
@@ -323,7 +343,7 @@ export async function getOutstationExpenseCommandData(
     if (filterStatus && row.status !== filterStatus) return false;
     if (filterSource && row.source !== filterSource) return false;
     if (filterTransport && (row.transportationType || "Unspecified") !== filterTransport) return false;
-    if (filterExpenseType && (row.tripType || "Unspecified") !== filterExpenseType) return false;
+    if (filterExpenseType && expenseTypeLabel(row) !== filterExpenseType) return false;
     return true;
   });
 
@@ -401,7 +421,7 @@ export async function getOutstationExpenseCommandData(
       if (filterStatus && row.status !== filterStatus) return false;
       if (filterSource && row.source !== filterSource) return false;
       if (filterTransport && (row.transportationType || "Unspecified") !== filterTransport) return false;
-      if (filterExpenseType && (row.tripType || "Unspecified") !== filterExpenseType) return false;
+      if (filterExpenseType && expenseTypeLabel(row) !== filterExpenseType) return false;
       return true;
     });
     const prevSummary = summarizePayrollExpenses(previousRows);
@@ -442,7 +462,7 @@ export async function getOutstationExpenseCommandData(
     ),
     // Group by tripType (NOT requestType) so the "by type" slice key matches the
     // expenseType filter field and the Expense-type dropdown options.
-    byExpenseType: groupPayrollExpenses(rows, (row) => (row as ExpenseCommandRow).tripType || "Unspecified"),
+    byExpenseType: groupPayrollExpenses(rows, (row) => expenseTypeLabel(row as ExpenseCommandRow)),
     byStatus: groupPayrollExpenses(rows, (row) => row.status || "Pending"),
   };
 
