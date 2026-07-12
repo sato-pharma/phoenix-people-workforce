@@ -11,7 +11,7 @@ import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import type {
   PayrollExpenseGroupRow,
   PayrollExpenseTrendPoint,
-} from "@/lib/payroll/expense-metrics";
+} from "@/lib/outstation/expense-metrics";
 
 /** How an expense entered the system. */
 export type ExpenseSource = "historical" | "live" | "manual";

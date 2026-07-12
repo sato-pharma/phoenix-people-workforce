@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
-import { analyzeExpenseWorkbook } from "@/lib/payroll/expense-import";
+import { analyzeExpenseWorkbook } from "@/lib/outstation/expense-import";
 import {
   clearPayrollExpenseReportRows,
   deletePayrollExpenseReport,
@@ -9,7 +9,7 @@ import {
   isPayrollExpenseReportLocked,
   isPayrollExpensesSchemaMissing,
   savePayrollExpenseApprovals,
-} from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";

@@ -5,7 +5,7 @@ import {
   listUnifiedOutstationExpenses,
   listPayrollExpenseReports,
   savePayrollExpenseApprovals,
-} from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expenses";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";

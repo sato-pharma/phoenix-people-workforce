@@ -25,7 +25,7 @@ export default async function EmployeePortalExpensesPage() {
     if (!canAccessSystemAdministratorWorkspace(access)) {
       redirect("/admin/access");
     }
-    redirect("/payroll/expenses/dashboard");
+    redirect("/admin/outstation/expenses/dashboard");
   }
 
   await assertPermission(access, "expenses", "read");

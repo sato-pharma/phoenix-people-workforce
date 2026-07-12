@@ -5,7 +5,7 @@ import { getDataHealthStats } from "@/lib/admin/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { upsertEmployee } from "@/lib/employees/employee-directory";
 import { approveAcceptedOffer } from "@/lib/offers/service";
-import { importApprovedExpensesToPayroll } from "@/lib/payroll/expenses";
+import { importApprovedExpensesToPayroll } from "@/lib/outstation/expenses";
 import { createSalaryBatch, replaceSalaryBatch, runPayrollWorkflow } from "@/lib/payroll/service";
 import { runProbationWorkflow } from "@/lib/probation/service";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";

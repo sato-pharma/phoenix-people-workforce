@@ -11,8 +11,8 @@ import {
   buildPayrollExpenseTrend,
   groupPayrollExpenses,
   summarizePayrollExpenses,
-} from "@/lib/payroll/expense-metrics";
-import { listUnifiedOutstationExpenses } from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expense-metrics";
+import { listUnifiedOutstationExpenses } from "@/lib/outstation/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { isHighRiskRequest } from "@/lib/outstation/expense-risk";

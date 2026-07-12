@@ -561,7 +561,7 @@ async function importAppRoutes(): Promise<AppRoutes> {
   const [login, employees, expenses, probation, vacation] = await Promise.all([
     import("../app/api/auth/login/route.ts"),
     import("../app/api/employees/route.ts"),
-    import("../app/api/payroll/expenses/route.ts"),
+    import("../app/api/admin/outstation/expenses/route.ts"),
     import("../app/api/probation/[id]/workflow/route.ts"),
     import("../app/api/vacations/requests/[id]/decision/route.ts"),
   ]);
@@ -772,7 +772,7 @@ async function runDirectAppRouteChecks(
     const fileName = `${phaseTag}_APP_SERVICE_SMOKE`;
     cleanup.expenseReportFileNames.push(fileName);
     cleanup.payrollExpenseTripIds.push(`${phaseTag}-EXPENSE`);
-    const result = await callRouteJson(routes.expenses.POST, superAdminCookie, "/api/payroll/expenses", {
+    const result = await callRouteJson(routes.expenses.POST, superAdminCookie, "/api/admin/outstation/expenses", {
       fileName,
       records: [{
         allowance: 0,
@@ -810,7 +810,7 @@ async function runDirectAppRouteChecks(
   }
 
   try {
-    const result = await callRouteJson(routes.expenses.POST, financeCookie, "/api/payroll/expenses", {
+    const result = await callRouteJson(routes.expenses.POST, financeCookie, "/api/admin/outstation/expenses", {
       fileName: `${phaseTag}_FINANCE_DENIED`,
       records: [{ tripId: `${phaseTag}-FINANCE-DENIED` }],
     });
@@ -821,7 +821,7 @@ async function runDirectAppRouteChecks(
   }
 
   try {
-    const result = await callRouteJson(routes.expenses.POST, employeeCookie, "/api/payroll/expenses", {
+    const result = await callRouteJson(routes.expenses.POST, employeeCookie, "/api/admin/outstation/expenses", {
       fileName: `${phaseTag}_DENIED`,
       records: [{ tripId: `${phaseTag}-DENIED` }],
     });

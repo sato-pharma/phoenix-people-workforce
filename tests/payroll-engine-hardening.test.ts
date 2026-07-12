@@ -47,12 +47,12 @@ const employeePortalServiceSource = readFileSync(
 );
 
 const expensesImportRouteSource = readFileSync(
-  new URL("../app/api/payroll/expenses/import/route.ts", import.meta.url),
+  new URL("../app/api/admin/outstation/expenses/import/route.ts", import.meta.url),
   "utf8",
 );
 
 const expensesSource = readFileSync(
-  new URL("../src/lib/payroll/expenses.ts", import.meta.url),
+  new URL("../src/lib/outstation/expenses.ts", import.meta.url),
   "utf8",
 );
 

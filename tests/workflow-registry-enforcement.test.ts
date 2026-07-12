@@ -41,7 +41,7 @@ export function runWorkflowRegistryEnforcementTests() {
   const payrollRoute = source("app/api/payroll/[id]/workflow/route.ts");
   assert.match(payrollRoute, /runPayrollWorkflow\(id,\s*action,\s*access,\s*actorIdentity,\s*rejectedReason\)/);
 
-  const payrollExpenses = source("src/lib/payroll/expenses.ts");
+  const payrollExpenses = source("src/lib/outstation/expenses.ts");
   assert.match(payrollExpenses, /actionKey: "approve"/);
   assert.match(payrollExpenses, /actionKey: "add_to_payroll"/);
   assert.match(payrollExpenses, /actionKey: "delete_before_payroll"/);

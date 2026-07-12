@@ -6,7 +6,7 @@ import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import {
   importApprovedExpensesToPayroll,
   isPayrollExpensesSchemaMissing,
-} from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 

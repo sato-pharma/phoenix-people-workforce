@@ -25,7 +25,7 @@ import { summarizeDeviceUserMappings } from "@/lib/attendance/metrics";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
 import { getWorkforceMetrics } from "@/lib/platform/metrics";
 import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
-import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
+import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;

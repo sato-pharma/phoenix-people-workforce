@@ -7,7 +7,7 @@ import {
   type PayrollExpenseBreakdownRow,
   type PayrollExpenseSummary,
   type PayrollExpenseTrendPoint,
-} from "@/lib/payroll/expense-metrics";
+} from "@/lib/outstation/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { roundCurrency } from "@/lib/payroll/money";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";

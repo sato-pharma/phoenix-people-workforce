@@ -3327,7 +3327,7 @@ export function PayrollDashboard({
 
   const loadSavedExpenseReport = useCallback(async (reportId?: string) => {
     const query = reportId ? `?reportId=${encodeURIComponent(reportId)}` : "";
-    const response = await fetch(`/api/payroll/expenses${query}`);
+    const response = await fetch(`/api/admin/outstation/expenses${query}`);
     const payload = await readPayrollApiPayload(response);
 
     if (!response.ok) return;
@@ -3682,7 +3682,7 @@ export function PayrollDashboard({
     setExpenseApprovalMessage(null);
 
     try {
-      const response = await fetch(`/api/payroll/expenses/reports/${reportId}`, {
+      const response = await fetch(`/api/admin/outstation/expenses/reports/${reportId}`, {
         method: "DELETE",
       });
       const payload = await readPayrollApiPayload(response);
@@ -3726,7 +3726,7 @@ export function PayrollDashboard({
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(`/api/payroll/expenses/reports/${reportId}`, {
+      const response = await fetch(`/api/admin/outstation/expenses/reports/${reportId}`, {
         body: formData,
         method: "PUT",
       });
@@ -3762,7 +3762,7 @@ export function PayrollDashboard({
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch("/api/payroll/expenses/analyze", {
+      const response = await fetch("/api/admin/outstation/expenses/analyze", {
         body: formData,
         method: "POST",
       });
@@ -3808,7 +3808,7 @@ export function PayrollDashboard({
     setExpenseApprovalMessage(null);
 
     try {
-      const response = await fetch("/api/payroll/expenses", {
+      const response = await fetch("/api/admin/outstation/expenses", {
         body: JSON.stringify({
           fileName: expenseAnalysis.fileName,
           records: recordsToSave,
@@ -3849,7 +3849,7 @@ export function PayrollDashboard({
     setExpenseApprovalMessage(null);
 
     try {
-      const response = await fetch("/api/payroll/expenses/import", {
+      const response = await fetch("/api/admin/outstation/expenses/import", {
         body: JSON.stringify({
           fileName: expenseAnalysis.fileName,
           month,
