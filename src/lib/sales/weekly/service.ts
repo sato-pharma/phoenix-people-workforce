@@ -8,7 +8,7 @@ import {
   listWeeklyProductScopeAssignments,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
-import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { loadBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import {
   WEEKLY_DISTRIBUTORS,
@@ -16,7 +16,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
-import { decumulateRows } from "@/lib/sales/weekly/decumulate";
+import { decumulateRows, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -246,6 +246,31 @@ async function persistWeeklyUpload(
     }
   }
 
+  // Second duplicate guard, on the LOGICAL week slot (cycle_month + week_number + template). The
+  // week_start guard above misses a re-upload of the same cycle-week that carries a different
+  // week_start date (cycle_month/week_number are operator-tagged and editable), which would insert a
+  // phantom extra week into the de-cumulation sequence for that cycle and corrupt the telescoping
+  // chain. Also enforced by a partial unique index (see the batch-insert 23505 handling below) so a
+  // concurrent race can't slip past this SELECT.
+  if (result.cycleMonth && result.weekNumber != null) {
+    const existingSlot = await supabase
+      .from("weekly_sales_batches")
+      .select("id")
+      .eq("distributor_code", result.distributor.code)
+      .eq("cycle_month", result.cycleMonth)
+      .eq("week_number", result.weekNumber)
+      .eq("template_key", result.templateKey)
+      .eq("status", "validated")
+      .limit(1);
+    if (!existingSlot.error && (existingSlot.data?.length ?? 0) > 0) {
+      throw new SalesWorkflowError(
+        "duplicate_week",
+        `A validated upload already exists for ${result.distributor.name} — cycle ${result.cycleMonth}, week ${result.weekNumber}. Delete it first to re-upload.`,
+        409,
+      );
+    }
+  }
+
   const batchInsert = await supabase
     .from("weekly_sales_batches")
     .insert({
@@ -275,6 +300,16 @@ async function persistWeeklyUpload(
     .select("id, created_at")
     .single();
   if (batchInsert.error || !batchInsert.data) {
+    // A partial unique index makes the batch INSERT the atomic arbiter for the two duplicate guards
+    // above: under a concurrent re-upload race both SELECTs can miss, but only one INSERT wins — the
+    // loser hits 23505 here. Surface it as the same friendly 409 instead of a raw 500.
+    if (isPostgresUniqueViolation(batchInsert.error)) {
+      throw new SalesWorkflowError(
+        "duplicate_week",
+        `A validated upload already exists for ${result.distributor.name} for this week. Delete it first to re-upload.`,
+        409,
+      );
+    }
     throw new SalesWorkflowError("persist_failed", batchInsert.error?.message ?? "Could not save the weekly batch.", 500);
   }
   const batchId = String(batchInsert.data.id);
@@ -1213,6 +1248,10 @@ export async function loadWeeklyDashboard(filters?: {
       salesUnits: Number(w.salesUnits.toFixed(2)),
       stockUnits: Number(w.stockUnits.toFixed(2)),
       deltaValuePct: prev && prev.salesValue !== 0 ? Number(((w.salesValue - prev.salesValue) / prev.salesValue).toFixed(4)) : null,
+      // M6: a gap in the uploaded weeks (previous present week number is >1 behind this one) means
+      // de-cumulation subtracted against a non-adjacent week, so this week's figure spans the missing
+      // week(s). weekHasDecumulationGap centralizes the check so it stays unit-tested.
+      spansGap: weekHasDecumulationGap(prev?.weekNumber ?? null, w.weekNumber),
     };
   });
 
