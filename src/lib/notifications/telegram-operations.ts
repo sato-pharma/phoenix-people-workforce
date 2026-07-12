@@ -236,7 +236,7 @@ export async function runTelegramDailyHrDigest() {
           vacationPendingCount: vacationPending.value,
           workflowApproverHrIds: recipients.map((r) => r.hrId),
         },
-        module: "telegram",
+        module: "system",
         priority: telegramDeliveries.counts.failed > 0 ? "high" : "normal",
         recipientHrId: recipient.hrId,
         recipientUserId: recipient.userId,
