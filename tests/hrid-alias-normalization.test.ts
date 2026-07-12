@@ -62,4 +62,31 @@ export function runHrIdAliasNormalizationTests() {
   const hiringDocumentsSource = readFileSync("src/lib/hiring-documents/service.ts", "utf8");
   assert.match(hiringDocumentsSource, /function normalizeHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "hiring-documents normalizeHrId delegates to the canonical alias-aware helper");
   assert.doesNotMatch(hiringDocumentsSource, /\.hr_id\.toUpperCase\(\)|\.employee_hr_id\.toUpperCase\(\)|manager_hr_id\.toUpperCase\(\)/, "no remaining raw .toUpperCase() HR_ID comparisons in the hiring-documents dashboard build");
+
+  // ── M13 completion sweep: additional files an Opus re-audit found with the same alias-unaware
+  //    pattern that the original 6-file fix missed. All only bite the single aliased id today
+  //    (aaa→aa, the CEO), but the fix (route through hrIdsMatch / canonicalHrIdForDisplay) is
+  //    identical to .toUpperCase() for every non-aliased id, so zero regression risk. Source-text
+  //    guards, matching the DB-backed convention above. ──
+  const approvalsHubSource = readFileSync("src/lib/approvals-hub/service.ts", "utf8");
+  assert.match(approvalsHubSource, /employees\.find\(\(e\) => hrIdsMatch\(e\.hrId, hrId\)\)/, "approvals-hub decider lookup uses hrIdsMatch");
+  assert.doesNotMatch(approvalsHubSource, /\(e\.hrId \?\? ""\)\.toUpperCase\(\) === hrId\.toUpperCase\(\)/, "no remaining raw decider comparison");
+
+  const ceoCommandCenterSource = readFileSync("src/lib/ceo/command-center.ts", "utf8");
+  assert.match(ceoCommandCenterSource, /hrIdsMatch\(k, s\.managerHrId\)/, "CEO command-center managers-on-leave match uses hrIdsMatch");
+
+  const employeePhotoSource = readFileSync("src/lib/employees/employee-photo.ts", "utf8");
+  assert.doesNotMatch(employeePhotoSource, /\.eq\("hr_id", hrId\.toUpperCase\(\)\)/, "employee-photo queries canonicalize the HR_ID filter");
+
+  const homeSnapshotSource = readFileSync("src/lib/employee-portal/home-snapshot.ts", "utf8");
+  assert.match(homeSnapshotSource, /import \{ canonicalHrIdForDisplay \} from "@\/lib\/hr-id"/, "home-snapshot imports the canonical helper");
+  assert.doesNotMatch(homeSnapshotSource, /\.eq\("[a-z_]*hr_id", hrId\.toUpperCase\(\)\)/, "no bare .eq(...hr_id, hrId.toUpperCase()) own-data filter remains in home-snapshot");
+  assert.doesNotMatch(homeSnapshotSource, /\$\{hrId\.toUpperCase\(\)\}/, "no bare ${hrId.toUpperCase()} interpolation remains in home-snapshot .or() filters");
+
+  const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
+  assert.match(portalServiceSource, /const canonicalHrId = canonicalHrIdForDisplay\(hrId\) \?\? hrId\.toUpperCase\(\);/, "portal notifications compute a canonical HR_ID once");
+  assert.match(portalServiceSource, /hrIdsMatch\(String\(recipient \?\? ""\)\.trim\(\), hrId\)/, "portal probation-recipient membership check uses hrIdsMatch");
+
+  const scopeVisibilitySource = readFileSync("src/lib/auth/scope-visibility.ts", "utf8");
+  assert.match(scopeVisibilitySource, /canonicalHrIdForDisplay\(row\.hr_id\)/, "scope-visibility name map canonicalizes both the key and the lookup");
 }

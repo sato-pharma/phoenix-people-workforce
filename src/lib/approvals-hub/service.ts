@@ -591,7 +591,7 @@ function deciderDisplayName(
   hrId: string | null | undefined,
 ): string | null {
   if (!hrId) return null;
-  const employee = employees.find((e) => (e.hrId ?? "").toUpperCase() === hrId.toUpperCase());
+  const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
   if (!employee) return hrId;
   return employee.jobTitle ? `${employee.fullName} (${employee.jobTitle})` : employee.fullName;
 }
