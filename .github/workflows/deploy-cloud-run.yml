@@ -56,12 +56,25 @@ jobs:
           RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
           echo "Deploying tag $SHA_TAG (no traffic)"
+          # Scaling/concurrency/execution-environment were previously set once by hand via
+          # gcloud and never captured here — a redeploy of this workflow alone (e.g. a fresh
+          # service recreate) would have silently reverted to platform defaults. Pinning them
+          # explicitly makes the live config match this file. --concurrency is lowered from
+          # the prior undocumented 80: a burst of concurrent requests to one instance's single
+          # vCPU is what turned the employee-directory photo-request bug into a real p95-
+          # latency alert (see PR #1022) — 40 makes Cloud Run spread a similar burst across
+          # the existing min/max-instances headroom instead of queuing on one instance.
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --source . \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --allow-unauthenticated \
             --memory 1Gi \
+            --cpu 1 \
+            --concurrency 40 \
+            --min-instances 1 \
+            --max-instances 3 \
+            --execution-environment gen2 \
             --cpu-boost \
             --no-traffic \
             --tag "$SHA_TAG" \
