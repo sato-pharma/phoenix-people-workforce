@@ -246,7 +246,9 @@ export function runCoachingAnalyticsTests() {
     completedReportStatuses.has("locked") && completedReportStatuses.has("submitted") && completedReportStatuses.has("reviewed_by_employee"),
     "the shared completed-status set covers the same three statuses every coaching analytics surface expects",
   );
-  const employeeCoachingListSource = readFileSync("src/components/coaching/employee-coaching-list.tsx", "utf8");
+  // employee-coaching-list.tsx is now a thin next/dynamic wrapper (performance follow-up);
+  // the real implementation this assertion targets lives in the sibling "-impl.tsx" file.
+  const employeeCoachingListSource = readFileSync("src/components/coaching/employee-coaching-list-impl.tsx", "utf8");
   assert.match(
     employeeCoachingListSource,
     /import \{ completedReportStatuses as completedStatuses \} from "@\/lib\/coaching\/analytics";/,

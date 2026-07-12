@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { cache } from "react";
 
 import { getRequiredEnv } from "@/lib/env";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -652,7 +653,11 @@ async function loadAllOptions(table: string, label = "name") {
   }));
 }
 
-async function getOpenVacancies(): Promise<VacancyLookupRow[]> {
+// Memoized per-request (React cache()): getOpenWorkforceVacancies()/getOpenMedicalRepVacancies()
+// and getOfferLookups() are all reached independently from the same /overview + command-center
+// request paths (via getEmployeeDirectory()'s internal vacancy calls and getRecruitmentMetrics()),
+// so without this a single page load issued this same position_vacancies query up to 3 times.
+const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
   try {
     const loadRows = (includeReplacement: boolean) => {
       const vacancyParams = new URLSearchParams({
@@ -737,7 +742,7 @@ async function getOpenVacancies(): Promise<VacancyLookupRow[]> {
 
     throw error;
   }
-}
+});
 
 export async function getOpenWorkforceVacancies(): Promise<VacancyLookupRow[]> {
   return getOpenVacancies();

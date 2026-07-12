@@ -45,21 +45,16 @@ type PhotoMapEntry = { path: string; updatedAt: string | null };
 
 let photoMapCache: { value: Map<string, PhotoMapEntry>; expiresAt: number } | null = null;
 
+// Same in-flight-dedupe pattern as inFlightDirectory in employee-directory.ts: concurrent
+// cache-miss callers (e.g. the directory service and a portal page loading at once) share one
+// query instead of each issuing their own.
+let inFlightPhotoMap: Promise<Map<string, PhotoMapEntry>> | null = null;
+
 export function invalidateEmployeePhotoMap(): void {
   photoMapCache = null;
 }
 
-/**
- * Cached map of normalized HR ID -> uploaded photo metadata. Defensive: if the
- * column/bucket does not exist yet (pre-migration) the query fails and we fall
- * back to an empty map so nothing in the read path breaks.
- */
-export async function getEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>> {
-  const now = Date.now();
-  if (photoMapCache && photoMapCache.expiresAt > now) {
-    return photoMapCache.value;
-  }
-
+async function fetchEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>> {
   const map = new Map<string, PhotoMapEntry>();
   try {
     const supabase = getSupabaseAdmin();
@@ -83,8 +78,32 @@ export async function getEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>>
     // Pre-migration or transient failure — fall back to no uploaded photos.
   }
 
-  photoMapCache = { value: map, expiresAt: now + PHOTO_MAP_TTL_MS };
   return map;
+}
+
+/**
+ * Cached map of normalized HR ID -> uploaded photo metadata. Defensive: if the
+ * column/bucket does not exist yet (pre-migration) the query fails and we fall
+ * back to an empty map so nothing in the read path breaks.
+ */
+export async function getEmployeePhotoMap(): Promise<Map<string, PhotoMapEntry>> {
+  const now = Date.now();
+  if (photoMapCache && photoMapCache.expiresAt > now) {
+    return photoMapCache.value;
+  }
+
+  if (!inFlightPhotoMap) {
+    inFlightPhotoMap = fetchEmployeePhotoMap()
+      .then((map) => {
+        photoMapCache = { value: map, expiresAt: Date.now() + PHOTO_MAP_TTL_MS };
+        return map;
+      })
+      .finally(() => {
+        inFlightPhotoMap = null;
+      });
+  }
+
+  return inFlightPhotoMap;
 }
 
 function cacheBust(updatedAt: string | null): string {

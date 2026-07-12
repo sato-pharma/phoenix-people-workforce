@@ -196,7 +196,9 @@ export function runPortalSosScopeTests() {
 
   // UI: DSM swaps "By region" for a vertical By-area chart and drops the Region breakdown tab;
   // multi-region viewers keep By region and gain a horizontal By-area chart.
-  const ui = readSource("../src/components/sales/portal/portal-sos-dashboard.tsx");
+  // portal-sos-dashboard.tsx is now a thin next/dynamic wrapper (performance follow-up); the
+  // real implementation these assertions target lives in the sibling "-impl.tsx" file.
+  const ui = readSource("../src/components/sales/portal/portal-sos-dashboard-impl.tsx");
   assert.ok(ui.includes("scope.isSingleRegion ?"), "UI must branch chart layout on isSingleRegion");
   assert.ok(ui.includes("<ColumnBars"), "UI must render the vertical ColumnBars chart for DSM By-area");
   assert.ok(
