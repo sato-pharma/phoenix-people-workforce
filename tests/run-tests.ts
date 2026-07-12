@@ -250,6 +250,7 @@ import { runProbationStabilizationTests } from "./probation-stabilization.test.t
 import { runProbationFeedbackSecurityTests } from "./probation-feedback-security.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
+import { runRlsAuthenticatedReadRevokeTests } from "./rls-authenticated-read-revoke.test.ts";
 import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
 import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
@@ -606,6 +607,7 @@ await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
+await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
 await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("workflow registry", runWorkflowRegistryTests);
