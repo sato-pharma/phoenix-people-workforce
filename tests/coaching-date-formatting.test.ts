@@ -8,8 +8,11 @@ function source(relPath: string): string {
 }
 
 const COACHING_DATE_COMPONENTS = [
-  "src/components/coaching/employee-coaching-list.tsx",
-  "src/components/coaching/employee-coaching-review.tsx",
+  // These two are thin next/dynamic wrappers (see performance follow-up); the real
+  // implementation — and the date-only formatting this test guards — lives in the
+  // sibling "-impl.tsx" file.
+  "src/components/coaching/employee-coaching-list-impl.tsx",
+  "src/components/coaching/employee-coaching-review-impl.tsx",
   "src/components/coaching/coaching-report-detail.tsx",
   "src/components/coaching/coaching-reports-center.tsx",
   "src/components/coaching/coaching-analytics-dashboard.tsx",
