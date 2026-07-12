@@ -290,12 +290,13 @@ function exportEntitlementsCSV(data: VacationEmployeeEligibilityRow[]) {
 }
 
 function exportRequestsCSV(data: VacationRequestRecord[]) {
-  const header = ["Request ID", "HR ID", "Employee", "Department", "Line", "Type", "Day Part", "Start", "End", "Duration", "Status", "Payment", "Paid Days", "Unpaid Days", "Submitted", "Manager"];
+  const header = ["Request ID", "HR ID", "Employee", "Department", "Line", "Type", "Day Part", "Start", "End", "Duration", "Balance Before", "Balance After", "Status", "Payment", "Paid Days", "Unpaid Days", "Submitted", "Manager"];
   const rows = data.map((r) => [
     csvEscape(vacationRequestDisplayId(r.id)), csvEscape(r.employeeHrId), csvEscape(r.employeeName),
     csvEscape(r.departmentName), csvEscape(r.lineName), csvEscape(vacationTypeLabel(r.vacationType)),
     csvEscape(vacationDayPartLabel(r.dayPart)), csvEscape(r.startDate), csvEscape(r.endDate),
-    csvEscape(r.durationDays), csvEscape(statusLabel(r.status)), csvEscape(paymentStatusLabel(r.paymentStatus)),
+    csvEscape(r.durationDays), csvEscape(r.balanceBeforeDays), csvEscape(r.balanceAfterDays),
+    csvEscape(statusLabel(r.status)), csvEscape(paymentStatusLabel(r.paymentStatus)),
     csvEscape(r.paidDurationDays), csvEscape(r.unpaidDurationDays),
     csvEscape(r.createdAt), csvEscape(r.managerName),
   ].join(","));
@@ -924,6 +925,14 @@ function RequestCard({
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
           <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.endDate)}</p>
         </div>
+      </div>
+
+      <div className="mt-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
+        <p className="mt-0.5 text-[12px] font-semibold text-slate-700">
+          {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
+          <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+        </p>
       </div>
 
       {row.paymentStatus === "partial" ? (
@@ -2077,6 +2086,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>From</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">To</th>
                       <SortableHeader active={requestSort === "durationDays"} direction={requestSortDir} sortKey="durationDays" onSort={toggleRequestSort}>Days</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Balance</th>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Payment</th>
                       <SortableHeader active={requestSort === "status"} direction={requestSortDir} sortKey="status" onSort={toggleRequestSort}>Status</SortableHeader>
                       <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
@@ -2113,6 +2123,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.endDate)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{formatDays(row.durationDays)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 whitespace-nowrap text-slate-700">
+                          <span className="font-semibold">{formatDays(row.balanceBeforeDays)}</span>
+                          <span className="mx-1 text-slate-400">&rarr;</span>
+                          <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+                        </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
                             {paymentStatusLabel(row.paymentStatus)}
@@ -2204,7 +2219,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ))}
                     {paginatedRequests.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={11}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={12}>
                           No vacation requests found.
                         </td>
                       </tr>
