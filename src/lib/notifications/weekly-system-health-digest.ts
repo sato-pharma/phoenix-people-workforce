@@ -194,7 +194,7 @@ export async function runWeeklySystemHealthDigest(options?: { force?: boolean; n
           sourceWarnings: warnings,
           totalErrors: summary.totalErrors,
         },
-        module: "telegram",
+        module: "system",
         priority,
         recipientHrId: recipient.hrId,
         recipientUserId: recipient.userId,
