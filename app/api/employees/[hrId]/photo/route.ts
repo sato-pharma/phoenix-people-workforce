@@ -56,7 +56,15 @@ async function assertCanManageTargetPhoto(request: Request, hrId: string) {
 // back to the bundled static photo / initials.
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
-    await resolveAccessContext(request);
+    const access = await resolveAccessContext(request);
+    // resolveAccessContext() never throws for a missing/invalid session — it falls back to a
+    // valid anonymousAccessContext (source: "guest") instead, matching every other
+    // access-control check in this codebase (see auth/permissions.ts canAccess). Without this
+    // check, an unauthenticated request would silently pass through as that guest context and
+    // stream any employee's photo.
+    if (access.source === "guest") {
+      throw new Error("Not authenticated.");
+    }
     const { hrId } = await params;
     const photo = await streamEmployeePhoto(hrId);
     if (!photo) {
