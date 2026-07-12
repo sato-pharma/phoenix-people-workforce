@@ -635,7 +635,15 @@ function organogramHrefForEmployee(
   return `/organogram${params.toString() ? `?${params.toString()}` : ""}`;
 }
 
-function DirectoryAvatar({ hrId, fullName }: { hrId: string; fullName: string }) {
+function DirectoryAvatar({
+  hrId,
+  fullName,
+  hasPhoto,
+}: {
+  hrId: string;
+  fullName: string;
+  hasPhoto?: boolean;
+}) {
   const staticUrl = employeeProfileImageForHrId(hrId);
   const initials =
     fullName
@@ -644,7 +652,13 @@ function DirectoryAvatar({ hrId, fullName }: { hrId: string; fullName: string })
       .map((p) => p.charAt(0))
       .join("")
       .toUpperCase() || "EM";
-  const [mode, setMode] = React.useState<"uploaded" | "static" | "initials">("uploaded");
+  // Only attempt the uploaded-photo route when the directory data says one
+  // exists — otherwise every row without a photo fires a guaranteed-404
+  // request, and a full page of rows does it all at once (see the Cloud Run
+  // p95-latency alert this was tripping).
+  const [mode, setMode] = React.useState<"uploaded" | "static" | "initials">(
+    hasPhoto ? "uploaded" : staticUrl ? "static" : "initials",
+  );
 
   function handleError() {
     setMode((m) => (m === "uploaded" ? (staticUrl ? "static" : "initials") : "initials"));
@@ -1686,7 +1700,11 @@ export function EmployeeManagement({
                             onClick={() => startEdit(employee)}
                             type="button"
                           >
-                            <DirectoryAvatar fullName={employee.displayName} hrId={employee.hrId} />
+                            <DirectoryAvatar
+                              fullName={employee.displayName}
+                              hasPhoto={employee.hasPhoto}
+                              hrId={employee.hrId}
+                            />
                             <div className="flex flex-col">
                             <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
                               {employee.displayName}
