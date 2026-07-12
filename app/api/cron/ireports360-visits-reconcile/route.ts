@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 
-import { runWideIReports360Reconciliation } from "@/lib/visits-report/service";
+import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
+import { logError } from "@/lib/observability/log";
+import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/visits-report/service";
+
+const JOB_NAME = "ireports360-visits-reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,10 +25,41 @@ function isAuthorized(request: Request) {
 }
 
 async function runReconcile() {
-  const result = await runWideIReports360Reconciliation();
+  // Same slice resolveWideReconciliationSlice-derived window runWideIReports360Reconciliation
+  // itself just used, so the Telegram notification's window labels line up exactly with what
+  // was actually pulled.
+  const { dateFrom, dateTo } = resolveWideReconciliationSlice(new Date());
+
+  let result: Awaited<ReturnType<typeof runWideIReports360Reconciliation>>;
+  try {
+    result = await runWideIReports360Reconciliation();
+  } catch (error) {
+    await notifyIReports360SyncResult({
+      dateFrom,
+      dateTo,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      jobName: JOB_NAME,
+      status: "failed",
+    }).catch((notifyError: unknown) => {
+      logError("Failed to send iReports360 reconcile-failure notification", { error: notifyError, labels: { job: JOB_NAME } });
+    });
+    throw error;
+  }
+
   // No probation DV-tick call here on purpose — the daily ireports360-visits-sync cron already
   // covers that over its own (narrower) window; re-running it over this wide window would be
   // redundant extra load with no benefit.
+  await notifyIReports360SyncResult({
+    dateFrom,
+    dateTo,
+    jobName: JOB_NAME,
+    result,
+    runId: result.runId,
+    status: "success",
+  }).catch((notifyError: unknown) => {
+    logError("Failed to send iReports360 reconcile-success notification", { error: notifyError, labels: { job: JOB_NAME } });
+  });
+
   return NextResponse.json({ success: true, ...result });
 }
 
@@ -35,7 +70,7 @@ export async function GET(request: Request) {
   try {
     return await runReconcile();
   } catch (error) {
-    console.error(error, { tags: { cron: "ireports360-visits-reconcile" } });
+    logError("iReports360 wide reconciliation failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = error instanceof Error ? error.message : "iReports360 wide reconciliation failed.";
     return NextResponse.json({ error: "ireports360_visits_reconcile_failed", message }, { status: 500 });
   }
