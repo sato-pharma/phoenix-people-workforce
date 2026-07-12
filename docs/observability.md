@@ -16,13 +16,14 @@ _Phoenix Workforce runs on GCP Cloud Run. **Sentry has been fully removed** — 
 - `event=cron_unauthorized` — a cron/worker endpoint hit without a valid `CRON_SECRET`.
 - `event=webhook_signature_invalid` / `webhook_misconfigured` — Resend webhook rejections.
 - `event=cron_failed` / `background_job_failed` — job execution failures.
+- `event=config_drift` — a notification-critical env var (`EMAIL_NOTIFICATIONS_ENABLED`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `NOTIFICATION_WEBHOOK_SECRET`) is unset in production, emitted by `/api/readyz` (`src/lib/observability/config-drift.ts`). Non-fatal — readiness stays 200 — but alerted, see below.
 
 Query in Cloud Logging: `resource.type="cloud_run_revision" resource.labels.service_name="phoenix-hr" labels.event="cron_unauthorized"`.
 
 ## Health probes
 
 - **`/api/healthz`** — liveness: static 200, no dependencies. Used by the deploy smoke test and the uptime check.
-- **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values.
+- **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values. Also surfaces non-fatal notification-config drift (see `event=config_drift` above) in a `warnings[]` field — drift never fails readiness, but it is logged and alerted (see below) since it means email/Telegram may be silently broken while everything else is healthy.
 
 ## Metrics & alerting (GCP Monitoring)
 
@@ -35,6 +36,7 @@ Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notificati
 | Uptime failure | uptime check on `/api/healthz` |
 | Cloud Scheduler job failure | log-based metric `phoenix_scheduler_failures` |
 | App auth/cron/webhook failure spike | log-based metric `phoenix_app_auth_failures` |
+| Notification-config drift | log-based metric `phoenix_config_drift` — fires on any occurrence in a 5-minute window (`labels.event="config_drift"`, see Structured logging above) |
 
 **Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
 
