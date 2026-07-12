@@ -72,6 +72,14 @@ export function runSalesSourceOfTruthTests() {
   assert.match(salesServiceSource, /selectCurrentSalesRecords/);
   assert.match(salesServiceSource, /getSalesPlatformMetrics/);
 
+  // M1: the sales-import duplicate-batch race is closed by a partial unique index on duplicate_hash
+  // (the batch INSERT becomes the atomic arbiter). createSalesImport must surface the losing
+  // concurrent INSERT's 23505 as a clean 409 SalesWorkflowError instead of a raw 500.
+  assert.match(salesServiceSource, /if \(isPostgresUniqueViolation\(batchInsert\.error\)\) \{[\s\S]*?new SalesWorkflowError\(\s*"duplicate_sales_batch"/, "createSalesImport maps a unique-violation on batch insert to a duplicate_sales_batch 409");
+  const dedupMigration = readFileSync("supabase/migrations/20260712000000_sales_import_batches_duplicate_hash_unique.sql", "utf8");
+  assert.match(dedupMigration, /create unique index if not exists sales_import_batches_active_duplicate_hash_uidx/, "the partial unique index migration exists");
+  assert.match(dedupMigration, /where status not in \('replaced', 'rejected'\) and btrim\(duplicate_hash\) <> ''/, "the index is scoped to active, hash-bearing batches only");
+
   const platformSource = readFileSync("src/lib/platform/metrics.ts", "utf8");
   assert.match(platformSource, /getSalesPlatformMetrics/);
   assert.doesNotMatch(platformSource, /getSalesDashboard/);
