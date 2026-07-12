@@ -96,6 +96,22 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
   );
 }
 
+// The admin client is a stateless REST (postgrest-js/fetch) wrapper keyed on the fixed
+// service-role key — no per-caller session is ever set on it, so one instance can safely
+// be shared across concurrent requests on the same Cloud Run instance. Memoizing it avoids
+// reconstructing the client (and its auth/storage/functions sub-clients) on every one of
+// the dozens of getSupabaseAdmin() calls a single request can make (e.g. the employee
+// directory service). A custom requestTimeoutMs is deliberately rare (heavy admin-only
+// reads) so that path still builds a fresh, uncached client.
+//
+// getSupabaseUserClient()/getSupabaseAuthBridgeClient() must NOT be memoized the same way:
+// both are used specifically so a caller can hydrate a per-request session onto the
+// returned client (see getSupabaseRlsClient() in rls-server.ts, which calls
+// `.auth.setSession(...)`, and signInWithLoginId() in supabase-identity.ts, which calls
+// `.auth.signInWithPassword(...)`). Sharing one instance across concurrent requests would
+// let one user's session overwrite another's mid-flight — always construct those fresh.
+let cachedAdminClient: SupabaseClient | null = null;
+
 /**
  * Admin client using service role key.
  * Bypasses RLS. Use ONLY for system jobs, background tasks, or admin-only logic.
@@ -105,12 +121,22 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
  * server-side compute legitimately exceeds 15s; leave it at the default everywhere else.
  */
 export function getSupabaseAdmin(options?: { requestTimeoutMs?: number }): SupabaseClient {
-  return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"), options?.requestTimeoutMs);
+  if (options?.requestTimeoutMs) {
+    return createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"), options.requestTimeoutMs);
+  }
+  if (!cachedAdminClient) {
+    cachedAdminClient = createSupabaseClient(getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+  }
+  return cachedAdminClient;
 }
 
 /**
  * User-scoped client using the anonymous key.
  * Respects RLS. Use for client-facing operations where a user session might be present.
+ *
+ * Always constructs a fresh client — callers (e.g. getSupabaseRlsClient()) hydrate a
+ * per-request session onto the result via `.auth.setSession(...)`, so this must never be
+ * shared across concurrent requests.
  */
 export function getSupabaseUserClient(): SupabaseClient {
   return createSupabaseClient(getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
@@ -182,6 +208,10 @@ export async function rpcAll<T = Record<string, unknown>>(
  * Server-only Auth bridge client. Prefer anon key, but allow service-role fallback
  * on previews where the public anon env was not configured. The service key never
  * leaves the server; the returned session is still a real user JWT.
+ *
+ * Always constructs a fresh client — callers (see signInWithLoginId() in
+ * supabase-identity.ts) call `.auth.signInWithPassword(...)` on the result, so this must
+ * never be shared/memoized across concurrent requests.
  */
 export function getSupabaseAuthBridgeClient(): SupabaseClient {
   return createSupabaseClient(
