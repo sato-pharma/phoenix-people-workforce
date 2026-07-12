@@ -28,7 +28,10 @@
 - Staging application: `https://phoenix-hr-staging-897559113412.us-central1.run.app` (Cloud Run
   service `phoenix-hr-staging`, project `phoenix-workforce-498619`, region `us-central1`; deployed
   2026-07-12, points at the staging Supabase project below, isolated from production — no shared
-  third-party secrets, no auto-redeploy from `main`, requires a manual `gcloud run deploy` to update)
+  third-party secrets. Auto-deploys from `main` after CI passes, via
+  `.github/workflows/deploy-cloud-run-staging.yml` — same no-traffic/smoke-test/promote gate as
+  production, reusing the env vars already configured on the Cloud Run service itself rather than
+  any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.)
 - Vercel project: `phoenix-workforce` (legacy references only — hosting migrated to GCP Cloud Run)
 - Vercel scope: `phoenix-hr-workspace-s-projects`
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, created

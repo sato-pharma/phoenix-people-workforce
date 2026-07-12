@@ -1,0 +1,89 @@
+name: Deploy to Google Cloud Run (Staging)
+
+# Deploy only AFTER the CI workflow succeeds for the same commit on main (never in
+# parallel with a red build), or on a manual dispatch. Mirrors deploy-cloud-run.yml's
+# safety pattern (no-traffic tag deploy, smoke test, then promote) but targets the
+# isolated staging Cloud Run service.
+#
+# Deliberately omits --set-env-vars / --set-build-env-vars: the staging service
+# already has its own env vars (staging Supabase project, staging
+# PHOENIX_AUTH_SECRET, etc.) configured directly on Cloud Run, isolated from
+# production. Omitting those flags means `gcloud run deploy` carries the existing
+# revision's env/build config forward untouched — this workflow only ships new
+# code, never new secrets. No STAGING_* GitHub secrets exist or are needed for
+# this reason. See AGENTS.md § Stable Environment Facts for the staging project
+# details.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: phoenix-workforce-498619
+  REGION: us-central1
+  SERVICE_NAME: phoenix-hr-staging
+
+jobs:
+  deploy:
+    # Gate: only proceed when the triggering CI run succeeded (or on manual dispatch).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Deploy the exact commit CI validated (workflow_run), else the dispatched ref.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Deploy new revision (no traffic) with a commit-SHA tag
+        id: deploy
+        run: |
+          set -euo pipefail
+          RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
+          echo "Deploying tag $SHA_TAG (no traffic) to ${{ env.SERVICE_NAME }}"
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --no-traffic \
+            --tag "$SHA_TAG"
+          TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
+            | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
+          echo "Tag URL: $TAG_URL"
+          test -n "$TAG_URL"
+          echo "tag_url=$TAG_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Post-deploy smoke test (isolated new revision, before routing traffic)
+        run: |
+          set -euo pipefail
+          URL="${{ steps.deploy.outputs.tag_url }}"
+          fail() { echo "SMOKE FAILED: $1"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/healthz"); echo "GET /api/healthz -> $code"; [ "$code" = "200" ] || fail "healthz not 200"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/login"); echo "GET /login -> $code"; [ "$code" = "200" ] || fail "login not 200"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/webhooks/resend" -H "content-type: application/json" -d '{}'); echo "POST /api/webhooks/resend -> $code"; [ "$code" = "401" ] || fail "webhook not 401"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"
+          echo "Smoke passed."
+
+      - name: Promote validated revision to 100% traffic
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --to-latest
