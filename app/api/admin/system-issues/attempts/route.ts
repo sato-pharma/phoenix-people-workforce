@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getUserAttemptSummary } from "@/lib/error-monitor/service";
+import { loadUserAttemptsSnapshot } from "@/lib/error-monitor/system-issues";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const summary = await getUserAttemptSummary({
+    const summary = await loadUserAttemptsSnapshot({
       dateFrom: url.searchParams.get("dateFrom") || null,
       dateTo: url.searchParams.get("dateTo") || null,
       hrId: url.searchParams.get("hrId") || null,

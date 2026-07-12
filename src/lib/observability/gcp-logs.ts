@@ -31,8 +31,27 @@ function getClient(projectId: string): Logging {
   return cachedClient;
 }
 
-function extractMessage(entry: { data?: unknown; metadata?: { jsonPayload?: unknown } }): string {
-  const payload = entry.data ?? entry.metadata?.jsonPayload;
+type LogEntryMetadata = {
+  jsonPayload?: unknown;
+  textPayload?: unknown;
+  httpRequest?: {
+    requestMethod?: string | null;
+    requestUrl?: string | null;
+    status?: number | null;
+  } | null;
+};
+
+/**
+ * Most WARNING+ entries for a Cloud Run service are the platform's own per-request
+ * access log (`run.googleapis.com/requests`) — GCP auto-derives severity from the HTTP
+ * status code (4xx/5xx), and these entries carry no jsonPayload/textPayload at all, only
+ * `httpRequest` metadata. Before this, they fell through to "(empty log entry)", which
+ * was the majority (67/100) of what the dashboard showed — technically not a parsing
+ * bug (there genuinely was no text/json payload), but a missed opportunity: the
+ * httpRequest metadata is exactly the information an admin wants ("GET /x -> 403").
+ */
+function extractMessage(entry: { data?: unknown; metadata?: LogEntryMetadata }): string {
+  const payload = entry.data ?? entry.metadata?.jsonPayload ?? entry.metadata?.textPayload;
   if (typeof payload === "string") return payload;
   if (payload && typeof payload === "object") {
     const record = payload as Record<string, unknown>;
@@ -42,6 +61,17 @@ function extractMessage(entry: { data?: unknown; metadata?: { jsonPayload?: unkn
     } catch {
       return "(unparseable log payload)";
     }
+  }
+  const httpRequest = entry.metadata?.httpRequest;
+  if (httpRequest?.requestMethod && httpRequest.requestUrl) {
+    const path = (() => {
+      try {
+        return new URL(httpRequest.requestUrl).pathname;
+      } catch {
+        return httpRequest.requestUrl;
+      }
+    })();
+    return `${httpRequest.requestMethod} ${path} → ${httpRequest.status ?? "?"}`;
   }
   return "(empty log entry)";
 }

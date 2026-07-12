@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getErrorEvents } from "@/lib/error-monitor/service";
-import { getRecentGcpLogEntries } from "@/lib/observability/gcp-logs";
+import { loadSystemIssuesSnapshot } from "@/lib/error-monitor/system-issues";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 
@@ -19,12 +18,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const hoursBack = Number(url.searchParams.get("hoursBack") ?? "24");
 
-    const [appErrors, gcpLogs] = await Promise.all([
-      getErrorEvents({ pageSize: 100 }),
-      getRecentGcpLogEntries({ hoursBack: Number.isFinite(hoursBack) ? hoursBack : 24 }),
-    ]);
-
-    return NextResponse.json({ appErrors, gcpLogs });
+    const snapshot = await loadSystemIssuesSnapshot(Number.isFinite(hoursBack) ? hoursBack : 24);
+    return NextResponse.json(snapshot);
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });

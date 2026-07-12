@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { Toaster } from "sonner";
 import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
+import { ReportingErrorBoundary } from "@/components/layout/reporting-error-boundary";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
 import "./globals.css";
@@ -42,7 +44,10 @@ export default function RootLayout({
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <GlobalErrorReporter />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <ReportingErrorBoundary>{children}</ReportingErrorBoundary>
+        </ThemeProvider>
+        <Toaster closeButton position="top-right" richColors theme="light" />
       </body>
     </html>
   );
