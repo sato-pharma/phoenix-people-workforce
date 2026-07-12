@@ -23,7 +23,7 @@ export function runNotificationGovernanceHardeningTests() {
   const accessRegistrySource = source("src/lib/security/access-registry.ts");
   const offersSource = source("src/lib/offers/service.ts");
   const internalMessagesSource = source("src/lib/internal-messages/service.ts");
-  const payrollExpensesSource = source("src/lib/payroll/expenses.ts");
+  const payrollExpensesSource = source("src/lib/outstation/expenses.ts");
   const highRiskDigestSource = source("src/lib/outstation/high-risk-digest.ts");
 
   // Finding #39: explicit-recipient resolution must batch the employees/app_auth_users

@@ -11,7 +11,7 @@ import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employee
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
 import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
-import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
+import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getPlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";

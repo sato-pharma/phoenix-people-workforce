@@ -182,7 +182,7 @@ async function run() {
         method: "POST",
       }, 404),
       await apiMultipartMissingFile(page, "payroll replace missing file", `/api/payroll/${fakeUuid}/replace`, {}),
-      await apiJson(page, "approved expenses import missing period", "/api/payroll/expenses/import", {
+      await apiJson(page, "approved expenses import missing period", "/api/admin/outstation/expenses/import", {
         body: JSON.stringify({ fileName: "phase14-expenses.xls", records: [] }),
         headers: { "Content-Type": "application/json" },
         method: "POST",

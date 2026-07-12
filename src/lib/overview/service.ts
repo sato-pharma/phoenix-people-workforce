@@ -1,6 +1,6 @@
 import { getPayrollDashboard } from "@/lib/payroll/service";
-import { getPayrollExpenseDashboardData } from "@/lib/payroll/expenses";
-import { payrollExpensePeriodKey } from "@/lib/payroll/expense-metrics";
+import { getPayrollExpenseDashboardData } from "@/lib/outstation/expenses";
+import { payrollExpensePeriodKey } from "@/lib/outstation/expense-metrics";
 import { getSalesDashboard } from "@/lib/sales/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getOperationalRecentActivity } from "@/lib/operations/events";

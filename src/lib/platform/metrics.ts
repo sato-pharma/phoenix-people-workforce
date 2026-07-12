@@ -16,7 +16,7 @@ import { getHiringDocumentsDashboard } from "@/lib/hiring-documents/service";
 import { buildLifecycleRiskMetrics, type LifecycleRiskAlert } from "@/lib/lifecycle-risk/metrics";
 import { getEmailNotificationOutboxStats } from "@/lib/notifications/email";
 import { getOfferDashboard } from "@/lib/offers/service";
-import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
+import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getProbationRows } from "@/lib/probation/service";
 import { buildRecruitmentOnboardingMetrics } from "@/lib/recruitment/onboarding-metrics";

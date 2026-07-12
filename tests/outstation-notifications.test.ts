@@ -19,7 +19,7 @@ function functionSlice(src: string, declaration: string) {
 
 export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
-  const expenses = source("src/lib/payroll/expenses.ts");
+  const expenses = source("src/lib/outstation/expenses.ts");
 
   // ── Rule 1: No submit notification ────────────────────────────────────────────
   // Outstation/expense submissions auto-approve directly to payroll. No email on submit.

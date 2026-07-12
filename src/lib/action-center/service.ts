@@ -468,7 +468,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     salary: "/payroll",
     sales_import: "/sales/queue",
     marketing_request: "/admin/marketing-requests/inbox",
-    payroll_expense: "/payroll/expenses",
+    payroll_expense: "/admin/outstation/expenses",
   } as const;
 
   const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses, momSteps] =

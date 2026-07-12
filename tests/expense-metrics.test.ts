@@ -6,7 +6,7 @@ import {
   getApprovedExpenseTotalsByHrId,
   groupPayrollExpenses,
   summarizePayrollExpenses,
-} from "../src/lib/payroll/expense-metrics.ts";
+} from "../src/lib/outstation/expense-metrics.ts";
 import type { PayrollExpenseApproval } from "../src/lib/payroll/types.ts";
 
 function expense(input: Partial<PayrollExpenseApproval>): PayrollExpenseApproval {
@@ -122,7 +122,7 @@ export function runExpenseMetricsTests() {
   assert.equal(dsmSummaries[0]?.approvedAmount, 180);
   assert.equal(dsmSummaries[0]?.pendingAmount, 110);
 
-  const expenseServiceSource = readFileSync("src/lib/payroll/expenses.ts", "utf8");
+  const expenseServiceSource = readFileSync("src/lib/outstation/expenses.ts", "utf8");
   assert.match(expenseServiceSource, /getPayrollExpenseMetrics/);
   assert.match(expenseServiceSource, /getPayrollExpenseDashboardData/);
   assert.match(expenseServiceSource, /summarizePayrollExpenses/);
@@ -138,13 +138,13 @@ export function runExpenseMetricsTests() {
   assert.doesNotMatch(overviewSource, /listPayrollExpenses/);
   assert.doesNotMatch(overviewSource, /listPayrollExpenseReports/);
 
-  const dashboardPageSource = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
+  const dashboardPageSource = readFileSync("app/(admin)/admin/outstation/expenses/dashboard/page.tsx", "utf8");
   assert.match(dashboardPageSource, /getPayrollExpenseDashboardData/);
   assert.match(dashboardPageSource, /canAccessSystemAdministratorWorkspace\(access\)/);
   assert.doesNotMatch(dashboardPageSource, /listPayrollExpenses/);
   assert.doesNotMatch(dashboardPageSource, /getEmployeeDirectory/);
 
-  const dashboardComponentSource = readFileSync("src/components/payroll/expenses-dashboard.tsx", "utf8");
+  const dashboardComponentSource = readFileSync("src/components/outstation/expenses-dashboard.tsx", "utf8");
   assert.match(dashboardComponentSource, /summarizePayrollExpenses/);
   assert.match(dashboardComponentSource, /groupPayrollExpenses/);
 
@@ -152,7 +152,7 @@ export function runExpenseMetricsTests() {
   assert.match(employeePortalSource, /summarizePayrollExpenses/);
   assert.match(employeePortalSource, /buildPayrollExpenseDsmSummaries/);
 
-  const importRouteSource = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
+  const importRouteSource = readFileSync("app/api/admin/outstation/expenses/import/route.ts", "utf8");
   assert.match(importRouteSource, /importApprovedExpensesToPayroll/);
   assert.match(importRouteSource, /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/);
   assert.doesNotMatch(importRouteSource, /listPayrollExpenses/);

@@ -1,9 +1,9 @@
-import { ExpensesDashboard } from "@/components/payroll/expenses-dashboard";
+import { ExpensesDashboard } from "@/components/outstation/expenses-dashboard";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
-import { getPayrollExpenseDashboardData } from "@/lib/payroll/expenses";
+import { getPayrollExpenseDashboardData } from "@/lib/outstation/expenses";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
-import type { PayrollExpenseDashboardData } from "@/lib/payroll/expenses";
+import type { PayrollExpenseDashboardData } from "@/lib/outstation/expenses";
 
 export const dynamic = "force-dynamic";
 

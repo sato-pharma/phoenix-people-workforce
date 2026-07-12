@@ -37,7 +37,7 @@ export function runExpenseRiskHardeningTests() {
   assert.match(adminOutstationSources, /assertOutstationAdminAccess\(access,\s*"approve"\)/);
   assert.match(adminOutstationSources, /assertOutstationAdminAccess\(access,\s*"delete"\)/);
 
-  const payrollExpenses = source("src/lib/payroll/expenses.ts");
+  const payrollExpenses = source("src/lib/outstation/expenses.ts");
   assert.match(payrollExpenses, /class PayrollExpenseReportLockedError/);
   assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"deleted",\s*accessContext\)/);
   assert.match(payrollExpenses, /assertPayrollExpenseReportCanMutate\(reportId,\s*"replaced",\s*accessContext\)/);
@@ -51,12 +51,12 @@ export function runExpenseRiskHardeningTests() {
   assert.match(payrollExpenses, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "add_to_payroll"/);
   assert.match(payrollExpenses, /Save manual HR\/admin expense approvals before importing/);
 
-  const importRoute = source("app/api/payroll/expenses/import/route.ts");
+  const importRoute = source("app/api/admin/outstation/expenses/import/route.ts");
   assert.match(importRoute, /unsaved_approval_rows_not_allowed/);
   assert.match(importRoute, /Save manual HR\/admin expense approvals before importing to payroll/);
   assert.doesNotMatch(importRoute, /records: rawRecords/);
 
-  const reportsRoute = source("app/api/payroll/expenses/reports/[id]/route.ts");
+  const reportsRoute = source("app/api/admin/outstation/expenses/reports/[id]/route.ts");
   assert.match(reportsRoute, /isPayrollExpenseReportLocked/);
   assert.match(reportsRoute, /"expense_report_locked"/);
   assert.match(reportsRoute, /status:\s*409/);

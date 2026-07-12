@@ -1525,7 +1525,7 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "Finance Manager"],
   },
   {
-    href: "/payroll/expenses/dashboard",
+    href: "/admin/outstation/expenses/dashboard",
     icon: ChartColumnBig,
     label: "Outstation Expenses",
     description: "Outstation expenses dashboard and reporting.",
@@ -1533,7 +1533,7 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     roles: systemAdministratorNavigationRoles,
   },
   {
-    href: "/payroll/expenses",
+    href: "/admin/outstation/expenses",
     icon: FileSpreadsheet,
     label: "Historical Upload",
     description: "Upload historical outstation expense data.",

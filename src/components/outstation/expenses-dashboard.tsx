@@ -25,7 +25,7 @@ import {
   summarizePayrollExpenses,
   type PayrollExpenseGroupRow,
   type PayrollExpenseSummary,
-} from "@/lib/payroll/expense-metrics";
+} from "@/lib/outstation/expense-metrics";
 import type {
   PayrollExpenseApproval,
   PayrollExpenseReport,
@@ -575,7 +575,7 @@ export function ExpensesDashboard({
                     Add Manual
                   </Button>
                 </Link>
-                <Link href="/payroll/expenses">
+                <Link href="/admin/outstation/expenses">
                   <Button className="gap-2 rounded-xl" variant="secondary">
                     <FileSpreadsheet className="h-4 w-4" />
                     Historical Upload

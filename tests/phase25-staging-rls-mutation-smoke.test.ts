@@ -5,7 +5,7 @@ export function runPhase25StagingRlsMutationSmokeTests() {
   const smoke = readFileSync("scripts/phase25-staging-rls-mutation-smoke.ts", "utf8");
   const vacationDecisionRoute = readFileSync("app/api/vacations/requests/[id]/decision/route.ts", "utf8");
   const vacationService = readFileSync("src/lib/vacation/service.ts", "utf8");
-  const expenseImportRoute = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
+  const expenseImportRoute = readFileSync("app/api/admin/outstation/expenses/import/route.ts", "utf8");
   const employeesRoute = readFileSync("app/api/employees/route.ts", "utf8");
   const probationWorkflowRoute = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
 

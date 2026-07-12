@@ -10,7 +10,7 @@ import {
   getOutstationRequestById,
 } from "@/lib/outstation/service";
 import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
-import { isPayrollExpensesSchemaMissing } from "@/lib/payroll/expenses";
+import { isPayrollExpensesSchemaMissing } from "@/lib/outstation/expenses";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteVacationRequestAsAdmin } from "@/lib/vacation/service";
 
