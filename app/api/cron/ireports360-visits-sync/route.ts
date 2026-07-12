@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 
+import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
+import { logError } from "@/lib/observability/log";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
+
+const JOB_NAME = "ireports360-visits-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,15 +35,46 @@ function isoDaysAgo(days: number) {
 }
 
 async function runSync() {
-  const mirrorSync = await runScheduledIReports360Sync();
+  // Computed up front (not just for the DV tick below) so the Telegram notification's window
+  // labels match exactly what runScheduledIReports360Sync itself just pulled, in both the
+  // success and failure branches below.
+  const dateTo = isoDaysAgo(0);
+  const dateFrom = isoDaysAgo(DV_TICK_LOOKBACK_DAYS);
+
+  let mirrorSync: Awaited<ReturnType<typeof runScheduledIReports360Sync>>;
+  try {
+    mirrorSync = await runScheduledIReports360Sync();
+  } catch (error) {
+    await notifyIReports360SyncResult({
+      dateFrom,
+      dateTo,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      jobName: JOB_NAME,
+      status: "failed",
+    }).catch((notifyError: unknown) => {
+      logError("Failed to send iReports360 sync-failure notification", { error: notifyError, labels: { job: JOB_NAME } });
+    });
+    throw error;
+  }
+
   // Auto-tick probation DV checkboxes for double visits in the just-refreshed window. Only
   // reached if the mirror sync above succeeded (it throws on failure, which short-circuits this
   // call). Never let a probation-tick failure mask an otherwise-successful visits sync.
-  const dateTo = isoDaysAgo(0);
-  const dateFrom = isoDaysAgo(DV_TICK_LOOKBACK_DAYS);
   await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
     console.error(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
   });
+
+  await notifyIReports360SyncResult({
+    dateFrom,
+    dateTo,
+    jobName: JOB_NAME,
+    result: mirrorSync,
+    runId: mirrorSync.runId,
+    status: "success",
+  }).catch((notifyError: unknown) => {
+    logError("Failed to send iReports360 sync-success notification", { error: notifyError, labels: { job: JOB_NAME } });
+  });
+
   return NextResponse.json({ success: true, ...mirrorSync });
 }
 
@@ -53,7 +88,7 @@ export async function GET(request: Request) {
     // drifts an hour off in winter (EET, UTC+2), same known tradeoff as that existing cron.
     return await runSync();
   } catch (error) {
-    console.error(error, { tags: { cron: "ireports360-visits-sync" } });
+    logError("iReports360 visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = error instanceof Error ? error.message : "iReports360 visits sync failed.";
     return NextResponse.json({ error: "ireports360_visits_sync_failed", message }, { status: 500 });
   }
