@@ -1,5 +1,6 @@
 import { cache } from "react";
 
+import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   canSeeEmployee,
@@ -368,7 +369,7 @@ async function fetchEmployeeSalaryStructure(hrId: string) {
   const { data } = await getSupabaseAdmin()
     .from("employee_salary_structure")
     .select("base_salary,cost_of_living,fuel_allowance,social_insurance,income_taxes")
-    .eq("employee_hr_id", hrId.toUpperCase())
+    .eq("employee_hr_id", canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -885,8 +886,8 @@ function mapDocument(row: Record<string, unknown>, index: number): EmployeePorta
 async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocument[]> {
   const supabase = getSupabaseAdmin();
   const queries = [
-    () => supabase.from("employee_documents").select("*").eq("employee_hr_id", hrId.toUpperCase()).order("created_at", { ascending: false }),
-    () => supabase.from("employee_documents").select("*").eq("hr_id", hrId.toUpperCase()).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("employee_hr_id", canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()).order("created_at", { ascending: false }),
+    () => supabase.from("employee_documents").select("*").eq("hr_id", canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()).order("created_at", { ascending: false }),
   ];
 
   for (const runQuery of queries) {
@@ -974,11 +975,12 @@ async function fetchSalaryTrend(
 
 async function fetchPortalNotifications(hrId: string): Promise<PortalNotification[]> {
   const supabase = getSupabaseAdmin();
+  const canonicalHrId = canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase();
   try {
     const { data } = await supabase
       .from("notification_events")
       .select("id,category,subject,scheduled_for,sent_at,status,metadata,recipients")
-      .or(`employee_hr_id.eq.${hrId},recipients.cs.{${hrId.toUpperCase()}}`)
+      .or(`employee_hr_id.eq.${canonicalHrId},recipients.cs.{${canonicalHrId}}`)
       .order("scheduled_for", { ascending: false })
       .limit(5);
 
@@ -986,7 +988,7 @@ async function fetchPortalNotifications(hrId: string): Promise<PortalNotificatio
       const r = row as Record<string, unknown>;
       if (String(r.category ?? "").toLowerCase() !== "probation") return true;
       const recipients = Array.isArray(r.recipients) ? r.recipients : [];
-      return recipients.some((recipient) => String(recipient ?? "").trim().toUpperCase() === hrId.toUpperCase());
+      return recipients.some((recipient) => hrIdsMatch(String(recipient ?? "").trim(), hrId));
     }).map((row) => {
       const r = row as Record<string, unknown>;
       const metadata = r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata)

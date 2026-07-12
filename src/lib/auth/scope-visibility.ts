@@ -7,6 +7,7 @@
  *                         visibility (null = use line scope, [] = sees nothing, [...] = those codes only).
  */
 
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "./permissions";
 
@@ -121,14 +122,14 @@ export async function listUserScopeOverrides(): Promise<UserScopeOverride[]> {
       .select("hr_id, full_name")
       .in("hr_id", hrIds);
     for (const row of (empData ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      if (row.hr_id) nameByHrId.set(row.hr_id.toUpperCase(), row.full_name ?? null);
+      if (row.hr_id) nameByHrId.set(canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase(), row.full_name ?? null);
     }
   }
 
   return rows.map((row) => ({
     loginId: row.login_id,
     hrId: row.hr_id ?? null,
-    fullName: row.hr_id ? (nameByHrId.get(row.hr_id.toUpperCase()) ?? null) : null,
+    fullName: row.hr_id ? (nameByHrId.get(canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase()) ?? null) : null,
     role: row.role ?? null,
     lineNames: Array.isArray(row.line_scope_override) && row.line_scope_override.length > 0
       ? row.line_scope_override

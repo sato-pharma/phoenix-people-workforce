@@ -1,4 +1,5 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
@@ -140,7 +141,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         supabase
           .from("marketing_requests")
           .select("id", { count: "exact", head: true })
-          .eq("requester_hr_id", hrId.toUpperCase())
+          .eq("requester_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
           .in("status", ["draft", "pending_approval", "returned"]),
         getUpcomingMarketingActivity(hrId),
       ]);
@@ -269,7 +270,7 @@ export async function getMrHomeStats(
     ? supabase
         .from("v_employee_portal_sales")
         .select("sales_value, target_value")
-        .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
+        .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
         .eq("year", now.getFullYear())
         .eq("month", now.getMonth() + 1)
     : Promise.resolve(null);
@@ -278,12 +279,12 @@ export async function getMrHomeStats(
     supabase
       .from("v2_vacation_requests")
       .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", hrId.toUpperCase())
+      .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
       .in("status", ["pending_manager", "pending_hr"]),
     supabase
       .from("v2_excuse_requests")
       .select("id", { count: "exact", head: true })
-      .eq("employee_hr_id", hrId.toUpperCase())
+      .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
       .eq("status", "pending_manager"),
     supabase
       .from("salary_batches")
@@ -309,7 +310,7 @@ export async function getMrHomeStats(
       .from("salary_records")
       .select("net_salary")
       .eq("batch_id", batch.id)
-      .eq("hr_id", hrId.toUpperCase())
+      .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
       .maybeSingle();
     if (record?.net_salary) {
       latestPayslip = {
@@ -373,7 +374,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
           supabase
             .from("v_employee_portal_sales")
             .select("sales_value, target_value")
-            .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
+            .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
             .eq("year", currentYear)
             .eq("month", currentMonth),
         )
@@ -390,7 +391,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
           supabase
             .from("v_employee_portal_sales")
             .select("year, month, sales_value, target_value")
-            .or(`hr_id.eq.${hrId.toUpperCase()},employee_hr_id.eq.${hrId.toUpperCase()}`)
+            .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
             .order("year", { ascending: false })
             .order("month", { ascending: false })
             .limit(200),
@@ -407,7 +408,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
           supabase
             .from("ireports360_visits")
             .select("visit_date")
-            .eq("agent_hr_id", hrId.toUpperCase())
+            .eq("agent_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
             .not("double_crm_id", "is", null)
             .neq("double_crm_id", 0)
             .in("visit_type", [0, -8])
@@ -423,7 +424,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
           supabase
             .from("outstation_expense_requests")
             .select("id", { count: "exact", head: true })
-            .eq("employee_hr_id", hrId.toUpperCase())
+            .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
             .eq("status", "submitted"),
         )
       : Promise.resolve(null);
@@ -435,7 +436,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
           supabase
             .from("weekly_plans")
             .select("id", { count: "exact", head: true })
-            .eq("manager_hr_id", hrId.toUpperCase())
+            .eq("manager_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
             .eq("status", "submitted"),
         )
       : Promise.resolve(null);
@@ -447,7 +448,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         supabase
           .from("v2_vacation_requests")
           .select("id", { count: "exact", head: true })
-          .eq("employee_hr_id", hrId.toUpperCase())
+          .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
           .in("status", ["pending_manager", "pending_hr"]),
       ),
     () =>
@@ -455,7 +456,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         supabase
           .from("v2_excuse_requests")
           .select("id", { count: "exact", head: true })
-          .eq("employee_hr_id", hrId.toUpperCase())
+          .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
           .eq("status", "pending_manager"),
       ),
     () =>
@@ -486,7 +487,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
       .from("salary_records")
       .select("net_salary")
       .eq("batch_id", batch.id)
-      .eq("hr_id", hrId.toUpperCase())
+      .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
       .maybeSingle();
     if (record?.net_salary) {
       latestPayslip = {

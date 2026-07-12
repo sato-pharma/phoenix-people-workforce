@@ -1,6 +1,6 @@
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getSalaryFlags } from "@/lib/admin/service";
-import { type AccessContext } from "@/lib/auth/permissions";
+import { hrIdsMatch, type AccessContext } from "@/lib/auth/permissions";
 import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
@@ -542,9 +542,8 @@ export async function getCeoLandingDeferred(
       });
       managersOnLeave = dv.managerSummaries
         .filter((s) => {
-          const key = s.managerHrId.toUpperCase();
           for (const [k, dates] of leaveMap) {
-            if (k.toUpperCase() === key && dates.has(todayIso)) return true;
+            if (hrIdsMatch(k, s.managerHrId) && dates.has(todayIso)) return true;
           }
           return false;
         })
