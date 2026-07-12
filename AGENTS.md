@@ -25,9 +25,15 @@
 ## Stable Environment Facts
 
 - Production application: `https://phoenix-hr.satopharma.com`
-- Vercel project: `phoenix-workforce`
+- Staging application: `https://phoenix-hr-staging-897559113412.us-central1.run.app` (Cloud Run
+  service `phoenix-hr-staging`, project `phoenix-workforce-498619`, region `us-central1`; deployed
+  2026-07-12, points at the staging Supabase project below, isolated from production — no shared
+  third-party secrets, no auto-redeploy from `main`, requires a manual `gcloud run deploy` to update)
+- Vercel project: `phoenix-workforce` (legacy references only — hosting migrated to GCP Cloud Run)
 - Vercel scope: `phoenix-hr-workspace-s-projects`
-- Staging Supabase project ref: `izhmxvgiktiafqusolot`
+- Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, created
+  2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
+  ref `izhmxvgiktiafqusolot`, is paused/decommissioned)
 - Production Supabase project ref: `ozucdzovmcqvepbozvqf`
 
 Environment meanings:
