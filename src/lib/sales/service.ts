@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@/lib/sales/employees";
@@ -1280,6 +1281,20 @@ export async function createSalesImport(payload: SalesImportPayload) {
     is_duplicate: isDuplicate,
   });
   if (batchInsert.error) {
+    // The partial unique index on duplicate_hash (WHERE status NOT IN replaced/rejected) is the
+    // atomic backstop for the SELECT-then-INSERT duplicate check above: under two concurrent uploads
+    // of the same sheet both SELECTs can miss (the first batch's records are inserted in a separate
+    // later statement, so the second upload's record-count check sees 0), leaving both flagged
+    // non-duplicate and both approvable. With the index, only one INSERT wins; the loser hits 23505
+    // here. Surface it as a clean "already uploaded" 409 (the upload route maps SalesWorkflowError to
+    // its status) instead of a raw 500 — matching how the SoS pipeline handles its own unique index.
+    if (isPostgresUniqueViolation(batchInsert.error)) {
+      throw new SalesWorkflowError(
+        "duplicate_sales_batch",
+        "This sales sheet has already been uploaded for this line and period. Delete or replace the existing batch, then re-upload.",
+        409,
+      );
+    }
     throw batchInsert.error;
   }
 
