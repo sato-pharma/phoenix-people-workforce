@@ -29,8 +29,8 @@ import type {
 } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
 
-import { panelClassName, payrollMonths } from "./shared";
-import { TableHeaderMenu } from "./table-header-menu";
+import { panelClassName, payrollMonths } from "@/components/payroll/dashboard/shared";
+import { TableHeaderMenu } from "@/components/payroll/dashboard/table-header-menu";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
