@@ -6,10 +6,10 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   SALES_LINES,
+  loadAllCanonicalAreaNames,
   loadEmployeeNameMap,
   loadMonthlyAchievement,
   loadProductNameMap,
-  loadTargetableAreas,
   regionName,
   rollupAchievementByDm,
   rollupAchievementByLine,
@@ -59,13 +59,12 @@ export default async function TargetsPage({
   let error: string | null = null;
 
   try {
-    const [achievement, areas, productNames, employeeNames] = await Promise.all([
+    const [achievement, areaName, productNames, employeeNames] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
-      loadTargetableAreas(selectedLine),
+      loadAllCanonicalAreaNames(),
       loadProductNameMap(),
       loadEmployeeNameMap(),
     ]);
-    const areaName = new Map(areas.map((area) => [area.areaCode, area.areaName]));
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
     const lineRows = achievement.filter((row) => row.lineCode === selectedLine);
 

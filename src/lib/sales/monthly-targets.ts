@@ -464,3 +464,22 @@ export async function loadTargetableAreas(lineCode: string): Promise<TargetableA
     };
   });
 }
+
+/**
+ * area_code -> area_name for ALL 42 canonical areas (line-independent; a canonical area's
+ * name never varies by line, only its region/rep/DM/carries_target do). Use this for DISPLAY
+ * so "Other" areas — excluded from loadTargetableAreas — still resolve to a real name instead
+ * of falling back to a blank/code in the UI.
+ */
+export async function loadAllCanonicalAreaNames(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("au_v_canonical_areas").select("area_code,area_name");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.area_code).trim();
+    if (code) map.set(code, str(record.area_name).trim() || code);
+  }
+  return map;
+}
