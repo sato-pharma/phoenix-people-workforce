@@ -71,14 +71,20 @@ jobs:
           echo "tag_url=$TAG_URL" >> "$GITHUB_OUTPUT"
 
       - name: Post-deploy smoke test (isolated new revision, before routing traffic)
+        # Deliberately narrower than prod's smoke test: it does NOT hit
+        # /api/webhooks/resend or /api/notifications/daily. Those checks assert a
+        # 401 that depends on RESEND_WEBHOOK_SECRET / CRON_SECRET being configured,
+        # which staging intentionally does not have (no shared third-party
+        # secrets). Without those secrets, the webhook route 500s instead of
+        # 401ing, and the cron route's unauthenticated-bypass-in-non-production
+        # fallback would actually execute the daily notifications job on every
+        # deploy instead of rejecting the request.
         run: |
           set -euo pipefail
           URL="${{ steps.deploy.outputs.tag_url }}"
           fail() { echo "SMOKE FAILED: $1"; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/healthz"); echo "GET /api/healthz -> $code"; [ "$code" = "200" ] || fail "healthz not 200"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/login"); echo "GET /login -> $code"; [ "$code" = "200" ] || fail "login not 200"
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/webhooks/resend" -H "content-type: application/json" -d '{}'); echo "POST /api/webhooks/resend -> $code"; [ "$code" = "401" ] || fail "webhook not 401"
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"
           echo "Smoke passed."
 
       - name: Promote validated revision to 100% traffic
