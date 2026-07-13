@@ -1,9 +1,21 @@
 name: Deploy to Google Cloud Run (Staging)
 
-# Deploy only AFTER the CI workflow succeeds for the same commit on main (never in
-# parallel with a red build), or on a manual dispatch. Mirrors deploy-cloud-run.yml's
+# Deploy only AFTER the prod deploy workflow finishes for the same commit on main
+# (never in parallel with it), or on a manual dispatch. Mirrors deploy-cloud-run.yml's
 # safety pattern (no-traffic tag deploy, smoke test, then promote) but targets the
 # isolated staging Cloud Run service.
+#
+# Chained off "Deploy to Google Cloud Run" (prod) rather than "CI" directly: both
+# workflows run `gcloud run deploy --source .` in the same GCP project, and
+# gcloud's build-status polling hits Cloud Build's `Get requests per minute` quota
+# (60/project) hard enough that two concurrent source deploys reliably 429 one of
+# them (seen twice in production — see PR #1029/#1032 history). Triggering after
+# prod's workflow completes serializes the two builds so they can never overlap,
+# regardless of quota headroom. The `if` below only skips when prod's job itself
+# never ran (conclusion "skipped", meaning the upstream CI run it depends on
+# failed) — a prod deploy *attempt* failing (e.g. transient quota, smoke-test
+# reject) does not block staging, since staging re-validates independently via
+# its own no-traffic-deploy + smoke-test gate below.
 #
 # Deliberately omits --set-env-vars / --set-build-env-vars: the staging service
 # already has its own env vars (staging Supabase project, staging
@@ -15,7 +27,7 @@ name: Deploy to Google Cloud Run (Staging)
 # details.
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Deploy to Google Cloud Run"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -27,8 +39,9 @@ env:
 
 jobs:
   deploy:
-    # Gate: only proceed when the triggering CI run succeeded (or on manual dispatch).
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Gate: skip only when prod's own job never ran (its upstream CI failed); a
+    # prod deploy *attempt* that failed still lets staging try independently.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
