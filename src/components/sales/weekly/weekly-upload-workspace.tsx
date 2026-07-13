@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Lock, Pencil, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileUp, Loader2, Lock, Pencil, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type {
@@ -832,6 +833,63 @@ export function WeeklyUploadWorkspace({
 
 // ── Validation result panel (step 2 output + step 3 confirm) ──────────────────────────────────────
 
+// Failure messages quote the exact code/name that needs fixing (master product code, branch name,
+// region code, ...) — pull it out so links can pre-fill the target screen's search box, which is
+// more reliable than the raw sheet value on rows where an alias already remapped it.
+function extractQuoted(message: string): string | null {
+  const match = message.match(/"([^"]*)"/);
+  return match && match[1] ? match[1] : null;
+}
+
+type IssueGroup = {
+  key: string;
+  field: string;
+  message: string;
+  rowNumbers: number[];
+  action: { label: string; href: string } | null;
+};
+
+// Every blocking field maps to exactly one existing admin screen that can resolve it — an alias
+// resolving to a missing/bad master product, or an unrecognized Direct region code, is Source of
+// Sales master data, out of Weekly's own tables (see resolveProduct/resolveRegion in parser.ts);
+// an unmapped branch is Weekly's own branch->region table.
+function actionForIssue(field: string, message: string): IssueGroup["action"] {
+  const searchTerm = extractQuoted(message);
+  const sosProductsHref = `/sales/import?tab=products${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`;
+
+  if (field === "productCode" || field === "officialLine" || field === "factoryPrice") {
+    return { label: "Fix in Source of Sales", href: sosProductsHref };
+  }
+  if (field === "regionCode") {
+    if (message.includes("Source of Sales master region table")) {
+      return { label: "Check Source of Sales geography", href: "/sales/import?tab=mapping" };
+    }
+    return { label: "Map in Weekly Mapping", href: "/sales/weekly/mapping?tab=branch" };
+  }
+  return null;
+}
+
+function groupUnresolvedIssues(result: WeeklySalesValidationResult): IssueGroup[] {
+  const groups = new Map<string, IssueGroup>();
+  for (const issue of result.issues) {
+    if (issue.severity !== "failure") continue;
+    const key = `${issue.field}|${issue.message}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rowNumbers.push(issue.rowNumber);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      field: issue.field,
+      message: issue.message,
+      rowNumbers: [issue.rowNumber],
+      action: actionForIssue(issue.field, issue.message),
+    });
+  }
+  return [...groups.values()];
+}
+
 function downloadUnmapped(result: WeeklySalesValidationResult) {
   const seen = new Set<string>();
   const lines = ["field,value,reason"];
@@ -850,6 +908,56 @@ function downloadUnmapped(result: WeeklySalesValidationResult) {
   link.download = `weekly-unmapped-${result.distributor.code}.csv`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  factoryPrice: "Price",
+  officialLine: "Line",
+  productCode: "Product",
+  regionCode: "Region",
+};
+
+function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult }) {
+  const groups = useMemo(() => groupUnresolvedIssues(result), [result]);
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="border-b border-[#E2E8F0] bg-rose-50/60 px-4 py-3">
+      <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-rose-700">
+        Unresolved items ({groups.length}) — map these to unblock the upload
+      </h3>
+      <div className="space-y-2">
+        {groups.map((group) => (
+          <div
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] border border-rose-200 bg-white px-3 py-2"
+            key={group.key}
+          >
+            <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-rose-700">
+              {FIELD_LABELS[group.field] ?? group.field}
+            </span>
+            <span className="text-sm font-semibold text-[#334155]">{group.message}</span>
+            <span className="text-xs font-medium text-[#94A3B8]">
+              {group.rowNumbers.length} row{group.rowNumbers.length === 1 ? "" : "s"}
+              {" "}(e.g. row {group.rowNumbers[0]})
+            </span>
+            {group.action && (
+              <Link
+                className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-[#F97316]"
+                href={group.action.href}
+                target="_blank"
+              >
+                {group.action.label} <ExternalLink className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+        Opens in a new tab — your current upload isn&apos;t stored yet, so fix the items above, then come back
+        and re-validate.
+      </p>
+    </div>
+  );
 }
 
 function ValidationResultPanel({
@@ -940,6 +1048,11 @@ function ValidationResultPanel({
           {result.blockingReasons.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+
+      {/* Unresolved items — one row per unique unmapped product/region/price/line problem, each with
+          a direct link to the screen that actually fixes it (Weekly Mapping for aliases/branches,
+          Source of Sales for master product data), instead of making the operator hunt for it. */}
+      {hasFailures && <UnresolvedItemsPanel result={result} />}
 
       {isPS && (
         <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">
