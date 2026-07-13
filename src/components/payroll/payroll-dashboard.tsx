@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,6 @@ import {
   AdminCallout,
   AdminPageHero,
 } from "@/components/admin/admin-design-system";
-import {
-  buildExpenseAnalysis,
-  ExpenseReport,
-} from "@/components/payroll/dashboard/expense-report";
 import { PayrollHistory } from "@/components/payroll/dashboard/payroll-history";
 import {
   PayrollGovernanceAlerts,
@@ -55,9 +51,6 @@ import {
   formatNumberValue,
 } from "@/lib/i18n/format";
 import type {
-  ExpenseAnalysisResult,
-  ExpenseTripRecord,
-  PayrollExpenseReport,
   PayrollDashboardData,
   PayrollPeriodConflict,
   PayrollWorkflowAction,
@@ -71,11 +64,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 type Props = {
   initialData: PayrollDashboardData | null;
   initialError: string | null;
-  initialSheetTab?: PayrollSheetTab;
 };
 
 type PayrollTab = "dashboard" | "governance" | "generate";
-type PayrollSheetTab = "salary" | "expenses";
 type GroupMode = "line" | "area" | "jobTitle";
 type ImpactLevel = "Low" | "Medium" | "High" | "Critical";
 type InsightSentiment = "positive" | "neutral" | "risk";
@@ -3263,25 +3254,13 @@ void retainedPayrollValidationUiGuardText;
 export function PayrollDashboard({
   initialData,
   initialError,
-  initialSheetTab = "salary",
 }: Props) {
   const currentYear = new Date().getFullYear();
-  const [payrollSheetTab, setPayrollSheetTab] = useState<PayrollSheetTab>(initialSheetTab);
   const [salaryReportSearch, setSalaryReportSearch] = useState("");
   const [salaryColumnFilters, setSalaryColumnFilters] = useState<Record<string, string>>({});
   const [salaryReportSort, setSalaryReportSort] = useState("employee-asc");
   const [salaryReportYear, setSalaryReportYear] = useState<number | null>(null);
   const [salaryReportMonth, setSalaryReportMonth] = useState<number | null>(null);
-  const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysisResult | null>(null);
-  const [expenseAnalysisError, setExpenseAnalysisError] = useState<string | null>(null);
-  const [expenseReports, setExpenseReports] = useState<PayrollExpenseReport[]>([]);
-  const [selectedExpenseReportId, setSelectedExpenseReportId] = useState<string | null>(null);
-  const [expenseAnalyzing, setExpenseAnalyzing] = useState(false);
-  const [expenseApprovalsSaving, setExpenseApprovalsSaving] = useState(false);
-  const [deletingExpenseReportId, setDeletingExpenseReportId] = useState<string | null>(null);
-  const [expenseImportingToPayroll, setExpenseImportingToPayroll] = useState(false);
-  const [replacingExpenseReportId, setReplacingExpenseReportId] = useState<string | null>(null);
-  const [expenseApprovalMessage, setExpenseApprovalMessage] = useState<string | null>(null);
   const [salaryHolds, setSalaryHolds] = useState<Set<string>>(new Set());
   const [payrollMonth, setPayrollMonth] = useState(String(new Date().getMonth() + 1));
   const [payrollYear, setPayrollYear] = useState(String(currentYear));
@@ -3304,7 +3283,6 @@ export function PayrollDashboard({
     useState<PayrollWorkflowAction | null>(null);
   const salaryFileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceFileInputRef = useRef<HTMLInputElement | null>(null);
-  const expenseFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const data = initialData;
   const activeBatch = data?.batch ?? null;
@@ -3324,48 +3302,6 @@ export function PayrollDashboard({
       salaryValidation.rowsToImport.length > 0 &&
       !salaryPeriodConflict,
   );
-
-  const loadSavedExpenseReport = useCallback(async (reportId?: string) => {
-    const query = reportId ? `?reportId=${encodeURIComponent(reportId)}` : "";
-    const response = await fetch(`/api/admin/outstation/expenses${query}`);
-    const payload = await readPayrollApiPayload(response);
-
-    if (!response.ok) return;
-
-    const reports = Array.isArray(payload.reports)
-      ? (payload.reports as PayrollExpenseReport[])
-      : [];
-    const targetReportId = reportId ?? null;
-    const savedRecords = Array.isArray(payload.expenses)
-      ? (payload.expenses as ExpenseTripRecord[])
-      : [];
-
-    setExpenseReports(reports);
-    setSelectedExpenseReportId(targetReportId);
-
-    if (savedRecords.length > 0) {
-      const reportName =
-        reports.find((report) => report.id === targetReportId)?.fileName ??
-        "Unified outstation expenses";
-      setExpenseAnalysis(buildExpenseAnalysis(reportName, savedRecords));
-    } else if (targetReportId) {
-      setExpenseAnalysis(buildExpenseAnalysis("Saved outstation expenses", []));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (payrollSheetTab !== "expenses" || expenseAnalysis || expenseAnalyzing) return;
-
-    async function loadSavedExpenses() {
-      try {
-        await loadSavedExpenseReport();
-      } catch {
-        // Keep the upload flow usable if saved expenses cannot be loaded.
-      }
-    }
-
-    void loadSavedExpenses();
-  }, [expenseAnalysis, expenseAnalyzing, loadSavedExpenseReport, payrollSheetTab]);
 
   async function handleSalaryTemplateUpload(file: File | null) {
     if (!file) return;
@@ -3669,224 +3605,6 @@ export function PayrollDashboard({
     if (salaryFileInputRef.current) salaryFileInputRef.current.value = "";
   }
 
-  async function handleDeleteExpenseReport(reportId: string) {
-    const report = expenseReports.find((item) => item.id === reportId);
-    const confirmed = window.confirm(
-      `Delete historical outstation upload "${report?.fileName ?? reportId}"? This removes the saved report and all expense rows inside it.`,
-    );
-
-    if (!confirmed) return;
-
-    setDeletingExpenseReportId(reportId);
-    setExpenseAnalysisError(null);
-    setExpenseApprovalMessage(null);
-
-    try {
-      const response = await fetch(`/api/admin/outstation/expenses/reports/${reportId}`, {
-        method: "DELETE",
-      });
-      const payload = await readPayrollApiPayload(response);
-
-      if (!response.ok || !payload.success) {
-        setExpenseAnalysisError(payrollPayloadMessage(payload, "Unable to delete expense report."));
-        return;
-      }
-
-      if (selectedExpenseReportId === reportId) {
-        setExpenseAnalysis(null);
-        setSelectedExpenseReportId(null);
-      }
-
-      setExpenseApprovalMessage("Historical outstation upload deleted.");
-      await loadSavedExpenseReport(
-        selectedExpenseReportId === reportId ? undefined : selectedExpenseReportId ?? undefined,
-      );
-    } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to delete expense report."));
-    } finally {
-      setDeletingExpenseReportId(null);
-    }
-  }
-
-  async function handleReplaceExpenseReport(reportId: string, file: File | null) {
-    if (!reportId || !file) return;
-
-    const report = expenseReports.find((item) => item.id === reportId);
-    const confirmed = window.confirm(
-      `Replace historical outstation upload "${report?.fileName ?? reportId}" with this file? Existing rows in this report will be removed.`,
-    );
-
-    if (!confirmed) return;
-
-    setReplacingExpenseReportId(reportId);
-    setExpenseAnalysisError(null);
-    setExpenseApprovalMessage(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`/api/admin/outstation/expenses/reports/${reportId}`, {
-        body: formData,
-        method: "PUT",
-      });
-      const payload = await readPayrollApiPayload(response);
-
-      if (!response.ok) {
-        if (Array.isArray(payload.records) && payload.validation) {
-          setExpenseAnalysis(payload as ExpenseAnalysisResult);
-        }
-        setExpenseAnalysisError(payrollPayloadMessage(payload, "Unable to replace expense report."));
-        return;
-      }
-
-      setExpenseApprovalMessage(
-        `${payload.saved ?? 0} outstation expense rows replaced and saved to the report.`,
-      );
-      await loadSavedExpenseReport(reportId);
-    } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to replace expense report."));
-    } finally {
-      setReplacingExpenseReportId(null);
-    }
-  }
-
-  async function handleExpenseUpload(file: File | null) {
-    if (!file) return;
-
-    setExpenseAnalyzing(true);
-    setExpenseAnalysisError(null);
-    setExpenseApprovalMessage(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/admin/outstation/expenses/analyze", {
-        body: formData,
-        method: "POST",
-      });
-      const payload = await readPayrollApiPayload(response);
-
-      if (!response.ok) {
-        if (Array.isArray(payload.records) && payload.validation) {
-          setExpenseAnalysis(payload as ExpenseAnalysisResult);
-        }
-        setExpenseAnalysisError(
-          payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Outstation expenses upload failed."),
-        );
-        return;
-      }
-
-      setExpenseAnalysis(payload as ExpenseAnalysisResult);
-      const uploadedReportId = Array.isArray(payload.records)
-        ? (payload.records.find((record: { reportId?: string | null }) => record.reportId)?.reportId ?? null)
-        : null;
-      if (uploadedReportId) {
-        await loadSavedExpenseReport(uploadedReportId);
-      }
-      setExpenseApprovalMessage(
-        `${payload.saved ?? (payload.records?.length ?? 0)} historical outstation expense rows uploaded and saved to the system. Review HR approvals, then import approved expenses to payroll.`,
-      );
-    } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to upload outstation expenses file."));
-    } finally {
-      setExpenseAnalyzing(false);
-      if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
-    }
-  }
-
-  async function handleSaveExpenseApprovals(
-    recordsToSave: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
-  ) {
-    if (!expenseAnalysis) return;
-
-    setExpenseApprovalsSaving(true);
-    setExpenseAnalysisError(null);
-    setExpenseApprovalMessage(null);
-
-    try {
-      const response = await fetch("/api/admin/outstation/expenses", {
-        body: JSON.stringify({
-          fileName: expenseAnalysis.fileName,
-          records: recordsToSave,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await readPayrollApiPayload(response);
-
-      if (!response.ok) {
-        setExpenseAnalysisError(
-          payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Unable to save outstation expense approvals."),
-        );
-        return;
-      }
-
-      const approvedTotal = recordsToSave
-        .filter((record) => record.hrApproved)
-        .reduce((sum, record) => sum + record.total, 0);
-
-      setExpenseApprovalMessage(
-        `${payload.saved ?? recordsToSave.length} outstation expense rows saved. Approved total ${formatEGP(approvedTotal)} is ready for payroll import after manual HR/admin approval is saved.`,
-      );
-    } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to save outstation expense approvals."));
-    } finally {
-      setExpenseApprovalsSaving(false);
-    }
-  }
-
-  async function handleImportExpensesToPayroll(month: number, year: number) {
-    if (!expenseAnalysis) return;
-
-    setExpenseImportingToPayroll(true);
-    setExpenseAnalysisError(null);
-    setExpenseApprovalMessage(null);
-
-    try {
-      const response = await fetch("/api/admin/outstation/expenses/import", {
-        body: JSON.stringify({
-          fileName: expenseAnalysis.fileName,
-          month,
-          year,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await readPayrollApiPayload(response);
-
-      if (!response.ok) {
-        setExpenseAnalysisError(
-          payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
-            : payrollPayloadMessage(payload, "Unable to import outstation expenses to payroll."),
-        );
-        return;
-      }
-
-      if (!payload.targetBatch) {
-        setExpenseAnalysisError(`No payroll sheet found for ${month}/${year}. Upload that payroll first, then import outstation expenses.`);
-        return;
-      }
-
-      setExpenseApprovalMessage(
-        `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}. Imported approved outstation expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
-      );
-      window.setTimeout(() => {
-        window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;
-      }, 700);
-    } catch (error) {
-      setExpenseAnalysisError(payrollRequestErrorMessage(error, "Unable to import outstation expenses to payroll."));
-    } finally {
-      setExpenseImportingToPayroll(false);
-    }
-  }
-
   const salaryTemplateActions = (
     <SalaryUploadActions
       canConfirmSalaryUpload={canConfirmSalaryUpload}
@@ -4053,13 +3771,10 @@ export function PayrollDashboard({
               </span>
             </div>
           )}
-          description={payrollSheetTab === "salary"
-            ? "Set the payroll period, download the working file, validate the upload, and move into batch review when the month is ready."
-            : "Upload historical outstation expense files, review records, confirm approvals, and import approved rows into a payroll period."
-          }
-          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Outstation expenses"}
-          icon={payrollSheetTab === "salary" ? <Upload className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-          title={payrollSheetTab === "salary" ? "Payroll upload and review" : "Outstation expenses review and import"}
+          description="Set the payroll period, download the working file, validate the upload, and move into batch review when the month is ready."
+          eyebrow="Payroll operations"
+          icon={<Upload className="h-3.5 w-3.5" />}
+          title="Payroll upload and review"
         />
 
         <SalaryUploadValidationSection
@@ -4136,24 +3851,21 @@ export function PayrollDashboard({
           badges={(
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
-                {payrollSheetTab === "salary" ? "Scope: payroll operations" : "Scope: outstation expenses workflow"}
+                Scope: payroll operations
               </span>
-              {!isAllTimeScope && payrollSheetTab === "salary" ? (
+              {!isAllTimeScope ? (
                 statusBadge(batch.status)
               ) : (
                 <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
-                  {payrollSheetTab === "salary" ? "Active batch selected" : "Payroll reference remains available"}
+                  Active batch selected
                 </span>
               )}
             </div>
           )}
-          description={payrollSheetTab === "salary"
-            ? "Validate salary files, review payroll rows, track workflow status, and switch between salary and outstation expenses from one compact workspace."
-            : "Review approved outstation expense rows, confirm HR approvals, and import selected rows into the selected payroll period."
-          }
-          eyebrow={payrollSheetTab === "salary" ? "Payroll operations" : "Outstation expenses"}
-          icon={payrollSheetTab === "salary" ? <Gauge className="h-3.5 w-3.5" /> : <FileCheck2 className="h-3.5 w-3.5" />}
-          title={payrollSheetTab === "salary" ? "Payroll report and monthly review" : "Outstation expenses operations"}
+          description="Validate salary files, review payroll rows, track workflow status, and review outstation expenses from a linked workspace."
+          eyebrow="Payroll operations"
+          icon={<Gauge className="h-3.5 w-3.5" />}
+          title="Payroll report and monthly review"
         />
 
       {workflowMessage && (
@@ -4174,7 +3886,7 @@ export function PayrollDashboard({
         validation={salaryValidation}
       />
 
-      {!isAllTimeScope && payrollSheetTab === "salary" && (
+      {!isAllTimeScope && (
         <PayrollWorkflowPanel
           batch={batch}
           busyAction={workflowActionBusy}
@@ -4185,26 +3897,17 @@ export function PayrollDashboard({
       <PayrollGovernanceAlerts flags={flags} />
 
       <div className={`${panelClassName} flex flex-wrap gap-2 p-2`}>
-        {[
-          { label: "Payroll Sheet", value: "salary" },
-          { label: "Outstation Expenses", value: "expenses" },
-        ].map((tab) => (
-          <Button
-            className={cn(
-              "rounded-xl px-4 py-2 text-sm",
-              payrollSheetTab === tab.value && "border border-[#FED7AA] bg-[#FFF7ED] text-[#EA580C] hover:bg-[#FFF1DD]",
-            )}
-            key={tab.value}
-            onClick={() => setPayrollSheetTab(tab.value as PayrollSheetTab)}
-            variant="secondary"
-          >
-            {tab.label}
+        <Button className="rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-4 py-2 text-sm text-[#EA580C] hover:bg-[#FFF1DD]" variant="secondary">
+          Payroll Sheet
+        </Button>
+        <Link href="/admin/outstation/expenses">
+          <Button className="rounded-xl px-4 py-2 text-sm" variant="secondary">
+            Outstation Expenses
           </Button>
-        ))}
+        </Link>
       </div>
 
-      {payrollSheetTab === "salary" ? (
-        <>
+      <>
           <AdminPageHero
             actions={(
               salaryReportBatch ? (
@@ -4352,41 +4055,7 @@ export function PayrollDashboard({
                 onReplace={handleReplaceBatch}
                 replacingBatchId={replacingBatchId}
               />
-            </>
-          ) : (
-            <>
-              {expenseApprovalMessage && (
-                <AdminCallout tone="success">
-                  <CheckCircle className="mt-0.5 h-4 w-4 text-success" />
-                  <p className="text-sm text-[#166534]">{expenseApprovalMessage}</p>
-                </AdminCallout>
-              )}
-              <ExpenseReport
-                analysis={expenseAnalysis}
-                analyzing={expenseAnalyzing}
-                deletingReportId={deletingExpenseReportId}
-                error={expenseAnalysisError}
-                importingToPayroll={expenseImportingToPayroll}
-                inputRef={expenseFileInputRef}
-                onDeleteReport={(reportId) => void handleDeleteExpenseReport(reportId)}
-                onImportToPayroll={(month, year) =>
-                  void handleImportExpensesToPayroll(month, year)
-                }
-                onReplaceReport={(reportId, file) => void handleReplaceExpenseReport(reportId, file)}
-                onSelectReport={(reportId) => {
-                  void loadSavedExpenseReport(reportId);
-                }}
-                onSaveApprovals={(recordsToSave) => void handleSaveExpenseApprovals(recordsToSave)}
-                onUpload={(file) => void handleExpenseUpload(file)}
-                payrollMonthsForImport={payrollMonths}
-                payrollYearsForImport={payrollYears}
-                replacingReportId={replacingExpenseReportId}
-                reports={expenseReports}
-                selectedReportId={selectedExpenseReportId}
-                savingApprovals={expenseApprovalsSaving}
-            />
-          </>
-      )}
+      </>
       </div>
     </PayrollPageShell>
   );
