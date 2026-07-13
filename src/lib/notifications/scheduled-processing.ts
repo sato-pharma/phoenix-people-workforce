@@ -10,6 +10,8 @@ import {
 } from "@/lib/notifications/email";
 import { processDeferredDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
+import { processFeedbackSlaReminders } from "@/lib/probation/intelligence/feedback-sla-reminders";
+import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/probation-emails";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { reapStaleIReports360SyncRuns } from "@/lib/visits-report/service";
 
@@ -23,6 +25,16 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   const probationReminders = await processDueProbationReminderEvents(limit).catch((e: unknown) => {
     console.error(e, { tags: { cron: "notification-process-probation-reminders" } });
     return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, error: String(e) };
+  });
+  // State-based DV feedback SLA reminders/escalations (deduped by (DV-Day, state) idempotency key).
+  const probationFeedbackSla = await processFeedbackSlaReminders().catch((e: unknown) => {
+    console.error(e, { tags: { cron: "notification-process-probation-feedback-sla" } });
+    return { scanned: 0, due: 0, escalated: 0, overdue: 0, notificationsEmitted: 0, error: String(e) };
+  });
+  // Day 30/60/75 milestone emails (deduped per case+milestone idempotency key — safe to run often).
+  const probationMilestones = await processProbationMilestoneEmails().catch((e: unknown) => {
+    console.error(e, { tags: { cron: "notification-process-probation-milestones" } });
+    return { scanned: 0, sent: 0, error: String(e) };
   });
   // Never throws; per-day idempotency key prevents duplicate alerts across runs.
   const attendanceAgent = await runAttendanceIngestionAlert();
@@ -55,5 +67,5 @@ export async function runScheduledNotificationProcessing(limit = 10) {
   if (inactiveUsers.length) {
     console.info(`[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`);
   }
-  return { activityRetention, attendanceAgent, attendanceDigest, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationReminders, reaped, reapedVisitsSyncRuns, retention, staleSosBatches, telegram };
+  return { activityRetention, attendanceAgent, attendanceDigest, deferred, exitedDeductions, inactiveUsers: inactiveUsers.length, outbox, probationFeedbackSla, probationMilestones, probationReminders, reaped, reapedVisitsSyncRuns, retention, staleSosBatches, telegram };
 }

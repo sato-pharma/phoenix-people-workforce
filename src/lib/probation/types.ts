@@ -40,11 +40,12 @@ export type ProbationRow = {
 
 export type ProbationWorkflowStatus =
   | "active"
-  | "extended"
   | "passed"
   | "terminated";
 
-export type ProbationDecision = "pass" | "extend" | "terminate";
+// `extend` intentionally removed by owner policy — probation is a fixed 90-day window with no
+// extension. Supported final decisions are pass or terminate only.
+export type ProbationDecision = "pass" | "terminate";
 
 export type ProbationWorkflowAction =
   | "manager_feedback"
@@ -72,7 +73,6 @@ export type ProbationWorkflowRecord = {
   managerFeedback: string | null;
   hrRecommendation: string | null;
   decision: ProbationDecision | null;
-  extensionEndDate: string | null;
   decisionReason: string | null;
   probationLetterUrl: string | null;
   probationLetterName: string | null;

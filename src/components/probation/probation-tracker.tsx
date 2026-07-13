@@ -137,7 +137,6 @@ function statusLabel(status: TrafficStatus) {
 function workflowBadgeVariant(status: string | null | undefined) {
   if (status === "passed") return "success";
   if (status === "terminated") return "danger";
-  if (status === "extended") return "warning";
   return "neutral";
 }
 

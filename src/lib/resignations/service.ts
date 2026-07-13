@@ -1090,6 +1090,7 @@ export async function resignEmployeeAndOpenVacancy(
   input: EmployeeResignationInput,
   actor: string,
   access?: AccessContext,
+  options?: { suppressWorkflowNotification?: boolean },
 ) {
   const employeeHrId = String(hrId || input.employeeHrId || "").trim();
   if (!employeeHrId) {
@@ -1224,17 +1225,22 @@ export async function resignEmployeeAndOpenVacancy(
     });
   }
 
-  await notifyResignationWorkflow(
-    {
-      effectiveDate,
-      employeeHrId: employee.hrId,
-      employeeName: employee.fullName,
-      id: result.resignation_id,
-      status: "submitted",
-    },
-    "Resignation Submitted",
-    "warning",
-  );
+  // A probation-sourced termination must NOT be announced as a voluntary "Resignation Submitted"
+  // (wrong framing, wrong recipient list, never reviewed for probation). The caller suppresses this;
+  // the dedicated probation-termination notification (owner-confirmed recipients) is handled separately.
+  if (!options?.suppressWorkflowNotification) {
+    await notifyResignationWorkflow(
+      {
+        effectiveDate,
+        employeeHrId: employee.hrId,
+        employeeName: employee.fullName,
+        id: result.resignation_id,
+        status: "submitted",
+      },
+      "Resignation Submitted",
+      "warning",
+    );
+  }
 
   invalidateEmployeeDirectoryCache();
   invalidateExecutiveDashboardCache("employee resigned and vacancy opened", ["resignations", "employees", "vacancies", "payroll"]);

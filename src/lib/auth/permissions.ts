@@ -659,6 +659,10 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create"],
     leave: allActions,
     coaching: ["read"],
+    // SFE Manager submits the (data-driven) SFE probation assessment. probation:read admits them
+    // through the coarse route/middleware gate; the fine boundary (canSubmitSfeAssessment) still
+    // restricts writes to SFE Manager / probation admin.
+    probation: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     sales: ["read", "import", "export"],
