@@ -177,11 +177,16 @@ export async function runEmailSendHardeningTests() {
 
   // --- Source locks ----------------------------------------------------------------
   const sendSource = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
+  // The raw provider POST + retry/error classification moved into the failover layer; the
+  // send path now delegates to it. Assert the hardening in its new home so the locks still hold.
+  const providersSource = readFileSync("src/lib/email/email-providers.ts", "utf8");
+  const errorsSource = readFileSync("src/lib/email/email-errors.ts", "utf8");
   assert.match(sendSource, /from\("email_suppressions"\)/, "suppression must use the durable email_suppressions table");
   assert.match(sendSource, /loadComplaintSuppressionsFromEvents/, "must fail-closed for complaints on table error");
-  assert.match(sendSource, /class RetryableEmailError/, "retryable error type must exist");
-  assert.match(sendSource, /AbortSignal\.timeout/, "the Resend POST must have a timeout");
-  assert.match(sendSource, /response\.status === 429/, "must handle 429 rate limiting");
+  assert.match(sendSource, /sendPreparedEmailWithFailover/, "send path must dispatch through the provider-failover layer");
+  assert.match(errorsSource, /class RetryableEmailError/, "retryable error type must exist");
+  assert.match(providersSource, /AbortSignal\.timeout/, "the provider POST must have a timeout");
+  assert.match(providersSource, /response\.status === 429/, "must handle 429 rate limiting");
   assert.match(sendSource, /guardAttachments\(input\.attachments\)/, "attachments must be size-guarded before sending");
   assert.match(sendSource, /fanoutToBcc/, "BCC fan-out option must exist");
   assert.match(sendSource, /Signature image unreachable; sending email anyway/, "image check must be non-fatal");

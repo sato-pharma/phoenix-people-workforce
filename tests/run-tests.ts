@@ -308,6 +308,7 @@ import { runEmailProductionReadinessTests } from "./email-production-readiness.t
 import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
 import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
 import { runEmailSendHardeningTests } from "./email-send-hardening.test.ts";
+import { runEmailProviderFailoverTests } from "./email-provider-failover.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
@@ -673,6 +674,7 @@ await runTest("email production readiness", runEmailProductionReadinessTests);
 await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
 await runTest("email engine hardening", runEmailEngineHardeningTests);
 await runTest("email send hardening", runEmailSendHardeningTests);
+await runTest("email provider failover (Resend → Brevo, dedup-safe)", runEmailProviderFailoverTests);
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);

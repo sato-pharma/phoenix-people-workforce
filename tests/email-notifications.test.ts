@@ -82,7 +82,8 @@ export function runEmailNotificationTests() {
   assert.match(vacationEmailSource, /renderPhoenixEmailHtml/);
   assert.match(vacationEmailSource, /renderPhoenixEmailText/);
 
-  assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/send-phoenix-email.ts"]);
+  // The single raw Resend send endpoint now lives in the provider-failover adapter.
+  assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/email-providers.ts"]);
 
   // Verify daily dispatcher cron hardening
   const dailyCronRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
