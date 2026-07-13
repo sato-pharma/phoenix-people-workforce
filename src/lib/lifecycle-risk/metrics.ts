@@ -132,7 +132,7 @@ export function summarizeProbationRiskRows(rows: ProbationRiskInput[]) {
   const activeRows = rows.filter((row) => row.workflowDecision !== "pass" && row.workflowDecision !== "terminate");
   return {
     critical: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "critical").length,
-    openWorkflows: activeRows.filter((row) => row.workflowDecision == null || row.workflowDecision === "extend").length,
+    openWorkflows: activeRows.filter((row) => row.workflowDecision == null).length,
     safe: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "safe").length,
     total: activeRows.length,
     warning: activeRows.filter((row) => classifyProbationTrafficStatus(Number(row.daysRemaining ?? 0)) === "warning").length,

@@ -4,6 +4,8 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
+import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
 
 const JOB_NAME = "ireports360-visits-sync";
@@ -62,6 +64,13 @@ async function runSync() {
   // call). Never let a probation-tick failure mask an otherwise-successful visits sync.
   await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
     console.error(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
+  });
+
+  // Capture validated probation DV-Days from the just-refreshed window into the new probation
+  // domain (idempotent; scoped to probation employees). Non-blocking — a failure here must never
+  // mask an otherwise-successful visits sync.
+  await syncProbationDvDays(getSupabaseAdmin(), { dateFrom, dateTo }).catch((error: unknown) => {
+    console.error(error, { tags: { cron: "ireports360-visits-sync-probation-dv" } });
   });
 
   await notifyIReports360SyncResult({

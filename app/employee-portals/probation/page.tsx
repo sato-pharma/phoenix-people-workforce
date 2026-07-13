@@ -2,6 +2,10 @@ import { redirect } from "next/navigation";
 
 import { EmployeeProbationDashboard } from "@/components/employee-portal/employee-probation-dashboard";
 import {
+  ProbationFeedbackTasksPanel,
+  type FeedbackTaskView,
+} from "@/components/employee-portal/probation-feedback-tasks-panel";
+import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
@@ -22,6 +26,7 @@ import {
   isProbationSchemaMissing,
   probationErrorMessage,
 } from "@/lib/probation/service";
+import { listFeedbackTasks } from "@/lib/probation/intelligence/feedback-workflow";
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +104,33 @@ export default async function EmployeePortalProbationPage({
     );
   }
 
+  // Manager feedback inbox (E2): the signed-in evaluator's open, validated Double-Visit days that still
+  // owe structured feedback. Best-effort — the intelligence tables may not exist in every environment,
+  // and this panel must never break the legacy tracker below it.
+  let feedbackTasks: FeedbackTaskView[] = [];
+  if (canSubmitManagerFeedback) {
+    try {
+      const nameByHrId = new Map<string, string>();
+      for (const row of initialData) {
+        if (row.full_name) nameByHrId.set(row.hr_id.toLowerCase(), row.full_name);
+      }
+      const tasks = await listFeedbackTasks(access);
+      feedbackTasks = tasks.map((t) => ({
+        dvDayId: t.dvDayId,
+        employeeHrId: t.employeeHrId,
+        employeeName: nameByHrId.get(t.employeeHrId.toLowerCase()) ?? null,
+        evaluatorRole: t.evaluatorRole,
+        dvDate: t.dvDate,
+        visitCount: t.visitCount,
+        slaState: t.sla.state,
+        hoursUntilDue: t.sla.hoursUntilDue,
+        hoursOverdue: t.sla.hoursOverdue,
+      }));
+    } catch {
+      feedbackTasks = [];
+    }
+  }
+
   return (
     <EmployeePortalPageShell
       badge="People Operations"
@@ -109,6 +141,7 @@ export default async function EmployeePortalProbationPage({
       <div className="flex flex-wrap items-center gap-2">
         <ScopeBadge scope={access.scope} />
       </div>
+      <ProbationFeedbackTasksPanel tasks={feedbackTasks} />
       <EmployeeProbationDashboard
         canManageDvCheckboxes={canManageDvCheckboxes}
         canSubmitManagerFeedback={canSubmitManagerFeedback}

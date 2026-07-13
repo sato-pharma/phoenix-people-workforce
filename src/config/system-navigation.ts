@@ -282,6 +282,13 @@ const adminNavigationSectionSeeds = [
       },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
       { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
+      // Decision-intelligence surfaces. Dashboard + Analytics require company-wide probation read
+      // (canReadAllProbation → Super Admin / CEO / Training Manager / Marketing Manager); Settings is
+      // administrator-only (isProbationAdministrator → Super Admin). Roles kept in sync with the page gates
+      // so managers/reps who'd be redirected never see a dead link.
+      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
     ],
     label: "People Management",

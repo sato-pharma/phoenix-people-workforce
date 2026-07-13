@@ -8,7 +8,7 @@ export async function runResignationScopeCheckTests() {
   // (a) resignEmployeeAndOpenVacancy accepts a full AccessContext, not just the role.
   assert.match(
     resignationsService,
-    /export\s+async\s+function\s+resignEmployeeAndOpenVacancy\(\s*hrId:\s*string,\s*input:\s*EmployeeResignationInput,\s*actor:\s*string,\s*access\?:\s*AccessContext,\s*\)/,
+    /export\s+async\s+function\s+resignEmployeeAndOpenVacancy\(\s*hrId:\s*string,\s*input:\s*EmployeeResignationInput,\s*actor:\s*string,\s*access\?:\s*AccessContext,/,
     "resignEmployeeAndOpenVacancy must accept access?: AccessContext (widened from Pick<AccessContext, \"role\">)",
   );
   assert.doesNotMatch(

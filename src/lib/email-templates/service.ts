@@ -20,6 +20,10 @@ export const emailTemplateKeys = [
   "interview_feedback",
   "probation_workflow",
   "probation_reminder",
+  "probation_dv_snapshot",
+  "probation_day30",
+  "probation_day60",
+  "probation_day75",
   "contract_renewal",
   "birthday",
   "resignation_workflow",
@@ -75,6 +79,10 @@ export const EMAIL_TEMPLATE_KEYS = {
   PASSWORD_RESET: "password_reset",
   PROBATION_REMINDER: "probation_reminder",
   PROBATION_WORKFLOW: "probation_workflow",
+  PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
+  PROBATION_DAY30: "probation_day30",
+  PROBATION_DAY60: "probation_day60",
+  PROBATION_DAY75: "probation_day75",
   PAYROLL_UPDATE: "payroll_update",
   RECRUITMENT_UPDATE: "recruitment_update",
   RESIGNATION_WORKFLOW: "resignation_workflow",
@@ -176,6 +184,27 @@ export type EmailTemplateContext = {
   returnCallout?: string | null;
   returnCalloutText?: string | null;
   roiWindow?: string | null;
+  // ── Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75) ──
+  /** The DV field date (YYYY-MM-DD) for the DV-snapshot email. */
+  dvDate?: string | null;
+  /** The evaluator (person) who performed the double visit. */
+  evaluatorName?: string | null;
+  /** The evaluator's probation role label (District Manager / NSM / TM / PM·GPM). */
+  evaluatorRole?: string | null;
+  /** Number of individual customer visits in that DV day. */
+  visitCount?: string | null;
+  /** One-line DV progress summary, e.g. "DM 2/3 · TM 1/1 · PM/GPM 0/1 · NSM 1/1 · Total 4/6". */
+  dvProgress?: string | null;
+  /** Milestone day number (30 / 60 / 75) for milestone emails. */
+  milestoneDay?: string | null;
+  /** Current probation day for the employee. */
+  probationDay?: string | null;
+  /** Days remaining in the probation window. */
+  daysRemaining?: string | null;
+  /** Provisional (or final) weighted score, e.g. "6.85 / 10". */
+  provisionalScore?: string | null;
+  /** Risk / readiness status label, e.g. "Action Required" / "Not decision-ready". */
+  riskStatus?: string | null;
 };
 
 export type EmailTemplateDefinition = {
@@ -444,6 +473,13 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   password_reset: emptyRules(["candidate"]),
   probation_reminder: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
   probation_workflow: emptyRules(["direct_manager"], ["hr"]),
+  // Owner-confirmed recipients. The role vocabulary covers CEO/HR/DM/NSM here; SFE Manager,
+  // Training Manager, PM/GPM and the evaluator are resolved + added explicitly at emit time
+  // (src/lib/probation/intelligence/probation-emails.ts).
+  probation_dv_snapshot: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_day30: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   resignation_workflow: emptyRules(["manager_chain"], ["hr"]),
   user_created: emptyRules(["employee"]),
 };
@@ -819,6 +855,80 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "probation_workflow",
     templateName: "Probation Tracker",
   },
+  probation_dv_snapshot: {
+    bodyHtml:
+      "<p>A double-visit day was completed and validated for <strong>{{employeeName}}</strong> ({{employeeHrId}}), day {{probationDay}} of probation.</p>" +
+      "<p>DV date: {{dvDate}} · Evaluator: {{evaluatorName}} ({{evaluatorRole}}) · Visits: {{visitCount}} · Area: {{area}}.</p>" +
+      "<p>Progress: {{dvProgress}}.</p><p>Feedback status: {{status}} · Risk: {{riskStatus}}.</p>" +
+      "<p>This is a management snapshot — open the live report for full detail.</p>",
+    bodyText:
+      "Double-visit day validated for {{employeeName}} ({{employeeHrId}}), probation day {{probationDay}}.\n" +
+      "DV date: {{dvDate}} · Evaluator: {{evaluatorName}} ({{evaluatorRole}}) · Visits: {{visitCount}} · Area: {{area}}.\n" +
+      "Progress: {{dvProgress}}.\nFeedback status: {{status}} · Risk: {{riskStatus}}.\n" +
+      "Open the live report for full detail.",
+    closingText: "Open the live consolidated report for the full picture.",
+    description: "Sent to stakeholders after each validated Double-Visit Day (management snapshot + link to the live report).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "A validated double-visit day for {{employeeName}}.",
+    subject: "Probation DV snapshot — {{employeeName}} ({{dvProgress}})",
+    templateKey: "probation_dv_snapshot",
+    templateName: "Probation DV Snapshot",
+  },
+  probation_day30: {
+    bodyHtml:
+      "<p><strong>Day 30 — early progress review</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.</p>" +
+      "<p>{{summary}}</p><p>Confirm who has already completed a DV day and flag any early gaps.</p>",
+    bodyText:
+      "Day 30 — early progress review for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n{{summary}}\n" +
+      "Confirm who has completed a DV day and flag early gaps.",
+    closingText: "Open the live report to review early progress.",
+    description: "Day-30 milestone: early progress review (who has completed a DV day, early gaps and risks).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 30 early progress for {{employeeName}}.",
+    subject: "Probation Day 30 — {{employeeName}} (early progress)",
+    templateKey: "probation_day30",
+    templateName: "Probation Day 30",
+  },
+  probation_day60: {
+    bodyHtml:
+      "<p><strong>Day 60 — escalation &amp; completion planning</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
+      "<p>{{summary}}</p><p>Schedule any remaining DV days and HR/SFE input before Day 75; resolve overdue feedback.</p>",
+    bodyText:
+      "Day 60 — escalation & completion planning for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
+      "Schedule remaining DV days + HR/SFE input before Day 75; resolve overdue feedback.",
+    closingText: "Open the live report to plan completion before Day 75.",
+    description: "Day-60 milestone: escalation and completion planning (remaining requirements, overdue feedback, decision-readiness gaps).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 60 completion planning for {{employeeName}}.",
+    subject: "Probation Day 60 — {{employeeName}} (plan to Day 75)",
+    templateKey: "probation_day60",
+    templateName: "Probation Day 60",
+  },
+  probation_day75: {
+    bodyHtml:
+      "<p><strong>Day 75 — decision readiness</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
+      "<p>{{summary}}</p><p>Review the consolidated evidence and any contradictions before the decision. No automatic decision is made.</p>",
+    bodyText:
+      "Day 75 — decision readiness for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
+      "Review the consolidated evidence + contradictions before the decision. No automatic decision is made.",
+    closingText: "Open the live report to review decision readiness.",
+    description: "Day-75 milestone: decision-readiness status (completeness, blockers, consolidated position). Never auto-decides.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 75 decision readiness for {{employeeName}}.",
+    subject: "Probation Day 75 — {{employeeName}} (decision readiness)",
+    templateKey: "probation_day75",
+    templateName: "Probation Day 75",
+  },
   resignation_workflow: {
     bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Effective date: {{date}}.</p><p>{{status}}</p>",
     bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nEffective date: {{date}}.\n{{status}}",
@@ -896,6 +1006,10 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   password_setup: "Account Access",
   probation_reminder: "Employee Lifecycle",
   probation_workflow: "Employee Lifecycle",
+  probation_dv_snapshot: "Employee Lifecycle",
+  probation_day30: "Employee Lifecycle",
+  probation_day60: "Employee Lifecycle",
+  probation_day75: "Employee Lifecycle",
   resignation_workflow: "Employee Lifecycle",
   user_created: "Account Access",
 };

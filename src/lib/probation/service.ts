@@ -64,7 +64,6 @@ type ProbationEvaluationDbRow = {
   manager_feedback: string | null;
   hr_recommendation: string | null;
   decision: ProbationDecision | null;
-  extension_end_date: string | null;
   decision_reason: string | null;
   probation_letter_url: string | null;
   probation_letter_name: string | null;
@@ -96,7 +95,6 @@ type ProbationReminderEventDbRow = {
 type ProbationWorkflowInput = {
   decisionReason?: string | null;
   expectedUpdatedAt?: string | null;
-  extensionEndDate?: string | null;
   evaluationScores?: Record<string, number | string | null>;
   hrRecommendation?: string | null;
   managerFeedback?: string | null;
@@ -235,7 +233,6 @@ function normalizeProbationStatus(
   decision: ProbationDecision | null | undefined,
 ): ProbationWorkflowStatus {
   if (decision === "pass") return "passed";
-  if (decision === "extend") return "extended";
   if (decision === "terminate") return "terminated";
   if (evaluationStatus === "completed") return "passed";
   return "active";
@@ -323,7 +320,6 @@ function mapEvaluation(row: ProbationEvaluationDbRow): ProbationWorkflowRecord {
     employeeHrId: row.employee_hr_id,
     employeeName: row.employee_name,
     evaluationScores: row.evaluation_scores ?? {},
-    extensionEndDate: row.extension_end_date,
     hrRecommendation: row.hr_recommendation,
     hrReviewedAt: asIso(row.hr_reviewed_at),
     hrReviewedBy: row.hr_reviewed_by,
@@ -811,6 +807,24 @@ export async function processDueProbationReminderEvents(limit = 25) {
   let failed = 0;
   let sent = 0;
 
+  // Coexistence guard: an employee already decided in the NEW probation-intelligence module must not
+  // keep receiving LEGACY probation reminders. A new-module pass/terminate never writes back to the
+  // legacy row, so without this the same person gets duplicate/contradictory reminders until the
+  // 90-day window expires. Best-effort — the new tables may not exist pre-migration.
+  const decidedByNewModule = new Set<string>();
+  try {
+    const { data: decided } = await supabase
+      .from("probation_cases")
+      .select("employee_hr_id")
+      .not("decision", "is", null);
+    for (const r of (decided ?? []) as Array<{ employee_hr_id: string }>) {
+      const key = normalizeHrId(r.employee_hr_id);
+      if (key) decidedByNewModule.add(key);
+    }
+  } catch {
+    // new-module schema absent (pre-migration) — legacy behavior unchanged
+  }
+
   for (const event of events) {
     attempted += 1;
     const metadata = reminderMetadata(event);
@@ -818,10 +832,14 @@ export async function processDueProbationReminderEvents(limit = 25) {
     const employee = employeeHrId ? employeesByHrId.get(employeeHrId) : null;
     const row = employeeHrId ? activeRows.get(employeeHrId) : null;
 
-    if (!employee || !row || row.workflow?.decision === "pass" || row.workflow?.decision === "terminate") {
+    if (
+      !employee || !row ||
+      row.workflow?.decision === "pass" || row.workflow?.decision === "terminate" ||
+      (employeeHrId && decidedByNewModule.has(employeeHrId))
+    ) {
       await markProbationReminderEvent(event.id, "failed", {
         ...metadata,
-        skipped_reason: "Probation reminder skipped because the employee is no longer in an active probation review window.",
+        skipped_reason: "Probation reminder skipped because the employee is no longer in an active probation review window (or was decided in the new probation module).",
       });
       failed += 1;
       processedIds.push(event.id);
@@ -1076,7 +1094,6 @@ export async function runProbationWorkflow(
       updates.status = "completed";
       updates.decision = action;
       updates.decision_reason = cleanText(input.decisionReason);
-      updates.extension_end_date = null;
       updates.approved_at = now;
       updates.approved_by = actorHrId;
       updates.completed_at = now;

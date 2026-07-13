@@ -315,6 +315,20 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/:runId/deductions/holiday-bridging", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/statutory/insurance-wages/import", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/payroll/**", permission: { resource: "payroll", action: "read" }, csrfRequired: true }),
+  // Probation Decision Intelligence routes are gated at probation:read at the middleware; each
+  // route enforces its exact permission / row-level ownership / decision-role check in-handler
+  // (findAccessRegistryEntry picks the longest matching pattern, so these override the blanket
+  // below). Without these, the /api/probation/** blanket would require Super-Admin-only
+  // probation:update and lock out managers / SFE / CEO / TM who legitimately hold probation:read.
+  sessionApi({ methods: readOnly, pattern: "/api/probation/feedback-tasks", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/probation/dashboard", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/probation/analytics", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/cases/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/dv/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/dv-feedback/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/development-actions/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  // Config editor stays admin-only (probation:update).
+  sessionApi({ methods: allMethods, pattern: "/api/probation/config", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/probation/**", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/requisitions/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/applications/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),

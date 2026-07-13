@@ -44,7 +44,7 @@ export function toProbationWorkflowStatus(input: {
   const decision = String(input.decision ?? "").trim().toLowerCase();
   if (decision === "pass") return "probation_passed";
   if (decision === "terminate") return "probation_terminated";
-  if (decision === "extend") return "probation_extended";
+  // `extend` removed by owner policy — no probation_extended decision path.
 
   const status = String(input.status ?? "evaluation_requested").trim().toLowerCase();
   if (status === "manager_feedback") return "probation_manager_feedback";
