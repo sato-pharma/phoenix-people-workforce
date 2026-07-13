@@ -23,9 +23,11 @@ gcloud scheduler jobs create http phoenix-daily-notifications \
     --location="${REGION}" \
     --project="${PROJECT_ID}"
 
-# 2. Process Notifications (*/30 * * * *)
+# 2. Process Notifications (*/5 * * * *) — drains the email/notification outbox + retries.
+# Every 5 min (not 30) so a failed/deferred email is retried quickly; the synchronous first
+# send already makes normal sends instant, so this only speeds up recovery of failures.
 gcloud scheduler jobs create http phoenix-process-notifications \
-    --schedule="*/30 * * * *" \
+    --schedule="*/5 * * * *" \
     --uri="${SERVICE_URL}/api/notifications/process?limit=50" \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \

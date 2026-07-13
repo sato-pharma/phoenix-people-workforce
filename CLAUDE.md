@@ -155,7 +155,7 @@ Notifications use an outbox model. The project runs on **Vercel Pro** (confirmed
 (`30 6 * * *`), which internally calls `runBirthdayNotifications` /
 `runContractRenewalNotifications` plus the other daily SLA/digest jobs (vacation,
 marketing, outstation, recruitment, resignations, weekly-plan drift, Telegram HR
-digest); `/api/notifications/process?limit=50` (`*/30 * * * *`), which drains the
+digest); `/api/notifications/process?limit=50` (`*/5 * * * *`), which drains the
 notification outbox, probation reminders, and deferred/Telegram delivery retries
 faster than once a day via `src/lib/notifications/scheduled-processing.ts`; and
 `/api/cron/ireports360-visits-sync` (`0 9,12,19 * * *`) / `/api/cron/ireports360-visits-reconcile`
