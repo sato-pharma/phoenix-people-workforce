@@ -21,6 +21,7 @@ import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
+import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -320,6 +321,12 @@ function dedupeChannels(channels: SystemNotificationChannel[]) {
 }
 
 function basePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
+  // Hard, fallback-proof guarantee: a payslip notification is NEVER emailed, whatever the policy,
+  // explicit channels, or Telegram-failure fallbacks resolve to. See payslip-channel-guard.ts.
+  return enforcePayslipEmailBlock(resolveBasePolicyChannels(input, preferred), input.eventType);
+}
+
+function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
   if (input.channels?.length) return dedupeChannels(input.channels);
   const policy = resolveNotificationPolicy(input);
   if (policy.channels.length > 0) {
