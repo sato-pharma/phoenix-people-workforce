@@ -23,6 +23,12 @@ export function runProbationEmailsTests() {
   // Tokens added.
   assert.match(engine, /dvProgress\?: string \| null/, "dvProgress token added to EmailTemplateContext");
   assert.match(engine, /milestoneDay\?: string \| null/, "milestoneDay token added");
+  // REGRESSION GUARD (prod incident 2026-07-14): the probation tokens must ALSO be in the render
+  // allowlist (placeholderHints). Declaring them only on the type let the renderer strip them to empty,
+  // so the DV-snapshot + milestone emails went out with blank DV date / evaluator / score / risk / day.
+  for (const token of ["probationDay", "dvDate", "evaluatorName", "evaluatorRole", "visitCount", "dvProgress", "riskStatus", "provisionalScore", "daysRemaining", "milestoneDay"]) {
+    assert.ok(engine.includes(`"${token}"`), `${token} is in the render allowlist (placeholderHints), not just the type`);
+  }
 
   const emails = src("src/lib/probation/intelligence/probation-emails.ts");
 
