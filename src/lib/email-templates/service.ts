@@ -440,6 +440,21 @@ const placeholderHints = [
   "requesterName",
   "productsTable",
   "returnCallout",
+  // Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75). These
+  // are declared on EmailTemplateContext and used by the shipped default bodies, but were missing
+  // here — so the renderer stripped them to empty and the emails went out with blank DV date /
+  // evaluator / visits / progress / score / risk / day-number. (area, status, employeeName,
+  // employeeHrId, summary are already allowed above.)
+  "probationDay",
+  "dvDate",
+  "evaluatorName",
+  "evaluatorRole",
+  "visitCount",
+  "dvProgress",
+  "riskStatus",
+  "provisionalScore",
+  "daysRemaining",
+  "milestoneDay",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
