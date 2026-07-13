@@ -21,29 +21,30 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
   const expenses = source("src/lib/outstation/expenses.ts");
 
-  // ── Rule 1 (revised): Submit notification → Super Admin only, full details ────
+  // ── Rule 1 (revised 2026-07-13): Submit notification → Super Admin + CEO, full details ──
   // Outstation/expense submissions auto-approve directly to payroll (no human
   // pending-approval step). Instead of an actionable "approve this" alert, every
-  // active Super Admin gets a live, informational feed of what was just submitted
-  // — by email + Telegram, with the full request detail (amounts, GPS, risk
-  // signals) — not the submitter's manager, and not the wider approver set that
-  // has no outstation approval authority.
+  // active Super Admin AND the CEO get a live, informational feed of what was just
+  // submitted — by email + Telegram, with the full request detail (amounts, GPS,
+  // risk signals) — not the submitter's manager, and not the wider approver set
+  // that has no outstation approval authority. (Super-Admin-only was a regression:
+  // it silently dropped the CEO from every outstation alert.)
   assert.match(
     service,
     /async function notifyOutstationSubmitted/,
-    "RULE 1: notifyOutstationSubmitted must exist — Super Admin gets a submit alert",
+    "RULE 1: notifyOutstationSubmitted must exist — Super Admin + CEO get a submit alert",
   );
 
   const submitNotifySlice = functionSlice(service, "async function notifyOutstationSubmitted");
   assert.match(
     submitNotifySlice,
-    /resolveActiveSuperAdminHrIds/,
-    "submit notification must resolve recipients via the Super Admin lookup, not the employee's manager",
+    /resolveOutstationSubmitAlertHrIds/,
+    "submit notification must resolve recipients via the submit-alert lookup, not the employee's manager",
   );
   assert.doesNotMatch(
     submitNotifySlice,
     /direct_manager/,
-    "submit notification must NOT go to the submitter's manager — Super Admin only",
+    "submit notification must NOT go to the submitter's manager — Super Admin + CEO only",
   );
   assert.match(
     submitNotifySlice,
@@ -56,11 +57,11 @@ export function runOutstationNotificationsTests() {
     "submit notification eventType must be request_submitted",
   );
 
-  const superAdminLookupSlice = functionSlice(service, "async function resolveActiveSuperAdminHrIds");
+  const submitAlertLookupSlice = functionSlice(service, "async function resolveOutstationSubmitAlertHrIds");
   assert.match(
-    superAdminLookupSlice,
-    /\.eq\("role", "Super Admin"\)/,
-    "submit notification recipients must be scoped to the Super Admin role",
+    submitAlertLookupSlice,
+    /\.in\("role",\s*\["Super Admin",\s*"CEO"\]\)/,
+    "submit notification recipients must be scoped to Super Admin + CEO roles",
   );
 
   const submitHooks = [

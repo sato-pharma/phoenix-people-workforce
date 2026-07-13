@@ -1258,13 +1258,16 @@ function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 
-async function resolveActiveSuperAdminHrIds(): Promise<string[]> {
+// Owner decision (2026-07-13): the submit alert must reach Super Admin (system oversight) AND
+// the CEO, not Super Admin alone — the original Super-Admin-only scoping silently dropped the
+// CEO from every outstation alert. Finance Manager stays excluded (not requested).
+async function resolveOutstationSubmitAlertHrIds(): Promise<string[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("hr_id,role,is_active")
       .eq("is_active", true)
-      .eq("role", "Super Admin");
+      .in("role", ["Super Admin", "CEO"]);
     if (error) throw error;
     const hrIds = new Set<string>();
     for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
@@ -1273,7 +1276,7 @@ async function resolveActiveSuperAdminHrIds(): Promise<string[]> {
     }
     return Array.from(hrIds);
   } catch (error) {
-    console.error("[outstation] Super Admin recipient lookup failed; submit notification skipped", error);
+    console.error("[outstation] submit-alert recipient lookup failed; submit notification skipped", error);
     return [];
   }
 }
@@ -1285,7 +1288,7 @@ async function resolveActiveSuperAdminHrIds(): Promise<string[]> {
 // practice). Not fired on later edits to an already-approved request.
 async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
   try {
-    const recipients = await resolveActiveSuperAdminHrIds();
+    const recipients = await resolveOutstationSubmitAlertHrIds();
     if (recipients.length === 0) return;
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
