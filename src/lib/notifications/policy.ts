@@ -115,7 +115,8 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "marketing_requests.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
   "offers.*": { channels: ["in_app", "email"], permissionResource: "offers", priority: "high", recipientStrategy: ["permission_based"] },
   "outstation.*": { channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
-  "payroll.payslip_available": { channels: ["in_app", "email"], recipientStrategy: ["employee"], sensitive: "payroll", telegramGenericOnly: true },
+  // Owner request 2026-07-13: no payslip emails to employees — in-app + Telegram only.
+  "payroll.payslip_available": { channels: ["in_app", "telegram"], recipientStrategy: ["employee"], sensitive: "payroll", telegramAllowed: true, telegramGenericOnly: true },
   "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
