@@ -148,6 +148,8 @@ function isApprovedFinalActionStatus(status: FieldWorkforceDecisionStatus) {
 function sourceLabel(sourceType: FieldWorkforceRecommendationSourceType) {
   const labels: Record<FieldWorkforceRecommendationSourceType, string> = {
     approved_leave_request: "Approved Leave Request",
+    av_with_attendance_punch: "AV Contradicted by Fingerprint",
+    av_with_partial_attendance_punch: "AV Partial Attendance (Half-Day)",
     calendar_av: "Calendar AV",
     n_retroactive_candidate: "N Retroactive Candidate",
     no_activity_candidate: "No Activity Candidate",
@@ -353,9 +355,25 @@ function generatedRecommendations(
       roleName: employee.roleName,
       teamName: employee.teamName,
     };
-    const avDates = employee.timeline
-      .filter((cell) => !cell.ignored && cell.status === "AV")
-      .map((cell) => cell.dateIso);
+    const avCells = employee.timeline.filter((cell) => !cell.ignored && cell.status === "AV");
+    // Split out AV days contradicted by a same-day fingerprint punch (attendance-cross-check.ts)
+    // into their own recommendations — mainly relevant for device-mapped, office-based (Head
+    // Office) staff, since field reps are never fingerprint-device-mapped. Excuse-labeled days
+    // (isExcuseLabeledAv) are excluded from BOTH splits: a punch on a day logged as "Afternoon
+    // Excuse"/"Morning Excuse" is expected, not a real vacation contradiction, so those stay in
+    // the plain calendar_av recommendation below. Genuine contradictions further split by
+    // worked duration (attendance-cross-check.ts's AV_HALF_DAY_MAX_WORKED_MINUTES, 5h,
+    // owner-confirmed): av_with_punch (>=5h proven worked) is a full contradiction;
+    // av_with_partial_punch (<5h, or unresolvable) reads as a half-day vacation instead.
+    const avBucket = (cell: (typeof avCells)[number]): "full" | "partial" | "plain" => {
+      if (cell.isExcuseLabeledAv) return "plain";
+      if (cell.attendanceCrossCheck === "av_with_punch") return "full";
+      if (cell.attendanceCrossCheck === "av_with_partial_punch") return "partial";
+      return "plain";
+    };
+    const avDates = avCells.filter((cell) => avBucket(cell) === "plain").map((cell) => cell.dateIso);
+    const avPartialPunchDates = avCells.filter((cell) => avBucket(cell) === "partial").map((cell) => cell.dateIso);
+    const avWithPunchDates = avCells.filter((cell) => avBucket(cell) === "full").map((cell) => cell.dateIso);
     if (avDates.length > 0) {
       leaveRecommendations.push(buildRecommendation({
         archive: archiveDetail.archive,
@@ -375,6 +393,48 @@ function generatedRecommendations(
         recommendationType: "leave_reconciliation",
         severity: "Review",
         sourceType: "calendar_av",
+      }));
+    }
+    if (avWithPunchDates.length > 0) {
+      leaveRecommendations.push(buildRecommendation({
+        archive: archiveDetail.archive,
+        dates: avWithPunchDates,
+        decisions,
+        ...hierarchy,
+        estimatedAmount: null,
+        existingCoverageStatus: coverageStatusForDates({
+          coverage: leaveCoverage,
+          dates: avWithPunchDates,
+          employeeCode: employee.hrId,
+          fallback: "leave_source_not_connected",
+        }),
+        holidayContext: null,
+        recommendation: "Fingerprint attendance shows a physical punch on a day the field calendar marks as vacation. Verify with the employee before treating this as leave.",
+        recommendationReason: "AV means vacation signal from the field calendar, but a matching fingerprint punch was recorded the same day — the two systems disagree. It does not automatically deduct or restore leave balance.",
+        recommendationType: "leave_reconciliation",
+        severity: "High",
+        sourceType: "av_with_attendance_punch",
+      }));
+    }
+    if (avPartialPunchDates.length > 0) {
+      leaveRecommendations.push(buildRecommendation({
+        archive: archiveDetail.archive,
+        dates: avPartialPunchDates,
+        decisions,
+        ...hierarchy,
+        estimatedAmount: null,
+        existingCoverageStatus: coverageStatusForDates({
+          coverage: leaveCoverage,
+          dates: avPartialPunchDates,
+          employeeCode: employee.hrId,
+          fallback: "leave_source_not_connected",
+        }),
+        holidayContext: null,
+        recommendation: "Fingerprint attendance shows under 5 hours worked on a day the field calendar marks as vacation — likely a half-day rather than a full vacation day. Verify with the employee before adjusting leave balance.",
+        recommendationReason: "AV means vacation signal from the field calendar, but a short fingerprint punch window (under 5h worked, or unresolvable) was recorded the same day. It does not automatically deduct or restore leave balance.",
+        recommendationType: "leave_reconciliation",
+        severity: "Review",
+        sourceType: "av_with_partial_attendance_punch",
       }));
     }
 

@@ -497,6 +497,10 @@ function withLoggingTimingTooltip(explanation: string, cell: FieldWorkforceDayCe
     result = `${result} Attendance cross-check: CRM shows activity, but no fingerprint punch this day.`;
   } else if (cell.attendanceCrossCheck === "punch_no_visits") {
     result = `${result} Attendance cross-check: fingerprint punch recorded, but no CRM activity this day.`;
+  } else if (cell.attendanceCrossCheck === "av_with_punch") {
+    result = `${result} Attendance cross-check: fingerprint punch recorded on a day marked as vacation (AV), 5h+ worked — full contradiction.`;
+  } else if (cell.attendanceCrossCheck === "av_with_partial_punch") {
+    result = `${result} Attendance cross-check: fingerprint punch recorded on a day marked as vacation (AV), under 5h worked — likely a half-day.`;
   }
   return result;
 }
@@ -520,6 +524,10 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-rose-500" />
       ) : cell.attendanceCrossCheck === "punch_no_visits" ? (
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-sky-500" />
+      ) : cell.attendanceCrossCheck === "av_with_punch" ? (
+        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-orange-600" />
+      ) : cell.attendanceCrossCheck === "av_with_partial_punch" ? (
+        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-yellow-500" />
       ) : null}
     </>
   );

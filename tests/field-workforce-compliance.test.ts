@@ -214,6 +214,95 @@ export async function runFieldWorkforceComplianceTests() {
     recommendation.existingCoverageStatus === "leave_source_not_connected"
   );
   assert.ok(avRecommendation);
+
+  // A fingerprint punch on the same AV day (attendance-cross-check.ts) splits that date out of
+  // the plain "calendar_av" recommendation into its own higher-severity "av_with_attendance_punch"
+  // recommendation, instead of silently being counted as ordinary vacation.
+  const restoredWithPunchedAv = {
+    ...restored,
+    preview: {
+      ...restored.preview,
+      employees: restored.preview.employees.map((employee) => employee.hrId !== "A-1" ? employee : {
+        ...employee,
+        timeline: employee.timeline.map((cell) => cell.dateIso !== "2026-01-06" ? cell : {
+          ...cell,
+          attendanceCrossCheck: "av_with_punch" as const,
+        }),
+      }),
+    },
+  };
+  const recommendationsWithPunchedAv = buildFieldWorkforceRecommendationsReportFromArchive(restoredWithPunchedAv);
+  const avWithPunchRecommendation = recommendationsWithPunchedAv.leaveRecommendations.find((recommendation) =>
+    recommendation.sourceType === "av_with_attendance_punch" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06")
+  );
+  assert.ok(avWithPunchRecommendation, "AV day contradicted by a fingerprint punch gets its own recommendation");
+  assert.equal(avWithPunchRecommendation.severity, "High");
+  assert.ok(!recommendationsWithPunchedAv.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "calendar_av" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06")
+  ), "the punch-contradicted date is removed from the plain calendar_av recommendation, not double-counted");
+
+  // An excuse-labeled AV day (e.g. "Afternoon Excuse") with a matching punch is NOT promoted —
+  // a punch on an excuse day is expected, not a real vacation contradiction. It stays in the
+  // plain calendar_av recommendation instead.
+  const restoredWithPunchedExcuseAv = {
+    ...restored,
+    preview: {
+      ...restored.preview,
+      employees: restored.preview.employees.map((employee) => employee.hrId !== "A-1" ? employee : {
+        ...employee,
+        timeline: employee.timeline.map((cell) => cell.dateIso !== "2026-01-06" ? cell : {
+          ...cell,
+          attendanceCrossCheck: "av_with_punch" as const,
+          isExcuseLabeledAv: true,
+        }),
+      }),
+    },
+  };
+  const recommendationsWithPunchedExcuseAv = buildFieldWorkforceRecommendationsReportFromArchive(restoredWithPunchedExcuseAv);
+  assert.ok(!recommendationsWithPunchedExcuseAv.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "av_with_attendance_punch" &&
+    recommendation.employeeCode === "A-1"
+  ), "an excuse-labeled AV day is never promoted to av_with_attendance_punch, even with a matching punch");
+  assert.ok(recommendationsWithPunchedExcuseAv.leaveRecommendations.some((recommendation) =>
+    recommendation.sourceType === "calendar_av" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06")
+  ), "an excuse-labeled AV day stays in the plain calendar_av recommendation");
+
+  // A genuine (non-excuse) AV+punch day with under 5h worked is a half-day, not a full
+  // contradiction — it gets its own Review-severity recommendation, distinct from both the
+  // plain calendar_av bucket and the High-severity av_with_attendance_punch bucket.
+  const restoredWithPartialPunchedAv = {
+    ...restored,
+    preview: {
+      ...restored.preview,
+      employees: restored.preview.employees.map((employee) => employee.hrId !== "A-1" ? employee : {
+        ...employee,
+        timeline: employee.timeline.map((cell) => cell.dateIso !== "2026-01-06" ? cell : {
+          ...cell,
+          attendanceCrossCheck: "av_with_partial_punch" as const,
+        }),
+      }),
+    },
+  };
+  const recommendationsWithPartialPunchedAv = buildFieldWorkforceRecommendationsReportFromArchive(restoredWithPartialPunchedAv);
+  const avPartialPunchRecommendation = recommendationsWithPartialPunchedAv.leaveRecommendations.find((recommendation) =>
+    recommendation.sourceType === "av_with_partial_attendance_punch" &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06")
+  );
+  assert.ok(avPartialPunchRecommendation, "an AV day with under-5h worked gets its own half-day recommendation");
+  assert.equal(avPartialPunchRecommendation.severity, "Review", "half-day contradiction is Review severity, not High");
+  assert.ok(!recommendationsWithPartialPunchedAv.leaveRecommendations.some((recommendation) =>
+    (recommendation.sourceType === "calendar_av" || recommendation.sourceType === "av_with_attendance_punch") &&
+    recommendation.employeeCode === "A-1" &&
+    recommendation.dates.includes("2026-01-06")
+  ), "the half-day date is not double-counted in either the plain calendar_av or the full-contradiction bucket");
+
   const nLeaveRecommendation = recommendations.leaveRecommendations.find((recommendation) =>
     recommendation.sourceType === "n_retroactive_candidate" &&
     recommendation.employeeCode === "A-1" &&

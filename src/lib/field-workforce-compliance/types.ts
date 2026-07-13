@@ -134,12 +134,35 @@ export type FieldWorkforceDayCell = {
    *    exists for the employee that day.
    *  - punch_no_visits: the employee physically punched in that day, but FWC classified it "N"
    *    (no CRM activity) — corroborates a genuine no-activity day rather than a CRM logging gap.
+   *  - av_with_punch: FWC classified this a vacation signal ("AV"), and the employee's
+   *    fingerprint activity that day (last punch minus first punch) proves at least
+   *    AV_HALF_DAY_MAX_WORKED_MINUTES (5h) worked — a full contradiction between the CRM
+   *    calendar and physical attendance, not just a brief appearance.
+   *  - av_with_partial_punch: same AV+punch disagreement, but worked minutes are under the 5h
+   *    threshold (or unresolvable) — reads as a half-day vacation rather than a full
+   *    contradiction. This is the conservative default when duration can't be computed.
+   *    Both AV variants mainly fire for office-based (Head Office) staff, since field reps are
+   *    not fingerprint-device-mapped in the first place.
    */
   attendanceCrossCheck?: FieldWorkforceAttendanceCrossCheckResult | null;
+  /**
+   * True when this day's AV-classified CRM visit carries an excuse-labeled comment (e.g.
+   * "Afternoon Excuse", "Morning Excuse") rather than an actual vacation label. iReports360 has
+   * no separate visit_type for excuses — both are logged under the same AV-mapped types, told
+   * apart only by free-text comment. Only ever set on the live CRM-mirror path
+   * (ireports360-source.ts); always undefined on the Excel-upload path, which has no comment
+   * data. Used only to exclude excuse days from the av_with_punch cross-check recommendation —
+   * never affects the base AV classification, severity, or deduction candidates.
+   */
+  isExcuseLabeledAv?: boolean;
   visitCount?: number;
 };
 
-export type FieldWorkforceAttendanceCrossCheckResult = "punch_no_visits" | "visits_no_punch";
+export type FieldWorkforceAttendanceCrossCheckResult =
+  | "av_with_partial_punch"
+  | "av_with_punch"
+  | "punch_no_visits"
+  | "visits_no_punch";
 
 /**
  * CRM-logging-timing signal for one employee-day, computed from the visits mirror's
@@ -343,6 +366,8 @@ export type FieldWorkforceRecommendationType =
 
 export type FieldWorkforceRecommendationSourceType =
   | "approved_leave_request"
+  | "av_with_attendance_punch"
+  | "av_with_partial_attendance_punch"
   | "calendar_av"
   | "n_retroactive_candidate"
   | "no_activity_candidate";

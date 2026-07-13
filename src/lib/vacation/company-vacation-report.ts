@@ -1,0 +1,557 @@
+/**
+ * Company-wide vacation report: merges official HR vacation requests with unverified
+ * CRM-derived leave candidates, so admins can see everything in one place with a clear
+ * `source` column distinguishing the two.
+ *
+ * IMPORTANT — read-only, advisory: the CRM-derived rows are estimates built from
+ * heuristics (excuse-comment filtering, national-holiday exclusion, and attendance
+ * cross-checks), not employee-submitted or HR-approved leave. This service never writes to
+ * v2_vacation_requests or any leave balance — it only reads and reports. Turning a CRM
+ * signal into a real leave adjustment is a separate, human-reviewed decision made through
+ * the existing Field Workforce Compliance recommendation workflow
+ * (src/lib/field-workforce-compliance/recommendations.ts), not this report.
+ *
+ * The CRM-signal methodology mirrors src/lib/field-workforce-compliance/{ireports360-source,
+ * attendance-cross-check}.ts, but is intentionally NOT the same code path: FWC's preview is
+ * scoped to "field commercial workforce" only (see eligibility.ts) and only produces whole-day
+ * AV counts. This report covers every CRM identity org-wide (including Head Office admin/HR
+ * roles FWC excludes by design).
+ *
+ * Owner-confirmed trigger rule (2026-07): the ONLY thing that counts a day as CRM leave is the
+ * CRM's own AV marking (visit_type -4) — after excuse-comment and public-holiday exclusion, an
+ * AV day is a full vacation day at face value. A regular/campaign visit-count heuristic (e.g.
+ * "fewer than 5 PM visits") must NEVER be used to downgrade or zero out an AV day for a normal
+ * employee — that inference was tried and explicitly rejected as too aggressive. The ONLY
+ * exception is a device-mapped employee with a real fingerprint punch that day, which is
+ * physical proof, not a soft inference — attendance-cross-check.ts's 5h threshold still applies
+ * there. Report rows with 0 working days are never returned — see getCompanyVacationReport.
+ *
+ * Historical caching (2026-07, owner-requested): re-scanning the whole date range on every page
+ * view is wasteful once a month is closed — that data essentially never changes. Every date-range
+ * fetch below is split at the current-month boundary: everything strictly before this month is
+ * "historical" and goes through a long-revalidate unstable_cache; the current month is always
+ * fetched fresh. Cached fetchers return plain arrays (never Maps/Sets — those don't survive
+ * Next's cache serialization) and do no employee-lookup — all classification/merging happens
+ * afterward, uncached, so it always reflects the latest employee roster and device mappings.
+ */
+
+import { unstable_cache } from "next/cache";
+
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+
+/** Same threshold as attendance-cross-check.ts's AV_HALF_DAY_MAX_WORKED_MINUTES —
+ * owner-confirmed (2026-07): under 5 worked hours on a CRM-AV day reads as a half-day. Only
+ * ever consulted for device-mapped employees with real fingerprint data — see the module doc
+ * comment above for why a visit-count heuristic is deliberately NOT used for anyone else. */
+const AV_HALF_DAY_MAX_WORKED_MINUTES = 5 * 60;
+const EXCUSE_COMMENT_PATTERN = /excuse/i;
+/** CRM visit_type for "Annual Vacation" — see VISIT_TYPE_TO_STATUS in ireports360-source.ts.
+ * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave. */
+const ANNUAL_VACATION_VISIT_TYPE = -4;
+/** Historical (closed-month) data is "pinned" for 6 hours — long enough to avoid re-scanning
+ * on every page view, short enough that a same-day HR correction or late CRM sync still shows
+ * up within a business day. */
+const HISTORICAL_REVALIDATE_SECONDS = 6 * 60 * 60;
+/** Exported so the approve-and-deduct route (app/api/vacation/company-report/approve) can bust
+ * this cache immediately after creating a real vacation_requests row — otherwise a newly
+ * approved CRM Signal date could sit invisible in the historical cache for up to 6h. */
+export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";
+const CACHE_TAG = COMPANY_VACATION_REPORT_CACHE_TAG;
+
+export type CompanyVacationReportSource =
+  | "HR Approved"
+  | "HR Pending"
+  | "HR Rejected"
+  | "HR Cancelled"
+  | "CRM Signal — Vacation"
+  | "CRM Signal — Half-Day (Attendance Partial)";
+
+export type CompanyVacationReportRow = {
+  detail: string;
+  employeeName: string;
+  endDate: string;
+  hrId: string;
+  jobTitle: string | null;
+  lineName: string | null;
+  requestId: string | null;
+  source: CompanyVacationReportSource;
+  startDate: string;
+  workingDays: number;
+};
+
+type VisitRow = {
+  agent_hr_id: string | null;
+  agent_name: string | null;
+  ampm: string | null;
+  comment: string | null;
+  visit_date: string;
+  visit_type: number;
+};
+
+type EmployeeRow = {
+  full_name: string | null;
+  hr_id: string;
+  job_title: string | null;
+  line_name: string | null;
+};
+
+export type HrVacationRequestRow = {
+  duration_days: number | null;
+  employee_hr_id: string | null;
+  employee_name: string | null;
+  end_date: string;
+  id: string;
+  line_name: string | null;
+  start_date: string;
+  status: string | null;
+  vacation_type: string | null;
+};
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function addDaysIso(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function currentMonthStartIso(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-01`;
+}
+
+type DateRange = { end: string; start: string };
+
+/** Splits [startDate,endDate] at the current-month boundary. Everything strictly before this
+ * month is "historical" (safe to cache long-term — those months are effectively closed); the
+ * rest is "current" (always fetched fresh). Either half is null when the range doesn't reach it. */
+function splitHistoricalAndCurrent(startDate: string, endDate: string): {
+  current: DateRange | null;
+  historical: DateRange | null;
+} {
+  const monthStart = currentMonthStartIso();
+  const historicalEnd = addDaysIso(monthStart, -1);
+  const historical = startDate <= historicalEnd
+    ? { end: endDate < historicalEnd ? endDate : historicalEnd, start: startDate }
+    : null;
+  const current = endDate >= monthStart
+    ? { end: endDate, start: startDate > monthStart ? startDate : monthStart }
+    : null;
+  return { current, historical };
+}
+
+function monthKeysBetween(startDate: string, endDate: string): Array<{ month: number; year: number }> {
+  const keys: Array<{ month: number; year: number }> = [];
+  let year = Number(startDate.slice(0, 4));
+  let month = Number(startDate.slice(5, 7));
+  const endYear = Number(endDate.slice(0, 4));
+  const endMonth = Number(endDate.slice(5, 7));
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    keys.push({ month, year });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return keys;
+}
+
+async function loadHolidayDates(startDate: string, endDate: string): Promise<string[]> {
+  const dates = new Set<string>();
+  // One call per month, run concurrently — sequential awaits here were a meaningful chunk of
+  // page load time for a multi-month range with no benefit (each month's lookup is independent).
+  const results = await Promise.all(monthKeysBetween(startDate, endDate).map(({ month, year }) =>
+    getConfirmedNationalHolidays({ month, year }).catch(() => null)));
+  for (const result of results) {
+    if (!result) continue; // Best-effort — a holiday lookup outage just under-excludes that month.
+    for (const holiday of result.holidays) {
+      const start = holiday.startDate;
+      const end = holiday.endDate ?? holiday.startDate;
+      for (let date = start; date <= end; date = addDaysIso(date, 1)) {
+        dates.add(date);
+      }
+    }
+  }
+  return [...dates];
+}
+
+const loadHolidayDatesCached = unstable_cache(loadHolidayDates, ["company-vacation-report-holidays"], {
+  revalidate: HISTORICAL_REVALIDATE_SECONDS,
+  tags: [CACHE_TAG],
+});
+
+async function loadHolidayDateSet(startDate: string, endDate: string): Promise<Set<string>> {
+  const { current, historical } = splitHistoricalAndCurrent(startDate, endDate);
+  const [historicalDates, currentDates] = await Promise.all([
+    historical ? loadHolidayDatesCached(historical.start, historical.end) : Promise.resolve([]),
+    current ? loadHolidayDates(current.start, current.end) : Promise.resolve([]),
+  ]);
+  return new Set([...historicalDates, ...currentDates]);
+}
+
+/** Raw HR-side leave requests for the range — no employee lookup here (kept cacheable), that
+ * happens once for both HR and CRM rows in getCompanyVacationReport. */
+async function loadHrVacationRequestsRaw(startDate: string, endDate: string): Promise<HrVacationRequestRow[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("v2_vacation_requests")
+    .select("id,employee_hr_id,employee_name,line_name,vacation_type,start_date,end_date,duration_days,status")
+    .lte("start_date", endDate)
+    .gte("end_date", startDate);
+  if (error) throw new Error(`Failed to load HR vacation requests: ${error.message}`);
+  return (data ?? []) as HrVacationRequestRow[];
+}
+
+const loadHrVacationRequestsRawCached = unstable_cache(loadHrVacationRequestsRaw, ["company-vacation-report-hr-requests"], {
+  revalidate: HISTORICAL_REVALIDATE_SECONDS,
+  tags: [CACHE_TAG],
+});
+
+/**
+ * A single request can span the historical/current split boundary (e.g. starts June 28, ends
+ * July 5) — the underlying query matches on date-range OVERLAP, so a boundary-spanning request
+ * satisfies both the historical and current sub-queries and would otherwise appear twice in the
+ * concatenated result. Dedupe by id — never by date, since two distinct real requests can
+ * legitimately share a date. Exported and pure so this is directly unit-testable.
+ */
+export function dedupeHrVacationRequestsById(rows: HrVacationRequestRow[]): HrVacationRequestRow[] {
+  const byId = new Map<string, HrVacationRequestRow>();
+  for (const row of rows) byId.set(row.id, row);
+  return [...byId.values()];
+}
+
+async function loadHrVacationRequests(startDate: string, endDate: string): Promise<HrVacationRequestRow[]> {
+  const { current, historical } = splitHistoricalAndCurrent(startDate, endDate);
+  const [historicalRows, currentRows] = await Promise.all([
+    historical ? loadHrVacationRequestsRawCached(historical.start, historical.end) : Promise.resolve([]),
+    current ? loadHrVacationRequestsRaw(current.start, current.end) : Promise.resolve([]),
+  ]);
+  return dedupeHrVacationRequestsById([...historicalRows, ...currentRows]);
+}
+
+/** ireports360_visits has ~99k+ rows total, far past PostgREST's default 1000-row cap, so a
+ * plain .select() silently truncates without pagination. Only visit_type = -4 (Annual
+ * Vacation) rows are ever read by this report — everything else is discarded downstream — so
+ * filtering here too avoids fetching ~99% of rows just to throw them away. Cut this page's
+ * server render from 33s down to about a second before the historical-caching split below cut
+ * it further. */
+async function loadAnnualVacationVisits(startDate: string, endDate: string): Promise<VisitRow[]> {
+  const supabase = getSupabaseAdmin();
+  const rows: VisitRow[] = [];
+  // PostgREST enforces its own max-rows cap (observed: 1000) regardless of the range size
+  // requested, so the loop must continue on ANY non-empty page — a smaller-than-requested
+  // page does NOT mean "last page" here, only an empty one does.
+  const PAGE_SIZE = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("ireports360_visits")
+      .select("agent_hr_id,agent_name,visit_date,ampm,comment,visit_type")
+      .eq("visit_type", ANNUAL_VACATION_VISIT_TYPE)
+      .gte("visit_date", startDate)
+      .lte("visit_date", endDate)
+      .not("agent_hr_id", "is", null)
+      .order("visit_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw new Error(`Failed to load CRM visits: ${error.message}`);
+    const page = (data ?? []) as VisitRow[];
+    rows.push(...page);
+    if (page.length === 0) break;
+    offset += PAGE_SIZE;
+  }
+  return rows;
+}
+
+const loadAnnualVacationVisitsCached = unstable_cache(loadAnnualVacationVisits, ["company-vacation-report-visits"], {
+  revalidate: HISTORICAL_REVALIDATE_SECONDS,
+  tags: [CACHE_TAG],
+});
+
+async function loadAnnualVacationVisitsSplit(startDate: string, endDate: string): Promise<VisitRow[]> {
+  const { current, historical } = splitHistoricalAndCurrent(startDate, endDate);
+  const [historicalRows, currentRows] = await Promise.all([
+    historical ? loadAnnualVacationVisitsCached(historical.start, historical.end) : Promise.resolve([]),
+    current ? loadAnnualVacationVisits(current.start, current.end) : Promise.resolve([]),
+  ]);
+  return [...historicalRows, ...currentRows];
+}
+
+async function loadEmployeesRaw(): Promise<EmployeeRow[]> {
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name,job_title,line_name");
+  if (error) throw new Error(`Failed to load employees: ${error.message}`);
+  return (data ?? []) as EmployeeRow[];
+}
+
+// Employee roster and device mappings aren't date-ranged — short revalidate (5 min) so a
+// same-day hire, role change, or new fingerprint mapping still shows up quickly.
+const loadEmployeesCached = unstable_cache(loadEmployeesRaw, ["company-vacation-report-employees"], {
+  revalidate: 300,
+  tags: [CACHE_TAG],
+});
+const loadDeviceMappedHrIdsCached = unstable_cache(
+  async () => [...(await loadActiveDeviceMappedHrIds().catch(() => new Set<string>()))],
+  ["company-vacation-report-device-mapped"],
+  { revalidate: 300, tags: [CACHE_TAG] },
+);
+
+export type ClassifiedAvDate = {
+  detail: string;
+  source: CompanyVacationReportSource;
+  workingDays: number;
+};
+
+/**
+ * Pure decision logic for one employee-day's AV visit rows, extracted so it's directly
+ * unit-testable without a DB. Returns null when the day should NOT appear in the report at
+ * all: every AV row that day was excuse-labeled, it's a public holiday, or (device-mapped
+ * only) fingerprint activity proves >=5h worked that day — see the module doc comment for why
+ * a 0-day "not vacation" row is never returned rather than shown with workingDays: 0.
+ */
+export function classifyAvDate(input: {
+  comments: Array<string | null>;
+  isDeviceMapped: boolean;
+  isHoliday: boolean;
+  workedMinutes: number | null;
+}): ClassifiedAvDate | null {
+  if (input.isHoliday) return null;
+
+  // Only rows NOT labeled as an excuse count toward this date being a real leave day — if even
+  // one non-excuse AV row survives, the date still counts. Only an all-excuse day is dropped.
+  const nonExcuseComments = input.comments.filter((comment) => !EXCUSE_COMMENT_PATTERN.test(comment ?? ""));
+  if (nonExcuseComments.length === 0) return null;
+  const comment = nonExcuseComments.find((value) => value) ?? "";
+
+  const hasFingerprintData = input.isDeviceMapped && input.workedMinutes != null;
+  if (hasFingerprintData) {
+    const workedMinutes = input.workedMinutes as number;
+    if (workedMinutes >= AV_HALF_DAY_MAX_WORKED_MINUTES) {
+      // Proven fully worked — not a vacation day at all, so it's dropped, never shown as 0.
+      return null;
+    }
+    return {
+      detail: `Fingerprint shows under 5h worked — likely a half-day ("${comment}").`,
+      source: "CRM Signal — Half-Day (Attendance Partial)",
+      workingDays: 0.5,
+    };
+  }
+
+  // No fingerprint proof available (not device-mapped, or no punch that day) — the CRM AV
+  // marking is trusted at face value as a full vacation day. No visit-count inference: a
+  // regular/campaign visit-count heuristic must never downgrade or zero an AV day here.
+  return {
+    detail: comment || "Annual Vacation",
+    source: "CRM Signal — Vacation",
+    workingDays: 1,
+  };
+}
+
+function buildEmployeeLookup(rows: EmployeeRow[]): Map<string, EmployeeRow> {
+  const employeeByKey = new Map<string, EmployeeRow>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hr_id);
+    if (key) employeeByKey.set(key, row);
+  }
+  return employeeByKey;
+}
+
+/** Every HR vacation request in range, tagged by its current status. Job title/line come from
+ * the shared employee lookup (employeeByKey), not from v2_vacation_requests, which has no
+ * job_title column — this is what previously left job title blank on every HR-sourced row. */
+function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<string, EmployeeRow>): CompanyVacationReportRow[] {
+  const statusToSource: Record<string, CompanyVacationReportSource> = {
+    approved: "HR Approved",
+    cancelled: "HR Cancelled",
+    pending: "HR Pending",
+    rejected: "HR Rejected",
+  };
+
+  return rawRows.map((row): CompanyVacationReportRow => {
+    const key = canonicalHrIdKey(row.employee_hr_id ?? "");
+    const employee = key ? employeeByKey.get(key) : undefined;
+    return {
+      detail: row.vacation_type ?? "",
+      employeeName: row.employee_name ?? row.employee_hr_id ?? "",
+      endDate: row.end_date,
+      hrId: row.employee_hr_id ?? "",
+      jobTitle: employee?.job_title ?? null,
+      lineName: row.line_name ?? employee?.line_name ?? null,
+      requestId: row.id,
+      source: statusToSource[String(row.status ?? "").toLowerCase()] ?? "HR Pending",
+      startDate: row.start_date,
+      // duration_days, NOT working_days: working_days has a static DB default of 1 and is
+      // never actually written by src/lib/vacation/service.ts's create/admin-create paths (only
+      // duration_days is) — confirmed live: a real half-day (0.50) and a real 3-day (3.00)
+      // request both showed working_days=1. duration_days is the one the app actually computes
+      // and writes (calculateVacationDurationDays), so it's the only trustworthy source here.
+      workingDays: Number(row.duration_days ?? 0),
+    };
+  });
+}
+
+/** Recomputes this session's validated CRM-signal methodology org-wide (not scoped to FWC's
+ * "field commercial workforce" eligibility list) — see the module doc comment above. */
+async function buildCrmSignalRows(input: {
+  deviceMappedKeys: Set<string>;
+  employeeByKey: Map<string, EmployeeRow>;
+  endDate: string;
+  startDate: string;
+}): Promise<CompanyVacationReportRow[]> {
+  const { deviceMappedKeys, employeeByKey, endDate, startDate } = input;
+
+  const [visits, holidayDates] = await Promise.all([
+    loadAnnualVacationVisitsSplit(startDate, endDate),
+    loadHolidayDateSet(startDate, endDate),
+  ]);
+
+  // Per hrKey, AV-type visits grouped by date (for excuse-detection + dedupe). visits is
+  // already filtered to visit_type = -4 at the query level in loadAnnualVacationVisits — see
+  // the module doc comment on why a regular/campaign visit-count heuristic is not used here.
+  const avVisitsByKeyAndDate = new Map<string, Map<string, VisitRow[]>>();
+  for (const visit of visits) {
+    const key = canonicalHrIdKey(visit.agent_hr_id ?? "");
+    if (!key) continue;
+    const byDate = avVisitsByKeyAndDate.get(key) ?? new Map<string, VisitRow[]>();
+    const dayVisits = byDate.get(visit.visit_date) ?? [];
+    dayVisits.push(visit);
+    byDate.set(visit.visit_date, dayVisits);
+    avVisitsByKeyAndDate.set(key, byDate);
+  }
+
+  // Worked minutes (fingerprint), only meaningful for device-mapped employees. Historical
+  // months' punches are also frozen once closed, but punch-minutes isn't split/cached here —
+  // it's only ever computed for a handful of device-mapped employees, not the ~99k-row cost
+  // the visits fetch was.
+  const trackedHrIds = [...avVisitsByKeyAndDate.keys()]
+    .filter((key) => deviceMappedKeys.has(key))
+    .map((key) => employeeByKey.get(key)?.hr_id)
+    .filter((hrId): hrId is string => Boolean(hrId));
+  const dayPunchMinutes = trackedHrIds.length > 0
+    ? await loadEmployeeDayPunchMinutes({ dateFromIso: startDate, dateToIso: endDate, employeeHrIds: trackedHrIds })
+    : new Map();
+  const workedMinutesByKeyAndDate = new Map<string, number | null>();
+  for (const [hrId, byDate] of dayPunchMinutes as Map<string, Map<string, { firstPunchMinutes: number | null; lastPunchMinutes: number | null; visiblePunchCount: number }>>) {
+    const key = canonicalHrIdKey(hrId);
+    if (!key) continue;
+    for (const [dateIso, punches] of byDate) {
+      // A single punch (or two punches at the identical minute) computes worked=0 minutes,
+      // which would otherwise satisfy "<5h worked" and misclassify a stray/device-artifact
+      // punch as a real half-day. Require at least 2 distinct punch times before trusting the
+      // duration as real evidence — with fewer than that, fall through to null (no fingerprint
+      // proof), which trusts the CRM AV entry at face value as a full day, same as any other
+      // device-mapped day with zero punches.
+      const span = punches.visiblePunchCount >= 2 && punches.firstPunchMinutes != null && punches.lastPunchMinutes != null
+        ? punches.lastPunchMinutes - punches.firstPunchMinutes
+        : null;
+      // Guard the October DST fall-back edge: punches are ordered by absolute time then folded
+      // to Cairo minute-of-day, so on the one night the 02:00-02:59 window repeats, the last
+      // punch's minute-of-day can be smaller than the first's -> a NEGATIVE span. A negative
+      // (physically impossible) span is unmeasurable, not a "<5h half-day": treat it as null so
+      // classifyAvDate trusts the CRM AV entry at face value as a full day, never fabricating a
+      // half-day from garbled data. Behaviour-neutral on all real (non-folded) days.
+      const worked = span != null && span >= 0 ? span : null;
+      workedMinutesByKeyAndDate.set(`${key}|${dateIso}`, worked);
+    }
+  }
+
+  const rows: CompanyVacationReportRow[] = [];
+  for (const [key, byDate] of avVisitsByKeyAndDate) {
+    const employee = employeeByKey.get(key);
+    for (const [dateIso, dayVisits] of byDate) {
+      const isDeviceMapped = deviceMappedKeys.has(key);
+      const workedMinutes = isDeviceMapped ? workedMinutesByKeyAndDate.get(`${key}|${dateIso}`) ?? null : null;
+      const classified = classifyAvDate({
+        comments: dayVisits.map((visit) => visit.comment),
+        isDeviceMapped,
+        isHoliday: holidayDates.has(dateIso),
+        workedMinutes,
+      });
+      if (!classified) continue;
+
+      rows.push({
+        detail: classified.detail,
+        employeeName: employee?.full_name ?? dayVisits[0]?.agent_name ?? key,
+        endDate: dateIso,
+        hrId: employee?.hr_id ?? key,
+        jobTitle: employee?.job_title ?? null,
+        lineName: employee?.line_name ?? null,
+        requestId: null,
+        source: classified.source,
+        startDate: dateIso,
+        workingDays: classified.workingDays,
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Full company vacation report for [startDate, endDate] (inclusive, ISO dates): every HR
+ * vacation request (any status) plus every CRM-derived leave signal, each row tagged with its
+ * Source. Read-only — never writes to v2_vacation_requests or any leave balance.
+ *
+ * Owner-confirmed (2026-07): a vacation report never shows a 0-day row — a day fingerprint-
+ * proved was fully worked (>=5h, device-mapped only) isn't a vacation day at all, so it's
+ * dropped here rather than shown as "0 days of vacation."
+ */
+export async function getCompanyVacationReport(input: {
+  endDate: string;
+  startDate: string;
+}): Promise<CompanyVacationReportRow[]> {
+  // Employee roster and device mappings are needed by both the HR-row and CRM-row builders
+  // (this is what fixes job title being blank on HR-sourced rows — they now share the same
+  // lookup CRM rows already used), so resolve them once up front.
+  const [employeeRows, deviceMappedHrIds] = await Promise.all([
+    loadEmployeesCached(),
+    loadDeviceMappedHrIdsCached(),
+  ]);
+  const employeeByKey = buildEmployeeLookup(employeeRows);
+  const deviceMappedKeys = new Set(
+    deviceMappedHrIds.map((id) => canonicalHrIdKey(id)).filter((key): key is string => Boolean(key)),
+  );
+
+  const [hrRequests, crmRows] = await Promise.all([
+    loadHrVacationRequests(input.startDate, input.endDate),
+    buildCrmSignalRows({ deviceMappedKeys, employeeByKey, endDate: input.endDate, startDate: input.startDate }),
+  ]);
+  const hrRows = buildHrRows(hrRequests, employeeByKey);
+
+  // Once a CRM Signal date has a real approved HR request covering it (including one just
+  // created via the approve-and-deduct route), stop showing it as a separate "unverified"
+  // row — it's no longer a signal, it's a real record, and leaving both visible would let an
+  // admin approve the same date twice (a duplicate balance deduction).
+  //
+  // Keyed by canonicalHrIdKey, NOT the raw hrId string: HR rows' hrId comes from
+  // v2_vacation_requests.employee_hr_id while CRM rows' hrId comes from employees.hr_id — two
+  // different source columns that are usually the same literal string but aren't guaranteed to
+  // be (casing/format drift between tables is a documented, recurring issue in this codebase —
+  // see src/lib/hr-id.ts). Comparing raw strings here would let this exact safety check silently
+  // fail to match for a hrId format mismatch, defeating the whole point of the dedupe.
+  const approvedRangesByHrKey = new Map<string, DateRange[]>();
+  for (const row of hrRows) {
+    if (row.source !== "HR Approved") continue;
+    const key = canonicalHrIdKey(row.hrId);
+    if (!key) continue;
+    const ranges = approvedRangesByHrKey.get(key) ?? [];
+    ranges.push({ end: row.endDate, start: row.startDate });
+    approvedRangesByHrKey.set(key, ranges);
+  }
+  const isAlreadyApproved = (row: CompanyVacationReportRow) => {
+    const key = canonicalHrIdKey(row.hrId);
+    if (!key) return false;
+    return (approvedRangesByHrKey.get(key) ?? []).some((range) => row.startDate >= range.start && row.startDate <= range.end);
+  };
+  const unapprovedCrmRows = crmRows.filter((row) => !isAlreadyApproved(row));
+
+  return [...hrRows, ...unapprovedCrmRows]
+    .filter((row) => row.workingDays > 0)
+    .sort((left, right) =>
+      left.hrId.localeCompare(right.hrId, undefined, { numeric: true }) || left.startDate.localeCompare(right.startDate));
+}
