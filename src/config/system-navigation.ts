@@ -430,6 +430,13 @@ const adminNavigationSectionSeeds = [
     label: "Sales Queue",
   },
   {
+    id: "sales-targets-module",
+    items: [
+      { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Targets",
+  },
+  {
     id: "sales-analytics",
     items: [
       // Collapsed to a single standalone sidebar button. Unlike every other

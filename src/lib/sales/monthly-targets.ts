@@ -377,3 +377,40 @@ export function rollupAchievementByRegion(rows: AchievementRow[]): KeyedAchievem
 export function rollupAchievementByLine(rows: AchievementRow[]): KeyedAchievement[] {
   return toKeyed(foldAchievement(rows, (row) => row.lineCode));
 }
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+/** The three canonical sales lines (fixed per owner: CNS, Pedia, Anti-infective). */
+export const SALES_LINES: ReadonlyArray<{ code: string; label: string }> = [
+  { code: "cns", label: "CNS" },
+  { code: "pedia", label: "Pedia" },
+  { code: "anti_infective", label: "Anti-infective" },
+];
+
+export type TargetableArea = {
+  areaCode: string;
+  areaName: string;
+  regionCode: string | null;
+  areaState: string | null;
+};
+
+/** Areas that CARRY a target for a line (occupied + vacant; excludes "Other"). */
+export async function loadTargetableAreas(lineCode: string): Promise<TargetableArea[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("au_v_line_area_map")
+    .select("line_code,area_code,area_name,operational_region_code,area_state,carries_target")
+    .eq("line_code", lineCode)
+    .eq("carries_target", true)
+    .order("area_code");
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      areaCode: str(record.area_code),
+      areaName: str(record.area_name),
+      regionCode: str(record.operational_region_code) || null,
+      areaState: str(record.area_state) || null,
+    };
+  });
+}
