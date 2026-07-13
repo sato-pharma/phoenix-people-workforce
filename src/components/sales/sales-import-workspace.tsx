@@ -70,6 +70,10 @@ type Props = {
   mappingReferences: MappingReferences;
   /** Distributor codes that have a normalizer layout profile (gates the Mapping tab's Learn/Analyze). */
   profiledDistributorCodes: string[];
+  /** Open directly on a given tab — carried from a "fix this in Source of Sales" deep-link. */
+  initialTab?: SourceOfSalesTab;
+  /** Pre-fill the Products Reference tab's search box (used with initialTab="products"). */
+  initialProductsSearch?: string;
 };
 
 type ValidationResponse = {
@@ -904,7 +908,7 @@ function UploadStatusPanel({
 
 type SourceOfSalesTab = "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes, initialTab, initialProductsSearch }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -915,7 +919,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState("");
   const [batches, setBatches] = useState(initialBatches);
-  const [activeTab, setActiveTab] = useState<SourceOfSalesTab>("dashboard");
+  const [activeTab, setActiveTab] = useState<SourceOfSalesTab>(initialTab ?? "dashboard");
   const [dashboard, setDashboard] = useState<SourceOfSalesDashboard | null>(initialDashboard);
   const [productsCount, setProductsCount] = useState(initialProducts.length);
   const [result, setResult] = useState<PreviewResult | null>(null);
@@ -1609,6 +1613,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
         ) : (
           <SourceOfSalesProductsTab
             initialProducts={initialProducts}
+            initialSearch={initialProductsSearch}
             onProductsChange={setProductsCount}
           />
         )}

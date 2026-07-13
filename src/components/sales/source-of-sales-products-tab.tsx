@@ -295,13 +295,16 @@ async function readJsonResponse<T extends ProductListResponse | ProductResponse>
 
 export function SourceOfSalesProductsTab({
   initialProducts,
+  initialSearch,
   onProductsChange,
 }: {
   initialProducts: SourceOfSalesProduct[];
+  /** Pre-fill the search box — used when arriving via a "fix this in Source of Sales" deep-link. */
+  initialSearch?: string;
   onProductsChange?: (count: number) => void;
 }) {
   const [products, setProducts] = useState(() => sortProducts(initialProducts));
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch ?? "");
   const [modal, setModal] = useState<ProductModalState | null>(null);
   const [form, setForm] = useState<ProductFormState>(emptyProductForm);
   const [saving, setSaving] = useState(false);
