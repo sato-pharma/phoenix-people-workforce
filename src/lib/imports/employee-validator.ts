@@ -531,27 +531,41 @@ function resolveGlobalDepartment(
   return null;
 }
 
+// Precise sales-line detection (the three canonical lines + their known spellings), built by
+// applying the SAME normalizer used on the row's line so membership is exact — not a substring
+// heuristic that would misfire on any line containing "anti"/"pedia"/"cns".
+const SALES_LINE_KEYS = new Set(
+  ["CNS", "Pedia", "Anti infective", "Anti Inf", "anti_infective", "anti-infective"].map(
+    normalizeDepartmentLookupKey,
+  ),
+);
+
 function resolveCanonicalArea(
   record: EmployeeImportRecord,
   canonicalByKey: Map<string, { code: string; name: string }>,
 ) {
   // Area unification: for SALES-line rows the Area must resolve to one of the 42 canonical
   // areas (canonicalize the spelling) or the row is rejected — areas are never auto-created.
-  // Office / non-sales lines are unaffected. If the canonical set is unavailable, skip.
-  if (canonicalByKey.size === 0) {
-    return null;
-  }
+  // Office / non-sales lines are unaffected.
   const lineKey = normalizeDepartmentLookupKey(
     record.rawOrganizationValues.line ?? record.lineName ?? record.codes.lineCode,
   );
-  const isSalesLine =
-    lineKey.includes("cns") || lineKey.includes("pedia") || lineKey.includes("anti");
-  if (!isSalesLine) {
+  if (!SALES_LINE_KEYS.has(lineKey)) {
     return null;
   }
   const areaText = normalizeTextValue(record.rawOrganizationValues.area ?? record.areaName);
   if (!areaText) {
     return null;
+  }
+  // Fail-closed: a sales-line row carries an area, so we MUST verify it against the 42. If the
+  // canonical reference could not be loaded, block the row rather than importing it unverified.
+  if (canonicalByKey.size === 0) {
+    return {
+      rowNumber: record.rowNumber,
+      field: "area" as const,
+      code: "canonical_area_unavailable",
+      message: `Cannot verify area "${areaText}" against the 42 canonical areas (reference set unavailable). Import blocked to avoid unverified areas — retry once the area reference loads.`,
+    };
   }
   const hit = canonicalByKey.get(normalizeDepartmentLookupKey(areaText));
   if (!hit) {
