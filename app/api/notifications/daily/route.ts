@@ -13,7 +13,6 @@ import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notification
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
-import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
@@ -48,7 +47,6 @@ async function runDailyNotifications(request: Request) {
     telegramDigest,
     weeklySystemHealthDigest,
     outstationGeocodeWarmup,
-    outstationHighRisk,
     fieldWorkforceComplianceDigest,
     fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
@@ -92,10 +90,6 @@ async function runDailyNotifications(request: Request) {
     }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
-      return { success: false, error: String(e) };
-    }),
-    runOutstationHighRiskDigest().catch((e: unknown) => {
-      console.error(e, { tags: { cron: "daily-outstation-high-risk-digest" } });
       return { success: false, error: String(e) };
     }),
     runFieldWorkforceComplianceDigest().catch((e: unknown) => {
@@ -146,7 +140,6 @@ async function runDailyNotifications(request: Request) {
     holidayConfirmation,
     marketingSla,
     outstationGeocodeWarmup,
-    outstationHighRisk,
     outstationSla,
     rateLimitPrune,
     errorEventsPrune,

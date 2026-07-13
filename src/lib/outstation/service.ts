@@ -22,8 +22,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
-import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
 import {
@@ -1247,63 +1246,19 @@ export async function calculateOutstationExpense(
 }
 
 // ── Approval notifications ────────────────────────────────────────────────────
-// The expenses/outstation workflow historically sent NO notifications (a confirmed
-// gap in the workflow map). These best-effort dispatch helpers close that gap:
-// on submit we alert the submitter's direct manager + HR manager(s) ("approval
-// needed"); on a decision we tell the submitting employee the outcome. Every send
-// is wrapped so a notification failure can never roll back or fail the underlying
-// submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
-// to the in-app "general" bell category and the "general" email type) with explicit
-// recipients + channels, so no notification policy/governance changes are needed.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function outstationActionCenterUrl(requestId: number | string) {
-  return `/admin/approvals-hub?module=outstation&id=${encodeURIComponent(String(requestId))}`;
-}
+// Submission auto-approves in the same request (no pending-approval step for a
+// human to act on), so instead of a "needs approval" alert we notify every active
+// Super Admin, on every fresh submission, with the full request details — a live
+// audit feed rather than an action queue. Every send is best-effort: a
+// notification failure must never roll back or fail the underlying submit.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
+const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
 
 function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 
-type OutstationNotifyRecipient = { email: string | null; hrId: string; name: string; role: "direct_manager" | "hr" };
-
-// Resolve who must act when an expense/outstation request is submitted: the
-// submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
-// manager). A-16 is intentionally excluded because it has no
-// outstation "approve" authority, so an "approval needed" alert there is a dead end.
-// Best-effort: a missing manager or a failed approver lookup is logged and skipped,
-// never thrown — notifications must not block a submit.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function resolveOutstationApprovalRecipients(
-  directory: EmployeeDirectoryData,
-  employee: EmployeeDirectoryRow,
-): Promise<OutstationNotifyRecipient[]> {
-  const byHrId = (hrId: string | null | undefined) =>
-    hrId
-      ? directory.employees.find(
-          (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(hrId),
-        ) ?? null
-      : null;
-
-  const recipients = new Map<string, OutstationNotifyRecipient>();
-  const add = (hrId: string | null | undefined, name: string | null | undefined, email: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
-    const key = normalizeHrIdForAccess(hrId);
-    if (!key || recipients.has(key)) return;
-    recipients.set(key, { email: pickDeliverableEmail(email), hrId: String(hrId), name: name?.trim() || String(hrId), role });
-  };
-
-  // 1. Direct manager of the submitter.
-  if (employee.managerHrId) {
-    const manager = byHrId(employee.managerHrId);
-    if (manager?.hrId) add(manager.hrId, manager.fullName, manager.workEmail, "direct_manager");
-    else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
-  }
-
-  // 2. Approver(s): Super Admin accounts only. A-16 is
-  //    deliberately NOT included: A-16 is HR review/follow-up and holds NO outstation
-  //    "approve" permission (see 20260522203000_hr_manager_approval_authority.sql), so an
-  //    "approval needed" alert to A-16 would be a dead end. B-10 is the Super Admin HR
-  //    approver and is covered by this query.
+async function resolveActiveSuperAdminHrIds(): Promise<string[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
@@ -1311,17 +1266,114 @@ async function resolveOutstationApprovalRecipients(
       .eq("is_active", true)
       .eq("role", "Super Admin");
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+    const hrIds = new Set<string>();
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
       const hrId = text(row.hr_id);
-      if (!hrId || text(row.role) !== "Super Admin") continue;
-      const directoryRow = byHrId(hrId);
-      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, directoryRow?.workEmail, "hr");
+      if (hrId) hrIds.add(hrId);
     }
+    return Array.from(hrIds);
   } catch (error) {
-    console.error("[outstation] approver lookup failed; approval alert may be incomplete", error);
+    console.error("[outstation] Super Admin recipient lookup failed; submit notification skipped", error);
+    return [];
   }
+}
 
-  return [...recipients.values()];
+// Fires once per fresh submission: the employee wizard, offline sync, the
+// Medical Rep simple-ticket flow, and admin-created manual entries all route
+// through approveOutstationRequestForPayroll immediately after insert (that
+// immediate auto-approve is what actually makes the request "submitted" in
+// practice). Not fired on later edits to an already-approved request.
+async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
+  try {
+    const recipients = await resolveActiveSuperAdminHrIds();
+    if (recipients.length === 0) return;
+
+    const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
+    const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
+    const fraudFlags = request.fraudFlags.length > 0 ? request.fraudFlags.join(", ") : "none";
+    const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
+
+    const metrics = [
+      { label: "Employee", value: `${request.employeeName} (${request.employeeHrId})` },
+      { label: "Role", value: request.employeeRole },
+      { label: "Line / Area", value: `${text(request.employeeLine) || "—"} / ${text(request.employeeArea) || "—"}` },
+      { label: "Transportation", value: request.transportationType },
+      { label: "Expense type", value: request.expenseType },
+      { label: "Trip dates", value: `${request.tripStartDate} to ${request.tripEndDate}` },
+      { label: "Trip length", value: request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)` },
+      { label: "Destination", value: destination },
+      {
+        label: "Distance from residence",
+        value: request.distanceFromResidenceKm != null ? `${request.distanceFromResidenceKm.toFixed(1)} km` : "—",
+      },
+      { label: "Fuel amount", value: formatEgp(request.fuelAmount) },
+      { label: "Ticket amount", value: formatEgp(request.ticketAmount) },
+      { label: "Allowance amount", value: formatEgp(request.allowanceAmount) },
+      { label: "Meeting amount", value: formatEgp(request.meetingAmount) },
+      { label: "Other amount", value: formatEgp(request.otherAmount) },
+      { label: "Expected total", value: formatEgp(request.expectedTotalAmount) },
+      { label: "Claimed total", value: claimedAmount },
+      {
+        label: "Variance",
+        value: `${formatEgp(request.varianceAmount)} (${request.variancePercent.toFixed(1)}%)`,
+      },
+      { label: "Eligibility", value: `${request.eligibilityStatus} — ${text(request.eligibilityReason) || "—"}` },
+      {
+        label: "Approval recommendation",
+        value: `${request.approvalRecommendation} — ${text(request.approvalReason) || "—"}`,
+      },
+      { label: "Suspicious location score", value: String(request.suspiciousLocationScore) },
+      { label: "Fraud flags", value: fraudFlags },
+      {
+        label: "Territory validation",
+        value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
+      },
+      {
+        label: "GPS capture",
+        value: `${request.capturedLatitude}, ${request.capturedLongitude} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`,
+      },
+      { label: "Notes", value: text(request.notes) || "—" },
+    ];
+
+    const messageLines = [
+      `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
+      `Trip: ${request.tripStartDate} to ${request.tripEndDate} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation} · Fraud flags: ${fraudFlags}`,
+      "",
+      ...metrics.map((row) => `${row.label}: ${row.value}`),
+    ];
+
+    await Promise.allSettled(
+      recipients.map((recipientHrId) =>
+        createSystemNotification({
+          actionUrl,
+          category: "general",
+          channels: ["email", "telegram"],
+          email: { metrics },
+          eventType: "request_submitted",
+          message: messageLines.join("\n"),
+          metadata: {
+            actionUrl,
+            claimedAmount,
+            employeeHrId: request.employeeHrId,
+            employeeName: request.employeeName,
+            fraudFlags: request.fraudFlags,
+            idempotencyKey: `outstation:${request.id}:request_submitted:${recipientHrId.toUpperCase()}`,
+            requestId: String(request.id),
+            status: "Submitted",
+          },
+          module: "outstation",
+          priority: "normal",
+          recipientHrId,
+          recordId: String(request.id),
+          telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
+          title: `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("[outstation] submitted notification dispatch failed (non-blocking)", error);
+  }
 }
 
 // Rejection notification to the submitting employee. This is the ONLY email sent for
@@ -2073,6 +2125,10 @@ export async function approveOutstationRequestForPayroll(
     },
     summary: `Outstation request ${request.id} approved for payroll expense import.`,
   });
+
+  if (existing.status !== "approved") {
+    await notifyOutstationSubmitted(request);
+  }
 
   return {
     expenseTripId: expenseRecord.tripId,
