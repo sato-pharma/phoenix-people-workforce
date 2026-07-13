@@ -1485,6 +1485,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "hr_calendar" }],
   },
   {
+    href: "/admin/vacation-report",
+    icon: FileSpreadsheet,
+    label: "Company Vacation Report",
+    description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/support-requests",
     icon: LifeBuoy,
     label: "HR Support Requests",
