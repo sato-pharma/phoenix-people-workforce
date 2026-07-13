@@ -54,9 +54,14 @@ export function runBrevoWebhookEventsTests() {
   assert.equal(row.provider_message_id, "<abc@brevo>");
   assert.ok(row.occurred_at.startsWith("2026-07-13T10:00:00"), "occurred_at parsed from date");
 
-  // occurred_at falls back to ts_event (epoch seconds) when no date string is present.
-  const epochRow = parseBrevoWebhookEvent({ event: "opened", email: "a@b.com", ts_event: 1768300800 });
-  assert.ok(!Number.isNaN(new Date(epochRow.occurred_at).getTime()), "occurred_at parsed from ts_event");
+  // occurred_at prefers the UTC epoch (ts_event) — exact, not skewed.
+  const epochRow = parseBrevoWebhookEvent({ event: "opened", email: "a@b.com", ts_event: 1768300800, date: "2026-01-13 12:00:00" });
+  assert.equal(epochRow.occurred_at, new Date(1768300800 * 1000).toISOString(), "occurred_at uses ts_event epoch (UTC), not the naive date");
+
+  // A naive local `date` string (no offset) and no epoch must NOT be trusted as UTC (that skewed
+  // Brevo times by the account's TZ). It falls back to receive time, so it never equals the naive value.
+  const naiveRow = parseBrevoWebhookEvent({ event: "opened", email: "a@b.com", date: "2026-07-13 21:35:58" });
+  assert.notEqual(naiveRow.occurred_at, "2026-07-13T21:35:58.000Z", "naive local date must not be recorded as UTC");
 
   // --- Dedup id -------------------------------------------------------------------
   assert.equal(brevoProviderEventId({ id: 42, event: "opened" }), "brevo:42", "explicit id preferred");

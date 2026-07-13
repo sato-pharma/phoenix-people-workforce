@@ -110,12 +110,17 @@ function brevoStatus(event: string): BrevoDeliveryStatus {
 }
 
 function occurredAt(payload: BrevoWebhookPayload) {
-  // Brevo sends `date` (string) and/or `ts`/`ts_event` (epoch seconds).
-  const raw = firstText(payload.date, payload["date_event"]);
-  const parsed = raw ? new Date(raw) : null;
-  if (parsed && !Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  // Prefer the epoch (`ts_event`/`ts`) — unambiguous UTC. Brevo's `date` string is sent in the
+  // account's LOCAL timezone WITHOUT an offset, so parsing it as UTC skews the time (e.g. +3h for
+  // Cairo). Only trust the string when it carries an explicit offset/Z; otherwise fall back to the
+  // receive time (the webhook arrives right after the event).
   const epoch = Number(payload.ts_event ?? payload.ts);
   if (Number.isFinite(epoch) && epoch > 0) return new Date(epoch * 1000).toISOString();
+  const raw = firstText(payload.date, payload["date_event"]);
+  if (raw && /(z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
   return new Date().toISOString();
 }
 
