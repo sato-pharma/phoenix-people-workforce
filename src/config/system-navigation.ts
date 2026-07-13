@@ -29,6 +29,7 @@ import {
   LifeBuoy,
   Mail,
   MailCheck,
+  MousePointerClick,
   MapPinned,
   Megaphone,
   MessageSquareText,
@@ -997,6 +998,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: MailCheck,
     label: "Email Delivery",
     description: "See which notification emails have sent vs. not sent, and why.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/notifications/email-tracking",
+    icon: MousePointerClick,
+    label: "Email Engagement",
+    description: "See who opened and clicked notification emails (Resend + Brevo).",
     permissions: [{ resource: "communication" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
