@@ -19,18 +19,22 @@ export type TargetGridRow = {
   areaCode: string;
   areaName: string;
   regionCode: string | null;
+  regionName: string | null;
   areaState: string | null;
   productCode: string;
+  productName: string;
   actualValue: number;
   targetValue: number | null;
   achievementValue: number | null;
   hasActual: boolean;
   repHrId: string | null;
+  repName: string | null;
   dmHrId: string | null;
+  dmName: string | null;
 };
 
 export type RegionRollup = { region: string; actualValue: number; targetValue: number; achievementValue: number | null };
-export type DmRollup = { dmHrId: string; actualValue: number; targetValue: number; achievementValue: number | null };
+export type DmRollup = { dmName: string; actualValue: number; targetValue: number; achievementValue: number | null };
 export type LineTotal = { actualValue: number; targetValue: number; achievementValue: number | null } | null;
 
 export type TargetsWorkspaceProps = {
@@ -253,8 +257,8 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           <div className="text-xs uppercase text-muted-foreground">By DM</div>
           <div className="mt-1 max-h-40 space-y-1 overflow-y-auto text-sm">
             {props.byDm.length === 0 ? <div className="text-muted-foreground">—</div> : props.byDm.map((dm) => (
-              <div key={dm.dmHrId} className="flex justify-between gap-2">
-                <span>{dm.dmHrId}</span>
+              <div key={dm.dmName} className="flex justify-between gap-2">
+                <span>{dm.dmName}</span>
                 <span className={achievementTone(dm.achievementValue)}>{fmtPct(dm.achievementValue)}</span>
               </div>
             ))}
@@ -297,13 +301,12 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   return (
                     <tr key={key} className="border-b hover:bg-muted/40">
                       <td className="p-2">
-                        <span>{row.areaCode}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">{row.areaName}</span>
+                        <span>{row.areaName || "—"}</span>
                         {row.areaState === "vacant_will_hire" ? <Badge className="ml-1 align-middle">vacant</Badge> : null}
                       </td>
-                      <td className="p-2">{row.regionCode ?? "—"}</td>
-                      <td className="p-2">{row.productCode}</td>
-                      <td className="p-2">{row.repHrId ?? <span className="text-muted-foreground">vacant</span>}</td>
+                      <td className="p-2">{row.regionName ?? "—"}</td>
+                      <td className="p-2">{row.productName || "—"}</td>
+                      <td className="p-2">{row.repName ?? <span className="text-muted-foreground">vacant</span>}</td>
                       <td className="p-2 text-right tabular-nums">{fmtMoney(row.actualValue)}</td>
                       <td className="p-2 text-right">
                         <Input

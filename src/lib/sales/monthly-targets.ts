@@ -394,6 +394,56 @@ export type TargetableArea = {
   areaState: string | null;
 };
 
+/** Fixed region code -> human name (never surface the code; see feedback-show-names-not-codes). */
+export const REGION_NAMES: Record<string, string> = {
+  AB: "Alex-BHR",
+  CA: "Cairo",
+  D1: "Delta 1",
+  D2: "Delta 2",
+  GZ: "Giza",
+  OT: "Others",
+  UE: "Upper Egypt",
+  "UE-1": "Upper Egypt 1",
+  "UE-2": "Upper Egypt 2",
+  NATIONAL: "National",
+};
+
+export function regionName(code: string | null | undefined): string {
+  const key = str(code).trim();
+  return key ? (REGION_NAMES[key] ?? key) : "";
+}
+
+/** product_code (upper) -> product name, for display (codes are never shown to the user). */
+export async function loadProductNameMap(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,product_name");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.product_code).trim().toUpperCase();
+    const name = str(record.product_name).trim();
+    if (code) map.set(code, name || code);
+  }
+  return map;
+}
+
+/** hr_id -> employee display name (full name, else nickname), for rep/DM display. */
+export async function loadEmployeeNameMap(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("employees").select("hr_id,full_name,nickname");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const hrId = str(record.hr_id).trim();
+    if (!hrId) continue;
+    const name = str(record.full_name).trim() || str(record.nickname).trim();
+    if (name) map.set(hrId, name);
+  }
+  return map;
+}
+
 /** Areas that CARRY a target for a line (occupied + vacant; excludes "Other"). */
 export async function loadTargetableAreas(lineCode: string): Promise<TargetableArea[]> {
   const supabase = getSupabaseAdmin();

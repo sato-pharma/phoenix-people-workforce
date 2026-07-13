@@ -6,8 +6,11 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   SALES_LINES,
+  loadEmployeeNameMap,
   loadMonthlyAchievement,
+  loadProductNameMap,
   loadTargetableAreas,
+  regionName,
   rollupAchievementByDm,
   rollupAchievementByLine,
   rollupAchievementByRegion,
@@ -52,15 +55,18 @@ export default async function TargetsPage({
   let rows: TargetGridRow[] = [];
   let lineTotal: { actualValue: number; targetValue: number; achievementValue: number | null } | null = null;
   let byRegion: Array<{ region: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
-  let byDm: Array<{ dmHrId: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
+  let byDm: Array<{ dmName: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
   let error: string | null = null;
 
   try {
-    const [achievement, areas] = await Promise.all([
+    const [achievement, areas, productNames, employeeNames] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
       loadTargetableAreas(selectedLine),
+      loadProductNameMap(),
+      loadEmployeeNameMap(),
     ]);
     const areaName = new Map(areas.map((area) => [area.areaCode, area.areaName]));
+    const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
     const lineRows = achievement.filter((row) => row.lineCode === selectedLine);
 
     rows = lineRows
@@ -68,14 +74,18 @@ export default async function TargetsPage({
         areaCode: row.areaCode ?? "",
         areaName: areaName.get(row.areaCode ?? "") ?? "",
         regionCode: row.regionCode,
+        regionName: regionName(row.regionCode),
         areaState: row.areaState,
         productCode: row.productCode,
+        productName: productNames.get(row.productCode.toUpperCase()) ?? row.productCode,
         actualValue: row.actualValue,
         targetValue: row.targetValue,
         achievementValue: row.achievementValue,
         hasActual: row.hasActual,
         repHrId: row.repHrId,
+        repName: nameFor(row.repHrId),
         dmHrId: row.dmHrId,
+        dmName: nameFor(row.dmHrId),
       }))
       .sort((left, right) => left.areaCode.localeCompare(right.areaCode) || left.productCode.localeCompare(right.productCode));
 
@@ -83,15 +93,15 @@ export default async function TargetsPage({
     lineTotal = line ? { actualValue: line.actualValue, targetValue: line.targetValue, achievementValue: line.achievementValue } : null;
     byRegion = rollupAchievementByRegion(lineRows)
       .map((entry) => ({
-        region: entry.key.startsWith(selectedLine) ? entry.key.slice(selectedLine.length) : entry.key,
+        region: regionName(entry.key.startsWith(selectedLine) ? entry.key.slice(selectedLine.length) : entry.key),
         actualValue: entry.actualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,
       }))
       .sort((left, right) => left.region.localeCompare(right.region));
     byDm = rollupAchievementByDm(lineRows)
-      .map((entry) => ({ dmHrId: entry.key, actualValue: entry.actualValue, targetValue: entry.targetValue, achievementValue: entry.achievementValue }))
-      .sort((left, right) => left.dmHrId.localeCompare(right.dmHrId));
+      .map((entry) => ({ dmName: nameFor(entry.key) ?? entry.key, actualValue: entry.actualValue, targetValue: entry.targetValue, achievementValue: entry.achievementValue }))
+      .sort((left, right) => left.dmName.localeCompare(right.dmName));
   } catch (loadError) {
     error = loadError instanceof Error ? loadError.message : "Failed to load targets.";
   }
