@@ -34,15 +34,10 @@ async function notifyEmployeesPayslipAvailable(batchId: string) {
 
     await Promise.all(hrIds.map((hrId) => createSystemNotification({
       actionUrl: "/payslips",
-      email: {
-        ctaHref: "/payslips",
-        ctaLabel: "View your payslip",
-        notificationType: "general",
-        subject: "Your payslip is ready",
-        summary: "Your payslip for this payroll period is now available to view.",
-        title: "Payslip Available",
-        tone: "success",
-      },
+      // Payslips are NEVER emailed (owner rule) — in-app + generic Telegram only. No email:{} block
+      // so the payload can't carry payslip email content, and the notification-layer guard
+      // (payslip-channel-guard) strips the email channel as a hard backstop regardless.
+      channels: ["in_app", "telegram"],
       eventType: "payslip_available",
       message: "Your payslip is now available to view.",
       metadata: {
