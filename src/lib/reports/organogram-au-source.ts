@@ -83,7 +83,11 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   };
 
   const nodeKeyBySeat = new Map<string, string>();
-  for (const s of tree) nodeKeyBySeat.set(s.seat_id, nodeKeyOf(s));
+  const occupantBySeat = new Map<string, string | null>();
+  for (const s of tree) {
+    nodeKeyBySeat.set(s.seat_id, nodeKeyOf(s));
+    occupantBySeat.set(s.seat_id, s.occupant_hr_id && s.occupant_hr_id.trim() ? s.occupant_hr_id.trim() : null);
+  }
 
   // Acting-DM occupants per line (their own REP seat is collapsed into the ACTING_DM node).
   const actingByLine = new Map<string, Set<string>>();
@@ -109,6 +113,10 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
 
     const nodeKey = nodeKeyBySeat.get(s.seat_id)!;
     const managerHrId = s.parent_seat_id ? (nodeKeyBySeat.get(s.parent_seat_id) ?? null) : null;
+    // Manager display name = the parent seat's occupant name (never an HR_ID/seat code). Left null
+    // when the manager seat is vacant, so the vacant-seat labeller (area/team/line name) takes over.
+    const managerOccupant = s.parent_seat_id ? (occupantBySeat.get(s.parent_seat_id) ?? null) : null;
+    const managerName = managerOccupant ? displayNameFor(managerOccupant) : null;
     const occupied = Boolean(s.occupant_hr_id && s.occupant_hr_id.trim());
 
     rows.push({
@@ -125,7 +133,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       lineName: s.line_name,
       managerHrId,
       managerReplacementForHrId: null,
-      managerName: null,
+      managerName,
       positionId: null,
       positionTitle: TITLE_BY_TIER[s.seat_tier],
       regionName: s.region_name,
