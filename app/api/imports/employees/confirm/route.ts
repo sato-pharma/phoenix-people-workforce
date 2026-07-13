@@ -308,36 +308,17 @@ async function upsertAreas(
   entities: OrganizationEntityToCreate[],
   lineIds: IdMap,
 ) {
-  const importable = entities.filter(
-    (entity) => entity.parentCode && lineIds.has(entity.parentCode),
-  );
-
-  if (importable.length === 0) {
+  // Area unification: areas are the FIXED 42 canonical set — the import NEVER creates areas.
+  // Sales-line rows are already map-or-rejected to a canonical area in the validator; any other
+  // (non-sales) area code that does not already exist simply resolves to a null area_id downstream.
+  // This is a resolve-only pass: employee area_id is set from a fresh idsForCodes(...) after this,
+  // so unknown codes never appear (→ null area) and no new `areas` row is written.
+  void lineIds;
+  const codes = codesFor(entities);
+  if (codes.length === 0) {
     return { created: 0, ids: new Map<string, number>() };
   }
-
-  const codes = codesFor(importable);
-  const existingCodes = await existingCodeSet(supabase, "areas", codes);
-  const now = new Date().toISOString();
-  const { error } = await supabase.from("areas").upsert(
-    importable.map((entity) => ({
-      code: entity.code,
-      line_id: lineIds.get(entity.parentCode ?? ""),
-      name: truncate(entity.name, 160) ?? entity.code,
-      updated_at: now,
-    })),
-    { onConflict: "code" },
-  );
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return {
-    created: importable.filter((entity) => !existingCodes.has(entity.code))
-      .length,
-    ids: await idsForCodes(supabase, "areas", codes),
-  };
+  return { created: 0, ids: await idsForCodes(supabase, "areas", codes) };
 }
 
 async function upsertTeams(
