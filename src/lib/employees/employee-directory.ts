@@ -659,7 +659,7 @@ async function loadAllOptions(table: string, label = "name") {
 
   const select =
     table === "areas"
-      ? `id,${label},line_id`
+      ? `id,${label},line_id,is_active`
       : table === "teams"
         ? `id,${label},area_id,is_active`
         : `id,${label}`;

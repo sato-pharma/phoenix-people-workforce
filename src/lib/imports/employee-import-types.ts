@@ -213,6 +213,8 @@ export type ExistingImportState = {
   departmentNameToCode?: Map<string, string>;
   lineCodes?: Set<string>;
   areaCodes?: Set<string>;
+  /** The fixed 42 canonical areas (au model). Import maps sales-line areas to these or rejects. */
+  canonicalAreas?: Array<{ code: string; name: string }>;
   teamCodes?: Set<string>;
   teamCodeToTeam?: Map<string, ExistingTeamLookup>;
   teamNameAreaToTeam?: Map<string, ExistingTeamLookup>;

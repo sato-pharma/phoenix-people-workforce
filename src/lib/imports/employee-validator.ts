@@ -531,6 +531,42 @@ function resolveGlobalDepartment(
   return null;
 }
 
+function resolveCanonicalArea(
+  record: EmployeeImportRecord,
+  canonicalByKey: Map<string, { code: string; name: string }>,
+) {
+  // Area unification: for SALES-line rows the Area must resolve to one of the 42 canonical
+  // areas (canonicalize the spelling) or the row is rejected — areas are never auto-created.
+  // Office / non-sales lines are unaffected. If the canonical set is unavailable, skip.
+  if (canonicalByKey.size === 0) {
+    return null;
+  }
+  const lineKey = normalizeDepartmentLookupKey(
+    record.rawOrganizationValues.line ?? record.lineName ?? record.codes.lineCode,
+  );
+  const isSalesLine =
+    lineKey.includes("cns") || lineKey.includes("pedia") || lineKey.includes("anti");
+  if (!isSalesLine) {
+    return null;
+  }
+  const areaText = normalizeTextValue(record.rawOrganizationValues.area ?? record.areaName);
+  if (!areaText) {
+    return null;
+  }
+  const hit = canonicalByKey.get(normalizeDepartmentLookupKey(areaText));
+  if (!hit) {
+    return {
+      rowNumber: record.rowNumber,
+      field: "area" as const,
+      code: "unmapped_area",
+      message: `Area "${areaText}" is not one of the 42 canonical areas. Fix the spelling or use a valid area — areas are never auto-created.`,
+    };
+  }
+  record.codes.areaCode = hit.code;
+  record.areaName = hit.name;
+  return null;
+}
+
 function resolveGlobalTeam(
   record: EmployeeImportRecord,
   options: EmployeeImportPlanOptions,
@@ -633,6 +669,13 @@ export function validateEmployeeImportRows(
     });
   }
 
+  // Build the canonical-area lookup once (normalized name -> {code,name}). Empty when the
+  // canonical set is unavailable, in which case resolveCanonicalArea skips enforcement.
+  const canonicalAreaByKey = new Map<string, { code: string; name: string }>();
+  for (const canonicalArea of options.existingState?.canonicalAreas ?? []) {
+    canonicalAreaByKey.set(normalizeDepartmentLookupKey(canonicalArea.name), canonicalArea);
+  }
+
   for (const record of records) {
     if (record.rowType === "employee" && !record.hrId) {
       validationErrors.push({
@@ -689,6 +732,11 @@ export function validateEmployeeImportRows(
     const departmentError = resolveGlobalDepartment(record, options);
     if (departmentError) {
       validationErrors.push(departmentError);
+    }
+
+    const areaError = resolveCanonicalArea(record, canonicalAreaByKey);
+    if (areaError) {
+      validationErrors.push(areaError);
     }
 
     const teamError = resolveGlobalTeam(record, options);
