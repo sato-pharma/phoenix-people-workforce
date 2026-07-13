@@ -1003,8 +1003,8 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/notifications/email-tracking",
     icon: MousePointerClick,
-    label: "Email Engagement",
-    description: "See who opened and clicked notification emails (Resend + Brevo).",
+    label: "Email Activity",
+    description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
     permissions: [{ resource: "communication" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
