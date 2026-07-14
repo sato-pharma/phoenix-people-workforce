@@ -23,11 +23,13 @@ export function runProbationEmailsTests() {
   // Tokens added.
   assert.match(engine, /dvProgress\?: string \| null/, "dvProgress token added to EmailTemplateContext");
   assert.match(engine, /milestoneDay\?: string \| null/, "milestoneDay token added");
-  // REGRESSION GUARD (prod incident 2026-07-14): the probation tokens must ALSO be in the render
-  // allowlist (placeholderHints). Declaring them only on the type let the renderer strip them to empty,
-  // so the DV-snapshot + milestone emails went out with blank DV date / evaluator / score / risk / day.
+  // REGRESSION GUARD (prod incidents 2026-07-14). A probation email token must be in THREE places:
+  // (1) EmailTemplateContext type, (2) placeholderHints (editor validation allowlist), and CRUCIALLY
+  // (3) contextVariables() — the render map that interpolate() reads. Missing (3) is what shipped the
+  // blank DV date / evaluator / score / risk / day emails (the first hotfix only fixed (2)).
   for (const token of ["probationDay", "dvDate", "evaluatorName", "evaluatorRole", "visitCount", "dvProgress", "riskStatus", "provisionalScore", "daysRemaining", "milestoneDay"]) {
-    assert.ok(engine.includes(`"${token}"`), `${token} is in the render allowlist (placeholderHints), not just the type`);
+    assert.ok(engine.includes(`"${token}"`), `${token} is in the placeholderHints allowlist`);
+    assert.ok(engine.includes(`${token}: text(input.${token})`), `${token} is mapped in contextVariables() (the actual render map)`);
   }
 
   const emails = src("src/lib/probation/intelligence/probation-emails.ts");
