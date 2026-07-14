@@ -86,7 +86,9 @@ export async function runMarketingPremiumNotificationTests() {
   const templates = source("src/lib/email-templates/service.ts");
   assert.match(templates, /"productsTable"/, "productsTable must be a registered placeholder");
   assert.match(templates, /"estimatedCost"/, "estimatedCost must be a registered placeholder");
-  const htmlBlockTokensLine = templates.match(/const htmlBlockTokens: ReadonlySet<string> = new Set\(\[([^\]]+)\]\);/)?.[1] ?? "";
+  // htmlBlockTokens now lives in the extracted pure render core (render-core.ts), imported by service.ts.
+  const renderCore = source("src/lib/email-templates/render-core.ts");
+  const htmlBlockTokensLine = renderCore.match(/htmlBlockTokens: ReadonlySet<string> = new Set\(\[([^\]]+)\]\);/)?.[1] ?? "";
   for (const token of ["planTable", "productsTable", "returnCallout", "scoreTable"]) {
     assert.ok(htmlBlockTokensLine.includes(`"${token}"`), `${token} must be a raw-HTML block token`);
   }

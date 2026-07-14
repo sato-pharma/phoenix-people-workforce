@@ -9,6 +9,7 @@ import {
 import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -1098,33 +1099,9 @@ function cleanTextArray(values: unknown) {
   return Array.from(new Set(values.map(text).filter(Boolean)));
 }
 
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
- * Tokens whose values are trusted pre-rendered HTML blocks (system-built, e.g. the
- * submitted-plan table). They bypass per-value escaping in bodyHtml; the WHOLE
- * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
- * the security authority. In text fields these tokens resolve to their text projection.
- */
-const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable", "digestTable"]);
-
-function interpolate(
-  template: string,
-  variables: Record<string, string>,
-  escapeValues: boolean,
-  rawHtmlTokens?: ReadonlySet<string>,
-) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
-    const value = variables[key] ?? "";
-    return escapeValues && !rawHtmlTokens?.has(key) ? escapeHtml(value) : value;
-  });
-}
+// The token substitution engine (interpolate), the trusted-HTML-block token set, and the render
+// variable map (contextVariables) live in ./render-core so they can be unit-tested without pulling in
+// the JSX email layout. contextVariables is the authoritative render whitelist — see render-core.ts.
 
 function extractPlaceholders(value: unknown) {
   const source = String(value ?? "");
@@ -2049,79 +2026,6 @@ export async function simulateTemplateRecipients(input: {
   }
 
   return { ...resolved, warnings };
-}
-
-function contextVariables(input: Partial<EmailTemplateContext>, recipientName: string) {
-  return {
-    amount: text(input.amount),
-    area: text(input.area),
-    approvalFlow: text(input.approvalFlow),
-    candidateName: text(input.candidateName),
-    ctaLabel: text(input.ctaLabel || "Open in Phoenix Workforce"),
-    ctaUrl: text(input.ctaUrl),
-    date: text(input.date || new Date().toISOString().slice(0, 10)),
-    destination: text(input.destination),
-    duration: text(input.duration),
-    excuseType: text(input.excuseType),
-    excuseDate: text(input.excuseDate),
-    endDate: text(input.endDate),
-    employeeHrId: text(input.employeeHrId),
-    employeeName: text(input.employeeName),
-    expiryText: text(input.expiryText),
-    feedback: text(input.feedback),
-    hireDate: text(input.hireDate),
-    honorific: text(input.honorific),
-    interviewDate: text(input.interviewDate),
-    interviewLocation: text(input.interviewLocation),
-    interviewerName: text(input.interviewerName),
-    interviewTime: text(input.interviewTime),
-    jobTitle: text(input.jobTitle),
-    line: text(input.line),
-    managerName: text(input.managerName),
-    meetingUrl: text(input.meetingUrl),
-    nextStep: text(input.nextStep),
-    planTable: text(input.planTable),
-    planTableText: text(input.planTableText),
-    digestTable: text(input.digestTable),
-    digestTableText: text(input.digestTableText),
-    weekLabel: text(input.weekLabel),
-    scoreTable: text(input.scoreTable),
-    scoreTableText: text(input.scoreTableText),
-    recipientName,
-    startDate: text(input.startDate),
-    status: text(input.status),
-    subject: text(input.subject),
-    summary: text(input.summary),
-    vacationBalance: text(input.vacationBalance),
-    vacationType: text(input.vacationType),
-    // Marketing-request tokens.
-    currentStep: text(input.currentStep),
-    customerName: text(input.customerName),
-    estimatedCost: text(input.estimatedCost),
-    payDate: text(input.payDate),
-    productsTable: text(input.productsTable),
-    productsTableText: text(input.productsTableText),
-    requestCode: text(input.requestCode),
-    requesterName: text(input.requesterName),
-    requiredRoi: text(input.requiredRoi),
-    returnCallout: text(input.returnCallout),
-    returnCalloutText: text(input.returnCalloutText),
-    roiWindow: text(input.roiWindow),
-    // Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75). The
-    // renderer resolves ONLY the keys listed here — a token declared on EmailTemplateContext and
-    // allowlisted in placeholderHints still renders EMPTY unless it is mapped here (prod incident
-    // 2026-07-14: DV snapshot + milestone emails went out with blank DV date / evaluator / score).
-    dvDate: text(input.dvDate),
-    evaluatorName: text(input.evaluatorName),
-    evaluatorRole: text(input.evaluatorRole),
-    visitCount: text(input.visitCount),
-    dvProgress: text(input.dvProgress),
-    milestoneDay: text(input.milestoneDay),
-    probationDay: text(input.probationDay),
-    daysRemaining: text(input.daysRemaining),
-    provisionalScore: text(input.provisionalScore),
-    riskStatus: text(input.riskStatus),
-  };
 }
 
 function recipientNameForGreeting(recipients: Recipient[], context: Partial<EmailTemplateContext>) {

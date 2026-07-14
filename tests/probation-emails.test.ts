@@ -27,9 +27,10 @@ export function runProbationEmailsTests() {
   // (1) EmailTemplateContext type, (2) placeholderHints (editor validation allowlist), and CRUCIALLY
   // (3) contextVariables() — the render map that interpolate() reads. Missing (3) is what shipped the
   // blank DV date / evaluator / score / risk / day emails (the first hotfix only fixed (2)).
+  const renderCore = src("src/lib/email-templates/render-core.ts");
   for (const token of ["probationDay", "dvDate", "evaluatorName", "evaluatorRole", "visitCount", "dvProgress", "riskStatus", "provisionalScore", "daysRemaining", "milestoneDay"]) {
     assert.ok(engine.includes(`"${token}"`), `${token} is in the placeholderHints allowlist`);
-    assert.ok(engine.includes(`${token}: text(input.${token})`), `${token} is mapped in contextVariables() (the actual render map)`);
+    assert.ok(renderCore.includes(`${token}: text(input.${token})`), `${token} is mapped in contextVariables() render map (render-core.ts)`);
   }
 
   const emails = src("src/lib/probation/intelligence/probation-emails.ts");
