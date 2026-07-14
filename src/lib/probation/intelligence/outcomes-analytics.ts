@@ -140,7 +140,6 @@ type CaseRow = {
   decision: ProbationCaseDecision | null;
   line_name: string | null;
   manager_hr_id: string | null;
-  manager_name: string | null;
   decision_at: string | null;
   decision_snapshot: { score?: { finalScore?: number | null; provisionalScore?: number | null } } | null;
 };
@@ -159,7 +158,7 @@ export async function getProbationOutcomesAnalytics(
 
   const { data, error } = await supabase
     .from("probation_cases")
-    .select("id, decision, line_name, manager_hr_id, manager_name, decision_at, decision_snapshot")
+    .select("id, decision, line_name, manager_hr_id, decision_at, decision_snapshot")
     .eq("status", "decided")
     .not("decision", "is", null);
   if (error) throw error;
@@ -168,12 +167,29 @@ export async function getProbationOutcomesAnalytics(
     (r): r is CaseRow & { decision: ProbationCaseDecision } => r.decision === "pass" || r.decision === "terminate",
   );
 
+  // probation_cases stores only manager_hr_id (there is no manager-name column on the table).
+  // Batch-resolve the manager's display name from employees.full_name so the "by manager" grouping
+  // shows a human name, not an HR code (show-names-not-codes). Mirrors the CEO dashboard resolver.
+  const managerHrIds = Array.from(
+    new Set(rows.map((r) => r.manager_hr_id).filter((x): x is string => Boolean(x))),
+  );
+  const managerNameByHrId = new Map<string, string>();
+  if (managerHrIds.length > 0) {
+    const { data: managers } = await supabase
+      .from("employees")
+      .select("hr_id, full_name")
+      .in("hr_id", managerHrIds);
+    for (const m of (managers ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
+      if (m.full_name) managerNameByHrId.set(m.hr_id.toLowerCase(), m.full_name);
+    }
+  }
+
   const items: DecidedCaseInput[] = rows.map((r) => ({
     decision: r.decision as ProbationCaseDecision,
     score: snapshotScore(r),
     lineName: r.line_name,
     managerHrId: r.manager_hr_id,
-    managerName: r.manager_name,
+    managerName: r.manager_hr_id ? managerNameByHrId.get(r.manager_hr_id.toLowerCase()) ?? null : null,
     decisionAt: r.decision_at,
   }));
 
