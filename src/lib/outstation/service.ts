@@ -2007,7 +2007,7 @@ async function getLinkedOutstationPayrollExpense(
   requestId: number,
 ): Promise<LinkedOutstationPayrollExpense | null> {
   const { data, error } = await getSupabaseAdmin()
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", outstationPayrollTripId(requestId))
     .maybeSingle();
@@ -2749,7 +2749,7 @@ export async function rejectOutstationRequestAsAdmin(
   const expenseTripId = outstationPayrollTripId(existing.id);
   const supabase = getSupabaseAdmin();
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", expenseTripId);
 
@@ -2791,7 +2791,7 @@ export async function rejectOutstationRequestAsAdmin(
 
   if (existing.status === "approved" && linkedRows.length > 0) {
     const { error: deletePayrollError } = await supabase
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .delete()
       .eq("trip_id", expenseTripId);
 
@@ -2799,7 +2799,7 @@ export async function rejectOutstationRequestAsAdmin(
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("id", { count: "exact", head: true })
         .eq("report_id", reportId);
 
@@ -2807,7 +2807,7 @@ export async function rejectOutstationRequestAsAdmin(
       if ((remainingRows ?? 0) > 0) continue;
 
       const { error: deleteReportError } = await supabase
-        .from("payroll_expense_reports")
+        .from("outstation_expense_reports")
         .delete()
         .eq("id", reportId);
 
@@ -2869,7 +2869,7 @@ export async function deleteOutstationRequestAsAdmin(
   const supabase = getSupabaseAdmin();
 
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", expenseTripId);
 
@@ -2903,7 +2903,7 @@ export async function deleteOutstationRequestAsAdmin(
 
   if (linkedRows.length > 0) {
     const { count, error: deletePayrollError } = await supabase
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .delete({ count: "exact" })
       .eq("trip_id", expenseTripId);
 
@@ -2912,7 +2912,7 @@ export async function deleteOutstationRequestAsAdmin(
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("id", { count: "exact", head: true })
         .eq("report_id", reportId);
 
@@ -2920,7 +2920,7 @@ export async function deleteOutstationRequestAsAdmin(
       if ((remainingRows ?? 0) > 0) continue;
 
       const { error: deleteReportError } = await supabase
-        .from("payroll_expense_reports")
+        .from("outstation_expense_reports")
         .delete()
         .eq("id", reportId);
 

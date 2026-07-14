@@ -1,4 +1,11 @@
--- DRAFT — NOT APPLIED to any environment (local, staging, or production).
+-- APPLIED to production (confirmed 2026-07-14 via list_migrations + table
+-- inspection: public.outstation_expenses / public.outstation_expense_reports
+-- exist with the renamed constraint/index/policy names below; payroll_expenses /
+-- payroll_expense_reports no longer exist). The application code was NOT updated
+-- in lockstep when this ran, which broke every payroll_expenses/payroll_expense_reports
+-- query app-wide (Employee 360, the Outstation Expenses admin module, action
+-- center, system cleanup, admin overview counts, geocode warmup) until that was
+-- fixed in a follow-up commit — see PR #1061.
 --
 -- Renames the expense storage tables from payroll ownership to outstation
 -- ownership, matching the code-level module move (expenses.ts, expense-metrics.ts,
@@ -9,9 +16,6 @@
 -- and land in payroll Part 2 via phx_import_approved_expenses_to_payroll (owner
 -- rule, see src/lib/payroll/copilot/expense-review.ts). Only identifiers move;
 -- no RLS predicate, column, or trigger logic changes.
---
--- Requires explicit separate approval before being applied to staging, and a
--- further separate approval before production, per this repo's migration policy.
 
 -- ── Tables ───────────────────────────────────────────────────────────────────
 ALTER TABLE public.payroll_expense_reports RENAME TO outstation_expense_reports;

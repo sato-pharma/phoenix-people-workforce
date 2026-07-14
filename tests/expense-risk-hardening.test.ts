@@ -85,7 +85,7 @@ export function runExpenseRiskHardeningTests() {
   assert.match(outstationService, /select\("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id"\)/);
   assert.match(outstationService, /if \(!input\.linkedPayroll\) return 0/);
   assert.match(outstationService, /const addedToPayroll = linkedRows\.some/);
-  assert.match(outstationService, /\.from\("payroll_expenses"\)[\s\S]*\.delete\(\{ count: "exact" \}\)[\s\S]*\.eq\("trip_id", expenseTripId\)/);
+  assert.match(outstationService, /\.from\("outstation_expenses"\)[\s\S]*\.delete\(\{ count: "exact" \}\)[\s\S]*\.eq\("trip_id", expenseTripId\)/);
   assert.match(outstationService, /already been added to payroll and cannot be deleted/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);

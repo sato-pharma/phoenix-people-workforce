@@ -111,6 +111,8 @@ export function isPayrollExpensesSchemaMissing(error: unknown) {
   return (
     message.includes("payroll_expenses") ||
     message.includes("payroll_expense_reports") ||
+    message.includes("outstation_expenses") ||
+    message.includes("outstation_expense_reports") ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
@@ -337,7 +339,7 @@ async function getVisibleExpenseReportIds(
   accessFilter: ExpenseAccessFilter,
 ) {
   let query = supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("report_id")
     .not("report_id", "is", null);
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
@@ -436,7 +438,7 @@ function mapExpense(row: Record<string, unknown>): PayrollExpenseApproval {
   };
 }
 
-// payroll_expenses only has hr_id — do NOT reference employee_hr_id or employee_code
+// outstation_expenses only has hr_id — do NOT reference employee_hr_id or employee_code
 function applyHrIdFilter<T extends { or: (value: string) => T; ilike: (column: string, value: string) => T }>(
   query: T,
   hrId: string,
@@ -465,7 +467,7 @@ function buildHrIdFilters(hrIds: string[]) {
   return Array.from(normalized);
 }
 
-// payroll_expenses only has hr_id — do NOT reference employee_hr_id or employee_code
+// outstation_expenses only has hr_id — do NOT reference employee_hr_id or employee_code
 function applyHrIdInFilter<T extends { or: (value: string) => T; ilike: (column: string, value: string) => T }>(
   query: T,
   hrIds: string[],
@@ -501,7 +503,7 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
 
   if (accessFilter.all) {
     const { data, error } = await supabase
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .select("*")
       .order("created_at", { ascending: false });
 
@@ -522,7 +524,7 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
   }
 
   const { data, error } = await supabase
-    .from("payroll_expense_reports")
+    .from("outstation_expense_reports")
     .select("*")
     .in("id", Array.from(visibleReportIds))
     .order("created_at", { ascending: false });
@@ -546,7 +548,7 @@ export async function listPayrollExpenses(
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
   let query = supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("*")
     .order("expense_date", { ascending: false });
 
@@ -694,7 +696,7 @@ async function assertPayrollExpenseReportCanMutate(
   accessContext: AccessContext,
 ) {
   const { data, error } = await getSupabaseAdmin()
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status")
     .eq("report_id", reportId);
 
@@ -735,14 +737,14 @@ export async function deletePayrollExpenseReport(reportId: string, accessContext
 
   const supabase = getSupabaseAdmin();
   const { error: rowsError } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .delete()
     .eq("report_id", reportId);
 
   if (rowsError) throw rowsError;
 
   const { error: reportError } = await supabase
-    .from("payroll_expense_reports")
+    .from("outstation_expense_reports")
     .delete()
     .eq("id", reportId);
 
@@ -757,7 +759,7 @@ export async function clearPayrollExpenseReportRows(reportId: string, accessCont
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .delete()
     .eq("report_id", reportId);
 
@@ -774,7 +776,7 @@ export async function getApprovedExpenseTotalsForPayroll(
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
   let query = supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("hr_id,total,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
     .eq("payout_month", month)
     .eq("payout_year", year)
@@ -861,7 +863,7 @@ export async function savePayrollExpenseApprovals(input: {
 
   if (reportId) {
     const { error } = await supabase
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .update({
         approved_rows: reportTotals.approvedRows,
         file_name: input.fileName,
@@ -876,7 +878,7 @@ export async function savePayrollExpenseApprovals(input: {
     if (error) throw error;
   } else {
     const { data: report, error } = await supabase
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .insert({
         approved_rows: reportTotals.approvedRows,
         file_name: input.fileName,
@@ -942,7 +944,7 @@ export async function savePayrollExpenseApprovals(input: {
   });
 
   const { data, error } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .upsert(payload, { onConflict: "trip_id" })
     .select("*");
 

@@ -337,7 +337,7 @@ async function getPayrollExpenseRows(tripIds: string[]) {
   if (tripIds.length === 0) return new Map<string, JsonRecord[]>();
 
   const { data, error } = await getSupabaseAdmin()
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id, imported_payroll_batch_id, imported_to_payroll_at, report_id, trip_id")
     .in("trip_id", tripIds);
 

@@ -14,12 +14,15 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import type { PhoenixRole } from "@/lib/auth/permissions";
+import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
 import {
   CAMPAIGN_TYPE,
-  REGULAR_TYPE,
+  classifyVisit,
   defaultWindow,
   fetchCheckinRows,
   fetchVisitRows,
+  isProductiveVisit,
   summarizeCheckins,
   summarizeVisits,
   type Employee360Summary,
@@ -54,7 +57,7 @@ export type SalesSummary = {
   summaryText: string;
 };
 
-type SalesRow = {
+export type SalesRow = {
   employee_hr_id: string | null;
   line: string | null;
   family: string | null;
@@ -71,7 +74,25 @@ function achievement(sales: number, target: number): number | null {
 
 // A manager's sales = the roll-up of their whole team (subject + all descendants).
 // For a rep, teamHrIds is just [self], so this is their own sales.
-async function getEmployeeSales(teamHrIds: string[]): Promise<SalesSummary> {
+//
+// Confidential products (LA003/LA004/SS001 — see src/lib/sales/access-scope.ts,
+// the single source of truth) are stripped BEFORE any aggregation, same as the
+// Sales module: they must never surface in a total, KPI, chart, or product list
+// for a non-CEO/Super-Admin viewer. sales_records keys products by NAME, so the
+// name-based strip (not the code-based one) is the one that reaches this table.
+// Pure, DB-free filter step — exported so the masking wiring is unit-testable
+// without a Supabase round trip (see stripRestrictedRowsByName's own tests in
+// tests/sales-restricted-products.test.ts for the underlying strip logic).
+export function applyRestrictedProductFilter(
+  rows: SalesRow[],
+  viewerRole: PhoenixRole,
+  restrictedNames: Set<string>,
+): SalesRow[] {
+  if (canViewRestrictedProducts(viewerRole)) return rows;
+  return stripRestrictedRowsByName(rows, restrictedNames, (r) => r.product, true);
+}
+
+async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
   const supabase = getSupabaseAdmin();
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
   const { data, error } = await supabase
@@ -80,7 +101,10 @@ async function getEmployeeSales(teamHrIds: string[]): Promise<SalesSummary> {
     .in("employee_hr_id", keys)
     .limit(20000);
   if (error) throw new Error(`Employee 360 sales: ${error.message}`);
-  const rows = (data ?? []) as SalesRow[];
+  let rows = (data ?? []) as SalesRow[];
+  if (!canViewRestrictedProducts(viewerRole)) {
+    rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
+  }
   const subjectKey = String(teamHrIds[0] ?? "").trim().toLowerCase();
   const contributingReps = new Set(rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && k !== subjectKey));
   const isTeamRollup = teamHrIds.length > 1 && contributingReps.size > 0;
@@ -347,7 +371,8 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
     const key = String(v.double_hr_id).trim().toLowerCase();
     const isTm = tmIds.has(key);
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
-    const kind = v.visit_type === REGULAR_TYPE ? "Regular" : v.visit_type === CAMPAIGN_TYPE ? "Campaign" : "Other";
+    const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
+    const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
     events.push({
       date: v.visit_date,
       doubleHrId: v.double_hr_id,
@@ -426,7 +451,7 @@ function poolImpact(rows: ProductiveRow[], eventDates: string[], windowDays: num
 }
 
 // ── Expenses & Outstation ────────────────────────────────────────────────────
-// Real expense history lives in payroll_expenses (Excel-imported). The newer
+// Real expense history lives in outstation_expenses (Excel-imported). The newer
 // GPS/variance/fraud outstation_expense_requests system is barely populated yet,
 // so it is folded in as a secondary "system-submitted" enrichment when present.
 export type ExpenseCategory = { key: string; label: string; amount: number; pct: number };
@@ -503,7 +528,7 @@ type OutstationRow = {
 
 const compactMoney = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 
-// request_type in payroll_expenses is one of: Traveling, Outstation, Meeting, Other.
+// request_type in outstation_expenses is one of: Traveling, Outstation, Meeting, Other.
 // Traveling + Outstation are both field travel (km + travel_cost); Meeting is a
 // meeting (meeting_amount, no destination); Other is misc.
 function classifyExpenseType(raw: string | null): "Travel" | "Meeting" | "Other" {
@@ -513,13 +538,59 @@ function classifyExpenseType(raw: string | null): "Travel" | "Meeting" | "Other"
   return "Other";
 }
 
+// Expense analysis is a MANAGER view (DM / RM / NSM / TM / PM / GPM) — Medical
+// Reps never see it (see showExpenses in the [hrId] page). Returned instead of
+// querying outstation_expenses at all, so a Medical Rep's profile never depends on
+// that table's availability.
+function emptyEmployeeExpenses(): EmployeeExpenses {
+  return {
+    payroll: {
+      hasData: false,
+      tripCount: 0,
+      totalCost: 0,
+      costPerTrip: null,
+      totalKm: 0,
+      costPerKm: null,
+      costPerVisit: null,
+      costPerTripVisit: null,
+      windowSalesValue: null,
+      expenseToSalesPct: null,
+      noDestinationTrips: 0,
+      unresolvedTrips: [],
+      meetingCount: 0,
+      byType: [],
+      categories: [],
+      byDestination: [],
+      monthly: [],
+      topTrips: [],
+      transportMix: [],
+      approvedCount: 0,
+      approvedCost: 0,
+      rejectedCount: 0,
+      pendingCount: 0,
+      amWorkload: 0,
+      pmWorkload: 0,
+      summaryText: "No expense or outstation records for this employee in this period.",
+    },
+    outstation: {
+      hasData: false,
+      tripCount: 0,
+      claimedTotal: 0,
+      expectedTotal: 0,
+      varianceTotal: 0,
+      overClaimCount: 0,
+      flaggedCount: 0,
+    },
+  };
+}
+
 async function getEmployeeExpenses(hrId: string, window: Employee360Window): Promise<EmployeeExpenses> {
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
 
   const [payrollRes, outstationRes] = await Promise.all([
     supabase
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,km,status,hr_approved,am_workload,pm_workload")
       .in("hr_id", keys)
       .gte("expense_date", window.from)
@@ -757,14 +828,16 @@ export async function getEmployee360Profile(
   nameByHrId: Map<string, string>,
   window: Employee360Window = defaultWindow(),
   teamHrIds: string[] = [hrId],
+  includeExpenses: boolean = true,
+  viewerRole: PhoenixRole = "Employee",
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
   const [visits, checkins, sales, tmIds, expenses] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
-    getEmployeeSales(salesTeam),
+    getEmployeeSales(salesTeam, viewerRole),
     getTrainingManagerHrIds(),
-    getEmployeeExpenses(hrId, window),
+    includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
   ]);
   const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
@@ -789,7 +862,7 @@ export async function getEmployee360Profile(
 
   // productive rows for the impact engine
   const productiveRows: ProductiveRow[] = visits
-    .filter((v) => (v.visit_type === REGULAR_TYPE || v.visit_type === CAMPAIGN_TYPE) && v.visit_date)
+    .filter((v) => isProductiveVisit(v) && v.visit_date)
     .map((v) => ({
       date: v.visit_date as string,
       isCampaign: v.visit_type === CAMPAIGN_TYPE,

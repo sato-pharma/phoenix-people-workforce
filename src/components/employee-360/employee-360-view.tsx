@@ -1,6 +1,21 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  Clock,
+  Footprints,
+  GraduationCap,
+  Megaphone,
+  Sparkles,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { LineChart } from "./charts";
 import type {
   CoachingCompetency,
@@ -11,6 +26,42 @@ import type {
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
+
+// ── Premium visual system — shared across every section of this report ──────
+type Tone = "sky" | "orange" | "indigo" | "emerald" | "rose" | "violet" | "amber" | "blue";
+const TONE_ICON_WRAP: Record<Tone, string> = {
+  sky: "bg-sky-50 text-sky-600 ring-sky-100",
+  orange: "bg-orange-50 text-orange-600 ring-orange-100",
+  indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
+  emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  rose: "bg-rose-50 text-rose-600 ring-rose-100",
+  violet: "bg-violet-50 text-violet-600 ring-violet-100",
+  amber: "bg-amber-50 text-amber-600 ring-amber-100",
+  blue: "bg-blue-50 text-blue-600 ring-blue-100",
+};
+
+const PREMIUM_CARD =
+  "rounded-[20px] border-slate-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6";
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  const joined = parts.map((part) => part[0] ?? "").join("");
+  return joined ? joined.toUpperCase() : "—";
+}
+
+const AVATAR_TONES = [
+  "from-orange-500 to-amber-600",
+  "from-sky-600 to-indigo-700",
+  "from-emerald-600 to-teal-700",
+  "from-violet-600 to-purple-700",
+  "from-rose-600 to-pink-700",
+  "from-slate-700 to-slate-900",
+];
+function avatarTone(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[hash % AVATAR_TONES.length];
+}
 
 export type Employee360Subject = {
   hrId: string;
@@ -59,51 +110,66 @@ function KpiTile({
   goodWhenAbove?: boolean | null;
   hint?: string;
 }) {
-  const tone =
-    goodWhenAbove == null
-      ? "text-foreground"
-      : goodWhenAbove
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-amber-600 dark:text-amber-400";
+  const tone = goodWhenAbove == null ? "text-slate-900" : goodWhenAbove ? "text-emerald-600" : "text-amber-600";
   return (
-    <div className="rounded-lg border border-border bg-background/50 p-3">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone}`}>{value}</div>
-      {benchmark ? <div className="mt-0.5 text-xs text-muted-foreground">vs {benchmark}</div> : null}
-      {hint ? <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div> : null}
+    <div className="group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]">
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={cn("mt-1.5 text-2xl font-black tabular-nums", tone)}>{value}</div>
+      {benchmark ? <div className="mt-1 text-[11px] font-bold text-slate-400">vs {benchmark}</div> : null}
+      {hint ? <div className="mt-0.5 text-[11px] text-slate-400">{hint}</div> : null}
     </div>
   );
 }
 
-function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) {
+function SectionHeader({
+  icon: Icon,
+  tone = "sky",
+  sub,
+  children,
+}: {
+  icon: LucideIcon;
+  tone?: Tone;
+  sub?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="mb-3">
-      <h2 className="text-base font-semibold text-foreground">{children}</h2>
-      {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+    <div className="mb-4 flex items-start gap-3 border-b border-slate-100 pb-3.5">
+      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset", TONE_ICON_WRAP[tone])}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 pt-0.5">
+        <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-900">{children}</h2>
+        {sub ? <p className="mt-1 text-xs leading-5 text-slate-500">{sub}</p> : null}
+      </div>
     </div>
   );
 }
 
 function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>;
+  return <p className="text-sm italic text-slate-400">{children}</p>;
 }
 
 function SummaryLine({ text }: { text: string }) {
-  return <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm leading-relaxed text-foreground">{text}</div>;
+  return (
+    <div className="mb-4 flex items-start gap-2.5 rounded-[14px] border border-slate-200/70 bg-gradient-to-r from-slate-50 to-white p-3.5 text-sm leading-relaxed text-slate-600">
+      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
+      <span>{text}</span>
+    </div>
+  );
 }
 
 function DeltaChip({ label, delta, kind, goodUp = true }: { label: string; delta: MetricDelta; kind: "int" | "ratio" | "pct"; goodUp?: boolean }) {
   const fmt = (v: number | null) => (v == null ? "—" : kind === "int" ? intFmt.format(Math.round(v)) : kind === "ratio" ? v.toFixed(1) : `${Math.round(v * 100)}%`);
   const rawDelta = delta.cur != null && delta.prev != null ? (kind === "pct" ? (delta.cur - delta.prev) * 100 : delta.cur - delta.prev) : null;
-  const tone = rawDelta == null || rawDelta === 0 ? "text-muted-foreground" : (rawDelta > 0) === goodUp ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400";
+  const tone = rawDelta == null || rawDelta === 0 ? "text-slate-400" : (rawDelta > 0) === goodUp ? "text-emerald-600" : "text-amber-600";
   const deltaText =
     rawDelta == null ? "—" : `${rawDelta >= 0 ? "▲ +" : "▼ "}${Math.abs(rawDelta) < 10 && kind !== "int" ? rawDelta.toFixed(1) : Math.round(rawDelta)}${kind === "pct" ? "pp" : ""}`;
   return (
-    <div className="rounded-lg border border-border bg-background/50 p-2.5">
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{fmt(delta.cur)}</div>
-      <div className={`text-[11px] tabular-nums ${tone}`}>
-        {deltaText} <span className="text-muted-foreground/70">vs {fmt(delta.prev)}</span>
+    <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5">
+      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-0.5 text-lg font-black tabular-nums text-slate-900">{fmt(delta.cur)}</div>
+      <div className={cn("text-[11px] font-bold tabular-nums", tone)}>
+        {deltaText} <span className="font-medium text-slate-400">vs {fmt(delta.prev)}</span>
       </div>
     </div>
   );
@@ -111,8 +177,10 @@ function DeltaChip({ label, delta, kind, goodUp = true }: { label: string; delta
 
 function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) {
   return (
-    <Card>
-      <div className="mb-2 text-xs text-muted-foreground">Period-over-period — this period vs {comparison.previousLabel}</div>
+    <Card className={PREMIUM_CARD}>
+      <div className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-400">
+        Period-over-period — this period vs {comparison.previousLabel}
+      </div>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
         <DeltaChip label="Productive visits" delta={comparison.productiveVisits} kind="int" />
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
@@ -137,18 +205,18 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
   const max = Math.max(1, ...counts);
   return (
     <div>
-      <div className="mb-1 text-xs text-muted-foreground">{title}</div>
+      <div className="mb-1.5 text-xs font-bold text-slate-500">{title}</div>
       <div className="flex items-end gap-1.5" style={{ height: 56 }}>
         {counts.map((c, i) => (
           <div key={i} className="flex flex-1 flex-col items-center gap-1">
             <div className="flex w-full flex-1 items-end">
               <div
-                className={`w-full rounded-t ${i === 5 || i === 6 ? "bg-muted-foreground/40" : "bg-sky-500/80"}`}
+                className={cn("w-full rounded-t", i === 5 || i === 6 ? "bg-slate-300" : "bg-sky-500/80")}
                 style={{ height: `${(c / max) * 100}%` }}
                 title={`${c}`}
               />
             </div>
-            <span className="text-[10px] text-muted-foreground">{DOW_LABELS[i]}</span>
+            <span className="text-[10px] font-semibold text-slate-400">{DOW_LABELS[i]}</span>
           </div>
         ))}
       </div>
@@ -162,11 +230,11 @@ function MixRows({ items }: { items: { label: string; count: number; pct: number
     <div className="space-y-1.5">
       {items.map((it) => (
         <div key={it.label} className="flex items-center gap-3">
-          <div className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={it.label}>{it.label}</div>
-          <div className="h-3 flex-1 overflow-hidden rounded bg-muted">
-            <div className="h-full bg-indigo-500/70" style={{ width: `${(it.count / max) * 100}%` }} />
+          <div className="w-40 shrink-0 truncate text-xs text-slate-500" title={it.label}>{it.label}</div>
+          <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-indigo-500/70" style={{ width: `${(it.count / max) * 100}%` }} />
           </div>
-          <div className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{it.count} · {Math.round(it.pct * 100)}%</div>
+          <div className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">{it.count} · {Math.round(it.pct * 100)}%</div>
         </div>
       ))}
     </div>
@@ -174,21 +242,77 @@ function MixRows({ items }: { items: { label: string; count: number; pct: number
 }
 
 const balanceCopy: Record<Employee360Profile["campaignBalanceFlag"], { label: string; tone: string }> = {
-  healthy: { label: "Balanced", tone: "text-emerald-600 dark:text-emerald-400" },
-  campaign_starved: { label: "Campaign-starved", tone: "text-amber-600 dark:text-amber-400" },
-  regular_neglect: { label: "Regular-neglect", tone: "text-amber-600 dark:text-amber-400" },
-  no_data: { label: "No data", tone: "text-muted-foreground" },
+  healthy: { label: "Balanced", tone: "text-emerald-600" },
+  campaign_starved: { label: "Campaign-starved", tone: "text-amber-600" },
+  regular_neglect: { label: "Regular-neglect", tone: "text-amber-600" },
+  no_data: { label: "No data", tone: "text-slate-400" },
 };
 
 const zoneStyle: Record<string, { label: string; tone: string }> = {
-  excellence_zone: { label: "Excellence", tone: "text-indigo-600 dark:text-indigo-400" },
-  green_zone: { label: "Green", tone: "text-emerald-600 dark:text-emerald-400" },
-  yellow_zone: { label: "Yellow", tone: "text-amber-600 dark:text-amber-400" },
-  red_zone: { label: "Red", tone: "text-red-600 dark:text-red-400" },
-  critical_red: { label: "Critical", tone: "text-red-700 dark:text-red-500" },
+  excellence_zone: { label: "Excellence", tone: "text-indigo-600" },
+  green_zone: { label: "Green", tone: "text-emerald-600" },
+  yellow_zone: { label: "Yellow", tone: "text-amber-600" },
+  red_zone: { label: "Red", tone: "text-red-600" },
+  critical_red: { label: "Critical", tone: "text-red-700" },
 };
 function zoneOf(zone: string | null) {
-  return (zone && zoneStyle[zone]) || { label: zone ?? "—", tone: "text-muted-foreground" };
+  return (zone && zoneStyle[zone]) || { label: zone ?? "—", tone: "text-slate-400" };
+}
+
+function IdentityHero({
+  subject,
+  tenure,
+  windowLabel,
+  benchmarkLabel,
+}: {
+  subject: Employee360Subject;
+  tenure: string | null;
+  windowLabel: string;
+  benchmarkLabel: string;
+}) {
+  return (
+    <AdminHeroFrame>
+      <div className="relative flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between lg:p-7">
+        <div className="flex min-w-0 items-center gap-4">
+          <span
+            aria-hidden
+            className={cn(
+              "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-base font-black text-white shadow-lg ring-2 ring-white/10",
+              avatarTone(subject.hrId),
+            )}
+          >
+            {initials(subject.displayName)}
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-xl font-black text-white sm:text-2xl">{subject.displayName}</h1>
+              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-bold text-slate-200 backdrop-blur">
+                {subject.hrId.toUpperCase()}
+              </span>
+              {subject.employmentStatus && subject.employmentStatus !== "active" ? (
+                <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-200">
+                  {subject.employmentStatus.replace(/_/g, " ")}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1.5 truncate text-sm text-slate-300">
+              {[subject.jobTitle, subject.lineName, subject.areaName || subject.regionName].filter(Boolean).join(" · ") || "—"}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {subject.managerName ? `Reports to ${subject.managerName}` : "No manager on record"}
+              {tenure ? ` · ${tenure}` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
+          <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-3 py-1 text-[11px] font-bold text-orange-200">
+            {windowLabel}
+          </span>
+          <span className="text-[11px] text-slate-400">{benchmarkLabel}</span>
+        </div>
+      </div>
+    </AdminHeroFrame>
+  );
 }
 
 export function Employee360View({
@@ -210,30 +334,7 @@ export function Employee360View({
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       {/* Header / identity */}
-      <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-foreground">{subject.displayName}</h1>
-            <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{subject.hrId.toUpperCase()}</span>
-            {subject.employmentStatus ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs capitalize text-muted-foreground">
-                {subject.employmentStatus.replace(/_/g, " ")}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {[subject.jobTitle, subject.lineName, subject.areaName || subject.regionName].filter(Boolean).join(" · ") || "—"}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {subject.managerName ? `Reports to ${subject.managerName}` : "No manager on record"}
-            {tenure ? ` · ${tenure}` : ""}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-xs text-muted-foreground">{summary.window.label}</div>
-          <div className="text-xs text-muted-foreground">{b.windowLabel}</div>
-        </div>
-      </Card>
+      <IdentityHero subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} />
 
       {/* Trust strip */}
       <div className="flex flex-wrap gap-2 text-xs">
@@ -247,8 +348,10 @@ export function Employee360View({
       {comparison ? <ComparisonStrip comparison={comparison} /> : null}
 
       {/* Module A — visits & coverage */}
-      <Card>
-        <SectionTitle sub="Productive = Regular + Campaign. Admin/non-visit codes excluded.">Visits &amp; Coverage</SectionTitle>
+      <Card className={PREMIUM_CARD}>
+        <SectionHeader icon={Footprints} tone="sky" sub="Productive = Regular + Campaign. Admin/non-visit codes excluded.">
+          Visits &amp; Coverage
+        </SectionHeader>
         <SummaryLine text={summary.visitsSummaryText} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={`${intFmt.format(b.productiveVisits)} co.`} hint={tenure ? "total — read with tenure" : undefined} />
@@ -270,38 +373,40 @@ export function Employee360View({
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <div>
             <DayOfWeekBars counts={summary.dayOfWeek} title="Visits by day of week (Fri/Sat dimmed)" />
-            <div className="mt-3 text-xs text-muted-foreground">Single visits {intFmt.format(summary.singleVisits)} · Double visits {intFmt.format(summary.doublesReceived)}</div>
+            <div className="mt-3 text-xs text-slate-400">Single visits {intFmt.format(summary.singleVisits)} · Double visits {intFmt.format(summary.doublesReceived)}</div>
             {summary.topCustomers.length > 0 ? (
               <div className="mt-3">
-                <div className="mb-1 text-xs text-muted-foreground">Most-visited customers</div>
+                <div className="mb-1.5 text-xs font-bold text-slate-500">Most-visited customers</div>
                 <div className="flex flex-wrap gap-1.5">
                   {summary.topCustomers.map((c) => (
-                    <span key={c.name} className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{c.name} · {c.count}</span>
+                    <span key={c.name} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{c.name} · {c.count}</span>
                   ))}
                 </div>
               </div>
             ) : null}
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground">Activity mix (all visit types)</div>
+            <div className="mb-1.5 text-xs font-bold text-slate-500">Activity mix (all visit types)</div>
             <MixRows items={summary.activityMix} />
           </div>
         </div>
       </Card>
 
       {/* Campaign vs Regular */}
-      <Card>
-        <SectionTitle sub="Each month vs the company's SAME-month campaign share (campaign is seasonal).">Campaign vs Regular</SectionTitle>
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+      <Card className={PREMIUM_CARD}>
+        <SectionHeader icon={Megaphone} tone="orange" sub="Each month vs the company's SAME-month campaign share (campaign is seasonal).">
+          Campaign vs Regular
+        </SectionHeader>
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-600">
           <span>
-            Mix: <span className="font-semibold tabular-nums">{pct(summary.regularShare)} regular / {pct(summary.campaignShare)} campaign</span>
+            Mix: <span className="font-black tabular-nums text-slate-900">{pct(summary.regularShare)} regular / {pct(summary.campaignShare)} campaign</span>
           </span>
-          <span className="text-muted-foreground">healthy band {Math.round(b.regularShare * 100)}:{Math.round(b.campaignShare * 100)}</span>
-          <span className={balanceCopy[summary.campaignBalanceFlag].tone}>● {balanceCopy[summary.campaignBalanceFlag].label}</span>
+          <span className="text-slate-400">healthy band {Math.round(b.regularShare * 100)}:{Math.round(b.campaignShare * 100)}</span>
+          <span className={cn("font-bold", balanceCopy[summary.campaignBalanceFlag].tone)}>● {balanceCopy[summary.campaignBalanceFlag].label}</span>
         </div>
         {summary.monthly.length > 1 ? (
           <div className="mb-5">
-            <div className="mb-1 text-xs text-muted-foreground">Monthly visit trend</div>
+            <div className="mb-1.5 text-xs font-bold text-slate-500">Monthly visit trend</div>
             <LineChart
               labels={summary.monthly.map((m) => m.month.slice(5))}
               series={[
@@ -320,19 +425,19 @@ export function Employee360View({
               const total = m.regular + m.campaign;
               return (
                 <div key={m.month} className="flex items-center gap-3">
-                  <div className="w-16 shrink-0 text-xs text-muted-foreground">{m.month}</div>
-                  <div className="flex h-5 flex-1 overflow-hidden rounded bg-muted">
+                  <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                  <div className="flex h-5 flex-1 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full bg-sky-500" style={{ width: `${(m.regular / monthlyMax) * 100}%` }} title={`${m.regular} regular`} />
                     <div className="h-full bg-orange-500" style={{ width: `${(m.campaign / monthlyMax) * 100}%` }} title={`${m.campaign} campaign`} />
                   </div>
-                  <div className="w-28 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                  <div className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-400">
                     {intFmt.format(total)} · {pct(m.campaignShare)} camp
-                    {m.companyCampaignShare != null ? <span className="text-muted-foreground/70"> (co {Math.round(m.companyCampaignShare * 100)}%)</span> : null}
+                    {m.companyCampaignShare != null ? <span className="text-slate-300"> (co {Math.round(m.companyCampaignShare * 100)}%)</span> : null}
                   </div>
                 </div>
               );
             })}
-            <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+            <div className="mt-2 flex gap-4 text-xs text-slate-400">
               <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-sky-500" /> Regular</span>
               <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-orange-500" /> Campaign</span>
             </div>
@@ -341,13 +446,18 @@ export function Employee360View({
       </Card>
 
       {/* Module B — check-in timing & authenticity */}
-      <Card>
-        <SectionTitle sub="Visit records have no clock time — timing below is from GPS check-ins (check_date). Visit-level intra-day is AM/PM only.">
+      <Card className={PREMIUM_CARD}>
+        <SectionHeader
+          icon={Clock}
+          tone="indigo"
+          sub="Visit records have no clock time — timing below is from GPS check-ins (check_date). Visit-level intra-day is AM/PM only."
+        >
           Check-in Timing &amp; Authenticity
-        </SectionTitle>
+        </SectionHeader>
         {!summary.hasGpsCheckins ? (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-            No GPS signal ever logged for this employee in the window. Timing and authenticity cannot be assessed — this usually means the mobile app GPS is off, not misconduct.
+          <div className="flex items-start gap-2.5 rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>No GPS signal ever logged for this employee in the window. Timing and authenticity cannot be assessed — this usually means the mobile app GPS is off, not misconduct.</span>
           </div>
         ) : (
           <>
@@ -359,13 +469,13 @@ export function Employee360View({
               <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–01:00" />
             </div>
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Check-in time of day (Cairo) — company peaks 16:00–19:00</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Check-in time of day (Cairo) — company peaks 16:00–19:00</div>
               <div className="flex h-24 items-end gap-[2px]">
                 {summary.hourHistogram.map((count, hour) => (
                   <div key={hour} className="flex-1 rounded-t bg-indigo-500/80" style={{ height: `${(count / hourMax) * 100}%` }} title={`${hour}:00 — ${count} check-ins`} />
                 ))}
               </div>
-              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+              <div className="mt-1 flex justify-between text-[10px] font-semibold text-slate-400"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -378,7 +488,7 @@ export function Employee360View({
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <DayOfWeekBars counts={summary.dayOfWeek} title="Check-ins by day of week (Fri/Sat dimmed)" />
               <div>
-                <div className="mb-1 text-xs text-muted-foreground">GPS coverage by month</div>
+                <div className="mb-1.5 text-xs font-bold text-slate-500">GPS coverage by month</div>
                 <LineChart
                   labels={summary.coverageTrend.map((m) => m.month.slice(5))}
                   series={[{ name: "Coverage", color: CHART_COLORS.coverage, points: summary.coverageTrend.map((m) => (m.coverage == null ? null : m.coverage * 100)), area: true }]}
@@ -389,8 +499,8 @@ export function Employee360View({
               </div>
             </div>
 
-            <div className="mt-4 text-xs text-muted-foreground">
-              Visit AM/PM split (self-reported): <span className="font-medium text-foreground">{intFmt.format(summary.amVisits)} AM / {intFmt.format(summary.pmVisits)} PM</span>
+            <div className="mt-4 text-xs text-slate-400">
+              Visit AM/PM split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM / {intFmt.format(summary.pmVisits)} PM</span>
               {summary.unknownAmpm > 0 ? ` · ${intFmt.format(summary.unknownAmpm)} unmarked` : ""}
             </div>
           </>
@@ -424,7 +534,7 @@ export function Employee360View({
       {/* Double-visit history */}
       <DoubleVisitSection dv={summary.doubleVisits} />
 
-      <p className="px-1 text-[11px] text-muted-foreground">
+      <p className="px-1 text-[11px] text-slate-400">
         Employee 360 · consolidated profile. Coaching is a single-rater signal (the Training Manager); sales lags visits ~2 months and covers ~2/3 of reps — light pillars are shown as coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
       </p>
     </div>
@@ -433,10 +543,14 @@ export function Employee360View({
 
 function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
   return (
-    <Card>
-      <SectionTitle sub={sales.isTeamRollup ? "Team roll-up — the sum of this manager's reps' sales vs target. Sales lag visits ~2 months." : "Actual sell-in vs target. Values are period-stamped — sales lag visits ~2 months."}>
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={TrendingUp}
+        tone="emerald"
+        sub={sales.isTeamRollup ? "Team roll-up — the sum of this manager's reps' sales vs target. Sales lag visits ~2 months." : "Actual sell-in vs target. Values are period-stamped — sales lag visits ~2 months."}
+      >
         Sales &amp; Achievement{sales.isTeamRollup ? " (Team)" : ""}
-      </SectionTitle>
+      </SectionHeader>
       {!sales.hasData ? (
         <EmptyState>No validated sales records for this employee yet (only ~2/3 of reps have linked sales).</EmptyState>
       ) : (
@@ -456,7 +570,7 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           </div>
           {sales.monthly.length > 1 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Sales vs target trend</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Sales vs target trend</div>
               <LineChart
                 labels={sales.monthly.map((m) => m.month.slice(5))}
                 series={[
@@ -470,18 +584,18 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           ) : null}
           {sales.monthly.length > 0 ? (
             <div className="mt-5 space-y-1.5">
-              <div className="text-xs text-muted-foreground">Monthly achievement (bar = achievement %, capped at 150%)</div>
+              <div className="text-xs font-bold text-slate-500">Monthly achievement (bar = achievement %, capped at 150%)</div>
               {sales.monthly.slice(-12).map((m: SalesMonthPoint) => {
                 const achv = m.achievementPct ?? 0;
                 const width = Math.min(150, achv) / 1.5; // % of bar
                 const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";
                 return (
                   <div key={m.month} className="flex items-center gap-3">
-                    <div className="w-16 shrink-0 text-xs text-muted-foreground">{m.month}</div>
-                    <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
-                      <div className={`h-full ${tone}`} style={{ width: `${width}%` }} />
+                    <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                    <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div className={cn("h-full rounded-full", tone)} style={{ width: `${width}%` }} />
                     </div>
-                    <div className="w-32 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                    <div className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-400">
                       {pctPoints(m.achievementPct)} · {compactFmt.format(m.sales)}/{compactFmt.format(m.target)}
                     </div>
                   </div>
@@ -491,30 +605,29 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           ) : null}
           {sales.topProducts.length > 0 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Top products by sales</div>
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Top products by sales</div>
+              <div className="overflow-hidden rounded-[14px] border border-slate-200">
                 {sales.topProducts.map((p) => (
-                  <div key={p.product} className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm last:border-b-0">
-                    <span className="truncate text-foreground">{p.product}</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">{compactFmt.format(p.sales)} · {pctPoints(p.achievementPct)}</span>
+                  <div key={p.product} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
+                    <span className="truncate text-slate-800">{p.product}</span>
+                    <span className="shrink-0 tabular-nums text-slate-400">{compactFmt.format(p.sales)} · {pctPoints(p.achievementPct)}</span>
                   </div>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">Confidential product masking for non-executive viewers is a pending hardening step.</p>
             </div>
           ) : null}
           {sales.byFamily.length > 1 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Achievement by product family</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Achievement by product family</div>
               <div className="space-y-1.5">
                 {sales.byFamily.slice(0, 6).map((f) => {
                   const achv = f.achievementPct ?? 0;
                   const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";
                   return (
                     <div key={f.family} className="flex items-center gap-3">
-                      <div className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={f.family}>{f.family}</div>
-                      <div className="h-3 flex-1 overflow-hidden rounded bg-muted"><div className={`h-full ${tone}`} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
-                      <div className="w-28 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{pctPoints(f.achievementPct)} · {compactFmt.format(f.sales)}</div>
+                      <div className="w-40 shrink-0 truncate text-xs text-slate-500" title={f.family}>{f.family}</div>
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
+                      <div className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-400">{pctPoints(f.achievementPct)} · {compactFmt.format(f.sales)}</div>
                     </div>
                   );
                 })}
@@ -529,8 +642,10 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
 
 function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"] }) {
   return (
-    <Card>
-      <SectionTitle sub="Received coaching (double-visit assessments). Single-rater signal — read as guidance, not objective truth.">Coaching</SectionTitle>
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={GraduationCap} tone="violet" sub="Received coaching (double-visit assessments). Single-rater signal — read as guidance, not objective truth.">
+        Coaching
+      </SectionHeader>
       {!coaching.hasData ? (
         <EmptyState>
           No coaching reports on record for this employee.
@@ -556,15 +671,15 @@ function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"
 
           {coaching.reports.length > 0 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Score progression{coaching.coachNames.length ? ` · coach: ${coaching.coachNames.join(", ")}` : ""}</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Score progression{coaching.coachNames.length ? ` · coach: ${coaching.coachNames.join(", ")}` : ""}</div>
               <div className="flex flex-wrap gap-2">
                 {coaching.reports.map((r, i) => {
                   const z = zoneOf(r.zone);
                   return (
-                    <div key={`${r.date}-${i}`} className="rounded-lg border border-border px-3 py-2 text-center">
-                      <div className={`text-lg font-semibold tabular-nums ${z.tone}`}>{pctPoints(r.finalScorePercent)}</div>
-                      <div className="text-[10px] text-muted-foreground">{r.date}</div>
-                      <div className={`text-[10px] ${z.tone}`}>{z.label}</div>
+                    <div key={`${r.date}-${i}`} className="rounded-[12px] border border-slate-200 px-3 py-2 text-center">
+                      <div className={cn("text-lg font-black tabular-nums", z.tone)}>{pctPoints(r.finalScorePercent)}</div>
+                      <div className="text-[10px] text-slate-400">{r.date}</div>
+                      <div className={cn("text-[10px] font-bold", z.tone)}>{z.label}</div>
                     </div>
                   );
                 })}
@@ -574,17 +689,17 @@ function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"
 
           {coaching.weakestCompetencies.length > 0 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Weakest competencies (avg across reports, worst first)</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Weakest competencies (avg across reports, worst first)</div>
               <div className="space-y-1.5">
                 {coaching.weakestCompetencies.map((c: CoachingCompetency) => {
                   const tone = c.avgPercent >= 80 ? "bg-emerald-500" : c.avgPercent >= 60 ? "bg-amber-500" : "bg-red-500";
                   return (
                     <div key={c.key} className="flex items-center gap-3">
-                      <div className="w-48 shrink-0 truncate text-xs text-muted-foreground" title={`${c.label} · ${c.category}`}>{c.label}</div>
-                      <div className="h-3 flex-1 overflow-hidden rounded bg-muted">
-                        <div className={`h-full ${tone}`} style={{ width: `${c.avgPercent}%` }} />
+                      <div className="w-48 shrink-0 truncate text-xs text-slate-500" title={`${c.label} · ${c.category}`}>{c.label}</div>
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className={cn("h-full rounded-full", tone)} style={{ width: `${c.avgPercent}%` }} />
                       </div>
-                      <div className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{Math.round(c.avgPercent)}% · {c.avgScore.toFixed(1)}/5</div>
+                      <div className="w-16 shrink-0 text-right text-xs tabular-nums text-slate-400">{Math.round(c.avgPercent)}% · {c.avgScore.toFixed(1)}/5</div>
                     </div>
                   );
                 })}
@@ -593,7 +708,7 @@ function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"
           ) : null}
 
           {coaching.reports[coaching.reports.length - 1]?.areaOfDevelopment ? (
-            <p className="mt-4 text-xs text-muted-foreground"><span className="font-medium text-foreground">Latest area of development:</span> {coaching.reports[coaching.reports.length - 1].areaOfDevelopment}</p>
+            <p className="mt-4 text-xs text-slate-500"><span className="font-bold text-slate-700">Latest area of development:</span> {coaching.reports[coaching.reports.length - 1].areaOfDevelopment}</p>
           ) : null}
         </>
       )}
@@ -604,8 +719,8 @@ function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"
 function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
   if (set.eventCount === 0) {
     return (
-      <div className="rounded-lg border border-border p-3">
-        <div className="text-sm font-medium text-foreground">{title}</div>
+      <div className="rounded-[14px] border border-slate-200 p-3.5">
+        <div className="text-sm font-bold text-slate-800">{title}</div>
         <EmptyState>No such events for this employee in the window.</EmptyState>
       </div>
     );
@@ -634,29 +749,29 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
     },
   ];
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-[14px] border border-slate-200 p-3.5">
       <div className="flex items-baseline justify-between">
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <div className="text-[11px] text-muted-foreground">{set.eventCount} event{set.eventCount === 1 ? "" : "s"} · ±{set.windowDays}d windows</div>
+        <div className="text-sm font-bold text-slate-800">{title}</div>
+        <div className="text-[11px] text-slate-400">{set.eventCount} event{set.eventCount === 1 ? "" : "s"} · ±{set.windowDays}d windows</div>
       </div>
       <div className="mt-2 space-y-1.5">
         {rows.map((r) => {
-          const deltaTone = r.delta == null ? "text-muted-foreground" : (r.delta >= 0) === r.goodUp ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400";
+          const deltaTone = r.delta == null ? "text-slate-400" : (r.delta >= 0) === r.goodUp ? "text-emerald-600" : "text-amber-600";
           const deltaText = r.delta == null ? "—" : `${r.delta >= 0 ? "▲ +" : "▼ "}${Math.abs(r.delta) < 10 ? r.delta.toFixed(1) : Math.round(r.delta)}`;
           return (
             <div key={r.label} className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-muted-foreground">{r.label}</span>
+              <span className="text-slate-500">{r.label}</span>
               <span className="tabular-nums">
-                <span className="text-muted-foreground">{r.before}</span>
-                <span className="mx-1 text-muted-foreground">→</span>
-                <span className="font-medium text-foreground">{r.after}</span>
-                <span className={`ml-2 text-xs ${deltaTone}`}>{deltaText}</span>
+                <span className="text-slate-400">{r.before}</span>
+                <span className="mx-1 text-slate-300">→</span>
+                <span className="font-bold text-slate-900">{r.after}</span>
+                <span className={cn("ml-2 text-xs font-bold", deltaTone)}>{deltaText}</span>
               </span>
             </div>
           );
         })}
       </div>
-      <div className="mt-2 text-[11px] text-muted-foreground">
+      <div className="mt-2 text-[11px] text-slate-400">
         Sample: {set.before.sampleVisits} visits before / {set.after.sampleVisits} after
       </div>
     </div>
@@ -666,10 +781,10 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
 function ImpactSection({ impact }: { impact: Employee360Profile["impact"] }) {
   const anything = impact.coaching.eventCount > 0 || impact.trainingDv.eventCount > 0;
   return (
-    <Card>
-      <SectionTitle sub={`Field activity in the ${impact.windowDays} days BEFORE vs AFTER each intervention. Directional — read with sample sizes.`}>
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={Sparkles} tone="amber" sub={`Field activity in the ${impact.windowDays} days BEFORE vs AFTER each intervention. Directional — read with sample sizes.`}>
         Before / After Impact
-      </SectionTitle>
+      </SectionHeader>
       {!anything ? (
         <EmptyState>No coaching sessions or Training-Manager double-visits recorded for this employee in the window.</EmptyState>
       ) : (
@@ -684,8 +799,10 @@ function ImpactSection({ impact }: { impact: Employee360Profile["impact"] }) {
 
 function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) {
   return (
-    <Card>
-      <SectionTitle sub="Every visit where a manager accompanied this rep. TM = Training Manager.">Double-Visit History</SectionTitle>
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={Users} tone="blue" sub="Every visit where a manager accompanied this rep. TM = Training Manager.">
+        Double-Visit History
+      </SectionHeader>
       {dv.totalReceived === 0 ? (
         <EmptyState>No double-visits recorded for this employee in the window.</EmptyState>
       ) : (
@@ -698,10 +815,10 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
 
           {dv.byVisitor.length > 0 ? (
             <div className="mt-5">
-              <div className="mb-1 text-xs text-muted-foreground">Who accompanied this rep</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Who accompanied this rep</div>
               <div className="flex flex-wrap gap-2">
                 {dv.byVisitor.map((v) => (
-                  <span key={v.hrId} className={`rounded-full border px-2.5 py-1 text-xs ${v.isTrainingManager ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300" : "border-border text-muted-foreground"}`}>
+                  <span key={v.hrId} className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", v.isTrainingManager ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
                     {v.name ?? v.hrId.toUpperCase()} · {v.count}{v.isTrainingManager ? " · TM" : ""}
                   </span>
                 ))}
@@ -710,16 +827,16 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
           ) : null}
 
           <div className="mt-5">
-            <div className="mb-1 text-xs text-muted-foreground">Recent double-visits{dv.totalReceived > dv.events.length ? ` (latest ${dv.events.length} of ${dv.totalReceived})` : ""}</div>
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className="mb-1.5 text-xs font-bold text-slate-500">Recent double-visits{dv.totalReceived > dv.events.length ? ` (latest ${dv.events.length} of ${dv.totalReceived})` : ""}</div>
+            <div className="overflow-hidden rounded-[14px] border border-slate-200">
               {dv.events.map((e, i) => (
-                <div key={`${e.date}-${i}`} className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm last:border-b-0">
+                <div key={`${e.date}-${i}`} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs text-muted-foreground">{e.date}</span>
-                    <span className="truncate text-foreground">{e.doubleName ?? e.doubleHrId.toUpperCase()}</span>
-                    {e.isTrainingManager ? <span className="shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">TM</span> : null}
+                    <span className="w-20 shrink-0 text-xs text-slate-400">{e.date}</span>
+                    <span className="truncate text-slate-800">{e.doubleName ?? e.doubleHrId.toUpperCase()}</span>
+                    {e.isTrainingManager ? <span className="shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">TM</span> : null}
                   </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">{e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}</span>
                 </div>
               ))}
             </div>
@@ -742,10 +859,10 @@ function ExpensesSection({
   const catMax = Math.max(1, ...payroll.categories.map((c) => c.amount));
   const destMax = Math.max(1, ...payroll.byDestination.map((d) => d.cost));
   return (
-    <Card>
-      <SectionTitle sub="Outstation trips & reimbursed expenses (payroll import). Most relevant to travelling managers — DM / NSM / TM / PM / GPM.">
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={Wallet} tone="rose" sub="Outstation trips & reimbursed expenses (payroll import). Most relevant to travelling managers — DM / NSM / TM / PM / GPM.">
         Expenses &amp; Outstation
-      </SectionTitle>
+      </SectionHeader>
       {!hasAny ? (
         <EmptyState>No expense or outstation records for this employee in this period.</EmptyState>
       ) : (
@@ -773,10 +890,10 @@ function ExpensesSection({
 
               {payroll.byType.length > 0 ? (
                 <div className="mt-3">
-                  <div className="mb-1 text-xs text-muted-foreground">By expense type</div>
+                  <div className="mb-1.5 text-xs font-bold text-slate-500">By expense type</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.byType.map((b) => (
-                      <span key={b.type} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
+                      <span key={b.type} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500">
                         {b.type}: {intFmt.format(b.trips)} · {compactFmt.format(b.cost)}
                       </span>
                     ))}
@@ -785,40 +902,40 @@ function ExpensesSection({
               ) : null}
 
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                <span className="text-muted-foreground">Approval:</span>
-                <span className="text-emerald-600 dark:text-emerald-400">✓ {intFmt.format(payroll.approvedCount)} approved</span>
-                <span className="text-amber-600 dark:text-amber-400">✗ {intFmt.format(payroll.rejectedCount)} rejected</span>
-                <span className="text-muted-foreground">◷ {intFmt.format(payroll.pendingCount)} pending</span>
+                <span className="font-bold text-slate-400">Approval:</span>
+                <span className="font-semibold text-emerald-600">✓ {intFmt.format(payroll.approvedCount)} approved</span>
+                <span className="font-semibold text-amber-600">✗ {intFmt.format(payroll.rejectedCount)} rejected</span>
+                <span className="text-slate-400">◷ {intFmt.format(payroll.pendingCount)} pending</span>
               </div>
 
               {payroll.monthly.length > 1 ? (
                 <div className="mt-5">
-                  <div className="mb-1 text-xs text-muted-foreground">Monthly spend trend</div>
+                  <div className="mb-1.5 text-xs font-bold text-slate-500">Monthly spend trend</div>
                   <LineChart labels={payroll.monthly.map((m) => m.month.slice(5))} series={[{ name: "Cost", color: "#f43f5e", points: payroll.monthly.map((m) => m.cost), area: true }]} height={160} yFormat={(n) => compactFmt.format(n)} />
                 </div>
               ) : null}
 
               <div className="mt-5 grid gap-5 sm:grid-cols-2">
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">Where the money goes</div>
+                  <div className="mb-1.5 text-xs font-bold text-slate-500">Where the money goes</div>
                   <div className="space-y-1.5">
                     {payroll.categories.map((c) => (
                       <div key={c.key} className="flex items-center gap-3">
-                        <div className="w-32 shrink-0 truncate text-xs text-muted-foreground">{c.label}</div>
-                        <div className="h-3 flex-1 overflow-hidden rounded bg-muted"><div className="h-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
-                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{compactFmt.format(c.amount)} · {Math.round(c.pct * 100)}%</div>
+                        <div className="w-32 shrink-0 truncate text-xs text-slate-500">{c.label}</div>
+                        <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
+                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400">{compactFmt.format(c.amount)} · {Math.round(c.pct * 100)}%</div>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">Top destinations by cost</div>
+                  <div className="mb-1.5 text-xs font-bold text-slate-500">Top destinations by cost</div>
                   <div className="space-y-1.5">
                     {payroll.byDestination.map((d) => (
                       <div key={d.name} className="flex items-center gap-3">
-                        <div className="w-32 shrink-0 truncate text-xs text-muted-foreground" title={d.name}>{d.name}</div>
-                        <div className="h-3 flex-1 overflow-hidden rounded bg-muted"><div className="h-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
-                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{compactFmt.format(d.cost)} · {d.trips}t</div>
+                        <div className="w-32 shrink-0 truncate text-xs text-slate-500" title={d.name}>{d.name}</div>
+                        <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
+                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400">{compactFmt.format(d.cost)} · {d.trips}t</div>
                       </div>
                     ))}
                   </div>
@@ -826,22 +943,22 @@ function ExpensesSection({
               </div>
 
               {payroll.unresolvedTrips.length > 0 ? (
-                <div className="mt-5 overflow-hidden rounded-lg border border-amber-300/60 bg-amber-50/50 dark:bg-amber-950/20">
-                  <div className="border-b border-amber-300/40 px-3 py-2">
-                    <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                <div className="mt-5 overflow-hidden rounded-[14px] border border-amber-200 bg-amber-50/50">
+                  <div className="border-b border-amber-200/70 px-3 py-2">
+                    <div className="text-xs font-bold text-amber-700">
                       Unresolved trips ({payroll.unresolvedTrips.length})
                     </div>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    <p className="mt-0.5 text-[11px] text-slate-500">
                       Travel with no recorded destination — held out of the breakdown and “most expensive trips” above until resolved. A location is never guessed, and home/origin is never shown as a destination. Meetings are separate and need no destination.
                     </p>
                   </div>
                   {payroll.unresolvedTrips.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 border-b border-amber-300/30 px-3 py-1.5 text-sm last:border-b-0">
+                    <div key={i} className="flex items-center justify-between gap-3 border-b border-amber-200/50 px-3 py-1.5 text-sm last:border-b-0">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-20 shrink-0 text-xs text-muted-foreground">{t.date}</span>
-                        <span className="truncate text-muted-foreground">{t.type} · no destination recorded</span>
+                        <span className="w-20 shrink-0 text-xs text-slate-400">{t.date}</span>
+                        <span className="truncate text-slate-500">{t.type} · no destination recorded</span>
                       </div>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-xs tabular-nums text-slate-400">
                         {compactFmt.format(t.total)}
                         {t.km != null ? ` · ${Math.round(t.km)}km` : ""}
                         {t.transport ? ` · ${t.transport}` : ""}
@@ -853,25 +970,25 @@ function ExpensesSection({
 
               {payroll.transportMix.length > 0 ? (
                 <div className="mt-4">
-                  <div className="mb-1 text-xs text-muted-foreground">Transport</div>
+                  <div className="mb-1.5 text-xs font-bold text-slate-500">Transport</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.transportMix.map((t) => (
-                      <span key={t.name} className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
+                      <span key={t.name} className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
                     ))}
                   </div>
                 </div>
               ) : null}
 
               <div className="mt-5">
-                <div className="mb-1 text-xs text-muted-foreground">Most expensive trips</div>
-                <div className="overflow-hidden rounded-lg border border-border">
+                <div className="mb-1.5 text-xs font-bold text-slate-500">Most expensive trips</div>
+                <div className="overflow-hidden rounded-[14px] border border-slate-200">
                   {payroll.topTrips.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm last:border-b-0">
+                    <div key={i} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-20 shrink-0 text-xs text-muted-foreground">{t.date}</span>
-                        <span className="truncate text-foreground">{t.destination || (t.type === "Meeting" ? "Meeting" : "—")}</span>
+                        <span className="w-20 shrink-0 text-xs text-slate-400">{t.date}</span>
+                        <span className="truncate text-slate-800">{t.destination || (t.type === "Meeting" ? "Meeting" : "—")}</span>
                       </div>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-xs tabular-nums text-slate-400">
                         {compactFmt.format(t.total)}
                         {t.km != null ? ` · ${Math.round(t.km)}km` : ""}
                         {t.transport ? ` · ${t.transport}` : ""}
@@ -884,14 +1001,14 @@ function ExpensesSection({
               {/* Field activity behind the spend — AM/PM split and Regular vs Campaign
                   visit mix (from the visits system, this period). */}
               <div className="mt-5">
-                <div className="mb-1 text-xs text-muted-foreground">Field activity (visits this period)</div>
+                <div className="mb-1.5 text-xs font-bold text-slate-500">Field activity (visits this period)</div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} hint={activity.unknownAmpm > 0 ? `${intFmt.format(activity.unknownAmpm)} unmarked` : undefined} />
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
                   <KpiTile label="Regular visits" value={intFmt.format(activity.regularVisits)} />
                   <KpiTile label="Campaign visits" value={intFmt.format(activity.campaignVisits)} />
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground">
+                <div className="mt-2 text-xs text-slate-400">
                   Workload logged on trips: {intFmt.format(payroll.amWorkload)} AM · {intFmt.format(payroll.pmWorkload)} PM
                 </div>
               </div>
@@ -899,8 +1016,8 @@ function ExpensesSection({
           ) : null}
 
           {outstation.hasData ? (
-            <div className="mt-5 rounded-lg border border-border p-3">
-              <div className="mb-2 text-sm font-medium text-foreground">System-submitted outstation (GPS-verified)</div>
+            <div className="mt-5 rounded-[14px] border border-slate-200 p-3.5">
+              <div className="mb-2 text-sm font-bold text-slate-800">System-submitted outstation (GPS-verified)</div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <KpiTile label="Trips" value={intFmt.format(outstation.tripCount)} />
                 <KpiTile label="Claimed" value={compactFmt.format(outstation.claimedTotal)} hint={`expected ${compactFmt.format(outstation.expectedTotal)}`} />
@@ -916,15 +1033,15 @@ function ExpensesSection({
 }
 
 function TrustChip({ ok, okText, badText }: { ok: boolean; okText: string; badText: string }) {
+  const Icon = ok ? BadgeCheck : AlertTriangle;
   return (
     <span
-      className={
-        ok
-          ? "rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-          : "rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-      }
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold shadow-sm",
+        ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700",
+      )}
     >
-      {ok ? "✓ " : "! "}
+      <Icon className="h-3.5 w-3.5" />
       {ok ? okText : badText}
     </span>
   );
