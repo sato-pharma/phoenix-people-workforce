@@ -545,6 +545,16 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
       const payload = text ? JSON.parse(text) : null;
 
       if (!response.ok) {
+        const isTransientServerError = [502, 503, 504].includes(response.status);
+        if (isTransientServerError && attempt < DATABASE_QUERY_MAX_ATTEMPTS - 1) {
+          lastError = new Error(
+            typeof payload?.message === "string"
+              ? payload.message
+              : `Supabase request failed with ${response.status}.`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
         const message =
           typeof payload?.message === "string"
             ? payload.message
