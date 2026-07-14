@@ -43,3 +43,22 @@ export function resolveJobFunctionRole(title: string | null | undefined): Phoeni
   // through the role parser; everything else is the baseline Employee function.
   return normalizeRole(raw);
 }
+
+// Traveling-manager roles whose job is field oversight — District / Regional /
+// National Sales Manager, Training Manager, Product / Group Product Manager.
+// Used to gate expense/outstation analysis (Employee 360, etc.) to the roles
+// that actually generate travel spend. Deliberately an allowlist, not
+// "everyone except Medical Rep" — HR, Finance, CEO, and admin-function titles
+// all fall back to the generic "Employee" job function and must NOT match.
+const EXPENSE_ANALYSIS_ROLES = new Set<PhoenixRole>([
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Training Manager",
+  "Product Manager",
+  "Group Product Manager",
+]);
+
+export function isExpenseAnalysisRole(title: string | null | undefined): boolean {
+  return EXPENSE_ANALYSIS_ROLES.has(resolveJobFunctionRole(title));
+}

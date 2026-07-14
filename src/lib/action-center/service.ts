@@ -521,7 +521,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .order("decision_at", { ascending: false })
         .limit(200),
       db
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("id,specialist,hr_id,expense_date,total,status,approved_by,approved_at")
         .ilike("approved_by", hrId)
         .not("approved_at", "is", null)
