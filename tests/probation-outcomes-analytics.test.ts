@@ -84,4 +84,12 @@ export function runProbationOutcomesAnalyticsTests() {
   const svc = src("src/lib/probation/intelligence/outcomes-analytics.ts");
   assert.match(svc, /decision_snapshot/, "score read from the frozen decision snapshot");
   assert.match(svc, /\.eq\("status", "decided"\)/, "only decided cases are aggregated");
+
+  // Regression (2026-07-14): probation_cases exposes manager_hr_id but has NO manager_name column,
+  // so selecting it threw `column probation_cases.manager_name does not exist` and the analytics page
+  // failed to load for everyone. The service must resolve the manager's display name from
+  // employees.full_name instead of selecting a phantom column.
+  assert.doesNotMatch(svc, /manager_name/, "must not select the non-existent probation_cases.manager_name column");
+  assert.match(svc, /\.from\("employees"\)/, "manager display name resolved from the employees table");
+  assert.match(svc, /full_name/, "manager display name resolved via employees.full_name");
 }
