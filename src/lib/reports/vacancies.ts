@@ -192,46 +192,62 @@ function textInFilter(values: string[]) {
   return `in.(${values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(",")})`;
 }
 
+const TRANSIENT_SERVER_ERRORS = [502, 503, 504];
+const databaseQueryMaxAttempts = 3;
+
 async function supabaseRest<T>(path: string): Promise<T> {
   const url = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/g, "");
   const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    databaseQueryTimeoutMs,
-  );
+  let lastError: unknown;
 
-  try {
-    const response = await fetch(`${url}/rest/v1/${path}`, {
-      cache: "no-store",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
+  for (let attempt = 0; attempt < databaseQueryMaxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      databaseQueryTimeoutMs,
+    );
 
-    if (!response.ok) {
-      const message =
-        typeof payload?.message === "string"
-          ? payload.message
-          : `Supabase request failed with ${response.status}.`;
-      throw new Error(message);
+    try {
+      const response = await fetch(`${url}/rest/v1/${path}`, {
+        cache: "no-store",
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : null;
+
+      if (!response.ok) {
+        const message =
+          typeof payload?.message === "string"
+            ? payload.message
+            : `Supabase request failed with ${response.status}.`;
+        if (TRANSIENT_SERVER_ERRORS.includes(response.status) && attempt < databaseQueryMaxAttempts - 1) {
+          lastError = new Error(message);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        throw new Error(message);
+      }
+
+      return payload as T;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error("Supabase request timed out.");
+      }
+      if (attempt < databaseQueryMaxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return payload as T;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Supabase request timed out.");
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError instanceof Error ? lastError : new Error("Supabase request failed.");
 }
 
 async function loadLookup(table: string, idsToLoad: number[], label = "name") {
