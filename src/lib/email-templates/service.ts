@@ -2107,6 +2107,20 @@ function contextVariables(input: Partial<EmailTemplateContext>, recipientName: s
     returnCallout: text(input.returnCallout),
     returnCalloutText: text(input.returnCalloutText),
     roiWindow: text(input.roiWindow),
+    // Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75). The
+    // renderer resolves ONLY the keys listed here — a token declared on EmailTemplateContext and
+    // allowlisted in placeholderHints still renders EMPTY unless it is mapped here (prod incident
+    // 2026-07-14: DV snapshot + milestone emails went out with blank DV date / evaluator / score).
+    dvDate: text(input.dvDate),
+    evaluatorName: text(input.evaluatorName),
+    evaluatorRole: text(input.evaluatorRole),
+    visitCount: text(input.visitCount),
+    dvProgress: text(input.dvProgress),
+    milestoneDay: text(input.milestoneDay),
+    probationDay: text(input.probationDay),
+    daysRemaining: text(input.daysRemaining),
+    provisionalScore: text(input.provisionalScore),
+    riskStatus: text(input.riskStatus),
   };
 }
 
