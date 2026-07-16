@@ -730,10 +730,59 @@ export type UserAttemptSummary = {
   rows: UserAttemptRow[];
   /** True if either source hit the per-fetch row cap — narrow the date range for full accuracy. */
   truncated: boolean;
+  /** ISO timestamp of the lower bound actually applied to both sources (default window or the caller's dateFrom). */
+  windowFrom: string;
 };
+
+/** Aggregated "everything that didn't resolve to a real app_auth_users account" bucket. */
+export type UnknownAttemptsSummary = {
+  attemptCount: number;
+  distinctCount: number;
+};
+
+/**
+ * Default lookback for the System Issues "Per-User Attempts" tab. All-time history (retention
+ * keeps ~90 days) makes stale/one-off failures dominate the view, so we default to the last
+ * 30 days; an explicit dateFrom from the UI still overrides it.
+ */
+export const DEFAULT_ATTEMPT_WINDOW_DAYS = 30;
 
 const ATTEMPT_FETCH_PAGE_SIZE = 1000;
 const ATTEMPT_FETCH_ROW_CAP = 20_000;
+
+/**
+ * Resolves the effective lower-bound timestamp for the attempts query: the caller's explicit
+ * dateFrom when provided, otherwise DEFAULT_ATTEMPT_WINDOW_DAYS ago. Pure + injectable `now`
+ * so the windowing is unit-testable without a live DB.
+ */
+export function resolveAttemptWindowFrom(dateFrom: string | null | undefined, now: number = Date.now()): string {
+  if (dateFrom) return dateFrom;
+  return new Date(now - DEFAULT_ATTEMPT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Partitions aggregated attempt rows into rows tied to a real account (predicate true) and an
+ * aggregate of everything else (test/synthetic/probe/typo login ids). Distinct unknown users
+ * are counted by canonical HR_ID key so the same fake login across many modules counts once.
+ * Pure — the caller injects `isRealAccount` so this is testable without a live directory/DB.
+ */
+export function partitionUserAttempts<T extends { hrId: string; attemptCount: number }>(
+  rows: T[],
+  isRealAccount: (hrId: string) => boolean,
+): { realRows: T[]; unknownAttempts: UnknownAttemptsSummary } {
+  const realRows: T[] = [];
+  const unknownKeys = new Set<string>();
+  let attemptCount = 0;
+  for (const row of rows) {
+    if (isRealAccount(row.hrId)) {
+      realRows.push(row);
+    } else {
+      attemptCount += row.attemptCount;
+      unknownKeys.add(canonicalHrIdKey(row.hrId) ?? row.hrId);
+    }
+  }
+  return { realRows, unknownAttempts: { attemptCount, distinctCount: unknownKeys.size } };
+}
 
 /**
  * Aggregates app_error_events + failed auth_login_attempts into per-HR_ID, per-module/route
@@ -744,7 +793,9 @@ const ATTEMPT_FETCH_ROW_CAP = 20_000;
  */
 export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Promise<UserAttemptSummary> {
   const supabase = getSupabaseAdmin();
-  const dateFrom = filter.dateFrom ?? null;
+  // Default to a recent window so the tab reflects live activity, not ~90 days of retained
+  // history; an explicit filter.dateFrom still overrides. Applied to BOTH sources below.
+  const windowFrom = resolveAttemptWindowFrom(filter.dateFrom);
   const dateTo = filter.dateTo ? `${filter.dateTo}T23:59:59Z` : null;
 
   type Bucket = {
@@ -805,7 +856,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
 
       if (filter.hrId) query = query.ilike("hr_id", `%${filter.hrId}%`);
-      if (dateFrom) query = query.gte("created_at", dateFrom);
+      query = query.gte("created_at", windowFrom);
       if (dateTo) query = query.lte("created_at", dateTo);
 
       const { data, error } = await query;
@@ -843,7 +894,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
 
       if (filter.hrId) query = query.ilike("login_id", `%${filter.hrId}%`);
-      if (dateFrom) query = query.gte("attempted_at", dateFrom);
+      query = query.gte("attempted_at", windowFrom);
       if (dateTo) query = query.lte("attempted_at", dateTo);
 
       const { data, error } = await query;
@@ -870,5 +921,5 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
   }
 
   const rowsOut = Array.from(buckets.values()).sort((a, b) => b.attemptCount - a.attemptCount);
-  return { rows: rowsOut, truncated };
+  return { rows: rowsOut, truncated, windowFrom };
 }

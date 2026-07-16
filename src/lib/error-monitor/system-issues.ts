@@ -10,7 +10,9 @@ import {
   getActiveErrorSignatures,
   getErrorEvents,
   getUserAttemptSummary,
+  partitionUserAttempts,
   type ErrorEventRow,
+  type UnknownAttemptsSummary,
   type UserAttemptRow,
 } from "@/lib/error-monitor/service";
 import { getRecentGcpLogEntries, type GcpLogEntry } from "@/lib/observability/gcp-logs";
@@ -32,6 +34,7 @@ export type ErrorEventRowWithStatus = ErrorEventRow & { status: IssueStatus; dis
 export type GcpLogEntryWithStatus = GcpLogEntry & { status: IssueStatus; displayMessage: string };
 export type { ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 export type UserAttemptRowWithStatus = UserAttemptRow & { status: IssueStatus; displayMessage: string; employeeName: string | null; employeeRole: string | null };
+export type { UnknownAttemptsSummary } from "@/lib/error-monitor/service";
 
 export async function loadSystemIssuesSnapshot(hoursBack = 24) {
   const currentRelease = getCurrentReleaseTag();
@@ -84,20 +87,28 @@ export async function loadUserAttemptsSnapshot(filter: { hrId?: string | null; d
   ]);
   const now = Date.now();
 
-  return {
-    ...summary,
-    rows: summary.rows.map((row): UserAttemptRowWithStatus => {
-      const identity = directory.get(canonicalHrIdKey(row.hrId) ?? "");
-      return {
-        ...row,
-        displayMessage: decodeErrorMessage(row.sampleMessage).display,
-        employeeName: identity?.name ?? null,
-        employeeRole: identity?.role ?? null,
-        status:
-          row.category === "app_error"
-            ? deriveAppErrorStatus(signatureKey(row.moduleKey, row.route), activeSignatures)
-            : deriveFailedLoginStatus(row.lastSeen, now),
-      };
-    }),
-  };
+  const rowsWithStatus = summary.rows.map((row): UserAttemptRowWithStatus => {
+    const identity = directory.get(canonicalHrIdKey(row.hrId) ?? "");
+    return {
+      ...row,
+      displayMessage: decodeErrorMessage(row.sampleMessage).display,
+      employeeName: identity?.name ?? null,
+      employeeRole: identity?.role ?? null,
+      status:
+        row.category === "app_error"
+          ? deriveAppErrorStatus(signatureKey(row.moduleKey, row.route), activeSignatures)
+          : deriveFailedLoginStatus(row.lastSeen, now),
+    };
+  });
+
+  // Keep only rows that resolve to a real app_auth_users account; fold the rest
+  // (test/synthetic/probe/typo login ids) into an aggregate so genuine probing stays
+  // visible without polluting the per-user list. The directory is the authoritative
+  // "real account" source, so this needs no hardcoded exclusion list to maintain.
+  const { realRows, unknownAttempts } = partitionUserAttempts(
+    rowsWithStatus,
+    (hrId) => directory.get(canonicalHrIdKey(hrId) ?? "") != null,
+  );
+
+  return { ...summary, rows: realRows, unknownAttempts };
 }

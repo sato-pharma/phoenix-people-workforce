@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { computeNewlyArrivedIds } from "@/lib/error-monitor/new-issue-diff";
-import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResult, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
+import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResult, UnknownAttemptsSummary, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
 import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
 import type { DeployTimeline, LoginSecuritySignals, ReproTrailEntry } from "@/lib/error-monitor/service";
@@ -666,7 +666,7 @@ type AppErrorsState = { events: ErrorEventRowWithStatus[] };
 type GcpLogsState =
   | { available: true; entries: GcpLogEntryWithStatus[] }
   | { available: false; entries: []; error: string };
-type AttemptsState = { rows: UserAttemptRowWithStatus[]; truncated: boolean };
+type AttemptsState = { rows: UserAttemptRowWithStatus[]; truncated: boolean; windowFrom: string; unknownAttempts: UnknownAttemptsSummary };
 
 export function SystemIssuesDashboard({
   aiEnabled = false,
@@ -878,6 +878,14 @@ export function SystemIssuesDashboard({
     () => attempts.rows.filter((row) => matchesStatusFilter(row.status, attemptsStatusFilter)),
     [attempts.rows, attemptsStatusFilter],
   );
+
+  // Days actually covered by the applied window (default 30, or the caller's custom dateFrom),
+  // derived from the effective windowFrom the server echoes back — always accurate.
+  const attemptWindowDays = useMemo(() => {
+    const from = attempts.windowFrom ? new Date(attempts.windowFrom).getTime() : Number.NaN;
+    if (!Number.isFinite(from)) return null;
+    return Math.max(1, Math.round((Date.now() - from) / 86_400_000));
+  }, [attempts.windowFrom]);
 
   async function toggleDetails(row: MergedIssueRow) {
     if (expandedRowId === row.id) {
@@ -1235,6 +1243,22 @@ export function SystemIssuesDashboard({
               </p>
             </div>
           )}
+          <div className="flex flex-col gap-1.5 px-1">
+            {attempts.windowFrom && (
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
+                {attemptWindowDays === null
+                  ? `Since ${attempts.windowFrom.slice(0, 10)}`
+                  : `Showing last ${attemptWindowDays} days · since ${attempts.windowFrom.slice(0, 10)}`}
+              </p>
+            )}
+            {attempts.unknownAttempts && attempts.unknownAttempts.attemptCount > 0 && (
+              <p className="text-[11px] font-semibold text-[#94A3B8]">
+                + {attempts.unknownAttempts.attemptCount} failed attempts against{" "}
+                {attempts.unknownAttempts.distinctCount} unknown/non-existent usernames — hidden from this
+                list (test/probe noise); see the Security Lens above for attack patterns.
+              </p>
+            )}
+          </div>
           <div className="rounded-3xl border border-[#E2E8F0] bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
