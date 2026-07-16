@@ -42,7 +42,10 @@ export function runProbationAuditFixesRound2Tests() {
   assert.match(emails, /DV_SNAPSHOT_GRACE_DAYS/, "R6: DV-snapshot recency guard present");
   assert.match(emails, /daysBetween\(d\.dv_date, today\) > DV_SNAPSHOT_GRACE_DAYS/, "R6: old field days skip the snapshot email");
   // ── R10: milestone sweep guards each case ──
-  assert.match(emails, /for \(const c of rows\) \{\s*\n\s*try \{/, "R10: milestone loop wraps each case in try/catch");
+  // Cases fan out via Promise.all (2026-07-16: parallelized to fix a cron timeout — see
+  // notifications-process-cron-504-timeout-fix memory) but each case's body is still
+  // independently try/caught, same guarantee as the original serial for-loop.
+  assert.match(emails, /rows\.map\(async \(c\) => \{\s*\n\s*try \{/, "R10: milestone loop wraps each case in try/catch");
 
   // ── R7: legacy reminder suppressed for employees decided in the new module ──
   const service = src("src/lib/probation/service.ts");

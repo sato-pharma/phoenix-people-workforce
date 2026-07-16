@@ -66,43 +66,48 @@ async function emitForTask(
         : "Probation feedback due";
   const message = `Probation feedback for ${task.employeeHrId} (DV day ${task.dvDate}) is ${state}.`;
 
-  let emitted = 0;
-  for (const recipientHrId of recipients) {
-    await createSystemNotification({
-      actorId: "system",
-      module: "probation",
-      eventType: "reminder_due",
-      title,
-      message,
-      priority: statePriority(state),
-      subjectHrId: task.employeeHrId,
-      recipientHrId,
-      // Telegram carries the full SLA reminder (E3); delivery still gated by the global switch, bot
-      // token, and each recipient's per-user opt-in + connected chat (admin/DB, not code).
-      channels: ["in_app", "email", "telegram"],
-      email: {
-        notificationType: "probation",
-        subject: title,
-        summary: message,
+  // Recipients are independent (each has its own idempotency key, and claimDelivery's atomic
+  // upsert-on-conflict makes concurrent claims race-safe) — dispatch in parallel instead of
+  // serially. With the cron's per-task fan-out also parallel (see processFeedbackSlaReminders),
+  // a serial recipient loop here was part of what made the whole run exceed its 30s step budget
+  // (see 2026-07-15/16 notifications cron 504 outage).
+  await Promise.all(
+    Array.from(recipients).map((recipientHrId) =>
+      createSystemNotification({
+        actorId: "system",
+        module: "probation",
+        eventType: "reminder_due",
         title,
-        tone: state === "overdue" ? "danger" : "warning",
-        metrics: [
-          { label: "Employee", value: task.employeeHrId },
-          { label: "DV date", value: task.dvDate },
-          { label: "Status", value: state },
-          { label: "Hours overdue", value: String(task.sla.hoursOverdue) },
-        ],
-      },
-      metadata: {
-        // Dedup: one notification per (DV-Day, state, recipient). A repeated sweep is a no-op.
-        idempotencyKey: `${slaReminderKey(task.dvDayId, state)}:${recipientHrId}`,
-        dvDayId: task.dvDayId,
-        slaState: state,
-      },
-    }).catch(() => undefined);
-    emitted += 1;
-  }
-  return emitted;
+        message,
+        priority: statePriority(state),
+        subjectHrId: task.employeeHrId,
+        recipientHrId,
+        // Telegram carries the full SLA reminder (E3); delivery still gated by the global switch, bot
+        // token, and each recipient's per-user opt-in + connected chat (admin/DB, not code).
+        channels: ["in_app", "email", "telegram"],
+        email: {
+          notificationType: "probation",
+          subject: title,
+          summary: message,
+          title,
+          tone: state === "overdue" ? "danger" : "warning",
+          metrics: [
+            { label: "Employee", value: task.employeeHrId },
+            { label: "DV date", value: task.dvDate },
+            { label: "Status", value: state },
+            { label: "Hours overdue", value: String(task.sla.hoursOverdue) },
+          ],
+        },
+        metadata: {
+          // Dedup: one notification per (DV-Day, state, recipient). A repeated sweep is a no-op.
+          idempotencyKey: `${slaReminderKey(task.dvDayId, state)}:${recipientHrId}`,
+          dvDayId: task.dvDayId,
+          slaState: state,
+        },
+      }).catch(() => undefined),
+    ),
+  );
+  return recipients.size;
 }
 
 /**
@@ -129,15 +134,18 @@ export async function processFeedbackSlaReminders(
   const withSla = tasks.map((t) => ({ ...t, sla: computeFeedbackSla(t.dvDate, nowIso, config.sla, t.createdAt) }));
 
   const hrApproverHrIds = await resolveHrApproverHrIds();
-  let due = 0, escalated = 0, overdue = 0, notificationsEmitted = 0;
-
+  let due = 0, escalated = 0, overdue = 0;
   for (const task of withSla) {
     const state = task.sla.state;
     if (state === "due") due += 1;
     else if (state === "escalated") escalated += 1;
     else if (state === "overdue") overdue += 1;
-    notificationsEmitted += await emitForTask(task, hrApproverHrIds);
   }
+
+  // Tasks are independent (each's notifications key off its own DV-Day id) — fan out in
+  // parallel rather than a serial per-task await chain (see emitForTask's comment).
+  const emittedPerTask = await Promise.all(withSla.map((task) => emitForTask(task, hrApproverHrIds)));
+  const notificationsEmitted = emittedPerTask.reduce((sum, n) => sum + n, 0);
 
   return { scanned: withSla.length, due, escalated, overdue, notificationsEmitted };
 }
