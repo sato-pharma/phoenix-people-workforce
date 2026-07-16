@@ -124,39 +124,43 @@ async function emitToRecipients(
     templateContext: Record<string, string | null>;
   },
 ): Promise<number> {
-  let emitted = 0;
-  for (const recipientHrId of recipients) {
-    await createSystemNotification({
-      actorId: "system",
-      module: input.module ?? "probation",
-      eventType: input.eventType,
-      title: input.title,
-      message: input.message,
-      priority: input.priority ?? "high",
-      subjectHrId: input.subjectHrId,
-      recipientHrId,
-      // Telegram carries full content (E3); actual delivery still needs the global switch, a bot token,
-      // and each recipient's per-user opt-in + connected chat (admin/DB, not code).
-      channels: ["in_app", "email", "telegram"],
-      actionUrl: input.ctaUrl,
-      email: {
-        templateKey: input.templateKey,
-        notificationType: "probation",
-        ctaHref: input.ctaUrl,
-        ctaLabel: "Open live report",
-        subject: input.title,
-        summary: input.message,
+  // Recipients are independent (own idempotency key, atomic claimDelivery upsert) — dispatch in
+  // parallel. A serial loop here, across every stakeholder of every milestone-crossing case, was
+  // part of what made this step exceed its 30s cron budget (see 2026-07-15/16 notifications cron
+  // 504 outage).
+  await Promise.all(
+    recipients.map((recipientHrId) =>
+      createSystemNotification({
+        actorId: "system",
+        module: input.module ?? "probation",
+        eventType: input.eventType,
         title: input.title,
-        templateContext: input.templateContext,
-      },
-      metadata: {
-        // Dedup: one email per (event, recipient). Re-runs are no-ops.
-        idempotencyKey: `${input.idempotencyKeyBase}:${recipientHrId}`,
-      },
-    }).catch(() => undefined);
-    emitted += 1;
-  }
-  return emitted;
+        message: input.message,
+        priority: input.priority ?? "high",
+        subjectHrId: input.subjectHrId,
+        recipientHrId,
+        // Telegram carries full content (E3); actual delivery still needs the global switch, a bot token,
+        // and each recipient's per-user opt-in + connected chat (admin/DB, not code).
+        channels: ["in_app", "email", "telegram"],
+        actionUrl: input.ctaUrl,
+        email: {
+          templateKey: input.templateKey,
+          notificationType: "probation",
+          ctaHref: input.ctaUrl,
+          ctaLabel: "Open live report",
+          subject: input.title,
+          summary: input.message,
+          title: input.title,
+          templateContext: input.templateContext,
+        },
+        metadata: {
+          // Dedup: one email per (event, recipient). Re-runs are no-ops.
+          idempotencyKey: `${input.idempotencyKeyBase}:${recipientHrId}`,
+        },
+      }).catch(() => undefined),
+    ),
+  );
+  return recipients.length;
 }
 
 /** Send the DV-Day snapshot email after a DV Day is validated. Idempotent per DV-Day. */
@@ -249,38 +253,48 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
     .from("probation_cases").select("id, employee_hr_id, employee_name, hire_date").eq("status", "active");
   const rows = (cases ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null }>;
 
-  let sent = 0;
-  for (const c of rows) {
-   try {
-    const day = currentProbationDay(c.hire_date, today);
-    if (day == null) continue;
-    // Fire a milestone only when it was crossed RECENTLY (within the grace window), not merely "day is
-    // past threshold". Without this, a go-live backfill of cases already well past Day 30/60/75 would
-    // burst every crossed milestone at once (stale "Day 30 early progress" for a rep near their
-    // decision, and a Resend daily-cap risk). The dedup key still makes re-runs within the window no-ops.
-    for (const m of MILESTONES) {
-      if (day < m.day || day > m.day + MILESTONE_GRACE_DAYS) continue;
-      const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
-      const recipients = await resolveStakeholders(c.employee_hr_id, { includeSfe: true });
-      const employeeName = c.employee_name ?? c.employee_hr_id;
-      sent += await emitToRecipients(recipients, {
-        templateKey: m.key,
-        eventType: `milestone_day${m.day}`,
-        subjectHrId: c.employee_hr_id,
-        title: `Probation ${m.label} — ${employeeName}`,
-        message: `${employeeName} reached ${m.label}. Progress: ${ctx.dvProgress} · ${ctx.provisionalScore} · ${ctx.riskStatus}.`,
-        idempotencyKeyBase: `probation:milestone:${c.id}:day${m.day}`,
-        ctaUrl: ctx.reportUrl,
-        templateContext: {
-          employeeName, employeeHrId: c.employee_hr_id, milestoneDay: String(m.day), ...ctx,
-          summary: `${employeeName} reached ${m.label}.`,
-        },
-      });
-    }
-   } catch {
-     // One un-scoreable case (e.g. a transient getCaseScore error) must not abort milestone emails
-     // for the rest of the cohort — log-and-continue, matching the DV-snapshot loop's per-item guard.
-   }
-  }
-  return { scanned: rows.length, sent };
+  // Cases are independent — fan out in parallel instead of a serial per-case await chain. At most
+  // one MILESTONES entry can match a given case (the day-30/60/75 grace windows don't overlap), so
+  // the inner loop stays a simple sequential scan; it's the outer case fan-out (each doing its own
+  // buildCaseContext + resolveStakeholders + email dispatch) that made this step exceed its 30s
+  // cron budget (see 2026-07-15/16 notifications cron 504 outage).
+  const sentPerCase = await Promise.all(
+    rows.map(async (c) => {
+      try {
+        const day = currentProbationDay(c.hire_date, today);
+        if (day == null) return 0;
+        let sentForCase = 0;
+        for (const m of MILESTONES) {
+          // Fire a milestone only when it was crossed RECENTLY (within the grace window), not merely
+          // "day is past threshold". Without this, a go-live backfill of cases already well past Day
+          // 30/60/75 would burst every crossed milestone at once (stale "Day 30 early progress" for a
+          // rep near their decision, and a Resend daily-cap risk). The dedup key still makes re-runs
+          // within the window no-ops.
+          if (day < m.day || day > m.day + MILESTONE_GRACE_DAYS) continue;
+          const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
+          const recipients = await resolveStakeholders(c.employee_hr_id, { includeSfe: true });
+          const employeeName = c.employee_name ?? c.employee_hr_id;
+          sentForCase += await emitToRecipients(recipients, {
+            templateKey: m.key,
+            eventType: `milestone_day${m.day}`,
+            subjectHrId: c.employee_hr_id,
+            title: `Probation ${m.label} — ${employeeName}`,
+            message: `${employeeName} reached ${m.label}. Progress: ${ctx.dvProgress} · ${ctx.provisionalScore} · ${ctx.riskStatus}.`,
+            idempotencyKeyBase: `probation:milestone:${c.id}:day${m.day}`,
+            ctaUrl: ctx.reportUrl,
+            templateContext: {
+              employeeName, employeeHrId: c.employee_hr_id, milestoneDay: String(m.day), ...ctx,
+              summary: `${employeeName} reached ${m.label}.`,
+            },
+          });
+        }
+        return sentForCase;
+      } catch {
+        // One un-scoreable case (e.g. a transient getCaseScore error) must not abort milestone
+        // emails for the rest of the cohort — log-and-continue, matching the DV-snapshot guard.
+        return 0;
+      }
+    }),
+  );
+  return { scanned: rows.length, sent: sentPerCase.reduce((sum, n) => sum + n, 0) };
 }
