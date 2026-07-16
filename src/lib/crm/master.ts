@@ -37,7 +37,7 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
-  { key: "visit_date_time", kind: "date", label: "Visit Date-Time", note: "Date only — the CRM stores no real visit time here (it is always midnight). Use CRM Save Date for when the agent submitted the visit." },
+  { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "The real time the agent saved/submitted this visit in the CRM (Cairo time) — the one authoritative visit timestamp. Logged time, not GPS-verified proof of being on site." },
   { key: "ampm", kind: "text", label: "AM/PM" },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
@@ -53,7 +53,6 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
-  { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "The real time the agent saved/submitted this visit in the CRM (Cairo time). This is when it was logged — not GPS-verified proof of being on site." },
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
@@ -74,7 +73,7 @@ export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
 const VISIT_SELECT =
   "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
   "contact_crm_id, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, double_name, " +
-  "visit_date, visit_date_time, visit_type, visit_type_description, synced_at, raw_payload";
+  "visit_date, visit_type, visit_type_description, synced_at, raw_payload";
 
 const CHECKIN_SELECT =
   "id, crm_checkin_id, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, " +
