@@ -103,3 +103,20 @@ jobs:
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --to-latest
+
+      - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
+        # Each sha-* tag was deployed with --min-instances 1, which reserves 1 vCPU
+        # permanently even at 0% traffic. Left unpruned, these accumulate across every
+        # deploy and eventually exhaust the region's CPU quota, failing the *next*
+        # deploy at the "Deploy new revision" step before it can even take traffic
+        # (happened 2026-07-13 and 2026-07-14 — see docs/disaster-recovery-runbook.md
+        # and gcloud-production-migration-audit.md for prior manual recoveries).
+        # Runs only after a successful promotion, and is best-effort: a cleanup
+        # failure here must never fail an already-live deploy.
+        continue-on-error: true
+        run: |
+          python3 scripts/cleanup-stale-cloud-run-tags.py \
+            --service ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --keep 3
