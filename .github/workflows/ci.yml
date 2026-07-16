@@ -199,6 +199,36 @@ jobs:
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
           PHOENIX_CI_SMOKE_LOGIN: "true"
 
+      # Best-effort: feed the /admin/synthetic-journeys dashboard from CI. This runs
+      # `npm run synthetic:save-report` (scripts/synthetic-save-report.ts →
+      # ingestSyntheticJourneyReport), which writes a run row directly to Supabase using
+      # the service-role key already provided to this job. It is a deliberate NO-OP unless
+      # a report exists at tests/synthetic/report/latest.json — the login smoke test above
+      # does NOT produce one; only a full synthetic run (`npm run synthetic:test` against a
+      # deployed target) does. TO ACTIVATE real ingestion: (1) add a repo secret
+      # SYNTHETIC_BASE_URL pointing at the environment to probe, and (2) add a step/job that
+      # runs `npm run synthetic:test` to generate the report BEFORE this step. Kept
+      # continue-on-error + guarded so a missing report or missing creds can never fail CI.
+      - name: Ingest synthetic-journey report (best-effort, never fails CI)
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional/not-yet-created secret; empty is fine (script defaults baseUrl to "unknown").
+          SYNTHETIC_BASE_URL: ${{ secrets.SYNTHETIC_BASE_URL }}
+        run: |
+          if [ ! -f tests/synthetic/report/latest.json ]; then
+            echo "No synthetic report at tests/synthetic/report/latest.json — nothing to ingest, skipping."
+            exit 0
+          fi
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]; then
+            echo "Supabase service credentials not configured — skipping synthetic ingest."
+            exit 0
+          fi
+          echo "Ingesting synthetic-journey report into Supabase..."
+          npm run synthetic:save-report
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
