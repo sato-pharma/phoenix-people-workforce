@@ -14,6 +14,7 @@ import {
   type UserAttemptRow,
 } from "@/lib/error-monitor/service";
 import { getRecentGcpLogEntries, type GcpLogEntry } from "@/lib/observability/gcp-logs";
+import { getServiceHealthSnapshot, type ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 import {
   deriveAppErrorStatus,
   deriveFailedLoginStatus,
@@ -29,16 +30,20 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type ErrorEventRowWithStatus = ErrorEventRow & { status: IssueStatus; displayMessage: string; employeeName: string | null };
 export type GcpLogEntryWithStatus = GcpLogEntry & { status: IssueStatus; displayMessage: string };
+export type { ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 export type UserAttemptRowWithStatus = UserAttemptRow & { status: IssueStatus; displayMessage: string; employeeName: string | null; employeeRole: string | null };
 
 export async function loadSystemIssuesSnapshot(hoursBack = 24) {
   const currentRelease = getCurrentReleaseTag();
   const currentRevision = getCurrentRevision();
-  const [appErrors, gcpLogs, activeSignatures, directory] = await Promise.all([
+  const [appErrors, gcpLogs, activeSignatures, directory, serviceHealth] = await Promise.all([
     getErrorEvents({ pageSize: 100 }),
     getRecentGcpLogEntries({ hoursBack }),
     getActiveErrorSignatures(currentRelease),
     getAccountDirectory(),
+    // Non-fatal: the reader returns { available: false, error } instead of throwing, so a
+    // missing GCP config / IAM grant never breaks the rest of the snapshot.
+    getServiceHealthSnapshot(),
   ]);
 
   const appErrorsWithStatus = {
@@ -62,7 +67,12 @@ export async function loadSystemIssuesSnapshot(hoursBack = 24) {
       }
     : gcpLogs;
 
-  return { aiEnabled: hasOpenAiApiKey(), appErrors: appErrorsWithStatus, gcpLogs: gcpLogsWithStatus };
+  return {
+    aiEnabled: hasOpenAiApiKey(),
+    appErrors: appErrorsWithStatus,
+    gcpLogs: gcpLogsWithStatus,
+    serviceHealth: serviceHealth satisfies ServiceHealthResult,
+  };
 }
 
 export async function loadUserAttemptsSnapshot(filter: { hrId?: string | null; dateFrom?: string | null; dateTo?: string | null } = {}) {

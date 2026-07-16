@@ -1,11 +1,11 @@
 "use client";
 
-import { AlertTriangle, Bell, Check, CloudOff, Globe, Loader2, Lock, Search, ServerCog, ShieldAlert, ShieldCheck, Sparkles, UsersRound, X } from "lucide-react";
+import { Activity, AlertTriangle, Bell, Check, CloudOff, Gauge, Globe, Loader2, Lock, Search, Server, ServerCog, ShieldAlert, ShieldCheck, Sparkles, Timer, UsersRound, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { computeNewlyArrivedIds } from "@/lib/error-monitor/new-issue-diff";
-import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
+import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResult, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
 import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
 import type { DeployTimeline, LoginSecuritySignals, ReproTrailEntry } from "@/lib/error-monitor/service";
@@ -540,6 +540,128 @@ function TabButton({
   );
 }
 
+function formatPct(value: number | null, digits = 2): string {
+  return value === null ? "—" : `${value.toFixed(digits)}%`;
+}
+
+function formatMs(value: number | null): string {
+  if (value === null) return "—";
+  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+  return `${Math.round(value)}ms`;
+}
+
+function formatCount(value: number | null): string {
+  return value === null ? "—" : value.toLocaleString("en-US");
+}
+
+function HealthTile({
+  icon,
+  label,
+  value,
+  sub,
+  tone = "neutral",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "good" | "bad" | "neutral";
+}) {
+  const valueClass =
+    tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-[#0F172A]";
+  return (
+    <div className="rounded-2xl border border-[#E2E8F0] bg-white/95 p-4">
+      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+        {icon}
+        {label}
+      </p>
+      <p className={`mt-1.5 text-2xl font-black ${valueClass}`}>{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] font-semibold text-[#64748B]">{sub}</p>}
+    </div>
+  );
+}
+
+// Live Cloud Run SLIs (availability / latency / instances) read from Cloud Monitoring by
+// src/lib/observability/gcp-metrics.ts. Shows an explicit "not connected" state — never a
+// misleading blank — when GCP config/IAM is missing.
+function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
+  if (!state.available) {
+    return (
+      <div className="flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-800 shadow-[0_10px_28px_rgba(245,158,11,0.06)]">
+        <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="text-xs font-semibold">
+          <p className="flex items-center gap-1.5 text-sm font-black">
+            <Activity className="h-4 w-4" /> Service Health
+          </p>
+          <p className="mt-1">GCP Cloud Monitoring metrics are unavailable — showing no live availability/latency data.</p>
+          <p className="mt-1 font-mono font-normal text-amber-700">{state.error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const h = state.health;
+  const availabilityTargetPct = h.availabilitySloGoal * 100;
+  const availabilityMet = h.availabilityPct24h !== null && h.availabilityPct24h >= availabilityTargetPct;
+  const latencyTargetMs = h.latencySloThresholdMs;
+  const latencyMet = h.latencyMsP95 !== null && h.latencyMsP95 <= latencyTargetMs;
+
+  return (
+    <div className="rounded-3xl border border-[#E2E8F0] bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">
+          <Activity className="h-3.5 w-3.5 text-emerald-500" /> Service Health — live Cloud Run metrics
+        </p>
+        <span className="text-[10px] font-semibold text-slate-400">
+          availability over {h.availabilityWindowHours}h · latency over {h.latencyWindowHours}h
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <HealthTile
+          icon={<Gauge className="h-3.5 w-3.5" />}
+          label="Availability (24h)"
+          value={formatPct(h.availabilityPct24h)}
+          sub={`target ${availabilityTargetPct.toFixed(1)}% · ${availabilityMet ? "meeting SLO" : "below target"}`}
+          tone={h.availabilityPct24h === null ? "neutral" : availabilityMet ? "good" : "bad"}
+        />
+        <HealthTile
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          label="5xx errors (24h)"
+          value={formatCount(h.error5xxCount24h)}
+          sub={`of ${formatCount(h.requestCount24h)} requests`}
+          tone={h.error5xxCount24h && h.error5xxCount24h > 0 ? "bad" : "neutral"}
+        />
+        <HealthTile
+          icon={<Timer className="h-3.5 w-3.5" />}
+          label="Latency p95"
+          value={formatMs(h.latencyMsP95)}
+          sub={`target ≤ ${formatMs(latencyTargetMs)} (${(h.latencySloGoal * 100).toFixed(0)}% of reqs) · ${
+            h.latencyMsP95 === null ? "no data" : latencyMet ? "within SLO" : "over target"
+          }`}
+          tone={h.latencyMsP95 === null ? "neutral" : latencyMet ? "good" : "bad"}
+        />
+        <HealthTile
+          icon={<Server className="h-3.5 w-3.5" />}
+          label="Instances"
+          value={formatCount(h.currentInstanceCount)}
+          sub="current container count"
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-semibold text-[#64748B]">
+        <span className="flex items-center gap-1.5">
+          <Timer className="h-3 w-3" /> p50 {formatMs(h.latencyMsP50)}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Timer className="h-3 w-3" /> p95 {formatMs(h.latencyMsP95)}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Timer className="h-3 w-3" /> p99 {formatMs(h.latencyMsP99)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 type AppErrorsState = { events: ErrorEventRowWithStatus[] };
 type GcpLogsState =
   | { available: true; entries: GcpLogEntryWithStatus[] }
@@ -551,16 +673,19 @@ export function SystemIssuesDashboard({
   initialAppErrors,
   initialGcpLogs,
   initialAttempts,
+  initialServiceHealth,
 }: {
   aiEnabled?: boolean;
   initialAppErrors: AppErrorsState;
   initialGcpLogs: GcpLogsState;
   initialAttempts: AttemptsState;
+  initialServiceHealth: ServiceHealthResult;
 }) {
   const [activeTab, setActiveTab] = useState<"issues" | "users">("issues");
 
   const [appErrors, setAppErrors] = useState<AppErrorsState>(initialAppErrors);
   const [gcpLogs, setGcpLogs] = useState<GcpLogsState>(initialGcpLogs);
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthResult>(initialServiceHealth);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issuesStatusFilter, setIssuesStatusFilter] = useState<StatusFilter>("all");
   const [timeline, setTimeline] = useState<TimelineState>({ data: null, error: null, loading: true });
@@ -627,10 +752,11 @@ export function SystemIssuesDashboard({
     try {
       const res = await fetch("/api/admin/system-issues");
       if (!res.ok) throw new Error("Failed to refresh issues");
-      const result = (await res.json()) as { appErrors: AppErrorsState; gcpLogs: GcpLogsState };
+      const result = (await res.json()) as { appErrors: AppErrorsState; gcpLogs: GcpLogsState; serviceHealth: ServiceHealthResult };
       if (!isMountedRef.current || seq !== issuesSeqRef.current) return;
       applyAppErrorsResult(result.appErrors.events);
       setGcpLogs(result.gcpLogs);
+      if (result.serviceHealth) setServiceHealth(result.serviceHealth);
     } catch (err) {
       console.error(err);
     } finally {
@@ -902,6 +1028,8 @@ export function SystemIssuesDashboard({
 
   return (
     <div className="space-y-5">
+      <ServiceHealthCard state={serviceHealth} />
+
       <div className="flex flex-wrap gap-2">
         <TabButton
           active={activeTab === "issues"}
