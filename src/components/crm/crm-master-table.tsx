@@ -36,7 +36,8 @@ function formatDateOnly(value: unknown): string {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
 }
 
-/** Date + 12-hour time in Cairo, e.g. "11 Jul 2026, 4:59 PM". */
+/** Date + 12-hour time in Cairo, e.g. "11 Jul 2026, 4:59 PM" — for a true UTC instant we recorded
+ * (synced_at), converted to Cairo. */
 function formatDateTimeCairo(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
@@ -45,10 +46,23 @@ function formatDateTimeCairo(value: unknown): string {
   return `${datePart}, ${timePart}`;
 }
 
-/** Cell rendering: datetimes → Cairo date + time; dates → date only; everything else raw. The
- * full untouched value is always available in the row's raw JSON. */
+/** Vendor timestamps (saveDate / checkDate) are already Cairo wall-clock but stored tagged UTC
+ * (iReports360 sends zone-less local times). Render the stored clock reading with NO timezone
+ * shift, e.g. "16 Jul 2026, 6:13 PM" — converting would read ~2–3h too late. */
+function formatVendorLocal(value: unknown): string {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
+  return `${datePart}, ${timePart}`;
+}
+
+/** Cell rendering: vendor local datetimes render as their stored Cairo wall-clock; our UTC
+ * datetimes convert to Cairo; dates → date only; everything else raw. The full untouched value
+ * is always available in the row's raw JSON. */
 function renderCell(value: unknown, kind: CrmMasterColumn["kind"]): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (kind === "datetime_local") return formatVendorLocal(value);
   if (kind === "datetime") return formatDateTimeCairo(value);
   if (kind === "date") return formatDateOnly(value);
   return String(value);
