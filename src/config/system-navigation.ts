@@ -402,6 +402,15 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Field Coaching",
   },
+  // Single Super-Admin-only sidebar button opening the CRM hub
+  // (app/(admin)/admin/crm/page.tsx, cards in crmPageItems below). The hub is the one
+  // home for all CRM (iReports360) data — sync health + manual pull on the page itself,
+  // plus Visits Report / CRM Integrity / Double Visit Data Integrity as cards.
+  {
+    id: "crm",
+    items: [{ href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] }],
+    label: "CRM",
+  },
 
   // ── Tier 6: Sales operations ──────────────────────────────────────────────────
   // Items ordered: dashboards → data entry → upload → data management → QA/diagnostics
@@ -1592,27 +1601,6 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["Marketing Manager"],
   },
   {
-    href: "/admin/double-visit-data-integrity",
-    icon: TriangleAlert,
-    label: "Double Visit Data Integrity",
-    description: "Data integrity checks for double-visit records.",
-    roles: ["Super Admin"],
-  },
-  {
-    href: "/admin/visits-report",
-    icon: FileSpreadsheet,
-    label: "Visits Report",
-    description: "Field visit activity report.",
-    roles: ["Super Admin"],
-  },
-  {
-    href: "/admin/crm-integrity",
-    icon: MapPinned,
-    label: "CRM Integrity",
-    description: "CRM data integrity and correlation checks.",
-    roles: ["Super Admin"],
-  },
-  {
     href: "/coaching/import",
     icon: FileUp,
     label: "Import History",
@@ -1625,6 +1613,35 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
     label: "Resigned Evaluations",
     description: "Archived coaching evaluations for resigned employees.",
     permissions: [{ action: "create", resource: "coaching" }],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── CRM hub (app/(admin)/admin/crm/page.tsx) ────────────────────────────────────
+// The single Super-Admin home for CRM (iReports360) data. The hub page itself shows
+// sync health + a manual "sync now"; these sub-modules render as cards. Relocated here
+// from fieldCoachingPageItems so every CRM surface lives under one parent tab. All CRM
+// pulling/reading is centralized in src/lib/crm/*.
+export const crmPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/visits-report",
+    icon: FileSpreadsheet,
+    label: "Visits Report",
+    description: "Browse & export every synced CRM visit; resolve unmapped agents.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/crm-integrity",
+    icon: MapPinned,
+    label: "CRM Integrity",
+    description: "Correlate visits with GPS check-ins; flag save-lag and impossible travel.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/double-visit-data-integrity",
+    icon: TriangleAlert,
+    label: "Double Visit Data Integrity",
+    description: "Data-integrity checks for double-visit records.",
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -1668,5 +1685,6 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: peopleManagementPageItems, label: "People Management" },
   { items: outstationExpensesPageItems, label: "Outstation Expenses" },
   { items: fieldCoachingPageItems, label: "Field Coaching" },
+  { items: crmPageItems, label: "CRM" },
   { items: pharmacovigilancePageItems, label: "Pharmacovigilance" },
 ] as const;
