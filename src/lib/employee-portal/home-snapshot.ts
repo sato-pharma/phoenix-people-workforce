@@ -1,5 +1,6 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import { queryVisitsLimited } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
@@ -398,22 +399,21 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
         )
       : Promise.resolve(null);
 
-  // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads the
-  // live iReports360 mirror directly (see double-visit-analytics/service.ts for the same
-  // double_crm_id + visit_type filter this module uses everywhere else): Regular/Campaign
-  // visits with a double-visit partner.
+  // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads via the
+  // CRM read layer (the shared double_crm_id + visit_type predicate): Regular/Campaign visits
+  // with a double-visit partner.
   const dvPromise =
     isMr && hrId
       ? wrapPromise(
-          supabase
-            .from("ireports360_visits")
-            .select("visit_date")
-            .eq("agent_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-            .not("double_crm_id", "is", null)
-            .neq("double_crm_id", 0)
-            .in("visit_type", [0, -8])
-            .order("visit_date", { ascending: false })
-            .limit(500),
+          queryVisitsLimited<{ visit_date: string }>({
+            agentHrIds: [canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()],
+            doubleOnly: true,
+            visitTypes: [0, -8],
+            columns: "visit_date",
+            orderBy: "visit_date",
+            ascending: false,
+            limit: 500,
+          }),
         )
       : Promise.resolve(null);
 
@@ -555,8 +555,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   let doubleVisitPulse: PortalHomeSnapshot["doubleVisitPulse"] = null;
   try {
     const dvData = dvResult.status === "fulfilled" ? dvResult.value : null;
-    if (dvData && "data" in dvData && Array.isArray(dvData.data)) {
-      const rows = dvData.data as Array<{ visit_date: string }>;
+    if (Array.isArray(dvData)) {
+      const rows = dvData as Array<{ visit_date: string }>;
       const thisMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
       if (rows.length === 0) {
         doubleVisitPulse = { daysSinceLastDv: null, dvsThisMonth: 0, dvsLast90Days: 0 };
