@@ -75,39 +75,58 @@ const CHECKIN_SELECT =
 
 export type CrmMasterRow = Record<string, unknown> & { id: string; raw_payload: Record<string, unknown> | null };
 
+/** Agent-mapping filter (visits): show all, only rows with a resolved agent_hr_id, or only unmapped. */
+export type CrmMasterMappingStatus = "all" | "agent_mapped" | "agent_unmapped";
+
+/** AM/PM filter (visits). */
+export type CrmMasterAmpm = "all" | "AM" | "PM";
+
 export type CrmMasterData = {
+  agentHrId: string | null;
+  ampm: CrmMasterAmpm;
   columns: readonly CrmMasterColumn[];
   configured: boolean;
   dataset: CrmMasterDataset;
   dateFrom: string | null;
   dateTo: string | null;
   latestSyncRuns: VisitsSyncRun[];
+  mappingStatus: CrmMasterMappingStatus;
   page: number;
   pageSize: number;
+  pageSizeOptions: readonly number[];
   rows: CrmMasterRow[];
   schemaReady: boolean;
   search: string | null;
   totalCount: number;
+  visitType: string | null;
 };
 
 export type CrmMasterFilter = {
+  agentHrId?: string | null;
+  ampm?: CrmMasterAmpm | null;
   dataset?: CrmMasterDataset;
   dateFrom?: string | null;
   dateTo?: string | null;
+  mappingStatus?: CrmMasterMappingStatus | null;
   page?: number;
   pageSize?: number;
   search?: string | null;
+  visitType?: string | null;
 };
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+export const CRM_MASTER_PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder (too deep to
    thread through a helper — same pattern as crm/reads.ts). */
 type MasterQuery = {
   eq: (...args: any[]) => MasterQuery;
   gte: (...args: any[]) => MasterQuery;
+  ilike: (...args: any[]) => MasterQuery;
+  is: (...args: any[]) => MasterQuery;
   lte: (...args: any[]) => MasterQuery;
+  not: (...args: any[]) => MasterQuery;
   or: (...args: any[]) => MasterQuery;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -124,27 +143,46 @@ function sanitizeSearch(term: string): string {
  */
 export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<CrmMasterData> {
   const dataset: CrmMasterDataset = input.dataset === "checkins" ? "checkins" : "visits";
+  const isVisits = dataset === "visits";
   const page = Math.max(1, input.page ?? 1);
-  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(10, input.pageSize ?? DEFAULT_PAGE_SIZE));
+  const requested = input.pageSize ?? DEFAULT_PAGE_SIZE;
+  const pageSize = (CRM_MASTER_PAGE_SIZE_OPTIONS as readonly number[]).includes(requested)
+    ? requested
+    : Math.min(MAX_PAGE_SIZE, Math.max(10, requested));
   const dateFrom = input.dateFrom || null;
   const dateTo = input.dateTo || null;
   const search = input.search?.trim() || null;
+  const agentHrId = input.agentHrId?.trim() || null;
+  const ampm: CrmMasterAmpm = input.ampm === "AM" || input.ampm === "PM" ? input.ampm : "all";
+  const visitType = input.visitType?.trim() || null;
+  const mappingStatus: CrmMasterMappingStatus =
+    input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped" ? input.mappingStatus : "all";
   const configured = isIReports360Configured();
 
   const columns = dataset === "checkins" ? CRM_CHECKIN_COLUMNS : CRM_VISIT_COLUMNS;
 
-  const empty = (schemaReady: boolean): CrmMasterData => ({
+  // Fields echoed back so the UI can seed its filter inputs.
+  const echo = {
+    agentHrId,
+    ampm,
     columns,
     configured,
     dataset,
     dateFrom,
     dateTo,
-    latestSyncRuns: [],
+    mappingStatus,
     page,
     pageSize,
+    pageSizeOptions: CRM_MASTER_PAGE_SIZE_OPTIONS,
+    search,
+    visitType,
+  };
+
+  const empty = (schemaReady: boolean): CrmMasterData => ({
+    ...echo,
+    latestSyncRuns: [],
     rows: [],
     schemaReady,
-    search,
     totalCount: 0,
   });
 
@@ -160,6 +198,18 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   let filtered = base as unknown as MasterQuery;
   if (dateFrom) filtered = filtered.gte(dateColumn, dataset === "checkins" ? `${dateFrom}T00:00:00` : dateFrom);
   if (dateTo) filtered = filtered.lte(dateColumn, dataset === "checkins" ? `${dateTo}T23:59:59` : dateTo);
+  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
+  if (agentHrId) {
+    const escaped = sanitizeSearch(agentHrId);
+    if (escaped) filtered = filtered.ilike("agent_hr_id", `%${escaped}%`);
+  }
+  if (isVisits && ampm !== "all") filtered = filtered.eq("ampm", ampm);
+  if (isVisits && visitType) {
+    const escaped = sanitizeSearch(visitType);
+    if (escaped) filtered = filtered.ilike("visit_type_description", `%${escaped}%`);
+  }
+  if (isVisits && mappingStatus === "agent_mapped") filtered = filtered.not("agent_hr_id", "is", null);
+  if (isVisits && mappingStatus === "agent_unmapped") filtered = filtered.is("agent_hr_id", null);
   if (search) {
     const escaped = sanitizeSearch(search);
     if (escaped) {
@@ -182,17 +232,10 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   }
 
   return {
-    columns,
-    configured,
-    dataset,
-    dateFrom,
-    dateTo,
+    ...echo,
     latestSyncRuns,
-    page,
-    pageSize,
     rows: (data ?? []) as unknown as CrmMasterRow[],
     schemaReady: true,
-    search,
     totalCount: count ?? 0,
   };
 }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { FileSpreadsheet, MapPinned, TriangleAlert } from "lucide-react";
 
 import { CrmMasterTable } from "@/components/crm/crm-master-table";
-import { getCrmMasterData, type CrmMasterDataset } from "@/lib/crm/master";
+import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -50,11 +50,28 @@ export default async function CrmHubPage({
   const dateTo = dateParam(params.dateTo);
   const search = stringParam(params.search);
   const page = intParam(params.page, 1);
+  const pageSize = intParam(params.pageSize, 50);
+  const agentHrId = stringParam(params.agentHrId);
+  const ampm: CrmMasterAmpm | null = params.ampm === "AM" || params.ampm === "PM" ? params.ampm : null;
+  const visitType = stringParam(params.visitType);
+  const mappingStatus: CrmMasterMappingStatus | null =
+    params.mappingStatus === "agent_mapped" || params.mappingStatus === "agent_unmapped" ? params.mappingStatus : null;
 
-  const data = await getCrmMasterData({ dataset, dateFrom, dateTo, page, search });
+  const data = await getCrmMasterData({
+    agentHrId,
+    ampm,
+    dataset,
+    dateFrom,
+    dateTo,
+    mappingStatus,
+    page,
+    pageSize,
+    search,
+    visitType,
+  });
 
   // Remount the client table when any URL-derived input changes so its filter inputs re-seed.
-  const tableKey = `${dataset}:${dateFrom}:${dateTo}:${page}:${search}`;
+  const tableKey = `${dataset}:${dateFrom}:${dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}`;
 
   return (
     <div className="space-y-5">
