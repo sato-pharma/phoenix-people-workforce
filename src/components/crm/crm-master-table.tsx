@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Braces, ChevronLeft, ChevronRight, Database, Search, SlidersHorizontal } from "lucide-react";
+import { Braces, ChevronLeft, ChevronRight, Database, Info, Search, SlidersHorizontal } from "lucide-react";
 
 import type {
   CrmMasterAmpm,
@@ -29,9 +29,28 @@ function formatCairo(iso: string | null): string {
   }).format(date);
 }
 
-/** Faithful cell rendering — value exactly as stored (raw-mirror view); null/blank → dash. */
-function renderCell(value: unknown): string {
+/** Date only, e.g. "11 Jul 2026" (UTC — a plain calendar date has no time-of-day). */
+function formatDateOnly(value: unknown): string {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+}
+
+/** Date + 12-hour time in Cairo, e.g. "11 Jul 2026, 4:59 PM". */
+function formatDateTimeCairo(value: unknown): string {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo" }).format(date);
+  return `${datePart}, ${timePart}`;
+}
+
+/** Cell rendering: datetimes → Cairo date + time; dates → date only; everything else raw. The
+ * full untouched value is always available in the row's raw JSON. */
+function renderCell(value: unknown, kind: CrmMasterColumn["kind"]): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (kind === "datetime") return formatDateTimeCairo(value);
+  if (kind === "date") return formatDateOnly(value);
   return String(value);
 }
 
@@ -378,8 +397,11 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-100 text-slate-500">
                   {data.columns.map((col) => (
-                    <th className="whitespace-nowrap px-3 py-2 font-semibold" key={col.key}>
-                      {col.label}
+                    <th className="whitespace-nowrap px-3 py-2 font-semibold" key={col.key} title={col.note ?? undefined}>
+                      <span className={`inline-flex items-center gap-1 ${col.note ? "cursor-help" : ""}`}>
+                        {col.label}
+                        {col.note ? <Info aria-hidden="true" className="h-3 w-3 text-orange-400" /> : null}
+                      </span>
                     </th>
                   ))}
                   <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">Raw</th>
@@ -414,7 +436,7 @@ function RowGroup({
       <tr className="border-b border-slate-100 text-slate-700 hover:bg-orange-50/40">
         {columns.map((col) => (
           <td className="whitespace-nowrap px-3 py-2" key={col.key}>
-            {renderCell(row[col.key])}
+            {renderCell(row[col.key], col.kind)}
           </td>
         ))}
         <td className="whitespace-nowrap px-3 py-2 text-right">

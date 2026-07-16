@@ -18,11 +18,13 @@ import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export type CrmMasterDataset = "visits" | "checkins";
 
-/** A displayed column: the raw DB key + a human label + a rendering hint. */
+/** A displayed column: the raw DB key + a human label + a rendering hint + an optional
+ * header tooltip. `date` renders date-only; `datetime` renders date + time in Cairo. */
 export type CrmMasterColumn = {
   key: string;
   label: string;
   kind: "text" | "number" | "date" | "datetime" | "coord";
+  note?: string;
 };
 
 /** Ordered columns shown for the visits dataset (every stored field except raw_payload, which is
@@ -30,7 +32,7 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
-  { key: "visit_date_time", kind: "datetime", label: "Visit Date-Time" },
+  { key: "visit_date_time", kind: "date", label: "Visit Date-Time", note: "Date only — the CRM stores no real visit time here (it is always midnight). Use CRM Save Date for when the agent submitted the visit." },
   { key: "ampm", kind: "text", label: "AM/PM" },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
@@ -46,14 +48,14 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
-  { key: "crm_save_date", kind: "datetime", label: "CRM Save Date" },
-  { key: "synced_at", kind: "datetime", label: "Synced At" },
+  { key: "crm_save_date", kind: "datetime", label: "CRM Save Date", note: "The real time the agent saved/submitted this visit in the CRM (Cairo time). This is when it was logged — not GPS-verified proof of being on site." },
+  { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
 /** Ordered columns shown for the check-ins dataset. */
 export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_checkin_id", kind: "number", label: "CRM Check-in ID" },
-  { key: "check_date", kind: "datetime", label: "Check Date" },
+  { key: "check_date", kind: "datetime", label: "Check Date", note: "Real GPS check-in time from the agent's phone (Cairo time)." },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
@@ -61,7 +63,7 @@ export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "lat", kind: "coord", label: "Latitude" },
   { key: "lon", kind: "coord", label: "Longitude" },
   { key: "address", kind: "text", label: "Address" },
-  { key: "synced_at", kind: "datetime", label: "Synced At" },
+  { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
 const VISIT_SELECT =
