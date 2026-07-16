@@ -50,22 +50,27 @@ async function resolveStakeholders(
 
   const recipients = new Set<string>();
 
-  const [ceo, hr] = await Promise.all([
+  // None of these role lookups depend on each other — resolve them concurrently
+  // instead of one-at-a-time (this function is called once per case/milestone, so a
+  // sequential chain here multiplied straight into the sweep's total wall-clock).
+  const [ceo, hr, sfe, tm, nsmList] = await Promise.all([
     activeHrIdsByRole(["CEO"]),
     activeHrIdsByRole(["HR Manager", "Super Admin"]),
+    opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
+    opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
+    activeHrIdsByRole(["National Sales Manager"]),
   ]);
   ceo.forEach((h) => recipients.add(h));
   hr.forEach((h) => recipients.add(h));
-
-  if (opts.includeSfe) (await activeHrIdsByRole(["SFE Manager"])).forEach((h) => recipients.add(h));
-  if (opts.includeTm) (await activeHrIdsByRole(["Training Manager"])).forEach((h) => recipients.add(h));
+  sfe.forEach((h) => recipients.add(h));
+  tm.forEach((h) => recipients.add(h));
 
   // DM = the employee's direct manager.
   const dm = normalizeHrId(employee?.managerHrId);
   if (dm) recipients.add(dm);
 
   // NSM = walk the management chain up to the National Sales Manager.
-  const nsmSet = new Set(await activeHrIdsByRole(["National Sales Manager"]));
+  const nsmSet = new Set(nsmList);
   let cur = managerOf(employee, byHrId);
   const seen = new Set<string>();
   while (cur) {
