@@ -106,3 +106,20 @@ jobs:
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --to-latest
+
+      - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
+        # Staging chains off every prod deploy (see header comment above), so it
+        # accumulates a sha-* tag just as fast as phoenix-hr and was found with 16
+        # piled up (vs. phoenix-hr's 4) during the 2026-07-14 incident triage. It has
+        # no --min-instances set (defaults to 0), so it isn't at the same acute
+        # CPU-quota-exhaustion risk as phoenix-hr today — but pruning here keeps both
+        # services' cleanup logic identical and avoids unbounded revision growth if
+        # min-instances is ever added to staging later. Best-effort: never fails an
+        # already-live deploy.
+        continue-on-error: true
+        run: |
+          python3 scripts/cleanup-stale-cloud-run-tags.py \
+            --service ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --keep 3
