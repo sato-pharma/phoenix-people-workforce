@@ -43,15 +43,18 @@ async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
 const resolveHrApproverHrIds = () => activeHrIdsByRole(["HR Manager", "Super Admin"]);
 const resolveCeoHrIds = () => activeHrIdsByRole(["CEO"]);
 
-// The dedicated "Phoenix System Administrator" account (owner-designated as the System Admin CC on
-// the reminder-2 escalation, MOD-2 2026-07-17). It's the PHX-1 account (login_id admin-HR); its
-// email is routed to the owner's inbox via employees.work_email. Resolved defensively by hr_id so a
-// rename of the display name doesn't break it.
+// The System Admin CC on the reminder-2 escalation (MOD-2, owner decision 2026-07-17). The synthetic
+// "Phoenix System Administrator" account (PHX-1) has no deliverable mailbox — employees.work_email is
+// UNIQUE and the intended address omar.anwar@satopharma.com already belongs to B-10 — so the escalation
+// is routed to the real system-administrator account B-10 (Omar Anwar, HR Manager + Super Admin), whose
+// work_email is that inbox. Resolved defensively by hr_id + is_active so a deactivation drops it rather
+// than emailing a dead account. (PHX-1 remains the cap-exempt in-app oversight account, see notification-cap.)
+const SYSTEM_ADMIN_CC_HR_ID = "B-10";
 async function resolveSystemAdminHrId(): Promise<string | null> {
   const { data } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .eq("hr_id", "PHX-1")
+    .eq("hr_id", SYSTEM_ADMIN_CC_HR_ID)
     .eq("is_active", true)
     .maybeSingle();
   return normalizeHrId((data as { hr_id?: string | null } | null)?.hr_id);

@@ -95,8 +95,10 @@ export function runProbationFeedbackWorkflowTests() {
     "reminder 3 (overdue) CCs CEO + HR + Super Admin");
   assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
     "HR must not be CC'd on the escalated warning (volume fix preserved)");
-  assert.match(rem, /\.eq\("hr_id", "PHX-1"\)/,
-    "the System Admin CC resolves the dedicated PHX-1 account, not a display name");
+  assert.match(rem, /const SYSTEM_ADMIN_CC_HR_ID = "B-10"/,
+    "the System Admin CC routes to the real system-administrator account B-10 (PHX-1 has no deliverable mailbox)");
+  assert.match(rem, /\.eq\("hr_id", SYSTEM_ADMIN_CC_HR_ID\)/,
+    "the System Admin CC resolves that account by hr_id + is_active");
   // MOD-3 daily cap: an over-cap recipient is filtered out of the SLA reminder audience this run.
   assert.match(rem, /\.filter\(\(h\) => parties\.cap\.allow\(h\)\)/,
     "the per-recipient daily cap (MOD-3) gates SLA reminder recipients");
