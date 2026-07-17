@@ -280,6 +280,11 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       <DashboardsGrid items={DASHBOARDS} />
 
+      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        Incentives shown below are not yet confirmed by HR.
+      </div>
+
       <div className="grid gap-3 lg:grid-cols-2">
         <RankingPanel
           title="Top Medical Reps"
