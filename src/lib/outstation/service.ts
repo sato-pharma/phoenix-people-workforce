@@ -381,24 +381,21 @@ function recommendationForResult(params: {
 // at least one double-visit and at most 2 campaign visits (the rest regular). Meeting /
 // other expense types and all other roles are unaffected. Thresholds are shared with the
 // pure decision engine (decision.ts) so there is a single source of truth.
-function assertCampaignRuleForTravel(input: {
+function campaignRuleRejection(input: {
   role: string;
   expenseType: OutstationExpenseType;
   evidence: DoubleVisitExpenseWorkloadEvidence;
-}) {
-  if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return;
+}): string | null {
+  if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return null;
   const campaignVisits = input.evidence.campaignVisits ?? 0;
   const totalDvVisits = campaignVisits + (input.evidence.regularVisits ?? 0);
   if (totalDvVisits <= 0) {
-    throw new Error(
-      "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.",
-    );
+    return "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.";
   }
   if (campaignVisits > MAX_CAMPAIGN_VISITS) {
-    throw new Error(
-      `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${campaignVisits}. The rest must be regular visits.`,
-    );
+    return `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${campaignVisits}. The rest must be regular visits.`;
   }
+  return null;
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -1204,10 +1201,6 @@ export async function submitOutstationRequest(
     throw new Error(evidenceValidation.message);
   }
 
-  if (calculation.eligibilityStatus === "not_eligible") {
-    throw new Error(calculation.eligibilityReason);
-  }
-
   await assertOutstationExpenseWorkflowTransition({
     access,
     actionKey: "submit",
@@ -1247,20 +1240,29 @@ export async function submitOutstationRequest(
     tripEndDate: calculation.tripEndDate,
     tripStartDate: calculation.tripStartDate,
   });
-  assertCampaignRuleForTravel({
+  const campaignRejectionReason = campaignRuleRejection({
     role: calculation.employeeRole,
     expenseType: calculation.expenseType,
     evidence: workloadPayload.workload_evidence_snapshot,
   });
+  // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
+  // campaign rule; otherwise accept. Rejected requests are PERSISTED (not thrown) so the
+  // employee sees them in their expense list with a reason, and a Super Admin can override.
+  const systemRejectionReason =
+    calculation.eligibilityStatus === "not_eligible"
+      ? calculation.eligibilityReason
+      : campaignRejectionReason;
+  const decisionStatus = systemRejectionReason ? "rejected_by_system" : "accepted_by_system";
+  const decisionReason = systemRejectionReason ?? calculation.approvalReason;
 
   const insertPayload = {
     allowance_amount: calculation.allowanceAmount,
     allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
     attachment_count: calculation.attachmentCount,
-    approval_reason: calculation.approvalReason,
+    approval_reason: decisionReason,
     approval_recommendation: calculation.approvalRecommendation,
     area: calculation.employeeArea,
-    calculation_status: "submitted",
+    calculation_status: decisionStatus,
     captured_accuracy_meters: calculation.capturedAccuracyMeters,
     captured_at: calculation.capturedAt,
     captured_latitude: calculation.capturedLatitude,
@@ -1303,7 +1305,7 @@ export async function submitOutstationRequest(
     residence_longitude: residence?.residenceLongitude ?? null,
     route_polyline: calculation.routePolyline,
     same_day_trip: calculation.sameDayTrip,
-    status: "submitted",
+    status: decisionStatus,
     submitted_at: calculation.submittedAt,
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
@@ -1361,7 +1363,13 @@ export async function submitOutstationRequest(
       ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
       : data.notes,
   });
-  await approveOutstationRequestForPayroll(submitted.id, systemAccessContext);
+  if (decisionStatus === "rejected_by_system") {
+    // Persisted, employee notified, no payroll push. Super Admin can override later.
+    await notifyOutstationDecision({ comment: decisionReason, decision: "reject", request: submitted });
+    return submitted;
+  }
+  await pushAcceptedOutstationExpenseToPayroll(submitted, systemAccessContext);
+  await notifyOutstationSubmitted(submitted);
   return submitted;
 }
 
@@ -1760,7 +1768,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
   request: OutstationExpenseRequest;
 }) {
   if (!input.linkedPayroll) return 0;
-  if (input.request.status !== "approved") return 0;
+  if (!input.request.status.startsWith("accepted")) return 0;
   if (input.linkedPayroll.importedPayrollBatchId || input.linkedPayroll.importedToPayrollAt) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
@@ -1777,6 +1785,43 @@ async function syncLinkedOutstationPayrollExpense(input: {
   return saved.length;
 }
 
+// Pushes an already-accepted outstation request into payroll (idempotent — skips if the
+// linked expense row was already imported into a paid batch). Used by the auto-accept at
+// submit and by a Super Admin's accept override.
+async function pushAcceptedOutstationExpenseToPayroll(
+  request: OutstationExpenseRequest,
+  access: AccessContext,
+): Promise<number> {
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
+  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+    return 0;
+  }
+  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
+    reportId: linkedPayroll?.reportId ?? null,
+  });
+  const savedExpenses = await savePayrollExpenseApprovals({
+    fileName: `outstation-request-${request.id}.workflow`,
+    records: [expenseRecord],
+    reportId: linkedPayroll?.reportId ?? null,
+  }, access);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(request.id),
+    entityType: "outstation_request",
+    newValues: {
+      expenseTripId: expenseRecord.tripId,
+      payrollExpenseRows: savedExpenses.length,
+      status: request.status,
+    },
+    summary: `Outstation request ${request.id} accepted; expense pushed to payroll.`,
+  });
+  return savedExpenses.length;
+}
+
+// Accept an outstation request and push it to payroll. At submit this runs as the system
+// (accepted_by_system); a Super Admin may also call it to OVERRIDE a system rejection
+// (accepted_by_admin). It intentionally does not block on the prior status — accepting a
+// rejected request is the whole point of the override.
 export async function approveOutstationRequestForPayroll(
   requestId: number,
   access: AccessContext,
@@ -1786,18 +1831,16 @@ export async function approveOutstationRequestForPayroll(
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
-  if (existing.status === "rejected") {
-    throw new Error("Rejected outstation requests cannot be approved for payroll.");
-  }
-  if (existing.eligibilityStatus === "not_eligible") {
-    throw new Error("Not eligible outstation requests cannot be approved for payroll.");
-  }
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
   if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
-    throw new Error("This outstation expense has already been added to payroll and cannot be approved again.");
+    throw new Error("This outstation expense has already been added to payroll and cannot be changed.");
   }
 
-  if (existing.status !== "approved") {
+  // Validate the accept transition through the workflow registry for the normal path (a
+  // freshly submitted / needs-review request). A Super Admin OVERRIDE of an already-decided
+  // request skips it — accepting a rejected request is not a registry transition, and the
+  // Super-Admin code gate above is the control.
+  if (!existing.status.startsWith("rejected") && !existing.status.startsWith("accepted")) {
     await assertOutstationExpenseWorkflowTransition({
       access,
       actionKey: "approve",
@@ -1806,18 +1849,17 @@ export async function approveOutstationRequestForPayroll(
     });
   }
 
+  const acceptedStatus = access.scope === "system" ? "accepted_by_system" : "accepted_by_admin";
   const now = new Date().toISOString();
-  const approvedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .update({
       approval_reason: cleanText(options.comment) ?? existing.approvalReason,
-      calculation_status: "approved",
-      status: "approved",
+      calculation_status: acceptedStatus,
+      status: acceptedStatus,
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "approved"])
     .select("*")
     .maybeSingle();
 
@@ -1827,37 +1869,24 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
-  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
-    reportId: linkedPayroll?.reportId ?? null,
-  });
-  const savedExpenses = await savePayrollExpenseApprovals({
-    fileName: `outstation-request-${request.id}.workflow`,
-    records: [expenseRecord],
-    reportId: linkedPayroll?.reportId ?? null,
-  }, access);
+  const payrollExpenseRows = await pushAcceptedOutstationExpenseToPayroll(request, access);
 
   await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? approvedBy,
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
     entityId: String(request.id),
     entityType: "outstation_request",
-    newValues: {
-      expenseTripId: expenseRecord.tripId,
-      payrollExpenseRows: savedExpenses.length,
-      status: request.status,
-    },
-    oldValues: {
-      status: existing.status,
-    },
-    summary: `Outstation request ${request.id} approved for payroll expense import.`,
+    newValues: { status: request.status },
+    oldValues: { status: existing.status },
+    summary: `Outstation request ${request.id} accepted (${acceptedStatus}).`,
   });
 
-  if (existing.status !== "approved") {
+  if (!existing.status.startsWith("accepted")) {
     await notifyOutstationSubmitted(request);
   }
 
   return {
-    expenseTripId: expenseRecord.tripId,
-    payrollExpenseRows: savedExpenses.length,
+    expenseTripId: outstationPayrollTripId(request.id),
+    payrollExpenseRows,
     request,
   };
 }
@@ -2453,10 +2482,10 @@ export async function rejectOutstationRequestAsAdmin(
     throw new Error("A rejection reason is required.");
   }
 
-  if (existing.status !== "rejected") {
+  if (!existing.status.startsWith("rejected")) {
     await assertOutstationExpenseWorkflowTransition({
       access,
-      actionKey: existing.status === "approved" ? "reject_before_payroll" : "reject",
+      actionKey: existing.status.startsWith("accepted") ? "reject_before_payroll" : "reject",
       expectedNextStatus: "rejected",
       status: existing.status,
     });
@@ -2472,7 +2501,7 @@ export async function rejectOutstationRequestAsAdmin(
     ),
   );
 
-  if (existing.status === "approved" && linkedRows.length > 0) {
+  if (existing.status.startsWith("accepted") && linkedRows.length > 0) {
     const { error: deletePayrollError } = await supabase
       .from("outstation_expenses")
       .delete()
@@ -2503,12 +2532,12 @@ export async function rejectOutstationRequestAsAdmin(
     .update({
       approval_reason: comment,
       approval_recommendation: "reject",
-      calculation_status: "rejected",
-      status: "rejected",
+      calculation_status: "rejected_by_admin",
+      status: "rejected_by_admin",
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "approved", "rejected"])
+    .in("status", ["submitted", "approved", "rejected", "needs_review", "accepted_by_system", "accepted_by_admin", "rejected_by_system", "rejected_by_admin"])
     .select("*")
     .maybeSingle();
 
@@ -2525,7 +2554,7 @@ export async function rejectOutstationRequestAsAdmin(
     entityType: "outstation_request",
     newValues: {
       approvalReason: comment,
-      removedPayrollExpenseRows: existing.status === "approved" ? linkedRows.length : 0,
+      removedPayrollExpenseRows: existing.status.startsWith("accepted") ? linkedRows.length : 0,
       status: rejected.status,
     },
     oldValues: {
