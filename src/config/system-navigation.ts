@@ -458,7 +458,9 @@ const adminNavigationSectionSeeds = [
   // ── Tier 7b: Master data governance ──────────────────────────────────────────
   // Standalone read-only master-data page. Deliberately NOT nested under the Marketing
   // Requests or Customer Validation surfaces — it governs the customer↔pharmacy relationship
-  // on its own route. Phase 1 is company-wide oversight only (Super Admin + CEO).
+  // on its own route. The page's two cards still grant CEO oversight, but the
+  // sidebar link is Super Admin + SFE Manager only: CEO is hidden from the
+  // sidebar by owner request (see the roles list below).
   {
     id: "master-data",
     items: [
@@ -467,9 +469,11 @@ const adminNavigationSectionSeeds = [
       // masterDataPageItems below). One of its two cards ("Customers Database")
       // is itself another consolidated hub (app/(admin)/admin/customers-
       // database/page.tsx) — nesting a hub-card inside a hub is fine, it still
-      // navigates to that page's own real destination. roles is the union of
-      // both cards' own roles.
-      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // navigates to that page's own real destination. The hub cards still grant
+      // CEO (see masterDataPageItems), but the sidebar link is deliberately
+      // narrowed to Super Admin + SFE Manager: CEO is hidden from the sidebar by
+      // owner request, so this list is intentionally NOT the union of the cards.
+      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Master Data",
   },

@@ -85,19 +85,25 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
   const cleanRows = (rows ?? []).filter((row) => String(row.value ?? "").trim());
   if (cleanRows.length === 0) return "";
 
-  // Zebra striping (owner feedback, 2026-07-17): a flat unstyled list of label/value pairs was
-  // hard to scan. Alternating row backgrounds make each field a distinct, readable line — this is
-  // the shared table every notification-type email renders through (metadataRows), so the fix
-  // applies everywhere, not just probation.
+  // Premium zebra-striped details table. Row striping is applied inline (email clients
+  // routinely drop <style>, and almost none honor :nth-child), with a matching class so the
+  // dark-mode blocks in the document <style> can re-tint the stripes. Wrapped in a rounded,
+  // bordered shell for a document-grade look.
+  const zebraBase = "#ffffff";
+  const zebraAlt = "#f4f7fb";
   return `
-    <table class="phoenix-metadata" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0 0;width:100%;border-collapse:collapse;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;mso-table-lspace:0pt;mso-table-rspace:0pt">
+    <table class="phoenix-metadata" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 0;width:100%;border-collapse:separate;border-spacing:0;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;mso-table-lspace:0pt;mso-table-rspace:0pt">
       ${cleanRows
         .map((row, index) => {
-          const rowStyle = index % 2 === 1 ? "background:#f8fafc" : "background:#ffffff";
+          const isAlt = index % 2 === 1;
+          const rowBg = isAlt ? zebraAlt : zebraBase;
+          const isLast = index === cleanRows.length - 1;
+          const cellBorder = isLast ? "" : "border-bottom:1px solid #edf1f6;";
+          const altClass = isAlt ? " phoenix-metadata-row-alt" : "";
           return `
-            <tr style="${rowStyle}">
-              <td class="phoenix-muted" style="padding:10px 12px 10px 0;${rowStyle};${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.5">${escapeAndIsolate(row.label)}</td>
-              <td class="phoenix-text" style="padding:10px 0 10px 12px;${rowStyle};${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
+            <tr class="phoenix-metadata-row${altClass}" bgcolor="${rowBg}">
+              <td class="phoenix-muted phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:12px 16px;background:${rowBg};${cellBorder}${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;line-height:1.5;vertical-align:middle">${escapeAndIsolate(row.label)}</td>
+              <td class="phoenix-text phoenix-metadata-cell${altClass}" bgcolor="${rowBg}" style="padding:12px 16px;background:${rowBg};${cellBorder}${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right;vertical-align:middle;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
             </tr>`;
         })
         .join("")}
@@ -179,6 +185,8 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
         .phoenix-title { color:#ffffff !important; }
         .phoenix-header-subtitle { color:#dbeafe !important; -webkit-text-fill-color:#dbeafe !important; }
         .phoenix-metadata { border-color:#334155 !important; }
+        .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
+        .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
         .phoenix-divider { background:#334155 !important; }
         .phoenix-auto-note { background:#42210f !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
         .phoenix-action-primary { background:#f97316 !important; border-color:#fb923c !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
@@ -198,6 +206,8 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
       [data-ogsc] .phoenix-text strong,
       [data-ogsc] .phoenix-text td { color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
       [data-ogsc] .phoenix-muted { color:#cbd5e1 !important; -webkit-text-fill-color:#cbd5e1 !important; }
+      [data-ogsc] .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
+      [data-ogsc] .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
       [data-ogsc] .phoenix-auto-note { background:#42210f !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
       [data-ogsc] .phoenix-action-primary { background:#f97316 !important; border-color:#fb923c !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
       [data-ogsc] .phoenix-action-secondary { background:#334155 !important; border-color:#64748b !important; color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }

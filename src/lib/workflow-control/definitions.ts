@@ -174,7 +174,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
     status: "Active",
     riskLevel: "Medium",
     summary: "Standard expenses and outstation travel: validation, evidence, approval, payroll import.",
-    modulesAffected: n("outstation_expense_requests", "outstation_location_audit_logs", "outstation_expenses", "storage (evidence)"),
+    modulesAffected: n("outstation_expense_requests", "outstation_expenses", "storage (evidence)"),
     subflows: [
       {
         key: "expense",
