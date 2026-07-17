@@ -59,6 +59,9 @@ type Props = {
   companyRequests?: CompanyRequestItem[] | null;
   companyRequestsExportTitle?: string;
   companyRequestsEmptyLabel?: string;
+  // Overrides the tab's displayed label (defaults to "Company Requests") — e.g. plans use
+  // "Company Plans" for the identical pending+decided, all-roles, read-only oversight view.
+  companyRequestsTabLabel?: string;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -99,6 +102,7 @@ export function ApprovalsWorkspace({
   companyRequests,
   companyRequestsExportTitle,
   companyRequestsEmptyLabel,
+  companyRequestsTabLabel,
 }: Props) {
   type TabKey = "pending" | "history" | "my-requests" | "approval-scope" | "company-requests" | "all-decisions";
   const [tab, setTab] = useState<TabKey>(initialTab);
@@ -111,7 +115,7 @@ export function ApprovalsWorkspace({
     { key: "history", label: "Response history", count: history.length, icon: Clock },
     { key: "my-requests", label: "My Requests", count: myRequests.length, icon: ClipboardList },
     ...(showApprovalScopeTab ? [{ key: "approval-scope" as const, label: "Who I Approve", count: approvalScope.totalPeople, icon: Users }] : []),
-    ...(showCompanyRequestsTab ? [{ key: "company-requests" as const, label: "Company Requests", count: companyRequests.length, icon: ListChecks }] : []),
+    ...(showCompanyRequestsTab ? [{ key: "company-requests" as const, label: companyRequestsTabLabel ?? "Company Requests", count: companyRequests.length, icon: ListChecks }] : []),
     ...(showCompanyWideTab ? [{ key: "all-decisions" as const, label: "All Decisions", count: companyWide.length, icon: Building2 }] : []),
   ];
 

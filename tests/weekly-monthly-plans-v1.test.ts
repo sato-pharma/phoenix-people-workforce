@@ -28,6 +28,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("HR Specialist", "Talent Acquisition"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Marketing Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("SFE Manager"), false);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("District Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Regional Manager"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Medical Rep"), false);
 

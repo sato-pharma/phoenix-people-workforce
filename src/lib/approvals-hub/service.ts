@@ -1702,6 +1702,57 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   return items;
 }
 
+/** Maps every plan status to the same tone vocabulary the vacation/excuse company views use. */
+function planStatusTone(status: string): CompanyRequestStatusTone {
+  if (status === "manager_rejected" || status === "ceo_rejected") return "rejected";
+  if (status === "manager_returned" || status === "ceo_returned") return "returned";
+  if (status === "final_approved" || status === "hr_acknowledged" || status === "ceo_approved") return "approved";
+  if (status === "submitted" || status === "edit_requested" || status === "details_requested" || status === "manager_approved") return "pending";
+  return "neutral";
+}
+
+/**
+ * Every submitted plan company-wide (pending AND decided) — CEO + Super Admin oversight only.
+ * Unlike the vacation/excuse "Company Requests" views, this does NOT exclude the field force:
+ * a District Manager's plans belong here just like anyone else's. Excludes only "draft" rows
+ * (never actually submitted, or currently back under revision after a `revise` action).
+ */
+export async function getCompanyPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
+  if (!canSeeCeoApprovalTabs(access)) {
+    throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
+  }
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
+    .neq("status", "draft")
+    .order("submitted_at", { ascending: false })
+    .limit(1000);
+  if (error) {
+    console.error("[approvals-hub] getCompanyPlanRequests query failed", { role: access.role, error });
+    return [];
+  }
+
+  const items: CompanyRequestItem[] = [];
+  for (const row of (data as Array<Record<string, unknown>> | null) ?? []) {
+    const status = String(row.status ?? "");
+    const id = String(row.id ?? "");
+    items.push({
+      id,
+      href: planApprovalHref(access, id),
+      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeHrId: String(row.employee_hr_id ?? ""),
+      submitterTitle: row.employee_job_title ? String(row.employee_job_title) : null,
+      typeLabel: String(row.plan_kind ?? "weekly") === "monthly" ? "Monthly" : "Weekly",
+      requestDate: String(row.period_start_date ?? ""),
+      submittedAt: String(row.submitted_at ?? ""),
+      status,
+      statusLabel: humanizeStatus(status),
+      statusTone: planStatusTone(status),
+    });
+  }
+  return items;
+}
+
 // ── Plan workspace (page-ready data for the 4-tab body) ───────────────────────
 
 export type PlanWorkspaceData = {
@@ -1711,6 +1762,8 @@ export type PlanWorkspaceData = {
   history: ResponderHistoryItem[];
   pendingCount: number;
   companyWide: CompanyWideDecisionItem[] | null;
+  // CEO + Super Admin only — the "Company Plans" oversight tab (pending AND decided, all roles).
+  companyRequests: CompanyRequestItem[] | null;
 };
 
 function planStageStatusLabel(stage: PlanApprovalStage): string {
@@ -1722,11 +1775,13 @@ function planStageStatusLabel(stage: PlanApprovalStage): string {
 
 export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanWorkspaceData> {
   const showCompanyWide = isPlanHrActor(access);
-  const [buckets, myRequests, history, companyWide] = await Promise.all([
+  const showCeoTabs = canSeeCeoApprovalTabs(access);
+  const [buckets, myRequests, history, companyWide, companyRequests] = await Promise.all([
     getPlanApprovalsForResponder(access),
     getMyPlanRequestItems(access),
     getResponderPlanHistory(access),
     showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
+    showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
   ]);
   const toCard = (item: PlanBucketItem): ApprovalPendingCard => ({
     id: item.id,
@@ -1743,5 +1798,6 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     history,
     pendingCount: buckets.awaiting.length,
     companyWide,
+    companyRequests,
   };
 }
