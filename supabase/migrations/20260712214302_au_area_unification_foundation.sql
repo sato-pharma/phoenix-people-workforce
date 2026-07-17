@@ -64,7 +64,7 @@ create table au.line_area_map (
   dm_seat_id text references au.seats(seat_id) on delete restrict,
   rep_seat_id text references au.seats(seat_id) on delete restrict,
   other_type text,
-  staffed_in_line_code text references au.lines(line_code) on delete restrict,
+  staffed_in_line_code text, -- comma-separated line_code(s); can hold multiple (e.g. 'cns, pedia'), so intentionally NOT an FK (matches staging reality + the documented design in au_area_unification_schema.sql).
   carries_target boolean generated always as (area_state in ('occupied','vacant_will_hire')) stored,
   effective_from date not null default '2026-07-13',
   effective_to date,

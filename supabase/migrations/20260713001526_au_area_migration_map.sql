@@ -1,9 +1,17 @@
 -- Old area_id -> canonical mapping used to retire the 86 legacy areas across all modules.
 -- 78 area rows (70 high-confidence + 8 ambiguous best-guess), 6 regions, 2 offices (kept, not collapsed).
+-- SAFE: drops/recreates only the au-schema mapping table this migration owns; public.* is untouched.
+-- NOTE: the old_area_id values below are STAGING ids and are illustrative only (see
+-- docs/area-unification/PHASE8-migration-packaging.md). The real production remap is a separate
+-- Phase-9 cutover migration built against production area ids.
 drop table if exists au.area_migration_map;
 create table au.area_migration_map (
   old_area_id bigint primary key,
-  canonical_code text references au.canonical_areas(area_code),
+  -- Not an FK: au.canonical_areas is only populated by the reference-data seed (20260713040000),
+  -- which sorts AFTER this migration. Constraining it here caused an FK-violation hard-fail on a
+  -- fresh production apply. These codes are illustrative staging data, so a plain text column is
+  -- correct and makes this migration order-independent.
+  canonical_code text,
   kind text not null check (kind in ('area','region','office')),
   confidence text,  -- high | ambiguous | null
   note text
