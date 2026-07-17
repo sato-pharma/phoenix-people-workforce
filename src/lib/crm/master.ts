@@ -23,6 +23,7 @@ export type CrmMasterDataset =
   | "double_visits"
   | "vacations"
   | "regular_no_checkin"
+  | "regular_dv_no_checkin"
   | "crm_issues";
 
 /** All datasets a tab can show, in display order. */
@@ -32,6 +33,7 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "double_visits", label: "Double Visits" },
   { id: "vacations", label: "Vacations" },
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
+  { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
   { id: "crm_issues", label: "CRM Issues" },
 ];
 
@@ -140,7 +142,7 @@ const CRM_ISSUE_COLUMNS: readonly CrmMasterColumn[] = [CRM_ISSUE_COLUMN, ...CRM_
 /** Columns shown for a given dataset/tab. */
 function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
-  if (dataset === "vacations" || dataset === "regular_no_checkin") return CRM_VISIT_BASE_COLUMNS;
+  if (dataset === "vacations" || dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
   if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
   return CRM_VISIT_COLUMNS; // visits, double_visits
 }
@@ -345,10 +347,15 @@ function attachIssueReason(rows: CrmMasterRow[]): void {
  * (the tab filters to it); for visits/double it's derived from the in-memory check-in correlation
  * (checkin_id null). Datasets that don't correlate (vacations, crm_issues) keep the raw type. */
 function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[]): void {
-  const knowsCheckin = dataset === "visits" || dataset === "double_visits" || dataset === "regular_no_checkin";
+  const knowsCheckin =
+    dataset === "visits" ||
+    dataset === "double_visits" ||
+    dataset === "regular_no_checkin" ||
+    dataset === "regular_dv_no_checkin";
+  const alwaysReclassified = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin";
   for (const row of rows) {
     const isRegular = row.visit_type === 0;
-    const reclassified = dataset === "regular_no_checkin" ? true : knowsCheckin && isRegular && row.checkin_id == null;
+    const reclassified = alwaysReclassified ? true : knowsCheckin && isRegular && row.checkin_id == null;
     row.effective_type = reclassified
       ? "Campaign — reclassified (Regular, no check-in)"
       : (typeof row.visit_type_description === "string" && row.visit_type_description) || String(row.visit_type ?? "—");
@@ -391,6 +398,9 @@ function applyMasterFilters(
   if (dataset === "double_visits") q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
   if (dataset === "regular_no_checkin") q = q.eq("reclassified_no_checkin", true);
+  if (dataset === "regular_dv_no_checkin") {
+    q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
+  }
   if (dataset === "crm_issues") {
     q = q.or("agent_hr_id.is.null,and(double_crm_id.not.is.null,double_crm_id.neq.0,double_hr_id.is.null)");
   }
@@ -481,7 +491,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   if (!(await isCrmVisitsSchemaReady())) return empty(false);
 
   const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
@@ -532,7 +542,7 @@ export async function getCrmMasterExportRows(
   if (!(await isCrmVisitsSchemaReady())) return emptyResult;
 
   const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
