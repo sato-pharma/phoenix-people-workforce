@@ -10,14 +10,16 @@ import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup 
 
 export const dynamic = "force-dynamic";
 
-const SOURCE_OF_SALES_EXCLUDED_ROLES = ["CEO", "Marketing Manager"] as const;
+const SOURCE_OF_SALES_EXCLUDED_ROLES = ["Marketing Manager"] as const;
 
 export default async function SourceOfSalesToolsPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Matches the sidebar button's own gate: sales:read is the broadest of the 11
-  // cards' own gates, but CEO/Marketing Manager have sales:read without
-  // sales:import — excluding them here too avoids landing them on an empty hub.
+  // Mirrors the sidebar button's gate (excludedRoles: ["Marketing Manager"]).
+  // Marketing Manager has sales:read but is excluded from every card and lacks
+  // sales:import, so its hub is genuinely empty — redirect it. CEO is NOT
+  // excluded: it can open the Source of Sales Dash card, so it sees a one-card
+  // hub (listing CEO here previously bounced it to the employee portal).
   if (
     !(await canAccess(access, "sales", "read")) ||
     (SOURCE_OF_SALES_EXCLUDED_ROLES as readonly string[]).includes(access.role)
