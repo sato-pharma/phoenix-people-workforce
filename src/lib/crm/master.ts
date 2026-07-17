@@ -21,6 +21,7 @@ export type CrmMasterDataset =
   | "visits"
   | "checkins"
   | "double_visits"
+  | "triple_visits"
   | "vacations"
   | "regular_no_checkin"
   | "regular_dv_no_checkin"
@@ -31,11 +32,17 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "visits", label: "Visits" },
   { id: "checkins", label: "Check-ins" },
   { id: "double_visits", label: "Double Visits" },
+  { id: "triple_visits", label: "Triple Visits" },
   { id: "vacations", label: "Vacations" },
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
   { id: "crm_issues", label: "CRM Issues" },
 ];
+
+/** Confidence labels for a detected triple visit — shared by the Triple Visits tab column and the
+ * Double Visits "Triple?" flag so both read identically. */
+const TRIPLE_CONFIRMED = "Confirmed — same doctor";
+const TRIPLE_UNSPECIFIED = "Contact unspecified — same day";
 
 /** DB view (migration crm_effective_visit_type_view) exposing has_checkin + effective_visit_type +
  * reclassified_no_checkin. Used only for the "Regular · No Check-in" tab's DB-level filter/count;
@@ -139,12 +146,76 @@ const CRM_ISSUE_COLUMN: CrmMasterColumn = {
 
 const CRM_ISSUE_COLUMNS: readonly CrmMasterColumn[] = [CRM_ISSUE_COLUMN, ...CRM_VISIT_BASE_COLUMNS];
 
+/** The "Triple?" flag shown on the Double Visits tab: set when a double visit is part of a triple
+ * (a third person was also stacked on it that day), naming who the third person is. */
+const CRM_TRIPLE_FLAG_COLUMN: CrmMasterColumn = {
+  key: "triple_flag",
+  kind: "text",
+  label: "Triple?",
+  note: "Flagged when this double visit is actually part of a TRIPLE — a third person was also stacked on the same contact/day. Shows who the third person is. '—' means a plain double visit.",
+};
+
+/** Double Visits tab = the visit columns with the "Triple?" flag inserted right after the double
+ * visitor's name, so the triple signal sits next to the pair it describes. */
+const CRM_DOUBLE_VISIT_COLUMNS: readonly CrmMasterColumn[] = CRM_VISIT_COLUMNS.flatMap((col) =>
+  col.key === "double_name" ? [col, CRM_TRIPLE_FLAG_COLUMN] : [col],
+);
+
+/** Triple Visits tab columns: one row per detected triple — the rep→middle→top chain, the contact,
+ * the two source visit IDs, and a confidence flag (same-doctor vs same-day-only). */
+export const CRM_TRIPLE_COLUMNS: readonly CrmMasterColumn[] = [
+  {
+    key: "confidence",
+    kind: "text",
+    label: "Confidence",
+    note: "Confirmed — same doctor: all three were logged at the SAME contact that day. Contact unspecified — same day: the accompaniment chain (rep←middle←top) is explicit and same-day, but no specific doctor was recorded (contact id 0).",
+  },
+  { key: "visit_date", kind: "date", label: "Date" },
+  { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
+  { key: "contact_name", kind: "text", label: "Contact Name" },
+  {
+    key: "base_name",
+    kind: "text",
+    label: "Rep (base)",
+    note: "The field rep at the bottom of the chain — logged the visit, accompanied by the middle manager.",
+  },
+  { key: "base_hr_id", kind: "text", label: "Rep HR ID" },
+  {
+    key: "mid_name",
+    kind: "text",
+    label: "Middle Manager",
+    note: "The bridge of the triple: accompanied the rep AND was themselves accompanied by the top manager.",
+  },
+  { key: "mid_hr_id", kind: "text", label: "Middle HR ID" },
+  {
+    key: "top_name",
+    kind: "text",
+    label: "Top Manager",
+    note: "The most senior of the three — accompanied the middle manager.",
+  },
+  { key: "top_hr_id", kind: "text", label: "Top HR ID" },
+  {
+    key: "base_visit_id",
+    kind: "number",
+    label: "Rep Visit ID",
+    note: "The rep's visit record (agent = rep, double = middle manager).",
+  },
+  {
+    key: "bridge_visit_id",
+    kind: "number",
+    label: "Manager Visit ID",
+    note: "The middle manager's visit record (agent = middle manager, double = top manager) — the bridge that links the chain.",
+  },
+];
+
 /** Columns shown for a given dataset/tab. */
 function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
   if (dataset === "vacations" || dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
   if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
-  return CRM_VISIT_COLUMNS; // visits, double_visits
+  if (dataset === "triple_visits") return CRM_TRIPLE_COLUMNS;
+  if (dataset === "double_visits") return CRM_DOUBLE_VISIT_COLUMNS;
+  return CRM_VISIT_COLUMNS; // visits
 }
 
 const VISIT_SELECT =
@@ -362,6 +433,157 @@ function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[]): v
   }
 }
 
+/** Lightweight double-visit row used to detect triples. */
+type TripleDvRow = {
+  crm_visit_id: number | null;
+  visit_date: string | null;
+  agent_crm_id: number | null;
+  agent_name: string | null;
+  agent_hr_id: string | null;
+  double_crm_id: number | null;
+  double_name: string | null;
+  double_hr_id: string | null;
+  contact_crm_id: number | null;
+  contact_name: string | null;
+};
+
+/**
+ * Detect TRIPLE visits over a date range. A triple is the rare chain where a manager M is the
+ * `double` (partner) on a rep R's visit AND the `agent` on M's own visit whose `double` is a higher
+ * manager T — so three people (R → M → T) were stacked at one contact/day. In mirror terms: two
+ * double-visit rows in the SAME (contact, day) where rowA.double_crm_id == rowB.agent_crm_id (M is
+ * the bridge), with R, M, T all distinct. Confidence: "confirmed" when the shared contact is a real
+ * doctor (contact_crm_id ≠ 0), "unspecified" when contact is 0 (chain is explicit and same-day but
+ * no doctor was recorded). Resigned agents are excluded (same rule as every CRM tab). Returns the
+ * per-triple rows (for the Triple Visits tab) plus a visit-id → third-person map (for the Double
+ * Visits "Triple?" flag). Bounded to 50k double-visit rows in range (ample; prod has ~dozens).
+ */
+async function computeTriplesInRange(range: {
+  dateFrom: string | null;
+  dateTo: string | null;
+}): Promise<{ rows: CrmMasterRow[]; byVisitId: Map<number, { third: string; unspecified: boolean }> }> {
+  const supabase = getSupabaseAdmin();
+  // Walk pages of double-visit rows (PostgREST caps a single request's row count, so a lone
+  // .limit() would silently truncate and miss triples) — same paging pattern as the export.
+  const PAGE = 1000;
+  const MAX_ROWS = 60000;
+  const dv: TripleDvRow[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const base = supabase
+      .from(CRM_VISITS_TABLE)
+      .select(
+        "crm_visit_id, visit_date, agent_crm_id, agent_name, agent_hr_id, double_crm_id, double_name, double_hr_id, contact_crm_id, contact_name",
+      )
+      .not("double_crm_id", "is", null)
+      .neq("double_crm_id", 0);
+    let q = base as unknown as MasterQuery;
+    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
+      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    }
+    if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
+    if (range.dateTo) q = q.lte("visit_date", range.dateTo);
+    const { data, error } = await (q as unknown as typeof base)
+      .order("visit_date", { ascending: false })
+      .order("crm_visit_id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error || !data) {
+      if (dv.length === 0) return { rows: [], byVisitId: new Map() };
+      break;
+    }
+    const pageRows = data as unknown as TripleDvRow[];
+    dv.push(...pageRows);
+    if (pageRows.length < PAGE) break;
+  }
+
+  // Group double-visit rows by (contact, day). contact 0 groups all unspecified-contact rows of the day.
+  const groups = new Map<string, TripleDvRow[]>();
+  for (const r of dv) {
+    if (r.agent_crm_id == null || r.double_crm_id == null || !r.visit_date) continue;
+    const contactKey = r.contact_crm_id ?? 0;
+    const day = String(r.visit_date).slice(0, 10);
+    const key = `${contactKey}|${day}`;
+    const list = groups.get(key);
+    if (list) list.push(r);
+    else groups.set(key, [r]);
+  }
+
+  const seen = new Set<string>();
+  const rows: CrmMasterRow[] = [];
+  const byVisitId = new Map<number, { third: string; unspecified: boolean }>();
+  const noteVisit = (id: unknown, third: string, unspecified: boolean) => {
+    if (typeof id !== "number") return;
+    const prev = byVisitId.get(id);
+    // Prefer a confirmed-contact label over an unspecified one if a visit is in several triples.
+    if (!prev || (prev.unspecified && !unspecified)) byVisitId.set(id, { third, unspecified });
+  };
+
+  for (const list of groups.values()) {
+    // Index rows in this group by agent so we can find the bridge (rowA.double == rowB.agent).
+    const byAgent = new Map<number, TripleDvRow[]>();
+    for (const r of list) {
+      const a = r.agent_crm_id as number;
+      const l = byAgent.get(a);
+      if (l) l.push(r);
+      else byAgent.set(a, [r]);
+    }
+    for (const a of list) {
+      const baseAgent = a.agent_crm_id as number;
+      const mid = a.double_crm_id as number;
+      if (baseAgent === mid) continue; // a row's own agent ≠ its double
+      const bridges = byAgent.get(mid);
+      if (!bridges) continue;
+      for (const b of bridges) {
+        const top = b.double_crm_id as number;
+        if (top === mid) continue; // bridge row's agent ≠ its double
+        if (top === baseAgent) continue; // base ≠ top → three distinct people
+        const contactKey = a.contact_crm_id ?? 0;
+        const day = String(a.visit_date).slice(0, 10);
+        const dedupe = `${day}|${contactKey}|${baseAgent}|${mid}|${top}`;
+        if (seen.has(dedupe)) continue;
+        seen.add(dedupe);
+        const unspecified = contactKey === 0;
+        const confidence = unspecified ? TRIPLE_UNSPECIFIED : TRIPLE_CONFIRMED;
+        rows.push({
+          id: dedupe,
+          confidence,
+          visit_date: a.visit_date,
+          contact_crm_id: a.contact_crm_id,
+          contact_name: a.contact_name,
+          base_name: a.agent_name,
+          base_hr_id: a.agent_hr_id,
+          mid_name: a.double_name, // == b.agent_name
+          mid_hr_id: a.double_hr_id,
+          top_name: b.double_name,
+          top_hr_id: b.double_hr_id,
+          base_visit_id: a.crm_visit_id,
+          bridge_visit_id: b.crm_visit_id,
+          raw_payload: { base_visit_id: a.crm_visit_id, bridge_visit_id: b.crm_visit_id, confidence },
+        } as CrmMasterRow);
+        // Flag both source visits on the Double Visits tab with the OTHER person in the triple.
+        noteVisit(a.crm_visit_id, b.double_name || `#${top}`, unspecified);
+        noteVisit(b.crm_visit_id, a.agent_name || `#${baseAgent}`, unspecified);
+      }
+    }
+  }
+
+  rows.sort((x, y) => String(y.visit_date).localeCompare(String(x.visit_date)));
+  return { rows, byVisitId };
+}
+
+/** Double Visits tab: set `triple_flag` from the triple membership map (naming the third person). */
+function attachTripleFlag(
+  rows: CrmMasterRow[],
+  byVisitId: Map<number, { third: string; unspecified: boolean }>,
+): void {
+  for (const row of rows) {
+    const id = typeof row.crm_visit_id === "number" ? row.crm_visit_id : null;
+    const hit = id != null ? byVisitId.get(id) : undefined;
+    row.triple_flag = hit
+      ? `Triple — also ${hit.third}${hit.unspecified ? " (contact unspecified)" : ""}`
+      : "—";
+  }
+}
+
 /** Normalize the requested dataset to a known value. */
 function normalizeDataset(value: CrmMasterDataset | undefined): CrmMasterDataset {
   return value && CRM_MASTER_DATASETS.some((d) => d.id === value) ? value : "visits";
@@ -429,9 +651,19 @@ function applyMasterFilters(
   return q;
 }
 
-/** Merge derived columns onto rows (nearest check-in for visit datasets, issue reason for issues). */
-async function attachDerived(dataset: CrmMasterDataset, rows: CrmMasterRow[]): Promise<void> {
+/** Merge derived columns onto rows (nearest check-in for visit datasets, triple flag for double
+ * visits, issue reason for issues). `range` scopes the triple detection to the same dates. */
+async function attachDerived(
+  dataset: CrmMasterDataset,
+  rows: CrmMasterRow[],
+  range: { dateFrom: string | null; dateTo: string | null },
+): Promise<void> {
   if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
+  if (dataset === "double_visits") {
+    // Flag the double visits that are actually part of a triple (third person stacked that day).
+    const { byVisitId } = await computeTriplesInRange(range);
+    attachTripleFlag(rows, byVisitId);
+  }
   if (dataset === "crm_issues") attachIssueReason(rows);
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
 }
@@ -490,6 +722,23 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
 
   if (!(await isCrmVisitsSchemaReady())) return empty(false);
 
+  // Triple visits are a derived analytic (a self-join across visit rows), not a single-table filter:
+  // detect them in memory over the date range, then paginate the computed result.
+  if (dataset === "triple_visits") {
+    const [{ rows: allTriples }, latestSyncRuns] = await Promise.all([
+      computeTriplesInRange({ dateFrom, dateTo }),
+      getLatestVisitsSyncRuns(6),
+    ]);
+    const start = (page - 1) * pageSize;
+    return {
+      ...echo,
+      latestSyncRuns,
+      rows: allTriples.slice(start, start + pageSize),
+      schemaReady: true,
+      totalCount: allTriples.length,
+    };
+  }
+
   const supabase = getSupabaseAdmin();
   const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
@@ -510,7 +759,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   }
 
   const rows = (data ?? []) as unknown as CrmMasterRow[];
-  await attachDerived(dataset, rows);
+  await attachDerived(dataset, rows, { dateFrom, dateTo });
 
   return { ...echo, latestSyncRuns, rows, schemaReady: true, totalCount: count ?? 0 };
 }
@@ -540,6 +789,12 @@ export async function getCrmMasterExportRows(
 
   const emptyResult = { columns, dataset, rows: [] as CrmMasterRow[], truncated: false };
   if (!(await isCrmVisitsSchemaReady())) return emptyResult;
+
+  // Triple visits: computed in memory (self-join), so export all detected triples for the range.
+  if (dataset === "triple_visits") {
+    const { rows } = await computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo });
+    return { columns, dataset, rows, truncated: false };
+  }
 
   const supabase = getSupabaseAdmin();
   const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
@@ -571,6 +826,6 @@ export async function getCrmMasterExportRows(
     }
   }
 
-  await attachDerived(dataset, rows);
+  await attachDerived(dataset, rows, { dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo });
   return { columns, dataset, rows, truncated };
 }

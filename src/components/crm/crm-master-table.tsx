@@ -20,6 +20,7 @@ const DATASET_TABS: Array<{ id: CrmMasterDataset; label: string }> = [
   { id: "visits", label: "Visits" },
   { id: "checkins", label: "Check-ins" },
   { id: "double_visits", label: "Double Visits" },
+  { id: "triple_visits", label: "Triple Visits" },
   { id: "vacations", label: "Vacations" },
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
