@@ -354,7 +354,6 @@ function recommendationForResult(params: {
   suspiciousLocationScore: number;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   transportationType: OutstationTransportationType;
-  variancePercent: number;
 }) {
   if (params.eligibilityStatus === "not_eligible") {
     return {
@@ -381,14 +380,6 @@ function recommendationForResult(params: {
       approvalReason:
         "Suspicious location score is too high for automatic approval and requires manual intervention.",
       approvalRecommendation: "reject" as OutstationApprovalRecommendation,
-    };
-  }
-
-  if (Math.abs(params.variancePercent) > 50) {
-    return {
-      approvalReason:
-        "Claimed amount materially exceeds the expected amount and should be reviewed by HR.",
-      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
     };
   }
 
@@ -1181,11 +1172,6 @@ export async function calculateOutstationExpense(
   const inputClaimedTotalAmount = numberValue(input.claimedTotalAmount);
   const claimedTotalAmount =
     inputClaimedTotalAmount > 0 ? inputClaimedTotalAmount : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
   const calculationStatus =
     result.eligibilityStatus === "not_eligible" ? "blocked" : "calculated";
   const recommendation = recommendationForResult({
@@ -1196,7 +1182,6 @@ export async function calculateOutstationExpense(
     suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     territoryValidationStatus: result.territoryValidationStatus,
     transportationType: input.transportationType,
-    variancePercent,
   });
 
   const calculation: OutstationCalculationResult = {
@@ -1238,8 +1223,6 @@ export async function calculateOutstationExpense(
     transportationType: input.transportationType,
     tripEndDate,
     tripStartDate,
-    varianceAmount,
-    variancePercent,
   };
 
   return calculation;
@@ -1316,10 +1299,6 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
       { label: "Other amount", value: formatEgp(request.otherAmount) },
       { label: "Expected total", value: formatEgp(request.expectedTotalAmount) },
       { label: "Claimed total", value: claimedAmount },
-      {
-        label: "Variance",
-        value: `${formatEgp(request.varianceAmount)} (${request.variancePercent.toFixed(1)}%)`,
-      },
       { label: "Eligibility", value: `${request.eligibilityStatus} — ${text(request.eligibilityReason) || "—"}` },
       {
         label: "Approval recommendation",
@@ -1556,8 +1535,6 @@ export async function submitOutstationRequest(
     transportation_type: calculation.transportationType,
     trip_end_date: calculation.tripEndDate,
     trip_start_date: calculation.tripStartDate,
-    variance_amount: calculation.varianceAmount,
-    variance_percent: calculation.variancePercent,
   };
 
   const { data, error } = await supabase
@@ -1786,8 +1763,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     tripEndDate: isoString(row.trip_end_date),
     tripStartDate: isoString(row.trip_start_date),
     updatedAt: isoString(row.updated_at),
-    varianceAmount: numberValue(row.variance_amount),
-    variancePercent: numberValue(row.variance_percent),
   };
 }
 
@@ -1974,8 +1949,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         trip_end_date: normalized.tripEndDate,
         trip_start_date: normalized.tripStartDate,
         updated_at: now,
-        variance_amount: 0,
-        variance_percent: 0,
       })
       .select("*")
       .single();
@@ -2187,7 +2160,6 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       longitude: request.capturedLongitude,
       recommendation: request.approvalRecommendation,
       status: request.eligibilityStatus,
-      varianceAmount: request.varianceAmount,
     }));
 
   return {
@@ -2200,10 +2172,10 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       byArea: groupNumeric(
         requests,
         (request) => request.toArea ?? request.employeeArea ?? "Unassigned",
-        (request) => request.varianceAmount,
+        (request) => request.claimedTotalAmount,
       ).map((row) => ({
         label: row.label,
-        totalVariance: roundMoney(row.value),
+        totalExpenses: roundMoney(row.value),
         trips: row.trips,
       })),
       byCity: groupNumeric(
@@ -2241,7 +2213,6 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       totalClaimed: roundMoney(sumBy(requests, (request) => request.claimedTotalAmount)),
       totalExpected: roundMoney(sumBy(requests, (request) => request.expectedTotalAmount)),
       totalRequests: requests.length,
-      totalVariance: roundMoney(sumBy(requests, (request) => request.varianceAmount)),
     },
     markers,
   };
@@ -2260,8 +2231,6 @@ export type ManagerExpenseCalculationPreview = {
   overnightDays: number;
   travelCost: number;
   sameDayTrip: boolean;
-  varianceAmount: number;
-  variancePercent: number;
 };
 
 /**
@@ -2326,10 +2295,6 @@ export async function previewManagerExpenseCalculation(
   const claimedInput = Number(input.claimedTotalAmount ?? 0);
   const claimedTotalAmount =
     Number.isFinite(claimedInput) && claimedInput > 0 ? claimedInput : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0 ? roundMoney((varianceAmount / expectedTotalAmount) * 100) : 0;
-
   return {
     allowanceAmount: allowance.allowanceAmount,
     allowanceBreakdown: allowance.breakdown,
@@ -2343,8 +2308,6 @@ export async function previewManagerExpenseCalculation(
     overnightDays: allowance.overnightDays,
     travelCost,
     sameDayTrip: allowance.sameDayTrip,
-    varianceAmount,
-    variancePercent,
   };
 }
 
@@ -2403,12 +2366,6 @@ export async function createManagerExpenseAsAdmin(
     });
   const claimedTotalAmount =
     input.claimedTotalAmount > 0 ? input.claimedTotalAmount : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
-
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const workloadPayload = await resolveOutstationWorkloadPayload({
@@ -2490,8 +2447,6 @@ export async function createManagerExpenseAsAdmin(
       trip_end_date: input.tripEndDate,
       trip_start_date: input.tripStartDate,
       updated_at: now,
-      variance_amount: varianceAmount,
-      variance_percent: variancePercent,
     })
     .select("*")
     .single();
@@ -2632,11 +2587,6 @@ export async function updateManagerExpenseAsAdmin(
   const claimedTotalAmount = claimedTotal != null && claimedTotal > 0
     ? claimedTotal
     : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
   const workloadPayload = await resolveOutstationWorkloadPayload({
     employeeHrId,
     tripEndDate,
@@ -2674,8 +2624,6 @@ export async function updateManagerExpenseAsAdmin(
     trip_end_date: tripEndDate,
     trip_start_date: tripStartDate,
     updated_at: now,
-    variance_amount: varianceAmount,
-    variance_percent: variancePercent,
   };
 
   if (destination) {
