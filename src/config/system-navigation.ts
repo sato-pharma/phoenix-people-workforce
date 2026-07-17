@@ -894,7 +894,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "DSM Performance",
     description: "Company-scope DSM performance dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/field-sales/med-reps-performance",
@@ -902,7 +902,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Med-Rep Performance",
     description: "Company-scope Med-Rep performance dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
