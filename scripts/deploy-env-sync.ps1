@@ -56,6 +56,6 @@ $yamlContent | Set-Content $cloudRunYamlPath
 Write-Host "Saved Cloud Run variables to $cloudRunYamlPath"
 
 Write-Host "Updating Cloud Run service..."
-gcloud run services update phoenix-hr --region us-central1 --env-vars-file $cloudRunYamlPath
+gcloud run services update phoenix-hr --region europe-west3 --env-vars-file $cloudRunYamlPath
 
 Write-Host "Done!"

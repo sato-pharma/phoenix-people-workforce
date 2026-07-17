@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission, canAccess, normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { canViewEmployeeExpenseScope } from "@/lib/outstation/expenses";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
 
 export const runtime = "nodejs";
@@ -16,8 +17,8 @@ export async function GET(request: Request) {
     const employeeHrId = url.searchParams.get("employeeHrId") || access.hrId || access.loginId;
     const requestedKey = normalizeHrIdForAccess(employeeHrId);
     const ownKeys = [access.hrId, access.loginId].map(normalizeHrIdForAccess).filter((value): value is string => Boolean(value));
-    if (requestedKey && !ownKeys.includes(requestedKey) && !(await canAccess(access, "outstation", "approve"))) {
-      return NextResponse.json({ error: "forbidden", message: "You can only view your own Double Visit workload evidence." }, { status: 403 });
+    if (requestedKey && !ownKeys.includes(requestedKey) && !(await canViewEmployeeExpenseScope(access, employeeHrId ?? ""))) {
+      return NextResponse.json({ error: "forbidden", message: "You can only view Double Visit workload evidence for employees within your access scope." }, { status: 403 });
     }
     const tripStartDate = url.searchParams.get("tripStartDate");
     const tripEndDate = url.searchParams.get("tripEndDate") || tripStartDate;

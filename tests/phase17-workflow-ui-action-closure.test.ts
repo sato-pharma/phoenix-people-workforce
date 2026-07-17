@@ -13,7 +13,7 @@ export function runPhase17WorkflowUiActionClosureTests() {
   assert.match(outstationRouteSource, /export async function POST/);
   assert.match(outstationRouteSource, /assertOutstationAdminAccess\(access,\s*"approve"\)/);
   assert.match(outstationRouteSource, /approveOutstationRequestForPayroll/);
-  assert.match(outstationUiSource, /Approve for payroll/);
+  assert.match(outstationUiSource, /Accept for payroll/);
   assert.match(outstationUiSource, /fetch\(`\/api\/admin\/outstation\/\$\{selectedRequest\.id\}`/);
   assert.match(outstationUiSource, /setLocalRequests/);
   assert.match(outstationServiceSource, /savePayrollExpenseApprovals/);

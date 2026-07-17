@@ -22,6 +22,7 @@ export const emailTemplateKeys = [
   "probation_workflow",
   "probation_reminder",
   "probation_dv_snapshot",
+  "probation_weekly_digest",
   "probation_day30",
   "probation_day60",
   "probation_day75",
@@ -81,6 +82,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   PROBATION_REMINDER: "probation_reminder",
   PROBATION_WORKFLOW: "probation_workflow",
   PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
+  PROBATION_WEEKLY_DIGEST: "probation_weekly_digest",
   PROBATION_DAY30: "probation_day30",
   PROBATION_DAY60: "probation_day60",
   PROBATION_DAY75: "probation_day75",
@@ -288,6 +290,7 @@ export type SendTemplatedEmailInput = {
   employeeHrId?: string | null;
   fallbackTo?: string[] | null;
   from?: string | null;
+  replyTo?: string | null;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -493,6 +496,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   // Training Manager, PM/GPM and the evaluator are resolved + added explicitly at emit time
   // (src/lib/probation/intelligence/probation-emails.ts).
   probation_dv_snapshot: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_weekly_digest: emptyRules(["direct_manager", "national_sales_manager"], ["ceo", "hr"]),
   probation_day30: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
@@ -891,6 +895,26 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "probation_dv_snapshot",
     templateName: "Probation DV Snapshot",
   },
+  probation_weekly_digest: {
+    bodyHtml:
+      "<p>Here is this week's Double-Visit summary for <strong>{{employeeName}}</strong> ({{employeeHrId}}), day {{probationDay}} of the 90-day probation period.</p>" +
+      "{{digestTable}}" +
+      "<p>Overall progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.</p>" +
+      "<p>Open the live report for the full picture.</p>",
+    bodyText:
+      "This week's Double-Visit summary for {{employeeName}} ({{employeeHrId}}), probation day {{probationDay}}.\n" +
+      "{{digestTableText}}\n" +
+      "Overall progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n" +
+      "Open the live report for the full picture.",
+    closingText: "Open the live consolidated report for the full picture.",
+    description: "Weekly roll-up of a probationer's Double-Visit activity, sent once per week to the line management chain (replaces the per-DV-day snapshot).",
+    greeting: "Dear Line {{line}} Managers,",
+    isActive: true,
+    previewText: "This week's Double-Visit summary for {{employeeName}}.",
+    subject: "Probation weekly summary — {{employeeName}} ({{weekLabel}})",
+    templateKey: "probation_weekly_digest",
+    templateName: "Probation Weekly Digest",
+  },
   probation_day30: {
     bodyHtml:
       "<p><strong>Day 30 — early progress review</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
@@ -1023,6 +1047,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   probation_reminder: "Employee Lifecycle",
   probation_workflow: "Employee Lifecycle",
   probation_dv_snapshot: "Employee Lifecycle",
+  probation_weekly_digest: "Employee Lifecycle",
   probation_day30: "Employee Lifecycle",
   probation_day60: "Employee Lifecycle",
   probation_day75: "Employee Lifecycle",
@@ -2345,6 +2370,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,
     from: input.from ?? undefined,
+    replyTo: input.replyTo ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,
     idempotencyKey: `template-${key}-${requestId}`,

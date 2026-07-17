@@ -14,6 +14,8 @@ import { systemDeployment } from "@/config/system-settings";
 
 import { getProbationConfig } from "./config";
 import { computeDvProgress, currentProbationDay, type DvDayLite } from "./report-metrics";
+import { createProbationDailyCap, type ProbationDailyCap } from "./notification-cap";
+import { isDateBeforeProbationEmailFreshStart, PROBATION_EMAIL_FRESH_START_ISO } from "./email-fresh-start";
 import { getCaseScore } from "./scoring-service";
 import { probationDaysRemaining } from "@/lib/probation/date";
 import type { ProbationEvaluatorRole } from "./types";
@@ -50,22 +52,27 @@ async function resolveStakeholders(
 
   const recipients = new Set<string>();
 
-  const [ceo, hr] = await Promise.all([
+  // None of these role lookups depend on each other — resolve them concurrently
+  // instead of one-at-a-time (this function is called once per case/milestone, so a
+  // sequential chain here multiplied straight into the sweep's total wall-clock).
+  const [ceo, hr, sfe, tm, nsmList] = await Promise.all([
     activeHrIdsByRole(["CEO"]),
     activeHrIdsByRole(["HR Manager", "Super Admin"]),
+    opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
+    opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
+    activeHrIdsByRole(["National Sales Manager"]),
   ]);
   ceo.forEach((h) => recipients.add(h));
   hr.forEach((h) => recipients.add(h));
-
-  if (opts.includeSfe) (await activeHrIdsByRole(["SFE Manager"])).forEach((h) => recipients.add(h));
-  if (opts.includeTm) (await activeHrIdsByRole(["Training Manager"])).forEach((h) => recipients.add(h));
+  sfe.forEach((h) => recipients.add(h));
+  tm.forEach((h) => recipients.add(h));
 
   // DM = the employee's direct manager.
   const dm = normalizeHrId(employee?.managerHrId);
   if (dm) recipients.add(dm);
 
   // NSM = walk the management chain up to the National Sales Manager.
-  const nsmSet = new Set(await activeHrIdsByRole(["National Sales Manager"]));
+  const nsmSet = new Set(nsmList);
   let cur = managerOf(employee, byHrId);
   const seen = new Set<string>();
   while (cur) {
@@ -122,14 +129,19 @@ async function emitToRecipients(
     title: string; message: string; idempotencyKeyBase: string;
     priority?: "high" | "normal"; ctaUrl: string;
     templateContext: Record<string, string | null>;
+    cap?: ProbationDailyCap;
   },
 ): Promise<number> {
+  // Per-recipient daily cap (MOD-3, 2026-07-17): a recipient over their 2/day probation limit is
+  // skipped this run; the daily idempotent sweep re-emits tomorrow. No cap → send to all.
+  const allowed = input.cap ? recipients.filter((h) => input.cap!.allow(h)) : recipients;
+  if (allowed.length === 0) return 0;
   // Recipients are independent (own idempotency key, atomic claimDelivery upsert) — dispatch in
   // parallel. A serial loop here, across every stakeholder of every milestone-crossing case, was
   // part of what made this step exceed its 30s cron budget (see 2026-07-15/16 notifications cron
   // 504 outage).
   await Promise.all(
-    recipients.map((recipientHrId) =>
+    allowed.map((recipientHrId) =>
       createSystemNotification({
         actorId: "system",
         module: input.module ?? "probation",
@@ -160,7 +172,7 @@ async function emitToRecipients(
       }).catch(() => undefined),
     ),
   );
-  return recipients.length;
+  return allowed.length;
 }
 
 /** Send the DV-Day snapshot email after a DV Day is validated. Idempotent per DV-Day. */
@@ -245,6 +257,124 @@ function daysBetween(fromDate: string, toDate: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
+// ── Weekly Double-Visit digest (MOD-1, 2026-07-17) ──────────────────────────────────────────────
+// Replaces the per-DV-day snapshot email: instead of ~8 emails on every field day, one weekly
+// roll-up per probationer to the line management chain. Self-gates to a single Cairo weekday so the
+// daily notifications cron only fires it once a week; a per-week idempotency key makes re-runs on
+// that day no-ops.
+
+const CAIRO_TZ = "Africa/Cairo";
+// Which Cairo weekday the digest goes out (0=Sun … 6=Sat). Sunday matches the weekly system-health
+// digest. Adjust here if the owner picks a different day (open item at time of build).
+const WEEKLY_DIGEST_WEEKDAY = 0;
+
+function cairoWeekday(when: Date): number {
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: CAIRO_TZ, weekday: "short" }).format(when);
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(wd);
+}
+function cairoDate(when: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: CAIRO_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(when);
+}
+
+const WEEKLY_ROLE_LABEL: Record<string, string> = {
+  dm: "District Manager", tm: "Training Manager", pm_gpm: "PM / GPM", nsm: "National Sales Manager", sfe: "SFE",
+};
+
+function buildWeeklyDigestTable(rows: Array<{ dv_date: string; evaluator_role: string | null; visit_count: number; dv_status: string }>): { html: string; text: string } {
+  const feedbackLabel = (s: string) => (s === "feedback_completed" ? "Feedback done" : "Feedback pending");
+  const cells = "padding:8px 12px;font-family:Arial,Helvetica,sans-serif;font-size:13px;border-bottom:1px solid #e2e8f0";
+  const bodyRows = rows
+    .map((r, i) => {
+      const bg = i % 2 === 1 ? "background:#f8fafc" : "background:#ffffff";
+      const role = r.evaluator_role ? WEEKLY_ROLE_LABEL[r.evaluator_role] ?? r.evaluator_role : "—";
+      return `<tr style="${bg}"><td style="${cells};${bg}">${r.dv_date}</td><td style="${cells};${bg}">${role}</td><td style="${cells};${bg};text-align:center">${r.visit_count}</td><td style="${cells};${bg}">${feedbackLabel(r.dv_status)}</td></tr>`;
+    })
+    .join("");
+  const html =
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:16px 0;width:100%;border-collapse:collapse;border-top:1px solid #e2e8f0">` +
+    `<thead><tr>${["Date", "Manager role", "Visits", "Feedback"].map((h) => `<th style="${cells};text-align:left;color:#475569;font-weight:700">${h}</th>`).join("")}</tr></thead>` +
+    `<tbody>${bodyRows}</tbody></table>`;
+  const text = rows.map((r) => `${r.dv_date} · ${r.evaluator_role ? WEEKLY_ROLE_LABEL[r.evaluator_role] ?? r.evaluator_role : "—"} · ${r.visit_count} visit(s) · ${feedbackLabel(r.dv_status)}`).join("\n");
+  return { html, text };
+}
+
+/**
+ * Weekly sweep (call daily; self-gates to WEEKLY_DIGEST_WEEKDAY): one digest email per probationer
+ * who had ≥1 validated Double-Visit day in the past 7 days, to the line management chain.
+ */
+export async function processProbationWeeklyDigest(nowIso: string = new Date().toISOString()): Promise<{ scanned: number; sent: number; skipped?: string }> {
+  const now = new Date(nowIso);
+  if (cairoWeekday(now) !== WEEKLY_DIGEST_WEEKDAY) return { scanned: 0, sent: 0, skipped: "not the weekly digest day" };
+
+  const today = cairoDate(now);
+  const weekStart = cairoDate(new Date(now.getTime() - 6 * 86_400_000)); // inclusive 7-day window
+  const weekLabel = `${weekStart} to ${today}`;
+  const supabase = getSupabaseAdmin();
+
+  const { data: dvRows } = await supabase
+    .from("probation_dv_days")
+    .select("id, case_id, dv_date, evaluator_role, visit_count, dv_status")
+    .gte("dv_date", weekStart)
+    .lte("dv_date", today)
+    // FRESH START (owner directive 2026-07-17): the first digests only summarise DV-Days captured
+    // on/after the reset instant — never a catch-up roll-up of pre-reset history.
+    .gte("created_at", PROBATION_EMAIL_FRESH_START_ISO)
+    .in("dv_status", ["validated", "feedback_completed"]);
+  const dvs = (dvRows ?? []) as Array<{ id: string; case_id: string | null; dv_date: string; evaluator_role: string | null; visit_count: number; dv_status: string }>;
+
+  const byCase = new Map<string, typeof dvs>();
+  for (const d of dvs) {
+    if (!d.case_id) continue;
+    const arr = byCase.get(d.case_id) ?? [];
+    arr.push(d);
+    byCase.set(d.case_id, arr);
+  }
+  if (byCase.size === 0) return { scanned: 0, sent: 0 };
+
+  const { data: caseRows } = await supabase
+    .from("probation_cases")
+    .select("id, employee_hr_id, employee_name, hire_date, line_name, status")
+    .in("id", Array.from(byCase.keys()));
+  const cases = (caseRows ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null; line_name: string | null; status: string }>;
+
+  const cap = await createProbationDailyCap(now);
+
+  const sentPerCase = await Promise.all(
+    cases
+      .filter((c) => c.status === "active")
+      .map(async (c) => {
+        try {
+          const rows = (byCase.get(c.id) ?? []).slice().sort((a, b) => a.dv_date.localeCompare(b.dv_date));
+          const table = buildWeeklyDigestTable(rows);
+          const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
+          const recipients = await resolveStakeholders(c.employee_hr_id, { includeTm: true, includePmGpm: true, includeSfe: true });
+          const employeeName = c.employee_name ?? c.employee_hr_id;
+          return await emitToRecipients(recipients, {
+            templateKey: "probation_weekly_digest",
+            eventType: "weekly_digest",
+            subjectHrId: c.employee_hr_id,
+            title: `Probation weekly summary — ${employeeName} (${weekLabel})`,
+            message: `This week's Double-Visit summary for ${employeeName}: ${rows.length} day(s). Progress: ${ctx.dvProgress}.`,
+            idempotencyKeyBase: `probation:weekly-digest:${c.id}:${weekStart}`,
+            ctaUrl: ctx.reportUrl,
+            cap,
+            templateContext: {
+              employeeName, employeeHrId: c.employee_hr_id,
+              line: c.line_name ?? "—",
+              weekLabel,
+              digestTable: table.html,
+              digestTableText: table.text,
+              ...ctx,
+            },
+          });
+        } catch {
+          return 0;
+        }
+      }),
+  );
+  return { scanned: byCase.size, sent: sentPerCase.reduce((sum, n) => sum + n, 0) };
+}
+
 /** Daily sweep: send Day 30/60/75 milestone emails once each as cases cross the threshold. */
 export async function processProbationMilestoneEmails(nowIso: string = new Date().toISOString()): Promise<{ scanned: number; sent: number }> {
   const today = nowIso.slice(0, 10);
@@ -252,6 +382,7 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
   const { data: cases } = await supabase
     .from("probation_cases").select("id, employee_hr_id, employee_name, hire_date").eq("status", "active");
   const rows = (cases ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null }>;
+  const cap = await createProbationDailyCap(new Date(nowIso));
 
   // Cases are independent — fan out in parallel instead of a serial per-case await chain. At most
   // one MILESTONES entry can match a given case (the day-30/60/75 grace windows don't overlap), so
@@ -271,6 +402,11 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
           // rep near their decision, and a Resend daily-cap risk). The dedup key still makes re-runs
           // within the window no-ops.
           if (day < m.day || day > m.day + MILESTONE_GRACE_DAYS) continue;
+          // FRESH START (owner directive 2026-07-17): a milestone crossed BEFORE the reset instant
+          // must not fire a catch-up email. crossing date = today − (day − m.day) days.
+          const crossingDate = new Date(new Date(`${today}T00:00:00Z`).getTime() - (day - m.day) * 86_400_000)
+            .toISOString().slice(0, 10);
+          if (isDateBeforeProbationEmailFreshStart(crossingDate)) continue;
           const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
           const recipients = await resolveStakeholders(c.employee_hr_id, { includeSfe: true });
           const employeeName = c.employee_name ?? c.employee_hr_id;
@@ -282,6 +418,7 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
             message: `${employeeName} reached ${m.label}. Progress: ${ctx.dvProgress} · ${ctx.provisionalScore} · ${ctx.riskStatus}.`,
             idempotencyKeyBase: `probation:milestone:${c.id}:day${m.day}`,
             ctaUrl: ctx.reportUrl,
+            cap,
             templateContext: {
               employeeName, employeeHrId: c.employee_hr_id, milestoneDay: String(m.day), ...ctx,
               summary: `${employeeName} reached ${m.label}.`,

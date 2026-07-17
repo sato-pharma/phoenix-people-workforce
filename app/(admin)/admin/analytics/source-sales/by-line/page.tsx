@@ -9,7 +9,7 @@ import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav"
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
@@ -130,7 +130,7 @@ async function ByLineContent({
 }
 
 export default async function SosByLinePage({ searchParams }: { searchParams: SearchParams }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
 

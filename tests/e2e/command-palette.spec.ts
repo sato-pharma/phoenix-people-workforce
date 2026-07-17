@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
  * - Results filter to match the search term
  * - Escape closes the search dropdown
  *
- * Run with:  npx playwright test tests/e2e/command-palette.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/command-palette.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals";

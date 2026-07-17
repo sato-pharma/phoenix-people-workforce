@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { ProbationAnalyticsView } from "@/components/probation/probation-analytics-view";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
-import { canReadAllProbation } from "@/lib/probation/service";
+import { canViewProbationAnalytics } from "@/lib/probation/service";
 import { getProbationOutcomesAnalytics } from "@/lib/probation/intelligence/outcomes-analytics";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export default async function ProbationAnalyticsPage() {
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }
-  if (!canReadAllProbation(access)) {
+  if (!canViewProbationAnalytics(access)) {
     redirect("/employee-portals");
   }
 

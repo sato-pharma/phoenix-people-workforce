@@ -24,7 +24,7 @@ export function runWorkflowRegistryEnforcementTests() {
   const outstationService = source("src/lib/outstation/service.ts");
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
-  assert.match(outstationService, /actionKey: existing\.status === "approved" \? "reject_before_payroll" : "reject"/);
+  assert.match(outstationService, /actionKey: existing\.status\.startsWith\("accepted"\) \? "reject_before_payroll" : "reject"/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "delete_before_payroll"/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);

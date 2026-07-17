@@ -4,14 +4,14 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalPayslipsPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/payslips");
   }

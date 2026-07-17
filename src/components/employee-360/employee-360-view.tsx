@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
+  Award,
   BadgeCheck,
   Clock,
   Footprints,
@@ -21,9 +22,11 @@ import type {
   CoachingCompetency,
   Employee360Profile,
   ImpactSet,
+  LeadershipActivity,
   SalesMonthPoint,
 } from "@/lib/employee-360/deep-service";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
+import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
 
@@ -264,11 +267,13 @@ function IdentityHero({
   tenure,
   windowLabel,
   benchmarkLabel,
+  roleLabel,
 }: {
   subject: Employee360Subject;
   tenure: string | null;
   windowLabel: string;
   benchmarkLabel: string;
+  roleLabel: string;
 }) {
   return (
     <AdminHeroFrame>
@@ -305,6 +310,9 @@ function IdentityHero({
           </div>
         </div>
         <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-200 backdrop-blur">
+            {roleLabel}
+          </span>
           <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-3 py-1 text-[11px] font-bold text-orange-200">
             {windowLabel}
           </span>
@@ -320,37 +328,73 @@ export function Employee360View({
   summary,
   comparison,
   showExpenses = true,
+  category,
 }: {
   subject: Employee360Subject;
   summary: Employee360Profile;
   comparison?: Employee360Comparison | null;
   showExpenses?: boolean;
+  category: Employee360RoleCategory;
 }) {
   const b = summary.benchmarks;
   const tenure = tenureLabel(subject.hireDate);
   const monthlyMax = Math.max(1, ...summary.monthly.map((m) => m.regular + m.campaign));
   const hourMax = Math.max(1, ...summary.hourHistogram);
 
+  // Role-driven section composition. A leader (DM / RM / NSM / PM / TM) leads with
+  // what they DELIVER (team sales + coaching/double-visits given); a Medical Rep
+  // leads with their own field work and the received-side coaching/impact.
+  const isLeader = category !== "medical-rep";
+  const showCampaign = category === "medical-rep" || category === "product-manager";
+  const showCheckin = category !== "product-manager";
+  const showReceivedSide = category === "medical-rep";
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       {/* Header / identity */}
-      <IdentityHero subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} />
+      <IdentityHero subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} roleLabel={EMPLOYEE_360_ROLE_META[category].label} />
 
       {/* Trust strip */}
       <div className="flex flex-wrap gap-2 text-xs">
         <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this HR_ID" />
         <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
-        <TrustChip ok={summary.sales.hasData} okText="Sales linked" badText="No validated sales yet" />
-        <TrustChip ok={summary.coaching.hasData} okText={`${summary.coaching.reportCount} coaching reports`} badText="Never coached" />
+        {category !== "training-manager" ? (
+          <TrustChip ok={summary.sales.hasData} okText="Sales linked" badText="No validated sales yet" />
+        ) : null}
+        {isLeader ? (
+          <TrustChip
+            ok={Boolean(summary.leadership?.hasData)}
+            okText={`${summary.leadership?.distinctRepsReached ?? 0} reps reached`}
+            badText="No coaching / double-visits delivered"
+          />
+        ) : (
+          <TrustChip ok={summary.coaching.hasData} okText={`${summary.coaching.reportCount} coaching reports`} badText="Never coached" />
+        )}
       </div>
 
-      {/* Period-over-period comparison */}
-      {comparison ? <ComparisonStrip comparison={comparison} /> : null}
+      {/* Period-over-period — own field-performance trend (reps). */}
+      {!isLeader && comparison ? <ComparisonStrip comparison={comparison} /> : null}
 
-      {/* Module A — visits & coverage */}
+      {/* Leaders lead with what they DELIVER. */}
+      {isLeader && summary.leadership ? (
+        <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} />
+      ) : null}
+
+      {/* Team / line sales — leaders show it up top (reps see their own further down). */}
+      {isLeader && category !== "training-manager" ? <SalesSection sales={summary.sales} /> : null}
+
+      {/* Visits & Coverage — reps: full field performance; leaders: their OWN field presence. */}
       <Card className={PREMIUM_CARD}>
-        <SectionHeader icon={Footprints} tone="sky" sub="Productive = Regular + Campaign. Admin/non-visit codes excluded.">
-          Visits &amp; Coverage
+        <SectionHeader
+          icon={Footprints}
+          tone="sky"
+          sub={
+            isLeader
+              ? "This manager's OWN field visits — their days in the field, not their team's. Team output is in Leadership Activity above."
+              : "Productive = Regular + Campaign. Admin/non-visit codes excluded."
+          }
+        >
+          {isLeader ? "Own Field Presence" : "Visits & Coverage"}
         </SectionHeader>
         <SummaryLine text={summary.visitsSummaryText} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -393,6 +437,7 @@ export function Employee360View({
       </Card>
 
       {/* Campaign vs Regular */}
+      {showCampaign ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader icon={Megaphone} tone="orange" sub="Each month vs the company's SAME-month campaign share (campaign is seasonal).">
           Campaign vs Regular
@@ -444,8 +489,10 @@ export function Employee360View({
           </div>
         )}
       </Card>
+      ) : null}
 
       {/* Module B — check-in timing & authenticity */}
+      {showCheckin ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader
           icon={Clock}
@@ -469,7 +516,7 @@ export function Employee360View({
               <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–01:00" />
             </div>
             <div className="mt-5">
-              <div className="mb-1.5 text-xs font-bold text-slate-500">Check-in time of day (Cairo) — company peaks 16:00–19:00</div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Check-in time of day (Cairo) — company peaks 14:00–16:00</div>
               <div className="flex h-24 items-end gap-[2px]">
                 {summary.hourHistogram.map((count, hour) => (
                   <div key={hour} className="flex-1 rounded-t bg-indigo-500/80" style={{ height: `${(count / hourMax) * 100}%` }} title={`${hour}:00 — ${count} check-ins`} />
@@ -506,13 +553,13 @@ export function Employee360View({
           </>
         )}
       </Card>
+      ) : null}
 
-      {/* Sales & Achievement */}
-      <SalesSection sales={summary.sales} />
+      {/* Sales & Achievement — reps see their own here (leaders saw team sales up top). */}
+      {!isLeader ? <SalesSection sales={summary.sales} /> : null}
 
-      {/* Expenses & Outstation — hidden for Medical Reps (expense analysis is a
-          manager view: DM / RM / NSM / TM / PM / GPM). */}
-      {showExpenses && (
+      {/* Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM). */}
+      {showExpenses ? (
         <ExpensesSection
           expenses={summary.expenses}
           activity={{
@@ -523,21 +570,108 @@ export function Employee360View({
             campaignVisits: summary.campaignVisits,
           }}
         />
-      )}
+      ) : null}
 
-      {/* Coaching */}
-      <CoachingSection coaching={summary.coaching} />
-
-      {/* Impact — before/after */}
-      <ImpactSection impact={summary.impact} />
-
-      {/* Double-visit history */}
-      <DoubleVisitSection dv={summary.doubleVisits} />
+      {/* Coaching / impact / double-visits RECEIVED — a rep-side view (Medical Reps). */}
+      {showReceivedSide ? (
+        <>
+          <CoachingSection coaching={summary.coaching} />
+          <ImpactSection impact={summary.impact} />
+          <DoubleVisitSection dv={summary.doubleVisits} />
+        </>
+      ) : null}
 
       <p className="px-1 text-[11px] text-slate-400">
-        Employee 360 · consolidated profile. Coaching is a single-rater signal (the Training Manager); sales lags visits ~2 months and covers ~2/3 of reps — light pillars are shown as coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
+        Employee 360 · {EMPLOYEE_360_ROLE_META[category].label} view — sections are tailored to this role. Sales lag visits ~2 months and cover ~2/3 of reps; coaching is a single-rater signal — light pillars are coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
       </p>
     </div>
+  );
+}
+
+function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivity; isTM: boolean }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={Award}
+        tone="violet"
+        sub="Coaching reports authored and double-visits conducted BY this leader in the period — the delivering end, and how many distinct reps it reached."
+      >
+        Leadership Activity{isTM ? " & Impact" : ""}
+      </SectionHeader>
+      {!leadership.hasData ? (
+        <EmptyState>No coaching reports authored or double-visits conducted in this period.</EmptyState>
+      ) : (
+        <>
+          <SummaryLine text={leadership.summaryText} />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile
+              label="Coaching delivered"
+              value={intFmt.format(leadership.coachingDelivered)}
+              hint={`${leadership.coachingRepsReached} rep${leadership.coachingRepsReached === 1 ? "" : "s"} coached`}
+            />
+            <KpiTile
+              label="Double-visits conducted"
+              value={intFmt.format(leadership.dvConducted)}
+              hint={`${leadership.dvRepsReached} rep${leadership.dvRepsReached === 1 ? "" : "s"} accompanied`}
+            />
+            <KpiTile label="Reps reached" value={intFmt.format(leadership.distinctRepsReached)} hint="distinct reps coached or accompanied" />
+            <KpiTile
+              label="Avg score given"
+              value={leadership.avgScoreGiven == null ? "—" : `${Math.round(leadership.avgScoreGiven)}%`}
+              hint="mean coaching score awarded"
+            />
+          </div>
+
+          {isTM && leadership.impact ? (
+            <div className="mt-5">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">
+                Impact of their double-visits — reps&apos; field activity in the {leadership.impact.windowDays} days before vs after
+                (averaged across {leadership.impactRepCount} rep{leadership.impactRepCount === 1 ? "" : "s"})
+              </div>
+              <BeforeAfterBlock title="Across coached reps" set={leadership.impact} />
+            </div>
+          ) : null}
+
+          {leadership.byRep.length > 0 ? (
+            <div className="mt-5">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Reps reached (most-touched first)</div>
+              <div className="overflow-hidden rounded-[14px] border border-slate-200">
+                {leadership.byRep.map((r) => {
+                  const parts = [
+                    r.coachingReports > 0 ? `${r.coachingReports} coaching` : null,
+                    r.doubleVisits > 0 ? `${r.doubleVisits} double-visit${r.doubleVisits === 1 ? "" : "s"}` : null,
+                    r.avgScoreGiven != null ? `${Math.round(r.avgScoreGiven)}% avg` : null,
+                  ].filter(Boolean);
+                  return (
+                    <div key={r.hrId} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
+                      <span className="truncate text-slate-800">{r.name ?? r.hrId}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-400">{parts.join(" · ")}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {leadership.recentDv.length > 0 ? (
+            <div className="mt-5">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Recent double-visits conducted</div>
+              <div className="overflow-hidden rounded-[14px] border border-slate-200">
+                {leadership.recentDv.map((e, i) => (
+                  <div key={`${e.date}-${i}`} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="w-20 shrink-0 text-xs text-slate-400">{e.date}</span>
+                      <span className="truncate text-slate-800">{e.repName ?? "—"}</span>
+                    </div>
+                    <span className="shrink-0 text-xs text-slate-400">{e.kind}{e.customerName ? ` · ${e.customerName}` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
   );
 }
 

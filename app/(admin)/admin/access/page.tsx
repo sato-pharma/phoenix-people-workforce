@@ -1,7 +1,7 @@
 import { AccessControlManager } from "@/components/admin/access-control-manager";
 import { getAccessControlDashboard } from "@/lib/admin/access-control";
 import { assertPermission, canAccess } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export default async function AccessControlPage() {
   let initialError: string | null = null;
 
   try {
-    const access = await resolveAccessContextFromPage();
+    const access = await resolveAuthenticatedPageAccess();
     const [canReadUsers, canManageUsers, canImportUsers, canManagePermissions] = await Promise.all([
       canAccess(access, "user_admin", "read"),
       canAccess(access, "user_admin", "update"),

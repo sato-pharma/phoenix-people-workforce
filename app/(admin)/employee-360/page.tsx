@@ -1,10 +1,6 @@
 import { Users } from "lucide-react";
 
-import {
-  AdminInsightChip,
-  AdminPageHero,
-  AdminStatCard,
-} from "@/components/admin/admin-design-system";
+import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
 import {
   EmployeeSearchList,
@@ -13,6 +9,8 @@ import {
 import { canSeeEmployee } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
+import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -20,34 +18,44 @@ export default async function Employee360IndexPage() {
   const access = await resolveAccessContextFromPage();
   const rows = await getEmployeeDirectoryRows({ includeInactive: false });
 
+  // Employee 360 is a FIELD-FORCE report: only the six covered role families appear.
+  // Everyone else (HR, Finance, CEO, admin, office…) is excluded entirely.
   const employees: Employee360ListItem[] = rows
     .filter((row) => canSeeEmployee(access, { hrId: row.hrId, managerHrId: row.managerHrId }))
-    .map((row) => ({
-      hrId: row.hrId,
-      displayName: row.displayName || row.fullName,
-      jobTitle: row.jobTitle,
-      lineName: row.lineName,
-      areaName: row.areaName,
-      regionName: row.regionName,
-      managerName: row.managerName,
-      employmentStatus: row.employmentStatus,
-    }))
+    .map((row) => {
+      const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
+      if (!category) return null;
+      return {
+        hrId: row.hrId,
+        displayName: row.displayName || row.fullName,
+        jobTitle: row.jobTitle,
+        // Canonicalize the line name so the duplicate master rows ("Anti Inf"
+        // id=53 vs "Anti infective" id=1) collapse to ONE line in the filter,
+        // cards, and hero. Single source of truth for line spelling.
+        lineName: bridgeEmployeeLineToOfficial(row.lineName),
+        areaName: row.areaName,
+        regionName: row.regionName,
+        managerName: row.managerName,
+        employmentStatus: row.employmentStatus,
+        category,
+      } satisfies Employee360ListItem;
+    })
+    .filter((e): e is Employee360ListItem => e !== null)
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   const lineCount = new Set(employees.map((e) => e.lineName).filter(Boolean)).size;
   const areaCount = new Set(employees.map((e) => e.areaName).filter(Boolean)).size;
-  const jobTitleCount = new Set(employees.map((e) => e.jobTitle).filter(Boolean)).size;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
       <AdminPageHero
         eyebrow="PEOPLE INTELLIGENCE"
         title="Employee 360"
-        description="One consolidated profile per person — field visits, campaign-vs-regular balance, GPS check-in timing, sales, coaching, expenses, and impact, all in a single report. Pick a person below to open it."
+        description="One consolidated profile per person, tailored to their role. Pick a tab for the field-force family you want, then open a person — each role's report shows the metrics that matter for what they actually do."
         icon={<Users className="h-3.5 w-3.5" />}
         badges={
           <>
-            <AdminInsightChip tone="orange">{employees.length} visible to you</AdminInsightChip>
+            <AdminInsightChip tone="orange">{employees.length} in the field force</AdminInsightChip>
             <AdminInsightChip>{lineCount} lines · {areaCount} areas</AdminInsightChip>
           </>
         }
@@ -56,48 +64,11 @@ export default async function Employee360IndexPage() {
       {employees.length === 0 ? (
         <Card>
           <p className="text-sm text-muted-foreground">
-            No employees are visible to your role here.
+            No field-force employees are visible to your role here.
           </p>
         </Card>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <AdminStatCard
-              tone="orange"
-              size="compact"
-              icon={<Users className="h-4 w-4" />}
-              label="Employees"
-              value={employees.length}
-              description="Visible to your role"
-            />
-            <AdminStatCard
-              tone="blue"
-              size="compact"
-              icon={<Users className="h-4 w-4" />}
-              label="Lines"
-              value={lineCount}
-              description="Distinct sales/field lines"
-            />
-            <AdminStatCard
-              tone="emerald"
-              size="compact"
-              icon={<Users className="h-4 w-4" />}
-              label="Areas"
-              value={areaCount}
-              description="Distinct geographic areas"
-            />
-            <AdminStatCard
-              tone="violet"
-              size="compact"
-              icon={<Users className="h-4 w-4" />}
-              label="Job titles"
-              value={jobTitleCount}
-              description="Distinct roles represented"
-            />
-          </div>
-
-          <EmployeeSearchList employees={employees} />
-        </>
+        <EmployeeSearchList employees={employees} />
       )}
     </div>
   );

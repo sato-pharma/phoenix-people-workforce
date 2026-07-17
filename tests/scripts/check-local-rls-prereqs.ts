@@ -210,7 +210,7 @@ async function main() {
   if (!localSupabaseWorks && !npxSupabase.success) {
     failWith(
       rows,
-      "Supabase CLI is missing. Run: npm install supabase --save-dev. Do not use npm install -g supabase.",
+      "Supabase CLI is missing. Run: pnpm add --save-dev supabase. Do not install the Supabase CLI globally.",
     );
     return;
   }
@@ -251,8 +251,8 @@ async function main() {
   console.log("");
   console.log("PASS local RLS prerequisites are ready for free-only local Supabase validation.");
   console.log("Next commands:");
-  console.log("  npm run db:rls:discover-free-target");
-  console.log("  npm run db:validate:role-alignment:local:dry-run");
+  console.log("  pnpm run db:rls:discover-free-target");
+  console.log("  pnpm run db:validate:role-alignment:local:dry-run");
 }
 
 await main().catch((error) => {

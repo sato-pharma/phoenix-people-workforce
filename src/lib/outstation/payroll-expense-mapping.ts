@@ -36,7 +36,7 @@ export function outstationPayrollTripId(requestId: number | string) {
 
 export function outstationStatusLabel(value: unknown) {
   const normalized = toText(value).toLowerCase();
-  if (normalized.includes("approve") || normalized.includes("confirm")) return "Approved";
+  if (normalized.includes("accept") || normalized.includes("approve") || normalized.includes("confirm")) return "Approved";
   if (normalized.includes("reject") || normalized.includes("decline")) return "Rejected";
   return "Pending";
 }

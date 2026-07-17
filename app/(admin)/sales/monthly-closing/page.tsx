@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { MonthlyClosingWorkspace } from "@/components/sales/monthly-closing-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   loadMonthlyClosing,
   type MonthlyClosingMatrix,
@@ -12,7 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function MonthlyClosingPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

@@ -13,6 +13,7 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
@@ -31,6 +32,7 @@ import {
 } from "./service";
 import { EMPLOYEE_360_BENCHMARKS } from "./benchmarks";
 import { canonicalizeLocation, canonicalizeTransport, resolveGovernorate } from "./egypt-locations";
+import { isFieldLeaderCategory, type Employee360RoleCategory } from "./roles";
 
 const IMPACT_WINDOW_DAYS = 30;
 
@@ -520,10 +522,8 @@ type PayrollExpenseRow = {
 type OutstationRow = {
   claimed_total_amount: number | null;
   expected_total_amount: number | null;
-  variance_amount: number | null;
   eligibility_status: string | null;
   territory_validation_status: string | null;
-  fraud_flags_json: unknown;
 };
 
 const compactMoney = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
@@ -598,7 +598,7 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
       .limit(5000),
     supabase
       .from("outstation_expense_requests")
-      .select("claimed_total_amount,expected_total_amount,variance_amount,eligibility_status,territory_validation_status,fraud_flags_json")
+      .select("claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
       .in("employee_hr_id", keys)
       .gte("trip_start_date", window.from)
       .lte("trip_start_date", `${window.to} 23:59:59+00`)
@@ -769,30 +769,25 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     summaryText,
   };
 
-  // ---- outstation (system-submitted, GPS/variance/fraud) ----
+  // ---- outstation (system-submitted). Variance + fraud were removed from the product,
+  // so those signals are no longer read here; eligibility/territory issues still flag a trip.
   let claimedTotal = 0;
   let expectedTotal = 0;
-  let varianceTotal = 0;
-  let overClaimCount = 0;
   let flaggedCount = 0;
   for (const o of outRows) {
     claimedTotal += Number(o.claimed_total_amount ?? 0);
     expectedTotal += Number(o.expected_total_amount ?? 0);
-    const v = Number(o.variance_amount ?? 0);
-    varianceTotal += v;
-    if (v > 0) overClaimCount += 1;
-    const flags = Array.isArray(o.fraud_flags_json) ? o.fraud_flags_json.length : 0;
     const eligIssue = o.eligibility_status != null && o.eligibility_status !== "eligible";
     const territoryIssue = o.territory_validation_status != null && o.territory_validation_status !== "valid";
-    if (flags > 0 || eligIssue || territoryIssue) flaggedCount += 1;
+    if (eligIssue || territoryIssue) flaggedCount += 1;
   }
   const outstation: OutstationSummary = {
     hasData: outRows.length > 0,
     tripCount: outRows.length,
     claimedTotal,
     expectedTotal,
-    varianceTotal,
-    overClaimCount,
+    varianceTotal: 0,
+    overClaimCount: 0,
     flaggedCount,
   };
 
@@ -814,6 +809,267 @@ async function getTrainingManagerHrIds(): Promise<Set<string>> {
   return set;
 }
 
+// ── Leadership activity (coaching + double-visits DELIVERED) ──────────────────
+// The RECEIVING-end sections (coaching received, double-visits received) describe
+// a rep. A leader (DM / RM / NSM / PM / TM) is judged on the DELIVERING end: the
+// coaching reports they authored, the double-visits where THEY were the
+// accompanying manager, and how many distinct reps that reached. All window-scoped
+// to the selected period. For Training Managers we also compute a bounded
+// before/after IMPACT aggregate across the reps they double-visited (their
+// signature metric) — reusing the same poolImpact engine as the rep-level view.
+export type LeaderRepTouch = {
+  hrId: string;
+  name: string | null;
+  coachingReports: number;
+  doubleVisits: number;
+  avgScoreGiven: number | null;
+  lastTouch: string | null;
+};
+export type LeaderCoachingEvent = { date: string; repName: string | null; scorePercent: number | null; zone: string | null };
+export type LeaderDvEvent = { date: string; repName: string | null; kind: "Regular" | "Campaign" | "Other"; customerName: string | null };
+export type LeadershipActivity = {
+  hasData: boolean;
+  coachingDelivered: number;
+  coachingRepsReached: number;
+  avgScoreGiven: number | null;
+  dvConducted: number;
+  dvRepsReached: number;
+  distinctRepsReached: number;
+  byRep: LeaderRepTouch[];
+  recentCoaching: LeaderCoachingEvent[];
+  recentDv: LeaderDvEvent[];
+  /** Bounded before/after aggregate across double-visited reps (Training Managers only); null otherwise or when the sample is empty. */
+  impact: ImpactSet | null;
+  impactRepCount: number;
+  summaryText: string;
+};
+
+type DeliveredCoachingRow = {
+  medical_rep_hr_id: string | null;
+  coaching_date: string | null;
+  final_score_percent: number | null;
+  performance_zone: string | null;
+};
+type ConductedDvRow = {
+  agent_hr_id: string | null;
+  agent_name: string | null;
+  visit_date: string | null;
+  visit_type: number | null;
+  visit_type_description: string | null;
+  comment: string | null;
+  contact_name: string | null;
+  customer_name: string | null;
+};
+type RepVisitRow = {
+  agent_hr_id: string | null;
+  visit_date: string | null;
+  visit_type: number | null;
+  visit_type_description: string | null;
+  comment: string | null;
+  contact_crm_id: number | null;
+  contact_name: string | null;
+  customer_name: string | null;
+};
+
+const MAX_IMPACT_REPS = 40;
+
+function foldImpactMetricsAcross(list: ImpactMetrics[]): ImpactMetrics {
+  return {
+    visitsPerActiveDay: meanNullable(list.map((m) => m.visitsPerActiveDay)),
+    campaignShare: meanNullable(list.map((m) => m.campaignShare)),
+    distinctCustomers: Math.round(meanNullable(list.map((m) => m.distinctCustomers)) ?? 0),
+    sampleDays: list.reduce((s, m) => s + m.sampleDays, 0),
+    sampleVisits: list.reduce((s, m) => s + m.sampleVisits, 0),
+  };
+}
+
+// Aggregate before/after across the reps this leader double-visited. Bounded to
+// MAX_IMPACT_REPS (most-visited first) and two queries total, so it stays a
+// page-load-safe read. `dvByRep` is keyed by lower(agent_hr_id).
+async function computeLeaderImpact(
+  dvByRep: Map<string, { exactIds: Set<string>; dates: string[] }>,
+): Promise<{ impact: ImpactSet | null; repCount: number }> {
+  const capped = Array.from(dvByRep.entries())
+    .sort((a, b) => b[1].dates.length - a[1].dates.length)
+    .slice(0, MAX_IMPACT_REPS);
+  if (capped.length === 0) return { impact: null, repCount: 0 };
+
+  const exactIds = Array.from(new Set(capped.flatMap(([, v]) => Array.from(v.exactIds)))).filter(Boolean);
+  const allDates = capped.flatMap(([, v]) => v.dates).sort();
+  if (exactIds.length === 0 || allDates.length === 0) return { impact: null, repCount: 0 };
+  const minDate = addDays(allDates[0], -(IMPACT_WINDOW_DAYS + 1));
+  const maxDate = addDays(allDates[allDates.length - 1], IMPACT_WINDOW_DAYS + 1);
+
+  // Reads through the CRM single-door layer (resigned/owner-excluded agents removed there).
+  const data = await queryVisitsLimited<RepVisitRow>({
+    agentHrIds: exactIds,
+    dateFrom: minDate,
+    dateTo: maxDate,
+    columns: "agent_hr_id, visit_date, visit_type, visit_type_description, comment, contact_crm_id, contact_name, customer_name",
+    limit: 12000,
+  });
+
+  const rowsByRep = new Map<string, ProductiveRow[]>();
+  for (const r of data) {
+    if (!r.visit_date || !isProductiveVisit(r)) continue;
+    const key = String(r.agent_hr_id ?? "").trim().toLowerCase();
+    const list = rowsByRep.get(key) ?? [];
+    list.push({
+      date: r.visit_date,
+      isCampaign: r.visit_type === CAMPAIGN_TYPE,
+      customer: r.contact_crm_id != null ? `id:${r.contact_crm_id}` : (r.contact_name ?? r.customer_name ?? "").trim().toLowerCase(),
+    });
+    rowsByRep.set(key, list);
+  }
+
+  const perRep: ImpactSet[] = [];
+  for (const [key, v] of capped) {
+    const rows = rowsByRep.get(key) ?? [];
+    if (rows.length === 0) continue;
+    perRep.push(poolImpact(rows, v.dates, IMPACT_WINDOW_DAYS));
+  }
+  if (perRep.length === 0) return { impact: null, repCount: 0 };
+
+  return {
+    impact: {
+      eventCount: perRep.reduce((s, x) => s + x.eventCount, 0),
+      windowDays: IMPACT_WINDOW_DAYS,
+      before: foldImpactMetricsAcross(perRep.map((p) => p.before)),
+      after: foldImpactMetricsAcross(perRep.map((p) => p.after)),
+    },
+    repCount: perRep.length,
+  };
+}
+
+async function getLeadershipActivity(
+  hrId: string,
+  window: Employee360Window,
+  nameByHrId: Map<string, string>,
+  computeImpact: boolean,
+): Promise<LeadershipActivity> {
+  const supabase = getSupabaseAdmin();
+  const keys = hrIdLookupKeys(hrId);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [coachRes, dvRows] = await Promise.all([
+    supabase
+      .from("coaching_reports")
+      .select("medical_rep_hr_id,coaching_date,final_score_percent,performance_zone")
+      .in("coach_hr_id", keys)
+      .gte("coaching_date", window.from)
+      .lte("coaching_date", window.to)
+      .limit(3000),
+    // Double visits CONDUCTED by this leader — read through the CRM single door.
+    queryVisitsLimited<ConductedDvRow>({
+      doubleHrIds: keys,
+      dateFrom: window.from,
+      dateTo: window.to,
+      columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
+      limit: 8000,
+    }),
+  ]);
+  if (coachRes.error) throw new Error(`Employee 360 coaching delivered: ${coachRes.error.message}`);
+
+  const coachRows = ((coachRes.data ?? []) as DeliveredCoachingRow[]).filter(
+    (r) => r.coaching_date && r.coaching_date <= today,
+  );
+
+  // Per-rep aggregation, keyed case-insensitively so the coaching feed
+  // (medical_rep_hr_id) and the CRM visit feed (agent_hr_id) merge cleanly.
+  const byRep = new Map<string, { name: string | null; coachingReports: number; doubleVisits: number; scoreSum: number; scoreCount: number; lastTouch: string | null }>();
+  const touch = (key: string, name: string | null, date: string | null) => {
+    const cur = byRep.get(key) ?? { name: null, coachingReports: 0, doubleVisits: 0, scoreSum: 0, scoreCount: 0, lastTouch: null };
+    if (!cur.name && name) cur.name = name;
+    if (date && (!cur.lastTouch || date > cur.lastTouch)) cur.lastTouch = date;
+    byRep.set(key, cur);
+    return cur;
+  };
+
+  let scoreSumAll = 0;
+  let scoreCountAll = 0;
+  const recentCoaching: LeaderCoachingEvent[] = [];
+  for (const r of coachRows) {
+    const key = String(r.medical_rep_hr_id ?? "").trim().toLowerCase();
+    if (!key) continue;
+    const repName = nameByHrId.get(key) ?? r.medical_rep_hr_id ?? null;
+    const cur = touch(key, repName, r.coaching_date);
+    cur.coachingReports += 1;
+    const score = r.final_score_percent != null ? Number(r.final_score_percent) : null;
+    if (score != null) {
+      cur.scoreSum += score;
+      cur.scoreCount += 1;
+      scoreSumAll += score;
+      scoreCountAll += 1;
+    }
+    recentCoaching.push({ date: String(r.coaching_date), repName, scorePercent: score, zone: r.performance_zone });
+  }
+
+  const dvByRepForImpact = new Map<string, { exactIds: Set<string>; dates: string[] }>();
+  const recentDv: LeaderDvEvent[] = [];
+  for (const r of dvRows) {
+    if (!r.visit_date) continue;
+    const rawId = String(r.agent_hr_id ?? "").trim();
+    const key = rawId.toLowerCase();
+    if (!key) continue;
+    const repName = nameByHrId.get(key) ?? r.agent_name ?? null;
+    const cur = touch(key, repName, r.visit_date);
+    cur.doubleVisits += 1;
+    const bucket = classifyVisit(r.visit_type, r.comment, r.visit_type_description).bucket;
+    const kind = bucket === "regular" ? "Regular" : bucket === "campaign" ? "Campaign" : "Other";
+    recentDv.push({ date: r.visit_date, repName, kind, customerName: r.contact_name ?? r.customer_name ?? null });
+    const imp = dvByRepForImpact.get(key) ?? { exactIds: new Set<string>(), dates: [] };
+    if (rawId) imp.exactIds.add(rawId);
+    imp.dates.push(r.visit_date);
+    dvByRepForImpact.set(key, imp);
+  }
+
+  const coachingRepsReached = new Set(coachRows.map((r) => String(r.medical_rep_hr_id ?? "").trim().toLowerCase()).filter(Boolean)).size;
+  const dvRepsReached = dvByRepForImpact.size;
+  const distinctRepsReached = byRep.size;
+
+  const byRepList: LeaderRepTouch[] = Array.from(byRep.entries())
+    .map(([hrIdKey, v]) => ({
+      hrId: hrIdKey.toUpperCase(),
+      name: v.name,
+      coachingReports: v.coachingReports,
+      doubleVisits: v.doubleVisits,
+      avgScoreGiven: v.scoreCount > 0 ? v.scoreSum / v.scoreCount : null,
+      lastTouch: v.lastTouch,
+    }))
+    .sort((a, b) => b.coachingReports + b.doubleVisits - (a.coachingReports + a.doubleVisits));
+
+  recentCoaching.sort((a, b) => b.date.localeCompare(a.date));
+  recentDv.sort((a, b) => b.date.localeCompare(a.date));
+
+  const { impact, repCount } = computeImpact
+    ? await computeLeaderImpact(dvByRepForImpact)
+    : { impact: null, repCount: 0 };
+
+  const avgScoreGiven = scoreCountAll > 0 ? scoreSumAll / scoreCountAll : null;
+  const hasData = coachRows.length > 0 || dvRows.length > 0;
+  const summaryText = !hasData
+    ? "No coaching reports authored or double-visits conducted in this period."
+    : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvRows.length} double-visit${dvRows.length === 1 ? "" : "s"}, ` +
+      `reaching ${distinctRepsReached} distinct rep${distinctRepsReached === 1 ? "" : "s"}` +
+      (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".");
+
+  return {
+    hasData,
+    coachingDelivered: coachRows.length,
+    coachingRepsReached,
+    avgScoreGiven,
+    dvConducted: dvRows.length,
+    dvRepsReached,
+    distinctRepsReached,
+    byRep: byRepList.slice(0, 30),
+    recentCoaching: recentCoaching.slice(0, 12),
+    recentDv: recentDv.slice(0, 12),
+    impact,
+    impactRepCount: repCount,
+    summaryText,
+  };
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 export type Employee360Profile = Employee360Summary & {
   sales: SalesSummary;
@@ -821,6 +1077,7 @@ export type Employee360Profile = Employee360Summary & {
   doubleVisits: DoubleVisitHistory;
   impact: InterventionImpact;
   expenses: EmployeeExpenses;
+  leadership: LeadershipActivity | null;
 };
 
 export async function getEmployee360Profile(
@@ -830,14 +1087,19 @@ export async function getEmployee360Profile(
   teamHrIds: string[] = [hrId],
   includeExpenses: boolean = true,
   viewerRole: PhoenixRole = "Employee",
+  roleCategory: Employee360RoleCategory | null = null,
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
-  const [visits, checkins, sales, tmIds, expenses] = await Promise.all([
+  const isLeader = isFieldLeaderCategory(roleCategory);
+  const [visits, checkins, sales, tmIds, expenses, leadership] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
     getEmployeeSales(salesTeam, viewerRole),
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
+    isLeader
+      ? getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager")
+      : Promise.resolve(null),
   ]);
   const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
@@ -893,5 +1155,6 @@ export async function getEmployee360Profile(
     doubleVisits,
     impact,
     expenses,
+    leadership,
   };
 }

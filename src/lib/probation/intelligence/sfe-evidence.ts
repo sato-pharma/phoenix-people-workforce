@@ -10,8 +10,6 @@
 
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 
-const CAIRO_TZ = "Africa/Cairo";
-
 export type SfeMetric = {
   key: string;
   label: string;
@@ -26,6 +24,8 @@ export type SfeEvidence = {
   totalVisits: number;
   activeVisitDays: number;
   distinctCustomers: number;
+  /** Visits whose contact is the CRM "unmapped/unspecified" sentinel (null or 0) — excluded from coverage. */
+  unmappedContactVisits: number;
   checkinCount: number;
   daysWithCheckin: number;
   metrics: SfeMetric[];
@@ -40,9 +40,12 @@ function daysBetween(from: string, to: string): number {
   return Math.max(1, Math.round(ms / 86_400_000) + 1);
 }
 
+// check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its stored clock reading
+// is ALREADY Cairo-local — read it as-is (timeZone "UTC"). Converting through Africa/Cairo would
+// double-add the Egypt offset and make reps look 2–3h late in the probation start-time metric.
 function cairoHour(iso: string): number | null {
   try {
-    const h = new Intl.DateTimeFormat("en-GB", { timeZone: CAIRO_TZ, hour: "2-digit", hour12: false, minute: "2-digit" }).format(new Date(iso));
+    const h = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", hour12: false, minute: "2-digit" }).format(new Date(iso));
     const [hh, mm] = h.split(":").map((x) => Number(x));
     if (!Number.isFinite(hh)) return null;
     return hh + (Number.isFinite(mm) ? mm / 60 : 0);
@@ -69,9 +72,15 @@ export function computeSfeEvidence(
   const totalVisits = visits.length;
   const visitDays = new Set(visits.map((v) => v.visit_date));
   const activeVisitDays = visitDays.size;
+  // A visit whose contact_crm_id is 0 is the CRM "unspecified / unmapped contact" sentinel — NOT a
+  // real customer (same convention as crm/master.ts: `contact_crm_id !== 0 ? ... : null`). Counting
+  // it inflated coverage to "1 distinct customer" for reps whose visits are entirely unmapped; exclude
+  // it so coverage reads truthfully (0), and surface how many visits are unmapped so an SFE reviewer
+  // sees WHY coverage is low instead of assuming missing data.
   const distinctCustomers = new Set(
-    visits.map((v) => v.contact_crm_id).filter((c): c is number => c != null),
+    visits.map((v) => v.contact_crm_id).filter((c): c is number => c != null && c !== 0),
   ).size;
+  const unmappedContactVisits = visits.filter((v) => v.contact_crm_id == null || v.contact_crm_id === 0).length;
 
   const checkinCount = checkins.length;
   const checkinDays = new Set(checkins.map((c) => c.check_date.slice(0, 10)));
@@ -98,7 +107,17 @@ export function computeSfeEvidence(
     { key: "call_rate", label: "Calls per active day", value: callsPerActiveDay, unit: "visits/day", available: callsPerActiveDay != null },
     { key: "visit_completion", label: "Total visits completed", value: totalVisits, unit: "visits", available: true },
     { key: "active_days", label: "Active field days", value: activeVisitDays, unit: "days", available: true },
-    { key: "customer_coverage", label: "Distinct customers covered", value: distinctCustomers, unit: "customers", available: true },
+    {
+      key: "customer_coverage",
+      label: "Distinct customers covered",
+      value: distinctCustomers,
+      unit: "customers",
+      available: true,
+      note:
+        unmappedContactVisits > 0
+          ? `${unmappedContactVisits} of ${totalVisits} visit${totalVisits === 1 ? "" : "s"} have an unmapped contact in the CRM (excluded from coverage)`
+          : undefined,
+    },
     { key: "checkin_compliance", label: "GPS check-ins per visit", value: checkinsPerVisit, unit: "ratio", available: checkinsPerVisit != null },
     { key: "start_time", label: "Avg first check-in (Cairo)", value: avgStartHour, unit: "hour", available: avgStartHour != null },
     { key: "activity_consistency", label: "Active-day consistency", value: activityConsistencyPct, unit: "%", available: activityConsistencyPct != null },
@@ -111,6 +130,7 @@ export function computeSfeEvidence(
     totalVisits,
     activeVisitDays,
     distinctCustomers,
+    unmappedContactVisits,
     checkinCount,
     daysWithCheckin,
     metrics,

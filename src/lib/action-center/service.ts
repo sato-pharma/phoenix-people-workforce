@@ -298,7 +298,7 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
     title: `Outstation · ${request.tripStartDate}`,
     statusLabel: "Pending approval",
     submittedAt: request.createdAt,
-    urgency: request.approvalRecommendation === "auto_approve" ? "low" : request.fraudFlags.length > 0 ? "high" : "normal",
+    urgency: request.approvalRecommendation === "auto_approve" ? "low" : request.approvalRecommendation === "reject" ? "high" : "normal",
     detail: {
       module: "outstation",
       expenseType: request.expenseType,
@@ -309,7 +309,6 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
       claimedTotalAmount: request.claimedTotalAmount,
       approvalRecommendation: request.approvalRecommendation,
       approvalReason: request.approvalReason,
-      fraudFlags: request.fraudFlags,
       notes: request.notes,
       requestId: request.id,
     },
@@ -455,12 +454,21 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
   // Role-aware deep-link back into the Approvals Hub (portal vs admin shell). Mirrors the
   // `?module=X&id=Y` convention the inbox/notifications already use, so "View request" always
   // routes to the correct surface for the viewer and never dead-ends.
-  const hubBase =
-    resolveNavigationMode(access) === "employee-portal"
-      ? "/employee-portals/approvals-hub"
-      : "/admin/approvals-hub";
-  const historyHref = (module: string, id: unknown) =>
-    `${hubBase}?module=${module}&id=${encodeURIComponent(String(id ?? ""))}`;
+  const isPortal = resolveNavigationMode(access) === "employee-portal";
+  const hubBase = isPortal ? "/employee-portals/approvals-hub" : "/admin/approvals-hub";
+  // Vacation/excuse/plan history links point at their dedicated per-request pages (they left the
+  // "Other Approvals" hub) so clicking a past decision never re-opens it inside the residual hub
+  // inbox. Resignation (and any other still-in-hub module) keeps the ?module=X&id=Y hub deep-link.
+  const dedicatedHistorySegment: Record<string, string> = { leave: "vacation", excuse: "excuse", weekly_plan: "plan" };
+  const historyHref = (module: string, id: unknown) => {
+    const segment = dedicatedHistorySegment[module];
+    const encodedId = encodeURIComponent(String(id ?? ""));
+    if (segment) {
+      const base = isPortal ? `/employee-portals/approvals/${segment}` : `/admin/approvals/${segment}`;
+      return `${base}/${encodedId}`;
+    }
+    return `${hubBase}?module=${module}&id=${encodedId}`;
+  };
 
   // Native-page deep-links for the admin/system modules (these never render inside the hub —
   // they live on their own dedicated pages, where the full decided record is shown).

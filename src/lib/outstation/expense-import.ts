@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import ExcelJS from "exceljs";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type {
@@ -13,6 +15,39 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { roundCurrency } from "@/lib/payroll/money";
+
+/**
+ * Stable, collision-resistant fallback id for an imported expense row that has
+ * no real TripID. Derived from row CONTENT (not sheet position), so two
+ * genuinely different rows never collide on the `trip_id` unique key, while an
+ * identical re-uploaded row stays idempotent. No file-name salt, by design.
+ */
+export function syntheticTripId(parts: {
+  hrId?: string | null;
+  specialist: string;
+  date?: unknown;
+  to: string;
+  location: string;
+  total: number;
+  travelCost: number;
+  meetingAmount: number;
+  allowance: number;
+  rowNumber: number;
+}): string {
+  const signature = [
+    parts.hrId ?? "",
+    parts.specialist,
+    String(parts.date ?? ""),
+    parts.to,
+    parts.location,
+    String(parts.total),
+    String(parts.travelCost),
+    String(parts.meetingAmount),
+    String(parts.allowance),
+    String(parts.rowNumber),
+  ].join("|");
+  return `ROW-${createHash("sha1").update(signature).digest("hex").slice(0, 12).toUpperCase()}`;
+}
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -556,7 +591,6 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       ? numberValue(totalCell)
       : calculatedTotal;
     const fileHrId = text(rowValueByAlias(...expenseHeaderAliases.columnHrId));
-    const tripId = text(rowValueByAlias(...expenseHeaderAliases.columnTripId)) || `ROW-${rowNumber}`;
     const hrId = resolveHrIdFromEmployeeMaps(employeeMaps, specialist, fileHrId);
     const expectedFrom = text(rowValueByAlias(...expenseHeaderAliases.columnFrom));
     const residenceFrom = resolveFromFromEmployeeMaps(employeeMaps, hrId, specialist);
@@ -565,6 +599,14 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
     const date = parseDate(rowValueByAlias(...expenseHeaderAliases.columnDate));
     const to = text(rowValueByAlias(...expenseHeaderAliases.columnTo));
     const location = text(rowValueByAlias(...expenseHeaderAliases.columnLocation));
+    // A row with no real TripID previously fell back to `ROW-<rowNumber>` (sheet
+    // position only) — so a blank-TripID row at the same position in two different
+    // uploads collided on the `trip_id` unique key and silently overwrote the
+    // earlier row (audit R1). Derive the fallback from row content instead.
+    const realTripId = text(rowValueByAlias(...expenseHeaderAliases.columnTripId));
+    const tripId =
+      realTripId ||
+      syntheticTripId({ hrId, specialist, date, to, location, total, travelCost, meetingAmount, allowance, rowNumber });
 
     if (template.recognized && !expectedFrom && !residenceFrom && specialist !== "Unassigned") {
       warnings.push(`Row ${rowNumber} / ${tripId}: '${specialist}' has no From column and no residence match in employee records.`);

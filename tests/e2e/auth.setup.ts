@@ -10,7 +10,7 @@ import { test as setup, expect } from "@playwright/test";
  * Credentials: Uses the a-12 test account (Ali – National Sales Manager).
  */
 
-const LOGIN_URL = "http://localhost:3000/login";
+const LOGIN_URL = `${process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000"}/login`;
 const AUTH_STATE_PATH = "tests/e2e/.auth/user.json";
 
 setup("authenticate", async ({ page }) => {

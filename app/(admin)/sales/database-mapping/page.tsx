@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { DatabaseMappingWorkspace } from "@/components/sales/database-mapping-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
 import { listMergedDistributorProfiles } from "@/lib/sales/normalizer/distributor-profile-store";
@@ -12,7 +12,7 @@ import { profilesToHeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 export const dynamic = "force-dynamic";
 
 export default async function DatabaseMappingPage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

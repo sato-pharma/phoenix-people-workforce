@@ -6,7 +6,6 @@ import { AlertCircle, RefreshCw, Radar } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ExpenseLeaderboards } from "@/components/outstation/expense-command/expense-leaderboards";
-import { ExpenseRiskPanel } from "@/components/outstation/expense-command/expense-risk-panel";
 import {
   ExpenseHeatmapLayer,
   type ExpenseBubbleInput,
@@ -206,11 +205,6 @@ export function ExpenseCommandDashboard({
                 <ExpenseLeaderboards
                   onSelectEmployee={(hrId) => updateFilters({ employeeHrId: hrId })}
                   topSpenders={data.leaderboards.topSpenders}
-                />
-                <ExpenseRiskPanel
-                  highRiskByLocation={data.leaderboards.highRiskByLocation}
-                  highRiskRows={data.kpis.highRiskRows}
-                  onSelectRegion={(region) => updateFilters({ region })}
                 />
               </>
             ) : null}

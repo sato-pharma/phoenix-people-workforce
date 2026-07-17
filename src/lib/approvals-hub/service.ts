@@ -1,5 +1,6 @@
 import {
   hrIdsMatch,
+  normalizeHrId,
   resolveNavigationMode,
   type AccessContext,
 } from "@/lib/auth/permissions";
@@ -16,7 +17,8 @@ import {
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import type {
@@ -229,6 +231,26 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
   }
 }
 
+/**
+ * Badge count + overdue flag derived from ONE getVacationApprovalsForResponder fetch.
+ * countVacationAwaiting and isVacationAwaitingOverdue each fetch the full responder
+ * dataset independently, so calling both (as the per-domain pending-count endpoint
+ * does) fetches it twice per poll — this helper computes both answers, with the same
+ * fallbacks, from a single fetch for the batched badge-counts endpoint.
+ */
+export async function getVacationAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getVacationApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getVacationAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
+  }
+}
+
 // ── Excuse buckets (single-step: no "coming to you") ──────────────────────────
 
 export type ExcuseApprovalsBuckets = {
@@ -267,6 +289,20 @@ export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<bo
   } catch (error) {
     console.error("[approvals-hub] isExcuseAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return false;
+  }
+}
+
+/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
+export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getExcuseApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getExcuseAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
   }
 }
 
@@ -521,15 +557,21 @@ export type VacationWorkspaceData = {
   pendingCount: number;
   // Only populated for Super Admin / system-scope viewers — the "All Decisions" tab.
   companyWide: CompanyWideDecisionItem[] | null;
+  // CEO + Super Admin only — the "Who I Approve" and "Company Requests" oversight tabs.
+  approvalScope: ApprovalScopeData | null;
+  companyRequests: CompanyRequestItem[] | null;
 };
 
 export async function getVacationWorkspaceData(access: AccessContext): Promise<VacationWorkspaceData> {
   const showCompanyWide = isAllVacationVisibility(access);
-  const [buckets, myRequests, history, companyWide] = await Promise.all([
+  const showCeoTabs = canSeeCeoApprovalTabs(access);
+  const [buckets, myRequests, history, companyWide, approvalScope, companyRequests] = await Promise.all([
     getVacationApprovalsForResponder(access),
     getMyVacationRequestItems(access),
     getResponderVacationHistory(access),
     showCompanyWide ? getAllVacationDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
+    showCeoTabs ? getVacationApprovalScope(access).catch(() => null) : Promise.resolve(null),
+    showCeoTabs ? getCompanyVacationRequestsExcludingFieldForce(access).catch(() => []) : Promise.resolve(null),
   ]);
   const toCard = (row: VacationRequestRecord & { slaAgeDays?: number }): ApprovalPendingCard => ({
     id: row.id,
@@ -546,6 +588,8 @@ export async function getVacationWorkspaceData(access: AccessContext): Promise<V
     history,
     pendingCount: buckets.awaiting.length,
     companyWide,
+    approvalScope,
+    companyRequests,
   };
 }
 
@@ -555,15 +599,21 @@ export type ExcuseWorkspaceData = {
   history: ResponderHistoryItem[];
   pendingCount: number;
   companyWide: CompanyWideDecisionItem[] | null;
+  // CEO + Super Admin only — the "Who I Approve" and "Company Requests" oversight tabs.
+  approvalScope: ApprovalScopeData | null;
+  companyRequests: CompanyRequestItem[] | null;
 };
 
 export async function getExcuseWorkspaceData(access: AccessContext): Promise<ExcuseWorkspaceData> {
   const showCompanyWide = isAllVacationVisibility(access);
-  const [buckets, myRequests, history, companyWide] = await Promise.all([
+  const showCeoTabs = canSeeCeoApprovalTabs(access);
+  const [buckets, myRequests, history, companyWide, approvalScope, companyRequests] = await Promise.all([
     getExcuseApprovalsForResponder(access),
     getMyExcuseRequestItems(access),
     getResponderExcuseHistory(access),
     showCompanyWide ? getAllExcuseDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
+    showCeoTabs ? getExcuseApprovalScope(access).catch(() => null) : Promise.resolve(null),
+    showCeoTabs ? getCompanyExcuseRequestsExcludingFieldForce(access).catch(() => []) : Promise.resolve(null),
   ]);
   const toCard = (req: EmployeeExcuseRequest): ApprovalPendingCard => ({
     id: req.id,
@@ -579,6 +629,8 @@ export async function getExcuseWorkspaceData(access: AccessContext): Promise<Exc
     history,
     pendingCount: buckets.awaiting.length,
     companyWide,
+    approvalScope,
+    companyRequests,
   };
 }
 
@@ -708,6 +760,241 @@ export async function getAllExcuseDecisionsCompanyWide(access: AccessContext): P
       href: excuseApprovalHref(access, id),
       subtype: row.excuse_type === "morning" ? "Morning" : "Afternoon",
       decidedByName: deciderDisplayName(directory.employees, String(row.manager_decision_by_hr_id ?? "")),
+    });
+  }
+  return items;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CEO / Super Admin oversight tabs (approval scope + company-wide request feed)
+// ─────────────────────────────────────────────────────────────────────────────
+// Two extra tabs surfaced ONLY to the CEO and Super Admin on the Vacation/Excuse
+// Approvals hub:
+//   • "Who I Approve"    — the people whose leave/excuse actually routes to the
+//                          viewer, derived LIVE from the org directory + the same
+//                          manager-chain rule the approval workflow uses. There is
+//                          no static role→role approver map anywhere; authority is
+//                          org-position driven, so this is computed, never hard-coded.
+//   • "Company Requests" — every leave/excuse request (pending AND decided) company-
+//                          wide, excluding submissions by the field force (District
+//                          Manager + Medical Rep). Vacation reuses the viewer's own
+//                          COMPANY-scoped report (the CEO already sees all company
+//                          leave); excuse reads company-wide via the admin client — a
+//                          new oversight view the owner explicitly approved for CEO+SA.
+
+/** The CEO and Super Admin (system scope) are the only viewers who get the two oversight tabs. */
+export function canSeeCeoApprovalTabs(access: AccessContext): boolean {
+  return access.role === "CEO" || isAllVacationVisibility(access);
+}
+
+export type ApprovalScopePerson = {
+  hrId: string;
+  name: string;
+  jobTitle: string | null;
+};
+
+export type ApprovalScopeGroup = {
+  title: string;
+  people: ApprovalScopePerson[];
+};
+
+export type ApprovalScopeData = {
+  groups: ApprovalScopeGroup[];
+  totalPeople: number;
+};
+
+/**
+ * The viewer's DIRECT reports — the people they are personally responsible for approving.
+ * Owner-confirmed: "Who I Approve" is the direct-report set ONLY, identical for BOTH leave and
+ * excuse — NOT the downstream manager-of-manager chain (e.g. a District Manager is approved by
+ * their own National Sales Manager, and must NOT be surfaced under the CEO here). Derived live
+ * from the org directory (employee.managerHrId), never a hard-coded list.
+ */
+async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
+  const viewerHrId = access.hrId?.trim() ?? "";
+  if (!viewerHrId) return { groups: [], totalPeople: 0 };
+
+  const directory = await getEmployeeDirectory().catch((error) => {
+    console.error("[approvals-hub] buildApprovalScope directory load failed", { role: access.role, error });
+    return null;
+  });
+  const employees = directory?.employees ?? [];
+  if (employees.length === 0) return { groups: [], totalPeople: 0 };
+
+  const people: ApprovalScopePerson[] = [];
+  for (const employee of employees) {
+    if (hrIdsMatch(employee.hrId, viewerHrId)) continue; // never list the viewer themselves
+    if (hrIdsMatch(employee.managerHrId, viewerHrId)) {
+      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
+    }
+  }
+
+  // Group by job title (the human answer to "which roles do I approve"), most-populated first.
+  const groupsByTitle = new Map<string, ApprovalScopePerson[]>();
+  for (const person of people) {
+    const title = (person.jobTitle && person.jobTitle.trim()) || "Unspecified title";
+    const bucket = groupsByTitle.get(title) ?? [];
+    bucket.push(person);
+    groupsByTitle.set(title, bucket);
+  }
+  const groups = Array.from(groupsByTitle.entries())
+    .map(([title, groupPeople]) => ({
+      title,
+      people: groupPeople.sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => b.people.length - a.people.length || a.title.localeCompare(b.title));
+
+  return { groups, totalPeople: people.length };
+}
+
+export function getVacationApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
+  return buildApprovalScope(access);
+}
+
+export function getExcuseApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
+  return buildApprovalScope(access);
+}
+
+// ── "Company Requests" — every request (pending + decided) except the field force ──
+
+export type CompanyRequestStatusTone = "pending" | "approved" | "rejected" | "returned" | "neutral";
+
+export type CompanyRequestItem = {
+  id: string;
+  href: string;
+  employeeName: string;
+  employeeHrId: string;
+  submitterTitle: string | null;
+  typeLabel: string;
+  requestDate: string; // the leave start date / excuse date
+  submittedAt: string; // when it was submitted (created_at)
+  status: string;
+  statusLabel: string;
+  statusTone: CompanyRequestStatusTone;
+};
+
+/** hrId → current job title, for the field-force exclusion + submitter-title display. */
+function buildTitleByHrId(employees: EmployeeDirectoryRow[]): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const employee of employees) {
+    const key = normalizeHrId(employee.hrId);
+    if (key) map.set(key, employee.jobTitle);
+  }
+  return map;
+}
+
+function titleForHrId(titleByHrId: Map<string, string | null>, hrId: string | null | undefined): string | null {
+  const key = normalizeHrId(hrId ?? "");
+  return key ? titleByHrId.get(key) ?? null : null;
+}
+
+/** True when the submitter's current job title classifies as District Manager or Medical Rep. */
+function isExcludedFieldForce(title: string | null): boolean {
+  const role = resolveJobFunctionRole(title);
+  return role === "District Manager" || role === "Medical Rep";
+}
+
+function vacationStatusTone(status: string): CompanyRequestStatusTone {
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "returned") return "returned";
+  if (status.startsWith("pending") || status.startsWith("needs")) return "pending";
+  return "neutral";
+}
+
+function excuseStatusTone(status: string): CompanyRequestStatusTone {
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "returned_to_employee") return "returned";
+  if (status === "pending_manager") return "pending";
+  return "neutral";
+}
+
+/**
+ * Every leave request company-wide (pending AND decided) except those submitted by the
+ * field force (District Manager / Medical Rep). Reuses the viewer's own COMPANY-scoped
+ * report — the CEO already has company-wide leave visibility — so this exposes no leave
+ * data the viewer couldn't already reach; it only re-shapes and filters it.
+ */
+export async function getCompanyVacationRequestsExcludingFieldForce(access: AccessContext): Promise<CompanyRequestItem[]> {
+  if (!canSeeCeoApprovalTabs(access)) {
+    throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
+  }
+  const [report, directory] = await Promise.all([
+    getVacationReportData(access, { status: "all" }).catch((error) => {
+      console.error("[approvals-hub] getCompanyVacationRequestsExcludingFieldForce report failed", { role: access.role, error });
+      return null;
+    }),
+    getEmployeeDirectory().catch(() => null),
+  ]);
+  const rows = report?.rows ?? [];
+  const titleByHrId = buildTitleByHrId(directory?.employees ?? []);
+
+  const items: CompanyRequestItem[] = [];
+  for (const row of rows) {
+    const title = titleForHrId(titleByHrId, row.employeeHrId);
+    if (isExcludedFieldForce(title)) continue;
+    items.push({
+      id: row.id,
+      href: vacationApprovalHref(access, row.id),
+      employeeName: row.employeeName,
+      employeeHrId: row.employeeHrId,
+      submitterTitle: title,
+      typeLabel: vacationTypeLabel(row.vacationType),
+      requestDate: row.startDate,
+      submittedAt: row.createdAt,
+      status: row.status,
+      statusLabel: humanizeStatus(row.status),
+      statusTone: vacationStatusTone(row.status),
+    });
+  }
+  items.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  return items;
+}
+
+/**
+ * Every excuse request company-wide (pending AND decided) except field-force submissions.
+ * Excuse has no company-wide viewer scope today, so this reads via the admin client — a new
+ * oversight surface the owner explicitly approved for the CEO + Super Admin only.
+ */
+export async function getCompanyExcuseRequestsExcludingFieldForce(access: AccessContext): Promise<CompanyRequestItem[]> {
+  if (!canSeeCeoApprovalTabs(access)) {
+    throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
+  }
+  const db = getSupabaseAdmin();
+  const [{ data, error }, directory] = await Promise.all([
+    db
+      .from("v2_excuse_requests")
+      .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,status,created_at")
+      .order("created_at", { ascending: false })
+      .limit(1000),
+    getEmployeeDirectory().catch(() => null),
+  ]);
+  if (error) {
+    console.error("[approvals-hub] getCompanyExcuseRequestsExcludingFieldForce query failed", { role: access.role, error });
+    return [];
+  }
+  const titleByHrId = buildTitleByHrId(directory?.employees ?? []);
+
+  const items: CompanyRequestItem[] = [];
+  for (const row of (data as Array<Record<string, unknown>> | null) ?? []) {
+    const employeeHrId = String(row.employee_hr_id ?? "");
+    const title = titleForHrId(titleByHrId, employeeHrId);
+    if (isExcludedFieldForce(title)) continue;
+    const status = String(row.status ?? "");
+    const id = String(row.id ?? "");
+    items.push({
+      id,
+      href: excuseApprovalHref(access, id),
+      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeHrId,
+      submitterTitle: title,
+      typeLabel: row.excuse_type === "morning" ? "Morning" : "Afternoon",
+      requestDate: String(row.excuse_date ?? ""),
+      submittedAt: String(row.created_at ?? ""),
+      status,
+      statusLabel: humanizeStatus(status),
+      statusTone: excuseStatusTone(status),
     });
   }
   return items;
@@ -859,6 +1146,20 @@ export async function countPlanAwaiting(access: AccessContext): Promise<number> 
   } catch (error) {
     console.error("[approvals-hub] countPlanAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return 0;
+  }
+}
+
+/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
+export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getPlanApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getPlanAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
   }
 }
 

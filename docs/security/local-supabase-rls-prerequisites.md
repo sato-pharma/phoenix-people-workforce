@@ -13,16 +13,16 @@ It does not touch production, create Supabase cloud branches, create Supabase pr
 5. Use the Supabase CLI through this repo:
 
 ```powershell
-npm install supabase --save-dev
+pnpm add --save-dev supabase
 ```
 
 Do not use:
 
 ```powershell
-npm install -g supabase
+pnpm add -g supabase
 ```
 
-You can also run Supabase CLI commands through `npx supabase`, but the repo-local dev dependency is preferred because it is repeatable for this project.
+You can also run Supabase CLI commands through `pnpm exec supabase`, but the repo-local dev dependency is preferred because it is repeatable for this project.
 
 ## Why This Is Free
 
@@ -51,32 +51,32 @@ Do not paste production Supabase values into `.env.staging.rls.local`.
 After installing Docker Desktop and starting it, run:
 
 ```powershell
-npm run db:rls:check-local-prereqs
-npm run db:rls:discover-free-target
-npm run db:validate:role-alignment:local:dry-run
+pnpm run db:rls:check-local-prereqs
+pnpm run db:rls:discover-free-target
+pnpm run db:validate:role-alignment:local:dry-run
 ```
 
 If the preflight reports that Supabase CLI is missing, install it locally:
 
 ```powershell
-npm install supabase --save-dev
+pnpm add --save-dev supabase
 ```
 
 Then re-run:
 
 ```powershell
-npm run db:rls:check-local-prereqs
+pnpm run db:rls:check-local-prereqs
 ```
 
 ## Expected Preflight Behavior
 
-`npm run db:rls:check-local-prereqs` checks:
+`pnpm run db:rls:check-local-prereqs` checks:
 
 - Node.js version, requiring Node 20 or later.
 - npm availability.
 - Docker command availability.
 - Docker daemon status.
-- Supabase CLI availability from `node_modules/.bin/supabase` or `npx --no-install supabase --help`.
+- Supabase CLI availability from `node_modules/.bin/supabase` or `npx --no-install supabase --help (works with pnpm-installed bins)`.
 - `supabase/config.toml` presence.
 - `.env.staging.rls.local` presence.
 - `PHOENIX_RLS_FREE_ONLY=1`.
@@ -87,7 +87,7 @@ If Docker is missing, the script stops and tells you to install Docker Desktop f
 If Supabase CLI is missing, the script stops and tells you to run:
 
 ```powershell
-npm install supabase --save-dev
+pnpm add --save-dev supabase
 ```
 
 No migration or validation runs from the prerequisite checker.

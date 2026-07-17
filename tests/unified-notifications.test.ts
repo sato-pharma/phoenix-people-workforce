@@ -137,4 +137,19 @@ export function runUnifiedNotificationsTests() {
   assert.match(webhookSource, /x-telegram-bot-api-secret-token/i, "Telegram webhook must validate the secret token header");
   assert.match(webhookSource, /linkTelegramConnection/, "Telegram webhook must link through the settings service");
   assert.doesNotMatch(webhookSource, /approve|reject/i, "Telegram webhook must not approve/reject workflow actions");
+
+  // REGRESSION GUARD (owner report, 2026-07-17): the non-templated (general/probation-alert)
+  // notification path always greeted with the generic "Dear {Brand} Team," even when the system
+  // knew exactly who it was writing to — input.recipientName is set for every single-recipient
+  // send (buildChannelEmailInput) but effectiveTemplate()'s greeting never read it. The templated
+  // path already resolved a real name correctly; this path did not. "Dear Team," must now only
+  // appear when no genuinely custom greeting is configured AND the recipient's name is unknown.
+  const emailSource = source("src/lib/notifications/email.ts");
+  assert.match(emailSource, /function resolveGreeting\(/, "a dedicated greeting resolver exists for the non-templated path");
+  assert.match(emailSource, /if \(isGenericDefault && input\.recipientName\) \{/,
+    "the generic default greeting is skipped whenever the recipient's real name is known");
+  assert.match(emailSource, /return `Dear \$\{input\.recipientHonorific \?\? ""\}\$\{input\.recipientName\},`/,
+    "falls back to a name-addressed greeting, not the generic team greeting");
+  assert.match(emailSource, /greeting: resolveGreeting\(input, template\)/,
+    "effectiveTemplate must route the greeting through the new resolver");
 }

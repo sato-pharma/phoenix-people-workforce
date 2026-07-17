@@ -334,6 +334,26 @@ async function resolveExpenseAccessFilter(
   return { all: false, allowedHrIds: new Set() };
 }
 
+/**
+ * True when `targetHrId` falls within the caller's expense visibility scope
+ * (self / team / hierarchy / line / company). Use this to authorize a read of a
+ * specific caller-supplied employee HR id, instead of a blanket capability check
+ * that would expose every employee. Canonical-compares to tolerate HR_ID casing.
+ */
+export async function canViewEmployeeExpenseScope(
+  accessContext: AccessContext,
+  targetHrId: string,
+): Promise<boolean> {
+  const filter = await resolveExpenseAccessFilter(accessContext);
+  if (filter.all) return true;
+  const canonicalTarget = normalizeHrIdForAccess(targetHrId);
+  if (!canonicalTarget) return false;
+  for (const allowed of filter.allowedHrIds) {
+    if (normalizeHrIdForAccess(allowed) === canonicalTarget) return true;
+  }
+  return false;
+}
+
 async function getVisibleExpenseReportIds(
   supabase: SupabaseClient,
   accessFilter: ExpenseAccessFilter,

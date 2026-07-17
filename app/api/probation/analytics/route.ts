@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { canReadAllProbation } from "@/lib/probation/service";
+import { canViewProbationAnalytics } from "@/lib/probation/service";
 import { getProbationOutcomesAnalytics } from "@/lib/probation/intelligence/outcomes-analytics";
 
 export const runtime = "nodejs";
@@ -14,8 +14,8 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "probation", "read");
-    if (!canReadAllProbation(access)) {
-      return NextResponse.json({ error: "Forbidden: probation analytics requires company-wide probation access." }, { status: 403 });
+    if (!canViewProbationAnalytics(access)) {
+      return NextResponse.json({ error: "Forbidden: probation analytics requires an analytics-eligible role." }, { status: 403 });
     }
     const analytics = await getProbationOutcomesAnalytics();
     return NextResponse.json(analytics, { headers: { "Cache-Control": "no-store" } });

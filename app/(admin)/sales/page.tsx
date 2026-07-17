@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { SosDashboard } from "@/components/sales/sos-dashboard";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canExportSosDashboard, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { getSosDashboard, type SosDashboardData } from "@/lib/sales/sos-dashboard";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export default async function SourceOfSalesDashboardPage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

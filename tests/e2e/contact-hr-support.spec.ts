@@ -16,7 +16,7 @@ import { test, expect } from "@playwright/test";
  * - Print stylesheet
  * - Error boundary verification
  *
- * Run with:  npx playwright test tests/e2e/contact-hr-support.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/contact-hr-support.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/contact-hr-support";

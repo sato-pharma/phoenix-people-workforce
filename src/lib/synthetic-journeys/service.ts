@@ -91,7 +91,7 @@ function environmentFromBaseUrl(baseUrl: string): string | null {
     // Canonical custom domain and the Cloud Run service host both mean production.
     if (
       host === "phoenix-hr.satopharma.com" ||
-      host === "phoenix-hr-897559113412.us-central1.run.app" ||
+      host === "phoenix-hr-897559113412.europe-west3.run.app" ||
       host.endsWith(".run.app")
     ) {
       return "production";
