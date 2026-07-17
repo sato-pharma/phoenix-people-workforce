@@ -42,6 +42,21 @@ export function isCrmDoubleVisitRow(row: {
   );
 }
 
+/** Resigned CRM agents (owner-flagged, 2026-07-17): their iReports360 agent_crm_ids. Excluded from
+ * EVERY CRM read — visits and check-ins — so resigned reps are invisible across all consumers that
+ * go through this read layer. Single source; the CRM master table imports this same list. Resolved
+ * from the owner's display-name list (see memory crm-resigned-agents-exclusion-list). */
+export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
+  832, 851, 1024, 1035, 1071, 1102, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
+  1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
+  1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
+  1395, 1396, 1402, 1407, 1409, 1437, 1476, 1477, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
+  1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
+];
+
+/** PostgREST `in` list literal for the resigned ids, e.g. "(832,851,...)". */
+const RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
+
 const DEFAULT_PAGE_SIZE = 1000;
 
 /** Shared visit filters, applied identically across every read. */
@@ -77,6 +92,8 @@ type VisitFilterableQuery = {
 
 function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): VisitFilterableQuery {
   let result = query;
+  // Resigned agents are invisible across every CRM read (single source).
+  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", RESIGNED_IN_LIST);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
@@ -190,11 +207,14 @@ type CheckinFilterableQuery = {
   gte: (...args: any[]) => CheckinFilterableQuery;
   lte: (...args: any[]) => CheckinFilterableQuery;
   in: (...args: any[]) => CheckinFilterableQuery;
+  not: (...args: any[]) => CheckinFilterableQuery;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 function applyCheckinFilter(query: CheckinFilterableQuery, filter: CrmCheckinFilter): CheckinFilterableQuery {
   let result = query;
+  // Resigned agents are invisible across every CRM read (single source).
+  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", RESIGNED_IN_LIST);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);

@@ -14,6 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
+import { CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export type CrmMasterDataset =
@@ -38,17 +39,6 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
  * reclassified_no_checkin. Used only for the "Regular · No Check-in" tab's DB-level filter/count;
  * the other tabs read the base table and derive the flag in memory. */
 const CRM_VISITS_EFFECTIVE_VIEW = "ireports360_visits_effective";
-
-/** Resigned CRM agents (owner-provided, 2026-07-17): their iReports360 agent_crm_ids, resolved from
- * the display-names the owner flagged. Excluded from EVERY CRM master tab (visits + check-ins +
- * CRM Issues) — skipped as if invisible. See memory crm-resigned-agents-exclusion-list. */
-const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
-  832, 851, 1024, 1035, 1071, 1102, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
-  1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
-  1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
-  1395, 1396, 1402, 1407, 1409, 1437, 1476, 1477, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
-  1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
-];
 
 /** A visit-based dataset (everything except check-ins reads the visits table). */
 function isVisitDataset(dataset: CrmMasterDataset): boolean {
