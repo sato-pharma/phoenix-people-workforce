@@ -15,6 +15,7 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
@@ -432,6 +433,11 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
   }
 
   return employees
+    // MEDICAL-REPRESENTATIVE-ONLY (owner rule 2026-07-17): probation is a med-rep workflow. Managers
+    // (DSM/RSM/NSM) and head-office roles inside their own hire+90 window must never surface in the
+    // tracker/dashboard/exports/portal — deleting their probation_cases was not enough because this
+    // list is built from the employee directory window, not probation_cases. See isMedicalRepresentativeTitle.
+    .filter((employee) => isMedicalRepresentativeTitle(employee.positionTitle ?? employee.jobTitle))
     .filter((employee) => canReadProbationEmployee(access, employee, viewer, employees, viewerAllowedLines))
     .map((employee) => {
       const probation = probationByHrId.get(employee.hrId);
