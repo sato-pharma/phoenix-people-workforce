@@ -6,7 +6,7 @@ import { ingestSyntheticJourneyReport, type JourneyResult } from "@/lib/syntheti
 const reportPath = path.resolve(process.cwd(), process.argv[2] ?? "tests/synthetic/report/latest.json");
 
 if (!fs.existsSync(reportPath)) {
-  console.error(`No report found at ${reportPath}. Run "npm run synthetic:test" first.`);
+  console.error(`No report found at ${reportPath}. Run "pnpm run synthetic:test" first.`);
   process.exit(1);
 }
 

@@ -13,12 +13,15 @@
 # Dockerfile's ARG/ENV lines actually receive a value, then the workflow deploys the
 # resulting image directly (gcloud run deploy --image, no further build).
 #
-# Build caching (measured 2026-07-17): the previous version of this config ran a classic
-# `docker build --no-cache`, so every deploy re-ran `npm ci` and `next build` from
-# scratch (~330-420s on the default e2-standard-2). This version uses BuildKit registry
-# caching plus a bigger machine. BUILDKIT_INLINE_CACHE only embeds cache metadata for
-# the FINAL stage's layers, so a single cached build can never reuse the expensive
-# multi-stage `deps` layer (npm ci) — hence the two-step pattern:
+# Build caching (measured 2026-07-17, then npm; deps install is pnpm since the
+# pnpm migration): the previous version of this config ran a classic
+# `docker build --no-cache`, so every deploy re-ran the dependency install and
+# `next build` from scratch (~330-420s on the default e2-standard-2). This version uses
+# BuildKit registry caching plus a bigger machine. BUILDKIT_INLINE_CACHE only embeds
+# cache metadata for the FINAL stage's layers, so a single cached build can never reuse
+# the expensive multi-stage `deps` layer (pnpm install --frozen-lockfile, keyed on the
+# Dockerfile's COPY of package.json + pnpm-lock.yaml + pnpm-workspace.yaml) — hence the
+# two-step pattern:
 #   (a) build the Dockerfile's `deps` stage alone, seeded from the previous
 #       $_CACHE_REPO:deps-cache, and push the refreshed tag immediately (so even a
 #       later `next build` failure still leaves a warm deps cache for the retry);
@@ -48,8 +51,8 @@ steps:
         set -euo pipefail
         # NOTE: no --network=cloudbuild here — BuildKit rejects that network mode
         # ("network mode \"cloudbuild\" not supported by buildkit", verified on build
-        # f0493e2a). Nothing in this Dockerfile needs the metadata server: npm ci
-        # pulls from the public registry and next build makes no GCP calls.
+        # f0493e2a). Nothing in this Dockerfile needs the metadata server: corepack and
+        # pnpm install pull from the public registry and next build makes no GCP calls.
         docker build \
           --target deps \
           --cache-from "${_CACHE_REPO}:deps-cache" \

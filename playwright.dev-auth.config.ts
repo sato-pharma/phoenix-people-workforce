@@ -9,8 +9,8 @@ import { defineConfig, devices } from "@playwright/test";
  * This repo's .env.local targets prod — override it before running so the role tests
  * don't read/exercise production data.
  *
- * Run (lets Playwright boot `npm run dev`, or reuses one you already have on :3000):
- *   npx playwright test --config playwright.dev-auth.config.ts
+ * Run (lets Playwright boot `pnpm run dev`, or reuses one you already have on :3000):
+ *   pnpm exec playwright test --config playwright.dev-auth.config.ts
  */
 export default defineConfig({
   testDir: "tests/e2e",
@@ -22,7 +22,7 @@ export default defineConfig({
   outputDir: "output/playwright-dev-auth",
   reporter: [["list"]],
   webServer: {
-    command: "npm run dev -- -p 3000",
+    command: "pnpm run dev -- -p 3000",
     reuseExistingServer: true,
     timeout: 120_000,
     url: "http://localhost:3000/login",

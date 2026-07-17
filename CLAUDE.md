@@ -28,17 +28,17 @@ All commands run from the repo root.
 
 | Task | Command |
 | --- | --- |
-| Dev server (Turbopack) | `npm run dev` |
-| Production build | `npm run build` |
-| Lint | `npm run lint` |
-| Typecheck | `npm run typecheck` |
-| Unit/integration tests | `npm run test` |
-| Fast editing gate (typecheck only) | `npm run check:edit` |
-| Full hardening gate (lint + typecheck + test + build) | `npm run check:harden` |
-| CI gate (same as harden) | `npm run ci` |
+| Dev server (Turbopack) | `pnpm run dev` |
+| Production build | `pnpm run build` |
+| Lint | `pnpm run lint` |
+| Typecheck | `pnpm run typecheck` |
+| Unit/integration tests | `pnpm run test` |
+| Fast editing gate (typecheck only) | `pnpm run check:edit` |
+| Full hardening gate (lint + typecheck + test + build) | `pnpm run check:harden` |
+| CI gate (same as harden) | `pnpm run ci` |
 
-**Editing workflow:** use `npm run check:edit` for the tight inner loop while
-reshaping UI/config; run `npm run check:harden` before any commit, push, PR,
+**Editing workflow:** use `pnpm run check:edit` for the tight inner loop while
+reshaping UI/config; run `pnpm run check:harden` before any commit, push, PR,
 migration, or deploy. See `docs/editing-guide.md`.
 
 ### Tests
@@ -52,13 +52,13 @@ migration, or deploy. See `docs/editing-guide.md`.
   the other `runTest(...)` lines in `tests/run-tests.ts`. When you add a test file,
   wire its exported function into `tests/run-tests.ts` or it will not run.
 - End-to-end tests use Playwright (`tests/e2e/*.spec.ts`, config
-  `playwright.config.ts`). Run with `npx playwright test`. An auth `setup` project
+  `playwright.config.ts`). Run with `pnpm exec playwright test`. An auth `setup` project
   signs in first and stores browser state; `*.data-bearing.spec.ts` only runs when
   `PLAYWRIGHT_DATA_USER_HRID` / `PLAYWRIGHT_DATA_USER_PASSWORD` are set.
 
 ### Database / RLS scripts
 
-Many `db:*` and `phaseNN:*` npm scripts (Node + type-stripping) validate Supabase
+Many `db:*` and `phaseNN:*` package.json scripts (Node + type-stripping) validate Supabase
 RLS, role alignment, and the staged production-migration approval pipeline. These
 talk to staging/production Supabase and gate migrations — do not run them casually;
 treat them as the migration safety harness described in `docs/security/`.

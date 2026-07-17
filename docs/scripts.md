@@ -14,22 +14,22 @@ All scripts are defined in `package.json`. This document classifies them by purp
 
 | Script | Purpose | Safety |
 |---|---|---|
-| `npm run dev` | Start dev server (Turbopack) | Safe |
-| `npm run build` | Production build | Safe |
-| `npm run start` | Start production server locally | Safe |
-| `npm run lint` | Run ESLint | Safe |
-| `npm run typecheck` | TypeScript type checking | Safe |
-| `npm run test` | Run unit/integration tests | Safe |
-| `npm run test:e2e` | Full Playwright E2E suite | Safe |
-| `npm run test:e2e:smoke` | Playwright login smoke test | Safe |
+| `pnpm run dev` | Start dev server (Turbopack) | Safe |
+| `pnpm run build` | Production build | Safe |
+| `pnpm run start` | Start production server locally | Safe |
+| `pnpm run lint` | Run ESLint | Safe |
+| `pnpm run typecheck` | TypeScript type checking | Safe |
+| `pnpm run test` | Run unit/integration tests | Safe |
+| `pnpm run test:e2e` | Full Playwright E2E suite | Safe |
+| `pnpm run test:e2e:smoke` | Playwright login smoke test | Safe |
 
 ## Quality Gates
 
 | Script | Purpose | Safety | Notes |
 |---|---|---|---|
-| `npm run check:edit` | Fast editing gate (typecheck only) | Safe | Inner loop during development |
-| `npm run check:harden` | Full validation gate | Safe | lint + typecheck + test + build |
-| `npm run ci` | CI pipeline gate | Safe | Same as check:harden |
+| `pnpm run check:edit` | Fast editing gate (typecheck only) | Safe | Inner loop during development |
+| `pnpm run check:harden` | Full validation gate | Safe | lint + typecheck + test + build |
+| `pnpm run ci` | CI pipeline gate | Safe | Same as check:harden |
 
 ## Database / RLS Validation Scripts
 
