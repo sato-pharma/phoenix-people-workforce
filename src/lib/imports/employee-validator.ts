@@ -684,7 +684,8 @@ export function validateEmployeeImportRows(
   }
 
   // Build the canonical-area lookup once (normalized name -> {code,name}). Empty when the
-  // canonical set is unavailable, in which case resolveCanonicalArea skips enforcement.
+  // canonical set is unavailable, in which case resolveCanonicalArea FAILS CLOSED — it blocks
+  // every sales-line row (code "canonical_area_unavailable") rather than importing it unverified.
   const canonicalAreaByKey = new Map<string, { code: string; name: string }>();
   for (const canonicalArea of options.existingState?.canonicalAreas ?? []) {
     canonicalAreaByKey.set(normalizeDepartmentLookupKey(canonicalArea.name), canonicalArea);

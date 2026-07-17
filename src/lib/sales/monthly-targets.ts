@@ -26,6 +26,15 @@ const LINE_ALIASES: Record<string, string> = {
   ["antiinfective"]: "anti_infective",
 };
 
+/**
+ * Confidential products (LA003 Lacto Basic 1, LA004 Lacto Basic 2, SS001 Satoslim) are
+ * CEO/Super-Admin-only (see src/lib/sales/access-scope.ts). They are excluded from the
+ * attribution engine and every drill-down function, so they must never be accepted as a
+ * target input either — otherwise a target row would surface the product name in the
+ * SFE-Manager-visible achievement grid (au.f_monthly_achievement unions target keys).
+ */
+const CONFIDENTIAL_PRODUCT_CODES = new Set(["LA003", "LA004", "SS001"]);
+
 function str(value: unknown): string {
   return value == null ? "" : String(value);
 }
@@ -66,6 +75,8 @@ export type TargetValidationRefs = {
   lineAreaCarriesTarget: Map<string, boolean>;
   /** normKey(product code or name) -> canonical product_code (upper) */
   productByKey: Map<string, string>;
+  /** normKey(code or name) of confidential products — rejected as target input, never resolvable */
+  confidentialByKey: Set<string>;
 };
 
 /** Load the canonical model + product reference used to validate target input. */
@@ -76,6 +87,7 @@ export async function loadTargetValidationRefs(): Promise<TargetValidationRefs> 
   const areaByKey = new Map<string, string>();
   const lineAreaCarriesTarget = new Map<string, boolean>();
   const productByKey = new Map<string, string>();
+  const confidentialByKey = new Set<string>();
 
   const [mapResult, productResult] = await Promise.all([
     supabase.from("au_v_line_area_map").select("line_code,area_code,area_name,carries_target"),
@@ -103,12 +115,18 @@ export async function loadTargetValidationRefs(): Promise<TargetValidationRefs> 
     if (record.active === false) continue;
     const code = str(record.product_code).trim().toUpperCase();
     if (!code) continue;
-    productByKey.set(normKey(code), code);
     const name = str(record.product_name).trim();
+    if (CONFIDENTIAL_PRODUCT_CODES.has(code)) {
+      // Never resolvable to a target; record its keys so validation rejects it with a clear message.
+      confidentialByKey.add(normKey(code));
+      if (name) confidentialByKey.add(normKey(name));
+      continue;
+    }
+    productByKey.set(normKey(code), code);
     if (name && !productByKey.has(normKey(name))) productByKey.set(normKey(name), code);
   }
 
-  return { lineByKey, areaByKey, lineAreaCarriesTarget, productByKey };
+  return { lineByKey, areaByKey, lineAreaCarriesTarget, productByKey, confidentialByKey };
 }
 
 // ── Input validation (map-or-reject) ──────────────────────────────────────────
@@ -184,6 +202,11 @@ export function validateTargetRows(
     }
     if (carries === false) {
       errors.push({ rowNumber, field: "area", code: "area_not_targetable", message: `Area "${areaCode}" is an "Other" area in "${lineCode}" and carries no target.` });
+      continue;
+    }
+
+    if (refs.confidentialByKey.has(normKey(row.product))) {
+      errors.push({ rowNumber, field: "product", code: "confidential_product", message: `Product "${row.product}" is confidential and cannot carry a field target.` });
       continue;
     }
 
