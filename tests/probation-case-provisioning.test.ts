@@ -27,6 +27,13 @@ export function runProbationCaseProvisioningTests() {
   assert.match(cases, /skippedReason: "not_medical_representative"/, "non-med-rep provisioning is surfaced, not created");
   // The backfill PLAN also excludes non-med-reps so the dry-run report is accurate.
   assert.match(backfill, /if \(!isMedicalRepresentativeTitle\(/, "backfill plan skips non-med-reps");
+  // The dashboard / tracker / Export PDF+Excel / manager portal all build from getProbationRows, which
+  // lists the hire+90 WINDOW from the employee directory (NOT probation_cases). It needs its OWN med-rep
+  // guard — else non-med-reps in their window leak onto the dashboard with Pass/Terminate/Feedback
+  // actions even after their cases are deleted (found in the 2026-07-17 live walkthrough: 15 shown → 11).
+  const service = source("src/lib/probation/service.ts");
+  assert.match(service, /\.filter\(\(employee\) => isMedicalRepresentativeTitle\(employee\.positionTitle \?\? employee\.jobTitle\)\)/,
+    "getProbationRows (dashboard/tracker/exports/portal) is medical-representatives-only");
   // The DB trigger (the primary hire path) carries the SAME guard — an app guard alone would leak via
   // the AFTER INSERT trigger. This is the load-bearing enforcement for every hire path.
   const scopeTrigger = source("supabase/migrations/20260717140000_probation_provision_medical_rep_only.sql");
