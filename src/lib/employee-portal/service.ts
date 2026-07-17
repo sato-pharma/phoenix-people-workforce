@@ -3138,6 +3138,34 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+// ── Portal performance target aggregation ─────────────────────────────────────
+// A rep/DSM's target for a (territory, period, product) can appear on several sales
+// rows — the SAME figure repeated across the Retail/Stores/Discount or duplicate rows
+// for that cell (an "echo"), OR genuinely different figures that are additive. We SUM
+// the DISTINCT target values per key: an echo (identical to the cent) is counted once,
+// while genuinely different targets add up. This realizes the additive intent (matching
+// the admin Source-of-Sales dashboard) without double-counting a repeated target.
+// Values are compared per integer cent to absorb floating-point representation noise.
+function addDistinctTargetValue(map: Map<string, Set<number>>, key: string, target: number): void {
+  if (!Number.isFinite(target) || target <= 0) return;
+  const cents = Math.round(target * 100);
+  let set = map.get(key);
+  if (!set) {
+    set = new Set<number>();
+    map.set(key, set);
+  }
+  set.add(cents);
+}
+
+function sumDistinctTargetValues(set: Set<number> | undefined): number {
+  if (!set) return 0;
+  let cents = 0;
+  set.forEach((value) => {
+    cents += value;
+  });
+  return cents / 100;
+}
+
 async function resolveSalesRankInTeam(params: {
   managerHrId: string | null;
   currentHrId: string;
@@ -3338,22 +3366,21 @@ async function resolveSalesRankInTeam(params: {
   const memberNames = new Map<string, string>();
   const totals = new Map<string, { name: string; sales: number; target: number }>();
 
-  // Target deduplication strategy depends on comparison mode:
+  // Target aggregation strategy depends on comparison mode:
   //
   // team-members mode (Med Reps): memberId IS the individual employee.
-  //   Target repeats across territory rows for the same product+period.
-  //   Dedup key: memberId::period::product → take max per employee.
+  //   A cell's target can repeat across the sales rows for one territory+product+period
+  //   (echo) or differ (additive). Key by territory; sum DISTINCT targets per key, then
+  //   sum across territories → the member's real total.
   //
   // line-managers mode (DSMs): memberId is the DSM; rows come from all their team members.
-  //   Each team member has their own target that repeats across their territories.
-  //   Dedup key: individualEmployeeId::period::product → take max per individual,
-  //   then sum across all individuals under the DSM.
+  //   Same rule per individual+territory, then sum across all individuals under the DSM.
   //   individualEmployeeId = employee_hr_id (or fallback to hr_id for vacant rows).
 
   // key format:
-  //   team-members → "TM::{memberId}::{period}::{product}"
-  //   line-managers → "LM::{individualId}::{period}::{product}"  (maps back to memberId separately)
-  const maxTargetKeys = new Map<string, number>();
+  //   team-members → "TM::{memberId}::{territory}::{period}::{product}"
+  //   line-managers → "LM::{individualId}::{territory}::{period}::{product}"  (maps back to memberId separately)
+  const targetSetKeys = new Map<string, Set<number>>();
   // For line-managers only: track which memberId each individualId belongs to
   const individualToMember = new Map<string, string>();
 
@@ -3386,9 +3413,7 @@ async function resolveSalesRankInTeam(params: {
       targetKey = `TM::${memberId}::${territory}::${periodKey}::${product}`;
     }
 
-    if (Number.isFinite(targetValue) && targetValue > (maxTargetKeys.get(targetKey) ?? 0)) {
-      maxTargetKeys.set(targetKey, targetValue);
-    }
+    addDistinctTargetValue(targetSetKeys, targetKey, targetValue);
   });
 
   // Pass 2 — sum sales (all rows, simple sum)
@@ -3406,21 +3431,21 @@ async function resolveSalesRankInTeam(params: {
     });
   });
 
-  // Pass 3 — add deduplicated targets
-  maxTargetKeys.forEach((value, key) => {
+  // Pass 3 — add targets (sum of distinct values per key)
+  targetSetKeys.forEach((set, key) => {
     let memberId: string | undefined;
     if (isLineManagersMode) {
-      // key = "LM::{individualId}::{period}::{product}"
+      // key = "LM::{individualId}::{territory}::{period}::{product}"
       const individualId = key.slice("LM::".length).split("::")[0];
       memberId = individualToMember.get(individualId);
     } else {
-      // key = "TM::{memberId}::{period}::{product}"
+      // key = "TM::{memberId}::{territory}::{period}::{product}"
       memberId = key.slice("TM::".length).split("::")[0];
     }
     if (!memberId) return;
     const current = totals.get(memberId);
     if (!current) return;
-    totals.set(memberId, { ...current, target: current.target + value });
+    totals.set(memberId, { ...current, target: current.target + sumDistinctTargetValues(set) });
   });
 
   teamHrCanonicalIds.forEach((hrId) => {
@@ -4323,15 +4348,15 @@ async function buildTeamPerformanceForScope(input: {
       ? allRecords.filter((r) => selectedPeriods.includes(r.period))
       : allRecords;
 
-    // Pass 1 — accumulate sales and build deduplicated target keys
-    // Target dedup key: (canonical rep ID OR territory for vacant)::period::product → take max
+    // Pass 1 — accumulate sales and build per-key distinct target sets
+    // Target key: canonical rep ID::territory::period::product → sum of DISTINCT targets
     const salesByRepProduct = new Map<string, { sales: number; units: number; family: string }>();
-    const maxTargetByKey = new Map<string, number>();
+    const targetSetByKey = new Map<string, Set<number>>();
     const targetKeyToRepProduct = new Map<string, { repId: string; product: string }>();
     
     // Global line totals (will include vacant areas if NSM)
     let teamTotalSales = 0;
-    const globalMaxTargetByKey = new Map<string, number>();
+    const globalTargetSetByKey = new Map<string, Set<number>>();
 
     records.forEach((record) => {
       const salesVal = record.salesValue;
@@ -4345,9 +4370,7 @@ async function buildTeamPerformanceForScope(input: {
       // Target key for the entire line: territory::period::product
       // We use territory because vacant areas are usually identified by territory
       const lineTargetKey = `${territory}::${period}::${product}`;
-      if (targetVal > (globalMaxTargetByKey.get(lineTargetKey) ?? 0)) {
-        globalMaxTargetByKey.set(lineTargetKey, targetVal);
-      }
+      addDistinctTargetValue(globalTargetSetByKey, lineTargetKey, targetVal);
 
       // Attribute to member if linked
       const normalized = normalizeHrId(record.hrId);
@@ -4365,26 +4388,23 @@ async function buildTeamPerformanceForScope(input: {
       });
 
       const targetKey = `${canonical}::${territory}::${period}::${product}`;
-      const currentMax = maxTargetByKey.get(targetKey) ?? 0;
-      if (targetVal > currentMax) {
-        maxTargetByKey.set(targetKey, targetVal);
-        targetKeyToRepProduct.set(targetKey, { repId: canonical, product });
-      }
+      addDistinctTargetValue(targetSetByKey, targetKey, targetVal);
+      targetKeyToRepProduct.set(targetKey, { repId: canonical, product });
     });
 
-    // Calculate team total target from global maxes
+    // Calculate team total target by summing distinct targets per line key
     let teamTotalTarget = 0;
-    globalMaxTargetByKey.forEach((val) => {
-      teamTotalTarget += val;
+    globalTargetSetByKey.forEach((set) => {
+      teamTotalTarget += sumDistinctTargetValues(set);
     });
 
-    // Pass 2 — aggregate deduplicated targets by (repId::product)
+    // Pass 2 — aggregate targets by (repId::product), summing distinct per key
     const targetByRepProduct = new Map<string, number>();
-    maxTargetByKey.forEach((value, key) => {
+    targetSetByKey.forEach((set, key) => {
       const rp = targetKeyToRepProduct.get(key);
       if (!rp) return;
       const k = `${rp.repId}::${rp.product}`;
-      targetByRepProduct.set(k, (targetByRepProduct.get(k) ?? 0) + value);
+      targetByRepProduct.set(k, (targetByRepProduct.get(k) ?? 0) + sumDistinctTargetValues(set));
     });
 
     // Pass 3 — build per-member data (include all med reps, even those with no sales)
@@ -4673,10 +4693,10 @@ async function computeLineTopAchievers(
 
   const records = await fetchPortalSalesRecords(repHrIds, {});
 
-  // Same target-dedup + per-rep achievement math as getDsmTeamPerformance:
-  // sum sales per (rep::product); take the max target per (rep::territory::period::product).
+  // Same per-rep achievement math as getDsmTeamPerformance:
+  // sum sales per (rep::product); sum DISTINCT targets per (rep::territory::period::product).
   const salesByRepProduct = new Map<string, number>();
-  const maxTargetByKey = new Map<string, number>();
+  const targetSetByKey = new Map<string, Set<number>>();
   const targetKeyToRep = new Map<string, string>();
 
   for (const record of records) {
@@ -4693,10 +4713,8 @@ async function computeLineTopAchievers(
     salesByRepProduct.set(rpKey, (salesByRepProduct.get(rpKey) ?? 0) + record.salesValue);
 
     const targetKey = `${canonical}::${territory}::${period}::${product}`;
-    if (record.targetValue > (maxTargetByKey.get(targetKey) ?? 0)) {
-      maxTargetByKey.set(targetKey, record.targetValue);
-      targetKeyToRep.set(targetKey, canonical);
-    }
+    addDistinctTargetValue(targetSetByKey, targetKey, record.targetValue);
+    targetKeyToRep.set(targetKey, canonical);
   }
 
   const salesByRep = new Map<string, number>();
@@ -4706,10 +4724,10 @@ async function computeLineTopAchievers(
   });
 
   const targetByRep = new Map<string, number>();
-  maxTargetByKey.forEach((value, key) => {
+  targetSetByKey.forEach((set, key) => {
     const repId = targetKeyToRep.get(key);
     if (!repId) return;
-    targetByRep.set(repId, (targetByRep.get(repId) ?? 0) + value);
+    targetByRep.set(repId, (targetByRep.get(repId) ?? 0) + sumDistinctTargetValues(set));
   });
 
   const achievers: LineTopAchiever[] = [];
@@ -5251,10 +5269,10 @@ async function buildDsmPerformanceForLineScope(input: {
       : allRecords;
 
     const salesByDsmProduct = new Map<string, { sales: number; units: number; family: string }>();
-    const maxTargetByDsmPeriodProduct = new Map<string, number>();
-    
+    const dsmTargetSetByKey = new Map<string, Set<number>>();
+
     let lineTotalSales = 0;
-    const globalMaxTargetByKey = new Map<string, number>();
+    const globalTargetSetByKey = new Map<string, Set<number>>();
 
     records.forEach(({ dsmCanonical, record }) => {
       const salesVal = record.salesValue;
@@ -5265,9 +5283,7 @@ async function buildDsmPerformanceForLineScope(input: {
 
       lineTotalSales += salesVal;
       const lineTargetKey = `${territory}::${period}::${product}`;
-      if (targetVal > (globalMaxTargetByKey.get(lineTargetKey) ?? 0)) {
-        globalMaxTargetByKey.set(lineTargetKey, targetVal);
-      }
+      addDistinctTargetValue(globalTargetSetByKey, lineTargetKey, targetVal);
 
       const family = record.family || "";
       const dpKey = `${dsmCanonical}::${product}`;
@@ -5278,26 +5294,24 @@ async function buildDsmPerformanceForLineScope(input: {
         family: family || existing.family,
       });
 
-      // DSM target dedup: manager::territory::period::product
+      // DSM target: manager::territory::period::product — sum of distinct targets
       const dsmTargetKey = `${dsmCanonical}::${territory}::${period}::${product}`;
-      if (targetVal > (maxTargetByDsmPeriodProduct.get(dsmTargetKey) ?? 0)) {
-        maxTargetByDsmPeriodProduct.set(dsmTargetKey, targetVal);
-      }
+      addDistinctTargetValue(dsmTargetSetByKey, dsmTargetKey, targetVal);
     });
 
     let lineTotalTarget = 0;
-    globalMaxTargetByKey.forEach((val) => {
-      lineTotalTarget += val;
+    globalTargetSetByKey.forEach((set) => {
+      lineTotalTarget += sumDistinctTargetValues(set);
     });
 
-    // Aggregate DSM product targets
+    // Aggregate DSM product targets (sum of distinct targets per key)
     const dsmProductTargets = new Map<string, number>();
-    maxTargetByDsmPeriodProduct.forEach((val, key) => {
+    dsmTargetSetByKey.forEach((set, key) => {
       const parts = key.split("::");
       const dsmId = parts[0];
       const product = parts[3];
       const k = `${dsmId}::${product}`;
-      dsmProductTargets.set(k, (dsmProductTargets.get(k) ?? 0) + val);
+      dsmProductTargets.set(k, (dsmProductTargets.get(k) ?? 0) + sumDistinctTargetValues(set));
     });
 
     // Build DSM data objects
