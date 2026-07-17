@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,16 @@ export type TargetGridRow = {
 export type RegionRollup = { region: string; actualValue: number; targetValue: number; achievementValue: number | null };
 export type DmRollup = { dmName: string; actualValue: number; targetValue: number; achievementValue: number | null };
 export type LineTotal = { actualValue: number; targetValue: number; achievementValue: number | null } | null;
+export type SourceFile = {
+  distributorName: string;
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  totalQty: number;
+  totalValue: number;
+  importableRows: number;
+  status: string;
+};
 
 export type TargetsWorkspaceProps = {
   lines: ReadonlyArray<{ code: string; label: string }>;
@@ -46,10 +56,15 @@ export type TargetsWorkspaceProps = {
   lineTotal: LineTotal;
   byRegion: RegionRollup[];
   byDm: DmRollup[];
+  sourceFiles: SourceFile[];
   error: string | null;
 };
 
 type UploadPreview = { totalRows: number; validRows: number; errors: Array<{ rowNumber: number; field: string; code: string; message: string }> };
+
+type BreakdownLine = { brickName: string; distributorName: string; customerName: string; units: number; value: number };
+type TrendPoint = { period: string; units: number; value: number };
+type BreakdownState = { loading: boolean; rows: BreakdownLine[]; trend: TrendPoint[]; totalUnits: number; totalValue: number; error: string | null };
 
 const money = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const fmtMoney = (value: number): string => money.format(Math.round(value));
@@ -64,6 +79,39 @@ function achievementTone(value: number | null): string {
 
 const keyOf = (row: TargetGridRow): string => `${row.areaCode}|${row.productCode}`;
 
+type CustomerLine = { customerName: string; units: number; value: number };
+type DistGroup = { distributorName: string; units: number; value: number; customers: CustomerLine[] };
+type BrickGroup = { brickName: string; units: number; value: number; distributors: DistGroup[] };
+
+/** Nest the raw lines into brick → distributor → customer (largest first at each level). */
+function groupSource(rows: BreakdownLine[]): BrickGroup[] {
+  const bricks = new Map<string, BrickGroup>();
+  for (const line of rows) {
+    let brick = bricks.get(line.brickName);
+    if (!brick) {
+      brick = { brickName: line.brickName, units: 0, value: 0, distributors: [] };
+      bricks.set(line.brickName, brick);
+    }
+    brick.units += line.units;
+    brick.value += line.value;
+    let dist = brick.distributors.find((d) => d.distributorName === line.distributorName);
+    if (!dist) {
+      dist = { distributorName: line.distributorName, units: 0, value: 0, customers: [] };
+      brick.distributors.push(dist);
+    }
+    dist.units += line.units;
+    dist.value += line.value;
+    dist.customers.push({ customerName: line.customerName, units: line.units, value: line.value });
+  }
+  const result = [...bricks.values()];
+  for (const brick of result) {
+    brick.distributors.sort((a, b) => b.value - a.value);
+    for (const dist of brick.distributors) dist.customers.sort((a, b) => b.value - a.value);
+  }
+  result.sort((a, b) => b.value - a.value);
+  return result;
+}
+
 export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const router = useRouter();
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -73,6 +121,41 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const [message, setMessage] = useState<string | null>(null);
 
   const editedKeys = useMemo(() => Object.keys(edits), [edits]);
+  const [expanded, setExpanded] = useState<Record<string, BreakdownState>>({});
+  const [showFiles, setShowFiles] = useState(false);
+
+  async function toggleBreakdown(row: TargetGridRow) {
+    const key = keyOf(row);
+    if (expanded[key]) {
+      setExpanded((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+    setExpanded((current) => ({ ...current, [key]: { loading: true, rows: [], trend: [], totalUnits: 0, totalValue: 0, error: null } }));
+    try {
+      const params = new URLSearchParams({
+        period: props.selectedPeriod,
+        line: props.selectedLine,
+        area: row.areaCode,
+        product: row.productCode,
+      });
+      const res = await fetch(`/api/sales/targets/breakdown?${params.toString()}`);
+      const json = await res.json();
+      if (!json.success) {
+        setExpanded((current) => ({ ...current, [key]: { loading: false, rows: [], trend: [], totalUnits: 0, totalValue: 0, error: json.error ?? "Failed to load." } }));
+        return;
+      }
+      setExpanded((current) => ({
+        ...current,
+        [key]: { loading: false, rows: json.rows ?? [], trend: json.trend ?? [], totalUnits: json.totalUnits ?? 0, totalValue: json.totalValue ?? 0, error: null },
+      }));
+    } catch {
+      setExpanded((current) => ({ ...current, [key]: { loading: false, rows: [], trend: [], totalUnits: 0, totalValue: 0, error: "Failed to load (network)." } }));
+    }
+  }
 
   function navigate(line: string, period: string) {
     setEdits({});
@@ -269,10 +352,21 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       {/* Grid */}
       <Card className="p-0">
         <div className="flex items-center justify-between border-b p-3">
-          <div className="text-sm font-semibold">Targets &amp; achievement — {props.selectedLine} · {props.selectedPeriod}</div>
-          <Button size="sm" disabled={editedKeys.length === 0 || busy !== null} onClick={saveEdits}>
-            {busy === "save" ? "Saving…" : `Save edits${editedKeys.length ? ` (${editedKeys.length})` : ""}`}
-          </Button>
+          <div>
+            <div className="text-sm font-semibold">Targets &amp; achievement — {props.lines.find((l) => l.code === props.selectedLine)?.label ?? props.selectedLine} · {props.selectedPeriod}</div>
+            <div className="text-xs text-muted-foreground">Click a row to trace its sales to source (distributor &amp; brick).</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+              href={`/api/sales/targets/breakdown/export?line=${encodeURIComponent(props.selectedLine)}&period=${encodeURIComponent(props.selectedPeriod)}`}
+            >
+              Export audit (Excel)
+            </a>
+            <Button size="sm" disabled={editedKeys.length === 0 || busy !== null} onClick={saveEdits}>
+              {busy === "save" ? "Saving…" : `Save edits${editedKeys.length ? ` (${editedKeys.length})` : ""}`}
+            </Button>
+          </div>
         </div>
         {props.rows.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">
@@ -283,6 +377,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 bg-background">
                 <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="w-6 p-2"></th>
                   <th className="p-2">Area</th>
                   <th className="p-2">Region</th>
                   <th className="p-2">Product</th>
@@ -298,33 +393,158 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   const editValue = edits[key] ?? (row.targetValue == null ? "" : String(row.targetValue));
                   const liveTarget = editValue === "" ? null : Number(editValue);
                   const liveAch = liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null;
+                  const canDrill = row.actualValue !== 0;
+                  const detail = expanded[key];
                   return (
-                    <tr key={key} className="border-b hover:bg-muted/40">
-                      <td className="p-2">
-                        <span>{row.areaName || "—"}</span>
-                        {row.areaState === "vacant_will_hire" ? <Badge className="ml-1 align-middle">vacant</Badge> : null}
-                      </td>
-                      <td className="p-2">{row.regionName ?? "—"}</td>
-                      <td className="p-2">{row.productName || "—"}</td>
-                      <td className="p-2">{row.repName ?? <span className="text-muted-foreground">vacant</span>}</td>
-                      <td className="p-2 text-right tabular-nums">{fmtMoney(row.actualValue)}</td>
-                      <td className="p-2 text-right">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          className="h-8 w-28 text-right tabular-nums"
-                          value={editValue}
-                          onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
-                        />
-                      </td>
-                      <td className={`p-2 text-right tabular-nums ${achievementTone(liveAch)}`}>{fmtPct(liveAch)}</td>
-                    </tr>
+                    <Fragment key={key}>
+                      <tr className="border-b hover:bg-muted/40">
+                        <td className="p-2 align-middle">
+                          {canDrill ? (
+                            <button
+                              type="button"
+                              aria-label={detail ? "Hide source" : "Show source"}
+                              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+                              onClick={() => toggleBreakdown(row)}
+                            >
+                              {detail ? "▾" : "▸"}
+                            </button>
+                          ) : null}
+                        </td>
+                        <td className="p-2">
+                          <span>{row.areaName || "—"}</span>
+                          {row.areaState === "vacant_will_hire" ? <Badge className="ml-1 align-middle">vacant</Badge> : null}
+                        </td>
+                        <td className="p-2">{row.regionName ?? "—"}</td>
+                        <td className="p-2">{row.productName || "—"}</td>
+                        <td className="p-2">{row.repName ?? <span className="text-muted-foreground">vacant</span>}</td>
+                        <td className="p-2 text-right tabular-nums">{fmtMoney(row.actualValue)}</td>
+                        <td className="p-2 text-right">
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            className="h-8 w-28 text-right tabular-nums"
+                            value={editValue}
+                            onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
+                          />
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${achievementTone(liveAch)}`}>{fmtPct(liveAch)}</td>
+                      </tr>
+                      {detail ? (
+                        <tr className="border-b bg-muted/30">
+                          <td className="p-2" />
+                          <td className="p-2" colSpan={7}>
+                            {detail.loading ? (
+                              <div className="text-xs text-muted-foreground">Loading source…</div>
+                            ) : detail.error ? (
+                              <div className="text-xs text-red-600 dark:text-red-400">{detail.error}</div>
+                            ) : detail.rows.length === 0 ? (
+                              <div className="text-xs text-muted-foreground">No source rows.</div>
+                            ) : (
+                              <div className="space-y-3">
+                                {detail.trend.length > 1 ? (
+                                  <div className="rounded border p-2">
+                                    <div className="mb-1 text-xs font-medium text-muted-foreground">Month-over-month (this area &amp; product)</div>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
+                                      {detail.trend.map((point) => (
+                                        <span key={point.period} className={point.period === props.selectedPeriod ? "font-semibold" : "text-muted-foreground"}>
+                                          {point.period}: {fmtMoney(point.value)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                                <div>
+                                  <div className="mb-1 text-xs font-medium text-muted-foreground">
+                                    Source of {fmtMoney(detail.totalValue)} EGP · {money.format(Math.round(detail.totalUnits))} units — brick → distributor → customer
+                                  </div>
+                                  <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+                                    {groupSource(detail.rows).map((brick) => (
+                                      <div key={brick.brickName} className="overflow-hidden rounded border">
+                                        <div className="flex items-center justify-between bg-muted/60 px-2 py-1 text-xs font-semibold">
+                                          <span>{brick.brickName}</span>
+                                          <span className="tabular-nums">{money.format(Math.round(brick.units))} units · {fmtMoney(brick.value)} EGP</span>
+                                        </div>
+                                        {brick.distributors.map((dist, di) => (
+                                          <div key={`${dist.distributorName}-${di}`} className="border-t">
+                                            <div className="flex items-center justify-between bg-muted/25 px-2 py-1 text-xs font-medium">
+                                              <span className="pl-2">{dist.distributorName}</span>
+                                              <span className="tabular-nums">{money.format(Math.round(dist.units))} · {fmtMoney(dist.value)}</span>
+                                            </div>
+                                            <table className="w-full text-xs">
+                                              <tbody>
+                                                {dist.customers.map((cust, ci) => (
+                                                  <tr key={`${cust.customerName}-${ci}`} className="border-t border-border/40">
+                                                    <td className="py-0.5 pl-6 pr-3 text-muted-foreground">{cust.customerName}</td>
+                                                    <td className="py-0.5 pr-3 text-right tabular-nums">{money.format(Math.round(cust.units))}</td>
+                                                    <td className="py-0.5 pr-2 text-right tabular-nums">{fmtMoney(cust.value)}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
             </table>
           </div>
         )}
+      </Card>
+
+      {/* Source files — provenance / paper trail */}
+      <Card className="p-0">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between border-b p-3 text-left"
+          onClick={() => setShowFiles((value) => !value)}
+        >
+          <div className="text-sm font-semibold">Source files this month — {props.sourceFiles.length} validated upload(s)</div>
+          <span className="text-muted-foreground">{showFiles ? "▾" : "▸"}</span>
+        </button>
+        {showFiles ? (
+          props.sourceFiles.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground">No validated distributor files for {props.selectedPeriod}.</div>
+          ) : (
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b text-left uppercase text-muted-foreground">
+                    <th className="p-2">Distributor</th>
+                    <th className="p-2">File</th>
+                    <th className="p-2">Uploaded by</th>
+                    <th className="p-2">When</th>
+                    <th className="p-2 text-right">Rows</th>
+                    <th className="p-2 text-right">Units</th>
+                    <th className="p-2 text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {props.sourceFiles.map((sourceFile, index) => (
+                    <tr key={`${sourceFile.fileName}-${index}`} className="border-b hover:bg-muted/40">
+                      <td className="p-2">{sourceFile.distributorName}</td>
+                      <td className="p-2">{sourceFile.fileName}</td>
+                      <td className="p-2">{sourceFile.uploadedBy || "—"}</td>
+                      <td className="p-2">{sourceFile.uploadedAt ? sourceFile.uploadedAt.slice(0, 10) : "—"}</td>
+                      <td className="p-2 text-right tabular-nums">{money.format(Math.round(sourceFile.importableRows))}</td>
+                      <td className="p-2 text-right tabular-nums">{money.format(Math.round(sourceFile.totalQty))}</td>
+                      <td className="p-2 text-right tabular-nums">{fmtMoney(sourceFile.totalValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : null}
       </Card>
     </div>
   );

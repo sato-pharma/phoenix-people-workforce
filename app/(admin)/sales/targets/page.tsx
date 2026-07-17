@@ -10,10 +10,12 @@ import {
   loadEmployeeNameMap,
   loadMonthlyAchievement,
   loadProductNameMap,
+  loadSourceFiles,
   regionName,
   rollupAchievementByDm,
   rollupAchievementByLine,
   rollupAchievementByRegion,
+  type SourceFileRow,
 } from "@/lib/sales/monthly-targets";
 
 export const dynamic = "force-dynamic";
@@ -56,15 +58,18 @@ export default async function TargetsPage({
   let lineTotal: { actualValue: number; targetValue: number; achievementValue: number | null } | null = null;
   let byRegion: Array<{ region: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
   let byDm: Array<{ dmName: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
+  let sourceFiles: SourceFileRow[] = [];
   let error: string | null = null;
 
   try {
-    const [achievement, areaName, productNames, employeeNames] = await Promise.all([
+    const [achievement, areaName, productNames, employeeNames, files] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
       loadAllCanonicalAreaNames(),
       loadProductNameMap(),
       loadEmployeeNameMap(),
+      loadSourceFiles(selectedPeriod),
     ]);
+    sourceFiles = files;
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
     const lineRows = achievement.filter((row) => row.lineCode === selectedLine);
 
@@ -115,6 +120,7 @@ export default async function TargetsPage({
       lineTotal={lineTotal}
       byRegion={byRegion}
       byDm={byDm}
+      sourceFiles={sourceFiles}
       error={error}
     />
   );
