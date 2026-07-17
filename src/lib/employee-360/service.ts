@@ -12,9 +12,12 @@
 //    (Meeting -11, Vacation -4, Training -9, …) is admin/non-visit and is bucketed
 //    explicitly — NEVER defaulted to campaign.
 //  - agent_hr_id casing is inconsistent in the CRM feed; match via hrIdLookupKeys.
-//  - Egypt work week is Sun–Thu (Fri/Sat weekend) — used for utilization.
+//  - Field-force work week (owner-confirmed, matches the CRM data): Sat–Wed are
+//    full working days, Thursday is AM-only (half day), Friday is off. Saturday
+//    IS a working day. Only Friday is excluded from working-days (utilization);
+//    the day-of-week charts dim Friday and lighten Thursday.
 
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
@@ -41,9 +44,6 @@ export const BRM_TYPE = -21;
 // a description to. Counted as productive, same as REGULAR_TYPE ("put it in its
 // normal place") — pharmacy-flavored comments get their own distinct label.
 export const UNLABELED_FIELD_VISIT_TYPE = -30;
-
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 8;
 
 export type Employee360Window = { from: string; to: string; label: string };
 
@@ -155,7 +155,7 @@ export type VisitSummary = {
   repeatCustomers: number;
   oneTimeCustomers: number;
   topCustomers: NamedCount[];
-  dayOfWeek: number[]; // 0=Sun … 6=Sat, productive counts
+  visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
   workingDaysInWindow: number;
   utilization: number | null;
   visitsSummaryText: string;
@@ -175,7 +175,7 @@ export type CheckinSummary = {
   avgLastHour: number | null;
   avgSpanHours: number | null;
   checkinsPerActiveDay: number | null;
-  dayOfWeek: number[];
+  checkinDayOfWeek: number[]; // 0=Sun … 6=Sat, GPS check-in counts (distinct from the visit dayOfWeek)
   coverageTrend: { month: string; coverage: number | null }[];
   uncorroboratedDays: number;
   distinctLocations: number;
@@ -197,40 +197,22 @@ export function defaultWindow(): Employee360Window {
   return { from: `${year}-01-01`, to, label: `${year} year-to-date` };
 }
 
-async function fetchPaged<T>(table: string, columns: string, keys: string[], dateColumn: string, from: string, to: string): Promise<T[]> {
-  const supabase = getSupabaseAdmin();
-  const out: T[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const start = page * PAGE_SIZE;
-    const { data, error } = await supabase
-      .from(table)
-      .select(columns)
-      .in("agent_hr_id", keys)
-      .gte(dateColumn, from)
-      .lte(dateColumn, `${to} 23:59:59+00`)
-      .order(dateColumn, { ascending: true })
-      .range(start, start + PAGE_SIZE - 1);
-    if (error) throw new Error(`Employee 360: failed reading ${table}: ${error.message}`);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-  }
-  return out;
-}
-
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
-  return fetchPaged<VisitRow>(
-    "ireports360_visits",
-    "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
-    hrIdLookupKeys(hrId),
-    "visit_date",
-    window.from,
-    window.to,
-  );
+  return queryVisits<VisitRow>({
+    agentHrIds: hrIdLookupKeys(hrId),
+    dateFrom: window.from,
+    dateTo: window.to,
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
+  });
 }
 
 export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
-  return fetchPaged<CheckinRow>("ireports360_checkins", "check_date,lat,lon", hrIdLookupKeys(hrId), "check_date", window.from, window.to);
+  return queryCheckins<CheckinRow>({
+    agentHrIds: hrIdLookupKeys(hrId),
+    dateFrom: window.from,
+    dateTo: window.to,
+    columns: "check_date,lat,lon",
+  });
 }
 
 // check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its clock reading is
@@ -265,12 +247,15 @@ function addDays(date: string, delta: number): string {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
-function countWorkingDays(from: string, to: string): number {
+export function countWorkingDays(from: string, to: string): number {
   let count = 0;
   let cursor = from;
   for (let i = 0; i < 400 && cursor <= to; i += 1) {
     const dow = dowOf(cursor);
-    if (dow !== 5 && dow !== 6) count += 1; // exclude Fri/Sat
+    // Field-force work week: only Friday is off. Sat–Wed are full days and
+    // Thursday is a working half-day (AM only) — all of them count. Saturday is
+    // a WORKING day (owner-confirmed; ~16k Sat visits in production).
+    if (dow !== 5) count += 1;
     cursor = addDays(cursor, 1);
   }
   return count;
@@ -427,7 +412,7 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
     repeatCustomers,
     oneTimeCustomers,
     topCustomers,
-    dayOfWeek: dow,
+    visitDayOfWeek: dow,
     workingDaysInWindow,
     utilization,
     visitsSummaryText: summaryText,
@@ -533,7 +518,7 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
     avgLastHour,
     avgSpanHours,
     checkinsPerActiveDay: distinctCheckinDays > 0 ? checkinCount / distinctCheckinDays : null,
-    dayOfWeek: dow,
+    checkinDayOfWeek: dow,
     coverageTrend,
     uncorroboratedDays,
     distinctLocations: locations.size,

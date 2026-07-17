@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { MarketingRoiFilterEngine } from "@/components/marketing-requests/roi-filter-engine";
 
 import { assertMarketingAdminPageAccess } from "../admin-access";
@@ -5,7 +7,10 @@ import { assertMarketingAdminPageAccess } from "../admin-access";
 export const dynamic = "force-dynamic";
 
 export default async function AdminMarketingRoiTrackingPage() {
-  await assertMarketingAdminPageAccess({ allowCompanyOversight: true });
+  const access = await assertMarketingAdminPageAccess({ allowCompanyOversight: true });
+  if (access.role === "CEO") {
+    redirect("/admin/marketing-roi");
+  }
 
   return (
     <div className="space-y-6 p-6 sm:p-8">

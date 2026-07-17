@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { isNationalSalesManager } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isHrIdInNsmTeamScope } from "@/lib/employee-portal/team-calendar";
-import { IReports360ApiError } from "@/lib/field-workforce-compliance/ireports360-client";
-import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
-import { getIReports360RepDayVisits } from "@/lib/field-workforce-compliance/ireports360-source";
+import { IReports360ApiError } from "@/lib/crm/client";
+import { isIReports360Configured } from "@/lib/crm/config";
+import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

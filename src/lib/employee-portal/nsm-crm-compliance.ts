@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryVisits } from "@/lib/crm/reads";
 
 // NSM "first CRM visit" compliance for the noon (12 PM Cairo) iReports360 sync:
 // who on the NSM's line has / hasn't submitted a real field visit today, plus the
@@ -46,24 +46,13 @@ function cairoToday(): string {
 }
 
 async function fetchVisitsForDate(date: string): Promise<VisitRow[]> {
-  const supabase = getSupabaseAdmin();
-  const pageSize = 1000;
-  const rows: VisitRow[] = [];
-  // One day of company-wide visits, paginated past PostgREST's default 1000-row cap
-  // so a busy day never silently drops rows and mislabels reps as non-submitters.
-  for (let page = 0; page < 12; page += 1) {
-    const from = page * pageSize;
-    const { data, error } = await supabase
-      .from("ireports360_visits")
-      .select("agent_hr_id, double_hr_id, crm_save_date, visit_date_time, synced_at, visit_type")
-      .eq("visit_date", date)
-      .order("crm_visit_id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error || !data || data.length === 0) break;
-    rows.push(...(data as VisitRow[]));
-    if (data.length < pageSize) break;
-  }
-  return rows;
+  // One day of company-wide visits via the CRM read layer — a full-coverage keyset scan, so a
+  // busy day never silently drops rows and mislabels reps as non-submitters.
+  return queryVisits<VisitRow>({
+    dateFrom: date,
+    dateTo: date,
+    columns: "agent_hr_id, double_hr_id, crm_save_date, visit_date_time, synced_at, visit_type",
+  });
 }
 
 export async function getNsmCrmCompliance(input: {

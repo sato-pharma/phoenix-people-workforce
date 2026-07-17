@@ -9,7 +9,9 @@ import { getProbationRows } from "@/lib/probation/service";
 import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
+import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import type {
   DoubleVisitBreakdownRow,
@@ -61,7 +63,6 @@ import type {
 // are already resolved (manual override -> crm_id -> crm_username; see
 // resolveEmployeeHrId in visits-report/service.ts and the Visits Report's own "Unmapped
 // Agents" tab), so this module does no CRM-identity resolution of its own.
-const visitsTable = "ireports360_visits";
 const DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -119,8 +120,7 @@ function schemaMissing(error: unknown) {
 }
 
 async function isDoubleVisitSchemaReady() {
-  const { error } = await getSupabaseAdmin().from(visitsTable).select("id", { count: "exact", head: true }).limit(1);
-  return !schemaMissing(error);
+  return isCrmVisitsSchemaReady();
 }
 
 function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardData {
@@ -355,28 +355,18 @@ function extractNameAreaLine(value: string | null | undefined) {
 }
 
 async function paginateLiveMirrorVisits(dateFrom: string, dateTo: string): Promise<MirrorVisitRow[]> {
-  const pageSize = 1000;
-  const rows: MirrorVisitRow[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await getSupabaseAdmin()
-      .from(visitsTable)
-      .select("id, crm_visit_id, visit_date, agent_hr_id, agent_name, contact_name, customer_name, double_crm_id, double_hr_id, double_name, ampm, raw_payload")
-      .not("double_crm_id", "is", null)
-      .neq("double_crm_id", 0)
-      .in("visit_type", [...DOUBLE_VISIT_TYPE_CODES])
-      .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo)
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (schemaMissing(error)) break;
-      throw new Error(error.message);
-    }
-    const page = (data ?? []) as MirrorVisitRow[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows;
+  // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
+  // row cap, resigned/excluded agents removed). The canonical double-visit predicate — a real
+  // partner (double_crm_id present and ≠ 0) on a fieldwork visit type (Regular 0 / Campaign -8) —
+  // lives in crm/reads, so this module can never drift from the Visits Report's own definition.
+  return getDoubleVisitRows<MirrorVisitRow>({
+    dateFrom,
+    dateTo,
+    visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
+    columns:
+      "id, crm_visit_id, visit_date, agent_hr_id, agent_name, contact_name, customer_name, " +
+      "double_crm_id, double_hr_id, double_name, ampm, raw_payload",
+  });
 }
 
 function dbRowFromMirrorVisit(
@@ -1743,7 +1733,7 @@ function privateCalendarItem(input: {
     sourceLabel: "Live iReports360 double-visit mirror",
     sourceRecordId: input.id,
     sourceSystem: "Double Visit Analytics",
-    sourceTable: visitsTable,
+    sourceTable: CRM_VISITS_TABLE,
     startDate: input.date,
     status: input.status,
     time: input.time,

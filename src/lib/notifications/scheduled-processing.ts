@@ -14,7 +14,7 @@ import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { processFeedbackSlaReminders } from "@/lib/probation/intelligence/feedback-sla-reminders";
 import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/probation-emails";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
-import { reapStaleIReports360SyncRuns } from "@/lib/visits-report/service";
+import { reapStaleIReports360SyncRuns } from "@/lib/crm/sync";
 
 // This cron runs many steps serially under the route's `maxDuration = 300`. Each step is
 // bounded by a soft per-step cap and a global deadline (see step-runner.ts) so a single

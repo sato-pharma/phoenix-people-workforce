@@ -456,6 +456,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
       <div className="grid gap-2.5 sm:hidden">
         {pageMembers.map((member) => {
           const gap = Math.max(0, member.totalTarget - member.totalSales);
+          const isAchieved = member.achievementPercent >= 90;
           const color = achievementColor(member.achievementPercent, member.position === 1);
           const progressWidth = Math.min(100, Math.max(0, member.achievementPercent));
           return (
@@ -505,7 +506,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                   <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                     Target: {compactEgp(member.totalTarget)}
                   </span>
-                  {gap > 0 ? (
+                  {!isAchieved ? (
                     <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
                       Gap: {compactEgp(gap)}
                     </span>
@@ -537,6 +538,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
           <tbody>
             {pageMembers.map((member) => {
               const gap = Math.max(0, member.totalTarget - member.totalSales);
+              const isAchieved = member.achievementPercent >= 90;
               const color = achievementColor(member.achievementPercent, member.position === 1);
               return (
                 <tr key={member.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
@@ -564,7 +566,7 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
                     <span className="text-slate-500">{egp(member.totalTarget)}</span>
                   </td>
                   <td className="py-2.5 px-3 text-right hidden min-[420px]:table-cell">
-                    {gap > 0 ? (
+                    {!isAchieved ? (
                       <span className="text-xs text-red-500 font-medium">{egp(gap)}</span>
                     ) : (
                       <span className="text-xs text-green-600 font-medium">Achieved</span>
