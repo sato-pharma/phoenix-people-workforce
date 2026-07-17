@@ -227,6 +227,42 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     }
   }
 
+  // CRM Issues: resolve an unmapped agent via the existing resolve-identity flow (writes the
+  // crm_id → hr_id override, or marks resigned). Works on whichever DB the app is connected to.
+  async function resolveIdentity(
+    crmId: number,
+    agentName: string | null,
+    action: "mapped" | "resigned",
+    mappedHrId: string | null,
+  ) {
+    try {
+      const response = await fetch("/api/admin/visits-report/resolve-identity", {
+        body: JSON.stringify({ action, crmId, crmName: agentName, mappedHrId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as { message?: string; success?: boolean };
+      if (!response.ok || !payload.success) {
+        window.alert(payload.message ?? "Could not resolve this CRM identity.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      window.alert("Could not resolve this CRM identity.");
+    }
+  }
+
+  function onMapAgent(crmId: number, agentName: string | null) {
+    const hrId = window.prompt(`Map "${agentName ?? `CRM id ${crmId}`}" to which HR ID?  (e.g. CN-0005)`);
+    if (!hrId || !hrId.trim()) return;
+    void resolveIdentity(crmId, agentName, "mapped", hrId.trim());
+  }
+
+  function onMarkResigned(crmId: number, agentName: string | null) {
+    if (!window.confirm(`Mark "${agentName ?? `CRM id ${crmId}`}" as resigned? Their CRM records will be hidden.`)) return;
+    void resolveIdentity(crmId, agentName, "resigned", null);
+  }
+
   const datasets = DATASET_TABS;
 
   return (
@@ -480,7 +516,16 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               </thead>
               <tbody>
                 {data.rows.map((row: CrmMasterRow) => (
-                  <RowGroup columns={data.columns} isOpen={expanded.has(row.id)} key={row.id} onToggle={() => toggleRaw(row.id)} row={row} />
+                  <RowGroup
+                    columns={data.columns}
+                    dataset={data.dataset}
+                    isOpen={expanded.has(row.id)}
+                    key={row.id}
+                    onMap={onMapAgent}
+                    onResign={onMarkResigned}
+                    onToggle={() => toggleRaw(row.id)}
+                    row={row}
+                  />
                 ))}
               </tbody>
             </table>
@@ -493,15 +538,24 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
 function RowGroup({
   columns,
+  dataset,
   isOpen,
+  onMap,
+  onResign,
   onToggle,
   row,
 }: {
   columns: readonly CrmMasterColumn[];
+  dataset: CrmMasterDataset;
   isOpen: boolean;
+  onMap: (crmId: number, agentName: string | null) => void;
+  onResign: (crmId: number, agentName: string | null) => void;
   onToggle: () => void;
   row: CrmMasterRow;
 }) {
+  const crmId = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
+  const agentName = typeof row.agent_name === "string" ? row.agent_name : null;
+  const showFix = dataset === "crm_issues" && crmId != null;
   return (
     <>
       <tr className="border-b border-slate-100 text-slate-700 hover:bg-orange-50/40">
@@ -511,17 +565,41 @@ function RowGroup({
           </td>
         ))}
         <td className="whitespace-nowrap px-3 py-2 text-right">
-          <button
-            aria-expanded={isOpen}
-            className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${
-              isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
-            }`}
-            onClick={onToggle}
-            type="button"
-          >
-            <Braces aria-hidden="true" className="h-3.5 w-3.5" />
-            {isOpen ? "Hide" : "JSON"}
-          </button>
+          <div className="inline-flex items-center gap-1">
+            {showFix ? (
+              <>
+                <button
+                  className="border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+                  onClick={() => {
+                    if (crmId != null) onMap(crmId, agentName);
+                  }}
+                  type="button"
+                >
+                  Map…
+                </button>
+                <button
+                  className="border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500 transition hover:bg-slate-50"
+                  onClick={() => {
+                    if (crmId != null) onResign(crmId, agentName);
+                  }}
+                  type="button"
+                >
+                  Resigned
+                </button>
+              </>
+            ) : null}
+            <button
+              aria-expanded={isOpen}
+              className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${
+                isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+              onClick={onToggle}
+              type="button"
+            >
+              <Braces aria-hidden="true" className="h-3.5 w-3.5" />
+              {isOpen ? "Hide" : "JSON"}
+            </button>
+          </div>
         </td>
       </tr>
       {isOpen ? (
