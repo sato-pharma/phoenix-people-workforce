@@ -520,10 +520,8 @@ type PayrollExpenseRow = {
 type OutstationRow = {
   claimed_total_amount: number | null;
   expected_total_amount: number | null;
-  variance_amount: number | null;
   eligibility_status: string | null;
   territory_validation_status: string | null;
-  fraud_flags_json: unknown;
 };
 
 const compactMoney = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
@@ -598,7 +596,7 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
       .limit(5000),
     supabase
       .from("outstation_expense_requests")
-      .select("claimed_total_amount,expected_total_amount,variance_amount,eligibility_status,territory_validation_status,fraud_flags_json")
+      .select("claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
       .in("employee_hr_id", keys)
       .gte("trip_start_date", window.from)
       .lte("trip_start_date", `${window.to} 23:59:59+00`)
@@ -769,30 +767,25 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     summaryText,
   };
 
-  // ---- outstation (system-submitted, GPS/variance/fraud) ----
+  // ---- outstation (system-submitted). Variance + fraud were removed from the product,
+  // so those signals are no longer read here; eligibility/territory issues still flag a trip.
   let claimedTotal = 0;
   let expectedTotal = 0;
-  let varianceTotal = 0;
-  let overClaimCount = 0;
   let flaggedCount = 0;
   for (const o of outRows) {
     claimedTotal += Number(o.claimed_total_amount ?? 0);
     expectedTotal += Number(o.expected_total_amount ?? 0);
-    const v = Number(o.variance_amount ?? 0);
-    varianceTotal += v;
-    if (v > 0) overClaimCount += 1;
-    const flags = Array.isArray(o.fraud_flags_json) ? o.fraud_flags_json.length : 0;
     const eligIssue = o.eligibility_status != null && o.eligibility_status !== "eligible";
     const territoryIssue = o.territory_validation_status != null && o.territory_validation_status !== "valid";
-    if (flags > 0 || eligIssue || territoryIssue) flaggedCount += 1;
+    if (eligIssue || territoryIssue) flaggedCount += 1;
   }
   const outstation: OutstationSummary = {
     hasData: outRows.length > 0,
     tripCount: outRows.length,
     claimedTotal,
     expectedTotal,
-    varianceTotal,
-    overClaimCount,
+    varianceTotal: 0,
+    overClaimCount: 0,
     flaggedCount,
   };
 
