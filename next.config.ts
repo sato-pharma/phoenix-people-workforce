@@ -106,6 +106,9 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       allowedOrigins: [
+        "phoenix-hr-897559113412.europe-west3.run.app",
+        // Old Iowa host — kept only for the post-cutover rollback window (DNS can be
+        // flipped back to it until the us-central1 service is decommissioned).
         "phoenix-hr-897559113412.us-central1.run.app",
         "phoenix-hr.satopharma.com",
       ],
