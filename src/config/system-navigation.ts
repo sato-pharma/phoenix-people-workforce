@@ -1317,6 +1317,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "AI-assisted payroll assembly, review, and deduction recommendations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payroll-copilot/insurance-wages",
@@ -1325,6 +1326,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Manage insurance wage bases used in statutory calculations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payslips-center",
@@ -1340,6 +1342,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions Governance",
     description: "Review and govern payroll deduction decisions.",
     permissions: [{ resource: "deductions", action: "read" }],
+    excludedRoles: ["CEO"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
