@@ -22,6 +22,7 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
@@ -650,6 +651,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
       supabase
         .from(VISITS_MIRROR_TABLE)
         .select("agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
+        .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
         .gte("visit_date", startDate)
         .lte("visit_date", endDate),
   );

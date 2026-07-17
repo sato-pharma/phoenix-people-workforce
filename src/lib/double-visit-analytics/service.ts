@@ -10,6 +10,7 @@ import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import type {
   DoubleVisitBreakdownRow,
@@ -363,6 +364,7 @@ async function paginateLiveMirrorVisits(dateFrom: string, dateTo: string): Promi
       .select("id, crm_visit_id, visit_date, agent_hr_id, agent_name, contact_name, customer_name, double_crm_id, double_hr_id, double_name, ampm, raw_payload")
       .not("double_crm_id", "is", null)
       .neq("double_crm_id", 0)
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
       .in("visit_type", [...DOUBLE_VISIT_TYPE_CODES])
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
