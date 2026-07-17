@@ -288,6 +288,7 @@ export type SendTemplatedEmailInput = {
   employeeHrId?: string | null;
   fallbackTo?: string[] | null;
   from?: string | null;
+  replyTo?: string | null;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -2345,6 +2346,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,
     from: input.from ?? undefined,
+    replyTo: input.replyTo ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,
     idempotencyKey: `template-${key}-${requestId}`,
