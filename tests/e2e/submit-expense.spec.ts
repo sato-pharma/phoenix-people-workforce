@@ -17,7 +17,7 @@ import { test, expect } from "@playwright/test";
  * Run with:  npx playwright test tests/e2e/submit-expense.spec.ts
  */
 
-const BASE_URL = "http://localhost:3000/employee-portals/submit-expense";
+const BASE_URL = `${process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000"}/employee-portals/submit-expense`;
 
 test.describe("Submit Expense", () => {
   test.beforeEach(async ({ page }) => {

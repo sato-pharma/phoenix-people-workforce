@@ -88,6 +88,70 @@ export function runOutstationDecisionTests() {
     "a Medical Rep is not subject to the campaign cap",
   );
 
+  // Explicit submitter-role coverage (the four roles that submit outstation trips):
+  // GPM / PM are NOT field double-visitors, so the campaign cap must NOT apply to them;
+  // TM / DM ARE subject to it. Traveling + zero visits is the discriminating case.
+  for (const role of ["Group Product Manager", "Product Manager"]) {
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 0,
+        campaignVisits: 9,
+      }).status,
+      "accepted_by_system",
+      `${role} is NOT subject to the campaign cap (traveling, 0 visits, 9 campaign -> accepted)`,
+    );
+  }
+  for (const role of ["District Manager", "Training Manager"]) {
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 0,
+        campaignVisits: 0,
+      }).status,
+      "rejected_by_system",
+      `${role} IS subject to the campaign cap (traveling, zero double-visits -> rejected)`,
+    );
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 5,
+        campaignVisits: 2,
+      }).status,
+      "accepted_by_system",
+      `${role} traveling with <=2 campaign visits is accepted`,
+    );
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 5,
+        campaignVisits: 3,
+      }).status,
+      "rejected_by_system",
+      `${role} traveling with >2 campaign visits is rejected`,
+    );
+    // A meeting expense bypasses the cap even for TM / DM.
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "meeting",
+        totalDvVisits: 0,
+        campaignVisits: 9,
+      }).status,
+      "accepted_by_system",
+      `${role} meeting expense bypasses the campaign cap`,
+    );
+  }
+
   // 4. Ticket evidence for train/bus.
   assert.equal(
     decideOutstationRequest({ ...base, transportationType: "train", requiresTicketAttachment: true, hasTicketAttachments: false }).status,
