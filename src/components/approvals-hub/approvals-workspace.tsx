@@ -2,13 +2,20 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock, Inbox, Building2, ClipboardList } from "lucide-react";
+import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks } from "lucide-react";
 
-import type { ResponderHistoryItem, CompanyWideDecisionItem } from "@/lib/approvals-hub/service";
+import type {
+  ResponderHistoryItem,
+  CompanyWideDecisionItem,
+  ApprovalScopeData,
+  CompanyRequestItem,
+} from "@/lib/approvals-hub/service";
 import type { MyRequestItem } from "@/components/action-center/types";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
 import { SlaAgeChip, type ApprovalsSlaModule } from "@/components/approvals-hub/sla-badge";
 import { HistoryList } from "@/components/approvals-hub/history-list";
+import { ApprovalScopeList } from "@/components/approvals-hub/approval-scope-list";
+import { CompanyRequestsList } from "@/components/approvals-hub/company-requests-list";
 
 export type PendingCard = {
   id: string;
@@ -45,6 +52,14 @@ type Props = {
   // Absent (null/undefined) hides the tab entirely for everyone else.
   companyWide?: CompanyWideDecisionItem[] | null;
   companyWideExportTitle?: string;
+  // CEO + Super Admin only — "Who I Approve" (approval scope) and "Company Requests" tabs.
+  // Absent (null/undefined) hides each tab entirely.
+  approvalScope?: ApprovalScopeData | null;
+  approvalScopeModuleLabel?: string;
+  approvalScopeIncludesSecondLevel?: boolean;
+  companyRequests?: CompanyRequestItem[] | null;
+  companyRequestsExportTitle?: string;
+  companyRequestsEmptyLabel?: string;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -80,27 +95,37 @@ export function ApprovalsWorkspace({
   myRequests,
   companyWide,
   companyWideExportTitle,
+  approvalScope,
+  approvalScopeModuleLabel,
+  approvalScopeIncludesSecondLevel,
+  companyRequests,
+  companyRequestsExportTitle,
+  companyRequestsEmptyLabel,
 }: Props) {
-  type TabKey = "pending" | "history" | "my-requests" | "all-decisions";
+  type TabKey = "pending" | "history" | "my-requests" | "approval-scope" | "company-requests" | "all-decisions";
   const [tab, setTab] = useState<TabKey>(initialTab);
+  const showApprovalScopeTab = approvalScope != null;
+  const showCompanyRequestsTab = Array.isArray(companyRequests);
   const showCompanyWideTab = Array.isArray(companyWide);
 
   const tabs: Array<{ key: TabKey; label: string; count: number; icon: typeof Inbox }> = [
     { key: "pending", label: "Response", count: pendingCount, icon: Inbox },
     { key: "history", label: "Response history", count: history.length, icon: Clock },
     { key: "my-requests", label: "My Requests", count: myRequests.length, icon: ClipboardList },
+    ...(showApprovalScopeTab ? [{ key: "approval-scope" as const, label: "Who I Approve", count: approvalScope.totalPeople, icon: Users }] : []),
+    ...(showCompanyRequestsTab ? [{ key: "company-requests" as const, label: "Company Requests", count: companyRequests.length, icon: ListChecks }] : []),
     ...(showCompanyWideTab ? [{ key: "all-decisions" as const, label: "All Decisions", count: companyWide.length, icon: Building2 }] : []),
   ];
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1 border-b border-[#e4e9ec]">
+      <div className="flex gap-1 overflow-x-auto border-b border-[#e4e9ec]">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
               tab === key
                 ? "border-b-2 border-orange-500 text-slate-900"
                 : "border-b-2 border-transparent text-slate-400 hover:text-slate-600"
@@ -153,6 +178,19 @@ export function ApprovalsWorkspace({
         />
       ) : tab === "my-requests" ? (
         <MyRequestsList items={myRequests} />
+      ) : tab === "approval-scope" ? (
+        <ApprovalScopeList
+          data={approvalScope ?? { groups: [], totalPeople: 0 }}
+          moduleLabel={approvalScopeModuleLabel ?? "request"}
+          includesSecondLevel={Boolean(approvalScopeIncludesSecondLevel)}
+        />
+      ) : tab === "company-requests" ? (
+        <CompanyRequestsList
+          items={companyRequests ?? []}
+          emptyLabel={companyRequestsEmptyLabel ?? "No requests found."}
+          exportTitle={companyRequestsExportTitle ?? "Company Requests"}
+          exportSheetName="Company Requests"
+        />
       ) : (
         <HistoryList
           items={companyWide ?? []}
