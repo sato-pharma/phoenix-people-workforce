@@ -52,6 +52,19 @@ WORKDIR /app
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Chromium + fonts for server-side PDF generation of offer letters (puppeteer-core drives this
+# system Chromium — we deliberately do NOT bundle Puppeteer's own Chromium, which is a glibc
+# binary that cannot run on Alpine/musl). puppeteer-core reads PUPPETEER_EXECUTABLE_PATH.
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
@@ -65,6 +78,17 @@ RUN chown nextjs:nodejs .next
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# The Next standalone trace omits puppeteer-core (it is loaded via a turbopackIgnore dynamic
+# import so it never enters a client bundle), so install it — JS only — into the runtime
+# node_modules for server-side offer-letter PDF generation. Chromium itself is the system
+# package installed above; PUPPETEER_SKIP_DOWNLOAD prevents a browser download. Installed in a
+# temp dir and merged in so the existing traced node_modules is not pruned. Keep the version in
+# sync with package.json.
+RUN cd /tmp && npm init -y >/dev/null 2>&1 \
+ && npm install --omit=dev puppeteer-core@23.11.1 >/dev/null 2>&1 \
+ && cp -R /tmp/node_modules/. /app/node_modules/ \
+ && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
 
 USER nextjs
 

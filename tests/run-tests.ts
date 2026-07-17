@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runOfferEmailPremiumTests } from "./offer-email-premium.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
@@ -791,6 +792,7 @@ await runTest("payroll exports (bank file + statutory summary)", runPayrollExpor
 await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
+await runTest("premium offer email (no salary in body + zebra details table)", runOfferEmailPremiumTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
