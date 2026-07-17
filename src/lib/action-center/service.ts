@@ -298,7 +298,7 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
     title: `Outstation · ${request.tripStartDate}`,
     statusLabel: "Pending approval",
     submittedAt: request.createdAt,
-    urgency: request.approvalRecommendation === "auto_approve" ? "low" : request.fraudFlags.length > 0 ? "high" : "normal",
+    urgency: request.approvalRecommendation === "auto_approve" ? "low" : request.approvalRecommendation === "reject" ? "high" : "normal",
     detail: {
       module: "outstation",
       expenseType: request.expenseType,
@@ -309,7 +309,6 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
       claimedTotalAmount: request.claimedTotalAmount,
       approvalRecommendation: request.approvalRecommendation,
       approvalReason: request.approvalReason,
-      fraudFlags: request.fraudFlags,
       notes: request.notes,
       requestId: request.id,
     },

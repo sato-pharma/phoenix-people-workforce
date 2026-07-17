@@ -21,7 +21,6 @@ import {
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
-import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -54,7 +53,6 @@ import type {
   OutstationEligibilityStatus,
   OutstationExpenseType,
   OutstationExpenseRequest,
-  OutstationFraudFlag,
   OutstationHeatmapData,
   OutstationHeatmapMarker,
   OutstationPolicyRule,
@@ -335,10 +333,8 @@ function reportExpectedTotal(input: {
 
 function recommendationForResult(params: {
   eligibilityStatus: OutstationEligibilityStatus;
-  fraudFlags: OutstationFraudFlag[];
   hasTicketAttachments: boolean;
   policy: OutstationPolicyRule;
-  suspiciousLocationScore: number;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   transportationType: OutstationTransportationType;
 }) {
@@ -362,23 +358,13 @@ function recommendationForResult(params: {
     };
   }
 
-  if (params.suspiciousLocationScore >= 70) {
-    return {
-      approvalReason:
-        "Suspicious location score is too high for automatic approval and requires manual intervention.",
-      approvalRecommendation: "reject" as OutstationApprovalRecommendation,
-    };
-  }
-
   if (
     params.eligibilityStatus === "needs_review" ||
-    params.suspiciousLocationScore >= 25 ||
-    params.fraudFlags.length > 0 ||
     params.territoryValidationStatus === "outside_expected_territory"
   ) {
     return {
       approvalReason:
-        "Location, territory, or timing checks require manager review before the request can move forward.",
+        "Location or timing checks require manager review before the request can move forward.",
       approvalRecommendation: "manager_review" as OutstationApprovalRecommendation,
     };
   }
@@ -848,7 +834,6 @@ async function validateCapturedLocation(
     employeeLine: identity.employeeLine,
     employeeName: identity.employeeName,
     employeeRole: identity.employeeRole,
-    fraudFlags: [],
     minimumRequiredDistanceKm: policy.minimumDistanceKm,
     residenceLatitude: residence.residenceLatitude,
     residenceLongitude: residence.residenceLongitude,
@@ -859,7 +844,6 @@ async function validateCapturedLocation(
     selectedRouteIndex,
     selectedRouteReason,
     submittedAt,
-    suspiciousLocationScore: 0,
     territoryValidationReason: territory.reason,
     territoryValidationStatus: territory.status,
     toArea: reverse?.area ?? null,
@@ -926,9 +910,6 @@ export async function calculateOutstationExpense(
       numberValue(input.goTicketAmount) + numberValue(input.returnTicketAmount),
     );
     if (policy.requiresTicketAttachment && !input.hasTicketAttachments) {
-      if (!result.fraudFlags.includes("missing_ticket_attachments")) {
-        result.fraudFlags.push("missing_ticket_attachments");
-      }
       if (result.eligibilityStatus === "eligible") {
         result.eligibilityStatus = "needs_review";
         result.eligibilityReason =
@@ -956,10 +937,8 @@ export async function calculateOutstationExpense(
     result.eligibilityStatus === "not_eligible" ? "blocked" : "calculated";
   const recommendation = recommendationForResult({
     eligibilityStatus: result.eligibilityStatus,
-    fraudFlags: result.fraudFlags,
     hasTicketAttachments: Boolean(input.hasTicketAttachments),
     policy,
-    suspiciousLocationScore: 0,
     territoryValidationStatus: result.territoryValidationStatus,
     transportationType: input.transportationType,
   });
@@ -996,7 +975,6 @@ export async function calculateOutstationExpense(
       sameDayTrip: allowance.sameDayTrip,
     }),
     sameDayTrip: allowance.sameDayTrip,
-    suspiciousLocationScore: 0,
     ticketAmount,
     carEvidenceImagePath: null,
     carEvidenceMetadata: input.carEvidenceMetadata,
@@ -1056,7 +1034,6 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
     const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
-    const fraudFlags = request.fraudFlags.length > 0 ? request.fraudFlags.join(", ") : "none";
     const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
 
     const metrics = [
@@ -1084,8 +1061,6 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
         label: "Approval recommendation",
         value: `${request.approvalRecommendation} — ${text(request.approvalReason) || "—"}`,
       },
-      { label: "Suspicious location score", value: String(request.suspiciousLocationScore) },
-      { label: "Fraud flags", value: fraudFlags },
       {
         label: "Territory validation",
         value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
@@ -1100,7 +1075,7 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
     const messageLines = [
       `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
       `Trip: ${request.tripStartDate} to ${request.tripEndDate} · Destination: ${destination} · Transportation: ${request.transportationType}`,
-      `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation} · Fraud flags: ${fraudFlags}`,
+      `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
       "",
       ...metrics.map((row) => `${row.label}: ${row.value}`),
     ];
@@ -1119,7 +1094,6 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
             claimedAmount,
             employeeHrId: request.employeeHrId,
             employeeName: request.employeeName,
-            fraudFlags: request.fraudFlags,
             idempotencyKey: `outstation:${request.id}:request_submitted:${recipientHrId.toUpperCase()}`,
             requestId: String(request.id),
             status: "Submitted",
@@ -1275,7 +1249,6 @@ export async function submitOutstationRequest(
     employee_name: calculation.employeeName,
     employee_role: calculation.employeeRole,
     expected_total_amount: calculation.expectedTotalAmount,
-    fraud_flags_json: JSON.stringify(calculation.fraudFlags),
     fuel_amount: calculation.fuelAmount,
     kilometer_reading: calculation.kilometerReading,
     line: calculation.employeeLine,
@@ -1302,7 +1275,6 @@ export async function submitOutstationRequest(
     same_day_trip: calculation.sameDayTrip,
     status: "submitted",
     submitted_at: calculation.submittedAt,
-    suspicious_location_score: calculation.suspiciousLocationScore,
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
     ...workloadPayload,
@@ -1452,7 +1424,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     employeeName: text(row.employee_name),
     employeeRole: text(row.employee_role),
     expectedTotalAmount: numberValue(row.expected_total_amount),
-    fraudFlags: safeJsonParse<OutstationFraudFlag[]>(row.fraud_flags_json, []),
     fuelAmount: numberValue(row.fuel_amount),
     goTicketAmount: numberValue(row.go_ticket_amount),
     id: Number(row.id),
@@ -1482,7 +1453,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     sameDayTrip: Boolean(row.same_day_trip),
     status: text(row.status),
     submittedAt: isoString(row.submitted_at) || null,
-    suspiciousLocationScore: numberValue(row.suspicious_location_score),
     territoryValidationReason: text(row.territory_validation_reason),
     territoryValidationStatus:
       text(row.territory_validation_status) as OutstationTerritoryValidationStatus,
@@ -1668,7 +1638,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         employee_role: "Medical Rep",
         expected_total_amount: normalized.ticketAmount,
         expense_type: "traveling",
-        fraud_flags_json: JSON.stringify([]),
         fuel_amount: 0,
         go_ticket_amount: normalized.goTicketAmount,
         line: identity.employeeLine,
@@ -1686,7 +1655,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         same_day_trip: sameDayTrip,
         status: "submitted",
         submitted_at: now,
-        suspicious_location_score: 0,
         ticket_amount: normalized.ticketAmount,
         ticket_attachment_metadata: uploadedAttachments,
         ticket_attachment_paths: attachmentPaths,
@@ -1947,20 +1915,8 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
         totalExpenses: roundMoney(row.value),
         trips: row.trips,
       })),
-      highRiskByLocation: groupNumeric(
-        // Canonical high-risk predicate (reject recommendation OR GPS-suspicion ≥ threshold
-        // OR any fraud flag) — keeps this heatmap aligned with the command-center and the
-        // daily-digest cron instead of undercounting on reject-recommendation alone.
-        requests.filter(isHighRiskRequest),
-        (request) => request.toCity ?? request.toArea ?? "Unknown",
-        () => 1,
-      ).map((row) => ({
-        highRiskTrips: row.trips,
-        label: row.label,
-      })),
     },
     kpis: {
-      highRiskRequests: requests.filter(isHighRiskRequest).length,
       totalClaimed: roundMoney(sumBy(requests, (request) => request.claimedTotalAmount)),
       totalExpected: roundMoney(sumBy(requests, (request) => request.expectedTotalAmount)),
       totalRequests: requests.length,
@@ -2151,7 +2107,6 @@ export async function createManagerExpenseAsAdmin(
       employee_role: resolveJobFunctionRole(employee.jobTitle ?? ""),
       expected_total_amount: expectedTotalAmount,
       expense_type: input.expenseType,
-      fraud_flags_json: JSON.stringify([]),
       fuel_amount: fuelAmount,
       go_ticket_amount: 0,
       line: employee.lineName ?? null,
@@ -2181,7 +2136,6 @@ export async function createManagerExpenseAsAdmin(
       same_day_trip: allowance.sameDayTrip,
       status: "submitted",
       submitted_at: now,
-      suspicious_location_score: 0,
       territory_validation_reason: "Admin-created expense; territory check not applicable.",
       territory_validation_status: "not_available",
       ...workloadPayload,

@@ -64,7 +64,6 @@ export type OutstationDetail = {
   claimedTotalAmount: number;
   approvalRecommendation: string;
   approvalReason: string;
-  fraudFlags: string[];
   notes: string | null;
   requestId: number;
 };
