@@ -81,19 +81,30 @@ export function runProbationFeedbackWorkflowTests() {
   const rem = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
   assert.match(rem, /idempotencyKey: `\$\{slaReminderKey\(task\.dvDayId, state\)\}:\$\{recipientHrId\}`/,
     "one notification per (DV-Day, state, recipient) — no uncontrolled repeats");
-  // Volume fix (2026-07-16 owner report): HR/Super Admin were CC'd on every "escalated" mid-way
-  // warning across the whole company (118 emails to 2 accounts) — trained recipients to stop
-  // opening probation email. HR now only joins at the genuinely urgent "overdue" state; the
-  // evaluator still gets every state so they never lose visibility of their own open task.
-  assert.match(rem, /if \(state === "overdue"\) \{\s*\n\s*for \(const hr of hrApproverHrIds\)/,
-    "HR/Super Admin are only added at the overdue state, not at the escalated warning");
+  // RECIPIENT LADDER (MOD-2, 2026-07-17 owner report): the 3 SLA reminders (timings unchanged
+  // 24/48/72h) now widen the audience per stage instead of CC'ing HR company-wide from the middle
+  // warning (118 emails to 2 accounts trained recipients to stop opening probation email):
+  //   1) due       → evaluator only.
+  //   2) escalated → + the probationer's Direct Manager (probation_cases.manager_hr_id) + System Admin (PHX-1).
+  //   3) overdue   → + CEO + HR + Super Admin.
+  assert.match(rem, /if \(evaluator\) ordered\.push\(evaluator\)/,
+    "the evaluator is on every SLA reminder stage (reminder 1 = evaluator only)");
+  assert.match(rem, /if \(state === "escalated"\)\s*\{[\s\S]*?parties\.directManagerHrId[\s\S]*?parties\.systemAdminHrId/,
+    "reminder 2 (escalated) CCs the Direct Manager + the System Admin");
+  assert.match(rem, /if \(state === "overdue"\)\s*\{\s*\n\s*ordered\.push\(\.\.\.parties\.ceoHrIds, \.\.\.parties\.hrApproverHrIds\)/,
+    "reminder 3 (overdue) CCs CEO + HR + Super Admin");
   assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
-    "HR must not be CC'd on the escalated warning (volume fix)");
+    "HR must not be CC'd on the escalated warning (volume fix preserved)");
+  assert.match(rem, /\.eq\("hr_id", "PHX-1"\)/,
+    "the System Admin CC resolves the dedicated PHX-1 account, not a display name");
+  // MOD-3 daily cap: an over-cap recipient is filtered out of the SLA reminder audience this run.
+  assert.match(rem, /\.filter\(\(h\) => parties\.cap\.allow\(h\)\)/,
+    "the per-recipient daily cap (MOD-3) gates SLA reminder recipients");
   // REGRESSION GUARD (2026-07-16 owner report): SLA reminder title/message/metrics used the raw
   // employeeHrId (e.g. "AI-0002") instead of the employee's name, and carried no link to the case
-  // report. Both are fixed by resolving employeeName up front and threading it through, plus a
-  // ctaHref/actionUrl to the live report.
-  assert.match(rem, /resolveEmployeeNames/, "employee names are bulk-resolved for the sweep");
+  // report. Both are fixed by resolving the case info (name + manager) up front and threading it
+  // through, plus a ctaHref/actionUrl to the live report.
+  assert.match(rem, /resolveCaseInfo/, "employee names + direct managers are bulk-resolved for the sweep");
   assert.match(rem, /const title = `\$\{copy\.headline\} — \$\{employeeName\}`/,
     "title uses the resolved employee name, not the raw HR_ID");
   assert.match(rem, /const message = copy\.body\(employeeName\)/,
