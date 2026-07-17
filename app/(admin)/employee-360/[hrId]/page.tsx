@@ -13,6 +13,7 @@ import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isExpenseAnalysisRole } from "@/lib/employees/job-function";
+import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +84,8 @@ export default async function Employee360DetailPage({
     hrId: target.hrId,
     displayName: target.displayName || target.fullName,
     jobTitle: target.jobTitle,
-    lineName: target.lineName,
+    // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
+    lineName: bridgeEmployeeLineToOfficial(target.lineName),
     areaName: target.areaName,
     regionName: target.regionName,
     managerName: target.managerName,
