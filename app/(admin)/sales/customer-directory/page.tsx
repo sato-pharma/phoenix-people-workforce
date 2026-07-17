@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CustomerDirectoryWorkspace } from "@/components/sales/customer-directory-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   loadCustomerDirectoryInitialData,
   type CustomerDirectoryFilterOptions,
@@ -13,7 +13,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function CustomerDirectoryPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

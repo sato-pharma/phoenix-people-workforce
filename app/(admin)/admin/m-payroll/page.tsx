@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { assertPermission } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { listSalaryBatches } from "@/lib/payroll/service";
 import type { SalaryBatch } from "@/lib/payroll/types";
 import { payrollMonths, payrollPeriodLabel, statusBadge } from "@/components/payroll/dashboard/shared";
@@ -62,7 +62,7 @@ export default async function MPayrollPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   await assertPermission(access, "payroll", "read");
 
   const now = new Date();

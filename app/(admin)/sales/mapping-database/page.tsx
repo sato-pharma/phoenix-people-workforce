@@ -3,14 +3,14 @@ import { redirect } from "next/navigation";
 import { MappingDatabaseWorkspace } from "@/components/sales/mapping-database-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { listSalesDistributors, type SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import { listMappingReferences } from "@/lib/sales/normalizer/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function MappingDatabasePage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

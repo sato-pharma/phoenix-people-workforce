@@ -7,7 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
@@ -41,7 +41,7 @@ function organogramPageError(error: unknown) {
 /* ---------- page ---------- */
 
 export default async function EmployeePortalOrganogramPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");

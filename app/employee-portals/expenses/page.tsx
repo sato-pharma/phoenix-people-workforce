@@ -11,7 +11,7 @@ import {
   canAccessSystemAdministratorWorkspace,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   getMedicalRepExpenseContext,
   listMedicalRepExpenseRequests,
@@ -20,7 +20,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalExpensesPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) !== "employee-portal") {
     if (!canAccessSystemAdministratorWorkspace(access)) {
       redirect("/admin/access");

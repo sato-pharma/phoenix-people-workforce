@@ -1,7 +1,7 @@
 import { ModulesControlManager } from "@/components/admin/modules-control-manager";
 import { getModuleControlDashboard, type ModuleControlDashboard } from "@/lib/admin/modules-control";
 import { assertPermission, canAccess } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export default async function ModulesControlPage() {
   let initialError: string | null = null;
 
   try {
-    const access = await resolveAccessContextFromPage();
+    const access = await resolveAuthenticatedPageAccess();
     canManage = access.role === "Super Admin" && await canAccess(access, "module_control", "update");
     await assertPermission(access, "module_control", "read");
     if (access.role !== "Super Admin") {
