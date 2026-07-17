@@ -489,17 +489,14 @@ async function loadOutstationCleanupRecord(recordId: string): Promise<LoadedClea
   const tripId = outstationPayrollTripId(requestId);
   const payrollRows = await getPayrollExpenseRows([tripId]);
   const linkedPayrollRows = payrollRows.get(tripId) ?? [];
-  const locationAudits = await selectChildren("outstation_location_audit_logs", "expense_request_id", requestId);
   const record = outstationRecord(requestRow, linkedPayrollRows);
   const snapshot = {
-    locationAudits,
     payrollRows: linkedPayrollRows,
     request: requestRow,
     serviceRecord,
   };
   const impactSummary = {
     carEvidenceImagePath: nullableText(requestRow.car_evidence_image_path),
-    linkedLocationAuditRows: locationAudits.length,
     linkedPayrollRows: linkedPayrollRows.length,
     payrollTripId: tripId,
     ticketAttachmentCount: Array.isArray(serviceRecord.ticketAttachmentPaths)
