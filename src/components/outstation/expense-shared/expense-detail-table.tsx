@@ -44,7 +44,6 @@ const COLUMNS: Column[] = [
   { key: "status", label: "Status", width: "104px", align: "left", sortValue: (r) => r.status ?? "" },
   { key: "km", label: "KM", width: "64px", align: "right", numeric: true, sortValue: (r) => r.km ?? 0 },
   { key: "total", label: "Total", width: "124px", align: "right", numeric: true, sortValue: (r) => r.total ?? 0 },
-  { key: "risk", label: "Risk", width: "60px", align: "center", adminOnly: true, sortValue: (r) => (r.isHighRisk ? 1 : 0) },
 ];
 
 const SOURCE_BADGE: Record<string, string> = {
@@ -153,15 +152,6 @@ export function ExpenseDetailTable({
         return <span className="tabular-nums text-slate-600">{Math.round(row.km ?? 0).toLocaleString()}</span>;
       case "total":
         return <span className="tabular-nums font-black text-[#0F172A]">{egp(row.total)}</span>;
-      case "risk":
-        return row.isHighRisk ? (
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-rose-100"
-            title="Flagged"
-          />
-        ) : (
-          <span className="text-slate-300">·</span>
-        );
       default:
         return null;
     }

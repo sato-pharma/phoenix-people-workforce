@@ -20,18 +20,6 @@ export type OutstationApprovalRecommendation =
   | "hr_review"
   | "reject";
 
-export type OutstationFraudFlag =
-  | "poor_accuracy"
-  | "impossible_speed"
-  | "location_permission_denied"
-  | "missing_residence_location"
-  | "repeated_same_coordinates"
-  | "outside_expected_territory"
-  | "distance_below_policy"
-  | "offline_delay"
-  | "missing_ticket_attachments"
-  | "timestamp_mismatch";
-
 export type OutstationCarEvidenceSource = "live_camera";
 
 export type OutstationCarEvidenceMetadata = {
@@ -121,7 +109,6 @@ export type OutstationCaptureResult = {
   employeeRole: string;
   employeeArea: string | null;
   employeeLine: string | null;
-  fraudFlags: OutstationFraudFlag[];
   minimumRequiredDistanceKm: number;
   residenceLatitude: number | null;
   residenceLongitude: number | null;
@@ -132,7 +119,6 @@ export type OutstationCaptureResult = {
   selectedRouteIndex: number | null;
   selectedRouteReason: "fastest_duration" | null;
   submittedAt: string;
-  suspiciousLocationScore: number;
   territoryValidationReason: string;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   toArea: string | null;
@@ -231,7 +217,6 @@ export type OutstationExpenseRequest = {
   employeeName: string;
   employeeRole: string;
   expectedTotalAmount: number;
-  fraudFlags: OutstationFraudFlag[];
   fuelAmount: number;
   goTicketAmount: number;
   id: number;
@@ -263,7 +248,6 @@ export type OutstationExpenseRequest = {
   sameDayTrip: boolean;
   status: string;
   submittedAt: string | null;
-  suspiciousLocationScore: number;
   territoryValidationReason: string;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   returnTicketAmount: number;
@@ -349,10 +333,8 @@ export type OutstationHeatmapData = {
     byArea: Array<{ label: string; totalExpenses: number; trips: number }>;
     byCity: Array<{ label: string; totalExpenses: number; trips: number }>;
     byLine: Array<{ label: string; totalExpenses: number; trips: number }>;
-    highRiskByLocation: Array<{ label: string; highRiskTrips: number }>;
   };
   kpis: {
-    highRiskRequests: number;
     totalClaimed: number;
     totalExpected: number;
     totalRequests: number;

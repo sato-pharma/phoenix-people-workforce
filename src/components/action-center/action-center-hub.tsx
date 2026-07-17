@@ -297,18 +297,6 @@ function OutstationDetailView({ detail }: { detail: OutstationDetail }) {
         </span>
         {detail.approvalReason && <span className="text-xs text-slate-500">{detail.approvalReason}</span>}
       </div>
-      {detail.fraudFlags.length > 0 && (
-        <div className="col-span-2">
-          <dt className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-600">Fraud flags</dt>
-          <dd className="flex flex-wrap gap-1.5">
-            {detail.fraudFlags.map((flag) => (
-              <span key={flag} className="rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-800">
-                {flag.replace(/_/g, " ")}
-              </span>
-            ))}
-          </dd>
-        </div>
-      )}
       {detail.notes && (
         <div className="col-span-2">
           <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Notes</dt>
