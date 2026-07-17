@@ -15,6 +15,7 @@ import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schem
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export type CrmMasterDataset =
@@ -92,6 +93,8 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
   { key: "agent_name", kind: "text", label: "Agent Name" },
+  { key: "line", kind: "text", label: "Line", note: "The agent's product line, from their Phoenix employee record. '—' when the agent isn't mapped to an employee." },
+  { key: "hire_date", kind: "text", label: "Hiring Date", note: "The agent's hiring date (dd-Mon-yyyy), from their Phoenix employee record." },
   { key: "double_crm_id", kind: "number", label: "Double CRM ID" },
   { key: "double_hr_id", kind: "text", label: "Double HR ID" },
   { key: "double_name", kind: "text", label: "Double Name" },
@@ -123,6 +126,8 @@ export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "check_date", kind: "datetime_local", label: "Check Date", note: "Real GPS check-in time from the agent's phone (Cairo time)." },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
+  { key: "line", kind: "text", label: "Line", note: "The agent's product line, from their Phoenix employee record. '—' when the agent isn't mapped to an employee." },
+  { key: "hire_date", kind: "text", label: "Hiring Date", note: "The agent's hiring date (dd-Mon-yyyy), from their Phoenix employee record." },
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
   { key: "contact_name", kind: "text", label: "Contact Name" },
   { key: "lat", kind: "coord", label: "Latitude" },
@@ -181,6 +186,18 @@ export const CRM_TRIPLE_COLUMNS: readonly CrmMasterColumn[] = [
   },
   { key: "base_hr_id", kind: "text", label: "Rep HR ID" },
   {
+    key: "line",
+    kind: "text",
+    label: "Rep Line",
+    note: "The rep's product line, from their Phoenix employee record.",
+  },
+  {
+    key: "hire_date",
+    kind: "text",
+    label: "Rep Hiring Date",
+    note: "The rep's hiring date (dd-Mon-yyyy), from their Phoenix employee record.",
+  },
+  {
     key: "mid_name",
     kind: "text",
     label: "Middle Manager",
@@ -208,10 +225,28 @@ export const CRM_TRIPLE_COLUMNS: readonly CrmMasterColumn[] = [
   },
 ];
 
+/** Vacations tab = one row per vacation PERIOD (consecutive CRM vacation days grouped), not per day.
+ * Vacation ID anchors the period (its earliest CRM visit id); Duration counts half-days as 0.5. */
+export const CRM_VACATION_COLUMNS: readonly CrmMasterColumn[] = [
+  { key: "vacation_id", kind: "number", label: "Vacation ID", note: "Identifies this vacation period — the earliest CRM visit id among its days." },
+  { key: "from_date", kind: "date", label: "From" },
+  { key: "to_date", kind: "date", label: "To" },
+  { key: "duration", kind: "number", label: "Duration (days)", note: "Total days in the period. A half-day (AM or PM only) counts as 0.5, so a period can be 0.5, 1, 1.5, 2 …" },
+  { key: "half_days", kind: "number", label: "Half Days", note: "How many of the days in this period were half-days (logged AM or PM only)." },
+  { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
+  { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
+  { key: "agent_name", kind: "text", label: "Agent Name" },
+  { key: "line", kind: "text", label: "Line", note: "The agent's product line, from their Phoenix employee record." },
+  { key: "hire_date", kind: "text", label: "Hiring Date", note: "The agent's hiring date (dd-Mon-yyyy), from their Phoenix employee record." },
+  { key: "visit_type_description", kind: "text", label: "Vacation Type" },
+  { key: "comment", kind: "text", label: "Comment", note: "The leave note on the first day of the period (e.g. Annual Leave, Morning Excuse)." },
+];
+
 /** Columns shown for a given dataset/tab. */
 function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
-  if (dataset === "vacations" || dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
+  if (dataset === "vacations") return CRM_VACATION_COLUMNS;
+  if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
   if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
   if (dataset === "triple_visits") return CRM_TRIPLE_COLUMNS;
   if (dataset === "double_visits") return CRM_DOUBLE_VISIT_COLUMNS;
@@ -584,6 +619,182 @@ function attachTripleFlag(
   }
 }
 
+const MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** Format a plain date (YYYY-MM-DD) as "05-Mar-2026". Parses the string directly (no Date/timezone
+ * so it never drifts a day). Returns null on empty/malformed input. */
+function formatDmy(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr));
+  if (!m) return null;
+  const monthIdx = Number(m[2]) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return null;
+  return `${m[3]}-${MONTHS_ABBR[monthIdx]}-${m[1]}`;
+}
+
+/** Per-agent metadata resolved from the employee roster for the CRM tabs' "Line" + "Hiring Date"
+ * columns: normalized-HR-ID → { line name, hire date pre-formatted dd-Mon-yyyy }. */
+type AgentMeta = { line: string | null; hireDate: string | null };
+
+/** Build the normalized-HR-ID → {line, hireDate} map from the employee roster (small: ~160 rows, so
+ * one unpaginated read is safe). Degrades to an empty map on any error (cells then show "—").
+ * Employees/lines are core tables outside the CRM mirror. */
+async function loadAgentMetaByHrId(): Promise<Map<string, AgentMeta>> {
+  const supabase = getSupabaseAdmin();
+  const [linesRes, empRes] = await Promise.all([
+    supabase.from("lines").select("id, name"),
+    supabase.from("employees").select("hr_id, line_id, hire_date").limit(5000),
+  ]);
+  if (linesRes.error || empRes.error) return new Map();
+  const lineNameById = new Map<number, string>();
+  for (const l of (linesRes.data ?? []) as Array<{ id: number | null; name: string | null }>) {
+    if (l.id != null && l.name) lineNameById.set(l.id, l.name);
+  }
+  const byHrId = new Map<string, AgentMeta>();
+  for (const e of (empRes.data ?? []) as Array<{ hr_id: string | null; line_id: number | null; hire_date: string | null }>) {
+    const key = canonicalHrIdKey(e.hr_id);
+    if (!key) continue;
+    byHrId.set(key, {
+      line: e.line_id != null ? lineNameById.get(e.line_id) ?? null : null,
+      hireDate: formatDmy(e.hire_date),
+    });
+  }
+  return byHrId;
+}
+
+/** Set each row's `line` + `hire_date` from the resolved HR ID in `hrIdField` (the agent for most
+ * tabs, the rep for triples), using the roster meta map. Unknown HR ids leave both null → "—". */
+function attachAgentMeta(rows: CrmMasterRow[], metaByHrId: Map<string, AgentMeta>, hrIdField: string): void {
+  for (const row of rows) {
+    const raw = typeof row[hrIdField] === "string" ? (row[hrIdField] as string) : null;
+    const meta = raw ? metaByHrId.get(canonicalHrIdKey(raw) ?? "") : undefined;
+    row.line = meta?.line ?? null;
+    row.hire_date = meta?.hireDate ?? null;
+  }
+}
+
+/** A vacation day-row from the mirror, used to group vacation periods. */
+type VacationDayRow = {
+  crm_visit_id: number | null;
+  visit_date: string | null;
+  ampm: string | null;
+  agent_crm_id: number | null;
+  agent_name: string | null;
+  agent_hr_id: string | null;
+  visit_type_description: string | null;
+  comment: string | null;
+};
+
+/** True when `cur` (YYYY-MM-DD) is exactly the calendar day after `prev`. */
+function isNextCalendarDay(prev: string, cur: string): boolean {
+  const p = Date.parse(`${prev}T00:00:00Z`);
+  const c = Date.parse(`${cur}T00:00:00Z`);
+  return Number.isFinite(p) && Number.isFinite(c) && c - p === 86_400_000;
+}
+
+/** Build one vacation-period row from a run of consecutive day-rows (same agent, sorted by date).
+ * Duration sums each day (0.5 for an AM/PM half-day, else 1). Vacation ID = earliest CRM visit id. */
+function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
+  const first = run[0];
+  const dates = run.map((r) => String(r.visit_date).slice(0, 10));
+  const fromDate = dates.reduce((a, b) => (a < b ? a : b));
+  const toDate = dates.reduce((a, b) => (a > b ? a : b));
+  let duration = 0;
+  let halfDays = 0;
+  for (const r of run) {
+    const isHalf = r.ampm === "AM" || r.ampm === "PM";
+    duration += isHalf ? 0.5 : 1;
+    if (isHalf) halfDays += 1;
+  }
+  const ids = run.map((r) => r.crm_visit_id).filter((v): v is number => typeof v === "number");
+  return {
+    id: `vac-${first.agent_crm_id}-${fromDate}-${toDate}`,
+    vacation_id: ids.length ? Math.min(...ids) : null,
+    from_date: fromDate,
+    to_date: toDate,
+    duration,
+    half_days: halfDays,
+    agent_crm_id: first.agent_crm_id,
+    agent_hr_id: first.agent_hr_id,
+    agent_name: first.agent_name,
+    visit_type_description: first.visit_type_description,
+    comment: first.comment,
+    raw_payload: {
+      visit_ids: ids,
+      days: run.map((r) => ({ date: String(r.visit_date).slice(0, 10), ampm: r.ampm || "full", crm_visit_id: r.crm_visit_id })),
+    },
+  } as CrmMasterRow;
+}
+
+/**
+ * Group CRM vacation day-rows (visit_type_description ILIKE '%vacation%') into vacation PERIODS: one
+ * row per run of consecutive calendar days for the same agent (a gap starts a new period; two rows on
+ * the same date — an AM + a PM half — stay in the same run). Resigned agents excluded. Duration counts
+ * half-days as 0.5. Walks paginated rows (PostgREST caps a single request). Newest period first.
+ */
+async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<CrmMasterRow[]> {
+  const supabase = getSupabaseAdmin();
+  const PAGE = 1000;
+  const MAX_ROWS = 60000;
+  const days: VacationDayRow[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const base = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("crm_visit_id, visit_date, ampm, agent_crm_id, agent_name, agent_hr_id, visit_type_description, comment")
+      .ilike("visit_type_description", "%vacation%");
+    let q = base as unknown as MasterQuery;
+    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
+      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    }
+    if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
+    if (range.dateTo) q = q.lte("visit_date", range.dateTo);
+    const { data, error } = await (q as unknown as typeof base)
+      .order("agent_crm_id", { ascending: true })
+      .order("visit_date", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !data) {
+      if (days.length === 0) return [];
+      break;
+    }
+    const rows = data as unknown as VacationDayRow[];
+    days.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+
+  // Group by agent, then split each agent's (date-sorted) days into consecutive-day runs.
+  const byAgent = new Map<number, VacationDayRow[]>();
+  for (const d of days) {
+    if (d.agent_crm_id == null || !d.visit_date) continue;
+    const list = byAgent.get(d.agent_crm_id);
+    if (list) list.push(d);
+    else byAgent.set(d.agent_crm_id, [d]);
+  }
+
+  const periods: CrmMasterRow[] = [];
+  for (const list of byAgent.values()) {
+    list.sort((a, b) => String(a.visit_date).localeCompare(String(b.visit_date)));
+    let run: VacationDayRow[] = [];
+    for (const d of list) {
+      if (run.length === 0) {
+        run = [d];
+        continue;
+      }
+      const prev = String(run[run.length - 1].visit_date).slice(0, 10);
+      const cur = String(d.visit_date).slice(0, 10);
+      if (cur === prev || isNextCalendarDay(prev, cur)) {
+        run.push(d);
+      } else {
+        periods.push(buildVacationPeriod(run));
+        run = [d];
+      }
+    }
+    if (run.length > 0) periods.push(buildVacationPeriod(run));
+  }
+
+  periods.sort((x, y) => String(y.from_date).localeCompare(String(x.from_date)));
+  return periods;
+}
+
 /** Normalize the requested dataset to a known value. */
 function normalizeDataset(value: CrmMasterDataset | undefined): CrmMasterDataset {
   return value && CRM_MASTER_DATASETS.some((d) => d.id === value) ? value : "visits";
@@ -666,6 +877,8 @@ async function attachDerived(
   }
   if (dataset === "crm_issues") attachIssueReason(rows);
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
+  // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
+  attachAgentMeta(rows, await loadAgentMetaByHrId(), "agent_hr_id");
 }
 
 /**
@@ -725,17 +938,39 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   // Triple visits are a derived analytic (a self-join across visit rows), not a single-table filter:
   // detect them in memory over the date range, then paginate the computed result.
   if (dataset === "triple_visits") {
-    const [{ rows: allTriples }, latestSyncRuns] = await Promise.all([
+    const [{ rows: allTriples }, latestSyncRuns, agentMeta] = await Promise.all([
       computeTriplesInRange({ dateFrom, dateTo }),
       getLatestVisitsSyncRuns(6),
+      loadAgentMetaByHrId(),
     ]);
     const start = (page - 1) * pageSize;
+    const pageRows = allTriples.slice(start, start + pageSize);
+    attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
     return {
       ...echo,
       latestSyncRuns,
-      rows: allTriples.slice(start, start + pageSize),
+      rows: pageRows,
       schemaReady: true,
       totalCount: allTriples.length,
+    };
+  }
+
+  // Vacations are grouped into periods (consecutive days), not shown per day — compute + paginate.
+  if (dataset === "vacations") {
+    const [allPeriods, latestSyncRuns, agentMeta] = await Promise.all([
+      computeVacationPeriods({ dateFrom, dateTo }),
+      getLatestVisitsSyncRuns(6),
+      loadAgentMetaByHrId(),
+    ]);
+    const start = (page - 1) * pageSize;
+    const pageRows = allPeriods.slice(start, start + pageSize);
+    attachAgentMeta(pageRows, agentMeta, "agent_hr_id");
+    return {
+      ...echo,
+      latestSyncRuns,
+      rows: pageRows,
+      schemaReady: true,
+      totalCount: allPeriods.length,
     };
   }
 
@@ -792,7 +1027,21 @@ export async function getCrmMasterExportRows(
 
   // Triple visits: computed in memory (self-join), so export all detected triples for the range.
   if (dataset === "triple_visits") {
-    const { rows } = await computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo });
+    const [{ rows }, agentMeta] = await Promise.all([
+      computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
+      loadAgentMetaByHrId(),
+    ]);
+    attachAgentMeta(rows, agentMeta, "base_hr_id");
+    return { columns, dataset, rows, truncated: false };
+  }
+
+  // Vacations: grouped into periods, so export all periods for the range.
+  if (dataset === "vacations") {
+    const [rows, agentMeta] = await Promise.all([
+      computeVacationPeriods({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
+      loadAgentMetaByHrId(),
+    ]);
+    attachAgentMeta(rows, agentMeta, "agent_hr_id");
     return { columns, dataset, rows, truncated: false };
   }
 
