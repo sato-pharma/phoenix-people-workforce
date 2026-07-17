@@ -6,6 +6,7 @@
 // transition produces a new notification. This is what stops the "uncontrolled repeated emails"
 // the audit called out.
 
+import { systemDeployment } from "@/config/system-settings";
 import { normalizeHrId, systemAccessContext } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -38,6 +39,22 @@ async function resolveHrApproverHrIds(): Promise<string[]> {
     .filter(Boolean) as string[];
 }
 
+// Bulk-resolve each task's human-readable employee name (never surface a bare HR_ID in a
+// notification — see CLAUDE.md "show names not codes"). One IN() query for the whole sweep.
+async function resolveEmployeeNames(tasks: FeedbackTask[]): Promise<Map<string, string>> {
+  const caseIds = Array.from(new Set(tasks.map((t) => t.caseId).filter((id): id is string => Boolean(id))));
+  if (caseIds.length === 0) return new Map();
+  const { data } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .select("id, employee_name")
+    .in("id", caseIds);
+  const map = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ id: string; employee_name: string | null }>) {
+    if (row.employee_name) map.set(row.id, row.employee_name);
+  }
+  return map;
+}
+
 function statePriority(state: FeedbackSlaState): "high" | "critical" {
   return state === "overdue" ? "critical" : "high";
 }
@@ -45,26 +62,30 @@ function statePriority(state: FeedbackSlaState): "high" | "critical" {
 async function emitForTask(
   task: FeedbackTask,
   hrApproverHrIds: string[],
+  employeeName: string,
 ): Promise<number> {
   const state = task.sla.state as FeedbackSlaState;
   if (!ACTIONABLE_STATES.includes(state)) return 0;
 
-  // Recipients: the evaluator always; HR added once the task escalates/overdue.
+  // Recipients: the evaluator always (every state — due/escalated/overdue — so they never lose
+  // visibility of their own open task). HR/Super Admin are added only once a task is genuinely
+  // Overdue, not at the mid-way "escalated" warning — HR was previously CC'd on every escalation
+  // company-wide (118 emails to 2 accounts in the first weeks live), which trained recipients to
+  // stop opening probation email (owner report, 2026-07-16). Overdue is still the one state that
+  // needs HR eyes.
   const recipients = new Set<string>();
   const evaluator = normalizeHrId(task.evaluatorHrId);
   if (evaluator) recipients.add(evaluator);
-  if (state === "escalated" || state === "overdue") {
+  if (state === "overdue") {
     for (const hr of hrApproverHrIds) recipients.add(hr);
   }
   if (recipients.size === 0) return 0;
 
-  const title =
-    state === "overdue"
-      ? "Probation feedback OVERDUE"
-      : state === "escalated"
-        ? "Probation feedback escalation"
-        : "Probation feedback due";
-  const message = `Probation feedback for ${task.employeeHrId} (DV day ${task.dvDate}) is ${state}.`;
+  const stateLabel =
+    state === "overdue" ? "OVERDUE" : state === "escalated" ? "escalation" : "due";
+  const title = `Probation feedback ${stateLabel} — ${employeeName}`;
+  const message = `Probation feedback for ${employeeName} (DV day ${task.dvDate}) is ${state}.`;
+  const ctaUrl = task.caseId ? `${systemDeployment.productionUrl}/probation/cases/${task.caseId}` : null;
 
   // Recipients are independent (each has its own idempotency key, and claimDelivery's atomic
   // upsert-on-conflict makes concurrent claims race-safe) — dispatch in parallel instead of
@@ -85,14 +106,17 @@ async function emitForTask(
         // Telegram carries the full SLA reminder (E3); delivery still gated by the global switch, bot
         // token, and each recipient's per-user opt-in + connected chat (admin/DB, not code).
         channels: ["in_app", "email", "telegram"],
+        actionUrl: ctaUrl,
         email: {
           notificationType: "probation",
           subject: title,
           summary: message,
           title,
           tone: state === "overdue" ? "danger" : "warning",
+          ctaHref: ctaUrl ?? undefined,
+          ctaLabel: "Open live report",
           metrics: [
-            { label: "Employee", value: task.employeeHrId },
+            { label: "Employee", value: employeeName },
             { label: "DV date", value: task.dvDate },
             { label: "Status", value: state },
             { label: "Hours overdue", value: String(task.sla.hoursOverdue) },
@@ -133,7 +157,10 @@ export async function processFeedbackSlaReminders(
   // evaluator never had the window to answer.
   const withSla = tasks.map((t) => ({ ...t, sla: computeFeedbackSla(t.dvDate, nowIso, config.sla, t.createdAt) }));
 
-  const hrApproverHrIds = await resolveHrApproverHrIds();
+  const [hrApproverHrIds, employeeNames] = await Promise.all([
+    resolveHrApproverHrIds(),
+    resolveEmployeeNames(withSla),
+  ]);
   let due = 0, escalated = 0, overdue = 0;
   for (const task of withSla) {
     const state = task.sla.state;
@@ -144,7 +171,11 @@ export async function processFeedbackSlaReminders(
 
   // Tasks are independent (each's notifications key off its own DV-Day id) — fan out in
   // parallel rather than a serial per-task await chain (see emitForTask's comment).
-  const emittedPerTask = await Promise.all(withSla.map((task) => emitForTask(task, hrApproverHrIds)));
+  const emittedPerTask = await Promise.all(
+    withSla.map((task) =>
+      emitForTask(task, hrApproverHrIds, (task.caseId && employeeNames.get(task.caseId)) || task.employeeHrId),
+    ),
+  );
   const notificationsEmitted = emittedPerTask.reduce((sum, n) => sum + n, 0);
 
   return { scanned: withSla.length, due, escalated, overdue, notificationsEmitted };
