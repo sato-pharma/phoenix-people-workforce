@@ -7,7 +7,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 
 /** True when an error is really "the iReports360 mirror tables don't exist yet". */
 export function isCrmSchemaMissingError(error: unknown): boolean {
@@ -21,6 +21,16 @@ export function isCrmSchemaMissingError(error: unknown): boolean {
 export async function isCrmVisitsSchemaReady(): Promise<boolean> {
   const { error } = await getSupabaseAdmin()
     .from(CRM_VISITS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .limit(1);
+  return !isCrmSchemaMissingError(error);
+}
+
+/** Cheap head-count probe: is the check-ins mirror queryable? (CRM Integrity correlates
+ * visits + check-ins, so it gates on the check-ins table specifically.) */
+export async function isCrmCheckinsSchemaReady(): Promise<boolean> {
+  const { error } = await getSupabaseAdmin()
+    .from(CRM_CHECKINS_TABLE)
     .select("id", { count: "exact", head: true })
     .limit(1);
   return !isCrmSchemaMissingError(error);

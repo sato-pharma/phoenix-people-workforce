@@ -13,6 +13,7 @@ import { computeDvProgress, currentProbationDay, milestoneStatuses, type DvDayLi
 import { computeFeedbackSla } from "./feedback-sla";
 import { classifyRisk, exceptionFlags, RISK_LABEL, type RiskLevel, type ExceptionFlags } from "./dashboard-classify";
 import { buildMappedAgentKeySet, isCrmUnmapped } from "./dashboard-crm-mapping";
+import { getMappedAgentHrIds } from "@/lib/crm/reads";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { probationDaysRemaining } from "@/lib/probation/date";
 import { countUnresolvedProvisioningFailures } from "@/lib/probation/provisioning";
@@ -113,7 +114,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
       }),
     ),
   );
-  const [dvRes, fbRes, asRes, mgrRes, daRes, crmRes] = await Promise.all([
+  const [dvRes, fbRes, asRes, mgrRes, daRes, mappedAgentHrIds] = await Promise.all([
     supabase.from("probation_dv_days").select("case_id, evaluator_role, dv_date, dv_status").in("case_id", caseIds),
     supabase.from("probation_feedback").select("case_id, dv_day_id, evaluator_role, scores, recommendation").in("case_id", caseIds),
     supabase.from("probation_assessments").select("case_id, kind, score, status").in("case_id", caseIds),
@@ -121,17 +122,17 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
       ? supabase.from("employees").select("hr_id, full_name").in("hr_id", managerHrIds)
       : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null }> }),
     supabase.from("probation_development_actions").select("case_id, status").in("case_id", caseIds),
-    // CRM identity-mapping check (E6): which probation reps actually appear as a CRM agent.
-    supabase.from("ireports360_visits").select("agent_hr_id").in("agent_hr_id", caseHrIds),
+    // CRM identity-mapping check (E6): which probation reps actually appear as a CRM agent, via the
+    // CRM single-door presence reader. No resigned-exclusion here on purpose — a present-but-excluded
+    // agent is still "mapped", so they must not be mislabeled a CRM data gap.
+    getMappedAgentHrIds(caseHrIds),
   ]);
 
   const dvByCase = groupBy((dvRes.data ?? []) as DvRow[], (r) => r.case_id);
   const fbByCase = groupBy((fbRes.data ?? []) as FbRow[], (r) => r.case_id);
   const asByCase = groupBy((asRes.data ?? []) as AssessRow[], (r) => r.case_id);
   const daByCase = groupBy((daRes.data ?? []) as Array<{ case_id: string | null; status: string }>, (r) => r.case_id);
-  const mappedAgentKeys = buildMappedAgentKeySet(
-    ((crmRes.data ?? []) as Array<{ agent_hr_id: string | null }>).map((r) => r.agent_hr_id),
-  );
+  const mappedAgentKeys = buildMappedAgentKeySet(mappedAgentHrIds);
   const mgrName = new Map<string, string>();
   for (const m of ((mgrRes.data ?? []) as Array<{ hr_id: string; full_name: string | null }>)) {
     if (m.full_name) mgrName.set(m.hr_id.toLowerCase(), m.full_name);
