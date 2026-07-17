@@ -53,6 +53,8 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
+  { key: "checkin_time", kind: "datetime_local", label: "Check-in Time (nearest)", note: "The GPS check-in closest in time to this visit's CRM Save Date (same rep, same day). A best-match correlation — NOT a guaranteed CRM link; a visit may have no check-in at all (shows —)." },
+  { key: "checkin_location", kind: "text", label: "Check-in Location (nearest)", note: "Address (or lat, lon) of that nearest GPS check-in. Same best-match caveat as Check-in Time." },
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
@@ -140,6 +142,86 @@ type MasterQuery = {
 /** Escapes a free-text search term for a PostgREST `or(...ilike...)` expression. */
 function sanitizeSearch(term: string): string {
   return term.replace(/[%,()]/g, " ").trim();
+}
+
+type CheckinLite = {
+  address: string | null;
+  agent_crm_id: number | null;
+  check_date: string | null;
+  contact_crm_id: number | null;
+  lat: number | null;
+  lon: number | null;
+};
+
+/**
+ * Attach each visit's NEAREST GPS check-in (Check-in Time + Location): same rep, same day, closest
+ * in time to the visit's crm_save_date, preferring a check-in at the same contact. Best-match
+ * correlation (visits ↔ check-ins are not 1:1), anchored on crm_save_date — the real submit time —
+ * NOT the fixed-midnight visit_date_time. Both crm_save_date and check_date are Cairo-local stored
+ * tagged UTC, so the gap is consistent. Mutates rows in place; best-effort (leaves nulls on any
+ * failure). Only the current page of visits is correlated.
+ */
+async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
+  for (const row of rows) {
+    row.checkin_time = null;
+    row.checkin_location = null;
+  }
+  const agentIds = Array.from(
+    new Set(rows.map((r) => r.agent_crm_id).filter((v): v is number => typeof v === "number")),
+  );
+  const days = rows
+    .map((r) => (typeof r.visit_date === "string" ? r.visit_date.slice(0, 10) : null))
+    .filter((v): v is string => Boolean(v));
+  if (agentIds.length === 0 || days.length === 0) return;
+  const from = days.reduce((a, b) => (a < b ? a : b));
+  const to = days.reduce((a, b) => (a > b ? a : b));
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(CRM_CHECKINS_TABLE)
+    .select("agent_crm_id, contact_crm_id, check_date, address, lat, lon")
+    .in("agent_crm_id", agentIds)
+    .gte("check_date", `${from}T00:00:00`)
+    .lte("check_date", `${to}T23:59:59`)
+    .limit(20000);
+  if (error || !data) return;
+
+  const byAgentDay = new Map<string, CheckinLite[]>();
+  for (const c of data as CheckinLite[]) {
+    if (c.agent_crm_id == null || !c.check_date) continue;
+    const key = `${c.agent_crm_id}|${String(c.check_date).slice(0, 10)}`;
+    const list = byAgentDay.get(key);
+    if (list) list.push(c);
+    else byAgentDay.set(key, [c]);
+  }
+
+  for (const row of rows) {
+    const agent = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
+    const day = typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null;
+    if (agent == null || !day) continue;
+    const candidates = byAgentDay.get(`${agent}|${day}`);
+    if (!candidates || candidates.length === 0) continue;
+
+    // Prefer check-ins at the same contact; among the pool, nearest in time to crm_save_date.
+    const contact = typeof row.contact_crm_id === "number" ? row.contact_crm_id : null;
+    const sameContact = contact != null ? candidates.filter((c) => c.contact_crm_id === contact) : [];
+    const pool = sameContact.length > 0 ? sameContact : candidates;
+    const anchorMs = typeof row.crm_save_date === "string" ? new Date(row.crm_save_date).getTime() : NaN;
+
+    let best = pool[0];
+    if (Number.isFinite(anchorMs)) {
+      let bestDiff = Number.POSITIVE_INFINITY;
+      for (const c of pool) {
+        const diff = Math.abs(new Date(String(c.check_date)).getTime() - anchorMs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = c;
+        }
+      }
+    }
+    row.checkin_time = best.check_date;
+    row.checkin_location = best.address || (best.lat != null && best.lon != null ? `${best.lat}, ${best.lon}` : null);
+  }
 }
 
 /**
@@ -237,10 +319,14 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
     throw new Error(error.message);
   }
 
+  const rows = (data ?? []) as unknown as CrmMasterRow[];
+  // Visits get their nearest GPS check-in merged in (Check-in Time/Location), anchored on crm_save_date.
+  if (isVisits) await attachNearestCheckins(rows);
+
   return {
     ...echo,
     latestSyncRuns,
-    rows: (data ?? []) as unknown as CrmMasterRow[],
+    rows,
     schemaReady: true,
     totalCount: count ?? 0,
   };
