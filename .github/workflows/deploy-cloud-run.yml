@@ -11,6 +11,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Prod and staging both submit builds to Cloud Build in the same GCP project and poll
+# its "Get requests per minute" quota (60/project); two overlapping source builds
+# reliably 429 one of them (see PR #1029/#1032 and the 2026-07-17 staging burst). This
+# shared group — identical in deploy-cloud-run-staging.yml — serializes BOTH deploy
+# workflows so their builds never poll concurrently. cancel-in-progress:false never
+# kills an in-flight deploy; a newer run just queues (GitHub keeps only the latest
+# pending, which is fine — main is cumulative, so the newest deploy ships all prior
+# commits).
+concurrency:
+  group: cloud-run-source-deploy
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: phoenix-workforce-498619
   REGION: us-central1
@@ -62,7 +74,9 @@ jobs:
           # was silently dropped and every NEXT_PUBLIC_* value got inlined into the client
           # bundle as an empty string on every prior deploy. cloudbuild.yaml builds with an
           # explicit --build-arg per value instead, which Docker actually honors.
-          gcloud builds submit . \
+          # retry-transient.sh retries ONLY transient Cloud Build 429/5xx/network errors
+          # (the 60/min get-requests quota); a real build failure is surfaced on attempt 1.
+          bash scripts/retry-transient.sh gcloud builds submit . \
             --config cloudbuild.yaml \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
