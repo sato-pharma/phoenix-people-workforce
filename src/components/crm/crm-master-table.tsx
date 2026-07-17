@@ -689,9 +689,15 @@ function RowGroup({
   const crmId = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
   const agentName = typeof row.agent_name === "string" ? row.agent_name : null;
   const showFix = dataset === "crm_issues" && crmId != null;
+  // Vacations tab: tint rows that are a national/official holiday (the service sets `national_holiday`).
+  const isNationalHoliday = typeof row.national_holiday === "string" && row.national_holiday.length > 0;
   return (
     <>
-      <tr className="border-b border-slate-100 text-slate-700 hover:bg-orange-50/40">
+      <tr
+        className={`border-b text-slate-700 ${
+          isNationalHoliday ? "border-amber-200 bg-amber-100/70 hover:bg-amber-100" : "border-slate-100 hover:bg-orange-50/40"
+        }`}
+      >
         {columns.map((col) => (
           <td className="whitespace-nowrap px-3 py-2" key={col.key}>
             {renderCell(row[col.key], col.kind)}
