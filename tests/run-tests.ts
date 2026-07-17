@@ -159,6 +159,7 @@ import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scop
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
 import { runEmployee360ExpenseRoleTests } from "./employee-360-expense-role.test.ts";
 import { runEmployee360SalesMaskingTests } from "./employee-360-sales-masking.test.ts";
+import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runCustomerDirectoryTests } from "./customer-directory.test.ts";
@@ -565,6 +566,7 @@ await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProdu
 await runTest("employee 360 expense-analysis role allowlist", runEmployee360ExpenseRoleTests);
 await runTest("employee 360 visit classification (CRM Unknown-type labeling)", runEmployee360VisitClassificationTests);
 await runTest("employee 360 sales confidential-product masking", runEmployee360SalesMaskingTests);
+await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sos customer key", runSosCustomerKeyTests);
