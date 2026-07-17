@@ -445,6 +445,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/missing/export", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "update" } }),
+  // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown", permission: { resource: "sales", action: "import" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown/export", permission: { resource: "sales", action: "import" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/template", permission: { resource: "sales", action: "import" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/targets/save", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only targets upsert (sales:import); map-or-reject validated server-side, rejects confidential products." }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/targets/upload", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin targets XLSX import (sales:import); parsed + map-or-reject validated server-side before persist." }),
   sessionApi({ methods: allMethods, pattern: "/api/sales/**", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),
