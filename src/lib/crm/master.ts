@@ -53,7 +53,7 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
-  { key: "checkin_id", kind: "number", label: "Check-in ID", note: "All 'Check-in …' columns come from ONE nearest GPS check-in: same rep, same day, closest in time to this visit's CRM Save Date, preferring the same contact. Best-match correlation — NOT a guaranteed CRM link; a visit may have no check-in at all (all show —)." },
+  { key: "checkin_id", kind: "number", label: "Check-in ID", note: "All 'Check-in …' columns come from the GPS check-in at the SAME contact (same rep, same day; nearest in time to CRM Save Date if the contact has several). Only Regular visits have a contact — Campaign/Meeting/Vacation/etc. correctly show — (no check-in)." },
   { key: "checkin_time", kind: "datetime_local", label: "Check-in Time" },
   { key: "checkin_agent_crm_id", kind: "number", label: "Check-in Agent CRM ID" },
   { key: "checkin_agent_hr_id", kind: "text", label: "Check-in Agent HR ID" },
@@ -181,12 +181,13 @@ const CHECKIN_MERGE_KEYS = [
 ] as const;
 
 /**
- * Attach each visit's NEAREST GPS check-in (Check-in Time + Location): same rep, same day, closest
- * in time to the visit's crm_save_date, preferring a check-in at the same contact. Best-match
- * correlation (visits ↔ check-ins are not 1:1), anchored on crm_save_date — the real submit time —
- * NOT the fixed-midnight visit_date_time. Both crm_save_date and check_date are Cairo-local stored
- * tagged UTC, so the gap is consistent. Mutates rows in place; best-effort (leaves nulls on any
- * failure). Only the current page of visits is correlated.
+ * Attach each visit's GPS check-in: matched by same rep + SAME contact + same day — a check-in
+ * belongs to the regular visit at that contact — and when one contact has >1 check-in that day, the
+ * one nearest in time to the visit's crm_save_date. Only REGULAR visits carry a contact, so
+ * non-regular visits (Campaign, Meeting, Vacation, …) correctly get no check-in. Time is only a
+ * tiebreaker, anchored on crm_save_date (the real submit time); both it and check_date are
+ * Cairo-local so the gap is consistent. Mutates rows in place; best-effort (leaves nulls on failure
+ * or no same-contact match). Only the current page of visits is correlated.
  */
 async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   for (const row of rows) {
@@ -212,32 +213,32 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     .limit(20000);
   if (error || !data) return;
 
-  const byAgentDay = new Map<string, CheckinLite[]>();
+  // Key by agent + CONTACT + day: a check-in belongs to the regular visit at that same contact.
+  const byAgentContactDay = new Map<string, CheckinLite[]>();
   for (const c of data as CheckinLite[]) {
-    if (c.agent_crm_id == null || !c.check_date) continue;
-    const key = `${c.agent_crm_id}|${String(c.check_date).slice(0, 10)}`;
-    const list = byAgentDay.get(key);
+    if (c.agent_crm_id == null || c.contact_crm_id == null || !c.check_date) continue;
+    const key = `${c.agent_crm_id}|${c.contact_crm_id}|${String(c.check_date).slice(0, 10)}`;
+    const list = byAgentContactDay.get(key);
     if (list) list.push(c);
-    else byAgentDay.set(key, [c]);
+    else byAgentContactDay.set(key, [c]);
   }
 
   for (const row of rows) {
     const agent = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
+    // Only regular visits carry a real contact; a check-in belongs to the visit at the SAME contact.
+    // Non-regular visits (Campaign, Meeting, Vacation, …) have no contact and genuinely no check-in.
+    const contact = typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0 ? row.contact_crm_id : null;
     const day = typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null;
-    if (agent == null || !day) continue;
-    const candidates = byAgentDay.get(`${agent}|${day}`);
+    if (agent == null || contact == null || !day) continue;
+    const candidates = byAgentContactDay.get(`${agent}|${contact}|${day}`);
     if (!candidates || candidates.length === 0) continue;
 
-    // Prefer check-ins at the same contact; among the pool, nearest in time to crm_save_date.
-    const contact = typeof row.contact_crm_id === "number" ? row.contact_crm_id : null;
-    const sameContact = contact != null ? candidates.filter((c) => c.contact_crm_id === contact) : [];
-    const pool = sameContact.length > 0 ? sameContact : candidates;
+    // One contact can have >1 check-in that day → pick the one nearest in time to crm_save_date.
     const anchorMs = typeof row.crm_save_date === "string" ? new Date(row.crm_save_date).getTime() : NaN;
-
-    let best = pool[0];
+    let best = candidates[0];
     if (Number.isFinite(anchorMs)) {
       let bestDiff = Number.POSITIVE_INFINITY;
-      for (const c of pool) {
+      for (const c of candidates) {
         const diff = Math.abs(new Date(String(c.check_date)).getTime() - anchorMs);
         if (diff < bestDiff) {
           bestDiff = diff;
