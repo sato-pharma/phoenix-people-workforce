@@ -21,6 +21,25 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# NEXT_PUBLIC_* values are inlined into the client bundle at `next build` time, not read
+# from the container's runtime env. gcloud run deploy --source (Docker path) forwards
+# --set-build-env-vars as --build-arg, which Docker silently drops without a matching ARG
+# here — so these must be declared and re-exported as ENV before the build step runs.
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+ARG NEXT_PUBLIC_SMI_USE_FACT_TABLES
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+ENV NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=$NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+ENV NEXT_PUBLIC_SMI_USE_FACT_TABLES=$NEXT_PUBLIC_SMI_USE_FACT_TABLES
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+
 # If using npm
 RUN npm run build
 
