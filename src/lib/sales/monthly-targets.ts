@@ -444,6 +444,179 @@ export async function loadEmployeeNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
+// ── Source drill-down (traceability) ─────────────────────────────────────────
+// Decompose a closing number to its raw source (distributor + brick). Reconciles
+// exactly to au.f_monthly_attribution. Used by the expandable Targets rows + export.
+
+export type SourceBreakdownRow = {
+  productCode: string;
+  productName: string;
+  distributorName: string;
+  brickName: string;
+  units: number;
+  value: number;
+};
+
+export type DirectBreakdownRow = {
+  regionCode: string;
+  regionName: string;
+  productCode: string;
+  productName: string;
+  distributorName: string;
+  units: number;
+  value: number;
+};
+
+export type LineSourceBreakdownRow = SourceBreakdownRow & { areaCode: string };
+
+/** Indirect distributor×brick breakdown for one (period, line, area[, product]). */
+export async function loadSourceBreakdown(
+  period: string,
+  lineCode: string,
+  areaCode: string,
+  productCode?: string | null,
+): Promise<SourceBreakdownRow[]> {
+  if (!isValidPeriod(period) || !lineCode || !areaCode) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sales_source_breakdown", {
+    p_period: period,
+    p_line_code: lineCode,
+    p_area_code: areaCode,
+    p_product_code: productCode ?? null,
+  });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    productCode: str(row.product_code),
+    productName: str(row.product_name) || str(row.product_code),
+    distributorName: str(row.distributor_name),
+    brickName: str(row.brick_name),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+}
+
+/** Direct (company) channel breakdown for one (period, line). */
+export async function loadDirectBreakdown(period: string, lineCode: string): Promise<DirectBreakdownRow[]> {
+  if (!isValidPeriod(period) || !lineCode) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sales_direct_breakdown", {
+    p_period: period,
+    p_line_code: lineCode,
+  });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    regionCode: str(row.region_code),
+    regionName: regionName(str(row.region_code)),
+    productCode: str(row.product_code),
+    productName: str(row.product_name) || str(row.product_code),
+    distributorName: str(row.distributor_name),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+}
+
+export type SourceDetailRow = {
+  brickName: string;
+  distributorName: string;
+  customerName: string;
+  units: number;
+  value: number;
+};
+
+/** Customer-grain source: brick → distributor → customer (named) for one (period, line, area, product). */
+export async function loadSourceBreakdownDetail(
+  period: string,
+  lineCode: string,
+  areaCode: string,
+  productCode: string,
+): Promise<SourceDetailRow[]> {
+  if (!isValidPeriod(period) || !lineCode || !areaCode) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sales_source_breakdown_detail", {
+    p_period: period,
+    p_line_code: lineCode,
+    p_area_code: areaCode,
+    p_product_code: productCode || null,
+  });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    brickName: str(row.brick_name),
+    distributorName: str(row.distributor_name),
+    customerName: str(row.customer_name),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+}
+
+export type AreaTrendPoint = { period: string; units: number; value: number };
+
+/** Month-over-month trend for one (line, area[, product]) across the loaded months. */
+export async function loadAreaTrend(lineCode: string, areaCode: string, productCode?: string | null): Promise<AreaTrendPoint[]> {
+  if (!lineCode || !areaCode) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sales_area_trend", {
+    p_line_code: lineCode,
+    p_area_code: areaCode,
+    p_product_code: productCode ?? null,
+  });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    period: str(row.period),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+}
+
+export type SourceFileRow = {
+  distributorName: string;
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  totalQty: number;
+  totalValue: number;
+  importableRows: number;
+  status: string;
+};
+
+/** The validated distributor uploads that fed a month (provenance / paper-trail). */
+export async function loadSourceFiles(period: string): Promise<SourceFileRow[]> {
+  if (!isValidPeriod(period)) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_sales_source_files", { p_period: period });
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    distributorName: str(row.distributor_name),
+    fileName: str(row.file_name),
+    uploadedBy: str(row.uploaded_by),
+    uploadedAt: str(row.uploaded_at),
+    totalQty: num(row.total_qty),
+    totalValue: num(row.total_value),
+    importableRows: num(row.importable_rows),
+    status: str(row.status),
+  }));
+}
+
+/** Whole-line indirect breakdown (all areas) — for the Excel audit export. */
+export async function loadLineSourceBreakdown(period: string, lineCode: string): Promise<LineSourceBreakdownRow[]> {
+  if (!isValidPeriod(period) || !lineCode) return [];
+  const supabase = getSupabaseAdmin();
+  const rows = await rpcAll<Record<string, unknown>>(
+    supabase,
+    "phx_sales_source_breakdown_line",
+    { p_period: period, p_line_code: lineCode },
+    ["area_code", "product_code"],
+  );
+  return rows.map((row) => ({
+    areaCode: str(row.area_code),
+    productCode: str(row.product_code),
+    productName: str(row.product_name) || str(row.product_code),
+    distributorName: str(row.distributor_name),
+    brickName: str(row.brick_name),
+    units: num(row.units),
+    value: num(row.value),
+  }));
+}
+
 /** Areas that CARRY a target for a line (occupied + vacant; excludes "Other"). */
 export async function loadTargetableAreas(lineCode: string): Promise<TargetableArea[]> {
   const supabase = getSupabaseAdmin();
