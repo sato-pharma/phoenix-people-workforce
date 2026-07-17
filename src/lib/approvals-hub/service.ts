@@ -757,9 +757,6 @@ export type ApprovalScopePerson = {
   hrId: string;
   name: string;
   jobTitle: string | null;
-  // "direct" = the viewer is this person's direct manager; "second" = the viewer is
-  // their manager-of-manager (leave only — excuse is single-step / direct manager only).
-  relation: "direct" | "second";
 };
 
 export type ApprovalScopeGroup = {
@@ -773,12 +770,13 @@ export type ApprovalScopeData = {
 };
 
 /**
- * The people the viewer approves for this module, computed from the LIVE org directory
- * (never a hard-coded role list — none exists). Mirrors managerChain() in the vacation
- * service: direct_manager = employee.managerHrId; manager_of_manager = that manager's
- * managerHrId. Excuse is single-step, so it only ever includes direct reports.
+ * The viewer's DIRECT reports — the people they are personally responsible for approving.
+ * Owner-confirmed: "Who I Approve" is the direct-report set ONLY, identical for BOTH leave and
+ * excuse — NOT the downstream manager-of-manager chain (e.g. a District Manager is approved by
+ * their own National Sales Manager, and must NOT be surfaced under the CEO here). Derived live
+ * from the org directory (employee.managerHrId), never a hard-coded list.
  */
-async function buildApprovalScope(access: AccessContext, includeSecondLevel: boolean): Promise<ApprovalScopeData> {
+async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
   const viewerHrId = access.hrId?.trim() ?? "";
   if (!viewerHrId) return { groups: [], totalPeople: 0 };
 
@@ -789,26 +787,11 @@ async function buildApprovalScope(access: AccessContext, includeSecondLevel: boo
   const employees = directory?.employees ?? [];
   if (employees.length === 0) return { groups: [], totalPeople: 0 };
 
-  const byHrId = new Map<string, EmployeeDirectoryRow>();
-  for (const employee of employees) {
-    const key = normalizeHrId(employee.hrId);
-    if (key) byHrId.set(key, employee);
-  }
-  const reportsToViewer = (managerHrId: string | null | undefined) => hrIdsMatch(managerHrId, viewerHrId);
-
   const people: ApprovalScopePerson[] = [];
   for (const employee of employees) {
     if (hrIdsMatch(employee.hrId, viewerHrId)) continue; // never list the viewer themselves
-    if (reportsToViewer(employee.managerHrId)) {
-      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle, relation: "direct" });
-      continue;
-    }
-    if (includeSecondLevel && employee.managerHrId) {
-      const managerKey = normalizeHrId(employee.managerHrId);
-      const manager = managerKey ? byHrId.get(managerKey) : undefined;
-      if (manager && reportsToViewer(manager.managerHrId)) {
-        people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle, relation: "second" });
-      }
+    if (hrIdsMatch(employee.managerHrId, viewerHrId)) {
+      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
     }
   }
 
@@ -831,11 +814,11 @@ async function buildApprovalScope(access: AccessContext, includeSecondLevel: boo
 }
 
 export function getVacationApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
-  return buildApprovalScope(access, true);
+  return buildApprovalScope(access);
 }
 
 export function getExcuseApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
-  return buildApprovalScope(access, false);
+  return buildApprovalScope(access);
 }
 
 // ── "Company Requests" — every request (pending + decided) except the field force ──
