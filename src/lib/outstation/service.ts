@@ -22,6 +22,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
+import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
@@ -374,6 +375,30 @@ function recommendationForResult(params: {
       "Distance, location, and policy checks are clean enough for automatic approval recommendation.",
     approvalRecommendation: "auto_approve" as OutstationApprovalRecommendation,
   };
+}
+
+// Campaign-visit cap (#11): a TRAVELING expense for a District/Training Manager needs
+// at least one double-visit and at most 2 campaign visits (the rest regular). Meeting /
+// other expense types and all other roles are unaffected. Thresholds are shared with the
+// pure decision engine (decision.ts) so there is a single source of truth.
+function assertCampaignRuleForTravel(input: {
+  role: string;
+  expenseType: OutstationExpenseType;
+  evidence: DoubleVisitExpenseWorkloadEvidence;
+}) {
+  if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return;
+  const campaignVisits = input.evidence.campaignVisits ?? 0;
+  const totalDvVisits = campaignVisits + (input.evidence.regularVisits ?? 0);
+  if (totalDvVisits <= 0) {
+    throw new Error(
+      "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.",
+    );
+  }
+  if (campaignVisits > MAX_CAMPAIGN_VISITS) {
+    throw new Error(
+      `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${campaignVisits}. The rest must be regular visits.`,
+    );
+  }
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -1221,6 +1246,11 @@ export async function submitOutstationRequest(
     employeeHrId: calculation.employeeHrId,
     tripEndDate: calculation.tripEndDate,
     tripStartDate: calculation.tripStartDate,
+  });
+  assertCampaignRuleForTravel({
+    role: calculation.employeeRole,
+    expenseType: calculation.expenseType,
+    evidence: workloadPayload.workload_evidence_snapshot,
   });
 
   const insertPayload = {
