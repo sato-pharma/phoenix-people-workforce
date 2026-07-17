@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { setUnmappedCrmIdentityResolution } from "@/lib/visits-report/service";
+import { setUnmappedCrmIdentityResolution } from "@/lib/crm/admin";
 import type { UnmappedCrmResolutionAction } from "@/lib/visits-report/types";
 
 export const runtime = "nodejs";

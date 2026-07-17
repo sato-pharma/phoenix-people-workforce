@@ -13,6 +13,7 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
@@ -899,18 +900,17 @@ async function computeLeaderImpact(
   const minDate = addDays(allDates[0], -(IMPACT_WINDOW_DAYS + 1));
   const maxDate = addDays(allDates[allDates.length - 1], IMPACT_WINDOW_DAYS + 1);
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("ireports360_visits")
-    .select("agent_hr_id,visit_date,visit_type,visit_type_description,comment,contact_crm_id,contact_name,customer_name")
-    .in("agent_hr_id", exactIds)
-    .gte("visit_date", minDate)
-    .lte("visit_date", maxDate)
-    .limit(12000);
-  if (error) throw new Error(`Employee 360 leader impact: ${error.message}`);
+  // Reads through the CRM single-door layer (resigned/owner-excluded agents removed there).
+  const data = await queryVisitsLimited<RepVisitRow>({
+    agentHrIds: exactIds,
+    dateFrom: minDate,
+    dateTo: maxDate,
+    columns: "agent_hr_id, visit_date, visit_type, visit_type_description, comment, contact_crm_id, contact_name, customer_name",
+    limit: 12000,
+  });
 
   const rowsByRep = new Map<string, ProductiveRow[]>();
-  for (const r of (data ?? []) as RepVisitRow[]) {
+  for (const r of data) {
     if (!r.visit_date || !isProductiveVisit(r)) continue;
     const key = String(r.agent_hr_id ?? "").trim().toLowerCase();
     const list = rowsByRep.get(key) ?? [];
@@ -951,7 +951,7 @@ async function getLeadershipActivity(
   const keys = hrIdLookupKeys(hrId);
   const today = new Date().toISOString().slice(0, 10);
 
-  const [coachRes, dvRes] = await Promise.all([
+  const [coachRes, dvRows] = await Promise.all([
     supabase
       .from("coaching_reports")
       .select("medical_rep_hr_id,coaching_date,final_score_percent,performance_zone")
@@ -959,21 +959,20 @@ async function getLeadershipActivity(
       .gte("coaching_date", window.from)
       .lte("coaching_date", window.to)
       .limit(3000),
-    supabase
-      .from("ireports360_visits")
-      .select("agent_hr_id,agent_name,visit_date,visit_type,visit_type_description,comment,contact_name,customer_name")
-      .in("double_hr_id", keys)
-      .gte("visit_date", window.from)
-      .lte("visit_date", window.to)
-      .limit(8000),
+    // Double visits CONDUCTED by this leader — read through the CRM single door.
+    queryVisitsLimited<ConductedDvRow>({
+      doubleHrIds: keys,
+      dateFrom: window.from,
+      dateTo: window.to,
+      columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
+      limit: 8000,
+    }),
   ]);
   if (coachRes.error) throw new Error(`Employee 360 coaching delivered: ${coachRes.error.message}`);
-  if (dvRes.error) throw new Error(`Employee 360 double-visits conducted: ${dvRes.error.message}`);
 
   const coachRows = ((coachRes.data ?? []) as DeliveredCoachingRow[]).filter(
     (r) => r.coaching_date && r.coaching_date <= today,
   );
-  const dvRows = (dvRes.data ?? []) as ConductedDvRow[];
 
   // Per-rep aggregation, keyed case-insensitively so the coaching feed
   // (medical_rep_hr_id) and the CRM visit feed (agent_hr_id) merge cleanly.

@@ -3,7 +3,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
-import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/visits-report/service";
+import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/crm/sync";
 
 const JOB_NAME = "ireports360-visits-reconcile";
 
