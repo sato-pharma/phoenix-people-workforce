@@ -25,6 +25,16 @@ function myRequestMatchesDeepLink(itemId: string, module: ActionHubModule | null
   return itemId === id || (module ? itemId === `${module}:${id}` : itemId.endsWith(`:${id}`));
 }
 
+// Vacation, excuse and weekly/monthly plans left the "Other Approvals" inbox for their own
+// dedicated portal pages. A stale link that still points at ?module=leave|excuse|weekly_plan must
+// never inject that request back into this inbox — bounce it to the dedicated page instead so
+// Other Approvals only ever shows resignation/contract/outstation.
+const MIGRATED_DEEPLINK_BASES: Record<string, string> = {
+  leave: "/employee-portals/approvals/vacation",
+  excuse: "/employee-portals/approvals/excuse",
+  weekly_plan: "/employee-portals/approvals/plan",
+};
+
 export default async function PortalApprovalsHubPage({
   searchParams,
 }: {
@@ -39,8 +49,15 @@ export default async function PortalApprovalsHubPage({
   const initialModule = (typeof params.module === "string" ? params.module : null) as ActionHubModule | null;
   const initialId = typeof params.id === "string" ? params.id : null;
 
-  // Portal audience: only access-scoped, manager-relevant sources (vacation + excuse + weekly_plan).
-  // Unscoped HR/admin sources never reach a portal manager — see getAwaitingMyActionItems.
+  // Migrated modules never render inside this hub — redirect to their dedicated portal page.
+  if (initialModule && MIGRATED_DEEPLINK_BASES[initialModule]) {
+    const base = MIGRATED_DEEPLINK_BASES[initialModule];
+    redirect(initialId ? `${base}/${encodeURIComponent(initialId)}` : base);
+  }
+
+  // Portal audience: after the migrated-module redirect above, the live inbox only carries the
+  // access-scoped residual modules (contract renewal). Unscoped HR/admin sources (resignation,
+  // outstation) never reach a portal manager — see getAwaitingMyActionItems.
   const [items, myRequests, historicalItems]: [ActionHubItem[], MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
     getAwaitingMyActionItems(access, "portal"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
