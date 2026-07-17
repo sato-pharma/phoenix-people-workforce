@@ -94,15 +94,37 @@ export function runProbationFeedbackWorkflowTests() {
   // report. Both are fixed by resolving employeeName up front and threading it through, plus a
   // ctaHref/actionUrl to the live report.
   assert.match(rem, /resolveEmployeeNames/, "employee names are bulk-resolved for the sweep");
-  assert.match(rem, /const title = `Probation feedback \$\{stateLabel\} — \$\{employeeName\}`/,
+  assert.match(rem, /const title = `\$\{copy\.headline\} — \$\{employeeName\}`/,
     "title uses the resolved employee name, not the raw HR_ID");
-  assert.match(rem, /const message = `Probation feedback for \$\{employeeName\} \(DV day \$\{task\.dvDate\}\) is \$\{state\}\.`/,
+  assert.match(rem, /const message = copy\.body\(employeeName\)/,
     "message uses the resolved employee name, not the raw HR_ID");
-  assert.doesNotMatch(rem, /message = `Probation feedback for \$\{task\.employeeHrId\}/,
-    "message must not fall back to interpolating the raw HR_ID");
   assert.match(rem, /label: "Employee", value: employeeName/, "email metrics show the name, not the code");
   assert.match(rem, /ctaHref: ctaUrl/, "SLA reminder email links to the live case report");
   assert.match(rem, /actionUrl: ctaUrl/, "SLA reminder in-app notification links to the live case report");
+  // CONTENT CLARITY GUARD (2026-07-17 owner report): "msh mafhoom" — the email never said why the
+  // recipient was getting it or what to do, and the table showed raw state words + a meaningless
+  // "Hours overdue: 0" for tasks that weren't actually overdue. Each state's copy must state a
+  // reason and an action in plain English, and the internal state word/"DV" jargon must not leak
+  // into anything user-facing.
+  assert.match(rem, /const STATE_COPY: Record<"due" \| "escalated" \| "overdue"/,
+    "each SLA state has dedicated plain-English copy (purpose + action)");
+  for (const state of ["due", "escalated", "overdue"]) {
+    const stateBlock = rem.slice(rem.indexOf(`${state}: {`), rem.indexOf(`${state}: {`) + 400);
+    assert.match(stateBlock, /submit your assessment|If you are the evaluating manager|please submit/i,
+      `${state} copy tells the recipient what action to take`);
+  }
+  assert.doesNotMatch(rem, /label: "Status", value: state\b/, "status row must use the plain-English label, not the raw state word");
+  assert.doesNotMatch(rem, /label: "Hours overdue", value: String\(task\.sla\.hoursOverdue\)/,
+    "must not always show Hours overdue (meaningless/0 outside the overdue state)");
+  assert.match(rem, /label: "Overdue by", value: `\$\{task\.sla\.hoursOverdue\}h`/,
+    "overdue duration is shown only for the overdue state, with a clear unit");
+
+  // ZEBRA TABLE GUARD (2026-07-17 owner report): the shared metadata-row table every
+  // notification-type email renders through (probation and everything else) had no row styling —
+  // a flat, hard-to-scan list. Fixed once, in the shared component, not just for probation.
+  const layout = src("src/emails/phoenix-email-layout.tsx");
+  assert.match(layout, /index % 2 === 1 \? "background:#f8fafc" : "background:#ffffff"/,
+    "the shared metadata table alternates row background (zebra striping)");
 
   // ── Routes: coarse gate is probation:read; mutations CSRF-guarded ──
   const submitRoute = src("app/api/probation/dv/[dvDayId]/feedback/route.ts");

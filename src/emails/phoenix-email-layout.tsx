@@ -85,16 +85,21 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
   const cleanRows = (rows ?? []).filter((row) => String(row.value ?? "").trim());
   if (cleanRows.length === 0) return "";
 
+  // Zebra striping (owner feedback, 2026-07-17): a flat unstyled list of label/value pairs was
+  // hard to scan. Alternating row backgrounds make each field a distinct, readable line — this is
+  // the shared table every notification-type email renders through (metadataRows), so the fix
+  // applies everywhere, not just probation.
   return `
     <table class="phoenix-metadata" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0 0;width:100%;border-collapse:collapse;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;mso-table-lspace:0pt;mso-table-rspace:0pt">
       ${cleanRows
-        .map(
-          (row) => `
-            <tr>
-              <td class="phoenix-muted" style="padding:10px 0;${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.5">${escapeAndIsolate(row.label)}</td>
-              <td class="phoenix-text" style="padding:10px 0;${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
-            </tr>`,
-        )
+        .map((row, index) => {
+          const rowStyle = index % 2 === 1 ? "background:#f8fafc" : "background:#ffffff";
+          return `
+            <tr style="${rowStyle}">
+              <td class="phoenix-muted" style="padding:10px 12px 10px 0;${rowStyle};${mutedTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.5">${escapeAndIsolate(row.label)}</td>
+              <td class="phoenix-text" style="padding:10px 0 10px 12px;${rowStyle};${bodyTextStyle};font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;line-height:1.5;text-align:right;unicode-bidi:isolate">${escapeAndIsolate(row.value)}</td>
+            </tr>`;
+        })
         .join("")}
     </table>`;
 }

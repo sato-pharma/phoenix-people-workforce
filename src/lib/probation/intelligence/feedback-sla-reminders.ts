@@ -59,6 +59,34 @@ function statePriority(state: FeedbackSlaState): "high" | "critical" {
   return state === "overdue" ? "critical" : "high";
 }
 
+// Plain-English content per state (owner feedback, 2026-07-17): the email must say, in the body
+// text, WHY the recipient is getting it and WHAT to do — not just restate the internal state word.
+// "DV day" (internal shorthand) becomes "Double-Visit day"; the SLA state word never appears
+// verbatim in the copy, only as a status label a reader can act on.
+const STATE_COPY: Record<"due" | "escalated" | "overdue", { statusLabel: string; headline: string; body: (employeeName: string) => string }> = {
+  due: {
+    statusLabel: "Feedback needed",
+    headline: "Probation feedback needed",
+    body: (name) =>
+      `A Double-Visit day was completed with ${name}, and their probation record needs your feedback. ` +
+      `Please open the report below and submit your assessment.`,
+  },
+  escalated: {
+    statusLabel: "Reminder — still needed",
+    headline: "Reminder: probation feedback still needed",
+    body: (name) =>
+      `Your feedback for ${name}'s Double-Visit day is still outstanding. This is a required part of their 90-day ` +
+      `probation record, so please submit your assessment as soon as you can.`,
+  },
+  overdue: {
+    statusLabel: "Overdue",
+    headline: "Probation feedback is overdue",
+    body: (name) =>
+      `Feedback for ${name}'s Double-Visit day is now overdue. If you are the evaluating manager, please submit your ` +
+      `assessment now. HR has been copied on this message so the case can be followed up.`,
+  },
+};
+
 async function emitForTask(
   task: FeedbackTask,
   hrApproverHrIds: string[],
@@ -81,11 +109,18 @@ async function emitForTask(
   }
   if (recipients.size === 0) return 0;
 
-  const stateLabel =
-    state === "overdue" ? "OVERDUE" : state === "escalated" ? "escalation" : "due";
-  const title = `Probation feedback ${stateLabel} — ${employeeName}`;
-  const message = `Probation feedback for ${employeeName} (DV day ${task.dvDate}) is ${state}.`;
+  const copy = STATE_COPY[state as "due" | "escalated" | "overdue"];
+  const title = `${copy.headline} — ${employeeName}`;
+  const message = copy.body(employeeName);
   const ctaUrl = task.caseId ? `${systemDeployment.productionUrl}/probation/cases/${task.caseId}` : null;
+  // Plain-English table rows (owner feedback, 2026-07-17): no raw state word, no "Hours overdue: 0"
+  // when the task isn't actually overdue yet — that read as meaningless noise.
+  const metrics = [
+    { label: "Employee", value: employeeName },
+    { label: "Visit date", value: task.dvDate },
+    { label: "Status", value: copy.statusLabel },
+    ...(state === "overdue" ? [{ label: "Overdue by", value: `${task.sla.hoursOverdue}h` }] : []),
+  ];
 
   // Recipients are independent (each has its own idempotency key, and claimDelivery's atomic
   // upsert-on-conflict makes concurrent claims race-safe) — dispatch in parallel instead of
@@ -114,13 +149,8 @@ async function emitForTask(
           title,
           tone: state === "overdue" ? "danger" : "warning",
           ctaHref: ctaUrl ?? undefined,
-          ctaLabel: "Open live report",
-          metrics: [
-            { label: "Employee", value: employeeName },
-            { label: "DV date", value: task.dvDate },
-            { label: "Status", value: state },
-            { label: "Hours overdue", value: String(task.sla.hoursOverdue) },
-          ],
+          ctaLabel: "Open probation report",
+          metrics,
         },
         metadata: {
           // Dedup: one notification per (DV-Day, state, recipient). A repeated sweep is a no-op.
