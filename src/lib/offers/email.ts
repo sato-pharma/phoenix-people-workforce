@@ -3,7 +3,7 @@ import {
   renderOfferLetterEmailText,
   type OfferLetterEmailProps,
 } from "@/emails/offer-letter";
-import { sendTemplatedEmail } from "@/lib/email-templates/service";
+import { sendPhoenixEmail, type SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferTemplate } from "@/lib/offers/templates";
 
 type SendEmailResult =
@@ -13,6 +13,8 @@ type SendEmailResult =
 export type JobOfferEmailInput = {
   acceptUrl: string;
   actionLinksEnabled?: boolean;
+  /** Files to attach — the auto-generated offer-letter PDF plus any manual HR uploads. */
+  attachments?: SendPhoenixEmailAttachment[];
   baseSalary?: number | null;
   basicSalary?: number | null;
   candidateEmail: string;
@@ -94,29 +96,25 @@ export function buildOfferEmailText(input: JobOfferEmailInput) {
 }
 
 export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<SendEmailResult> {
-  return sendTemplatedEmail({
-    candidateEmail: input.candidateEmail,
-    context: {
-      area: input.territoryName || input.territory || "Assigned territory",
-      candidateName: input.candidateName,
-      ctaLabel: "Review Offer Details",
-      ctaUrl: input.reviewUrl || input.acceptUrl,
-      date: input.issuedAt ?? null,
-      jobTitle: input.jobTitle,
-      line: input.reportingLine || "To be assigned",
-      managerName: input.reportingManager,
-      recipientName: input.candidateName,
-      startDate: formatDate(input.startDate),
-      status: `Offer code ${input.offerCode}`,
-      subject: `${input.jobTitle} Job Offer`,
-      summary: `Offer prepared for ${input.candidateName}.`,
-    },
-    fallbackTo: [input.candidateEmail],
-    from: process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM,
+  // Offers use a FIXED premium renderer (not the editable DB template engine) so the
+  // company-facing letter design is guaranteed and can carry attachments (the offer-letter
+  // PDF + manual HR uploads), which the templated-email path does not support.
+  const props = offerTemplateProps(input);
+  const from = process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
+  const reviewLink = input.reviewUrl || input.acceptUrl;
+
+  return sendPhoenixEmail({
+    to: [input.candidateEmail],
+    from,
     // Candidate replies to a job offer must reach the HR inbox (a real receiving mailbox),
     // not the outbound sending address. Reply-To needs no SPF/DKIM, so hr@satopharma.com is
     // safe here even though sends go out via the verified send.satopharma.com domain.
     replyTo: process.env.JOB_OFFER_REPLY_TO || "hr@satopharma.com",
-    templateKey: "offer",
+    subject: `${input.jobTitle} Job Offer`,
+    html: renderOfferLetterEmailHtml(props),
+    text: renderOfferLetterEmailText(props),
+    attachments: input.attachments,
+    // Token/reviewUrl changes on every (re)send, so this stays unique per dispatch.
+    idempotencyKey: `offer-${input.offerCode}-${reviewLink}`,
   });
 }

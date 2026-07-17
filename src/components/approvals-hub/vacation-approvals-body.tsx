@@ -23,6 +23,11 @@ export function VacationApprovalsBody({ data }: { data: VacationWorkspaceData })
       myRequests={data.myRequests}
       companyWide={data.companyWide}
       companyWideExportTitle="Company-Wide Vacation Decisions"
+      approvalScope={data.approvalScope}
+      approvalScopeModuleLabel="vacation"
+      companyRequests={data.companyRequests}
+      companyRequestsExportTitle="Company Vacation Requests (excl. DM & Medical Rep)"
+      companyRequestsEmptyLabel="No vacation requests found (excluding District Managers and Medical Reps)."
     />
   );
 }

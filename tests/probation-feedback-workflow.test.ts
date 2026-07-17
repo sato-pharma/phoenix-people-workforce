@@ -134,8 +134,10 @@ export function runProbationFeedbackWorkflowTests() {
   // notification-type email renders through (probation and everything else) had no row styling —
   // a flat, hard-to-scan list. Fixed once, in the shared component, not just for probation.
   const layout = src("src/emails/phoenix-email-layout.tsx");
-  assert.match(layout, /index % 2 === 1 \? "background:#f8fafc" : "background:#ffffff"/,
+  assert.match(layout, /const isAlt = index % 2 === 1;/,
     "the shared metadata table alternates row background (zebra striping)");
+  assert.match(layout, /phoenix-metadata-row-alt/,
+    "alternating rows carry a class so dark-mode styles can re-tint the stripe");
 
   // ── Routes: coarse gate is probation:read; mutations CSRF-guarded ──
   const submitRoute = src("app/api/probation/dv/[dvDayId]/feedback/route.ts");
