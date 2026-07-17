@@ -6,7 +6,7 @@ import { logError } from "@/lib/observability/log";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { runScheduledIReports360Sync } from "@/lib/visits-report/service";
+import { runScheduledIReports360Sync } from "@/lib/crm/sync";
 
 const JOB_NAME = "ireports360-visits-sync";
 

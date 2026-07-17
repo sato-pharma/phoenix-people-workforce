@@ -1,4 +1,5 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -608,23 +609,19 @@ export async function setDvCheckboxManual(
 export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string): Promise<void> {
   const db = getSupabaseAdmin();
 
-  // Load every double visit (Regular/Campaign with a double-visit partner — same definition
-  // as double-visit-analytics/service.ts) in the just-synced window.
-  const { data: dvRows } = await db
-    .from("ireports360_visits")
-    .select("double_hr_id,agent_hr_id")
-    .not("double_crm_id", "is", null)
-    .neq("double_crm_id", 0)
-    .in("visit_type", [0, -8])
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .not("agent_hr_id", "is", null)
-    .not("double_hr_id", "is", null);
+  // Load every double visit (Regular/Campaign with a double-visit partner — same canonical
+  // definition as double-visit-analytics) in the just-synced window, through the CRM single door.
+  const dvRows = await getDoubleVisitRows<{ agent_hr_id: string; double_hr_id: string }>({
+    dateFrom,
+    dateTo,
+    columns: "double_hr_id, agent_hr_id",
+    requireAgentHrId: true,
+    requireDoubleHrId: true,
+  });
 
-  if (!dvRows || dvRows.length === 0) return;
+  if (dvRows.length === 0) return;
 
-  type MirrorDvRow = { agent_hr_id: string; double_hr_id: string };
-  const rows = (dvRows as MirrorDvRow[]).map((row) => ({
+  const rows = dvRows.map((row) => ({
     double_visitor_hr_id: row.double_hr_id,
     visited_employee_hr_id: row.agent_hr_id,
   }));

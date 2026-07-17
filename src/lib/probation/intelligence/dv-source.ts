@@ -24,6 +24,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { getDoubleVisitRows } from "@/lib/crm/reads";
+
 /** The CRM mirror table that carries synced visits. */
 export const DV_SOURCE_TABLE = "ireports360_visits";
 export const DV_SOURCE_TYPE = "ireports360" as const;
@@ -83,24 +85,6 @@ function normalizeAmpm(value: string | null): "AM" | "PM" | null {
   return v === "AM" || v === "PM" ? v : null;
 }
 
-/**
- * Apply the canonical double-visit filter to a PostgREST query builder:
- * a real double partner (double_crm_id present and ≠ 0) on a fieldwork visit type.
- * Returns the same builder for chaining (date range, ordering, pagination are added by callers).
- */
-export function applyDoubleVisitFilter<T>(query: T): T {
-  // The generic is a PostgREST filter builder; cast narrowly to chain the known methods.
-  const q = query as unknown as {
-    not: (col: string, op: string, val: unknown) => typeof q;
-    neq: (col: string, val: unknown) => typeof q;
-    in: (col: string, vals: readonly unknown[]) => typeof q;
-  };
-  return q
-    .not("double_crm_id", "is", null)
-    .neq("double_crm_id", 0)
-    .in("visit_type", [...DV_VISIT_TYPE_CODES]) as unknown as T;
-}
-
 /** The dedup / uniqueness key for a DV-Day: one field day per (evaluator, employee, date). */
 export function dvDayKey(
   evaluatorHrId: string | null | undefined,
@@ -134,7 +118,7 @@ export function mapRawDvVisit(row: RawDvVisitRow): SourceDvVisit {
  * Detection/validation layers (P3-T02+) consume the mapped output.
  */
 export async function loadDoubleVisitRows(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   dateFrom: string,
   dateTo: string,
   // Scope to specific visited employees (the probation cohort). Omit to load all — but the
@@ -142,28 +126,16 @@ export async function loadDoubleVisitRows(
   // enter the probation tables.
   employeeHrIds?: string[],
 ): Promise<RawDvVisitRow[]> {
-  if (employeeHrIds && employeeHrIds.length === 0) return [];
-  const pageSize = 1000;
-  const rows: RawDvVisitRow[] = [];
-  for (let from = 0; ; from += pageSize) {
-    let base = supabase
-      .from(DV_SOURCE_TABLE)
-      .select(DV_SOURCE_COLUMNS)
-      .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo);
-    if (employeeHrIds && employeeHrIds.length > 0) {
-      base = (base as unknown as { in: (c: string, v: readonly unknown[]) => typeof base }).in(
-        "agent_hr_id",
-        employeeHrIds,
-      );
-    }
-    const { data, error } = await applyDoubleVisitFilter(base)
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(error.message);
-    const page = (data ?? []) as unknown as RawDvVisitRow[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows;
+  // Reads through the CRM single-door double-visit loader: the canonical predicate (real partner
+  // on a Regular(0)/Campaign(-8) fieldwork visit) and the resigned/owner-excluded filter both live
+  // in crm/reads, so probation and Double-Visit Analytics can never disagree about what counts.
+  // `_supabase` is retained for call-site signature stability with the detection layer; the read
+  // layer uses the admin client internally.
+  return getDoubleVisitRows<RawDvVisitRow>({
+    dateFrom,
+    dateTo,
+    agentHrIds: employeeHrIds,
+    visitTypes: [...DV_VISIT_TYPE_CODES],
+    columns: DV_SOURCE_COLUMNS,
+  });
 }

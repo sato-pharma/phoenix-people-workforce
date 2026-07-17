@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { syncIReports360Visits } from "@/lib/visits-report/service";
+import { syncIReports360Visits } from "@/lib/crm/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

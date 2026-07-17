@@ -17,7 +17,7 @@
 //    IS a working day. Only Friday is excluded from working-days (utilization);
 //    the day-of-week charts dim Friday and lighten Thursday.
 
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
@@ -44,9 +44,6 @@ export const BRM_TYPE = -21;
 // a description to. Counted as productive, same as REGULAR_TYPE ("put it in its
 // normal place") — pharmacy-flavored comments get their own distinct label.
 export const UNLABELED_FIELD_VISIT_TYPE = -30;
-
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 8;
 
 export type Employee360Window = { from: string; to: string; label: string };
 
@@ -200,40 +197,22 @@ export function defaultWindow(): Employee360Window {
   return { from: `${year}-01-01`, to, label: `${year} year-to-date` };
 }
 
-async function fetchPaged<T>(table: string, columns: string, keys: string[], dateColumn: string, from: string, to: string): Promise<T[]> {
-  const supabase = getSupabaseAdmin();
-  const out: T[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const start = page * PAGE_SIZE;
-    const { data, error } = await supabase
-      .from(table)
-      .select(columns)
-      .in("agent_hr_id", keys)
-      .gte(dateColumn, from)
-      .lte(dateColumn, `${to} 23:59:59+00`)
-      .order(dateColumn, { ascending: true })
-      .range(start, start + PAGE_SIZE - 1);
-    if (error) throw new Error(`Employee 360: failed reading ${table}: ${error.message}`);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-  }
-  return out;
-}
-
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
-  return fetchPaged<VisitRow>(
-    "ireports360_visits",
-    "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
-    hrIdLookupKeys(hrId),
-    "visit_date",
-    window.from,
-    window.to,
-  );
+  return queryVisits<VisitRow>({
+    agentHrIds: hrIdLookupKeys(hrId),
+    dateFrom: window.from,
+    dateTo: window.to,
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
+  });
 }
 
 export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
-  return fetchPaged<CheckinRow>("ireports360_checkins", "check_date,lat,lon", hrIdLookupKeys(hrId), "check_date", window.from, window.to);
+  return queryCheckins<CheckinRow>({
+    agentHrIds: hrIdLookupKeys(hrId),
+    dateFrom: window.from,
+    dateTo: window.to,
+    columns: "check_date,lat,lon",
+  });
 }
 
 // check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its clock reading is
