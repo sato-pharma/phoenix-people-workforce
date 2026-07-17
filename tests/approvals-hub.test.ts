@@ -266,6 +266,25 @@ export function runApprovalsHubTests() {
     "company-wide plan query is gated to Super Admin / system-scope",
   );
 
+  // ── "Company Plans" tab: CEO + Super Admin, ALL roles (pending + decided), no action buttons ──
+  assert.match(
+    svc,
+    /export async function getCompanyPlanRequests[\s\S]*?if \(!canSeeCeoApprovalTabs\(access\)\) \{\s*throw new Error\("Forbidden: only the CEO or Super Admin can view the company-wide request feed\."\);/,
+    "getCompanyPlanRequests is gated by the same canSeeCeoApprovalTabs check as the vacation/excuse company-requests views",
+  );
+  {
+    const companyPlanFnMatch = svc.match(/export async function getCompanyPlanRequests[\s\S]*?return items;\n}/);
+    assert.ok(companyPlanFnMatch, "getCompanyPlanRequests function body is present");
+    assert.doesNotMatch(
+      companyPlanFnMatch![0],
+      /isExcludedFieldForce/,
+      "unlike vacation/excuse, plan company requests must NOT exclude the field force — a District Manager's own plans belong here",
+    );
+  }
+  assert.match(svc, /companyRequests: CompanyRequestItem\[\] \| null;/, "PlanWorkspaceData exposes the Company Plans data alongside companyWide");
+  assert.match(planBody, /companyRequestsTabLabel="Company Plans"/, "the plan hub's oversight tab is labeled 'Company Plans', not the generic 'Company Requests'");
+  assert.match(workspaceSource, /companyRequestsTabLabel/, "ApprovalsWorkspace supports overriding the Company Requests tab label per module");
+
   // The self-contained per-plan page reuses the extracted shared calendar renderer (one source).
   const planDetail = readFileSync("src/components/approvals-hub/plan-request-detail.tsx", "utf8");
   assert.match(planDetail, /import \{ WeeklyPlanCalendar \} from "@\/components\/action-center\/weekly-plan-calendar"/, "plan detail reuses the extracted shared WeeklyPlanCalendar, not a re-built grid");
