@@ -138,6 +138,7 @@ export const WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES = [
   "Marketing Manager",
   "Training Manager",
   "National Sales Manager",
+  "District Manager",
 ] as const;
 
 const eligibleRoleSet = new Set<PhoenixRole>(WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES);
