@@ -10,6 +10,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -312,8 +313,8 @@ const MAX_EXPORT_ROWS = 20000;
  */
 const visitReportColumns =
   "id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
-  "contact_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, double_hr_id, " +
-  "double_name, visit_date, visit_date_time, visit_type, visit_type_description";
+  "contact_crm_id, contact_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, " +
+  "double_hr_id, double_name, visit_date, visit_date_time, visit_type, visit_type_description";
 
 export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
   return {
@@ -324,6 +325,7 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     attendance: row.attendance == null ? null : Number(row.attendance),
     callType: row.call_type == null ? null : Number(row.call_type),
     comment: (row.comment as string | null) ?? null,
+    contactCrmId: row.contact_crm_id == null ? null : Number(row.contact_crm_id),
     contactName: (row.contact_name as string | null) ?? null,
     crmSaveDate: (row.crm_save_date as string | null) ?? null,
     crmVisitId: Number(row.crm_visit_id),
@@ -362,6 +364,9 @@ function applyVisitsReportFilters(
   filters: VisitsReportFilterInput & { dateFrom: string; dateTo: string },
 ): ReportFilterableQuery {
   let result: ReportFilterableQuery = query.gte("visit_date", filters.dateFrom).lte("visit_date", filters.dateTo);
+  // Resigned/owner-excluded agents are invisible across every CRM read — the Visits Report is no
+  // exception, so its totals reconcile with DV Analytics, FWC, probation, and the CRM master tab.
+  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filters.agentName) result = result.eq("agent_name", filters.agentName);
   if (filters.ampm) result = result.eq("ampm", filters.ampm);
   if (filters.visitType) result = result.eq("visit_type_description", filters.visitType);
@@ -383,12 +388,14 @@ function applyVisitsReportFilters(
   return result;
 }
 
+type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string; address: string | null };
+
 /**
- * Best-effort GPS check-in correlation: batch-fetches check-ins for exactly the distinct
- * agent_crm_ids present in `rows` over [dateFrom, dateTo], then attaches to each visit the
- * check-in closest in time (by visitDateTime, falling back to the earliest same-day check-in
- * when no time is available) from that same agent + same calendar day. Never a guaranteed
- * exact match — the vendor's own data model has no shared key between visits and check-ins.
+ * Best-effort GPS check-in correlation via the shared CRM matcher (see crm/checkin-match.ts): for
+ * each visit, the same-agent + same-real-contact + same-day check-in nearest `crm_save_date`. The
+ * Visits Report and the CRM master tab use the SAME matcher, so a given visit resolves to the same
+ * check-in in both. Never anchored on the `visit_date_time` midnight placeholder. Regular visits
+ * only — Campaign/Meeting/Vacation rows carry no real contact and genuinely have no check-in.
  */
 async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, dateTo: string): Promise<VisitsReportRow[]> {
   if (rows.length === 0) return rows;
@@ -396,36 +403,20 @@ async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, 
   const supabase = getSupabaseAdmin();
   const { data: checkinRows } = await supabase
     .from(CRM_CHECKINS_TABLE)
-    .select("agent_crm_id, check_date, address")
+    .select("agent_crm_id, contact_crm_id, check_date, address")
     .in("agent_crm_id", agentIds)
     .gte("check_date", `${dateFrom}T00:00:00`)
     .lte("check_date", `${dateTo}T23:59:59`)
-    .limit(5000);
+    .limit(20000);
 
-  const byAgentDay = new Map<string, Array<{ address: string | null; checkDate: string }>>();
-  for (const checkin of (checkinRows ?? []) as Array<{ address: string | null; agent_crm_id: number; check_date: string }>) {
-    const day = checkin.check_date.slice(0, 10);
-    const key = `${checkin.agent_crm_id}:${day}`;
-    byAgentDay.set(key, [...(byAgentDay.get(key) ?? []), { address: checkin.address, checkDate: checkin.check_date }]);
-  }
-
+  const index = indexCheckinsByAgentContactDay((checkinRows ?? []) as NearestCheckinRow[]);
   return rows.map((row) => {
-    const key = `${row.agentCrmId}:${row.visitDate}`;
-    const candidates = byAgentDay.get(key);
-    if (!candidates || candidates.length === 0) return row;
-    const anchor = row.visitDateTime ? new Date(row.visitDateTime).getTime() : null;
-    let nearest = candidates[0];
-    if (anchor != null) {
-      let bestDiff = Infinity;
-      for (const candidate of candidates) {
-        const diff = Math.abs(new Date(candidate.checkDate).getTime() - anchor);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          nearest = candidate;
-        }
-      }
-    }
-    return { ...row, nearestCheckinAddress: nearest.address, nearestCheckinTime: nearest.checkDate };
+    const match = pickCheckinForVisit(
+      { agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId, visitDay: row.visitDate, crmSaveDate: row.crmSaveDate },
+      index,
+    );
+    if (!match) return row;
+    return { ...row, nearestCheckinAddress: match.address, nearestCheckinTime: match.check_date };
   });
 }
 
@@ -447,6 +438,7 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
     let query = supabase
       .from(CRM_VISITS_TABLE)
       .select("id, agent_name")
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
       .order("id", { ascending: true })
@@ -468,6 +460,7 @@ async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<
   const { data } = await getSupabaseAdmin()
     .from(CRM_VISITS_TABLE)
     .select("visit_type_description")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo)
     .limit(5000);
