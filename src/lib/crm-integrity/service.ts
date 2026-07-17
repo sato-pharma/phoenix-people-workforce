@@ -145,7 +145,6 @@ export async function getCrmIntegrityData(
     crmSaveDate: row.crm_save_date,
     crmVisitId: row.crm_visit_id,
     visitDate: row.visit_date,
-    visitDateTime: row.visit_date_time,
   }));
   const correlations = correlateVisitsWithCheckins(
     visitInputs,
