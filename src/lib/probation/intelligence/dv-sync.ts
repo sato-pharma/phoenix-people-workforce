@@ -18,7 +18,6 @@ import { detectDvDaysForWindow } from "./dv-detection";
 import { dvDayKey } from "./dv-source";
 import { toDvDayRow, toDvVisitRows } from "./dv-persistence";
 import { toIngestIssueRows } from "./dv-review";
-import { sendDvSnapshotEmail } from "./probation-emails";
 import {
   partitionValidatedDvDays,
   validateDvDays,
@@ -231,11 +230,11 @@ export async function syncProbationDvDays(
     if (bumpErr) throw new Error(bumpErr.message);
   }
 
-  // DV-Day snapshot emails for newly-captured validated days (Phase 9). Non-blocking + idempotent
-  // (one email per DV-Day per recipient), so a re-sync never re-sends. Never fails the sync.
-  for (const dvDayId of newValidatedDvDayIds) {
-    await sendDvSnapshotEmail(dvDayId, syncedAt).catch(() => undefined);
-  }
+  // NOTE (MOD-1, 2026-07-17): the per-DV-Day snapshot email is intentionally NOT sent here anymore.
+  // Firing one email to ~8 stakeholders on every validated Double-Visit day flooded inboxes. It's
+  // replaced by a single WEEKLY digest per probationer (processProbationWeeklyDigest) that rolls up
+  // the week's DV-Days. newValidatedDvDayIds is still tracked for the sync result/telemetry below.
+  void newValidatedDvDayIds;
 
   return {
     window: { dateFrom: input.dateFrom, dateTo: input.dateTo },

@@ -81,28 +81,63 @@ export function runProbationFeedbackWorkflowTests() {
   const rem = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
   assert.match(rem, /idempotencyKey: `\$\{slaReminderKey\(task\.dvDayId, state\)\}:\$\{recipientHrId\}`/,
     "one notification per (DV-Day, state, recipient) — no uncontrolled repeats");
-  // Volume fix (2026-07-16 owner report): HR/Super Admin were CC'd on every "escalated" mid-way
-  // warning across the whole company (118 emails to 2 accounts) — trained recipients to stop
-  // opening probation email. HR now only joins at the genuinely urgent "overdue" state; the
-  // evaluator still gets every state so they never lose visibility of their own open task.
-  assert.match(rem, /if \(state === "overdue"\) \{\s*\n\s*for \(const hr of hrApproverHrIds\)/,
-    "HR/Super Admin are only added at the overdue state, not at the escalated warning");
+  // RECIPIENT LADDER (MOD-2, 2026-07-17 owner report): the 3 SLA reminders (timings unchanged
+  // 24/48/72h) now widen the audience per stage instead of CC'ing HR company-wide from the middle
+  // warning (118 emails to 2 accounts trained recipients to stop opening probation email):
+  //   1) due       → evaluator only.
+  //   2) escalated → + the probationer's Direct Manager (probation_cases.manager_hr_id) + System Admin (PHX-1).
+  //   3) overdue   → + CEO + HR + Super Admin.
+  assert.match(rem, /if \(evaluator\) ordered\.push\(evaluator\)/,
+    "the evaluator is on every SLA reminder stage (reminder 1 = evaluator only)");
+  assert.match(rem, /if \(state === "escalated"\)\s*\{[\s\S]*?parties\.directManagerHrId[\s\S]*?parties\.systemAdminHrId/,
+    "reminder 2 (escalated) CCs the Direct Manager + the System Admin");
+  assert.match(rem, /if \(state === "overdue"\)\s*\{\s*\n\s*ordered\.push\(\.\.\.parties\.ceoHrIds, \.\.\.parties\.hrApproverHrIds\)/,
+    "reminder 3 (overdue) CCs CEO + HR + Super Admin");
   assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
-    "HR must not be CC'd on the escalated warning (volume fix)");
+    "HR must not be CC'd on the escalated warning (volume fix preserved)");
+  assert.match(rem, /\.eq\("hr_id", "PHX-1"\)/,
+    "the System Admin CC resolves the dedicated PHX-1 account, not a display name");
+  // MOD-3 daily cap: an over-cap recipient is filtered out of the SLA reminder audience this run.
+  assert.match(rem, /\.filter\(\(h\) => parties\.cap\.allow\(h\)\)/,
+    "the per-recipient daily cap (MOD-3) gates SLA reminder recipients");
   // REGRESSION GUARD (2026-07-16 owner report): SLA reminder title/message/metrics used the raw
   // employeeHrId (e.g. "AI-0002") instead of the employee's name, and carried no link to the case
-  // report. Both are fixed by resolving employeeName up front and threading it through, plus a
-  // ctaHref/actionUrl to the live report.
-  assert.match(rem, /resolveEmployeeNames/, "employee names are bulk-resolved for the sweep");
-  assert.match(rem, /const title = `Probation feedback \$\{stateLabel\} — \$\{employeeName\}`/,
+  // report. Both are fixed by resolving the case info (name + manager) up front and threading it
+  // through, plus a ctaHref/actionUrl to the live report.
+  assert.match(rem, /resolveCaseInfo/, "employee names + direct managers are bulk-resolved for the sweep");
+  assert.match(rem, /const title = `\$\{copy\.headline\} — \$\{employeeName\}`/,
     "title uses the resolved employee name, not the raw HR_ID");
-  assert.match(rem, /const message = `Probation feedback for \$\{employeeName\} \(DV day \$\{task\.dvDate\}\) is \$\{state\}\.`/,
+  assert.match(rem, /const message = copy\.body\(employeeName\)/,
     "message uses the resolved employee name, not the raw HR_ID");
-  assert.doesNotMatch(rem, /message = `Probation feedback for \$\{task\.employeeHrId\}/,
-    "message must not fall back to interpolating the raw HR_ID");
   assert.match(rem, /label: "Employee", value: employeeName/, "email metrics show the name, not the code");
   assert.match(rem, /ctaHref: ctaUrl/, "SLA reminder email links to the live case report");
   assert.match(rem, /actionUrl: ctaUrl/, "SLA reminder in-app notification links to the live case report");
+  // CONTENT CLARITY GUARD (2026-07-17 owner report): "msh mafhoom" — the email never said why the
+  // recipient was getting it or what to do, and the table showed raw state words + a meaningless
+  // "Hours overdue: 0" for tasks that weren't actually overdue. Each state's copy must state a
+  // reason and an action in plain English, and the internal state word/"DV" jargon must not leak
+  // into anything user-facing.
+  assert.match(rem, /const STATE_COPY: Record<"due" \| "escalated" \| "overdue"/,
+    "each SLA state has dedicated plain-English copy (purpose + action)");
+  for (const state of ["due", "escalated", "overdue"]) {
+    const stateBlock = rem.slice(rem.indexOf(`${state}: {`), rem.indexOf(`${state}: {`) + 400);
+    assert.match(stateBlock, /submit your assessment|If you are the evaluating manager|please submit/i,
+      `${state} copy tells the recipient what action to take`);
+  }
+  assert.doesNotMatch(rem, /label: "Status", value: state\b/, "status row must use the plain-English label, not the raw state word");
+  assert.doesNotMatch(rem, /label: "Hours overdue", value: String\(task\.sla\.hoursOverdue\)/,
+    "must not always show Hours overdue (meaningless/0 outside the overdue state)");
+  assert.match(rem, /label: "Overdue by", value: `\$\{task\.sla\.hoursOverdue\}h`/,
+    "overdue duration is shown only for the overdue state, with a clear unit");
+
+  // ZEBRA TABLE GUARD (2026-07-17 owner report): the shared metadata-row table every
+  // notification-type email renders through (probation and everything else) had no row styling —
+  // a flat, hard-to-scan list. Fixed once, in the shared component, not just for probation.
+  const layout = src("src/emails/phoenix-email-layout.tsx");
+  assert.match(layout, /const isAlt = index % 2 === 1;/,
+    "the shared metadata table alternates row background (zebra striping)");
+  assert.match(layout, /phoenix-metadata-row-alt/,
+    "alternating rows carry a class so dark-mode styles can re-tint the stripe");
 
   // ── Routes: coarse gate is probation:read; mutations CSRF-guarded ──
   const submitRoute = src("app/api/probation/dv/[dvDayId]/feedback/route.ts");

@@ -16,6 +16,7 @@ import { isProbationSchemaMissing } from "@/lib/probation/service";
 import { getProbationConfig } from "./config";
 import { computeFeedbackSla, slaReminderKey, type FeedbackSlaState } from "./feedback-sla";
 import { listFeedbackTasks, type FeedbackTask } from "./feedback-workflow";
+import { createProbationDailyCap, type ProbationDailyCap } from "./notification-cap";
 
 export type FeedbackSlaSweepResult = {
   scanned: number;
@@ -28,29 +29,48 @@ export type FeedbackSlaSweepResult = {
 // Only these states trigger a notification (pending is silent — not yet due).
 const ACTIONABLE_STATES: FeedbackSlaState[] = ["due", "escalated", "overdue"];
 
-async function resolveHrApproverHrIds(): Promise<string[]> {
+async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
   const { data } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["HR Manager", "Super Admin"])
+    .in("role", roles)
     .eq("is_active", true);
   return ((data ?? []) as Array<{ hr_id?: string | null }>)
     .map((r) => normalizeHrId(r.hr_id))
     .filter(Boolean) as string[];
 }
 
-// Bulk-resolve each task's human-readable employee name (never surface a bare HR_ID in a
-// notification — see CLAUDE.md "show names not codes"). One IN() query for the whole sweep.
-async function resolveEmployeeNames(tasks: FeedbackTask[]): Promise<Map<string, string>> {
+const resolveHrApproverHrIds = () => activeHrIdsByRole(["HR Manager", "Super Admin"]);
+const resolveCeoHrIds = () => activeHrIdsByRole(["CEO"]);
+
+// The dedicated "Phoenix System Administrator" account (owner-designated as the System Admin CC on
+// the reminder-2 escalation, MOD-2 2026-07-17). It's the PHX-1 account (login_id admin-HR); its
+// email is routed to the owner's inbox via employees.work_email. Resolved defensively by hr_id so a
+// rename of the display name doesn't break it.
+async function resolveSystemAdminHrId(): Promise<string | null> {
+  const { data } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .eq("hr_id", "PHX-1")
+    .eq("is_active", true)
+    .maybeSingle();
+  return normalizeHrId((data as { hr_id?: string | null } | null)?.hr_id);
+}
+
+// Bulk-resolve each case's employee name (never surface a bare HR_ID — CLAUDE.md "show names not
+// codes") AND the probationer's Direct Manager (probation_cases.manager_hr_id, the reminder-2 CC).
+// One IN() query for the whole sweep.
+type CaseInfo = { name: string | null; managerHrId: string | null };
+async function resolveCaseInfo(tasks: FeedbackTask[]): Promise<Map<string, CaseInfo>> {
   const caseIds = Array.from(new Set(tasks.map((t) => t.caseId).filter((id): id is string => Boolean(id))));
   if (caseIds.length === 0) return new Map();
   const { data } = await getSupabaseAdmin()
     .from("probation_cases")
-    .select("id, employee_name")
+    .select("id, employee_name, manager_hr_id")
     .in("id", caseIds);
-  const map = new Map<string, string>();
-  for (const row of (data ?? []) as Array<{ id: string; employee_name: string | null }>) {
-    if (row.employee_name) map.set(row.id, row.employee_name);
+  const map = new Map<string, CaseInfo>();
+  for (const row of (data ?? []) as Array<{ id: string; employee_name: string | null; manager_hr_id: string | null }>) {
+    map.set(row.id, { name: row.employee_name, managerHrId: normalizeHrId(row.manager_hr_id) });
   }
   return map;
 }
@@ -59,33 +79,86 @@ function statePriority(state: FeedbackSlaState): "high" | "critical" {
   return state === "overdue" ? "critical" : "high";
 }
 
+// Plain-English content per state (owner feedback, 2026-07-17): the email must say, in the body
+// text, WHY the recipient is getting it and WHAT to do — not just restate the internal state word.
+// "DV day" (internal shorthand) becomes "Double-Visit day"; the SLA state word never appears
+// verbatim in the copy, only as a status label a reader can act on.
+const STATE_COPY: Record<"due" | "escalated" | "overdue", { statusLabel: string; headline: string; body: (employeeName: string) => string }> = {
+  due: {
+    statusLabel: "Feedback needed",
+    headline: "Probation feedback needed",
+    body: (name) =>
+      `A Double-Visit day was completed with ${name}, and their probation record needs your feedback. ` +
+      `Please open the report below and submit your assessment.`,
+  },
+  escalated: {
+    statusLabel: "Reminder — still needed",
+    headline: "Reminder: probation feedback still needed",
+    body: (name) =>
+      `Your feedback for ${name}'s Double-Visit day is still outstanding. This is a required part of their 90-day ` +
+      `probation record, so please submit your assessment as soon as you can.`,
+  },
+  overdue: {
+    statusLabel: "Overdue",
+    headline: "Probation feedback is overdue",
+    body: (name) =>
+      `Feedback for ${name}'s Double-Visit day is now overdue. If you are the evaluating manager, please submit your ` +
+      `assessment now. HR has been copied on this message so the case can be followed up.`,
+  },
+};
+
+type EscalationParties = {
+  hrApproverHrIds: string[];
+  ceoHrIds: string[];
+  systemAdminHrId: string | null;
+  directManagerHrId: string | null;
+  cap: ProbationDailyCap;
+};
+
 async function emitForTask(
   task: FeedbackTask,
-  hrApproverHrIds: string[],
   employeeName: string,
+  parties: EscalationParties,
 ): Promise<number> {
   const state = task.sla.state as FeedbackSlaState;
   if (!ACTIONABLE_STATES.includes(state)) return 0;
 
-  // Recipients: the evaluator always (every state — due/escalated/overdue — so they never lose
-  // visibility of their own open task). HR/Super Admin are added only once a task is genuinely
-  // Overdue, not at the mid-way "escalated" warning — HR was previously CC'd on every escalation
-  // company-wide (118 emails to 2 accounts in the first weeks live), which trained recipients to
-  // stop opening probation email (owner report, 2026-07-16). Overdue is still the one state that
-  // needs HR eyes.
-  const recipients = new Set<string>();
+  // Recipient escalation ladder (owner-confirmed 2026-07-17), in priority order so the evaluator
+  // claims their daily-cap slot before the CC audience. The evaluator (the manager who owes the
+  // feedback) is on EVERY stage. Each stage widens the audience:
+  //   1) due       → evaluator only.
+  //   2) escalated → + the probationer's Direct Manager + the System Admin (PHX-1).
+  //   3) overdue   → + CEO + HR + Super Admin.
+  // HR was previously CC'd from the escalated stage company-wide (118 emails to 2 accounts in the
+  // first weeks) which trained recipients to stop opening probation email — so HR now only joins at
+  // the genuinely urgent overdue stage.
+  const ordered: string[] = [];
   const evaluator = normalizeHrId(task.evaluatorHrId);
-  if (evaluator) recipients.add(evaluator);
-  if (state === "overdue") {
-    for (const hr of hrApproverHrIds) recipients.add(hr);
+  if (evaluator) ordered.push(evaluator);
+  if (state === "escalated") {
+    if (parties.directManagerHrId) ordered.push(parties.directManagerHrId);
+    if (parties.systemAdminHrId) ordered.push(parties.systemAdminHrId);
   }
-  if (recipients.size === 0) return 0;
+  if (state === "overdue") {
+    ordered.push(...parties.ceoHrIds, ...parties.hrApproverHrIds);
+  }
+  // De-dup (keep first occurrence / priority order) then apply the per-recipient daily cap (MOD-3):
+  // an over-cap recipient is skipped this run and re-tried by tomorrow's idempotent sweep.
+  const recipients = [...new Set(ordered)].filter((h) => parties.cap.allow(h));
+  if (recipients.length === 0) return 0;
 
-  const stateLabel =
-    state === "overdue" ? "OVERDUE" : state === "escalated" ? "escalation" : "due";
-  const title = `Probation feedback ${stateLabel} — ${employeeName}`;
-  const message = `Probation feedback for ${employeeName} (DV day ${task.dvDate}) is ${state}.`;
+  const copy = STATE_COPY[state as "due" | "escalated" | "overdue"];
+  const title = `${copy.headline} — ${employeeName}`;
+  const message = copy.body(employeeName);
   const ctaUrl = task.caseId ? `${systemDeployment.productionUrl}/probation/cases/${task.caseId}` : null;
+  // Plain-English table rows (owner feedback, 2026-07-17): no raw state word, no "Hours overdue: 0"
+  // when the task isn't actually overdue yet — that read as meaningless noise.
+  const metrics = [
+    { label: "Employee", value: employeeName },
+    { label: "Visit date", value: task.dvDate },
+    { label: "Status", value: copy.statusLabel },
+    ...(state === "overdue" ? [{ label: "Overdue by", value: `${task.sla.hoursOverdue}h` }] : []),
+  ];
 
   // Recipients are independent (each has its own idempotency key, and claimDelivery's atomic
   // upsert-on-conflict makes concurrent claims race-safe) — dispatch in parallel instead of
@@ -93,7 +166,7 @@ async function emitForTask(
   // a serial recipient loop here was part of what made the whole run exceed its 30s step budget
   // (see 2026-07-15/16 notifications cron 504 outage).
   await Promise.all(
-    Array.from(recipients).map((recipientHrId) =>
+    recipients.map((recipientHrId) =>
       createSystemNotification({
         actorId: "system",
         module: "probation",
@@ -114,13 +187,8 @@ async function emitForTask(
           title,
           tone: state === "overdue" ? "danger" : "warning",
           ctaHref: ctaUrl ?? undefined,
-          ctaLabel: "Open live report",
-          metrics: [
-            { label: "Employee", value: employeeName },
-            { label: "DV date", value: task.dvDate },
-            { label: "Status", value: state },
-            { label: "Hours overdue", value: String(task.sla.hoursOverdue) },
-          ],
+          ctaLabel: "Open probation report",
+          metrics,
         },
         metadata: {
           // Dedup: one notification per (DV-Day, state, recipient). A repeated sweep is a no-op.
@@ -131,7 +199,7 @@ async function emitForTask(
       }).catch(() => undefined),
     ),
   );
-  return recipients.size;
+  return recipients.length;
 }
 
 /**
@@ -157,9 +225,12 @@ export async function processFeedbackSlaReminders(
   // evaluator never had the window to answer.
   const withSla = tasks.map((t) => ({ ...t, sla: computeFeedbackSla(t.dvDate, nowIso, config.sla, t.createdAt) }));
 
-  const [hrApproverHrIds, employeeNames] = await Promise.all([
+  const [hrApproverHrIds, ceoHrIds, systemAdminHrId, caseInfo, cap] = await Promise.all([
     resolveHrApproverHrIds(),
-    resolveEmployeeNames(withSla),
+    resolveCeoHrIds(),
+    resolveSystemAdminHrId(),
+    resolveCaseInfo(withSla),
+    createProbationDailyCap(new Date(nowIso)),
   ]);
   let due = 0, escalated = 0, overdue = 0;
   for (const task of withSla) {
@@ -172,9 +243,16 @@ export async function processFeedbackSlaReminders(
   // Tasks are independent (each's notifications key off its own DV-Day id) — fan out in
   // parallel rather than a serial per-task await chain (see emitForTask's comment).
   const emittedPerTask = await Promise.all(
-    withSla.map((task) =>
-      emitForTask(task, hrApproverHrIds, (task.caseId && employeeNames.get(task.caseId)) || task.employeeHrId),
-    ),
+    withSla.map((task) => {
+      const info = task.caseId ? caseInfo.get(task.caseId) : undefined;
+      return emitForTask(task, info?.name || task.employeeHrId, {
+        hrApproverHrIds,
+        ceoHrIds,
+        systemAdminHrId,
+        directManagerHrId: info?.managerHrId ?? null,
+        cap,
+      });
+    }),
   );
   const notificationsEmitted = emittedPerTask.reduce((sum, n) => sum + n, 0);
 
