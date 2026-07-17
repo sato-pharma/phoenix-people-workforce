@@ -25,7 +25,7 @@ export function runEmployeePortalModuleCurationTests() {
     return found!;
   };
 
-  const privateCalendar = findModule("/employee-portals/private-calendar", "Private Calendar");
+  const deductions = findModule("/employee-portals/deductions", "Deductions");
   const myCoaching = findModule("/employee-portals/coaching", "My Coaching Reports");
   const teamCoaching = findModule("/employee-portals/coaching", "Team Coaching Reports");
   assert.notEqual(
@@ -36,7 +36,7 @@ export function runEmployeePortalModuleCurationTests() {
 
   // (a) effectiveModuleIds === null (no override configured) — every destination stays
   // visible, whether or not it even exists in the Modules Control catalog.
-  assert.equal(isEmployeePortalHrefCurated("/employee-portals/private-calendar", null), true);
+  assert.equal(isEmployeePortalHrefCurated("/employee-portals/deductions", null), true);
   assert.equal(
     isEmployeePortalHrefCurated("/employee-portals/incentive", null),
     true,
@@ -46,12 +46,12 @@ export function runEmployeePortalModuleCurationTests() {
   // (b) A configured restriction actually removes a matched destination, and keeps an
   // explicitly-allowed one.
   assert.equal(
-    isEmployeePortalHrefCurated("/employee-portals/private-calendar", [privateCalendar.moduleId]),
+    isEmployeePortalHrefCurated("/employee-portals/deductions", [deductions.moduleId]),
     true,
     "href stays visible when its moduleId is in the effective set",
   );
   assert.equal(
-    isEmployeePortalHrefCurated("/employee-portals/private-calendar", ["some.other.module"]),
+    isEmployeePortalHrefCurated("/employee-portals/deductions", ["some.other.module"]),
     false,
     "href is hidden when the effective set does not include its moduleId",
   );
@@ -59,7 +59,7 @@ export function runEmployeePortalModuleCurationTests() {
   // were never added to the Modules Control catalog, so an admin never had a way to select
   // them — a restriction must not accidentally hide them.
   assert.equal(
-    isEmployeePortalHrefCurated("/employee-portals/incentive", [privateCalendar.moduleId]),
+    isEmployeePortalHrefCurated("/employee-portals/incentive", [deductions.moduleId]),
     true,
     "hrefs absent from the catalog stay visible even under an active restriction",
   );
@@ -86,15 +86,15 @@ export function runEmployeePortalModuleCurationTests() {
   );
 
   // End-to-end through the actual bottom-nav/profile-grid registry (same helper the mobile
-  // surfaces call): restricting a Medical Rep to Private Calendar only removes Coaching.
+  // surfaces call): restricting a Medical Rep to Deductions only removes Coaching.
   const medicalRepVisibility = resolveEmployeePortalNavVisibility("Medical Rep");
-  const restrictedEntries = visiblePortalNavEntries(medicalRepVisibility, [privateCalendar.moduleId]);
+  const restrictedEntries = visiblePortalNavEntries(medicalRepVisibility, [deductions.moduleId]);
   assert.ok(
     restrictedEntries.every((entry) => entry.href !== "/employee-portals/coaching"),
-    "restricting to Private Calendar only removes My Coaching Reports from the bottom-nav registry",
+    "restricting to Deductions only removes My Coaching Reports from the bottom-nav registry",
   );
   assert.ok(
-    restrictedEntries.some((entry) => entry.href === "/employee-portals/private-calendar"),
+    restrictedEntries.some((entry) => entry.href === "/employee-portals/deductions"),
     "the explicitly allowed module stays visible in the bottom-nav registry",
   );
 
