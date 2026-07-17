@@ -22,6 +22,7 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
@@ -36,7 +37,6 @@ import {
 } from "@/lib/outstation/medical-rep-expenses";
 import {
   googleDirectionsRoute,
-  googleDistanceMatrix,
   googleGeocodeAddress,
   googleReverseGeocode,
 } from "@/lib/google-maps/server";
@@ -62,12 +62,6 @@ import type {
   OutstationTerritoryValidationStatus,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
-
-type ValidationSignal = {
-  capturedAt: string | null;
-  capturedLatitude: number | null;
-  capturedLongitude: number | null;
-};
 
 type ValidationContext = {
   access: AccessContext;
@@ -190,6 +184,8 @@ function fallbackWorkloadEvidence(params: {
     matchStatus: "stale_import",
     missingDates: start && end ? [start, end].filter((value, index, list) => value && list.indexOf(value) === index) : [],
     pmWorkload: 0,
+    campaignVisits: 0,
+    regularVisits: 0,
     source: "manual",
     sourceLabel: params.sourceLabel,
   };
@@ -242,15 +238,6 @@ function isMissingTolerancePolicyColumn(
       message.includes("does not exist") &&
       message.includes("tolerance_minimum_distance_km"))
   );
-}
-
-function hoursBetween(previousIso: string, currentIso: string) {
-  const previous = new Date(previousIso).getTime();
-  const current = new Date(currentIso).getTime();
-  if (!Number.isFinite(previous) || !Number.isFinite(current) || current <= previous) {
-    return null;
-  }
-  return (current - previous) / 3600000;
 }
 
 function daysBetween(startIso: string, endIso: string) {
@@ -649,25 +636,6 @@ async function getActivePolicyForRole(roleName: string) {
   return fallback;
 }
 
-async function getLatestValidationSignal(employeeHrId: string): Promise<ValidationSignal | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_location_audit_logs")
-    .select("captured_latitude,captured_longitude,previous_captured_at,created_at")
-    .ilike("employee_hr_id", employeeHrId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  return {
-    capturedAt: isoString(data.previous_captured_at || data.created_at) || null,
-    capturedLatitude: nullableNumber(data.captured_latitude),
-    capturedLongitude: nullableNumber(data.captured_longitude),
-  };
-}
-
 async function getCachedRoute(params: {
   capturedLatitude: number;
   capturedLongitude: number;
@@ -728,85 +696,12 @@ async function validateTerritory(input: {
   };
 }
 
-function buildSuspiciousScore(flags: OutstationFraudFlag[]) {
-  const weights: Record<OutstationFraudFlag, number> = {
-    distance_below_policy: 90,
-    impossible_speed: 50,
-    location_permission_denied: 80,
-    missing_residence_location: 90,
-    missing_ticket_attachments: 25,
-    offline_delay: 25,
-    outside_expected_territory: 20,
-    poor_accuracy: 20,
-    repeated_same_coordinates: 15,
-    timestamp_mismatch: 25,
-  };
-
-  return Math.min(
-    100,
-    flags.reduce((sum, flag) => sum + (weights[flag] ?? 0), 0),
-  );
-}
-
-async function insertAuditLog(input: {
-  capturedAccuracyMeters: number;
-  capturedLatitude: number;
-  capturedLongitude: number;
-  distanceKm: number | null;
-  durationMinutes: number | null;
-  employeeHrId: string;
-  expenseRequestId?: number | null;
-  fraudFlags: OutstationFraudFlag[];
-  previousCapturedAt: string | null;
-  previousLatitude: number | null;
-  previousLongitude: number | null;
-  residenceLatitude: number | null;
-  residenceLongitude: number | null;
-  speedCheckResult: string;
-  suspiciousLocationScore: number;
-  territoryCheckResult: string;
-  timestampCheckResult: string;
-  validationReason: string;
-  validationResult: OutstationEligibilityStatus | "error";
-}) {
-  const supabase = getSupabaseAdmin();
-  await supabase.from("outstation_location_audit_logs").insert({
-    accuracy_check_result: input.fraudFlags.includes("poor_accuracy") ? "poor_accuracy" : "ok",
-    calculated_distance_km: input.distanceKm,
-    captured_accuracy_meters: input.capturedAccuracyMeters,
-    captured_latitude: roundCoordinate(input.capturedLatitude),
-    captured_longitude: roundCoordinate(input.capturedLongitude),
-    created_at: new Date().toISOString(),
-    distance_km: input.distanceKm,
-    duration_minutes: input.durationMinutes,
-    employee_hr_id: input.employeeHrId,
-    expense_request_id: input.expenseRequestId ?? null,
-    fraud_flags_json: JSON.stringify(input.fraudFlags),
-    previous_captured_at: input.previousCapturedAt,
-    previous_latitude:
-      input.previousLatitude != null ? roundCoordinate(input.previousLatitude) : null,
-    previous_longitude:
-      input.previousLongitude != null ? roundCoordinate(input.previousLongitude) : null,
-    residence_latitude:
-      input.residenceLatitude != null ? roundCoordinate(input.residenceLatitude) : null,
-    residence_longitude:
-      input.residenceLongitude != null ? roundCoordinate(input.residenceLongitude) : null,
-    speed_check_result: input.speedCheckResult,
-    suspicious_location_score: input.suspiciousLocationScore,
-    territory_check_result: input.territoryCheckResult,
-    timestamp_check_result: input.timestampCheckResult,
-    validation_reason: input.validationReason,
-    validation_result: input.validationResult,
-  });
-}
-
 async function validateCapturedLocation(
   params: ValidationContext,
 ): Promise<ValidatedLocationBundle> {
   const identity = await getEmployeeIdentity(params.access);
   const policy = await getActivePolicyForRole(identity.employeeRole);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
-  const fraudFlags: OutstationFraudFlag[] = [];
   const submittedAt = new Date().toISOString();
 
   if (
@@ -814,69 +709,14 @@ async function validateCapturedLocation(
     residence.residenceLatitude == null ||
     residence.residenceLongitude == null
   ) {
-    fraudFlags.push("missing_residence_location");
-    const reason =
-      "Your registered residence location is missing or invalid. Please contact HR before submitting an outstation request.";
-    const score = buildSuspiciousScore(fraudFlags);
-    await insertAuditLog({
-      capturedAccuracyMeters: params.capturedAccuracyMeters,
-      capturedLatitude: params.capturedLatitude,
-      capturedLongitude: params.capturedLongitude,
-      distanceKm: null,
-      durationMinutes: null,
-      employeeHrId: identity.employeeHrId,
-      fraudFlags,
-      previousCapturedAt: null,
-      previousLatitude: null,
-      previousLongitude: null,
-      residenceLatitude: residence?.residenceLatitude ?? null,
-      residenceLongitude: residence?.residenceLongitude ?? null,
-      speedCheckResult: "missing_residence_location",
-      suspiciousLocationScore: score,
-      territoryCheckResult: "not_available",
-      timestampCheckResult: "missing_residence_location",
-      validationReason: reason,
-      validationResult: "error",
-    });
-    throw new Error(reason);
+    throw new Error(
+      "Your registered residence location is missing or invalid. Please contact HR before submitting an outstation request.",
+    );
   }
 
   let eligibilityStatus: OutstationEligibilityStatus = "eligible";
   let eligibilityReason = "Captured location is eligible for outstation calculation.";
-
-  if (params.capturedAccuracyMeters > policy.gpsAccuracyThresholdMeters) {
-    fraudFlags.push("poor_accuracy");
-    eligibilityStatus = "needs_review";
-    eligibilityReason =
-      "Captured GPS accuracy is weaker than the policy threshold and requires manager review.";
-  }
-
   const capturedAt = isoString(params.capturedAt) || submittedAt;
-  const capturedAgeHours = hoursBetween(capturedAt, submittedAt);
-  if (capturedAgeHours != null) {
-    if (params.offlineCaptured && capturedAgeHours > policy.maxOfflineSyncDelayHours) {
-      fraudFlags.push("offline_delay");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Offline-captured trip was synced too late and now requires manual review.";
-    } else if (!params.offlineCaptured && capturedAgeHours > 0.25) {
-      fraudFlags.push("timestamp_mismatch");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Captured timestamp differs materially from the server timestamp and needs review.";
-    }
-  }
-
-  const latestSignal = await getLatestValidationSignal(identity.employeeHrId);
-  if (
-    latestSignal?.capturedLatitude != null &&
-    latestSignal?.capturedLongitude != null &&
-    latestSignal.capturedAt !== capturedAt &&
-    roundCoordinate(latestSignal.capturedLatitude) === roundCoordinate(params.capturedLatitude) &&
-    roundCoordinate(latestSignal.capturedLongitude) === roundCoordinate(params.capturedLongitude)
-  ) {
-    fraudFlags.push("repeated_same_coordinates");
-  }
 
   let polyline: string | null = null;
   let durationMinutes: number | null = null;
@@ -941,39 +781,6 @@ async function validateCapturedLocation(
     }
   }
 
-  let speedCheckResult = "no_previous_signal";
-  if (
-    latestSignal?.capturedAt &&
-    latestSignal.capturedAt !== capturedAt &&
-    latestSignal.capturedLatitude != null &&
-    latestSignal.capturedLongitude != null
-  ) {
-    const previousDistance = await googleDistanceMatrix(
-      {
-        lat: latestSignal.capturedLatitude,
-        lng: latestSignal.capturedLongitude,
-      },
-      {
-        lat: params.capturedLatitude,
-        lng: params.capturedLongitude,
-      },
-    );
-    const hours = hoursBetween(latestSignal.capturedAt, capturedAt);
-    const previousDistanceKm =
-      previousDistance.distanceMeters != null ? previousDistance.distanceMeters / 1000 : null;
-    const speedKmPerHour =
-      previousDistanceKm != null && hours && hours > 0 ? previousDistanceKm / hours : null;
-    if (speedKmPerHour != null && speedKmPerHour > 180) {
-      fraudFlags.push("impossible_speed");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Movement speed between captured points is too high to trust automatically.";
-      speedCheckResult = `impossible_speed:${speedKmPerHour.toFixed(1)}kmh`;
-    } else if (speedKmPerHour != null) {
-      speedCheckResult = `ok:${speedKmPerHour.toFixed(1)}kmh`;
-    }
-  }
-
   const distanceEligibility = classifyOutstationExpenseEligibility({
     actualDistanceKm: distanceKm,
     policy: {
@@ -987,25 +794,12 @@ async function validateCapturedLocation(
       : distanceEligibility.reason;
 
   if (distanceEligibility.classification === "not_eligible") {
-    fraudFlags.push("distance_below_policy");
     eligibilityStatus = "not_eligible";
     eligibilityReason = distanceReason;
-  } else if (distanceEligibility.classification === "tolerance_eligible") {
-    eligibilityReason =
-      eligibilityStatus === "eligible"
-        ? distanceReason
-        : `${eligibilityReason} ${distanceReason}`;
+  } else if (distanceEligibility.classification !== "eligible") {
+    // tolerance / missing / invalid / manual-exception — accept but flag for review.
     eligibilityStatus = "needs_review";
-  } else if (
-    distanceEligibility.classification === "missing_distance" ||
-    distanceEligibility.classification === "invalid_distance" ||
-    distanceEligibility.classification === "manual_exception"
-  ) {
-    eligibilityReason =
-      eligibilityStatus === "eligible"
-        ? distanceReason
-        : `${eligibilityReason} ${distanceReason}`;
-    eligibilityStatus = "needs_review";
+    eligibilityReason = distanceReason;
   }
 
   const reverse = await googleReverseGeocode({
@@ -1019,16 +813,26 @@ async function validateCapturedLocation(
     employeeArea: identity.employeeArea,
   });
 
-  if (territory.status === "outside_expected_territory") {
-    fraudFlags.push("outside_expected_territory");
-    if (eligibilityStatus === "eligible") {
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Captured destination is outside the expected territory and needs manager review.";
-    }
+  // Residence-vs-destination governorate rule: a trip must be OUTSIDE the
+  // employee's residence governorate. Canonicalize both via resolveGovernorate so a
+  // plain compare is valid; only reject when both resolve and match (fail-open).
+  const residenceGovernorate =
+    resolveGovernorate(
+      residence.residenceCity ?? residence.residenceArea ?? residence.residenceAddress ?? "",
+    ) ?? null;
+  const destinationGovernorate =
+    resolveGovernorate(reverse?.governorate ?? reverse?.formattedAddress ?? reverse?.city ?? "") ??
+    null;
+  if (
+    eligibilityStatus !== "not_eligible" &&
+    residenceGovernorate &&
+    destinationGovernorate &&
+    residenceGovernorate === destinationGovernorate
+  ) {
+    eligibilityStatus = "not_eligible";
+    eligibilityReason = `Destination is within the same governorate as your residence (${residenceGovernorate}) and is not eligible for an outstation expense.`;
   }
 
-  const suspiciousLocationScore = buildSuspiciousScore(fraudFlags);
   const result: OutstationCaptureResult = {
     capturedAccuracyMeters: params.capturedAccuracyMeters,
     capturedAt,
@@ -1044,7 +848,7 @@ async function validateCapturedLocation(
     employeeLine: identity.employeeLine,
     employeeName: identity.employeeName,
     employeeRole: identity.employeeRole,
-    fraudFlags,
+    fraudFlags: [],
     minimumRequiredDistanceKm: policy.minimumDistanceKm,
     residenceLatitude: residence.residenceLatitude,
     residenceLongitude: residence.residenceLongitude,
@@ -1055,37 +859,13 @@ async function validateCapturedLocation(
     selectedRouteIndex,
     selectedRouteReason,
     submittedAt,
-    suspiciousLocationScore,
+    suspiciousLocationScore: 0,
     territoryValidationReason: territory.reason,
     territoryValidationStatus: territory.status,
     toArea: reverse?.area ?? null,
     toCity: reverse?.city ?? null,
     toLabel: reverse?.formattedAddress ?? null,
   };
-
-  await insertAuditLog({
-    capturedAccuracyMeters: params.capturedAccuracyMeters,
-    capturedLatitude: params.capturedLatitude,
-    capturedLongitude: params.capturedLongitude,
-    distanceKm,
-    durationMinutes,
-    employeeHrId: identity.employeeHrId,
-    fraudFlags,
-    previousCapturedAt: latestSignal?.capturedAt ?? null,
-    previousLatitude: latestSignal?.capturedLatitude ?? null,
-    previousLongitude: latestSignal?.capturedLongitude ?? null,
-    residenceLatitude: residence.residenceLatitude,
-    residenceLongitude: residence.residenceLongitude,
-    speedCheckResult,
-    suspiciousLocationScore,
-    territoryCheckResult: territory.status,
-    timestampCheckResult:
-      fraudFlags.includes("offline_delay") || fraudFlags.includes("timestamp_mismatch")
-        ? "review_required"
-        : "ok",
-    validationReason: eligibilityReason,
-    validationResult: eligibilityStatus,
-  });
 
   return {
     employee: identity.employee,
@@ -1179,7 +959,7 @@ export async function calculateOutstationExpense(
     fraudFlags: result.fraudFlags,
     hasTicketAttachments: Boolean(input.hasTicketAttachments),
     policy,
-    suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
+    suspiciousLocationScore: 0,
     territoryValidationStatus: result.territoryValidationStatus,
     transportationType: input.transportationType,
   });
@@ -1216,7 +996,7 @@ export async function calculateOutstationExpense(
       sameDayTrip: allowance.sameDayTrip,
     }),
     sameDayTrip: allowance.sameDayTrip,
-    suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
+    suspiciousLocationScore: 0,
     ticketAmount,
     carEvidenceImagePath: null,
     carEvidenceMetadata: input.carEvidenceMetadata,
@@ -1570,35 +1350,6 @@ export async function submitOutstationRequest(
       persistedCarEvidenceMetadata = metadataWithRequestId;
     }
   }
-
-  const previousSignal = await getLatestValidationSignal(calculation.employeeHrId);
-  await insertAuditLog({
-    capturedAccuracyMeters: calculation.capturedAccuracyMeters,
-    capturedLatitude: calculation.capturedLatitude,
-    capturedLongitude: calculation.capturedLongitude,
-    distanceKm: calculation.distanceFromResidenceKm,
-    durationMinutes: calculation.durationMinutes,
-    employeeHrId: calculation.employeeHrId,
-    expenseRequestId: Number(data.id),
-    fraudFlags: calculation.fraudFlags,
-    previousCapturedAt: previousSignal?.capturedAt ?? null,
-    previousLatitude: previousSignal?.capturedLatitude ?? null,
-    previousLongitude: previousSignal?.capturedLongitude ?? null,
-    residenceLatitude: residence?.residenceLatitude ?? null,
-    residenceLongitude: residence?.residenceLongitude ?? null,
-    speedCheckResult: calculation.fraudFlags.includes("impossible_speed")
-      ? "impossible_speed"
-      : "ok",
-    suspiciousLocationScore: calculation.suspiciousLocationScore,
-    territoryCheckResult: calculation.territoryValidationStatus,
-    timestampCheckResult:
-      calculation.fraudFlags.includes("offline_delay") ||
-      calculation.fraudFlags.includes("timestamp_mismatch")
-        ? "review_required"
-        : "ok",
-    validationReason: calculation.eligibilityReason,
-    validationResult: calculation.eligibilityStatus,
-  });
 
   const submitted = mapOutstationRequestRow({
     ...data,
