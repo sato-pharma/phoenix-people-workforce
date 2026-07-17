@@ -42,16 +42,19 @@ export function isCrmDoubleVisitRow(row: {
   );
 }
 
-/** Resigned CRM agents (owner-flagged, 2026-07-17): their iReports360 agent_crm_ids. Excluded from
- * EVERY CRM read — visits and check-ins — so resigned reps are invisible across all consumers that
- * go through this read layer. Single source; the CRM master table imports this same list. Resolved
- * from the owner's display-name list (see memory crm-resigned-agents-exclusion-list). */
+/** Resigned OR owner-excluded CRM agents (their iReports360 agent_crm_ids). Excluded from EVERY CRM
+ * read — visits and check-ins — so they're invisible across all consumers that go through this read
+ * layer. Single source; the CRM master table imports this same list. Resolved from the owner's
+ * display-name lists (see memory crm-resigned-agents-exclusion-list). */
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1102, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
   1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
   1395, 1396, 1402, 1407, 1409, 1437, 1476, 1477, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
   1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
+  // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
+  // CEO 1474, George.Rafaat (Sharkia 1/C) 1500. (Mahmoud.Gamal 1272 already listed above.)
+  667, 1436, 1474, 1500,
 ];
 
 /** PostgREST `in` list literal for the resigned ids, e.g. "(832,851,...)" — consumers that query
