@@ -23,10 +23,23 @@ set -uo pipefail
 max_attempts="${RETRY_MAX_ATTEMPTS:-4}"
 base_wait="${RETRY_BASE_WAIT_SECONDS:-60}"
 
-# Case-insensitive markers of a retryable transient error (quota rate-limit, 5xx, or
-# network blip). Deliberately narrow: a real build/compile failure matches none of
-# these and is returned to the caller on the first attempt.
-transient_re='RATE_LIMIT_EXCEEDED|Quota exceeded|Get requests per minute|(^|[^0-9])(429|503)([^0-9]|$)|network connectivity|Deadline exceeded|connection reset'
+# Case-insensitive markers of a retryable transient error. Two classes, both
+# genuinely transient — a real build/compile failure, or a real auth *misconfig*,
+# matches none of these and is surfaced to the caller on the first attempt:
+#   1. Cloud Build quota / 5xx / network blips — the original reason (HTTP 429 on the
+#      60/min "Get requests" quota when two source builds poll concurrently; see
+#      PR #1029/#1032).
+#   2. Workload Identity token-refresh timeouts. The OIDC->GCP token exchange (and
+#      gcloud's mid-run re-refresh during `builds submit`) intermittently cannot reach
+#      Google's STS endpoint and fails with "Unable to retrieve Identity Pool subject
+#      token" / "upstream connect error" / "connection timeout". A ~5-min GCP auth blip
+#      on 2026-07-17 hard-failed BOTH the prod and staging deploys of commit 19d5a572
+#      this way, while the very next commit deployed fine. These are connectivity
+#      errors, NOT credential/permission errors — a broken WIF provider or unauthorized
+#      service account surfaces as 403 / PERMISSION_DENIED, deliberately absent below —
+#      so retrying with the same escalating backoff is safe and lets the endpoint
+#      recover instead of turning a transient blip into a red deploy.
+transient_re='RATE_LIMIT_EXCEEDED|Quota exceeded|Get requests per minute|(^|[^0-9])(429|503)([^0-9]|$)|network connectivity|Deadline exceeded|connection reset|Unable to retrieve Identity Pool subject token|refreshing your current auth tokens|upstream connect error|disconnect/reset before headers|connection timeout'
 
 if [ "$#" -eq 0 ]; then
   echo "retry-transient: no command given" >&2

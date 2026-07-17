@@ -8,7 +8,7 @@
 // Metrics that are NOT computable today (e.g. plan adherence — the weekly_plans tables are empty)
 // are reported as unavailable rather than faked.
 
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 
 export type SfeMetric = {
   key: string;
@@ -144,31 +144,24 @@ export async function buildSfeEvidence(
   window: { from: string | null; to: string },
   generatedAt: string = new Date().toISOString(),
 ): Promise<SfeEvidence> {
-  const supabase = getSupabaseAdmin();
   const hrId = employeeHrId.trim();
 
-  let visitsQuery = supabase
-    .from("ireports360_visits")
-    .select("visit_date, contact_crm_id")
-    .ilike("agent_hr_id", hrId)
-    .lte("visit_date", window.to);
-  if (window.from) visitsQuery = visitsQuery.gte("visit_date", window.from);
-  const { data: visits, error: vErr } = await visitsQuery;
-  if (vErr) throw new Error(vErr.message);
+  // Reads through the CRM single-door layer. agentHrIdILike preserves the case-insensitive match on
+  // the stored agent_hr_id, and resigned/owner-excluded agents are removed inside the read layer.
+  const [visits, checkins] = await Promise.all([
+    queryVisits<VisitRow>({
+      agentHrIdILike: hrId,
+      dateFrom: window.from ?? undefined,
+      dateTo: window.to,
+      columns: "visit_date, contact_crm_id",
+    }),
+    queryCheckins<CheckinRow>({
+      agentHrIdILike: hrId,
+      dateFrom: window.from ?? undefined,
+      dateTo: window.to,
+      columns: "check_date, contact_crm_id",
+    }),
+  ]);
 
-  let checkinsQuery = supabase
-    .from("ireports360_checkins")
-    .select("check_date, contact_crm_id")
-    .ilike("agent_hr_id", hrId)
-    .lte("check_date", `${window.to}T23:59:59Z`);
-  if (window.from) checkinsQuery = checkinsQuery.gte("check_date", `${window.from}T00:00:00Z`);
-  const { data: checkins, error: cErr } = await checkinsQuery;
-  if (cErr) throw new Error(cErr.message);
-
-  return computeSfeEvidence(
-    (visits ?? []) as VisitRow[],
-    (checkins ?? []) as CheckinRow[],
-    window,
-    generatedAt,
-  );
+  return computeSfeEvidence(visits, checkins, window, generatedAt);
 }

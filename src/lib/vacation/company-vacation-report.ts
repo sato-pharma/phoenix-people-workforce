@@ -39,6 +39,7 @@ import { unstable_cache } from "next/cache";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -242,31 +243,15 @@ async function loadHrVacationRequests(startDate: string, endDate: string): Promi
  * server render from 33s down to about a second before the historical-caching split below cut
  * it further. */
 async function loadAnnualVacationVisits(startDate: string, endDate: string): Promise<VisitRow[]> {
-  const supabase = getSupabaseAdmin();
-  const rows: VisitRow[] = [];
-  // PostgREST enforces its own max-rows cap (observed: 1000) regardless of the range size
-  // requested, so the loop must continue on ANY non-empty page — a smaller-than-requested
-  // page does NOT mean "last page" here, only an empty one does.
-  const PAGE_SIZE = 1000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("ireports360_visits")
-      .select("agent_hr_id,agent_name,visit_date,ampm,comment,visit_type")
-      .eq("visit_type", ANNUAL_VACATION_VISIT_TYPE)
-      .gte("visit_date", startDate)
-      .lte("visit_date", endDate)
-      .not("agent_hr_id", "is", null)
-      .order("visit_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error(`Failed to load CRM visits: ${error.message}`);
-    const page = (data ?? []) as VisitRow[];
-    rows.push(...page);
-    if (page.length === 0) break;
-    offset += PAGE_SIZE;
-  }
-  return rows;
+  // Only visit_type = -4 (Annual Vacation) rows are ever read by this report; the CRM read
+  // layer full-scans (keyset) so the ~99% of non-AV rows are filtered server-side, not fetched.
+  return queryVisits<VisitRow>({
+    visitTypes: [ANNUAL_VACATION_VISIT_TYPE],
+    dateFrom: startDate,
+    dateTo: endDate,
+    requireAgentHrId: true,
+    columns: "agent_hr_id,agent_name,visit_date,ampm,comment,visit_type",
+  });
 }
 
 const loadAnnualVacationVisitsCached = unstable_cache(loadAnnualVacationVisits, ["company-vacation-report-visits"], {

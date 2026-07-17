@@ -322,7 +322,7 @@ export function CeoCommandCenter({
     <div className="space-y-0 divide-y divide-slate-200">
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <AdminHeroFrame>
+      <AdminHeroFrame className="z-10 overflow-visible">
         <div className="p-5 sm:p-6 lg:p-8">
           <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
             <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
@@ -339,8 +339,8 @@ export function CeoCommandCenter({
       <DataUnavailableNotice sources={dataUnavailable} />
 
       <SectionShell
-        title="Workforce & payroll snapshot"
-        description="Company-level totals from CEO-safe aggregate loaders."
+        title="Sato Pharma"
+        description="A healthier life is our commitment."
         action={
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/sato-pharma-logo.png" alt="SATO Pharma" className="mr-[28px] h-8 w-auto shrink-0" />
@@ -558,14 +558,6 @@ export function CeoCommandCenter({
             href="/sales/weekly/dashboard"
           />
 
-          {/* Marketing ROI — instant link card */}
-          <QuickLinkCard
-            title="Marketing ROI"
-            icon={<Megaphone className="h-3.5 w-3.5" />}
-            headline="Coverage, spend at risk, top risk accounts"
-            sub="Click to open ROI Tracking"
-            href="/admin/marketing-requests/roi-tracking"
-          />
         </div>
 
         {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
@@ -611,13 +603,6 @@ export function CeoCommandCenter({
             headline="Coverage, AM/PM split, per-rep intensity"
             sub="Open Double-Visit Analytics"
             href="/admin/double-visit-analytics"
-          />
-          <QuickLinkCard
-            title="Events Calendar"
-            icon={<CalendarClock className="h-3.5 w-3.5" />}
-            headline="Company events, leave, plans, birthdays"
-            sub="Open the company events calendar"
-            href="/admin/company-calendar"
           />
         </div>
       </SectionShell>

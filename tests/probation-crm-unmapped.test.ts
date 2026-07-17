@@ -35,7 +35,8 @@ export function runProbationCrmUnmappedTests() {
   const dash = src("src/lib/probation/intelligence/dashboard.ts");
   assert.match(dash, /crmUnmapped: boolean/, "DashboardRow has crmUnmapped");
   assert.match(dash, /openActions: number/, "DashboardRow has openActions");
-  assert.match(dash, /ireports360_visits/, "dashboard queries the CRM visits table");
+  assert.match(dash, /getMappedAgentHrIds\(/, "dashboard checks CRM presence via the CRM single-door reader");
+  assert.doesNotMatch(dash, /\.from\(\s*["'`]ireports360_visits["'`]/, "dashboard no longer queries the CRM mirror directly");
   assert.match(dash, /isCrmUnmapped\(c\.employee_hr_id, mappedAgentKeys\)/, "row is classified");
   assert.match(dash, /crmUnmapped: rows\.filter\(\(r\) => r\.crmUnmapped\)\.length/, "summary counts unmapped");
   assert.match(dash, /probation_development_actions/, "dashboard counts open dev actions");

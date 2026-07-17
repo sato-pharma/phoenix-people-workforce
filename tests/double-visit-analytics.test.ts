@@ -102,7 +102,7 @@ export function runDoubleVisitAnalyticsTests() {
   const service = readFileSync("src/lib/double-visit-analytics/service.ts", "utf8");
   assert.match(service, /DOUBLE_VISIT_TYPE_CODES = \[0, -8\]/, "double-visit definition is Regular(0)/Campaign(-8) only");
   assert.match(service, /getLiveDoubleVisitRows/, "module reads through the live loader");
-  assert.match(service, /from\(visitsTable\)/, "live loader queries ireports360_visits, not a mirror table");
+  assert.match(service, /getDoubleVisitRows</, "live loader reads through the CRM single-door loader (crm/reads), not its own mirror query");
   assert.match(service, /CRM:\$\{visit\.double_crm_id\}/, "unmapped double-visitor still carries the CRM: sentinel the integrity report depends on");
   assert.doesNotMatch(service, /from\("double_visit_rows"\)|from\("double_visit_imports"\)/, "no live query against the removed import/publish tables remains");
   assert.doesNotMatch(service, /saveDoubleVisitPreview|publishDoubleVisitImport|buildAndSaveDoubleVisitFromMirror|buildAndSaveDoubleVisitExcelImport/, "import/publish/Excel machinery is fully removed");
@@ -117,7 +117,11 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(service, /addWorksheet\("Weekly Trend"\)/, "export must include the new Weekly Trend sheet");
   assert.match(service, /addWorksheet\("Manager × MR Pairs"\)/, "export must include a Manager × MR Pairs sheet");
   assert.match(service, /buildManagerMrPairs\(data\.visitLog\)/, "pairs sheet must be built from the visit log");
-  assert.match(service, /\.range\(from, from \+ pageSize/, "live rows must be paged past the PostgREST row cap, not truncated");
+  assert.doesNotMatch(
+    service,
+    /\.from\(\s*(visitsTable|["'`]ireports360_visits["'`])\s*\)/,
+    "no direct ireports360_visits query remains — CRM data comes only through crm/reads (which keyset-pages past the PostgREST row cap)",
+  );
   assert.match(service, /resolveDoubleVisitChains\(/, "same-day chain resolver is wired into the live loader");
   assert.match(service, /resolved_via_chain/, "chain-resolved rows are flagged so callers can audit them");
   assert.match(service, /export async function getDoubleVisitRecoveredChains/, "recovered chains are exposed as their own reusable loader (consumed by Visits Report, not the Integrity report)");
