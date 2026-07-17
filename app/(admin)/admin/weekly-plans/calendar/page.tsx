@@ -29,10 +29,10 @@ export default async function AdminPlanningCalendarPage() {
             <AdminInsightChip tone="emerald">Coverage View</AdminInsightChip>
           </>
         }
-        description="Monitor submitted planning activity, national vacations, and same-line Medical Rep conflicts in the desktop admin workspace."
+        description="Review company-wide submitted planning activity, national vacations, and same-line Medical Rep conflicts in one admin calendar."
         eyebrow="Planning Calendar"
         icon={<CalendarRange className="h-3.5 w-3.5" />}
-        title="Weekly / Monthly Plans Calendar"
+        title="Company Planning Calendar"
         aside={
           <div className="grid min-w-[260px] gap-2 text-xs font-bold text-slate-200 sm:grid-cols-2 lg:grid-cols-1">
             <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
