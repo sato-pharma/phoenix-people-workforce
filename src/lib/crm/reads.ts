@@ -76,6 +76,9 @@ export type CrmVisitFilter = {
    * per-employee reads (e.g. probation SFE evidence) where the caller's hr-id casing may differ
    * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
   agentHrIdILike?: string;
+  /** Restrict to these resolved DOUBLE-visitor hr ids (`double_hr_id IN`). Empty array → no rows.
+   * For "double visits conducted by this manager" reads (e.g. Employee 360 leadership activity). */
+  doubleHrIds?: readonly string[];
   /** Restrict to these visit types (`visit_type IN`). */
   visitTypes?: readonly number[];
   /** Keep only rows with a real double partner (`double_crm_id` present and ≠ 0). */
@@ -108,6 +111,7 @@ function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): 
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
+  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", [...filter.doubleHrIds]);
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
@@ -140,6 +144,7 @@ export async function queryVisits<T = CrmVisitRow>(
   options: CrmVisitFilter & { columns?: string; pageSize?: number },
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
+  if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const projection = withIdColumn(options.columns ?? "*");
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -171,6 +176,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   options: CrmVisitFilter & { columns?: string; orderBy?: string; ascending?: boolean; limit: number },
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
+  if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   let query = supabase.from(CRM_VISITS_TABLE).select(options.columns ?? "*");
   query = applyVisitFilter(query as unknown as VisitFilterableQuery, options) as unknown as typeof query;

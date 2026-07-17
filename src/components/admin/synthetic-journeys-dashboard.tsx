@@ -253,12 +253,12 @@ export function SyntheticJourneysDashboard({
       {!activeRun ? (
         <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
           <p className="text-sm font-semibold text-slate-700">
-            No synthetic journey runs found yet. Run <code className="rounded bg-slate-100 px-1.5 py-0.5">npm run synthetic:test</code>, then save or ingest the report.
+            No synthetic journey runs found yet. Run <code className="rounded bg-slate-100 px-1.5 py-0.5">pnpm run synthetic:test</code>, then save or ingest the report.
           </p>
           <pre className="overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs text-slate-100">
 {`cd "F:/Phoenix Workforce/_wt-synthetic-user-journeys"
-npm run synthetic:test
-npm run synthetic:save-report`}
+pnpm run synthetic:test
+pnpm run synthetic:save-report`}
           </pre>
         </Card>
       ) : (

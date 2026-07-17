@@ -3,7 +3,6 @@ import {
   Archive,
   BellRing,
   BriefcaseBusiness,
-  Bug,
   Building2,
   CalendarCheck,
   CalendarClock,
@@ -468,7 +467,9 @@ const adminNavigationSectionSeeds = [
   // ── Tier 7b: Master data governance ──────────────────────────────────────────
   // Standalone read-only master-data page. Deliberately NOT nested under the Marketing
   // Requests or Customer Validation surfaces — it governs the customer↔pharmacy relationship
-  // on its own route. Phase 1 is company-wide oversight only (Super Admin + CEO).
+  // on its own route. The page's two cards still grant CEO oversight, but the
+  // sidebar link is Super Admin + SFE Manager only: CEO is hidden from the
+  // sidebar by owner request (see the roles list below).
   {
     id: "master-data",
     items: [
@@ -477,9 +478,11 @@ const adminNavigationSectionSeeds = [
       // masterDataPageItems below). One of its two cards ("Customers Database")
       // is itself another consolidated hub (app/(admin)/admin/customers-
       // database/page.tsx) — nesting a hub-card inside a hub is fine, it still
-      // navigates to that page's own real destination. roles is the union of
-      // both cards' own roles.
-      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // navigates to that page's own real destination. The hub cards still grant
+      // CEO (see masterDataPageItems), but the sidebar link is deliberately
+      // narrowed to Super Admin + SFE Manager: CEO is hidden from the sidebar by
+      // owner request, so this list is intentionally NOT the union of the cards.
+      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Master Data",
   },
@@ -928,7 +931,7 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/monitoring",
     icon: Radar,
     label: "Monitoring",
-    description: "Live system health, uptime, and service status monitoring.",
+    description: "Authentication signals and email/notification delivery telemetry.",
     permissions: [{ resource: "admin" }],
     excludedRoles: ["CEO"],
   },
@@ -937,14 +940,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: ScrollText,
     label: "Audit Logs",
     description: "Full audit trail of administrative actions across the platform.",
-    permissions: [{ resource: "admin" }],
-    excludedRoles: ["CEO"],
-  },
-  {
-    href: "/admin/error-monitor",
-    icon: Bug,
-    label: "Error Monitor",
-    description: "Runtime error tracking and exception triage, tagged by module.",
     permissions: [{ resource: "admin" }],
     excludedRoles: ["CEO"],
   },

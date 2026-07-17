@@ -8,6 +8,10 @@ export function runPhase30ProductionMigrationApprovalGateTests() {
   assert.match(gate, /expectedChecksum = "e001a0d5c530262056f803ea656a529320a71e49a38ba71af063ee02fabb95ce"/);
   assert.match(gate, /production backup\/PITR readiness must be confirmed/);
   assert.match(gate, /DEFER_TO_SEPARATE_MIGRATION/);
+  // Deliberately still `npx` (works identically with pnpm-installed node_modules/.bin):
+  // the doesNotMatch safety net below rejects the literal token "exec" anywhere in the
+  // gate script, so `pnpm exec supabase ...` would trip it. Keeping npx preserves that
+  // safety assertion byte-for-byte.
   assert.match(gate, /npx supabase db push --db-url/);
   assert.match(gate, /--dry-run/);
   assert.match(gate, /--yes/);

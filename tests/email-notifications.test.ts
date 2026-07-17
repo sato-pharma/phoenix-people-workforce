@@ -69,6 +69,9 @@ export function runEmailNotificationTests() {
     "src/lib/email/send-phoenix-email.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
+    // Offers use a fixed premium renderer + attachments (offer-letter PDF), so they send
+    // directly rather than through the DB template engine. See src/lib/offers/email.ts.
+    "src/lib/offers/email.ts",
     "src/lib/sales/sos-report-delivery.ts",
     "src/lib/vacation/email.ts",
   ]);

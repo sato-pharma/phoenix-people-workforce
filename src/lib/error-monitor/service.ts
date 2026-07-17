@@ -441,23 +441,45 @@ export type LoginSecuritySignals = {
 
 export type AccountIdentity = { name: string | null; role: string | null };
 
+/** Row shape read from app_auth_users to build the account directory. */
+export type AccountDirectoryRow = { login_id?: unknown; hr_id?: unknown; name?: unknown; role?: unknown };
+
+/**
+ * Builds the canonical-id → identity map, indexing each account by BOTH its login_id and its
+ * hr_id. Attempts are keyed by login_id (failed logins) OR hr_id (app errors), and for some
+ * accounts those differ — e.g. the Super Admin logs in as "admin-HR" but has hr_id "PHX-1".
+ * Keying by only one (as this did before) silently dropped the other's rows from the per-user
+ * view AND made the real-account filter treat that account's errors as unknown. Pure +
+ * injectable so the dual-key behavior is unit-testable without a live DB.
+ */
+export function buildAccountDirectory(rows: AccountDirectoryRow[]): Map<string, AccountIdentity> {
+  const map = new Map<string, AccountIdentity>();
+  for (const row of rows) {
+    const identity: AccountIdentity = {
+      name: (row.name as string | null) ?? null,
+      role: (row.role as string | null) ?? null,
+    };
+    const loginKey = canonicalHrIdKey(row.login_id as string);
+    const hrKey = canonicalHrIdKey(row.hr_id as string);
+    if (loginKey) map.set(loginKey, identity);
+    if (hrKey) map.set(hrKey, identity);
+  }
+  return map;
+}
+
 /**
  * Small directory mapping canonical login_id/hr_id → display name + role (app_auth_users is
  * ~150 rows, so fetching all is cheap). Used to show "Ahmed Hassan (Medical Rep)" instead of
  * a bare hr_id, and to resolve names in the security lens. Best-effort — empty on failure.
  */
 export async function getAccountDirectory(): Promise<Map<string, AccountIdentity>> {
-  const map = new Map<string, AccountIdentity>();
   try {
     const { data } = await getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id, name, role");
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      const key = canonicalHrIdKey(row.login_id as string) ?? canonicalHrIdKey(row.hr_id as string);
-      if (key) map.set(key, { name: (row.name as string | null) ?? null, role: (row.role as string | null) ?? null });
-    }
+    return buildAccountDirectory((data ?? []) as AccountDirectoryRow[]);
   } catch (error) {
     console.error("Failed to load account directory:", error);
+    return new Map();
   }
-  return map;
 }
 
 /**
@@ -730,10 +752,59 @@ export type UserAttemptSummary = {
   rows: UserAttemptRow[];
   /** True if either source hit the per-fetch row cap — narrow the date range for full accuracy. */
   truncated: boolean;
+  /** ISO timestamp of the lower bound actually applied to both sources (default window or the caller's dateFrom). */
+  windowFrom: string;
 };
+
+/** Aggregated "everything that didn't resolve to a real app_auth_users account" bucket. */
+export type UnknownAttemptsSummary = {
+  attemptCount: number;
+  distinctCount: number;
+};
+
+/**
+ * Default lookback for the System Issues "Per-User Attempts" tab. All-time history (retention
+ * keeps ~90 days) makes stale/one-off failures dominate the view, so we default to the last
+ * 30 days; an explicit dateFrom from the UI still overrides it.
+ */
+export const DEFAULT_ATTEMPT_WINDOW_DAYS = 30;
 
 const ATTEMPT_FETCH_PAGE_SIZE = 1000;
 const ATTEMPT_FETCH_ROW_CAP = 20_000;
+
+/**
+ * Resolves the effective lower-bound timestamp for the attempts query: the caller's explicit
+ * dateFrom when provided, otherwise DEFAULT_ATTEMPT_WINDOW_DAYS ago. Pure + injectable `now`
+ * so the windowing is unit-testable without a live DB.
+ */
+export function resolveAttemptWindowFrom(dateFrom: string | null | undefined, now: number = Date.now()): string {
+  if (dateFrom) return dateFrom;
+  return new Date(now - DEFAULT_ATTEMPT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Partitions aggregated attempt rows into rows tied to a real account (predicate true) and an
+ * aggregate of everything else (test/synthetic/probe/typo login ids). Distinct unknown users
+ * are counted by canonical HR_ID key so the same fake login across many modules counts once.
+ * Pure — the caller injects `isRealAccount` so this is testable without a live directory/DB.
+ */
+export function partitionUserAttempts<T extends { hrId: string; attemptCount: number }>(
+  rows: T[],
+  isRealAccount: (hrId: string) => boolean,
+): { realRows: T[]; unknownAttempts: UnknownAttemptsSummary } {
+  const realRows: T[] = [];
+  const unknownKeys = new Set<string>();
+  let attemptCount = 0;
+  for (const row of rows) {
+    if (isRealAccount(row.hrId)) {
+      realRows.push(row);
+    } else {
+      attemptCount += row.attemptCount;
+      unknownKeys.add(canonicalHrIdKey(row.hrId) ?? row.hrId);
+    }
+  }
+  return { realRows, unknownAttempts: { attemptCount, distinctCount: unknownKeys.size } };
+}
 
 /**
  * Aggregates app_error_events + failed auth_login_attempts into per-HR_ID, per-module/route
@@ -744,7 +815,9 @@ const ATTEMPT_FETCH_ROW_CAP = 20_000;
  */
 export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Promise<UserAttemptSummary> {
   const supabase = getSupabaseAdmin();
-  const dateFrom = filter.dateFrom ?? null;
+  // Default to a recent window so the tab reflects live activity, not ~90 days of retained
+  // history; an explicit filter.dateFrom still overrides. Applied to BOTH sources below.
+  const windowFrom = resolveAttemptWindowFrom(filter.dateFrom);
   const dateTo = filter.dateTo ? `${filter.dateTo}T23:59:59Z` : null;
 
   type Bucket = {
@@ -805,7 +878,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
 
       if (filter.hrId) query = query.ilike("hr_id", `%${filter.hrId}%`);
-      if (dateFrom) query = query.gte("created_at", dateFrom);
+      query = query.gte("created_at", windowFrom);
       if (dateTo) query = query.lte("created_at", dateTo);
 
       const { data, error } = await query;
@@ -843,7 +916,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);
 
       if (filter.hrId) query = query.ilike("login_id", `%${filter.hrId}%`);
-      if (dateFrom) query = query.gte("attempted_at", dateFrom);
+      query = query.gte("attempted_at", windowFrom);
       if (dateTo) query = query.lte("attempted_at", dateTo);
 
       const { data, error } = await query;
@@ -870,5 +943,5 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
   }
 
   const rowsOut = Array.from(buckets.values()).sort((a, b) => b.attemptCount - a.attemptCount);
-  return { rows: rowsOut, truncated };
+  return { rows: rowsOut, truncated, windowFrom };
 }

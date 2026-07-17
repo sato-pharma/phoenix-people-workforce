@@ -1,6 +1,6 @@
 import { ScopeVisibilityManager } from "@/components/admin/scope-visibility-manager";
 import { assertPermission } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import type { ProductOption } from "@/lib/auth/scope-visibility";
 import { listProducts, listUserScopeOverrides } from "@/lib/auth/scope-visibility";
 
@@ -12,7 +12,7 @@ export default async function ScopeVisibilityPage() {
   let initialProducts: ProductOption[] = [];
 
   try {
-    const access = await resolveAccessContextFromPage();
+    const access = await resolveAuthenticatedPageAccess();
     await assertPermission(access, "admin", "update");
     const [overrides, products] = await Promise.all([listUserScopeOverrides(), listProducts()]);
     initialData = overrides;

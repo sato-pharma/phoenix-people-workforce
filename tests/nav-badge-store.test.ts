@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   subscribeNavBadge,
   _resetNavBadgeChannels,
+  BADGE_COUNTS_ENDPOINT,
 } from "../src/lib/nav-badge-store.ts";
 
 // ── Minimal browser-environment mock ─────────────────────────────────────────
@@ -184,6 +185,55 @@ export async function runNavBadgeStoreTests() {
     unsub();
     _resetNavBadgeChannels();
     // Reset fetch mock to a normal one for any subsequent runs
+    setupFetch(0);
+  }
+
+  // ── 8. Approval badge srcs share ONE batched fetch (per-src counts intact) ──
+  {
+    _resetNavBadgeChannels();
+    const fetchedUrls: string[] = [];
+    (globalThis as unknown as Record<string, unknown>)["fetch"] = (url: string) => {
+      fetchedUrls.push(url);
+      return Promise.resolve({
+        json: () =>
+          Promise.resolve({
+            plan: { count: 2, overdue: false },
+            vacation: { count: 5, overdue: true },
+            excuse: { count: 0, overdue: false },
+            hub: { count: 9 },
+          }),
+      });
+    };
+
+    const vacationReceived: Array<{ count: number | null; overdue: boolean }> = [];
+    const hubReceived: Array<{ count: number | null; overdue: boolean }> = [];
+    const unsubVacation = subscribeNavBadge("/api/approvals/vacation/pending-count", (c, o) =>
+      vacationReceived.push({ count: c, overdue: o }),
+    );
+    const unsubHub = subscribeNavBadge("/api/approvals-hub/pending-count", (c, o) =>
+      hubReceived.push({ count: c, overdue: o }),
+    );
+    await flush();
+
+    assert.deepEqual(
+      fetchedUrls,
+      [BADGE_COUNTS_ENDPOINT],
+      "8: two badge srcs must share exactly one batched fetch to the badge-counts endpoint",
+    );
+    assert.deepEqual(
+      vacationReceived,
+      [{ count: 5, overdue: true }],
+      "8: the vacation channel must receive its own slot from the batched response",
+    );
+    assert.deepEqual(
+      hubReceived,
+      [{ count: 9, overdue: false }],
+      "8: the hub channel must receive its own slot (no overdue flag → false)",
+    );
+
+    unsubVacation();
+    unsubHub();
+    _resetNavBadgeChannels();
     setupFetch(0);
   }
 }

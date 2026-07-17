@@ -6,7 +6,7 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getNsmDsmPerformance, normalizeTeamComparisonPeriods } from "@/lib/employee-portal/service";
 
@@ -75,7 +75,7 @@ export default async function DsmsPerformancePage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");

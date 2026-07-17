@@ -156,17 +156,19 @@ export type FieldWorkforceMatrixVisit = IReports360Visit & {
  * must label it "logged", never "visited".
  */
 
-const FWC_TIME_ZONE = "Africa/Cairo";
 const LATE_START_THRESHOLD_MINUTES = 11 * 60 + 30; // 11:30 AM, owner-confirmed.
 
-/** Cairo-local minute-of-day for a timestamp, using real IANA timezone rules (not a fixed
- * UTC offset) — mirrors the proven technique in src/lib/attendance/punch-minutes.ts. */
+/** Cairo wall-clock minute-of-day for a vendor CRM save timestamp. iReports360 returns saveDate
+ * as a ZONE-LESS Cairo wall-clock ("2026-07-16T18:13:18"); the sync stores that string verbatim in
+ * a timestamptz column, so Postgres tags it +00 and it returns as an ...Z instant whose clock
+ * reading is ALREADY Cairo-local. Read it as-is (timeZone "UTC"); converting through Africa/Cairo
+ * would add the Egypt offset a SECOND time and report every logged time 2–3h late (false "late log"). */
 function cairoMinutesOfDay(date: Date): number | null {
   const parts = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     hourCycle: "h23",
     minute: "2-digit",
-    timeZone: FWC_TIME_ZONE,
+    timeZone: "UTC",
   }).formatToParts(date);
   const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? NaN);
   const hour = value("hour");

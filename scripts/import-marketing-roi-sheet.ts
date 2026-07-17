@@ -3,10 +3,10 @@
 // DRY-RUN by default (no writes). Add --execute to actually write. --limit N imports only
 // the first N importable line-items (useful for a staged first-batch check).
 //
-//   npm run marketing:roi-import                  # dry-run, full sheet
-//   npm run marketing:roi-import -- --limit 1     # dry-run, first item
-//   npm run marketing:roi-import -- --execute     # WRITE the whole sheet
-//   npm run marketing:roi-import -- --execute --limit 5
+//   pnpm run marketing:roi-import                  # dry-run, full sheet
+//   pnpm run marketing:roi-import -- --limit 1     # dry-run, first item
+//   pnpm run marketing:roi-import -- --execute     # WRITE the whole sheet
+//   pnpm run marketing:roi-import -- --execute --limit 5
 //
 // Targets whichever Supabase project .env.local points at.
 

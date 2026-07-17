@@ -4,7 +4,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getProbationConfig } from "@/lib/probation/intelligence/config";
@@ -23,7 +23,7 @@ export default async function StructuredFeedbackPage({
 }: {
   params: Promise<{ dvDayId: string }>;
 }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   await assertPermission(access, "probation", "read");
 
   const { dvDayId } = await params;

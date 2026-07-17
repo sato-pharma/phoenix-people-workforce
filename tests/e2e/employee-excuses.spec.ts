@@ -29,7 +29,7 @@ import { test, expect } from "@playwright/test";
  * - Optimistic submit animation (#1)
  * - Error boundary wrapping
  *
- * Run with:  npx playwright test tests/e2e/employee-excuses.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/employee-excuses.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/excuses";

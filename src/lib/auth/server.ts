@@ -186,7 +186,42 @@ export async function resolveSessionState(
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
-  const appSession = await validateAppSession(payload);
+  const supabase = getSupabaseAdmin();
+
+  // Parallelization invariant: the three lookups below (app_sessions via
+  // validateAppSession, app_auth_users, employees lifecycle) are each keyed off
+  // the signed token payload alone (payload.sid / payload.loginId / payload.hrId),
+  // so they can be fired concurrently. All are read-only. Every rejection check
+  // still runs below in EXACTLY the original sequential order with identical
+  // audit logging and error propagation — a speculative result is simply
+  // discarded when an earlier check rejects. The employees lifecycle gate is
+  // only trusted when the fresh app_auth_users row carries the same hr_id the
+  // token was speculatively keyed on; otherwise it is re-run keyed on the row
+  // (the exact key the sequential code used), so gate semantics are unchanged.
+  const [appSessionSettled, userLookupSettled, speculativeLifecycleGate] = await Promise.all([
+    validateAppSession(payload).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+    supabase
+      .from("app_auth_users")
+      .select("login_id, hr_id, role, is_active, session_version")
+      .eq("login_id", payload.loginId)
+      .maybeSingle()
+      .then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+    // Never rejects — resolveEmployeeLifecycleGate catches internally (fail closed).
+    resolveEmployeeLifecycleGate(supabase, payload.hrId),
+  ]);
+
+  // Check order below is byte-identical to the previous sequential version:
+  // app_sessions rejection first (its query error also propagates first), then
+  // the app_auth_users error/missing/inactive/role/version checks, then the
+  // employees lifecycle gate.
+  if (!appSessionSettled.ok) throw appSessionSettled.error;
+  const appSession = appSessionSettled.value;
   if (!appSession.ok) {
     await auditSessionRejection({
       entityId: payload.loginId,
@@ -202,12 +237,8 @@ export async function resolveSessionState(
     return null;
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("app_auth_users")
-    .select("login_id, hr_id, role, is_active, session_version")
-    .eq("login_id", payload.loginId)
-    .maybeSingle();
+  if (!userLookupSettled.ok) throw userLookupSettled.error;
+  const { data, error } = userLookupSettled.value;
 
   if (error) {
     throw error;
@@ -282,7 +313,13 @@ export async function resolveSessionState(
   // fails unexpectedly (fail closed — never silently allow when it cannot verify).
   // Missing employee row / unset status remain allowed. See
   // src/lib/auth/session-lifecycle.ts. (Read-only; no mutation.)
-  const lifecycleGate = await resolveEmployeeLifecycleGate(supabase, row.hr_id);
+  // The gate must be evaluated on the FRESH app_auth_users hr_id. The speculative
+  // parallel lookup above was keyed on payload.hrId; reuse it only when both keys
+  // normalize to the same employees lookup key, otherwise re-run on row.hr_id.
+  const lifecycleGate =
+    String(row.hr_id ?? "").trim() === String(payload.hrId ?? "").trim()
+      ? speculativeLifecycleGate
+      : await resolveEmployeeLifecycleGate(supabase, row.hr_id);
   if (!lifecycleGate.allowed) {
     await auditSessionRejection({
       entityId: row.login_id,

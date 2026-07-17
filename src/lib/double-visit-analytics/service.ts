@@ -1844,6 +1844,8 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
       matchStatus: "no_activity",
       missingDates: dates,
       pmWorkload: 0,
+      campaignVisits: 0,
+      regularVisits: 0,
       source: "manual",
       sourceLabel: "No employee HR ID available for Double Visit evidence matching.",
     };
@@ -1871,6 +1873,12 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     : missingDates.length > 0
       ? "partial"
       : "matched";
+  const campaignVisits = ownRows
+    .filter((row) => deriveVisitKind(row) !== "Regular")
+    .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+  const regularVisits = ownRows
+    .filter((row) => deriveVisitKind(row) === "Regular")
+    .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
   return {
     amWorkload: dateBreakdown.reduce((sum, row) => sum + row.am, 0),
     dateBreakdown,
@@ -1879,6 +1887,8 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     matchStatus,
     missingDates,
     pmWorkload: dateBreakdown.reduce((sum, row) => sum + row.pm, 0),
+    campaignVisits,
+    regularVisits,
     source: "double_visit_import",
     sourceLabel: "Live iReports360 Visits Report (double-visit mirror).",
   };

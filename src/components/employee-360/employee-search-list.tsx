@@ -1,10 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Search, SlidersHorizontal, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  Flag,
+  GraduationCap,
+  Map as MapIcon,
+  Package,
+  Search,
+  SlidersHorizontal,
+  Stethoscope,
+  Users,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import {
+  EMPLOYEE_360_ROLE_META,
+  EMPLOYEE_360_ROLE_ORDER,
+  type Employee360RoleCategory,
+} from "@/lib/employee-360/roles";
 
 export type Employee360ListItem = {
   hrId: string;
@@ -15,14 +32,23 @@ export type Employee360ListItem = {
   regionName: string | null;
   managerName: string | null;
   employmentStatus: string | null;
+  category: Employee360RoleCategory;
 };
 
-type FilterKey = "lineName" | "areaName" | "jobTitle" | "managerName";
+const TAB_ICON: Record<Employee360RoleCategory, LucideIcon> = {
+  "medical-rep": Stethoscope,
+  "district-manager": Users,
+  "regional-manager": MapIcon,
+  "national-sales-manager": Flag,
+  "product-manager": Package,
+  "training-manager": GraduationCap,
+};
+
+type FilterKey = "lineName" | "areaName" | "managerName";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "lineName", label: "Line" },
   { key: "areaName", label: "Area" },
-  { key: "jobTitle", label: "Job title" },
   { key: "managerName", label: "Manager" },
 ];
 
@@ -54,48 +80,99 @@ function uniqueSorted(values: (string | null)[]): string[] {
 }
 
 export function EmployeeSearchList({ employees }: { employees: Employee360ListItem[] }) {
+  const countByCategory = useMemo(() => {
+    const map = new Map<Employee360RoleCategory, number>();
+    for (const e of employees) map.set(e.category, (map.get(e.category) ?? 0) + 1);
+    return map;
+  }, [employees]);
+
+  // Tabs only for role families that actually have someone visible to this viewer.
+  const tabs = useMemo(
+    () => EMPLOYEE_360_ROLE_ORDER.filter((c) => (countByCategory.get(c) ?? 0) > 0),
+    [countByCategory],
+  );
+
+  const [activeTab, setActiveTab] = useState<Employee360RoleCategory>(tabs[0] ?? "medical-rep");
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<Record<FilterKey, string>>({
-    lineName: "",
-    areaName: "",
-    jobTitle: "",
-    managerName: "",
-  });
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({ lineName: "", areaName: "", managerName: "" });
   const [showFilters, setShowFilters] = useState(false);
+
+  const inTab = useMemo(() => employees.filter((e) => e.category === activeTab), [employees, activeTab]);
 
   const options = useMemo(
     () => ({
-      lineName: uniqueSorted(employees.map((e) => e.lineName)),
-      areaName: uniqueSorted(employees.map((e) => e.areaName)),
-      jobTitle: uniqueSorted(employees.map((e) => e.jobTitle)),
-      managerName: uniqueSorted(employees.map((e) => e.managerName)),
+      lineName: uniqueSorted(inTab.map((e) => e.lineName)),
+      areaName: uniqueSorted(inTab.map((e) => e.areaName)),
+      managerName: uniqueSorted(inTab.map((e) => e.managerName)),
     }),
-    [employees],
+    [inTab],
   );
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return employees.filter((e) => {
+    return inTab.filter((e) => {
       if (filters.lineName && e.lineName !== filters.lineName) return false;
       if (filters.areaName && e.areaName !== filters.areaName) return false;
-      if (filters.jobTitle && e.jobTitle !== filters.jobTitle) return false;
       if (filters.managerName && e.managerName !== filters.managerName) return false;
       if (!q) return true;
       return [e.displayName, e.hrId, e.jobTitle, e.lineName, e.areaName, e.regionName, e.managerName]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(q));
     });
-  }, [employees, query, filters]);
+  }, [inTab, query, filters]);
 
   const clearAll = () => {
     setQuery("");
-    setFilters({ lineName: "", areaName: "", jobTitle: "", managerName: "" });
+    setFilters({ lineName: "", areaName: "", managerName: "" });
   };
+
+  const switchTab = (c: Employee360RoleCategory) => {
+    setActiveTab(c);
+    clearAll();
+    setShowFilters(false);
+  };
+
+  const meta = EMPLOYEE_360_ROLE_META[activeTab];
 
   return (
     <div className="space-y-4">
+      {/* Role tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {tabs.map((c) => {
+          const Icon = TAB_ICON[c];
+          const active = c === activeTab;
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => switchTab(c)}
+              className={cn(
+                "flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition",
+                active
+                  ? "border-orange-500 bg-orange-500 text-white shadow-[0_6px_16px_rgba(249,115,22,0.28)]"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {EMPLOYEE_360_ROLE_META[c].tab}
+              <span
+                className={cn(
+                  "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black",
+                  active ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500",
+                )}
+              >
+                {countByCategory.get(c) ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="px-0.5 text-xs text-slate-500">{meta.description}</p>
+
+      {/* Search + filters */}
       <div className="rounded-[18px] border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
           <div className="relative flex-1">
@@ -104,7 +181,7 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name, HR ID, job title, line, area or manager…"
+              placeholder={`Search ${meta.label.toLowerCase()} by name, HR ID, line, area or manager…`}
               className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
               aria-label="Search employees"
             />
@@ -130,7 +207,7 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
         </div>
 
         {showFilters ? (
-          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-3">
             {FILTERS.map(({ key, label }) => (
               <label key={key} className="block">
                 <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500">
@@ -178,16 +255,18 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
 
       <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
         <span>
-          {filtered.length} of {employees.length} employees
+          {filtered.length} of {inTab.length} {meta.label.toLowerCase()}
         </span>
       </div>
 
       {filtered.length === 0 ? (
         <div className="rounded-[18px] border border-dashed border-slate-300 bg-white p-10 text-center">
-          <p className="text-sm font-semibold text-slate-500">No matches.</p>
-          <button type="button" onClick={clearAll} className="mt-2 text-xs font-bold text-orange-600 hover:underline">
-            Clear search and filters
-          </button>
+          <p className="text-sm font-semibold text-slate-500">No matches in {meta.label}.</p>
+          {query || activeFilterCount > 0 ? (
+            <button type="button" onClick={clearAll} className="mt-2 text-xs font-bold text-orange-600 hover:underline">
+              Clear search and filters
+            </button>
+          ) : null}
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -9,7 +9,7 @@ import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banne
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import { loadAnalyticsDimensions, loadCrossSource, type AnalyticsDimensions, type CrossSourceRow } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
@@ -146,7 +146,7 @@ async function ReconciliationContent({
 }
 
 export default async function ReconciliationPage({ searchParams }: { searchParams: SearchParams }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
 

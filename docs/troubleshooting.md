@@ -2,7 +2,7 @@
 
 ## Common Issues
 
-### `npm run test` fails with syntax errors
+### `pnpm run test` fails with syntax errors
 
 Tests require Node.js 22+ for `--experimental-strip-types` support.
 
@@ -24,7 +24,7 @@ Regenerate Next.js route types, then typecheck:
 
 ```bash
 npx next typegen
-npm run typecheck
+pnpm run typecheck
 ```
 
 ### Playwright tests fail to start
@@ -37,7 +37,7 @@ npx playwright install --with-deps chromium
 
 ### Dev auth not working
 
-Dev auth only works in development mode (`NODE_ENV=development`). Ensure you are running `npm run dev`, not a production build. The endpoint is:
+Dev auth only works in development mode (`NODE_ENV=development`). Ensure you are running `pnpm run dev`, not a production build. The endpoint is:
 
 ```
 GET /api/dev-auth?role=Super%20Admin
@@ -45,7 +45,7 @@ GET /api/dev-auth?role=Super%20Admin
 
 ### Build fails but typecheck passes
 
-The build may catch errors that typecheck alone misses (e.g., route type generation). Run `npx next typegen` before `npm run build`.
+The build may catch errors that typecheck alone misses (e.g., route type generation). Run `pnpm exec next typegen` before `pnpm run build`.
 
 ### Permission denied errors in API routes
 

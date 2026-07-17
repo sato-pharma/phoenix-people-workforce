@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, Banknote, Route, ShieldAlert, Target, Users, Wallet } from "lucide-react";
+import { ArrowDown, ArrowUp, Banknote, Route, Target, Users, Wallet } from "lucide-react";
 
 import { AdminStatCard } from "@/components/admin/admin-design-system";
 import { egp, orDash, pct } from "@/components/outstation/expense-shared/formatters";
@@ -131,21 +131,6 @@ export function ExpenseKpiRow({
         description: "total travelled",
         tone: "violet",
         icon: <Route className="h-4 w-4" />,
-      },
-      {
-        key: "risk",
-        label: "High-Risk",
-        value: (
-          <KpiValue
-            deltaPct={kpiDeltas?.highRiskRowsPct}
-            previousLabel={previousLabel}
-            primary={kpis.highRiskRows && kpis.highRiskRows > 0 ? kpis.highRiskRows.toLocaleString() : "—"}
-            sentiment="down"
-          />
-        ),
-        description: "fraud / territory flags",
-        tone: "rose",
-        icon: <ShieldAlert className="h-4 w-4" />,
       },
       {
         key: "employees",

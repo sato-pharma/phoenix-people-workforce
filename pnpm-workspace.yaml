@@ -1,0 +1,40 @@
+# pnpm settings (pnpm >= 11 reads overrides/build-script approvals from this file,
+# NOT from a "pnpm" key in package.json — that key is ignored with a warning).
+# This is a single-package repo: no `packages:` list on purpose.
+
+# Version pins previously enforced via npm's top-level package.json "overrides"
+# (transitive security/compat pins). Keep this list in sync with any advisory-driven
+# bumps; pnpm applies them to the whole graph exactly like npm overrides did.
+overrides:
+  "@babel/core": ^7.29.6
+  "@opentelemetry/core": ^2.8.0
+  "@opentelemetry/resources": ^2.8.0
+  "@opentelemetry/sdk-trace-base": ^2.8.0
+  hono: ^4.12.25
+  js-yaml: ^4.2.0
+  postcss: 8.5.12
+  qs: 6.15.2
+  tar: ^7.5.16
+  tmp: ^0.2.6
+  uuid: 11.1.1
+  ws: 8.21.0
+
+# Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
+# (pnpm 11 hard-fails the install on undecided ones: ERR_PNPM_IGNORED_BUILDS).
+# All four are approved `true` for exact behavioral parity with the previous
+# npm setup, which always ran them. Any NEW dependency with a build script will
+# fail the install until a decision is added here — that is deliberate
+# (supply-chain guard).
+# - supabase: postinstall downloads the Supabase CLI binary into node_modules;
+#   required by the db:*/phase* migration-gate scripts (`pnpm exec supabase ...`).
+# - sharp: transitive (next@16 image optimization) + direct devDep
+#   (scripts/optimize-brand-assets.mjs); prebuilt binaries via optional deps,
+#   script is a fallback compile — same as under npm.
+# - protobufjs (via @google-cloud/logging): trivial postinstall (version aliasing).
+# - unrs-resolver (via eslint-config-next): napi-postinstall fallback for the
+#   prebuilt native binding.
+allowBuilds:
+  protobufjs: true
+  sharp: true
+  supabase: true
+  unrs-resolver: true

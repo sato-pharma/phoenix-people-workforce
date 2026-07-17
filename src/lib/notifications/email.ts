@@ -713,12 +713,32 @@ function templateValue(input: NotificationEmailInput, value: string) {
   return value.replace(/\{([^}]+)\}/g, (_match, key: string) => variables[templateToken(key)] ?? "");
 }
 
+/**
+ * Resolve the greeting for the non-templated (general/probation-alert) notification path.
+ *
+ * Bug (owner report, 2026-07-17): this path always fell back to the generic "Dear {Brand} Team,"
+ * even when the system knew exactly who it was writing to (`input.recipientName` — set by
+ * buildChannelEmailInput for every single-recipient send). The templated-email path already does
+ * this fallback correctly (see the `recipientName` resolution near sendTemplatedEmail); this path
+ * did not. Only fall back to the team greeting when a notification-type policy has an explicit,
+ * genuinely custom greeting (e.g. birthday's "Dear {employee},") or the recipient's name is
+ * unknown (a role-based/HR-inbox send with no single addressee).
+ */
+function resolveGreeting(input: NotificationEmailInput, template?: EmailNotificationPolicy["template"]) {
+  const configured = template?.greeting;
+  const isGenericDefault = !configured || configured === systemNotificationEmailText.teamGreeting;
+  if (isGenericDefault && input.recipientName) {
+    return `Dear ${input.recipientHonorific ?? ""}${input.recipientName},`;
+  }
+  return templateValue(input, configured || systemNotificationEmailText.teamGreeting);
+}
+
 function effectiveTemplate(input: NotificationEmailInput, policy?: EmailNotificationPolicy): EmailTemplateContent {
   const template = policy?.template ?? defaultPolicyForType(input.notificationType ?? "general")?.template;
   return {
     bodyText: templateValue(input, template?.bodyText || "{summary}"),
     closingText: templateValue(input, template?.closingText || "Please review this update."),
-    greeting: templateValue(input, template?.greeting || systemNotificationEmailText.teamGreeting),
+    greeting: resolveGreeting(input, template),
     previewText: templateValue(input, template?.previewText || input.summary),
     subject: templateValue(input, template?.subject || "{subject}"),
     title: templateValue(input, template?.title || "{title}"),
@@ -1293,7 +1313,8 @@ export type OutboxSkipCode =
   | "policy_disabled"
   | "no_recipients"
   | "recipient_suppressed"
-  | "no_deliverable_recipient";
+  | "no_deliverable_recipient"
+  | "probation_audit_failed";
 
 export type OutboxSkipClass =
   | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
@@ -1732,6 +1753,39 @@ export async function cleanupOldNotificationData(): Promise<{
   return { eventsRedacted, outboxDeleted, outboxTerminalDeleted };
 }
 
+/**
+ * MOD-4 (2026-07-17): a pre-send correctness audit for probation emails. Before a probation email
+ * is dispatched from the outbox, confirm it is not broken — no unresolved {{token}} leaked into any
+ * user-facing value, a non-empty subject/title, and the employee shown by NAME (never a bare
+ * HR_ID). This is the runtime backstop to the build-time render-core harness: a broken probation
+ * email (like the 2026-07-14 blank-token incident) is BLOCKED from reaching an inbox and surfaced
+ * as a terminal skip instead of silently going out wrong.
+ */
+export function auditProbationOutboundEmail(payload: NotificationEmailInput): { ok: true } | { ok: false; reason: string } {
+  const strings: string[] = [];
+  const push = (v: unknown) => { if (typeof v === "string" && v.trim()) strings.push(v); };
+  push(payload.subject); push(payload.title); push(payload.summary); push(payload.ctaLabel);
+  for (const m of payload.metrics ?? []) push(String(m.value));
+  for (const v of Object.values(payload.templateContext ?? {})) push(typeof v === "string" ? v : "");
+
+  const unresolved = strings.find((s) => /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(s));
+  if (unresolved) return { ok: false, reason: `probation email carries an unresolved template token: "${unresolved.slice(0, 80)}"` };
+
+  if (!String(payload.subject ?? "").trim() && !String(payload.title ?? "").trim()) {
+    return { ok: false, reason: "probation email has no subject/title" };
+  }
+
+  const employeeHrId = String(payload.employeeHrId ?? "").trim().toUpperCase();
+  const nameCarriers = [
+    payload.templateContext?.employeeName,
+    payload.metrics?.find((m) => m.label.trim().toLowerCase() === "employee")?.value,
+  ].map((v) => String(v ?? "").trim()).filter(Boolean);
+  if (employeeHrId && nameCarriers.length > 0 && nameCarriers.some((n) => n.toUpperCase() === employeeHrId)) {
+    return { ok: false, reason: `probation email shows the raw HR_ID (${employeeHrId}) instead of the employee name` };
+  }
+  return { ok: true };
+}
+
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
   const claimed = await claimNotificationOutboxRow(row.id);
   if (!claimed) {
@@ -1753,6 +1807,20 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
         extra: { id: claimed.id, ...identity.metadata },
       });
       return { reason: identity.reason, skipped: true };
+    }
+
+    // MOD-4 pre-send audit — a probation email must pass a correctness check before it fires.
+    if (claimed.payload.notificationType === "probation") {
+      const audit = auditProbationOutboundEmail(claimed.payload);
+      if (!audit.ok) {
+        await markNotificationOutboxSkipped(claimed, audit.reason, "probation_audit_failed");
+        console.log("Probation email blocked by pre-send audit", {
+          level: "error",
+          tags: { component: "email", cron: "outbox-processing", notificationType: "probation", outboxSkipCode: "probation_audit_failed" },
+          extra: { id: claimed.id, reason: audit.reason },
+        });
+        return { reason: audit.reason, skipped: true };
+      }
     }
 
     const result = await sendNotificationEmailDirect(claimed.payload);
