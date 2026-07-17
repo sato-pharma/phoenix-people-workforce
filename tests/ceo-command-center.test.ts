@@ -115,12 +115,12 @@ export function runCeoCommandCenterTests() {
   );
   assert.match(
     ceoComponentSource,
-    /<DataUnavailableNotice sources=\{dataUnavailable\} \/>/,
+    /<DataUnavailableNotice sources=\{visibleDataUnavailable\} \/>/,
     "CEO fast path must render unavailable-source warnings",
   );
   assert.match(
     ceoComponentSource,
-    /const allClear = dataAvailable && attention\.length === 0 && totalApprovals === 0/,
+    /const allClear = dataAvailable && visibleAttention\.length === 0 && totalApprovals === 0/,
     "CEO all-clear must be blocked while any source is unavailable",
   );
   assert.match(
@@ -158,7 +158,7 @@ export function runCeoCommandCenterTests() {
     /href: "\/sales\/monthly-dashboard"/,
     "CEO Phase B smart navigation must not link to the redirecting monthly sales route",
   );
-  assert.match(ceoPhaseBSource, /SmartNavGrid\(\{ access \}/);
+  assert.match(ceoPhaseBSource, /SmartNavGrid access=\{access\} variant=\{variant\}/);
   assert.match(ceoPhaseBSource, /item\.href !== "\/employees" && item\.href !== "\/admin\/data-health"/);
   assert.match(attendanceAnalyticsPageSource, /canAccess\(access, "attendance", "read"\)/);
   assert.doesNotMatch(attendanceAnalyticsPageSource, /canAccess\(access, "employees", "read"\)/);
