@@ -9,6 +9,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -71,6 +72,10 @@ export type CrmVisitFilter = {
   dateTo?: string;
   /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
   agentHrIds?: readonly string[];
+  /** Case-insensitive exact match on a single resolved agent hr id (`agent_hr_id ILIKE`). For
+   * per-employee reads (e.g. probation SFE evidence) where the caller's hr-id casing may differ
+   * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
+  agentHrIdILike?: string;
   /** Restrict to these visit types (`visit_type IN`). */
   visitTypes?: readonly number[];
   /** Keep only rows with a real double partner (`double_crm_id` present and ≠ 0). */
@@ -87,6 +92,7 @@ type VisitFilterableQuery = {
   eq: (...args: any[]) => VisitFilterableQuery;
   gte: (...args: any[]) => VisitFilterableQuery;
   lte: (...args: any[]) => VisitFilterableQuery;
+  ilike: (...args: any[]) => VisitFilterableQuery;
   in: (...args: any[]) => VisitFilterableQuery;
   is: (...args: any[]) => VisitFilterableQuery;
   neq: (...args: any[]) => VisitFilterableQuery;
@@ -101,6 +107,7 @@ function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): 
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
@@ -200,6 +207,9 @@ export type CrmCheckinFilter = {
   agentCrmIds?: readonly number[];
   /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
   agentHrIds?: readonly string[];
+  /** Case-insensitive exact match on the resolved agent hr id (`agent_hr_id ILIKE`) — see the
+   * visit-filter note. */
+  agentHrIdILike?: string;
   /** Inclusive `check_date` lower bound as a date (YYYY-MM-DD); expanded to `T00:00:00`. */
   dateFrom?: string;
   /** Inclusive `check_date` upper bound as a date (YYYY-MM-DD); expanded to `T23:59:59`. */
@@ -210,6 +220,7 @@ export type CrmCheckinFilter = {
 type CheckinFilterableQuery = {
   gte: (...args: any[]) => CheckinFilterableQuery;
   lte: (...args: any[]) => CheckinFilterableQuery;
+  ilike: (...args: any[]) => CheckinFilterableQuery;
   in: (...args: any[]) => CheckinFilterableQuery;
   not: (...args: any[]) => CheckinFilterableQuery;
 };
@@ -221,6 +232,7 @@ function applyCheckinFilter(query: CheckinFilterableQuery, filter: CrmCheckinFil
   if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
   if (filter.dateTo) result = result.lte("check_date", `${filter.dateTo}T23:59:59`);
   return result;
@@ -541,4 +553,146 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
   const totalCount = count ?? rows.length;
 
   return { rows, totalCount, truncated: totalCount > rows.length };
+}
+
+// ── Consumer-specific read primitives ─────────────────────────────────────────────
+// Purpose-built reads that keep a consumer's exact query semantics (and its performance
+// tuning) inside the CRM module, so no module runs its own `.from("ireports360_*")`.
+
+const DISTINCT_AGENT_NAMES_CAP = 25000;
+
+/**
+ * Distinct agent names in [dateFrom, dateTo], resigned/excluded agents removed — feeds the CRM
+ * Integrity agent-filter dropdown. A single flat, capped, UNORDERED fetch (not a keyset scan):
+ * ordering by the random-uuid `id` abandons the `(visit_date)` index and is measurably slower
+ * (6.9s vs 3.9s on a real 30-day window), and only the small distinct-name set is needed, not
+ * every row. An unusually wide range could in theory truncate before every name is seen, which
+ * only narrows the dropdown — never the report's own rows. Returns `[]` if the schema is missing.
+ */
+export async function getVisitAgentNames(dateFrom: string, dateTo: string): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(CRM_VISITS_TABLE)
+    .select("agent_name")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+    .gte("visit_date", dateFrom)
+    .lte("visit_date", dateTo)
+    .limit(DISTINCT_AGENT_NAMES_CAP);
+  if (error) {
+    if (isCrmSchemaMissingError(error)) return [];
+    throw new Error(error.message);
+  }
+  const names = new Set<string>();
+  for (const row of (data ?? []) as Array<{ agent_name: string | null }>) {
+    if (row.agent_name) names.add(row.agent_name);
+  }
+  return Array.from(names).sort();
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape (see
+   VisitFilterableQuery note); the paginated builder mixes filter + transform methods. */
+type PagedVisitQuery = {
+  eq: (...args: any[]) => PagedVisitQuery;
+  order: (...args: any[]) => PagedVisitQuery;
+  range: (from: number, to: number) => Promise<{ data: any; error: { message: string } | null; count: number | null }>;
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * One page of visits plus the exact total match count — for table UIs (e.g. CRM Integrity) that
+ * render "page N of M". Applies the shared resigned exclusion + date range, an optional exact
+ * `agent_name` match, the caller's order chain, and a `.range()` window. Returns `{ rows, count }`
+ * (empty + 0 when the schema is missing).
+ */
+export async function queryVisitsPage<T = CrmVisitRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  agentName?: string | null;
+  columns: string;
+  orderBy: ReadonlyArray<{ column: string; ascending: boolean }>;
+  page: number;
+  pageSize: number;
+}): Promise<{ rows: T[]; count: number }> {
+  const supabase = getSupabaseAdmin();
+  const baseQuery = supabase.from(CRM_VISITS_TABLE).select(options.columns, { count: "exact" });
+  let query = applyVisitFilter(baseQuery as unknown as VisitFilterableQuery, {
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+  }) as unknown as PagedVisitQuery;
+  if (options.agentName) query = query.eq("agent_name", options.agentName);
+  for (const order of options.orderBy) query = query.order(order.column, { ascending: order.ascending });
+  const from = (options.page - 1) * options.pageSize;
+  const { data, error, count } = await query.range(from, options.page * options.pageSize - 1);
+  if (error) {
+    if (isCrmSchemaMissingError(error)) return { rows: [], count: 0 };
+    throw new Error(error.message);
+  }
+  return { rows: (data ?? []) as unknown as T[], count: count ?? 0 };
+}
+
+/**
+ * Full offset-paginated scan (via {@link fetchAllRows}) of every visit in [dateFrom, dateTo],
+ * resigned/excluded agents removed. Unlike {@link queryVisits} (keyset by `id`), it issues NO
+ * `.order()`, so a covering index on `visit_date` can serve each `.range()` page as an index-only
+ * scan — the access pattern the Field Workforce Compliance monthly-matrix build depends on to stay
+ * under the Postgres statement timeout when a whole month (~90k rows) must be in memory at once.
+ * Returns `[]` if the schema is missing.
+ */
+export async function scanVisitsForRange<T = CrmVisitRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+}): Promise<T[]> {
+  const supabase = getSupabaseAdmin();
+  try {
+    return await fetchAllRows<T>(() =>
+      supabase
+        .from(CRM_VISITS_TABLE)
+        .select(options.columns)
+        .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+        .gte("visit_date", options.dateFrom)
+        .lte("visit_date", options.dateTo),
+    );
+  } catch (error) {
+    if (isCrmSchemaMissingError(error)) return [];
+    throw error;
+  }
+}
+
+/**
+ * Presence check for the probation "CRM-unmapped" badge: of the given resolved hr ids, which
+ * actually appear as an `agent_hr_id` on at least one visit. Returns the distinct raw
+ * `agent_hr_id` values found (callers canonicalize).
+ *
+ * Deliberately does NOT apply the resigned/owner-excluded filter — this asks "does the CRM feed
+ * know this person at all", so an excluded-but-present agent must still count as mapped rather than
+ * be mislabeled a data gap. Full keyset scan (no silent 1000-row cap): a rep with any visit is
+ * mapped, so wider coverage only ever removes false "unmapped" flags, never adds them. Returns `[]`
+ * if the schema is missing.
+ */
+export async function getMappedAgentHrIds(hrIds: readonly string[]): Promise<string[]> {
+  if (hrIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const present = new Set<string>();
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, agent_hr_id")
+      .in("agent_hr_id", [...hrIds])
+      .order("id", { ascending: true })
+      .limit(DEFAULT_PAGE_SIZE);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_hr_id: string | null }>;
+    for (const row of page) {
+      if (row.agent_hr_id) present.add(row.agent_hr_id);
+    }
+    if (page.length < DEFAULT_PAGE_SIZE) break;
+    cursor = page[page.length - 1].id;
+  }
+  return Array.from(present);
 }

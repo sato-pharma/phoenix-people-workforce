@@ -21,9 +21,8 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
-import { fetchAllRows } from "@/lib/supabase/paginated";
+import { scanVisitsForRange } from "@/lib/crm/reads";
+import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
   daysInMonth,
@@ -556,20 +555,9 @@ async function loadHolidays(month: number, year: number): Promise<{
   }
 }
 
-const VISITS_MIRROR_TABLE = "ireports360_visits";
-
-/** Same schema-missing detection as src/lib/visits-report/service.ts's schemaMissing(). */
-function isVisitsMirrorSchemaMissingError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : JSON.stringify(error);
-  return /ireports360_visits|schema cache|does not exist|PGRST205|42P01/i.test(message);
-}
-
+/** The iReports360 visits mirror is ready when the CRM read layer can probe it (single source). */
 async function isVisitsReportSchemaReady(): Promise<boolean> {
-  const { error } = await getSupabaseAdmin()
-    .from(VISITS_MIRROR_TABLE)
-    .select("id", { count: "exact", head: true })
-    .limit(1);
-  return !isVisitsMirrorSchemaMissingError(error);
+  return isCrmVisitsSchemaReady();
 }
 
 export type VisitsMirrorRow = {
@@ -641,20 +629,17 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
  * logging-timing signal (computeLoggingTiming) is built on — see the comment above
  * FieldWorkforceMatrixVisit. */
 async function loadMirrorVisitsForRange(startDate: string, endDate: string): Promise<VisitsMirrorRow[]> {
-  const supabase = getSupabaseAdmin();
-  // fetchAllRows handles PostgREST's db-max-rows cap by paginating with .range().
-  // The covering index ireports360_visits_visit_date_covering_idx makes each page an
-  // index-only scan, keeping every page well within the 8s statement timeout regardless
-  // of the total row count or offset depth.
-  return fetchAllRows<VisitsMirrorRow>(
-    () =>
-      supabase
-        .from(VISITS_MIRROR_TABLE)
-        .select("agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, double_crm_id, double_hr_id, double_name, visit_date, visit_type")
-        .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-        .gte("visit_date", startDate)
-        .lte("visit_date", endDate),
-  );
+  // Reads through the CRM single-door range scanner, which offset-paginates past the db-max-rows
+  // cap WITHOUT an ORDER BY so the covering index ireports360_visits_visit_date_covering_idx can
+  // serve each page as an index-only scan — keeping a full month (~90k rows) well within the 8s
+  // statement timeout. Resigned/excluded agents are removed inside the read layer (single source).
+  return scanVisitsForRange<VisitsMirrorRow>({
+    dateFrom: startDate,
+    dateTo: endDate,
+    columns:
+      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, " +
+      "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
+  });
 }
 
 function validateMonthYear(month: number, year: number): void {
