@@ -32,6 +32,7 @@ export function runProbationAssessmentsTests() {
     assert.equal(ev.totalVisits, 5);
     assert.equal(ev.activeVisitDays, 2, "distinct visit days");
     assert.equal(ev.distinctCustomers, 3, "distinct contact ids (null excluded)");
+    assert.equal(ev.unmappedContactVisits, 1, "the 1 null-contact visit is counted as unmapped");
     assert.equal(ev.checkinCount, 4);
     assert.equal(ev.daysWithCheckin, 2);
 
@@ -45,6 +46,37 @@ export function runProbationAssessmentsTests() {
     // Plan adherence is honestly unavailable, not faked.
     assert.equal(byKey.plan_adherence.available, false);
     assert.equal(byKey.plan_adherence.value, null);
+    assert.match(byKey.customer_coverage.note ?? "", /1 of 5 visits have an unmapped contact/, "coverage note surfaces the unmapped count");
+  }
+
+  // Owner-reported SFE bug (2026-07-17): contact_crm_id = 0 is the CRM "unmapped/unspecified contact"
+  // sentinel — it must NOT count as a real customer (matches crm/master.ts). A rep whose visits are
+  // entirely unmapped previously read "1 distinct customer"; it must read 0.
+  {
+    const allUnmapped = [
+      { visit_date: "2026-06-01", contact_crm_id: 0 },
+      { visit_date: "2026-06-02", contact_crm_id: 0 },
+      { visit_date: "2026-06-03", contact_crm_id: 0 },
+    ];
+    const ev = computeSfeEvidence(allUnmapped, [], { from: "2026-06-01", to: "2026-06-10" }, "t");
+    assert.equal(ev.distinctCustomers, 0, "the 0 unmapped-contact sentinel is NOT a customer (was mis-counted as 1)");
+    assert.equal(ev.unmappedContactVisits, 3, "all-zero-contact visits are all unmapped");
+    const byKey = Object.fromEntries(ev.metrics.map((m) => [m.key, m]));
+    assert.equal(byKey.customer_coverage.value, 0);
+    assert.match(byKey.customer_coverage.note ?? "", /3 of 3 visits have an unmapped contact/, "note explains the 0 coverage");
+  }
+
+  // Mixed real + unmapped: only the real (non-zero) contacts count.
+  {
+    const mixed = [
+      { visit_date: "2026-06-01", contact_crm_id: 7 },
+      { visit_date: "2026-06-01", contact_crm_id: 0 },
+      { visit_date: "2026-06-02", contact_crm_id: 9 },
+      { visit_date: "2026-06-02", contact_crm_id: null },
+    ];
+    const ev = computeSfeEvidence(mixed, [], { from: "2026-06-01", to: "2026-06-10" }, "t");
+    assert.equal(ev.distinctCustomers, 2, "only 7 and 9 are real customers");
+    assert.equal(ev.unmappedContactVisits, 2, "the 0 and null contacts are unmapped");
   }
 
   // Empty data → metrics null/unavailable, never throws.
