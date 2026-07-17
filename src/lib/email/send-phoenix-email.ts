@@ -31,6 +31,12 @@ export type SendPhoenixEmailInput = {
   fanoutToBcc?: boolean;
   from?: string;
   headers?: Record<string, string>;
+  /**
+   * Per-send Reply-To override. When unset, falls back to NOTIFICATION_REPLY_TO / the
+   * system default reply-to. Lets a specific email type (e.g. job offers) route replies
+   * to a dedicated inbox without changing every other email's reply-to.
+   */
+  replyTo?: string;
   html: string;
   idempotencyKey: string;
   subject: string;
@@ -216,13 +222,15 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   let cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(removeNonDeliverable(input.cc), suppressed) : undefined;
   let bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(removeNonDeliverable(input.bcc), suppressed) : undefined;
 
+  const resolvedReplyTo = input.replyTo || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
+
   let finalTo = to;
   // Privacy: a multi-recipient fan-out must not expose every recipient to the others.
   // Move them to BCC behind a neutral visible To (never in testing-redirect mode).
   if (input.fanoutToBcc && !testingRecipients && finalTo.length > 1) {
     bcc = Array.from(new Set([...finalTo, ...(bcc ?? [])]));
     cc = undefined;
-    finalTo = [process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo];
+    finalTo = [resolvedReplyTo];
   }
 
   // Always CC omar.anwar@satopharma.com on every automated system email (all modules, all types).
@@ -242,7 +250,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     headers: emailHeaders,
     html: input.html,
     idempotencyKey: input.idempotencyKey,
-    replyTo: process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo,
+    replyTo: resolvedReplyTo,
     subject: input.subject,
     text: input.text,
     to: finalTo,

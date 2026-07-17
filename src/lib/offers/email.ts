@@ -113,6 +113,10 @@ export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<Send
     },
     fallbackTo: [input.candidateEmail],
     from: process.env.JOB_OFFER_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM,
+    // Candidate replies to a job offer must reach the HR inbox (a real receiving mailbox),
+    // not the outbound sending address. Reply-To needs no SPF/DKIM, so hr@satopharma.com is
+    // safe here even though sends go out via the verified send.satopharma.com domain.
+    replyTo: process.env.JOB_OFFER_REPLY_TO || "hr@satopharma.com",
     templateKey: "offer",
   });
 }
