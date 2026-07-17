@@ -140,6 +140,23 @@ export function canReadAllProbation(access: Pick<AccessContext, "role" | "scope"
   return canViewAllProbation(access) || access.role === "CEO";
 }
 
+// Probation Analytics (historical outcomes) audience — owner rule 2026-07-17. The feedback-submitting
+// manager tiers (National Sales Manager, Product / Group Product Manager) plus SFE, admin, and the CEO
+// get the read-only outcomes dashboard. This is deliberately WIDER than canReadAllProbation (which
+// gates the operational tracker/exports) so evaluators can see aggregate pass/terminate trends without
+// gaining the operational or administrative surfaces.
+const probationAnalyticsRoles: ReadonlySet<AccessContext["role"]> = new Set([
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "SFE Manager",
+  "CEO",
+  "Super Admin",
+]);
+export function canViewProbationAnalytics(access: Pick<AccessContext, "role" | "scope">) {
+  return access.scope === "system" || canReadAllProbation(access) || probationAnalyticsRoles.has(access.role);
+}
+
 export function assertCanExportProbation(access: AccessContext) {
   if (!canViewAllProbation(access)) {
     throw new Error(`Forbidden: ${access.role} cannot export probation.`);
