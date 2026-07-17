@@ -97,8 +97,6 @@ export function RouteMapPreview({
         tripEndDate: request.tripEndDate,
         tripStartDate: request.tripStartDate,
         updatedAt: request.submittedAt,
-        varianceAmount: request.varianceAmount,
-        variancePercent: request.variancePercent,
       };
 
   return <OutstationReviewMap request={mapRequest} />;

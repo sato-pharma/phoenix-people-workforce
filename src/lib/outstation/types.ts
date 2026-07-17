@@ -203,8 +203,6 @@ export type OutstationCalculationResult = OutstationCaptureResult & {
   transportationType: OutstationTransportationType;
   tripEndDate: string;
   tripStartDate: string;
-  varianceAmount: number;
-  variancePercent: number;
 };
 
 export type OutstationExpenseRequest = {
@@ -290,8 +288,6 @@ export type OutstationExpenseRequest = {
   workloadOverrideReason: string | null;
   workloadSource: string;
   workloadSourceImportId: string | null;
-  varianceAmount: number;
-  variancePercent: number;
 };
 
 export type PlacesPrediction = {
@@ -341,7 +337,6 @@ export type OutstationHeatmapMarker = {
   longitude: number;
   recommendation: OutstationApprovalRecommendation;
   status: OutstationEligibilityStatus;
-  varianceAmount: number;
 };
 
 export type OutstationHeatmapData = {
@@ -351,7 +346,7 @@ export type OutstationHeatmapData = {
     statuses: OutstationEligibilityStatus[];
   };
   heatmapRows: {
-    byArea: Array<{ label: string; totalVariance: number; trips: number }>;
+    byArea: Array<{ label: string; totalExpenses: number; trips: number }>;
     byCity: Array<{ label: string; totalExpenses: number; trips: number }>;
     byLine: Array<{ label: string; totalExpenses: number; trips: number }>;
     highRiskByLocation: Array<{ label: string; highRiskTrips: number }>;
@@ -361,7 +356,6 @@ export type OutstationHeatmapData = {
     totalClaimed: number;
     totalExpected: number;
     totalRequests: number;
-    totalVariance: number;
   };
   markers: OutstationHeatmapMarker[];
 };
