@@ -64,22 +64,42 @@ export function runOutstationNotificationsTests() {
     "submit notification recipients must be scoped to Super Admin + CEO roles",
   );
 
-  const submitHooks = [
-    "async function submitOutstationRequest",
+  // submitOutstationRequest now makes the system decision itself: accepted -> push to
+  // payroll + Super Admin/CEO alert; a rejected_by_system decision persists the request
+  // and notifies the employee (no throw).
+  const submitDecisionSlice = functionSlice(service, "async function submitOutstationRequest");
+  assert.match(
+    submitDecisionSlice,
+    /notifyOutstationSubmitted\(/,
+    "an accepted submit fires the Super Admin/CEO alert",
+  );
+  assert.match(
+    submitDecisionSlice,
+    /notifyOutstationDecision\(/,
+    "a system-rejected submit notifies the employee",
+  );
+  assert.match(
+    submitDecisionSlice,
+    /rejected_by_system/,
+    "a failed decision persists as rejected_by_system rather than throwing",
+  );
+
+  // The medical-rep and admin-manual flows still auto-accept via approveOutstationRequestForPayroll.
+  const autoAcceptHooks = [
     "async function submitMedicalRepSimpleExpenseRequest",
     "async function createManagerExpenseAsAdmin",
   ];
-  for (const hook of submitHooks) {
+  for (const hook of autoAcceptHooks) {
     const slice = functionSlice(service, hook);
     assert.doesNotMatch(
       slice,
       /notifyOutstationSubmitted\(/,
-      `${hook} must not call the submit notification directly — it fires once, from inside approveOutstationRequestForPayroll`,
+      `${hook} must not call the submit notification directly — it fires from inside approveOutstationRequestForPayroll`,
     );
     assert.match(
       slice,
       /approveOutstationRequestForPayroll\(/,
-      `RULE 1: ${hook} must auto-approve on submit`,
+      `${hook} must auto-accept on submit`,
     );
   }
 

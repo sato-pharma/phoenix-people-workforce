@@ -24,6 +24,10 @@ export function toOutstationExpenseWorkflowStatus(
   const normalized = String(status ?? "").trim().toLowerCase();
   if (!normalized) return "draft";
   if (normalized === "submitted") return "pending";
+  // The granular decision statuses fold onto the registry's approved / rejected so the
+  // workflow registry needs no schema change.
+  if (normalized === "accepted_by_system" || normalized === "accepted_by_admin") return "approved";
+  if (normalized === "rejected_by_system" || normalized === "rejected_by_admin") return "rejected";
   return normalized;
 }
 

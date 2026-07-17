@@ -104,7 +104,7 @@ export async function listExpenseCandidates(period: CopilotPeriod): Promise<Expe
       .select(
         "id,employee_hr_id,employee_name,trip_start_date,trip_end_date,residence_city,residence_area,to_city,to_area,distance_km,expense_type,fuel_amount,ticket_amount,allowance_amount",
       )
-      .eq("status", "approved")
+      .in("status", ["accepted_by_system", "accepted_by_admin", "approved"])
       .lte("trip_start_date", end)
       .gte("trip_end_date", start),
     getEmployeeDirectory(),
