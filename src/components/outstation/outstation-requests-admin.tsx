@@ -120,8 +120,8 @@ function statusTone(status: string) {
 
 function requestStatusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized === "approved") return "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]";
-  if (normalized === "rejected") return "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]";
+  if (normalized.includes("accept") || normalized === "approved") return "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]";
+  if (normalized.includes("reject") || normalized === "rejected") return "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]";
   return "bg-[#FFF7ED] text-[#C2410C] ring-[#FED7AA]";
 }
 
@@ -210,23 +210,27 @@ function RequestActionButtons({
   const approving = busy && acting?.action === "approve";
   const deleting = busy && acting?.action === "delete";
   const rejecting = busy && acting?.action === "reject";
-  const terminal = request.status === "approved" || request.status === "rejected";
+  // Super-Admin override: a system-rejected request can still be accepted, and an
+  // accepted one can still be rejected — only disable the action that matches the
+  // current decision.
+  const isAccepted = request.status.includes("accept");
+  const isRejected = request.status.includes("reject");
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           className="gap-2 rounded-xl bg-[#047857] px-4 py-2 text-xs font-black text-white hover:bg-[#065F46]"
-          disabled={!canApprove || busy || terminal || request.eligibilityStatus === "not_eligible"}
+          disabled={!canApprove || busy || isAccepted}
           onClick={() => onApprove(request)}
           type="button"
         >
           {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-          Approve for payroll
+          Accept for payroll
         </Button>
         <Button
           className="gap-2 rounded-xl bg-[#B91C1C] px-4 py-2 text-xs font-black text-white hover:bg-[#991B1B]"
-          disabled={!canApprove || busy || terminal}
+          disabled={!canApprove || busy || isRejected}
           onClick={() => onReject(request)}
           type="button"
         >
@@ -244,10 +248,10 @@ function RequestActionButtons({
           Delete expense
         </Button>
       </div>
-      {request.status === "approved" ? (
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Approved - payroll import lock checked before delete</p>
+      {isAccepted ? (
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Accepted - payroll import lock checked before delete</p>
       ) : null}
-      {request.status === "rejected" ? (
+      {request.status.includes("reject") ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
       ) : null}
       {actionMessage && busy ? <p className="text-sm font-semibold text-[#047857]">{actionMessage}</p> : null}
@@ -659,9 +663,9 @@ export function OutstationRequestsAdmin({
   const totals = useMemo(() => {
     return filtered.reduce(
       (accumulator, request) => {
-        accumulator.approved += request.status === "approved" ? 1 : 0;
+        accumulator.approved += request.status.includes("accept") || request.status === "approved" ? 1 : 0;
         accumulator.claimed += request.claimedTotalAmount;
-        accumulator.rejected += request.status === "rejected" ? 1 : 0;
+        accumulator.rejected += request.status.includes("reject") ? 1 : 0;
         accumulator.submitted += request.status === "submitted" ? 1 : 0;
         return accumulator;
       },

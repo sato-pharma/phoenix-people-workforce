@@ -39,7 +39,9 @@ export default defineConfig({
     {
       name: "chromium",
       dependencies: ["setup"],
-      testIgnore: /data-bearing\.spec\.ts/,
+      // outstation-roles is dev-auth-only (localhost + NODE_ENV=development); it has its
+      // own playwright.dev-auth.config.ts and must not run in the default/CI (prod-mode) run.
+      testIgnore: /(data-bearing|outstation-roles)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: AUTH_STATE_PATH,

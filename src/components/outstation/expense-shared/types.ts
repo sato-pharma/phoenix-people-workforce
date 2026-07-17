@@ -12,7 +12,6 @@ export type {
   ExpenseCommandLeaderboards,
   ExpenseCommandHeatPoint,
   ExpenseSpenderRow,
-  ExpenseRiskLocationRow,
   ExpenseSource,
   ExpenseSourceTotals,
   ExpenseDatePreset,

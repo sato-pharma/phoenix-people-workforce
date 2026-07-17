@@ -23,6 +23,10 @@ type GeocodeResponse = {
   area: string | null;
   city: string | null;
   formattedAddress: string | null;
+  // administrative_area_level_1, " Governorate" suffix stripped (e.g. "Dakahlia").
+  // Raw Google value (language follows the account default) — canonicalize with
+  // resolveGovernorate() at the call site before comparing.
+  governorate: string | null;
   lat: number;
   lng: number;
 };
@@ -391,6 +395,9 @@ export async function googleReverseGeocode(
     return null;
   }
 
+  const governorate = extractAddressComponent(result.address_components, [
+    "administrative_area_level_1",
+  ]);
   return {
     area:
       extractAddressComponent(result.address_components, [
@@ -404,6 +411,7 @@ export async function googleReverseGeocode(
         "administrative_area_level_1",
       ]) ?? null,
     formattedAddress: result.formatted_address ?? null,
+    governorate: governorate ? governorate.replace(/\s*Governorate$/i, "").trim() : null,
     lat: Number(geo.lat),
     lng: Number(geo.lng),
   };
