@@ -4,6 +4,7 @@ import {
   type CrmIntegrityVisitInput,
 } from "@/lib/crm-integrity/correlation";
 import type { CrmIntegrityData, CrmIntegrityFilterInput, CrmIntegrityRow } from "@/lib/crm-integrity/types";
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
 import { isIReports360Configured } from "@/lib/field-workforce-compliance/ireports360-config";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -132,6 +133,7 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
   const { data, error } = await getSupabaseAdmin()
     .from(visitsTable)
     .select("agent_name")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo)
     .limit(distinctAgentNamesFetchCap);
@@ -173,6 +175,7 @@ export async function getCrmIntegrityData(
     .select("id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, contact_crm_id, contact_name, customer_name, comment, visit_date, visit_date_time, crm_save_date", {
       count: "exact",
     })
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo);
   if (input.agentName) visitsQuery = visitsQuery.eq("agent_name", input.agentName);
