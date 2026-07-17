@@ -14,7 +14,7 @@ import {
   assertPermission,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   employeeDirectoryErrorMessage,
   isEmployeeDirectoryEnvMissing,
@@ -54,7 +54,7 @@ export default async function EmployeePortalProbationPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/probation");

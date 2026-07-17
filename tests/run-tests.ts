@@ -266,6 +266,7 @@ import { runOutstationPolicyClassificationTests } from "./outstation-policy-clas
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
+import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
 import { runAuthAuditHardeningTests } from "./auth-audit-hardening.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-validation.test.ts";
@@ -686,6 +687,7 @@ await runTest("probation stabilization", runProbationStabilizationTests);
 await runTest("probation feedback security", runProbationFeedbackSecurityTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
+await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
 await runTest("auth audit hardening", runAuthAuditHardeningTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
 await runTest("employee import seat validation", runEmployeeImportSeatValidationTests);
