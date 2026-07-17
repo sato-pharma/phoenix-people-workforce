@@ -296,13 +296,17 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "203", crmUsername: null, employmentStatus: "active", fullName: "Timing Four", hireDate: "2024-01-01", hrId: "T-4", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const timingVisits: FieldWorkforceMatrixVisit[] = [
+    // iReports360 stores saveDate as a ZONE-LESS Cairo wall-clock tagged +00 (verified in
+    // production), so a visit logged at 10:15 Cairo is stored — and read back — as 10:15:00Z. The
+    // code reads that clock as-is and must NOT re-convert through Africa/Cairo, so these fixtures
+    // carry the real wall-clock the rep logged at, as a ...Z instant (no offset juggling).
     // T-1: two visits same day, logged 10:15 Cairo (AM-tagged, on-time) and 15:30 Cairo (PM-tagged).
-    { ...baseVisit(200, "x"), ampm: "AM", visitDate: "2026-05-06", saveDate: "2026-05-06T07:15:00Z" },
-    { ...baseVisit(200, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:30:00Z" },
+    { ...baseVisit(200, "x"), ampm: "AM", visitDate: "2026-05-06", saveDate: "2026-05-06T10:15:00Z" },
+    { ...baseVisit(200, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T15:30:00Z" },
     // T-2: single AM-tagged visit logged at 13:15 Cairo — logged past 11:30 -> late start.
-    { ...baseVisit(201, "x"), ampm: "am", visitDate: "2026-05-06", saveDate: "2026-05-06T10:15:00Z" },
+    { ...baseVisit(201, "x"), ampm: "am", visitDate: "2026-05-06", saveDate: "2026-05-06T13:15:00Z" },
     // T-3: only a PM-tagged visit that day -> no AM entry to judge -> isLateStart must be null, not false.
-    { ...baseVisit(202, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:00:00Z" },
+    { ...baseVisit(202, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T15:00:00Z" },
     // T-4: visit with no saveDate at all (e.g. a defensive/legacy shape) -> no timing entry.
     { ...baseVisit(203, "x"), ampm: "AM", visitDate: "2026-05-06" },
   ];

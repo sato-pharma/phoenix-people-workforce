@@ -7,13 +7,17 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/types";
 
+// Vendor CRM timestamps (visit_date / check_date) are zone-less Cairo wall-clock stored as +00,
+// so their clock reading is ALREADY Cairo-local. Render as-is with timeZone "UTC" — this is a
+// client component, so without it the browser's own zone (Cairo) would double-add the offset and
+// show check-in times 2–3h late.
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function formatTime(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 }
 
 function ContactMatchBadge({ row }: { row: CrmIntegrityRow }) {
