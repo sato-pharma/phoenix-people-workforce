@@ -127,6 +127,24 @@ export async function runCeoAccountContractTests() {
     /href: "\/admin\/ceo-command-center"[\s\S]{0,180}roles: \["CEO"\]/,
     "CEO sidebar command-center item must link directly to the dedicated CEO route",
   );
+  // The sidebar exposes the "Source of Sales" hub button to CEO (only Marketing
+  // Manager is excluded there) and CEO can open the Source of Sales Dash card,
+  // so the hub page must NOT redirect CEO away. Guard the page's own exclusion
+  // list directly — the nav-visibility loop above never exercises this runtime
+  // redirect, which is how the CEO bounce-to-portal regression slipped through.
+  const sourceOfSalesHubSource = readFileSync("app/(admin)/sales/source-of-sales-tools/page.tsx", "utf8");
+  const sosExcludedRolesMatch = sourceOfSalesHubSource.match(/SOURCE_OF_SALES_EXCLUDED_ROLES\s*=\s*\[([^\]]*)\]/);
+  assert.ok(sosExcludedRolesMatch, "Source of Sales hub must define SOURCE_OF_SALES_EXCLUDED_ROLES");
+  assert.doesNotMatch(
+    sosExcludedRolesMatch[1],
+    /"CEO"/,
+    "Source of Sales hub must not exclude CEO — it would redirect CEO to the employee portal despite the sidebar exposing the hub button to CEO",
+  );
+  assert.match(
+    sosExcludedRolesMatch[1],
+    /"Marketing Manager"/,
+    "Source of Sales hub must still exclude Marketing Manager (excluded from every card + lacks sales:import, so a genuinely empty hub)",
+  );
   // Attendance Analytics now lives behind the "Attendance Management" hub (single
   // sidebar entry at /attendance) rather than as its own top-level sidebar item —
   // check its real gate on the exported card list instead of the raw source text.
