@@ -177,8 +177,8 @@ export function runEmployeePortalNavigationTests() {
   );
   assert.equal(
     resolveLandingPathForRole("SFE Manager"),
-    "/workspace/marketing-requests",
-    "SFE Manager should land in its de-duplicated /workspace marketing home",
+    "/admin/sfe-command-center",
+    "SFE Manager should land in the dedicated SFE Manager overview",
   );
 
   const marketingManager = resolveEmployeePortalNavVisibility("Marketing Manager");
