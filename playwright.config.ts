@@ -18,7 +18,7 @@ export default defineConfig({
     // In CI: serve the pre-built production bundle (no HMR, no Turbopack lazy-compile
     // latency — avoids the networkidle / login-timeout flakiness seen with `next dev`).
     // Locally: use the dev server for hot-reload convenience.
-    command: process.env.CI ? "npm run start" : "npm run dev -- -p 3000",
+    command: process.env.CI ? "pnpm run start" : "pnpm run dev -- -p 3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: "http://localhost:3000/login",

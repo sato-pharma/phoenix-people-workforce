@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
  * - Print stylesheet
  * - Error boundary verification
  *
- * Run with:  npx playwright test tests/e2e/submit-expense.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/submit-expense.spec.ts
  */
 
 const BASE_URL = `${process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000"}/employee-portals/submit-expense`;

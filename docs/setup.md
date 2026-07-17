@@ -12,7 +12,7 @@
 ```bash
 git clone <repo-url>
 cd phoenix-workforce
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 ## Environment Configuration
@@ -40,7 +40,7 @@ etc.) — dev-auth and the dev server will fail until you populate it. From
 inside the new worktree, run:
 
 ```bash
-npm run worktree:sync-env
+pnpm run worktree:sync-env
 ```
 
 This copies `.env.local` and the other local-only env files (`.env.*.rls.local`,
@@ -52,13 +52,13 @@ it once per new worktree, right after `git worktree add`.
 ## Start the Dev Server
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Opens at http://localhost:3000. On macOS/Linux this uses Turbopack for faster
 refreshes. On Windows, Turbopack is automatically disabled because its SWC
 worker processes are unstable on NTFS and can crash, breaking client resource
-loading. To opt in to Turbopack on Windows anyway, run `npm run dev:turbopack`.
+loading. To opt in to Turbopack on Windows anyway, run `pnpm run dev:turbopack`.
 
 ## Dev Auth (Local Testing)
 
@@ -77,13 +77,13 @@ To also enable dev auth headers (`x-phoenix-role`, `x-phoenix-hr-id`), set `PHOE
 Fast inner loop (typecheck only):
 
 ```bash
-npm run check:edit
+pnpm run check:edit
 ```
 
 Full pre-commit validation (lint + typecheck + test + build):
 
 ```bash
-npm run check:harden
+pnpm run check:harden
 ```
 
 Always run `check:harden` before committing, pushing, or creating PRs.
@@ -93,19 +93,19 @@ Always run `check:harden` before committing, pushing, or creating PRs.
 Unit/integration tests:
 
 ```bash
-npm run test
+pnpm run test
 ```
 
 Playwright E2E smoke:
 
 ```bash
-npm run test:e2e:smoke
+pnpm run test:e2e:smoke
 ```
 
 Full E2E suite:
 
 ```bash
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 See `docs/testing.md` for details.

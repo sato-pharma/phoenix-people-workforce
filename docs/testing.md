@@ -14,7 +14,7 @@ Located in `tests/*.test.ts`. Each file exports a named run function (e.g., `run
 ### Running
 
 ```bash
-npm run test
+pnpm run test
 ```
 
 This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 22+).
@@ -26,7 +26,7 @@ This executes `tests/run-tests.ts`, which imports and runs all registered test f
 3. Use `node:assert/strict` for assertions
 4. Import domain code directly with `.ts` extensions (e.g., `../src/lib/domain/service.ts`)
 5. Wire the function into `tests/run-tests.ts` by adding a `runTest()` call
-6. Run `npm run test` to verify
+6. Run `pnpm run test` to verify
 
 ### Filtering Tests
 
@@ -44,10 +44,10 @@ Located in `tests/e2e/*.spec.ts`. Configuration in `playwright.config.ts`.
 
 ```bash
 # Smoke test (login only)
-npm run test:e2e:smoke
+pnpm run test:e2e:smoke
 
 # Full suite
-npm run test:e2e
+pnpm run test:e2e
 
 # Install browsers first if needed
 npx playwright install --with-deps chromium

@@ -297,8 +297,8 @@ Current test coverage includes auth sessions, coaching, employee portal behavior
 
 Safe local checks:
 
-- `npm run typecheck`
-- `npm run test`
-- `npm run build`
-- `npm audit --audit-level=low`
+- `pnpm run typecheck`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm audit --audit-level=low`
 - Targeted Playwright checks where a UI flow needs browser verification
