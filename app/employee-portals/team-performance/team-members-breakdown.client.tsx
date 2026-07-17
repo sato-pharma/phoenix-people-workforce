@@ -235,7 +235,13 @@ function SalesVsTargetTooltip({
   );
 }
 
-export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData[] }) {
+export function TeamSalesVsTargetChart({
+  members,
+  minHeightPx = 320,
+}: {
+  members: DsmTeamMemberData[];
+  minHeightPx?: number;
+}) {
   const [activeDatum, setActiveDatum] = useState<SalesVsTargetChartDatum | null>(null);
   const chartData = members.map((m) => ({
     name: displayName(m.name),
@@ -245,7 +251,7 @@ export function TeamSalesVsTargetChart({ members }: { members: DsmTeamMemberData
   return (
     <div className="min-w-0 overflow-hidden pb-2">
       <div role="img" aria-label="Sales versus target comparison bar chart for each team member">
-        <SafeResponsiveContainer className="h-80 min-h-80 w-full min-w-0" minHeight={320}>
+        <SafeResponsiveContainer className="w-full min-w-0" minHeight={minHeightPx} style={{ height: minHeightPx }}>
           <BarChart data={chartData} margin={{ left: 0, right: 0, top: 8, bottom: 36 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis

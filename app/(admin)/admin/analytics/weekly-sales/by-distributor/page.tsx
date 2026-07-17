@@ -9,7 +9,7 @@ import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav"
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   loadAnalyticsDimensions,
   loadWeeklyFact,
@@ -112,7 +112,7 @@ async function ByDistributorContent({
 }
 
 export default async function WeeklyByDistributorPage({ searchParams }: { searchParams: SearchParams }) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "weekly_sales", "read");
 

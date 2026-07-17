@@ -1,0 +1,41 @@
+# Used by .github/workflows/deploy-cloud-run.yml via `gcloud builds submit`.
+#
+# `gcloud run deploy --source .` (the previous single-command approach) only forwards
+# --set-build-env-vars into the build when Cloud Build picks the Buildpacks path. This
+# repo has a Dockerfile, so Cloud Build runs a plain `docker build ... .` with no
+# --build-arg at all — any --set-build-env-vars passed to `gcloud run deploy --source`
+# were silently dropped. NEXT_PUBLIC_* values are inlined into the client bundle at
+# `next build` time, so the effect was empty strings baked into the production JS for
+# every NEXT_PUBLIC_* var (visible as e.g. the Google Maps components' "...is missing
+# from the environment" message even though the real key was configured everywhere).
+#
+# This config builds explicitly with --build-arg so the Dockerfile's ARG/ENV lines
+# actually receive a value, then the workflow deploys the resulting image directly
+# (gcloud run deploy --image, no further build).
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --network=cloudbuild
+      - --no-cache
+      - -t
+      - $_IMAGE
+      - --build-arg
+      - NEXT_PUBLIC_APP_URL=$_NEXT_PUBLIC_APP_URL
+      - --build-arg
+      - NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=$_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+      - --build-arg
+      - NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=$_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+      - --build-arg
+      - NEXT_PUBLIC_SMI_USE_FACT_TABLES=$_NEXT_PUBLIC_SMI_USE_FACT_TABLES
+      - --build-arg
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY
+      - --build-arg
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+      - --build-arg
+      - NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL
+      - .
+images:
+  - $_IMAGE
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { MissingDataWorkspace } from "@/components/sales/missing-data-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { loadSalesReferenceGaps, type SalesReferenceGaps } from "@/lib/sales/reference-gaps";
 import { loadWeeklyMissingProducts } from "@/lib/sales/weekly/service";
 import type { WeeklyMissingProduct } from "@/lib/sales/weekly/types";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export default async function MissingDataPage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

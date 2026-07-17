@@ -49,12 +49,32 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      - name: Deploy new revision (no traffic) with a commit-SHA tag
-        id: deploy
+      - name: Build image via Cloud Build (explicit --build-arg for NEXT_PUBLIC_*)
+        id: build
         run: |
           set -euo pipefail
           RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}:$SHA_TAG"
+          echo "Building $IMAGE"
+          # gcloud run deploy --source's --set-build-env-vars only reaches the build when
+          # Cloud Build picks the Buildpacks path. This repo has a Dockerfile, so that flag
+          # was silently dropped and every NEXT_PUBLIC_* value got inlined into the client
+          # bundle as an empty string on every prior deploy. cloudbuild.yaml builds with an
+          # explicit --build-arg per value instead, which Docker actually honors.
+          gcloud builds submit . \
+            --config cloudbuild.yaml \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --substitutions=_IMAGE="$IMAGE",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy new revision (no traffic) with a commit-SHA tag
+        id: deploy
+        run: |
+          set -euo pipefail
+          SHA_TAG="${{ steps.build.outputs.sha_tag }}"
           echo "Deploying tag $SHA_TAG (no traffic)"
           # Scaling/concurrency/execution-environment were previously set once by hand via
           # gcloud and never captured here — a redeploy of this workflow alone (e.g. a fresh
@@ -65,7 +85,7 @@ jobs:
           # latency alert (see PR #1022) — 40 makes Cloud Run spread a similar burst across
           # the existing min/max-instances headroom instead of queuing on one instance.
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --source . \
+            --image "${{ steps.build.outputs.image }}" \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --allow-unauthenticated \
@@ -78,7 +98,6 @@ jobs:
             --cpu-boost \
             --no-traffic \
             --tag "$SHA_TAG" \
-            --set-build-env-vars=NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} \
             --update-env-vars ^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com^
           TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
             | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")

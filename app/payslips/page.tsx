@@ -12,14 +12,14 @@ import { PageTransition } from "@/components/ui/page-transition";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function PayslipsPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   const navigationMode = resolveNavigationMode(access);
 
   await assertPermission(access, "payslips", "read");

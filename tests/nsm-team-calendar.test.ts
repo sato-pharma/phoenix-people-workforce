@@ -128,4 +128,61 @@ export async function runNsmTeamCalendarTests() {
   assert.equal(vacantSeatGroups[0].managerHrId, null, "a vacant seat has no real employee as its header");
   assert.equal(vacantSeatGroups[0].managerName, "Cairo — Vacant DSM seat");
   assert.deepEqual(vacantSeatGroups[0].members.map((member) => member.hrId), ["B-164"]);
+
+  // Regression for a real production case (Pedia line): when a Regional Sales Manager sits
+  // between the NSM and several DSMs, the RSM's own row stays in the scoped set (only the
+  // NSM's row is dropped), so every DSM's managerHrId resolves to the in-scope RSM. Before
+  // the fix, that made the RSM the sole "root" and flattened ALL of their DSMs (and every
+  // DSM's own reps) into one giant merged block. Each DSM must remain its own group boundary
+  // regardless of the RSM layer above them.
+  const rsmPreview = buildFieldWorkforceCompliancePreview({
+    employeeReferences: [
+      { fullName: "Hany Saad Mohamed Omar", hrId: "PD-0001", managerHrId: "A-12", roleName: "Regional Sales Manager" },
+      { fullName: "Ahmed Mohamed Ahmed Mohamed Abdallah", hrId: "B-74", managerHrId: "PD-0001", roleName: "District Sales Manager" },
+      { fullName: "Ahmed Mohamed Ahmed Mohamed Heikal", hrId: "B-5", managerHrId: "PD-0001", roleName: "District Sales Manager" },
+      { fullName: "Ahmed Hemdan Ahmed Elsayed Abdallah", hrId: "B-58", managerHrId: "B-5", roleName: "Medical Representative" },
+      { fullName: "Nermeen Salah Abdelaty Abohussien", hrId: "B-154", managerHrId: "PD-0001", roleName: "District Sales Manager" },
+    ],
+    holidayConnected: true,
+    holidaySourceLabel: "Egypt public holidays",
+    parsed: parseFieldWorkforceComplianceMatrix({
+      fileName: "Jan 2026 team calendar.xlsx",
+      matrix: [
+        ["TM", "HR ID", "Hiring Date", "Month", "Year", "1-Jan-2026"],
+        ["Hany Saad Mohamed Omar", "PD-0001", "1-Jan-2020", "Jan", 2026, "N"],
+        ["Ahmed Mohamed Ahmed Mohamed Abdallah", "B-74", "1-Jan-2020", "Jan", 2026, "N"],
+        ["Ahmed Mohamed Ahmed Mohamed Heikal", "B-5", "1-Jan-2020", "Jan", 2026, "N"],
+        ["Ahmed Hemdan Ahmed Elsayed Abdallah", "B-58", "1-Jan-2020", "Jan", 2026, "N"],
+        ["Nermeen Salah Abdelaty Abohussien", "B-154", "1-Jan-2020", "Jan", 2026, "N"],
+      ],
+      sheetName: "iReport",
+    }),
+  });
+  const rsmGroups = buildDsmGroups(rsmPreview.employees);
+
+  assert.equal(rsmGroups.length, 4, "RSM + 3 DSM blocks, not one merged block");
+
+  const rsmGroup = rsmGroups.find((group) => group.managerHrId === "PD-0001");
+  assert.ok(rsmGroup);
+  assert.deepEqual(
+    rsmGroup.members.map((member) => member.hrId),
+    ["PD-0001"],
+    "the RSM's own block must not swallow their DSMs' subtrees",
+  );
+
+  const abdallahGroup = rsmGroups.find((group) => group.managerHrId === "B-74");
+  assert.ok(abdallahGroup);
+  assert.deepEqual(abdallahGroup.members.map((member) => member.hrId), ["B-74"]);
+
+  const heikalGroup = rsmGroups.find((group) => group.managerHrId === "B-5");
+  assert.ok(heikalGroup);
+  assert.deepEqual(
+    heikalGroup.members.map((member) => member.hrId),
+    ["B-5", "B-58"],
+    "Heikal's own rep must stay in Heikal's block, not the RSM's",
+  );
+
+  const nermeenGroup = rsmGroups.find((group) => group.managerHrId === "B-154");
+  assert.ok(nermeenGroup);
+  assert.deepEqual(nermeenGroup.members.map((member) => member.hrId), ["B-154"]);
 }

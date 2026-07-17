@@ -9,7 +9,7 @@ import {
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getNsmTeamExpenses } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ type TeamExpensesPageProps = {
 export default async function TeamExpensesPage(
   props: TeamExpensesPageProps,
 ) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");

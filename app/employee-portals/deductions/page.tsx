@@ -9,7 +9,7 @@ import {
   assertPermission,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   compactDeductionHrId,
   listPublishedDeductionsForPortal,
@@ -22,7 +22,7 @@ type DeductionsPortalPageProps = {
 };
 
 export default async function DeductionsPortalPage(props: DeductionsPortalPageProps) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin/deductions-governance");
   }
