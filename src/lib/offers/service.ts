@@ -8,6 +8,8 @@ import { formatHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { sendJobOfferEmail } from "@/lib/offers/email";
+import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
+import { listOfferLetterVersions } from "@/lib/recruitment/offer-letters";
 import { getOfferTemplate } from "@/lib/offers/templates";
 import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
@@ -575,6 +577,16 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
       const payload = text ? JSON.parse(text) : null;
 
       if (!response.ok) {
+        const isTransientServerError = [502, 503, 504].includes(response.status);
+        if (isTransientServerError && attempt < databaseQueryMaxAttempts - 1) {
+          lastError = new Error(
+            typeof payload?.message === "string"
+              ? payload.message
+              : `Supabase request failed with ${response.status}.`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
         throw new Error(
           typeof payload?.message === "string"
             ? payload.message
@@ -1404,6 +1416,7 @@ export async function createOffer(
   const offerEmailResult = mode === "send" ? await sendJobOfferEmail({
     acceptUrl,
     actionLinksEnabled: Boolean(baseUrl),
+    attachments: await resolveOfferEmailAttachments(offer.id),
     baseSalary: offer.base_salary,
     basicSalary: offer.basic_salary,
     candidateEmail: offer.candidate_email,
@@ -1438,13 +1451,46 @@ export async function createOffer(
   };
 }
 
+// Assemble the offer email's attachments: the generated offer-letter PDF (which carries the
+// salary — the email body deliberately does not) plus any manual HR uploads. Best-effort: PDF
+// generation runs headless Chromium and can fail (or no letter version exists yet on legacy
+// direct-create), and must never block the offer send — a failure just drops the PDF.
+async function resolveOfferEmailAttachments(
+  offerId: string,
+  manual: SendPhoenixEmailAttachment[] = [],
+): Promise<SendPhoenixEmailAttachment[]> {
+  const generated: SendPhoenixEmailAttachment[] = [];
+  try {
+    const versions = await listOfferLetterVersions(offerId);
+    const letter = versions.find((version) => version.kind === "offer_letter") ?? versions[0];
+    if (letter) {
+      // Lazy import: keeps the puppeteer-core/Chromium (server-only) dependency out of the
+      // static module graph so it can never be traced into a client bundle.
+      const { buildOfferLetterPdfAttachment } = await import("@/lib/recruitment/offer-letter-pdf");
+      generated.push(await buildOfferLetterPdfAttachment(letter));
+    }
+  } catch (error) {
+    console.log("Offer-letter PDF attachment skipped (offer still sends)", {
+      level: "warning",
+      tags: { component: "offers", step: "pdf_attachment" },
+      extra: { offerId, error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+  return [...generated, ...manual];
+}
+
 // Offer pipeline — send an already-prepared (generated) offer to the candidate.
 // Regenerates the candidate token at send time (drafts carry only a placeholder
 // hash), records sent metadata, emails the candidate, and asserts the registry
 // transition generated -> sent. Reused by the recruitment sendPreparedOffer step.
 export async function sendOffer(
   offerId: string,
-  options: { access?: Pick<AccessContext, "role">; sentByHrId?: string | null; sentVersion?: number | null } = {},
+  options: {
+    access?: Pick<AccessContext, "role">;
+    sentByHrId?: string | null;
+    sentVersion?: number | null;
+    attachments?: SendPhoenixEmailAttachment[];
+  } = {},
 ) {
   const current = await supabaseRest<OfferDbRow[]>(
     `job_offers?${new URLSearchParams({ id: `eq.${offerId}`, select: "id,status,expires_at" })}`,
@@ -1484,6 +1530,7 @@ export async function sendOffer(
   const email = await sendJobOfferEmail({
     acceptUrl,
     actionLinksEnabled: Boolean(baseUrl),
+    attachments: await resolveOfferEmailAttachments(updated.id, options.attachments),
     baseSalary: updated.base_salary,
     basicSalary: updated.basic_salary,
     candidateEmail: updated.candidate_email,
@@ -1578,6 +1625,7 @@ export async function runOfferAdminAction(
     const email = await sendJobOfferEmail({
       acceptUrl,
       actionLinksEnabled: Boolean(baseUrl),
+      attachments: await resolveOfferEmailAttachments(updated.id),
       baseSalary: updated.base_salary,
       basicSalary: updated.basic_salary,
       candidateEmail: updated.candidate_email,

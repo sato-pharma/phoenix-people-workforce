@@ -61,6 +61,7 @@ Current admin pages:
 - `/admin/email-reply-composer`
 - `/admin/logs`
 - `/admin/monitoring`
+- `/admin/outstation/expenses`, `/admin/outstation/expenses/dashboard`
 - `/admin/outstation/heatmaps`
 - `/admin/outstation/policy`
 - `/admin/outstation/requests`
@@ -81,7 +82,7 @@ Top-level admin/workforce pages:
 - `/organogram`
 - `/overview`
 - `/password-setup/[token]`
-- `/payroll`, `/payroll/expenses`, `/payroll/expenses/dashboard`
+- `/payroll`
 - `/payslips`
 - `/probation`
 - `/reports/vacancies`
@@ -173,13 +174,13 @@ Payroll and expenses:
 - `/api/payroll/[id]/payslips`
 - `/api/payroll/[id]/replace`
 - `/api/payroll/[id]/workflow`
-- `/api/payroll/expenses`
-- `/api/payroll/expenses/analyze`
-- `/api/payroll/expenses/import`
-- `/api/payroll/expenses/reports/[id]`
 
 Outstation:
 
+- `/api/admin/outstation/expenses`
+- `/api/admin/outstation/expenses/analyze`
+- `/api/admin/outstation/expenses/import`
+- `/api/admin/outstation/expenses/reports/[id]`
 - `/api/outstation/calculate`
 - `/api/outstation/capture-location`
 - `/api/outstation/policy`
@@ -242,11 +243,11 @@ Payroll:
 4. Run workflow actions on a batch.
 5. Download payroll/payslip outputs through batch-scoped API routes.
 
-Payroll Expenses:
+Outstation Expenses:
 
-1. Upload/import expense data through payroll expense routes.
-2. Review expenses in `/payroll/expenses`.
-3. Inspect aggregated dashboard data in `/payroll/expenses/dashboard`.
+1. Upload/import expense data through outstation expense routes.
+2. Review expenses in `/admin/outstation/expenses`.
+3. Inspect aggregated dashboard data in `/admin/outstation/expenses/dashboard`.
 4. Employee portal managers review personal/team expense dashboards from employee portal routes.
 
 Outstation:
@@ -296,8 +297,8 @@ Current test coverage includes auth sessions, coaching, employee portal behavior
 
 Safe local checks:
 
-- `npm run typecheck`
-- `npm run test`
-- `npm run build`
-- `npm audit --audit-level=low`
+- `pnpm run typecheck`
+- `pnpm run test`
+- `pnpm run build`
+- `pnpm audit --audit-level=low`
 - Targeted Playwright checks where a UI flow needs browser verification

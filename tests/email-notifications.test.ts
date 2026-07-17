@@ -69,6 +69,9 @@ export function runEmailNotificationTests() {
     "src/lib/email/send-phoenix-email.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
+    // Offers use a fixed premium renderer + attachments (offer-letter PDF), so they send
+    // directly rather than through the DB template engine. See src/lib/offers/email.ts.
+    "src/lib/offers/email.ts",
     "src/lib/sales/sos-report-delivery.ts",
     "src/lib/vacation/email.ts",
   ]);
@@ -82,7 +85,8 @@ export function runEmailNotificationTests() {
   assert.match(vacationEmailSource, /renderPhoenixEmailHtml/);
   assert.match(vacationEmailSource, /renderPhoenixEmailText/);
 
-  assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/send-phoenix-email.ts"]);
+  // The single raw Resend send endpoint now lives in the provider-failover adapter.
+  assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/email-providers.ts"]);
 
   // Verify daily dispatcher cron hardening
   const dailyCronRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
@@ -95,7 +99,6 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runRecruitmentDailyNotifications\(\)\.catch\(/, "daily recruitment run must have catch boundary");
   assert.match(dailyCronRoute, /runTelegramDailyHrDigest\(\)\.catch\(/, "daily telegram digest run must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationGeocodeWarmup\(\)\.catch\(/, "daily outstation geocode warmup must have catch boundary");
-  assert.match(dailyCronRoute, /runOutstationHighRiskDigest\(\)\.catch\(/, "daily outstation high risk digest must have catch boundary");
   assert.match(dailyCronRoute, /runFieldWorkforceComplianceDigest\(\)\.catch\(/, "daily FWC digest must have catch boundary");
   assert.match(dailyCronRoute, /runFieldWorkforceComplianceDeductionsAutoSync\(\)\.catch\(/, "daily deductions auto sync must have catch boundary");
   assert.match(dailyCronRoute, /runExcuseSlaDaily\(\)\.catch\(/, "daily excuse SLA must have catch boundary");

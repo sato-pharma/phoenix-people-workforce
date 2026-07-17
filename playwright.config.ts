@@ -18,7 +18,7 @@ export default defineConfig({
     // In CI: serve the pre-built production bundle (no HMR, no Turbopack lazy-compile
     // latency — avoids the networkidle / login-timeout flakiness seen with `next dev`).
     // Locally: use the dev server for hot-reload convenience.
-    command: process.env.CI ? "npm run start" : "npm run dev -- -p 3000",
+    command: process.env.CI ? "pnpm run start" : "pnpm run dev -- -p 3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: "http://localhost:3000/login",
@@ -39,7 +39,9 @@ export default defineConfig({
     {
       name: "chromium",
       dependencies: ["setup"],
-      testIgnore: /data-bearing\.spec\.ts/,
+      // outstation-roles is dev-auth-only (localhost + NODE_ENV=development); it has its
+      // own playwright.dev-auth.config.ts and must not run in the default/CI (prod-mode) run.
+      testIgnore: /(data-bearing|outstation-roles)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: AUTH_STATE_PATH,

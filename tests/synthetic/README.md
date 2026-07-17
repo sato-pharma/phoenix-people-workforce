@@ -46,22 +46,22 @@ Never commit real credentials. Set these in your shell or an untracked
 
 ```bash
 # 1. Start the app you want to test (in another terminal)
-npm run dev
+pnpm run dev
 
 # 2. One-time: install browsers if you haven't already
-npx playwright install chromium
+pnpm exec playwright install chromium
 
 # 3. Set env vars and run
 export SYNTHETIC_BASE_URL=http://localhost:3000
 export SYNTHETIC_ADMIN_HR_ID=<a real local Super Admin HR_ID>
 export SYNTHETIC_ADMIN_PASSWORD=<its password>
-npm run synthetic:test
+pnpm run synthetic:test
 ```
 
 Other scripts:
 
-- `npm run synthetic:test:headed` — same, with a visible browser window.
-- `npm run synthetic:report` — opens the Playwright HTML report from the
+- `pnpm run synthetic:test:headed` — same, with a visible browser window.
+- `pnpm run synthetic:report` — opens the Playwright HTML report from the
   last run (`tests/synthetic/report/html`).
 
 Every run also writes:
@@ -142,7 +142,7 @@ Full report: tests/synthetic/report/latest.md
    ```
 
    and set `mutates: true` in its `JourneyDefinition` for clarity.
-4. Run `npm run synthetic:test` and confirm it shows up in the summary and
+4. Run `pnpm run synthetic:test` and confirm it shows up in the summary and
    in `tests/synthetic/report/latest.json`.
 
 ## Troubleshooting

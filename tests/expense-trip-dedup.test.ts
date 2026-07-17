@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { dedupeHistoricalExpensesByTrip } from "../src/lib/payroll/expenses.ts";
+import { dedupeHistoricalExpensesByTrip } from "../src/lib/outstation/expenses.ts";
 
 // Behavioral coverage for the shared trip-dedup helper (extracted in the accuracy
 // cleanup PR). Live/request outstation expenses are authoritative over historical

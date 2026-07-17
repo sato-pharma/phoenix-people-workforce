@@ -27,6 +27,21 @@ export const REGULAR_TYPE = 0;
 export const CAMPAIGN_TYPE = -8;
 export const TRAINING_TYPE = -9;
 
+// Additional iReports360 visit-type codes that come back from the CRM's own API
+// with the literal description "Unknown" (confirmed against production comment
+// text with the business owner, 2026-07-14 — see PR #1061). Each was identified
+// by reading the actual `comment` field on hundreds of sample rows, not guessed.
+export const HOLIDAY_TYPE = -5;
+export const CASUAL_LEAVE_TYPE = -6;
+export const AMBIGUOUS_TYPE = -7; // split at runtime by comment text — see classifyAmbiguousComment
+export const MEETING_TYPE = -19;
+export const ADMIN_WORK_TYPE = -20;
+export const BRM_TYPE = -21;
+// Real field visits (doctor/pharmacy call notes) that iReports360 never assigned
+// a description to. Counted as productive, same as REGULAR_TYPE ("put it in its
+// normal place") — pharmacy-flavored comments get their own distinct label.
+export const UNLABELED_FIELD_VISIT_TYPE = -30;
+
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 8;
 
@@ -42,7 +57,62 @@ export type VisitRow = {
   customer_name: string | null;
   double_hr_id: string | null;
   double_name: string | null;
+  comment: string | null;
 };
+
+export type VisitBucket = "regular" | "campaign" | "training" | "admin";
+export type VisitClassification = { label: string; bucket: VisitBucket };
+
+// -7's own comments carry no single consistent meaning (owner-confirmed) — read
+// the free-text comment itself to route it: "sales day" -> Health Day, a leave
+// mention -> Vacations & Leaves, a meeting mention -> Meetings. Anything else
+// falls back to Admin Work (no clearer signal available in the text).
+function classifyAmbiguousComment(comment: string | null): string {
+  const c = (comment ?? "").toLowerCase();
+  if (c.includes("sales day") || c.includes("health day")) return "Health Day";
+  if (c.includes("اجازه") || c.includes("اجازة") || c.includes("excuse") || c.includes("leave")) return "Vacations & Leaves";
+  if (c.includes("meeting") || c.includes("اجتماع")) return "Meetings";
+  return "Admin Work";
+}
+
+// "ص" (short for صيدلية/pharmacy) as its own token before a name is the reps'
+// own shorthand for a pharmacy call (e.g. "ص السلامه", "ص. نور الرحمن"), seen
+// consistently across -30 sample comments alongside "فارما"/"pharmacy". Best
+// effort against free text — not perfect, but never fabricates a category.
+const PHARMACY_COMMENT_PATTERN = /(^|\s)ص[\s.]|صيدلي|فارما|pharmacy/iu;
+function isPharmacyComment(comment: string | null): boolean {
+  return PHARMACY_COMMENT_PATTERN.test(comment ?? "");
+}
+
+// Single source of truth for "what is this visit" — both its display label
+// (Activity Mix) and which counting bucket it belongs to (productive/admin/etc).
+// Every place that used to compare visit_type directly must go through this
+// so the two can never drift apart again.
+export function classifyVisit(type: number | null, comment: string | null, rawDescription: string | null): VisitClassification {
+  if (type === REGULAR_TYPE) return { label: "Regular", bucket: "regular" };
+  if (type === CAMPAIGN_TYPE) return { label: "Campaign", bucket: "campaign" };
+  if (type === TRAINING_TYPE) return { label: "Training", bucket: "training" };
+  if (type === HOLIDAY_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
+  if (type === CASUAL_LEAVE_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
+  if (type === MEETING_TYPE) return { label: "Meetings", bucket: "admin" };
+  if (type === ADMIN_WORK_TYPE) return { label: "Admin Work", bucket: "admin" };
+  if (type === BRM_TYPE) return { label: "Business Review (BRM)", bucket: "admin" };
+  if (type === AMBIGUOUS_TYPE) return { label: classifyAmbiguousComment(comment), bucket: "admin" };
+  if (type === UNLABELED_FIELD_VISIT_TYPE) {
+    return isPharmacyComment(comment) ? { label: "Pharmacy Visit", bucket: "regular" } : { label: "Regular", bucket: "regular" };
+  }
+  const trimmed = (rawDescription ?? "").trim();
+  const label = trimmed && trimmed.toLowerCase() !== "unknown" ? trimmed : `Type ${type ?? "?"}`;
+  return { label, bucket: "admin" };
+}
+
+// Shared "does this row count as a productive visit" check for callers that only
+// need the yes/no answer (checkin coverage, the impact engine, etc.) — always
+// goes through classifyVisit so it can never drift from the Activity Mix logic.
+export function isProductiveVisit(row: Pick<VisitRow, "visit_type" | "comment" | "visit_type_description">): boolean {
+  const { bucket } = classifyVisit(row.visit_type, row.comment, row.visit_type_description);
+  return bucket === "regular" || bucket === "campaign";
+}
 
 export type CheckinRow = { check_date: string | null; lat: number | null; lon: number | null };
 
@@ -151,7 +221,7 @@ async function fetchPaged<T>(table: string, columns: string, keys: string[], dat
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
   return fetchPaged<VisitRow>(
     "ireports360_visits",
-    "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name",
+    "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
     hrIdLookupKeys(hrId),
     "visit_date",
     window.from,
@@ -163,11 +233,14 @@ export async function fetchCheckinRows(hrId: string, window: Employee360Window):
   return fetchPaged<CheckinRow>("ireports360_checkins", "check_date,lat,lon", hrIdLookupKeys(hrId), "check_date", window.from, window.to);
 }
 
+// check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its clock reading is
+// ALREADY Cairo-local — read day + hour as-is with timeZone "UTC". Converting through Africa/Cairo
+// would double-add the Egypt offset and push the whole check-in histogram / late-night tail 2–3h late.
 function cairoParts(iso: string): { day: string; hourDecimal: number } | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
   const [h, m] = hm.split(":").map((v) => Number(v));
   return { day, hourDecimal: (h % 24) + (Number.isFinite(m) ? m / 60 : 0) };
 }
@@ -229,16 +302,16 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
 
   for (const row of visits) {
     const type = row.visit_type;
-    const isRegular = type === REGULAR_TYPE;
-    const isCampaign = type === CAMPAIGN_TYPE;
+    const { label, bucket } = classifyVisit(type, row.comment, row.visit_type_description);
+    const isRegular = bucket === "regular";
+    const isCampaign = bucket === "campaign";
     const isProductive = isRegular || isCampaign;
 
-    const label = (row.visit_type_description ?? "").trim() || `Type ${type ?? "?"}`;
     typeMix.set(label, (typeMix.get(label) ?? 0) + 1);
 
     if (isRegular) regularVisits += 1;
     else if (isCampaign) campaignVisits += 1;
-    else if (type === TRAINING_TYPE) trainingVisits += 1;
+    else if (bucket === "training") trainingVisits += 1;
     else adminVisits += 1;
 
     if (row.double_hr_id) doublesReceived += 1;
@@ -409,7 +482,7 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
   // per-month coverage trend (check-in days ÷ productive active days)
   const activeDaysByMonth = new Map<string, Set<string>>();
   for (const v of visits) {
-    if ((v.visit_type === REGULAR_TYPE || v.visit_type === CAMPAIGN_TYPE) && v.visit_date) {
+    if (isProductiveVisit(v) && v.visit_date) {
       const m = v.visit_date.slice(0, 7);
       const s = activeDaysByMonth.get(m) ?? new Set<string>();
       s.add(v.visit_date);
@@ -426,7 +499,7 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
   // uncorroborated: productive visit days with no GPS check-in that day
   const gpsDays = new Set(perDay.keys());
   const visitDays = new Set<string>();
-  for (const v of visits) if ((v.visit_type === REGULAR_TYPE || v.visit_type === CAMPAIGN_TYPE) && v.visit_date) visitDays.add(v.visit_date);
+  for (const v of visits) if (isProductiveVisit(v) && v.visit_date) visitDays.add(v.visit_date);
   let uncorroboratedDays = 0;
   visitDays.forEach((d) => {
     if (!gpsDays.has(d)) uncorroboratedDays += 1;

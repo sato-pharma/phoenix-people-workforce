@@ -19,7 +19,7 @@ import { test, expect, type Page } from "@playwright/test";
  *   - Local/staging test data only. Never point this mutating workflow at production.
  *
  * Run:
- *   npx playwright test tests/e2e/weekly-plans-workflow.spec.ts
+ *   pnpm exec playwright test tests/e2e/weekly-plans-workflow.spec.ts
  */
 
 const BASE = "http://localhost:3000";

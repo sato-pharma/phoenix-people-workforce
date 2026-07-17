@@ -77,7 +77,9 @@ function hasCoords(checkin: RouteCheckin): checkin is RouteCheckin & { lat: numb
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(date);
+  // check_date is a zone-less Cairo wall-clock stored as +00 — render as-is with timeZone "UTC".
+  // Without it this client component uses the browser zone (Cairo) and shows stop times 2–3h late.
+  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(date);
 }
 
 /**

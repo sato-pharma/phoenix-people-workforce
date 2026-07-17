@@ -25,7 +25,7 @@ import { summarizeDeviceUserMappings } from "@/lib/attendance/metrics";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
 import { getWorkforceMetrics } from "@/lib/platform/metrics";
 import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
-import { getPayrollExpenseMetrics } from "@/lib/payroll/expenses";
+import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 
 export type PhoenixAdminStats = {
   totalEmployees: number;
@@ -66,7 +66,7 @@ export async function getPhoenixAdminStats(): Promise<PhoenixAdminStats> {
     supabase.from("v_payroll_eligible_employees").select("*", { count: "exact", head: true }),
     supabase.from("salary_records").select("*", { count: "exact", head: true }),
     supabase.from("sales_records").select("*", { count: "exact", head: true }),
-    supabase.from("payroll_expenses").select("*", { count: "exact", head: true }),
+    supabase.from("outstation_expenses").select("*", { count: "exact", head: true }),
     supabase.from("salary_flags").select("*", { count: "exact", head: true }),
     supabase.from("position_vacancies").select("*", { count: "exact", head: true }),
     supabase.from("job_offers").select("*", { count: "exact", head: true }),

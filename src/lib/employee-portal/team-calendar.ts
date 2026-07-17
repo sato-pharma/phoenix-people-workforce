@@ -15,7 +15,7 @@
  * here is defence-in-depth (safe-by-construction: no line resolved -> no rows).
  */
 
-import type { AccessContext } from "@/lib/auth/permissions";
+import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { isNationalSalesManager } from "@/lib/auth/permissions";
 import {
   isMedicalRepDirectoryEmployee,
@@ -187,16 +187,25 @@ async function resolveNsmScope(access: AccessContext): Promise<ResolvedNsmScope 
   return { allowedKeys, lineName: scope.lineName, seatOverridesByHrKey };
 }
 
+/** True for a District Sales Manager row, by job title/role — see resolveJobFunctionRole. */
+function isDistrictManagerSummary(employee: Pick<FieldWorkforceEmployeeSummary, "roleName">): boolean {
+  const role: PhoenixRole = resolveJobFunctionRole(employee.roleName);
+  return role === "District Manager";
+}
+
 /**
- * Arrange the scoped field force by REAL manager/report topology (managerHrId), not job
- * title: each "root" — someone whose manager isn't also in the scoped set, i.e. a DSM once
- * the NSM's own row is dropped, or a Regional Manager if one is in-scope above the DSMs —
- * becomes its own group, followed by everyone recursively reporting to them (DSM, then
- * their reps; or RSM, then their DSMs, then those DSMs' reps). This mirrors the admin WFC
- * classifier's orderEmployeesByHierarchy, but title-based classification was tried first and
- * proved fragile — a DSM whose title doesn't exactly match a known string would silently
- * never form a group, dumping their whole team into a single flat "Other" bucket. Manager
- * HR-ID topology can't misclassify a real manager, it can only ever be right or absent.
+ * Arrange the scoped field force by REAL manager/report topology (managerHrId), each "root"
+ * — someone whose manager isn't also in the scoped set (e.g. a DSM once the NSM's own row is
+ * dropped, or a Regional Manager if one is in-scope above the DSMs) — becomes its own group,
+ * followed by everyone recursively reporting to them. Manager HR-ID topology can't
+ * misclassify a real manager, it can only ever be right or absent, which is why this mirrors
+ * (rather than title-classifies, like the admin WFC classifier's orderEmployeesByHierarchy)
+ * the org chart.
+ *
+ * A DSM is ALWAYS its own group boundary, even when a Regional Manager sits between them and
+ * the NSM: every DSM and their own reps get one block, never several DSMs merged into a
+ * single block under a shared RSM (a Regional Manager who is in-scope still gets their own
+ * group, just with no DSM subtrees flattened into it).
  *
  * `seatOverridesByHrKey` (from resolveNsmScope) redirects orphaned reps — a real DSM
  * resigned, seat not yet refilled, so their raw managerHrId now points at the NSM — to a
@@ -228,12 +237,15 @@ export function buildDsmGroups(
     }
 
     const managerKey = canonicalHrIdKey(employee.managerHrId);
-    if (managerKey && managerKey !== ownKey && presentKeys.has(managerKey)) {
+    const attachToManager =
+      managerKey != null && managerKey !== ownKey && presentKeys.has(managerKey) && !isDistrictManagerSummary(employee);
+    if (attachToManager) {
       const bucket = childrenByManagerKey.get(managerKey) ?? [];
       bucket.push(employee);
       childrenByManagerKey.set(managerKey, bucket);
     } else {
-      // No manager in the scoped set (e.g. a DSM once the NSM is dropped) -> a root.
+      // No manager in the scoped set (e.g. a DSM once the NSM is dropped), or the employee
+      // is themself a DSM (always a group boundary, even under an in-scope RSM) -> a root.
       roots.push(employee);
     }
   }

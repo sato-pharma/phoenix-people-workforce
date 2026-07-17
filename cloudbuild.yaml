@@ -1,0 +1,91 @@
+# Used by .github/workflows/deploy-cloud-run.yml via `gcloud builds submit` (and by
+# deploy-cloud-run-staging.yml's manual build_from_source fallback).
+#
+# Why explicit --build-arg: `gcloud run deploy --source .` (the previous single-command
+# approach) only forwards --set-build-env-vars into the build when Cloud Build picks the
+# Buildpacks path. This repo has a Dockerfile, so Cloud Build runs a plain
+# `docker build ... .` with no --build-arg at all — any --set-build-env-vars passed to
+# `gcloud run deploy --source` were silently dropped. NEXT_PUBLIC_* values are inlined
+# into the client bundle at `next build` time, so the effect was empty strings baked into
+# the production JS for every NEXT_PUBLIC_* var (visible as e.g. the Google Maps
+# components' "...is missing from the environment" message even though the real key was
+# configured everywhere). This config builds explicitly with --build-arg so the
+# Dockerfile's ARG/ENV lines actually receive a value, then the workflow deploys the
+# resulting image directly (gcloud run deploy --image, no further build).
+#
+# Build caching (measured 2026-07-17, then npm; deps install is pnpm since the
+# pnpm migration): the previous version of this config ran a classic
+# `docker build --no-cache`, so every deploy re-ran the dependency install and
+# `next build` from scratch (~330-420s on the default e2-standard-2). This version uses
+# BuildKit registry caching plus a bigger machine. BUILDKIT_INLINE_CACHE only embeds
+# cache metadata for the FINAL stage's layers, so a single cached build can never reuse
+# the expensive multi-stage `deps` layer (pnpm install --frozen-lockfile, keyed on the
+# Dockerfile's COPY of package.json + pnpm-lock.yaml + pnpm-workspace.yaml) — hence the
+# two-step pattern:
+#   (a) build the Dockerfile's `deps` stage alone, seeded from the previous
+#       $_CACHE_REPO:deps-cache, and push the refreshed tag immediately (so even a
+#       later `next build` failure still leaves a warm deps cache for the retry);
+#   (b) build the final image seeded from BOTH :deps-cache and :latest-cache;
+#   (c) push the image and refresh :latest-cache for the next build.
+# BuildKit silently ignores --cache-from images that don't exist yet, so the very first
+# (cold) run simply builds everything and seeds the cache tags. --build-arg values
+# cannot poison the deps cache: every NEXT_PUBLIC_* ARG is declared only in the
+# Dockerfile's `builder` stage, so the `deps` stage's cache key never sees them.
+# (Kaniko was measured WORSE than a cold docker build here — 405s vs 330s — and is
+# unmaintained, so it is deliberately not used.)
+substitutions:
+  # Where the reusable BuildKit cache tags (:deps-cache / :latest-cache) live.
+  # Defaults to the production service's image path in the existing Artifact Registry
+  # repo (no new repo needed). Staging's manual build_from_source fallback overrides
+  # this to its own image path so a staging-args build never overwrites the
+  # production cache tags.
+  _CACHE_REPO: europe-west3-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr
+steps:
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        # NOTE: no --network=cloudbuild here — BuildKit rejects that network mode
+        # ("network mode \"cloudbuild\" not supported by buildkit", verified on build
+        # f0493e2a). Nothing in this Dockerfile needs the metadata server: corepack and
+        # pnpm install pull from the public registry and next build makes no GCP calls.
+        docker build \
+          --target deps \
+          --cache-from "${_CACHE_REPO}:deps-cache" \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          -t "${_CACHE_REPO}:deps-cache" \
+          .
+        docker push "${_CACHE_REPO}:deps-cache"
+        docker build \
+          --cache-from "${_CACHE_REPO}:deps-cache" \
+          --cache-from "${_CACHE_REPO}:latest-cache" \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          --build-arg "NEXT_PUBLIC_APP_URL=${_NEXT_PUBLIC_APP_URL}" \
+          --build-arg "NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY}" \
+          --build-arg "NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID}" \
+          --build-arg "NEXT_PUBLIC_SMI_USE_FACT_TABLES=${_NEXT_PUBLIC_SMI_USE_FACT_TABLES}" \
+          --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}" \
+          --build-arg "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}" \
+          --build-arg "NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}" \
+          -t "${_IMAGE}" \
+          .
+        docker push "${_IMAGE}"
+        docker tag "${_IMAGE}" "${_CACHE_REPO}:latest-cache"
+        docker push "${_CACHE_REPO}:latest-cache"
+images:
+  - $_IMAGE
+options:
+  logging: CLOUD_LOGGING_ONLY
+  # NO machineType here — not by choice. `next build` is CPU-bound and E2_HIGHCPU_8
+  # would cut it further, but this project has ZERO Cloud Build quota for
+  # E2_HIGHCPU_8 AND E2_HIGHCPU_32 in us-central1, where this was verified (submit fails instantly with
+  # FAILED_PRECONDITION "due to quota restrictions, Cloud Build cannot run builds
+  # of this machine type in this region"; N1 types are region-banned outright —
+  # both verified empirically 2026-07-17). If a machine-type quota increase is ever
+  # granted, add `machineType: E2_HIGHCPU_8` back under options. Until then builds
+  # run on the default e2-standard-2, where BuildKit caching alone was measured at
+  # 240s warm vs 330s cold.

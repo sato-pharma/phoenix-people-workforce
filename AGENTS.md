@@ -28,7 +28,10 @@
 - Staging application: `https://phoenix-hr-staging-897559113412.us-central1.run.app` (Cloud Run
   service `phoenix-hr-staging`, project `phoenix-workforce-498619`, region `us-central1`; deployed
   2026-07-12, points at the staging Supabase project below, isolated from production — no shared
-  third-party secrets, no auto-redeploy from `main`, requires a manual `gcloud run deploy` to update)
+  third-party secrets. Auto-deploys from `main` after CI passes, via
+  `.github/workflows/deploy-cloud-run-staging.yml` — same no-traffic/smoke-test/promote gate as
+  production, reusing the env vars already configured on the Cloud Run service itself rather than
+  any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.)
 - Vercel project: `phoenix-workforce` (legacy references only — hosting migrated to GCP Cloud Run)
 - Vercel scope: `phoenix-hr-workspace-s-projects`
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, created
@@ -62,9 +65,41 @@ git worktree list
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as user work.
 - If the tree is dirty, classify the changes and preserve them. Continue only when the requested work can be isolated safely.
 - Create worktrees with `git worktree add`. Remove them only with `git worktree remove` and only after approval.
-- Immediately after creating a worktree, run `npm run worktree:sync-env` from inside it. `git worktree add` never copies gitignored files, so a new worktree has no `.env.local` (no `PHOENIX_AUTH_SECRET`, Supabase keys, etc.) until this runs — dev-auth and the dev server fail silently otherwise. This is a local file copy only; it never touches Git or prints secret contents.
+- Never delete a `.xlsx` or `.pdf` file, even one found as stray/untracked data in a stale or broken worktree folder being cleaned up. Before removing any folder, scan it for `.xlsx`/`.pdf` files first; if any are found and are not already identical to a git-tracked copy, move them into an `xlsx/` folder at the repo root (create it if missing) instead of deleting them or the folder that held them.
+- Immediately after creating a worktree, run `pnpm run worktree:sync-env` from inside it. `git worktree add` never copies gitignored files, so a new worktree has no `.env.local` (no `PHOENIX_AUTH_SECRET`, Supabase keys, etc.) until this runs — dev-auth and the dev server fail silently otherwise. This is a local file copy only; it never touches Git or prints secret contents.
 - Prefer creating worktrees as siblings of this repo (e.g. `git worktree add ../_wt-<task>`), not nested inside it. If a worktree must live inside the repo, its folder name must start with `_wt-` (or live under `.codex-worktrees/`, or `.claude/worktrees/` which Claude Code's own worktree feature uses) — `tsconfig.json`, `eslint.config.mjs`, and `.gitignore` all exclude those patterns so `typecheck`/`lint` don't redundantly walk full duplicate copies of the codebase. (`.claude/worktrees/` is currently excluded only incidentally, via the broader `.claude` exclude entry — if that entry is ever narrowed, add `.claude/worktrees` back explicitly.) A worktree folder inside the repo that doesn't match one of those patterns will silently make every local `typecheck`/`lint` run several times slower (confirmed: ~12x file count, 70s vs 8s). Do not remove or narrow those exclude patterns without confirming no in-repo worktrees would be missed.
 - Treat remote history as the source of truth for merged state, while protecting all unpushed local work.
+
+## Parallel Work Model (owner policy, 2026-07-17)
+
+The owner runs multiple tasks concurrently. The division of labor that keeps sessions
+from colliding AND keeps the laptop responsive (16 GB RAM; 15+ simultaneous
+`node_modules` copies previously froze the machine):
+
+- **One local interactive session at a time** — the "control tower". It holds owner
+  context, performs gcloud/DNS/Supabase actions with local credentials, does browser
+  verification, and makes merge/deploy decisions. Never run two interactive sessions
+  against the same checkout (this caused real git-corruption incidents; the
+  SessionStart hook warns about it — heed it).
+- **Independent parallel tasks go to cloud sessions** (Claude Code on the web), one
+  per task. Each cloud session has its own isolated clone and ends by opening a PR —
+  CI plus the auto-deploy pipeline take it from there. Zero local resource cost, zero
+  collision surface. Prefer this over spawning more local worktrees whenever the task
+  does not need local files, localhost browser checks, or locally-authenticated CLIs.
+- **Local worktrees: at most 2–3 alive at once.** Create per task as before, but:
+  - Run `pnpm install --frozen-lockfile` in a worktree only when the task actually
+    needs typecheck/build/dev server (docs/SQL/workflow-file tasks usually don't —
+    note the pre-push gate does need `node_modules`, so installing right before push
+    is the usual pattern). With pnpm this is cheap: every worktree hardlinks into the
+    shared per-drive store, so an extra worktree's `node_modules` costs seconds and
+    barely any real disk, instead of a full duplicate copy per worktree.
+  - **Delete-on-merge ritual**: after a worktree's PR merges, the session asks the
+    owner "CLEAN?" and, on confirmation, verifies (no uncommitted/untracked work +
+    branch is an ancestor of origin/main + xlsx/pdf rescue scan per the rule above),
+    then runs `git worktree remove` and `git branch -d`. Stale worktrees must not
+    accumulate — 26 folders with 15 node_modules copies was the failure mode.
+- Locked worktrees under `.claude/worktrees/` belong to other live sessions — never
+  remove them.
 
 ## Branch And Change Isolation
 

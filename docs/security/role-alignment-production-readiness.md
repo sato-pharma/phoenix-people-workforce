@@ -207,7 +207,7 @@ Required before production migration:
 - Run the read-only preflight runner:
 
   ```powershell
-  npm run db:preflight:role-alignment:production
+  pnpm run db:preflight:role-alignment:production
   ```
 
 - Confirm target ref is Phoenix HR production only after explicit approval.

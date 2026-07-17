@@ -23,6 +23,16 @@ function preservedQuery(params: Record<string, string | string[] | undefined>) {
   return text ? `?${text}` : "";
 }
 
+// Vacation, excuse and weekly/monthly plans left the "Other Approvals" inbox for their own
+// dedicated pages. A stale link (old notification, bookmarked history URL) that still points at
+// ?module=leave|excuse|weekly_plan must never inject that request back into this inbox — bounce it
+// to the dedicated page instead so Other Approvals only ever shows resignation/contract/outstation.
+const MIGRATED_DEEPLINK_BASES: Record<string, string> = {
+  leave: "/admin/approvals/vacation",
+  excuse: "/admin/approvals/excuse",
+  weekly_plan: "/admin/approvals/plan",
+};
+
 export default async function AdminApprovalsHubPage({
   searchParams,
 }: {
@@ -36,6 +46,12 @@ export default async function AdminApprovalsHubPage({
 
   const initialModule = (typeof params.module === "string" ? params.module : null) as ActionHubModule | null;
   const initialId = typeof params.id === "string" ? params.id : null;
+
+  // Migrated modules never render inside this hub — redirect to their dedicated page.
+  if (initialModule && MIGRATED_DEEPLINK_BASES[initialModule]) {
+    const base = MIGRATED_DEEPLINK_BASES[initialModule];
+    redirect(initialId ? `${base}/${encodeURIComponent(initialId)}` : base);
+  }
 
   // Admin audience: the full cross-module inbox (marketing always excluded — it keeps
   // its own dedicated inbox). "My requests" and history resolve in parallel.

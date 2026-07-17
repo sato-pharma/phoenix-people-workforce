@@ -111,6 +111,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   tokenApi({ authMode: "dev-only", methods: ["GET"], pattern: "/api/dev-auth", reason: "Development-only local preview authentication helper." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
+  tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/integrations/telegram/webhook", reason: "Telegram bot webhook is protected by the Telegram secret-token header." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/attendance/raw-punches", reason: "Local attendance agent bearer-token ingestion route." }),
   tokenApi({ authMode: "public-token", methods: ["GET", "POST"], pattern: "/api/excuses/:id/decision", reason: "Manager excuse decision email link is protected by a one-time token; POST is explicitly unsupported." }),
@@ -161,6 +162,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-reply/send", permission: { resource: "communication", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/recommendations/export", permission: { resource: "hr_calendar", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/export", permission: { resource: "hr_calendar", action: "export" } }),
+  // Super-Admin-only via assertSystemAdministratorWorkspaceAccess (direct role check), not
+  // the permission matrix — same pattern as the visits-report/backfill entry below.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/vacation/company-report/export", permission: null, guard: "domain-helper" }),
+  // Converts one CRM-signal row into a real, balance-deducting vacation_requests row —
+  // Super-Admin-only, same direct-role-check pattern as the export route above. Individual,
+  // human-reviewed decisions only; never a bulk write.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacation/company-report/approve", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/monitoring/events-csv", permission: { resource: "admin", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/data-backup", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/admin/data-backup/status/:jobId", permission: null, guard: "domain-helper" }),
@@ -284,11 +292,11 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/offers/**", permission: { resource: "offers", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/payroll/expenses", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/expenses", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/expenses/analyze", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/expenses/import", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/payroll/expenses/reports/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses/analyze", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses/import", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/admin/outstation/expenses/reports/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/start", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/payroll/copilot/:runId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/:runId/message", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -307,6 +315,20 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/:runId/deductions/holiday-bridging", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/statutory/insurance-wages/import", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/payroll/**", permission: { resource: "payroll", action: "read" }, csrfRequired: true }),
+  // Probation Decision Intelligence routes are gated at probation:read at the middleware; each
+  // route enforces its exact permission / row-level ownership / decision-role check in-handler
+  // (findAccessRegistryEntry picks the longest matching pattern, so these override the blanket
+  // below). Without these, the /api/probation/** blanket would require Super-Admin-only
+  // probation:update and lock out managers / SFE / CEO / TM who legitimately hold probation:read.
+  sessionApi({ methods: readOnly, pattern: "/api/probation/feedback-tasks", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/probation/dashboard", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/probation/analytics", permission: { resource: "probation", action: "read" } }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/cases/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/dv/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/dv-feedback/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/probation/development-actions/**", permission: { resource: "probation", action: "read" }, csrfRequired: true }),
+  // Config editor stays admin-only (probation:update).
+  sessionApi({ methods: allMethods, pattern: "/api/probation/config", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/probation/**", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/requisitions/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/applications/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
@@ -432,6 +454,9 @@ export const accessRegistry = [
   // read from the session cookie when present, never trusted from the body.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/pending-count", permission: { resource: "leave", action: "read" } }),
+  // Batched replacement for the four pending-count polls below (they stay registered
+  // and live for other consumers). Each sub-count enforces its own domain guard.
+  sessionApi({ methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }] }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/vacation/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/excuse/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/plan/pending-count", permission: { resource: "weekly_plans", action: "read" } }),
@@ -466,8 +491,8 @@ export const accessRegistry = [
   // /admin/** admin:read catch-all. (Replaces the removed Vacation Action Center page.)
   { ...sessionApi({ methods: readOnly, pattern: "/admin/approvals/**", permission: { resource: "leave", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/employee-portals/approvals/**", permission: { resource: "leave", action: "read" } }), surface: "page" },
-  { ...sessionApi({ methods: readOnly, pattern: "/payroll/expenses", permission: null, guard: "domain-helper" }), surface: "page" },
-  { ...sessionApi({ methods: readOnly, pattern: "/payroll/expenses/dashboard", permission: null, guard: "domain-helper" }), surface: "page" },
+  { ...sessionApi({ methods: readOnly, pattern: "/admin/outstation/expenses", permission: null, guard: "domain-helper" }), surface: "page" },
+  { ...sessionApi({ methods: readOnly, pattern: "/admin/outstation/expenses/dashboard", permission: null, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/payroll/**", permission: { resource: "payroll", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/assignments", permission: { resource: "weekly_sales", action: "update" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/dashboard", permission: { resource: "weekly_sales", action: "read" } }), surface: "page" },

@@ -20,7 +20,7 @@ import { test, expect } from "@playwright/test";
  * - Error boundary
  * - Mobile responsiveness
  *
- * Run with:  npx playwright test tests/e2e/employee-coaching-review.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/employee-coaching-review.spec.ts
  */
 
 // Use a known coaching report ID — this requires at least one report in the database

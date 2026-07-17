@@ -61,7 +61,7 @@ export function runTransactionWorkflowAuditTests() {
   assert.match(payrollService, /rpc\(\s*"phx_replace_salary_batch"/);
   assert.match(payrollService, /rpc\(\s*"phx_delete_salary_batch"/);
 
-  const payrollExpenses = source("src/lib/payroll/expenses.ts");
+  const payrollExpenses = source("src/lib/outstation/expenses.ts");
   assert.match(payrollExpenses, /rpc\(\s*"phx_import_approved_expenses_to_payroll"/);
 
   const vacationService = source("src/lib/vacation/service.ts");
@@ -91,5 +91,7 @@ export function runTransactionWorkflowAuditTests() {
   assert.match(probationService, /employeeStatus: "terminated"/);
 
   const outstationService = source("src/lib/outstation/service.ts");
-  assert.match(outstationService, /outstation_location_audit_logs/);
+  // The GPS fraud/location audit-log table was removed with the fraud system; the
+  // outstation workflow's transaction audit trail is the shared writeRequiredAuditLog.
+  assert.match(outstationService, /writeRequiredAuditLog\(\{[\s\S]*entityType: "outstation_request"/);
 }

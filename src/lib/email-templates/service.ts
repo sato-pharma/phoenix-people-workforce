@@ -9,6 +9,7 @@ import {
 import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -20,6 +21,11 @@ export const emailTemplateKeys = [
   "interview_feedback",
   "probation_workflow",
   "probation_reminder",
+  "probation_dv_snapshot",
+  "probation_weekly_digest",
+  "probation_day30",
+  "probation_day60",
+  "probation_day75",
   "contract_renewal",
   "birthday",
   "resignation_workflow",
@@ -75,6 +81,11 @@ export const EMAIL_TEMPLATE_KEYS = {
   PASSWORD_RESET: "password_reset",
   PROBATION_REMINDER: "probation_reminder",
   PROBATION_WORKFLOW: "probation_workflow",
+  PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
+  PROBATION_WEEKLY_DIGEST: "probation_weekly_digest",
+  PROBATION_DAY30: "probation_day30",
+  PROBATION_DAY60: "probation_day60",
+  PROBATION_DAY75: "probation_day75",
   PAYROLL_UPDATE: "payroll_update",
   RECRUITMENT_UPDATE: "recruitment_update",
   RESIGNATION_WORKFLOW: "resignation_workflow",
@@ -176,6 +187,27 @@ export type EmailTemplateContext = {
   returnCallout?: string | null;
   returnCalloutText?: string | null;
   roiWindow?: string | null;
+  // ── Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75) ──
+  /** The DV field date (YYYY-MM-DD) for the DV-snapshot email. */
+  dvDate?: string | null;
+  /** The evaluator (person) who performed the double visit. */
+  evaluatorName?: string | null;
+  /** The evaluator's probation role label (District Manager / NSM / TM / PM·GPM). */
+  evaluatorRole?: string | null;
+  /** Number of individual customer visits in that DV day. */
+  visitCount?: string | null;
+  /** One-line DV progress summary, e.g. "DM 2/3 · TM 1/1 · PM/GPM 0/1 · NSM 1/1 · Total 4/6". */
+  dvProgress?: string | null;
+  /** Milestone day number (30 / 60 / 75) for milestone emails. */
+  milestoneDay?: string | null;
+  /** Current probation day for the employee. */
+  probationDay?: string | null;
+  /** Days remaining in the probation window. */
+  daysRemaining?: string | null;
+  /** Provisional (or final) weighted score, e.g. "6.85 / 10". */
+  provisionalScore?: string | null;
+  /** Risk / readiness status label, e.g. "Action Required" / "Not decision-ready". */
+  riskStatus?: string | null;
 };
 
 export type EmailTemplateDefinition = {
@@ -258,6 +290,7 @@ export type SendTemplatedEmailInput = {
   employeeHrId?: string | null;
   fallbackTo?: string[] | null;
   from?: string | null;
+  replyTo?: string | null;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -411,6 +444,21 @@ const placeholderHints = [
   "requesterName",
   "productsTable",
   "returnCallout",
+  // Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75). These
+  // are declared on EmailTemplateContext and used by the shipped default bodies, but were missing
+  // here — so the renderer stripped them to empty and the emails went out with blank DV date /
+  // evaluator / visits / progress / score / risk / day-number. (area, status, employeeName,
+  // employeeHrId, summary are already allowed above.)
+  "probationDay",
+  "dvDate",
+  "evaluatorName",
+  "evaluatorRole",
+  "visitCount",
+  "dvProgress",
+  "riskStatus",
+  "provisionalScore",
+  "daysRemaining",
+  "milestoneDay",
 ] as const;
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
@@ -444,6 +492,14 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   password_reset: emptyRules(["candidate"]),
   probation_reminder: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
   probation_workflow: emptyRules(["direct_manager"], ["hr"]),
+  // Owner-confirmed recipients. The role vocabulary covers CEO/HR/DM/NSM here; SFE Manager,
+  // Training Manager, PM/GPM and the evaluator are resolved + added explicitly at emit time
+  // (src/lib/probation/intelligence/probation-emails.ts).
+  probation_dv_snapshot: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_weekly_digest: emptyRules(["direct_manager", "national_sales_manager"], ["ceo", "hr"]),
+  probation_day30: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   resignation_workflow: emptyRules(["manager_chain"], ["hr"]),
   user_created: emptyRules(["employee"]),
 };
@@ -819,6 +875,100 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "probation_workflow",
     templateName: "Probation Tracker",
   },
+  probation_dv_snapshot: {
+    bodyHtml:
+      "<p>A double-visit day was completed and validated for <strong>{{employeeName}}</strong> ({{employeeHrId}}), day {{probationDay}} of probation.</p>" +
+      "<p>DV date: {{dvDate}} · Evaluator: {{evaluatorName}} ({{evaluatorRole}}) · Visits: {{visitCount}} · Area: {{area}}.</p>" +
+      "<p>Progress: {{dvProgress}}.</p><p>Feedback status: {{status}} · Risk: {{riskStatus}}.</p>" +
+      "<p>This is a management snapshot — open the live report for full detail.</p>",
+    bodyText:
+      "Double-visit day validated for {{employeeName}} ({{employeeHrId}}), probation day {{probationDay}}.\n" +
+      "DV date: {{dvDate}} · Evaluator: {{evaluatorName}} ({{evaluatorRole}}) · Visits: {{visitCount}} · Area: {{area}}.\n" +
+      "Progress: {{dvProgress}}.\nFeedback status: {{status}} · Risk: {{riskStatus}}.\n" +
+      "Open the live report for full detail.",
+    closingText: "Open the live consolidated report for the full picture.",
+    description: "Sent to stakeholders after each validated Double-Visit Day (management snapshot + link to the live report).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "A validated double-visit day for {{employeeName}}.",
+    subject: "Probation DV snapshot — {{employeeName}} ({{dvProgress}})",
+    templateKey: "probation_dv_snapshot",
+    templateName: "Probation DV Snapshot",
+  },
+  probation_weekly_digest: {
+    bodyHtml:
+      "<p>Here is this week's Double-Visit summary for <strong>{{employeeName}}</strong> ({{employeeHrId}}), day {{probationDay}} of the 90-day probation period.</p>" +
+      "{{digestTable}}" +
+      "<p>Overall progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.</p>" +
+      "<p>Open the live report for the full picture.</p>",
+    bodyText:
+      "This week's Double-Visit summary for {{employeeName}} ({{employeeHrId}}), probation day {{probationDay}}.\n" +
+      "{{digestTableText}}\n" +
+      "Overall progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n" +
+      "Open the live report for the full picture.",
+    closingText: "Open the live consolidated report for the full picture.",
+    description: "Weekly roll-up of a probationer's Double-Visit activity, sent once per week to the line management chain (replaces the per-DV-day snapshot).",
+    greeting: "Dear Line {{line}} Managers,",
+    isActive: true,
+    previewText: "This week's Double-Visit summary for {{employeeName}}.",
+    subject: "Probation weekly summary — {{employeeName}} ({{weekLabel}})",
+    templateKey: "probation_weekly_digest",
+    templateName: "Probation Weekly Digest",
+  },
+  probation_day30: {
+    bodyHtml:
+      "<p><strong>Day 30 — early progress review</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.</p>" +
+      "<p>{{summary}}</p><p>Confirm who has already completed a DV day and flag any early gaps.</p>",
+    bodyText:
+      "Day 30 — early progress review for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n{{summary}}\n" +
+      "Confirm who has completed a DV day and flag early gaps.",
+    closingText: "Open the live report to review early progress.",
+    description: "Day-30 milestone: early progress review (who has completed a DV day, early gaps and risks).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 30 early progress for {{employeeName}}.",
+    subject: "Probation Day 30 — {{employeeName}} (early progress)",
+    templateKey: "probation_day30",
+    templateName: "Probation Day 30",
+  },
+  probation_day60: {
+    bodyHtml:
+      "<p><strong>Day 60 — escalation &amp; completion planning</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
+      "<p>{{summary}}</p><p>Schedule any remaining DV days and HR/SFE input before Day 75; resolve overdue feedback.</p>",
+    bodyText:
+      "Day 60 — escalation & completion planning for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
+      "Schedule remaining DV days + HR/SFE input before Day 75; resolve overdue feedback.",
+    closingText: "Open the live report to plan completion before Day 75.",
+    description: "Day-60 milestone: escalation and completion planning (remaining requirements, overdue feedback, decision-readiness gaps).",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 60 completion planning for {{employeeName}}.",
+    subject: "Probation Day 60 — {{employeeName}} (plan to Day 75)",
+    templateKey: "probation_day60",
+    templateName: "Probation Day 60",
+  },
+  probation_day75: {
+    bodyHtml:
+      "<p><strong>Day 75 — decision readiness</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
+      "<p>DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
+      "<p>{{summary}}</p><p>Review the consolidated evidence and any contradictions before the decision. No automatic decision is made.</p>",
+    bodyText:
+      "Day 75 — decision readiness for {{employeeName}} ({{employeeHrId}}).\n" +
+      "DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
+      "Review the consolidated evidence + contradictions before the decision. No automatic decision is made.",
+    closingText: "Open the live report to review decision readiness.",
+    description: "Day-75 milestone: decision-readiness status (completeness, blockers, consolidated position). Never auto-decides.",
+    greeting: "Dear Team,",
+    isActive: true,
+    previewText: "Day 75 decision readiness for {{employeeName}}.",
+    subject: "Probation Day 75 — {{employeeName}} (decision readiness)",
+    templateKey: "probation_day75",
+    templateName: "Probation Day 75",
+  },
   resignation_workflow: {
     bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Effective date: {{date}}.</p><p>{{status}}</p>",
     bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nEffective date: {{date}}.\n{{status}}",
@@ -896,6 +1046,11 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   password_setup: "Account Access",
   probation_reminder: "Employee Lifecycle",
   probation_workflow: "Employee Lifecycle",
+  probation_dv_snapshot: "Employee Lifecycle",
+  probation_weekly_digest: "Employee Lifecycle",
+  probation_day30: "Employee Lifecycle",
+  probation_day60: "Employee Lifecycle",
+  probation_day75: "Employee Lifecycle",
   resignation_workflow: "Employee Lifecycle",
   user_created: "Account Access",
 };
@@ -969,33 +1124,9 @@ function cleanTextArray(values: unknown) {
   return Array.from(new Set(values.map(text).filter(Boolean)));
 }
 
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
- * Tokens whose values are trusted pre-rendered HTML blocks (system-built, e.g. the
- * submitted-plan table). They bypass per-value escaping in bodyHtml; the WHOLE
- * interpolated body still goes through sanitizeEmailTemplateHtml afterwards, which stays
- * the security authority. In text fields these tokens resolve to their text projection.
- */
-const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable", "digestTable"]);
-
-function interpolate(
-  template: string,
-  variables: Record<string, string>,
-  escapeValues: boolean,
-  rawHtmlTokens?: ReadonlySet<string>,
-) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
-    const value = variables[key] ?? "";
-    return escapeValues && !rawHtmlTokens?.has(key) ? escapeHtml(value) : value;
-  });
-}
+// The token substitution engine (interpolate), the trusted-HTML-block token set, and the render
+// variable map (contextVariables) live in ./render-core so they can be unit-tested without pulling in
+// the JSX email layout. contextVariables is the authoritative render whitelist — see render-core.ts.
 
 function extractPlaceholders(value: unknown) {
   const source = String(value ?? "");
@@ -1922,65 +2053,6 @@ export async function simulateTemplateRecipients(input: {
   return { ...resolved, warnings };
 }
 
-function contextVariables(input: Partial<EmailTemplateContext>, recipientName: string) {
-  return {
-    amount: text(input.amount),
-    area: text(input.area),
-    approvalFlow: text(input.approvalFlow),
-    candidateName: text(input.candidateName),
-    ctaLabel: text(input.ctaLabel || "Open in Phoenix Workforce"),
-    ctaUrl: text(input.ctaUrl),
-    date: text(input.date || new Date().toISOString().slice(0, 10)),
-    destination: text(input.destination),
-    duration: text(input.duration),
-    excuseType: text(input.excuseType),
-    excuseDate: text(input.excuseDate),
-    endDate: text(input.endDate),
-    employeeHrId: text(input.employeeHrId),
-    employeeName: text(input.employeeName),
-    expiryText: text(input.expiryText),
-    feedback: text(input.feedback),
-    hireDate: text(input.hireDate),
-    honorific: text(input.honorific),
-    interviewDate: text(input.interviewDate),
-    interviewLocation: text(input.interviewLocation),
-    interviewerName: text(input.interviewerName),
-    interviewTime: text(input.interviewTime),
-    jobTitle: text(input.jobTitle),
-    line: text(input.line),
-    managerName: text(input.managerName),
-    meetingUrl: text(input.meetingUrl),
-    nextStep: text(input.nextStep),
-    planTable: text(input.planTable),
-    planTableText: text(input.planTableText),
-    digestTable: text(input.digestTable),
-    digestTableText: text(input.digestTableText),
-    weekLabel: text(input.weekLabel),
-    scoreTable: text(input.scoreTable),
-    scoreTableText: text(input.scoreTableText),
-    recipientName,
-    startDate: text(input.startDate),
-    status: text(input.status),
-    subject: text(input.subject),
-    summary: text(input.summary),
-    vacationBalance: text(input.vacationBalance),
-    vacationType: text(input.vacationType),
-    // Marketing-request tokens.
-    currentStep: text(input.currentStep),
-    customerName: text(input.customerName),
-    estimatedCost: text(input.estimatedCost),
-    payDate: text(input.payDate),
-    productsTable: text(input.productsTable),
-    productsTableText: text(input.productsTableText),
-    requestCode: text(input.requestCode),
-    requesterName: text(input.requesterName),
-    requiredRoi: text(input.requiredRoi),
-    returnCallout: text(input.returnCallout),
-    returnCalloutText: text(input.returnCalloutText),
-    roiWindow: text(input.roiWindow),
-  };
-}
-
 function recipientNameForGreeting(recipients: Recipient[], context: Partial<EmailTemplateContext>) {
   if (context.recipientName) return text(context.recipientName);
   if (recipients.length === 1 && recipients[0]?.name) return text(recipients[0].name);
@@ -2298,6 +2370,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,
     from: input.from ?? undefined,
+    replyTo: input.replyTo ?? undefined,
     headers: unsubscribeHeaders,
     html: rendered.html,
     idempotencyKey: `template-${key}-${requestId}`,

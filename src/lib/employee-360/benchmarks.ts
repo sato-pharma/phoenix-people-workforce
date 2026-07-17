@@ -28,12 +28,14 @@ export const EMPLOYEE_360_BENCHMARKS = {
   checkinToVisitRatio: 0.88,
 } as const;
 
-// Company check-in time-of-day distribution (share %, Cairo hours 0–23),
-// measured from production `ireports360_checkins.check_date`. Used to overlay a
-// reference curve on a rep's own histogram. Field work is afternoon/evening.
+// Company check-in time-of-day distribution (share %, Cairo hours 0–23), measured from production
+// `ireports360_checkins.check_date` read AS-STORED (the vendor stores a zone-less Cairo wall-clock
+// as +00, so the stored clock IS Cairo-local — never re-convert through Africa/Cairo). Used to
+// overlay a reference curve on a rep's own histogram. Field work peaks early-afternoon (14:00–16:00).
+// Refreshed 2026-07-17 over 2026 YTD (85,095 check-ins).
 export const COMPANY_CHECKIN_HOUR_SHARE: readonly number[] = [
-  2.9, 1.2, 0.3, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.3, 4.5, 7.3, 7.0,
-  7.1, 9.4, 11.3, 11.4, 9.9, 8.2, 6.9, 6.7, 5.2,
+  0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 2.6, 5.7, 7.5, 6.4, 8.3, 10.6,
+  11.7, 11.2, 8.8, 7.3, 6.7, 5.6, 4.0, 2.1, 0.7,
 ];
 
 // Company campaign share by month (%), for the campaign-vs-regular trend

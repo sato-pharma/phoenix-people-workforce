@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildManagerMap, collectHierarchy } from "../src/lib/payroll/expenses.ts";
+import { buildManagerMap, collectHierarchy } from "../src/lib/outstation/expenses.ts";
 import { normalizeHrId } from "../src/lib/auth/permissions.ts";
 
 // A fake org: NSM-1 → {GPM-1, OTHER-1}; GPM-1 → {PM-1}; PM-1 → {MR-1, MR-2}.
@@ -53,7 +53,7 @@ export async function runExpenseAccessScopeTests() {
   assert.equal(leafDescendants.size, 0, "a rep with no reports sees no descendants (self only)");
 
   // --- Source invariant: PM/GPM/TM are routed to HIERARCHY scope, matrix untouched -----
-  const src = readFileSync("src/lib/payroll/expenses.ts", "utf8");
+  const src = readFileSync("src/lib/outstation/expenses.ts", "utf8");
   assert.match(
     src,
     /PORTAL_HIERARCHY_EXPENSE_ROLES[\s\S]*"Product Manager"[\s\S]*"Group Product Manager"[\s\S]*"Training Manager"/,

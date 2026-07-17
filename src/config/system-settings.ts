@@ -13,10 +13,10 @@ export const systemAssets = {
   adminSidebarBadge: "/brand/phoenix-admin-intelligence-badge.png",
   // Full admin sidebar lockup (phoenix emblem + wordmark on black). Renders as the
   // expanded admin sidebar header in place of the icon + "PHOENIX / Workforce · Admin"
-  // text. Native size 640×288 (~2.22:1) — optimized via `npm run optimize:brand-assets`.
+  // text. Native size 640×288 (~2.22:1) — optimized via `pnpm run optimize:brand-assets`.
   adminSidebarLockup: "/brand/phoenix-sidebar-lockup.png",
   // Square phoenix mark on black — used for the COLLAPSED admin sidebar rail (no
-  // white background box). Native size 128×128 — optimized via `npm run optimize:brand-assets`.
+  // white background box). Native size 128×128 — optimized via `pnpm run optimize:brand-assets`.
   adminRailMark: "/brand/phoenix-rail-mark.png",
 } as const;
 
@@ -27,8 +27,8 @@ export const systemDeployment = {
 } as const;
 
 export const systemEditingPolicy = {
-  fastCheckScript: "npm run check:edit",
-  hardeningScript: "npm run check:harden",
+  fastCheckScript: "pnpm run check:edit",
+  hardeningScript: "pnpm run check:harden",
   localEditingModeEnv: "NEXT_PUBLIC_PHOENIX_EDITING_MODE",
   protectedAreas: [
     "authentication",

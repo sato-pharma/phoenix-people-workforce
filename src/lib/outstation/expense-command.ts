@@ -11,11 +11,10 @@ import {
   buildPayrollExpenseTrend,
   groupPayrollExpenses,
   summarizePayrollExpenses,
-} from "@/lib/payroll/expense-metrics";
-import { listUnifiedOutstationExpenses } from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expense-metrics";
+import { listUnifiedOutstationExpenses } from "@/lib/outstation/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
-import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { normalizeDestinationKey, resolveDestinationCoords } from "@/lib/outstation/destination-geocode";
 import { canonicalizeLocation } from "@/lib/employee-360/egypt-locations";
@@ -71,7 +70,6 @@ function isManualOutstationRequest(request: OutstationExpenseRequest): boolean {
   if (reason.startsWith("manual outstation expense created by admin")) return true;
   return (
     request.capturedAccuracyMeters === 0 &&
-    request.suspiciousLocationScore === 0 &&
     request.approvalRecommendation === "manager_review"
   );
 }
@@ -252,16 +250,7 @@ export async function getOutstationExpenseCommandData(
     const longitude = regionCentroid?.lng ?? null;
     const mappable = regionCentroid !== null;
 
-    const suspiciousLocationScore = request ? request.suspiciousLocationScore : null;
     const approvalRecommendation = request ? request.approvalRecommendation : null;
-    const fraudFlags = request ? [...request.fraudFlags] : null;
-    const isHighRisk = request
-      ? isHighRiskRequest({
-          approvalRecommendation,
-          suspiciousLocationScore,
-          fraudFlags,
-        })
-      : false;
 
     // Canonicalise the free-text destination (English/Arabic variants + full
     // addresses all fold to one governorate, e.g. "الإسكندرية…" and "Alexandria")
@@ -284,10 +273,7 @@ export async function getOutstationExpenseCommandData(
       latitude,
       longitude,
       mappable,
-      suspiciousLocationScore,
       approvalRecommendation,
-      fraudFlags,
-      isHighRisk,
     };
   });
 
@@ -385,8 +371,6 @@ export async function getOutstationExpenseCommandData(
     rows.map((row) => normalizeHrIdForAccess(row.hrId)).filter(Boolean),
   ).size;
 
-  const highRiskRows = isAdmin ? rows.filter((row) => row.isHighRisk).length : null;
-
   const kpis = {
     totalAmount: summary.totalAmount,
     approvedAmount: summary.approvedAmount,
@@ -405,7 +389,6 @@ export async function getOutstationExpenseCommandData(
     mappableRows,
     unmappableRows,
     unmappedPct: rows.length > 0 ? roundCurrency((unmappableRows / rows.length) * 100) : 0,
-    highRiskRows,
   };
 
   // Cross-period deltas: same in-memory rows, but filtered to the previous window of
@@ -428,8 +411,6 @@ export async function getOutstationExpenseCommandData(
     const prevEmployeeCount = new Set(
       previousRows.map((row) => normalizeHrIdForAccess(row.hrId)).filter(Boolean),
     ).size;
-    const prevHighRiskRows = isAdmin ? previousRows.filter((row) => row.isHighRisk).length : 0;
-
     const pctDelta = (current: number, previous: number): number | null => {
       if (previous === 0) return null;
       return roundCurrency(((current - previous) / previous) * 100);
@@ -440,7 +421,6 @@ export async function getOutstationExpenseCommandData(
       pendingAmountPct: pctDelta(summary.pendingAmount, prevSummary.pendingAmount),
       totalRowsPct: pctDelta(summary.totalRows, prevSummary.totalRows),
       employeeCountPct: pctDelta(employeeCount, prevEmployeeCount),
-      highRiskRowsPct: isAdmin ? pctDelta(highRiskRows ?? 0, prevHighRiskRows) : null,
       previousLabel: previousWindow.label,
     };
   }
@@ -485,23 +465,6 @@ export async function getOutstationExpenseCommandData(
     .map((entry) => ({ ...entry, total: roundCurrency(entry.total) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, LEADERBOARD_LIMIT);
-
-  let highRiskByLocation = null;
-  if (isAdmin) {
-    const riskByLocation = new Map<string, number>();
-    rows
-      .filter((row) => row.isHighRisk)
-      .forEach((row) => {
-        // Group by brick-master region so the risk-panel click round-trips through
-        // the region filter (a city/free-text label would never match row.region).
-        const label = row.region || "Unassigned";
-        riskByLocation.set(label, (riskByLocation.get(label) ?? 0) + 1);
-      });
-    highRiskByLocation = Array.from(riskByLocation.entries())
-      .map(([label, highRiskTrips]) => ({ label, highRiskTrips }))
-      .sort((a, b) => b.highRiskTrips - a.highRiskTrips)
-      .slice(0, LEADERBOARD_LIMIT);
-  }
 
   // Location bubbles: aggregate spend by resolved coordinate (geocoded destination
   // town, exact GPS, or region-centroid fallback). One weighted, clickable
@@ -557,10 +520,7 @@ export async function getOutstationExpenseCommandData(
     ? rows
     : rows.map((row) => ({
         ...row,
-        suspiciousLocationScore: null,
         approvalRecommendation: null,
-        fraudFlags: null,
-        isHighRisk: false,
       }));
 
   return {
@@ -575,7 +535,6 @@ export async function getOutstationExpenseCommandData(
     breakdowns,
     leaderboards: {
       topSpenders,
-      highRiskByLocation,
     },
     heatPoints,
     rows: exposedRows,

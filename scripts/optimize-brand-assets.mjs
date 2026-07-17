@@ -6,7 +6,7 @@
 // (src/components/employee-portal/... PhoenixIdentityCard), both bloating the
 // repo and the image optimizer.
 //
-// Run: npm run optimize:brand-assets
+// Run: pnpm run optimize:brand-assets
 // Safe to re-run — it reads each file into a buffer first, so resizing never
 // races the in-place write, and `withoutEnlargement` means a second run is a no-op.
 

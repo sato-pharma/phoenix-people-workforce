@@ -56,14 +56,17 @@ export function notificationHrefForViewerRole(input: {
   const isPortal = Boolean(role && PORTAL_PLAN_ROLES.has(role));
 
   // Vacation approvals now live on the dedicated per-request page (Approvals Hub › Vacation
-  // Approvals). Route BOTH the new canonical URL and legacy vacation-action-center /
-  // vacation-report links to the correct shell so old and new notifications both land there.
+  // Approvals). Route the new canonical URL, the legacy vacation-action-center / vacation-report
+  // links, AND the legacy combined-hub approvals-hub?module=leave link to the correct shell so old
+  // and new notifications all land there (never back in the residual "Other Approvals" inbox).
   {
     const legacyActionCenter = fallback.startsWith("/leave-management/vacation-action-center");
+    const legacyHub = /approvals-hub\?/.test(fallback) && /module=leave/.test(fallback);
     const current = fallback.startsWith("/admin/approvals/vacation") || fallback.startsWith("/employee-portals/approvals/vacation");
-    if (legacyActionCenter || current) {
+    if (legacyActionCenter || legacyHub || current) {
       const requestId =
         /[?&]requestId=([^&]+)/.exec(fallback)?.[1] ??
+        /[?&]id=([^&]+)/.exec(fallback)?.[1] ??
         /\/approvals\/vacation\/([^/?#]+)/.exec(fallback)?.[1] ??
         null;
       const base = isPortal ? "/employee-portals/approvals/vacation" : "/admin/approvals/vacation";

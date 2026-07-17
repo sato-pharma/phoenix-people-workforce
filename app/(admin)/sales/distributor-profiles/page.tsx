@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 import { DistributorProfileEditor } from "@/components/sales/distributor-profile-editor";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { listEditableProfiles, type EditableProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 
 export const dynamic = "force-dynamic";
 
 export default async function DistributorProfilesPage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

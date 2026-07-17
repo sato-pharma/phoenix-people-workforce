@@ -125,7 +125,7 @@ export function PhoenixAdminDashboard({ stats }: PhoenixAdminDashboardProps) {
         <ModuleCard 
           title="Outstation Expenses" 
           description="Claim approvals and reimbursements" 
-          href="/payroll/expenses/dashboard" 
+          href="/admin/outstation/expenses/dashboard"
           stat={stats.expensesCount}
           icon={Receipt}
         />

@@ -4,13 +4,13 @@ import { Suspense } from "react";
 import { PayrollDashboard } from "@/components/payroll/payroll-dashboard-dynamic";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, getPayrollScope, type AccessContext } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 
 export default async function PayrollPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const [sp, access] = await Promise.all([
     searchParams,
-    resolveAccessContextFromPage(),
+    resolveAuthenticatedPageAccess(),
   ]);
   const scope = getPayrollScope(access);
   if (scope !== "COMPANY") {

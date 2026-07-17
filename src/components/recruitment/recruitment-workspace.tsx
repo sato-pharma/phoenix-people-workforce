@@ -185,6 +185,7 @@ function OfferPipelinePanel({ application, canManage }: { application: Applicati
   const [benefitsText, setBenefitsText] = useState("");
   const [reason, setReason] = useState("");
   const [steps, setSteps] = useState<OfferApprovalStep[]>([]);
+  const offerAttachmentsRef = useRef<HTMLInputElement>(null);
 
   const reloadChain = useCallback(async () => {
     try {
@@ -405,13 +406,52 @@ function OfferPipelinePanel({ application, canManage }: { application: Applicati
 
       {stage === "offer_generated" ? (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">Documents generated. Send the offer to the candidate.</p>
+          <p className="text-xs text-slate-500">
+            Documents generated. The offer-letter PDF is attached automatically — add any extra files (signed
+            contract, etc.) below, then send.
+          </p>
+          <input
+            ref={offerAttachmentsRef}
+            type="file"
+            multiple
+            className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700 hover:file:bg-slate-200"
+          />
           <Button
             disabled={busy}
             onClick={() =>
               act(async () => {
-                await postJson(`/api/recruitment/applications/${appId}/offer/send`, {});
-                return "Offer sent to the candidate.";
+                const files = Array.from(offerAttachmentsRef.current?.files ?? []);
+                // Mirror the server caps so HR gets an immediate error instead of a partial
+                // send (the route hard-rejects >6 files or an oversized total).
+                if (files.length > 6) {
+                  throw new Error("You can attach at most 6 files. Remove some and try again.");
+                }
+                const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+                if (totalBytes > 25 * 1024 * 1024) {
+                  throw new Error("Attachments exceed the 25 MB total limit.");
+                }
+                if (files.length > 0) {
+                  const form = new FormData();
+                  for (const file of files) form.append("attachments", file);
+                  const res = await fetch(`/api/recruitment/applications/${appId}/offer/send`, {
+                    method: "POST",
+                    body: form,
+                  });
+                  if (!res.ok) {
+                    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+                    throw new Error(
+                      (typeof data.message === "string" && data.message) ||
+                        (typeof data.error === "string" && data.error) ||
+                        "Failed to send the prepared offer.",
+                    );
+                  }
+                } else {
+                  await postJson(`/api/recruitment/applications/${appId}/offer/send`, {});
+                }
+                if (offerAttachmentsRef.current) offerAttachmentsRef.current.value = "";
+                return files.length > 0
+                  ? `Offer sent with the PDF + ${files.length} attachment${files.length === 1 ? "" : "s"}.`
+                  : "Offer sent to the candidate (with offer-letter PDF).";
               })
             }
           >

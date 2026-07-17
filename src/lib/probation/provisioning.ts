@@ -7,38 +7,81 @@
 // mirrors the window onto employees.probation_end_date.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const DEFAULT_PROBATION_MONTHS = 3;
-
-// Pure: add `months` whole months to a YYYY-MM-DD date, clamping the day to the
-// end of the target month (e.g. 2026-01-31 + 1 month -> 2026-02-28).
-export function addMonths(dateStr: string, months: number): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr).trim());
-  if (!match) return dateStr;
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1; // 0-11
-  const day = Number(match[3]);
-  const shifted = monthIndex + months;
-  const targetYear = year + Math.floor(shifted / 12);
-  const targetMonth = ((shifted % 12) + 12) % 12; // 0-11
-  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  const targetDay = Math.min(day, lastDay);
-  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
-}
+import { probationEndDate } from "@/lib/probation/date";
+import { ensureProbationCase } from "@/lib/probation/intelligence/cases";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// App-layer provisioning of the new central Probation Case on the primary hire path.
+// This is DEFENSE-IN-DEPTH: the DB AFTER INSERT trigger (20260713131000) already provisions a
+// case for every hire path, so on the recruitment/offer path the case usually exists by the time
+// this runs (ensureProbationCase then no-ops). The explicit call still matters when the trigger is
+// absent in an environment, and it surfaces provisioning failures at the app layer instead of
+// silently. It NEVER throws — a Case failure must not block a hire (the caller already treats
+// probation provisioning as non-blocking).
+async function ensureProbationCaseSafely(employeeHrId: string, startDate: string): Promise<boolean> {
+  try {
+    const result = await ensureProbationCase({
+      employeeHrId,
+      hireDate: startDate,
+      source: "hire_provisioning",
+    });
+    if (result.skippedReason) {
+      await recordProvisioningFailure(employeeHrId, `case_skipped:${result.skippedReason}`);
+    }
+    return result.created;
+  } catch (error) {
+    await recordProvisioningFailure(employeeHrId, String((error as { message?: unknown })?.message ?? error));
+    return false;
+  }
+}
+
+async function recordProvisioningFailure(employeeHrId: string, message: string): Promise<void> {
+  try {
+    await getSupabaseAdmin()
+      .from("probation_provisioning_failures")
+      .insert({ employee_hr_id: employeeHrId, source: "hire_provisioning", error_message: message });
+  } catch {
+    // Monitoring sink is best-effort; never let it break the hire path.
+  }
+}
+
+/**
+ * Count unresolved provisioning failures so the monitoring sink is actually SEEN (surfaced on the
+ * probation dashboard). Best-effort: returns 0 if the table is absent/unreadable — a monitoring read
+ * must never throw into the caller.
+ */
+export async function countUnresolvedProvisioningFailures(): Promise<number> {
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from("probation_provisioning_failures")
+      .select("id", { count: "exact", head: true })
+      .is("resolved_at", null);
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Idempotently create the initial probation window for a freshly hired employee.
 // Skips if a probation row already exists for the employee (re-hire / re-approval safe).
+//
+// NOTE: `probationMonths` is retained on the input for backward compatibility with existing
+// callers (recruitment offer path), but is intentionally NOT used to derive the end date.
+// The owner-locked canonical rule is a FIXED 90-day window (probationEndDate), not a
+// configurable month count — see src/lib/probation/date.ts.
 export async function createInitialProbationRecord(input: {
   employeeHrId: string;
   startDate?: string | null;
   probationMonths?: number | null;
-}): Promise<{ created: boolean }> {
+}): Promise<{ created: boolean; caseCreated: boolean }> {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
-  if (!employeeHrId) return { created: false };
+  if (!employeeHrId) return { created: false, caseCreated: false };
+
+  const startDate = (input.startDate && input.startDate.trim()) || todayIso();
 
   const supabase = getSupabaseAdmin();
   const { data: existing, error: existingError } = await supabase
@@ -47,14 +90,14 @@ export async function createInitialProbationRecord(input: {
     .eq("employee_hr_id", employeeHrId)
     .limit(1);
   if (existingError) throw existingError;
-  if (existing && existing.length > 0) return { created: false };
+  if (existing && existing.length > 0) {
+    // Legacy window already exists, but still ensure the new central Case is provisioned
+    // (covers rows created before the Case model / trigger existed).
+    const caseCreated = await ensureProbationCaseSafely(employeeHrId, startDate);
+    return { created: false, caseCreated };
+  }
 
-  const startDate = (input.startDate && input.startDate.trim()) || todayIso();
-  const months =
-    typeof input.probationMonths === "number" && Number.isFinite(input.probationMonths) && input.probationMonths > 0
-      ? input.probationMonths
-      : DEFAULT_PROBATION_MONTHS;
-  const endDate = addMonths(startDate, months);
+  const endDate = probationEndDate(startDate) ?? startDate;
 
   const { error: insertError } = await supabase.from("employee_probation").insert({
     employee_hr_id: employeeHrId,
@@ -67,5 +110,8 @@ export async function createInitialProbationRecord(input: {
   // Mirror the window onto the employee row (used by lifecycle-risk + payroll eligibility).
   await supabase.from("employees").update({ probation_end_date: endDate }).eq("hr_id", employeeHrId);
 
-  return { created: true };
+  // Provision the new central Probation Case (defense-in-depth alongside the DB hire trigger).
+  const caseCreated = await ensureProbationCaseSafely(employeeHrId, startDate);
+
+  return { created: true, caseCreated };
 }

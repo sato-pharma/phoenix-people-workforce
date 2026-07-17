@@ -1060,18 +1060,18 @@ Response: HTML document with embedded CSS
 #### GET `/api/payroll/[batchId]/download`
 Download as Excel/CSV
 
-### 5. Expenses
+### 5. Expenses (now owned by the outstation module, see `src/lib/outstation/expenses.ts`)
 
-#### POST `/api/payroll/expenses/import`
+#### POST `/api/admin/outstation/expenses/import`
 Upload expense file
 
-#### GET `/api/payroll/expenses`
+#### GET `/api/admin/outstation/expenses`
 List all expense reports
 
-#### POST `/api/payroll/expenses/analyze`
+#### POST `/api/admin/outstation/expenses/analyze`
 Analyze imported expenses
 
-#### GET `/api/payroll/expenses/reports/[reportId]`
+#### GET `/api/admin/outstation/expenses/reports/[reportId]`
 Get detailed expense report
 
 ---
@@ -1578,7 +1578,7 @@ Before deploying payroll to production:
 - **Types**: `src/lib/payroll/types.ts`
 - **Validation**: `src/lib/payroll/salary-import.ts`
 - **Payslips**: `src/lib/payroll/payslip-center.ts`
-- **Expenses**: `src/lib/payroll/expenses.ts`
+- **Expenses**: `src/lib/outstation/expenses.ts`
 - **Tests**: `tests/payroll-sheet-mapping.test.ts`
-- **UI Pages**: `app/payroll/*`, `app/payslips/*`
+- **UI Pages**: `app/payroll/*`, `app/payslips/*`, `app/(admin)/admin/outstation/expenses/*`
 

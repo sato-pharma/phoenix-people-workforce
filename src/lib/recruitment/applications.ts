@@ -19,6 +19,7 @@ import {
   type OfferLifecycleInput,
 } from "@/lib/offers/service";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
+import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import {
   canCastOfferApproval,
   computeRequiredApprovers,
@@ -662,7 +663,11 @@ export async function generateOfferDocuments(id: string, access: AccessContext):
 }
 
 // Step 5 — send the generated offer to the candidate (token + email + tracking).
-export async function sendPreparedOffer(id: string, access: AccessContext): Promise<{ application: Application; offerId: string }> {
+export async function sendPreparedOffer(
+  id: string,
+  access: AccessContext,
+  attachments?: SendPhoenixEmailAttachment[],
+): Promise<{ application: Application; offerId: string }> {
   const application = await loadApplicationRow(id);
   if (!application.offerId) throw new Error("This application has no generated offer to send.");
 
@@ -673,6 +678,7 @@ export async function sendPreparedOffer(id: string, access: AccessContext): Prom
     access: { role: access.role },
     sentByHrId: access.hrId ?? null,
     sentVersion: latestVersion > 0 ? latestVersion : null,
+    attachments,
   });
 
   const updated = await commitApplicationStage({

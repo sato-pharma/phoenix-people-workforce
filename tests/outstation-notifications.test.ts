@@ -19,38 +19,97 @@ function functionSlice(src: string, declaration: string) {
 
 export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
-  const expenses = source("src/lib/payroll/expenses.ts");
+  const expenses = source("src/lib/outstation/expenses.ts");
 
-  // ── Rule 1: No submit notification ────────────────────────────────────────────
-  // Outstation/expense submissions auto-approve directly to payroll. No email on submit.
-  assert.doesNotMatch(
+  // ── Rule 1 (revised 2026-07-13): Submit notification → Super Admin + CEO, full details ──
+  // Outstation/expense submissions auto-approve directly to payroll (no human
+  // pending-approval step). Instead of an actionable "approve this" alert, every
+  // active Super Admin AND the CEO get a live, informational feed of what was just
+  // submitted — by email + Telegram, with the full request detail (amounts, GPS,
+  // risk signals) — not the submitter's manager, and not the wider approver set
+  // that has no outstation approval authority. (Super-Admin-only was a regression:
+  // it silently dropped the CEO from every outstation alert.)
+  assert.match(
     service,
     /async function notifyOutstationSubmitted/,
-    "RULE 1: notifyOutstationSubmitted must NOT exist — no email on submit",
+    "RULE 1: notifyOutstationSubmitted must exist — Super Admin + CEO get a submit alert",
   );
 
-  const submitHooks = [
-    "async function submitOutstationRequest",
+  const submitNotifySlice = functionSlice(service, "async function notifyOutstationSubmitted");
+  assert.match(
+    submitNotifySlice,
+    /resolveOutstationSubmitAlertHrIds/,
+    "submit notification must resolve recipients via the submit-alert lookup, not the employee's manager",
+  );
+  assert.doesNotMatch(
+    submitNotifySlice,
+    /direct_manager/,
+    "submit notification must NOT go to the submitter's manager — Super Admin + CEO only",
+  );
+  assert.match(
+    submitNotifySlice,
+    /channels:\s*\["email",\s*"telegram"\]/,
+    "submit notification must be delivered via email + Telegram",
+  );
+  assert.match(
+    submitNotifySlice,
+    /eventType: "request_submitted"/,
+    "submit notification eventType must be request_submitted",
+  );
+
+  const submitAlertLookupSlice = functionSlice(service, "async function resolveOutstationSubmitAlertHrIds");
+  assert.match(
+    submitAlertLookupSlice,
+    /\.in\("role",\s*\["Super Admin",\s*"CEO"\]\)/,
+    "submit notification recipients must be scoped to Super Admin + CEO roles",
+  );
+
+  // submitOutstationRequest now makes the system decision itself: accepted -> push to
+  // payroll + Super Admin/CEO alert; a rejected_by_system decision persists the request
+  // and notifies the employee (no throw).
+  const submitDecisionSlice = functionSlice(service, "async function submitOutstationRequest");
+  assert.match(
+    submitDecisionSlice,
+    /notifyOutstationSubmitted\(/,
+    "an accepted submit fires the Super Admin/CEO alert",
+  );
+  assert.match(
+    submitDecisionSlice,
+    /notifyOutstationDecision\(/,
+    "a system-rejected submit notifies the employee",
+  );
+  assert.match(
+    submitDecisionSlice,
+    /rejected_by_system/,
+    "a failed decision persists as rejected_by_system rather than throwing",
+  );
+
+  // The medical-rep and admin-manual flows still auto-accept via approveOutstationRequestForPayroll.
+  const autoAcceptHooks = [
     "async function submitMedicalRepSimpleExpenseRequest",
     "async function createManagerExpenseAsAdmin",
   ];
-  for (const hook of submitHooks) {
+  for (const hook of autoAcceptHooks) {
     const slice = functionSlice(service, hook);
     assert.doesNotMatch(
       slice,
       /notifyOutstationSubmitted\(/,
-      `RULE 1: ${hook} must NOT emit a submit notification`,
+      `${hook} must not call the submit notification directly — it fires from inside approveOutstationRequestForPayroll`,
     );
     assert.match(
       slice,
       /approveOutstationRequestForPayroll\(/,
-      `RULE 1: ${hook} must auto-approve on submit`,
+      `${hook} must auto-accept on submit`,
     );
   }
 
-  // ── Rule 1: No approve notification ──────────────────────────────────────────
-  // Approvals are silent — they auto-happen on submission, no email needed.
+  // ── Rule 1: Approve fires the Super Admin submit alert, never the employee decision email ──
   const approveSlice = functionSlice(service, "async function approveOutstationRequestForPayroll");
+  assert.match(
+    approveSlice,
+    /notifyOutstationSubmitted\(/,
+    "RULE 1: approveOutstationRequestForPayroll must fire the Super Admin submit alert",
+  );
   assert.doesNotMatch(
     approveSlice,
     /notifyOutstationDecision\(/,

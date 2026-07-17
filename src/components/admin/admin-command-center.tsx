@@ -986,7 +986,7 @@ export function AdminCommandCenter({
               <ModuleCard
                 accentColor="amber"
                 description="Trip reports, fuel claims, and expense approval workflow."
-                href="/payroll/expenses/dashboard"
+                href="/admin/outstation/expenses/dashboard"
                 icon={Receipt}
                 lastSync="Live"
                 metrics={[

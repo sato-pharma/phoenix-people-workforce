@@ -33,7 +33,7 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
 async function main() {
   const [path, sheetFilter, maxRowsArg] = process.argv.slice(2);
   if (!path) {
-    console.error('Usage: npx tsx scripts/probe-weekly-xlsx.ts "<path.xlsx>" [sheetNameFilter] [maxRows]');
+    console.error('Usage: pnpm dlx tsx scripts/probe-weekly-xlsx.ts "<path.xlsx>" [sheetNameFilter] [maxRows]');
     process.exit(1);
   }
   const maxRows = Number(maxRowsArg) || 6;

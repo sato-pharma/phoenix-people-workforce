@@ -778,7 +778,7 @@ async function verifyLocalAppPermissionGuards(browser: Browser, users: Record<Ph
       ],
       [
         "Employee app API cannot import approved expenses",
-        "/api/payroll/expenses/import",
+        "/api/admin/outstation/expenses/import",
         {
           body: JSON.stringify({ month: 5, records: [], year: 2026 }),
           headers: { "Content-Type": "application/json" },

@@ -11,7 +11,7 @@ import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import type {
   PayrollExpenseGroupRow,
   PayrollExpenseTrendPoint,
-} from "@/lib/payroll/expense-metrics";
+} from "@/lib/outstation/expense-metrics";
 
 /** How an expense entered the system. */
 export type ExpenseSource = "historical" | "live" | "manual";
@@ -55,10 +55,7 @@ export type ExpenseCommandRow = PayrollExpenseApproval & {
   longitude: number | null;
   mappable: boolean;
   // Admin-only intelligence — null in self (portal) scope.
-  suspiciousLocationScore: number | null;
   approvalRecommendation: string | null;
-  fraudFlags: string[] | null;
-  isHighRisk: boolean;
 };
 
 export type ExpenseSourceTotals = Record<ExpenseSource, { rows: number; amount: number }>;
@@ -81,8 +78,6 @@ export type ExpenseCommandKpis = {
   mappableRows: number;
   unmappableRows: number;
   unmappedPct: number;
-  // Admin-only — null in self scope.
-  highRiskRows: number | null;
 };
 
 /**
@@ -96,7 +91,6 @@ export type ExpenseCommandKpiDeltas = {
   pendingAmountPct: number | null;
   totalRowsPct: number | null;
   employeeCountPct: number | null;
-  highRiskRowsPct: number | null;
   previousLabel: string;
 };
 
@@ -117,15 +111,8 @@ export type ExpenseSpenderRow = {
   trips: number;
 };
 
-export type ExpenseRiskLocationRow = {
-  label: string;
-  highRiskTrips: number;
-};
-
 export type ExpenseCommandLeaderboards = {
   topSpenders: ExpenseSpenderRow[];
-  // Admin-only — null in self scope.
-  highRiskByLocation: ExpenseRiskLocationRow[] | null;
 };
 
 export type ExpenseCommandHeatPoint = {
