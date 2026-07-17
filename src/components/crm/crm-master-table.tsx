@@ -133,25 +133,28 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
   useEffect(() => {
     // Width of the scrolling content = the widest of the table element and its scroll container. The
-    // table can reflow WIDER a beat after first paint (nowrap columns, late font/RTL layout); a single
-    // synchronous read then captures a too-small width and the top scrollbar goes missing (this is why
-    // narrower tabs sometimes showed no bar). So re-measure across a few frames + short timeouts, and
-    // keep a ResizeObserver on the table for anything after that.
+    // table reflows WIDER well after first paint (nowrap columns, RTL Arabic text, web fonts loading a
+    // second or two later), and a single early read captures a too-small width → the top scrollbar goes
+    // missing. The component remounts on every navigation (page key), so scrollWidth starts at 0 here;
+    // we GROW it to the widest value seen and keep it (no shrink-back flicker). Re-measure aggressively
+    // for a few seconds + on font load + via a ResizeObserver so a late reflow is always caught.
     const measure = () => {
       const width = Math.max(tableRef.current?.scrollWidth ?? 0, bodyRef.current?.scrollWidth ?? 0);
-      setScrollWidth((prev) => (prev === width ? prev : width));
+      setScrollWidth((prev) => (width > prev ? width : prev));
     };
     measure();
-    const raf = requestAnimationFrame(measure);
-    const t1 = setTimeout(measure, 150);
-    const t2 = setTimeout(measure, 450);
+    const interval = setInterval(measure, 250);
+    const stop = setTimeout(() => clearInterval(interval), 3000);
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     if (observer && tableRef.current) observer.observe(tableRef.current);
+    if (observer && bodyRef.current) observer.observe(bodyRef.current);
+    if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
+      void document.fonts.ready.then(measure);
+    }
     window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      clearInterval(interval);
+      clearTimeout(stop);
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
