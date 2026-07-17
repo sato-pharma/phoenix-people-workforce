@@ -11,16 +11,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Prod and staging both submit builds to Cloud Build in the same GCP project and poll
-# its "Get requests per minute" quota (60/project); two overlapping source builds
-# reliably 429 one of them (see PR #1029/#1032 and the 2026-07-17 staging burst). This
-# shared group — identical in deploy-cloud-run-staging.yml — serializes BOTH deploy
-# workflows so their builds never poll concurrently. cancel-in-progress:false never
-# kills an in-flight deploy; a newer run just queues (GitHub keeps only the latest
-# pending, which is fine — main is cumulative, so the newest deploy ships all prior
-# commits).
+# Own concurrency group (staging uses cloud-run-deploy-staging). The two deploy
+# workflows used to share one group ("cloud-run-source-deploy") because BOTH ran a
+# Cloud Build in the same GCP project, and gcloud's build-status polling reliably
+# 429'd against Cloud Build's "Get requests per minute" quota (59/project) whenever
+# two builds polled concurrently (see PR #1029/#1032/#1097 and the 2026-07-17
+# staging burst). Staging no longer builds anything on its normal path — it reuses
+# the image THIS workflow pushes (build once, deploy twice) — so there is at most
+# one Cloud Build at a time project-wide and the shared group would only make
+# staging queue behind the next prod deploy for no reason. cancel-in-progress:false
+# never kills an in-flight deploy; a newer run just queues (GitHub keeps only the
+# latest pending, which is fine — main is cumulative, so the newest deploy ships all
+# prior commits).
 concurrency:
-  group: cloud-run-source-deploy
+  group: cloud-run-deploy-prod
   cancel-in-progress: false
 
 env:
@@ -61,34 +65,53 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      - name: Build image via Cloud Build (explicit --build-arg for NEXT_PUBLIC_*)
-        id: build
+      - name: Resolve image tag and check Artifact Registry for an existing build
+        id: preflight
         run: |
           set -euo pipefail
           RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
           IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}:$SHA_TAG"
+          # sha-* image tags are immutable per commit, so if this commit's image is
+          # already in Artifact Registry (workflow re-run, or a retry after a
+          # post-build step failed) rebuilding would spend minutes producing the
+          # identical artifact. Skip the build and deploy the existing image.
+          if gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+            echo "Image $IMAGE already exists — skipping build."
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Image $IMAGE not found — will build."
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build image via Cloud Build (BuildKit cache; explicit --build-arg for NEXT_PUBLIC_*)
+        if: ${{ steps.preflight.outputs.skip_build != 'true' }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.preflight.outputs.image }}"
           echo "Building $IMAGE"
           # gcloud run deploy --source's --set-build-env-vars only reaches the build when
           # Cloud Build picks the Buildpacks path. This repo has a Dockerfile, so that flag
           # was silently dropped and every NEXT_PUBLIC_* value got inlined into the client
           # bundle as an empty string on every prior deploy. cloudbuild.yaml builds with an
           # explicit --build-arg per value instead, which Docker actually honors.
+          # _CACHE_REPO is where cloudbuild.yaml keeps its reusable BuildKit cache tags
+          # (:deps-cache / :latest-cache) — same AR image path as the service image.
           # retry-transient.sh retries ONLY transient Cloud Build 429/5xx/network errors
           # (the 60/min get-requests quota); a real build failure is surfaced on attempt 1.
           bash scripts/retry-transient.sh gcloud builds submit . \
             --config cloudbuild.yaml \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
-            --substitutions=_IMAGE="$IMAGE",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Deploy new revision (no traffic) with a commit-SHA tag
         id: deploy
         run: |
           set -euo pipefail
-          SHA_TAG="${{ steps.build.outputs.sha_tag }}"
+          SHA_TAG="${{ steps.preflight.outputs.sha_tag }}"
           echo "Deploying tag $SHA_TAG (no traffic)"
           # Scaling/concurrency/execution-environment were previously set once by hand via
           # gcloud and never captured here — a redeploy of this workflow alone (e.g. a fresh
@@ -98,8 +121,16 @@ jobs:
           # vCPU is what turned the employee-directory photo-request bug into a real p95-
           # latency alert (see PR #1022) — 40 makes Cloud Run spread a similar burst across
           # the existing min/max-instances headroom instead of queuing on one instance.
+          # --startup-probe and --min pin config first applied live by hand on 2026-07-17:
+          # the fast healthz probe (every 5s, up to 60s) makes a new revision routable
+          # seconds after Next.js starts instead of waiting out the default TCP probe, and
+          # service-level min instances (--min; this SDK's spelling of the older
+          # --service-min-instances) keeps ONE warm instance shared across all revisions —
+          # unlike revision-level --min-instances, it does not reserve a vCPU per stale
+          # sha-* tagged revision (the 2026-07-13/14 CPU-quota exhaustion). Revision-level
+          # --min-instances stays 0 for exactly that reason.
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image "${{ steps.build.outputs.image }}" \
+            --image "${{ steps.preflight.outputs.image }}" \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --allow-unauthenticated \
@@ -107,12 +138,14 @@ jobs:
             --cpu 1 \
             --concurrency 40 \
             --min-instances 0 \
+            --min 1 \
             --max-instances 3 \
             --execution-environment gen2 \
             --cpu-boost \
+            --startup-probe httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=12,initialDelaySeconds=0 \
             --no-traffic \
             --tag "$SHA_TAG" \
-            --update-env-vars ^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com^
+            --update-env-vars "^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com"
           TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
             | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
           echo "Tag URL: $TAG_URL"
