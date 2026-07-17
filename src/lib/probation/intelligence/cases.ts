@@ -126,6 +126,17 @@ export async function assertCaseAcceptsSubmissions(caseId: string | null | undef
   }
 }
 
+/**
+ * Probation is a MEDICAL-REPRESENTATIVE-ONLY workflow (owner rule, 2026-07-17). Managers
+ * (District/Regional/National Sales Manager) and head-office roles must NEVER get a probation case,
+ * even inside the hire+90 window — provisioning them was a scope bug that put 4 non-reps into the
+ * live module. Matched on a normalized "medical rep" substring so title variants (e.g. "Senior
+ * Medical Representative") are covered while every manager/admin title is excluded.
+ */
+export function isMedicalRepresentativeTitle(jobTitle: string | null | undefined): boolean {
+  return String(jobTitle ?? "").trim().toLowerCase().includes("medical rep");
+}
+
 export type EnsureProbationCaseInput = {
   employeeHrId: string;
   /** Optional overrides; when omitted, identity + hire date resolve from the employee directory. */
@@ -179,6 +190,7 @@ export async function ensureProbationCase(
   if (
     !identity.hireDate ||
     !identity.employeeName ||
+    !identity.jobTitle ||
     identity.managerHrId === null
   ) {
     const rows = await getEmployeeDirectoryRows();
@@ -198,6 +210,13 @@ export async function ensureProbationCase(
   if (!identity.hireDate) {
     // Cannot anchor the 90-day window without a hire date — surface, don't fabricate.
     return { case: null, created: false, skippedReason: "missing_hire_date" };
+  }
+
+  // Scope guard (owner rule 2026-07-17): probation is medical-representatives-only. A manager
+  // (DSM/RSM/NSM) or head-office employee never gets a case, even mid hire+90 window. This is the
+  // single choke point for BOTH the backfill and the real-time hire hook (provisioning.ts).
+  if (!isMedicalRepresentativeTitle(identity.jobTitle)) {
+    return { case: null, created: false, skippedReason: "not_medical_representative" };
   }
 
   const startDate = probationStartDate(identity.hireDate);

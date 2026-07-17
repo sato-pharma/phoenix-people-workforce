@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { probationEndDate } from "../src/lib/probation/date.ts";
+import { isMedicalRepresentativeTitle } from "../src/lib/probation/intelligence/cases.ts";
 
 function source(path: string): string {
   return readFileSync(path, "utf8");
@@ -10,6 +11,27 @@ function source(path: string): string {
 export function runProbationCaseProvisioningTests() {
   const cases = source("src/lib/probation/intelligence/cases.ts");
   const backfill = source("src/lib/probation/intelligence/backfill.ts");
+
+  // ── MEDICAL-REPRESENTATIVE-ONLY scope (owner rule 2026-07-17) ──
+  // Behavioral: the eligibility helper accepts med-rep titles (+ variants) and rejects everyone else.
+  assert.equal(isMedicalRepresentativeTitle("Medical Representative"), true, "med rep is in scope");
+  assert.equal(isMedicalRepresentativeTitle("Senior Medical Representative"), true, "med rep variant is in scope");
+  assert.equal(isMedicalRepresentativeTitle("  medical rep  "), true, "match is trimmed + case-insensitive");
+  assert.equal(isMedicalRepresentativeTitle("District Sales Manager"), false, "DSM is out of scope");
+  assert.equal(isMedicalRepresentativeTitle("Regional Sales Manager"), false, "RSM is out of scope");
+  assert.equal(isMedicalRepresentativeTitle("Admin Assistant"), false, "head-office role is out of scope");
+  assert.equal(isMedicalRepresentativeTitle(null), false, "null/unknown title is out of scope");
+
+  // The app-layer choke point (ensureProbationCase) enforces the scope with a skippedReason.
+  assert.match(cases, /if \(!isMedicalRepresentativeTitle\(identity\.jobTitle\)\)/, "ensureProbationCase guards on med-rep scope");
+  assert.match(cases, /skippedReason: "not_medical_representative"/, "non-med-rep provisioning is surfaced, not created");
+  // The backfill PLAN also excludes non-med-reps so the dry-run report is accurate.
+  assert.match(backfill, /if \(!isMedicalRepresentativeTitle\(/, "backfill plan skips non-med-reps");
+  // The DB trigger (the primary hire path) carries the SAME guard — an app guard alone would leak via
+  // the AFTER INSERT trigger. This is the load-bearing enforcement for every hire path.
+  const scopeTrigger = source("supabase/migrations/20260717140000_probation_provision_medical_rep_only.sql");
+  assert.match(scopeTrigger, /position\('medical rep' in lower\(coalesce\(new\.job_title, ''\)\)\) = 0/, "trigger guards on med-rep job title");
+  assert.match(scopeTrigger, /create or replace function public\.probation_provision_case_on_hire/, "trigger function is recreated with the guard");
 
   // ensureProbationCase is the single idempotent entry point.
   assert.match(cases, /export async function ensureProbationCase/, "ensureProbationCase must be exported");
