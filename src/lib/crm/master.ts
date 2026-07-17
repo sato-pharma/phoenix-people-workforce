@@ -53,13 +53,16 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
-  { key: "checkin_time", kind: "datetime_local", label: "Check-in Time (nearest)", note: "All 'Check-in …' columns come from ONE nearest GPS check-in: same rep, same day, closest in time to this visit's CRM Save Date, preferring the same contact. Best-match correlation — NOT a guaranteed CRM link; a visit may have no check-in at all (all show —)." },
-  { key: "checkin_contact_name", kind: "text", label: "Check-in Contact" },
+  { key: "checkin_id", kind: "number", label: "Check-in ID", note: "All 'Check-in …' columns come from ONE nearest GPS check-in: same rep, same day, closest in time to this visit's CRM Save Date, preferring the same contact. Best-match correlation — NOT a guaranteed CRM link; a visit may have no check-in at all (all show —)." },
+  { key: "checkin_time", kind: "datetime_local", label: "Check-in Time" },
+  { key: "checkin_agent_crm_id", kind: "number", label: "Check-in Agent CRM ID" },
+  { key: "checkin_agent_hr_id", kind: "text", label: "Check-in Agent HR ID" },
   { key: "checkin_contact_id", kind: "number", label: "Check-in Contact ID" },
-  { key: "checkin_address", kind: "text", label: "Check-in Address" },
+  { key: "checkin_contact_name", kind: "text", label: "Check-in Contact" },
   { key: "checkin_lat", kind: "coord", label: "Check-in Latitude" },
   { key: "checkin_lon", kind: "coord", label: "Check-in Longitude" },
-  { key: "checkin_id", kind: "number", label: "Check-in ID" },
+  { key: "checkin_address", kind: "text", label: "Check-in Address" },
+  { key: "checkin_synced_at", kind: "datetime", label: "Check-in Synced At" },
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
@@ -152,23 +155,29 @@ function sanitizeSearch(term: string): string {
 type CheckinLite = {
   address: string | null;
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   check_date: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
   crm_checkin_id: number | null;
   lat: number | null;
   lon: number | null;
+  synced_at: string | null;
 };
 
-/** The nearest-check-in fields merged onto each visit row (all null when there's no match). */
+/** The nearest-check-in fields merged onto each visit row (all null when there's no match) —
+ * the full set of check-in columns, mirroring the Check-ins dataset. */
 const CHECKIN_MERGE_KEYS = [
+  "checkin_id",
   "checkin_time",
-  "checkin_contact_name",
+  "checkin_agent_crm_id",
+  "checkin_agent_hr_id",
   "checkin_contact_id",
-  "checkin_address",
+  "checkin_contact_name",
   "checkin_lat",
   "checkin_lon",
-  "checkin_id",
+  "checkin_address",
+  "checkin_synced_at",
 ] as const;
 
 /**
@@ -196,7 +205,7 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(CRM_CHECKINS_TABLE)
-    .select("crm_checkin_id, agent_crm_id, contact_crm_id, contact_name, check_date, address, lat, lon")
+    .select("crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at")
     .in("agent_crm_id", agentIds)
     .gte("check_date", `${from}T00:00:00`)
     .lte("check_date", `${to}T23:59:59`)
@@ -236,13 +245,16 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
         }
       }
     }
+    row.checkin_id = best.crm_checkin_id;
     row.checkin_time = best.check_date;
-    row.checkin_contact_name = best.contact_name;
+    row.checkin_agent_crm_id = best.agent_crm_id;
+    row.checkin_agent_hr_id = best.agent_hr_id;
     row.checkin_contact_id = best.contact_crm_id;
-    row.checkin_address = best.address;
+    row.checkin_contact_name = best.contact_name;
     row.checkin_lat = best.lat;
     row.checkin_lon = best.lon;
-    row.checkin_id = best.crm_checkin_id;
+    row.checkin_address = best.address;
+    row.checkin_synced_at = best.synced_at;
   }
 }
 
