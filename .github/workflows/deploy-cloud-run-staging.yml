@@ -67,7 +67,10 @@ env:
   SERVICE_NAME: phoenix-hr-staging
   # The PROD service's image path — the image reused on the normal path (staging
   # deploys the exact artifact the prod workflow built for the same commit).
-  PROD_IMAGE_PATH: us-central1-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr
+  # Prod builds/pushes in europe-west3 since the 2026-07-17 region cutover; the
+  # staging SERVICE stays in us-central1 for now and pulls this image cross-region
+  # (supported by Cloud Run; only slightly slower cold starts on staging).
+  PROD_IMAGE_PATH: europe-west3-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr
   # Where the manual build_from_source fallback pushes its image and BuildKit cache
   # tags — kept separate from PROD_IMAGE_PATH so a staging-args build can never
   # overwrite the prod image or its :deps-cache/:latest-cache tags.

@@ -125,7 +125,7 @@ export function runGcloudMigrationHardeningTests() {
   );
 
   // --- Wave 2: deliberate host posture (canonical vs .run.app vs unknown) ---
-  const runAppHost = "https://phoenix-hr-897559113412.us-central1.run.app";
+  const runAppHost = "https://phoenix-hr-897559113412.europe-west3.run.app";
   const savedAllowed = process.env.PHOENIX_ALLOWED_ORIGINS;
   try {
     // Default posture (no PHOENIX_ALLOWED_ORIGINS): only the canonical domain is trusted;
@@ -139,7 +139,7 @@ export function runGcloudMigrationHardeningTests() {
     // A request arriving on the .run.app host must still produce a CANONICAL redirect
     // origin — sensitive links must never carry the .run.app hostname.
     const runAppRequest = new Request(`${runAppHost}/api/auth/login`, {
-      headers: { "x-forwarded-host": "phoenix-hr-897559113412.us-central1.run.app", "x-forwarded-proto": "https" },
+      headers: { "x-forwarded-host": "phoenix-hr-897559113412.europe-west3.run.app", "x-forwarded-proto": "https" },
     });
     assert.equal(
       trustedOriginForRedirect(runAppRequest),

@@ -29,7 +29,13 @@ concurrency:
 
 env:
   PROJECT_ID: phoenix-workforce-498619
-  REGION: us-central1
+  # europe-west3 (Frankfurt) since the 2026-07-17 region cutover: colocated with the
+  # production Supabase project (AWS eu-central-1, same metro, ~1ms) and ~57ms from
+  # Cairo users vs ~146ms from Iowa. REGION drives the Cloud Build submit region, the
+  # Artifact Registry image path, and the Cloud Run deploy target together — the AR
+  # repo cloud-run-source-deploy exists in both regions, and the first europe-west3
+  # build simply seeds fresh :deps-cache/:latest-cache tags there.
+  REGION: europe-west3
   SERVICE_NAME: phoenix-hr
 
 jobs:
@@ -145,7 +151,7 @@ jobs:
             --startup-probe httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=12,initialDelaySeconds=0 \
             --no-traffic \
             --tag "$SHA_TAG" \
-            --update-env-vars "^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.us-central1.run.app,https://phoenix-hr.satopharma.com"
+            --update-env-vars "^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.europe-west3.run.app,https://phoenix-hr.satopharma.com"
           TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
             | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
           echo "Tag URL: $TAG_URL"
