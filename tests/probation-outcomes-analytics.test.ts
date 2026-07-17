@@ -72,13 +72,14 @@ export function runProbationOutcomesAnalyticsTests() {
   // Always returns a row per recommendation, even with zero data.
   assert.equal(rollupPredictiveness([]).length, 3);
 
-  // Wiring: route gated company-wide, page gated, service reads frozen snapshot score.
+  // Wiring: route + page gate on the analytics-audience helper (owner rule 2026-07-17: NSM + PM/GPM +
+  // SFE + admin + CEO — WIDER than canReadAllProbation), service reads the frozen snapshot score.
   const route = src("app/api/probation/analytics/route.ts");
   assert.match(route, /assertPermission\(access, "probation", "read"\)/, "analytics route gated at read");
-  assert.match(route, /canReadAllProbation\(access\)/, "analytics route company-wide only");
+  assert.match(route, /canViewProbationAnalytics\(access\)/, "analytics route gated on the analytics-audience helper");
 
   const page = src("app/(admin)/probation/analytics/page.tsx");
-  assert.match(page, /canReadAllProbation\(access\)/, "analytics page company-wide only");
+  assert.match(page, /canViewProbationAnalytics\(access\)/, "analytics page gated on the analytics-audience helper");
   assert.match(page, /<ProbationAnalyticsView data=\{data\}/, "page renders the view");
 
   const svc = src("src/lib/probation/intelligence/outcomes-analytics.ts");

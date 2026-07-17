@@ -15,6 +15,7 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
@@ -137,6 +138,23 @@ export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope"
 
 export function canReadAllProbation(access: Pick<AccessContext, "role" | "scope">) {
   return canViewAllProbation(access) || access.role === "CEO";
+}
+
+// Probation Analytics (historical outcomes) audience — owner rule 2026-07-17. The feedback-submitting
+// manager tiers (National Sales Manager, Product / Group Product Manager) plus SFE, admin, and the CEO
+// get the read-only outcomes dashboard. This is deliberately WIDER than canReadAllProbation (which
+// gates the operational tracker/exports) so evaluators can see aggregate pass/terminate trends without
+// gaining the operational or administrative surfaces.
+const probationAnalyticsRoles: ReadonlySet<AccessContext["role"]> = new Set([
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "SFE Manager",
+  "CEO",
+  "Super Admin",
+]);
+export function canViewProbationAnalytics(access: Pick<AccessContext, "role" | "scope">) {
+  return access.scope === "system" || canReadAllProbation(access) || probationAnalyticsRoles.has(access.role);
 }
 
 export function assertCanExportProbation(access: AccessContext) {
@@ -432,6 +450,11 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
   }
 
   return employees
+    // MEDICAL-REPRESENTATIVE-ONLY (owner rule 2026-07-17): probation is a med-rep workflow. Managers
+    // (DSM/RSM/NSM) and head-office roles inside their own hire+90 window must never surface in the
+    // tracker/dashboard/exports/portal — deleting their probation_cases was not enough because this
+    // list is built from the employee directory window, not probation_cases. See isMedicalRepresentativeTitle.
+    .filter((employee) => isMedicalRepresentativeTitle(employee.positionTitle ?? employee.jobTitle))
     .filter((employee) => canReadProbationEmployee(access, employee, viewer, employees, viewerAllowedLines))
     .map((employee) => {
       const probation = probationByHrId.get(employee.hrId);
