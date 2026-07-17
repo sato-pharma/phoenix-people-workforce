@@ -12,7 +12,7 @@ import { normalizeHrId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isWithinProbationWindow, probationDaysRemaining, probationEndDate } from "@/lib/probation/date";
 
-import { ensureProbationCase, getProbationCaseByEmployee } from "./cases";
+import { ensureProbationCase, getProbationCaseByEmployee, isMedicalRepresentativeTitle } from "./cases";
 
 export type BackfillEligibleRow = {
   employeeHrId: string;
@@ -102,6 +102,9 @@ export async function planProbationCaseBackfill(): Promise<BackfillReport> {
     const hrId = normalizeHrId(employee.hrId);
     if (!hrId) continue;
     if (!isEligibleStatus(employee)) continue;
+    // Probation is medical-representatives-only (owner rule 2026-07-17) — never plan a case for a
+    // manager (DSM/RSM/NSM) or head-office role. Defense-in-depth with the ensureProbationCase guard.
+    if (!isMedicalRepresentativeTitle(employee.positionTitle ?? employee.jobTitle)) continue;
 
     if (!employee.hireDate) {
       // Only flag as unresolved if they'd otherwise plausibly be in probation (no hire date at all).
