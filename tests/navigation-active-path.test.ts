@@ -12,6 +12,7 @@ import {
 import {
   adminNavigationSections,
   employeePortalNavigationSections,
+  payrollManagementPageItems,
   type NavigationSection,
   type NavigationSectionItem,
 } from "../src/config/system-navigation.ts";
@@ -189,6 +190,17 @@ export function runNavigationActivePathTests() {
     ),
     false,
     "CEO must not see the Admin Tools sidebar tab even if a permission lookup grants admin",
+  );
+
+  const ceoPayrollTools = payrollManagementPageItems.filter(
+    (item) => roleNotExcluded("CEO", item.excludedRoles),
+  );
+  assert.deepEqual(
+    ceoPayrollTools.filter(
+      (item) => item.href.includes("payroll-copilot") || item.href === "/admin/deductions-governance",
+    ).map((item) => item.href),
+    [],
+    "CEO payroll navigation must hide Copilot, Insurance Wages, and Deductions Governance",
   );
 
   const ceoExecutiveNav = getSections(adminNavigationSections, "admin", { "probation:read": true, "organogram:read": true }, "CEO");
