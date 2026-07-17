@@ -195,6 +195,10 @@ export type DoubleVisitExpenseWorkloadEvidence = {
   matchStatus: "manual" | "matched" | "no_activity" | "partial" | "stale_import";
   missingDates: string[];
   pmWorkload: number;
+  // Visit-kind counts within the trip window (visitType -8 = campaign, 0 = regular),
+  // summed by visit_count. Used by the outstation campaign-cap rule for DM/TM.
+  campaignVisits: number;
+  regularVisits: number;
   source: "double_visit_import" | "manual";
   sourceLabel: string;
 };
