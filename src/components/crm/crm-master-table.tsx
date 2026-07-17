@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Braces, ChevronLeft, ChevronRight, Database, Info, Search, SlidersHorizontal } from "lucide-react";
+import { Braces, ChevronLeft, ChevronRight, Database, Download, Info, Loader2, Search, SlidersHorizontal } from "lucide-react";
 
+import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
+import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type {
   CrmMasterAmpm,
   CrmMasterColumn,
@@ -13,6 +15,18 @@ import type {
   CrmMasterRow,
 } from "@/lib/crm/master";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
+
+const DATASET_TABS: Array<{ id: CrmMasterDataset; label: string }> = [
+  { id: "visits", label: "Visits" },
+  { id: "checkins", label: "Check-ins" },
+  { id: "double_visits", label: "Double Visits" },
+  { id: "vacations", label: "Vacations" },
+  { id: "crm_issues", label: "CRM Issues" },
+];
+
+function datasetLabel(dataset: CrmMasterDataset): string {
+  return DATASET_TABS.find((tab) => tab.id === dataset)?.label ?? dataset;
+}
 
 function formatCairo(iso: string | null): string {
   if (!iso) return "—";
@@ -84,6 +98,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const advancedActive =
     Boolean(data.agentHrId) || data.ampm !== "all" || Boolean(data.visitType) || data.mappingStatus !== "all";
   const [showAdvanced, setShowAdvanced] = useState(advancedActive);
+  const [exportBusy, setExportBusy] = useState(false);
 
   // Synced top horizontal scrollbar: a thin bar directly above the table whose scroll position
   // mirrors the table body's, so wide columns can be panned without scrolling to the bottom.
@@ -178,10 +193,40 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     });
   }
 
-  const datasets: Array<{ id: CrmMasterDataset; label: string }> = [
-    { id: "visits", label: "Visits" },
-    { id: "checkins", label: "Check-ins" },
-  ];
+  // Export the FULL filtered result of the current tab (not just the page): fetch every matching
+  // row from the server, render each cell the same way the table does, then build the XLSX.
+  async function handleExport() {
+    if (exportBusy || data.totalCount === 0) return;
+    setExportBusy(true);
+    try {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("dataset", data.dataset);
+      params.delete("page");
+      params.delete("pageSize");
+      const response = await fetch(`/api/admin/crm/master-export?${params.toString()}`);
+      if (!response.ok) throw new Error("Export failed");
+      const payload = (await response.json()) as { rows: Array<Record<string, unknown>>; truncated: boolean };
+      const columns: ExportColumn[] = data.columns.map((col) => ({ key: col.key, label: col.label }));
+      const rows: ExportRow[] = payload.rows.map((row) => {
+        const out: ExportRow = {};
+        for (const col of data.columns) out[col.key] = renderCell(row[col.key], col.kind);
+        return out;
+      });
+      await downloadXlsxExport({
+        columns,
+        rows,
+        sheetName: datasetLabel(data.dataset),
+        subtitle: payload.truncated ? "Capped at the first 50,000 rows" : undefined,
+        title: `CRM — ${datasetLabel(data.dataset)}`,
+      });
+    } catch (error) {
+      console.error("CRM master export failed:", error);
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  const datasets = DATASET_TABS;
 
   return (
     <div className="space-y-4">
@@ -286,7 +331,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               value={agentText}
             />
           </label>
-          {data.dataset === "visits" ? (
+          {data.dataset !== "checkins" ? (
             <>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 AM/PM
@@ -302,16 +347,18 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Visit Type
-                <input
+                <select
                   className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
                   onChange={(event) => setVisitTypeText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") applyFilters();
-                  }}
-                  placeholder="e.g. Campaign, Meeting"
-                  type="text"
                   value={visitTypeText}
-                />
+                >
+                  <option value="">All types</option>
+                  {data.visitTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Mapping
@@ -336,13 +383,22 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       {/* Count + page size + pagination */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <p>
-          <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span>{" "}
-          {data.dataset === "checkins" ? "check-in" : "visit"} records
+          <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span> records
           {data.totalCount > 0 ? (
             <span className="text-slate-400"> · showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
           ) : null}
         </p>
         <div className="flex items-center gap-3">
+          <button
+            className="inline-flex h-8 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition enabled:hover:border-orange-300 enabled:hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={exportBusy || data.totalCount === 0}
+            onClick={handleExport}
+            title={data.totalCount === 0 ? "Nothing to export" : "Export the full filtered result as XLSX"}
+            type="button"
+          >
+            {exportBusy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Download aria-hidden="true" className="h-3.5 w-3.5" />}
+            Export XLSX
+          </button>
           <label className="flex items-center gap-1.5 text-slate-500">
             Rows
             <select

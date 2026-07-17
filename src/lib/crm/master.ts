@@ -16,7 +16,35 @@ import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
-export type CrmMasterDataset = "visits" | "checkins";
+export type CrmMasterDataset = "visits" | "checkins" | "double_visits" | "vacations" | "crm_issues";
+
+/** All datasets a tab can show, in display order. */
+export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: string }> = [
+  { id: "visits", label: "Visits" },
+  { id: "checkins", label: "Check-ins" },
+  { id: "double_visits", label: "Double Visits" },
+  { id: "vacations", label: "Vacations" },
+  { id: "crm_issues", label: "CRM Issues" },
+];
+
+/** A visit-based dataset (everything except check-ins reads the visits table). */
+function isVisitDataset(dataset: CrmMasterDataset): boolean {
+  return dataset !== "checkins";
+}
+
+/** Fixed visit-type options for the Visit Type dropdown (a stable iReports360 enum). */
+export const CRM_VISIT_TYPE_OPTIONS: readonly string[] = [
+  "Regular Visit",
+  "Campaign (Prospection)",
+  "Meeting",
+  "Group Meeting",
+  "Conference",
+  "Training",
+  "Health Day",
+  "Traveling",
+  "Annual Vacation",
+  "Unknown",
+];
 
 /** A displayed column: the raw DB key + a human label + a rendering hint + an optional
  * header tooltip.
@@ -80,6 +108,29 @@ export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
+/** Vacation / issue tabs reuse the visit fields WITHOUT the nearest-check-in block (those records
+ * have no check-in). Derived so the base column set stays defined in one place. */
+const CRM_VISIT_BASE_COLUMNS: readonly CrmMasterColumn[] = CRM_VISIT_COLUMNS.filter(
+  (col) => !col.key.startsWith("checkin_"),
+);
+
+const CRM_ISSUE_COLUMN: CrmMasterColumn = {
+  key: "issue",
+  kind: "text",
+  label: "Issue",
+  note: "Why this record isn't fully recognized: an unmapped agent and/or unmapped double visitor — its CRM id did not resolve to a Phoenix employee.",
+};
+
+const CRM_ISSUE_COLUMNS: readonly CrmMasterColumn[] = [CRM_ISSUE_COLUMN, ...CRM_VISIT_BASE_COLUMNS];
+
+/** Columns shown for a given dataset/tab. */
+function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
+  if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
+  if (dataset === "vacations") return CRM_VISIT_BASE_COLUMNS;
+  if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
+  return CRM_VISIT_COLUMNS; // visits, double_visits
+}
+
 const VISIT_SELECT =
   "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
   "contact_crm_id, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, double_name, " +
@@ -115,6 +166,7 @@ export type CrmMasterData = {
   search: string | null;
   totalCount: number;
   visitType: string | null;
+  visitTypeOptions: readonly string[];
 };
 
 export type CrmMasterFilter = {
@@ -142,6 +194,7 @@ type MasterQuery = {
   ilike: (...args: any[]) => MasterQuery;
   is: (...args: any[]) => MasterQuery;
   lte: (...args: any[]) => MasterQuery;
+  neq: (...args: any[]) => MasterQuery;
   not: (...args: any[]) => MasterQuery;
   or: (...args: any[]) => MasterQuery;
 };
@@ -259,14 +312,93 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   }
 }
 
+/** CRM Issues: anything not fully recognized — an unmapped agent and/or (for a double visit) an
+ * unmapped double visitor. Sets the `issue` column describing what didn't resolve. */
+function attachIssueReason(rows: CrmMasterRow[]): void {
+  for (const row of rows) {
+    const agentUnmapped = row.agent_hr_id == null || row.agent_hr_id === "";
+    const hasDouble = typeof row.double_crm_id === "number" && row.double_crm_id !== 0;
+    const doubleUnmapped = hasDouble && (row.double_hr_id == null || row.double_hr_id === "");
+    const reasons: string[] = [];
+    if (agentUnmapped) reasons.push("Agent unmapped");
+    if (doubleUnmapped) reasons.push("Double visitor unmapped");
+    row.issue = reasons.length > 0 ? reasons.join(" · ") : "Unmapped";
+  }
+}
+
+/** Normalize the requested dataset to a known value. */
+function normalizeDataset(value: CrmMasterDataset | undefined): CrmMasterDataset {
+  return value && CRM_MASTER_DATASETS.some((d) => d.id === value) ? value : "visits";
+}
+
+/** Apply date + advanced + dataset-scope filters. Shared by the paginated view and the export. */
+function applyMasterFilters(
+  query: MasterQuery,
+  opts: {
+    agentHrId: string | null;
+    ampm: CrmMasterAmpm;
+    dataset: CrmMasterDataset;
+    dateFrom: string | null;
+    dateTo: string | null;
+    mappingStatus: CrmMasterMappingStatus;
+    search: string | null;
+    visitType: string | null;
+  },
+): MasterQuery {
+  const { agentHrId, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType } = opts;
+  const isCheckins = dataset === "checkins";
+  const isVisits = isVisitDataset(dataset);
+  const dateColumn = isCheckins ? "check_date" : "visit_date";
+
+  let q = query;
+  if (dateFrom) q = q.gte(dateColumn, isCheckins ? `${dateFrom}T00:00:00` : dateFrom);
+  if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);
+
+  // Dataset scope.
+  if (dataset === "double_visits") q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0);
+  if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
+  if (dataset === "crm_issues") {
+    q = q.or("agent_hr_id.is.null,and(double_crm_id.not.is.null,double_crm_id.neq.0,double_hr_id.is.null)");
+  }
+
+  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
+  if (agentHrId) {
+    const escaped = sanitizeSearch(agentHrId);
+    if (escaped) q = q.ilike("agent_hr_id", `%${escaped}%`);
+  }
+  if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
+  if (isVisits && visitType) {
+    const escaped = sanitizeSearch(visitType);
+    if (escaped) q = q.ilike("visit_type_description", `%${escaped}%`);
+  }
+  if (isVisits && mappingStatus === "agent_mapped") q = q.not("agent_hr_id", "is", null);
+  if (isVisits && mappingStatus === "agent_unmapped") q = q.is("agent_hr_id", null);
+  if (search) {
+    const escaped = sanitizeSearch(search);
+    if (escaped) {
+      const orExpr = isCheckins
+        ? `agent_hr_id.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,address.ilike.%${escaped}%`
+        : `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%,agent_hr_id.ilike.%${escaped}%,comment.ilike.%${escaped}%`;
+      q = q.or(orExpr);
+    }
+  }
+  return q;
+}
+
+/** Merge derived columns onto rows (nearest check-in for visit datasets, issue reason for issues). */
+async function attachDerived(dataset: CrmMasterDataset, rows: CrmMasterRow[]): Promise<void> {
+  if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
+  if (dataset === "crm_issues") attachIssueReason(rows);
+}
+
 /**
  * Paginated master view of one CRM dataset (visits or check-ins). Returns every stored column
  * plus the full `raw_payload` for each row, ordered newest-first, with an exact total count.
  * Degrades to an empty result (never throws) when the mirror schema isn't present yet.
  */
 export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<CrmMasterData> {
-  const dataset: CrmMasterDataset = input.dataset === "checkins" ? "checkins" : "visits";
-  const isVisits = dataset === "visits";
+  const dataset = normalizeDataset(input.dataset);
+  const isCheckins = dataset === "checkins";
   const page = Math.max(1, input.page ?? 1);
   const requested = input.pageSize ?? DEFAULT_PAGE_SIZE;
   const pageSize = (CRM_MASTER_PAGE_SIZE_OPTIONS as readonly number[]).includes(requested)
@@ -282,7 +414,8 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
     input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped" ? input.mappingStatus : "all";
   const configured = isIReports360Configured();
 
-  const columns = dataset === "checkins" ? CRM_CHECKIN_COLUMNS : CRM_VISIT_COLUMNS;
+  const columns = columnsForDataset(dataset);
+  const filterOpts = { agentHrId, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType };
 
   // Fields echoed back so the UI can seed its filter inputs.
   const echo = {
@@ -299,6 +432,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
     pageSizeOptions: CRM_MASTER_PAGE_SIZE_OPTIONS,
     search,
     visitType,
+    visitTypeOptions: CRM_VISIT_TYPE_OPTIONS,
   };
 
   const empty = (schemaReady: boolean): CrmMasterData => ({
@@ -312,37 +446,13 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   if (!(await isCrmVisitsSchemaReady())) return empty(false);
 
   const supabase = getSupabaseAdmin();
-  const table = dataset === "checkins" ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
-  const dateColumn = dataset === "checkins" ? "check_date" : "visit_date";
-  const idColumn = dataset === "checkins" ? "crm_checkin_id" : "crm_visit_id";
-  const select = dataset === "checkins" ? CHECKIN_SELECT : VISIT_SELECT;
+  const table = isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const dateColumn = isCheckins ? "check_date" : "visit_date";
+  const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
+  const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
 
   const base = supabase.from(table).select(select, { count: "exact" });
-  let filtered = base as unknown as MasterQuery;
-  if (dateFrom) filtered = filtered.gte(dateColumn, dataset === "checkins" ? `${dateFrom}T00:00:00` : dateFrom);
-  if (dateTo) filtered = filtered.lte(dateColumn, dataset === "checkins" ? `${dateTo}T23:59:59` : dateTo);
-  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
-  if (agentHrId) {
-    const escaped = sanitizeSearch(agentHrId);
-    if (escaped) filtered = filtered.ilike("agent_hr_id", `%${escaped}%`);
-  }
-  if (isVisits && ampm !== "all") filtered = filtered.eq("ampm", ampm);
-  if (isVisits && visitType) {
-    const escaped = sanitizeSearch(visitType);
-    if (escaped) filtered = filtered.ilike("visit_type_description", `%${escaped}%`);
-  }
-  if (isVisits && mappingStatus === "agent_mapped") filtered = filtered.not("agent_hr_id", "is", null);
-  if (isVisits && mappingStatus === "agent_unmapped") filtered = filtered.is("agent_hr_id", null);
-  if (search) {
-    const escaped = sanitizeSearch(search);
-    if (escaped) {
-      const orExpr = dataset === "checkins"
-        ? `agent_hr_id.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,address.ilike.%${escaped}%`
-        : `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%,agent_hr_id.ilike.%${escaped}%,comment.ilike.%${escaped}%`;
-      filtered = filtered.or(orExpr);
-    }
-  }
-
+  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
   const ordered = (filtered as unknown as typeof base)
     .order(dateColumn, { ascending: false })
     .order(idColumn, { ascending: false })
@@ -355,14 +465,67 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   }
 
   const rows = (data ?? []) as unknown as CrmMasterRow[];
-  // Visits get their nearest GPS check-in merged in (Check-in Time/Location), anchored on crm_save_date.
-  if (isVisits) await attachNearestCheckins(rows);
+  await attachDerived(dataset, rows);
 
-  return {
-    ...echo,
-    latestSyncRuns,
-    rows,
-    schemaReady: true,
-    totalCount: count ?? 0,
+  return { ...echo, latestSyncRuns, rows, schemaReady: true, totalCount: count ?? 0 };
+}
+
+/**
+ * All matching rows for a dataset + filters, UNPAGINATED (capped at 50k) — powers the XLSX export.
+ * Runs the same filters and derived columns as the paginated view; walks pages internally.
+ */
+export async function getCrmMasterExportRows(
+  input: CrmMasterFilter = {},
+): Promise<{ columns: readonly CrmMasterColumn[]; dataset: CrmMasterDataset; rows: CrmMasterRow[]; truncated: boolean }> {
+  const dataset = normalizeDataset(input.dataset);
+  const isCheckins = dataset === "checkins";
+  const columns = columnsForDataset(dataset);
+  const filterOpts = {
+    agentHrId: input.agentHrId?.trim() || null,
+    ampm: (input.ampm === "AM" || input.ampm === "PM" ? input.ampm : "all") as CrmMasterAmpm,
+    dataset,
+    dateFrom: input.dateFrom || null,
+    dateTo: input.dateTo || null,
+    mappingStatus: (input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped"
+      ? input.mappingStatus
+      : "all") as CrmMasterMappingStatus,
+    search: input.search?.trim() || null,
+    visitType: input.visitType?.trim() || null,
   };
+
+  const emptyResult = { columns, dataset, rows: [] as CrmMasterRow[], truncated: false };
+  if (!(await isCrmVisitsSchemaReady())) return emptyResult;
+
+  const supabase = getSupabaseAdmin();
+  const table = isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const dateColumn = isCheckins ? "check_date" : "visit_date";
+  const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
+  const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
+
+  const PAGE = 1000;
+  const MAX_ROWS = 50000;
+  const rows: CrmMasterRow[] = [];
+  let truncated = false;
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const base = supabase.from(table).select(select);
+    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
+    const { data, error } = await (filtered as unknown as typeof base)
+      .order(dateColumn, { ascending: false })
+      .order(idColumn, { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return emptyResult;
+      throw new Error(error.message);
+    }
+    const pageRows = (data ?? []) as unknown as CrmMasterRow[];
+    rows.push(...pageRows);
+    if (pageRows.length < PAGE) break;
+    if (rows.length >= MAX_ROWS) {
+      truncated = true;
+      break;
+    }
+  }
+
+  await attachDerived(dataset, rows);
+  return { columns, dataset, rows, truncated };
 }
