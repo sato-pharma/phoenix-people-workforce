@@ -46,8 +46,11 @@ steps:
       - -c
       - |
         set -euo pipefail
+        # NOTE: no --network=cloudbuild here — BuildKit rejects that network mode
+        # ("network mode \"cloudbuild\" not supported by buildkit", verified on build
+        # f0493e2a). Nothing in this Dockerfile needs the metadata server: npm ci
+        # pulls from the public registry and next build makes no GCP calls.
         docker build \
-          --network=cloudbuild \
           --target deps \
           --cache-from "${_CACHE_REPO}:deps-cache" \
           --build-arg BUILDKIT_INLINE_CACHE=1 \
@@ -55,7 +58,6 @@ steps:
           .
         docker push "${_CACHE_REPO}:deps-cache"
         docker build \
-          --network=cloudbuild \
           --cache-from "${_CACHE_REPO}:deps-cache" \
           --cache-from "${_CACHE_REPO}:latest-cache" \
           --build-arg BUILDKIT_INLINE_CACHE=1 \
