@@ -70,6 +70,34 @@ git worktree list
 - Prefer creating worktrees as siblings of this repo (e.g. `git worktree add ../_wt-<task>`), not nested inside it. If a worktree must live inside the repo, its folder name must start with `_wt-` (or live under `.codex-worktrees/`, or `.claude/worktrees/` which Claude Code's own worktree feature uses) — `tsconfig.json`, `eslint.config.mjs`, and `.gitignore` all exclude those patterns so `typecheck`/`lint` don't redundantly walk full duplicate copies of the codebase. (`.claude/worktrees/` is currently excluded only incidentally, via the broader `.claude` exclude entry — if that entry is ever narrowed, add `.claude/worktrees` back explicitly.) A worktree folder inside the repo that doesn't match one of those patterns will silently make every local `typecheck`/`lint` run several times slower (confirmed: ~12x file count, 70s vs 8s). Do not remove or narrow those exclude patterns without confirming no in-repo worktrees would be missed.
 - Treat remote history as the source of truth for merged state, while protecting all unpushed local work.
 
+## Parallel Work Model (owner policy, 2026-07-17)
+
+The owner runs multiple tasks concurrently. The division of labor that keeps sessions
+from colliding AND keeps the laptop responsive (16 GB RAM; 15+ simultaneous
+`node_modules` copies previously froze the machine):
+
+- **One local interactive session at a time** — the "control tower". It holds owner
+  context, performs gcloud/DNS/Supabase actions with local credentials, does browser
+  verification, and makes merge/deploy decisions. Never run two interactive sessions
+  against the same checkout (this caused real git-corruption incidents; the
+  SessionStart hook warns about it — heed it).
+- **Independent parallel tasks go to cloud sessions** (Claude Code on the web), one
+  per task. Each cloud session has its own isolated clone and ends by opening a PR —
+  CI plus the auto-deploy pipeline take it from there. Zero local resource cost, zero
+  collision surface. Prefer this over spawning more local worktrees whenever the task
+  does not need local files, localhost browser checks, or locally-authenticated CLIs.
+- **Local worktrees: at most 2–3 alive at once.** Create per task as before, but:
+  - Run `npm ci` in a worktree only when the task actually needs typecheck/build/dev
+    server (docs/SQL/workflow-file tasks usually don't — note the pre-push gate does
+    need `node_modules`, so installing right before push is the usual pattern).
+  - **Delete-on-merge ritual**: after a worktree's PR merges, the session asks the
+    owner "CLEAN?" and, on confirmation, verifies (no uncommitted/untracked work +
+    branch is an ancestor of origin/main + xlsx/pdf rescue scan per the rule above),
+    then runs `git worktree remove` and `git branch -d`. Stale worktrees must not
+    accumulate — 26 folders with 15 node_modules copies was the failure mode.
+- Locked worktrees under `.claude/worktrees/` belong to other live sessions — never
+  remove them.
+
 ## Branch And Change Isolation
 
 - `main` is production. Use a branch and PR for normal work.
