@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { TrendingUp, Trophy, Users } from "lucide-react";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
@@ -9,9 +10,10 @@ import { assertPermission, isNationalSalesManager, resolveNavigationMode } from 
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
+import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 
 import {
-  TeamAchievementChart,
   TeamLeaderboardTable,
   TeamMembersBreakdown,
   TeamSalesVsTargetChart,
@@ -41,6 +43,14 @@ function achievementColor(pct: number): string {
   if (pct >= 90) return "text-emerald-600";
   if (pct >= 70) return "text-amber-600";
   return "text-red-600";
+}
+
+/** Lighter variant of {@link achievementColor} for dark (slate-900) backgrounds. */
+function achievementColorOnDark(pct: number): string {
+  if (pct >= 100) return "text-emerald-400";
+  if (pct >= 90) return "text-emerald-300";
+  if (pct >= 70) return "text-amber-400";
+  return "text-rose-400";
 }
 
 /** Thin left-border color per stat context. */
@@ -116,6 +126,10 @@ export default async function MedRepsPerformancePage({
     { label: "Achievement", value: `${teamAchievementPercent.toFixed(1)}%` },
     { label: "Eligible Reps", value: `${eligibleCount} / ${teamMemberCount}` },
   ];
+
+  const bestPerformer = members[0] ?? null;
+  const totalGap = Math.max(0, teamTotalTarget - teamTotalSales);
+  const dsmGroups = buildSalesManagerPerformanceGroups(members);
 
   return (
     <EmployeePortalPageShell
@@ -255,26 +269,63 @@ export default async function MedRepsPerformancePage({
           </div>
         </Card>
 
-        {/* ── Charts (Achievement Ranking + Sales vs Target) ── */}
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
-            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
-              Medical Reps Achievement Ranking
-            </h3>
-            <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
-              <TeamAchievementChart members={members} teamAchievementPercent={teamAchievementPercent} />
-            </WorkspaceErrorBoundary>
-          </Card>
+        {/* ── Sales vs Target (full width, premium) ── */}
+        <Card className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-orange-50/40 shadow-[0_4px_20px_rgba(15,23,42,0.08)] print:shadow-none print:break-inside-avoid">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-slate-800 px-5 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-500/15">
+                <TrendingUp className="h-4.5 w-4.5 text-orange-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-400">
+                  Field Performance
+                </p>
+                <h3 className="break-words text-base font-black text-white sm:text-lg">
+                  Medical Reps Sales vs Target
+                </h3>
+              </div>
+            </div>
 
-          <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
-            <h3 className="mb-4 break-words text-sm font-semibold text-slate-900">
-              Medical Reps Sales vs Target
-            </h3>
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+              {bestPerformer && (
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <div className="min-w-0 text-left">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                      Top rep
+                    </p>
+                    <p className="max-w-[9rem] truncate text-xs font-bold text-white">
+                      {formatEmployeeDisplayName(bestPerformer.name)}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-bold ${achievementColorOnDark(bestPerformer.achievementPercent)}`}>
+                    {bestPerformer.achievementPercent.toFixed(1)}%
+                  </span>
+                </div>
+              )}
+              <div className="text-right">
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                  Line achievement
+                </p>
+                <p className={`text-sm font-black ${achievementColorOnDark(teamAchievementPercent)}`}>
+                  {teamAchievementPercent.toFixed(1)}%
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                  Gap to target
+                </p>
+                <p className="text-sm font-black text-white">{egp(totalGap)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6">
             <WorkspaceErrorBoundary fallbackTitle="Chart failed to render">
-              <TeamSalesVsTargetChart members={members} />
+              <TeamSalesVsTargetChart members={members} minHeightPx={420} />
             </WorkspaceErrorBoundary>
-          </Card>
-        </div>
+          </div>
+        </Card>
 
         {/* ── Leaderboard Table ── */}
         <Card className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
@@ -298,9 +349,9 @@ export default async function MedRepsPerformancePage({
           <div className="h-px flex-1 bg-gray-200" />
         </div>
 
-        {/* ── Product Comparison ── */}
+        {/* ── Product Comparison (grouped by district / DSM) ── */}
         <Card className="min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 print:shadow-none print:break-inside-avoid">
-          <div className="mb-4">
+          <div className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
               Product depth
             </p>
@@ -308,9 +359,37 @@ export default async function MedRepsPerformancePage({
               Medical Reps Product Comparison
             </h3>
           </div>
-          <WorkspaceErrorBoundary fallbackTitle="Product breakdown failed to render">
-            <TeamMembersBreakdown members={members} />
-          </WorkspaceErrorBoundary>
+
+          <div className="space-y-6">
+            {dsmGroups.map((group, index) => (
+              <div key={group.managerHrId}>
+                {index > 0 && <div className="mb-6 h-px bg-gray-200" />}
+
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-[10px] font-bold text-white">
+                      <Users className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-bold text-slate-900">
+                        {formatEmployeeDisplayName(group.managerName)}
+                      </p>
+                      <p className="text-[10px] font-medium text-slate-400">
+                        District Manager &middot; {group.members.length} medical reps
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 text-sm font-bold ${achievementColor(group.achievementPercent)}`}>
+                    {group.achievementPercent.toFixed(1)}%
+                  </span>
+                </div>
+
+                <WorkspaceErrorBoundary fallbackTitle="Product breakdown failed to render">
+                  <TeamMembersBreakdown members={group.members} />
+                </WorkspaceErrorBoundary>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
     </EmployeePortalPageShell>
