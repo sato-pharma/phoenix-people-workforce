@@ -22,9 +22,11 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 
 # NEXT_PUBLIC_* values are inlined into the client bundle at `next build` time, not read
-# from the container's runtime env. gcloud run deploy --source (Docker path) forwards
-# --set-build-env-vars as --build-arg, which Docker silently drops without a matching ARG
-# here — so these must be declared and re-exported as ENV before the build step runs.
+# from the container's runtime env, so they must arrive as --build-arg (see cloudbuild.yaml
+# — gcloud run deploy --source's --set-build-env-vars only reaches the build when Cloud
+# Build picks the Buildpacks path; a Dockerfile like this one gets a plain `docker build`
+# with no --build-arg at all unless the caller passes it explicitly). Declared here and
+# re-exported as ENV so `RUN npm run build` below can see them.
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
