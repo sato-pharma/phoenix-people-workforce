@@ -45,7 +45,8 @@ export default async function CrmHubPage({
   }
 
   const params = await searchParams;
-  const dataset: CrmMasterDataset = params.dataset === "checkins" ? "checkins" : "visits";
+  // getCrmMasterData normalizes any unknown value back to "visits".
+  const dataset = (typeof params.dataset === "string" ? params.dataset : "visits") as CrmMasterDataset;
   const dateFrom = dateParam(params.dateFrom);
   const dateTo = dateParam(params.dateTo);
   const search = stringParam(params.search);
