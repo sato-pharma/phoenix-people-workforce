@@ -7,7 +7,7 @@ export function runProbationEmailsTests() {
   const engine = src("src/lib/email-templates/service.ts");
 
   // ── P9-T01 templates registered in the admin email-template engine (not hardcoded) ──
-  for (const key of ["probation_dv_snapshot", "probation_day30", "probation_day60", "probation_day75"]) {
+  for (const key of ["probation_dv_snapshot", "probation_weekly_digest", "probation_day30", "probation_day60", "probation_day75"]) {
     assert.ok(engine.includes(`"${key}"`), `${key} registered in the email-template engine`);
     // Category assigned.
     assert.match(engine, new RegExp(`${key}: "Employee Lifecycle"`), `${key} has a category`);
@@ -57,10 +57,33 @@ export function runProbationEmailsTests() {
   // Milestones fire once each threshold is reached.
   assert.match(emails, /if \(day < m\.day \|\| day > m\.day \+ MILESTONE_GRACE_DAYS\) continue;/, "milestone fires only within the recent grace window (no stale backfill burst)");
 
+  // ── MOD-1 (2026-07-17): WEEKLY digest replaces the per-DV-day snapshot email ──
+  // Owner report: one probation email fired on EVERY validated Double-Visit day flooded ~8
+  // stakeholders' inboxes. Replaced by a single weekly digest per probationer, to the line
+  // management chain, greeting "Dear Line {Line} Managers".
+  assert.match(engine, /probation_weekly_digest: "Employee Lifecycle"/, "weekly digest has a category");
+  assert.match(engine, /greeting: "Dear Line \{\{line\}\} Managers,"/,
+    'weekly digest greets the line management chain by line name ("Dear Line Pedia Managers,")');
+  assert.match(emails, /export async function processProbationWeeklyDigest/, "weekly digest sweep exists");
+  assert.match(emails, /cairoWeekday\(now\) !== WEEKLY_DIGEST_WEEKDAY/, "weekly digest self-gates to one Cairo weekday (safe to call daily)");
+  assert.match(emails, /templateKey: "probation_weekly_digest"/, "digest emits via the registered weekly template");
+  assert.match(emails, /idempotencyKeyBase: `probation:weekly-digest:\$\{c\.id\}:\$\{weekStart\}`/, "one digest per (probationer, week) — deduped");
+  assert.match(emails, /\.filter\(\(c\) => c\.status === "active"\)/, "digest is per active probationer");
+  assert.match(emails, /includeTm: true, includePmGpm: true, includeSfe: true/, "digest goes to TM + PM/GPM + SFE (line chain), plus DM/NSM/CEO/HR defaults");
+
+  // ── MOD-3 (2026-07-17): per-recipient daily cap gates the milestone + digest fan-out too ──
+  assert.match(emails, /const allowed = input\.cap \? recipients\.filter\(\(h\) => input\.cap!\.allow\(h\)\) : recipients/,
+    "emitToRecipients drops over-cap recipients when a daily cap is supplied");
+  assert.match(emails, /const cap = await createProbationDailyCap\(/, "milestone + weekly sweeps build the daily cap");
+
   // ── Wiring ──
+  // MOD-1: the per-DV-day snapshot email is NO LONGER fired from the CRM sync (replaced by the weekly
+  // digest). The tracked ids are retained for telemetry only.
   const sync = src("src/lib/probation/intelligence/dv-sync.ts");
-  assert.match(sync, /sendDvSnapshotEmail\(dvDayId, syncedAt\)\.catch/, "DV snapshot wired into the CRM sync (non-blocking)");
-  assert.match(sync, /if \(r\.dv_status === "validated"\) newValidatedDvDayIds\.push/, "snapshot only for newly validated DV-Days");
+  assert.doesNotMatch(sync, /sendDvSnapshotEmail\(/, "per-DV-day snapshot email is no longer wired into the CRM sync (MOD-1)");
+  assert.match(sync, /if \(r\.dv_status === "validated"\) newValidatedDvDayIds\.push/, "newly-validated DV-Days are still tracked (telemetry)");
   const cron = src("src/lib/notifications/scheduled-processing.ts");
   assert.match(cron, /processProbationMilestoneEmails\(\)/, "milestone sweep wired into the notifications cron");
+  const dailyRoute = src("app/api/notifications/daily/route.ts");
+  assert.match(dailyRoute, /processProbationWeeklyDigest\(\)/, "weekly digest wired into the daily notifications cron");
 }
