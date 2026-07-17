@@ -17,6 +17,7 @@ import { getProbationConfig } from "./config";
 import { computeFeedbackSla, slaReminderKey, type FeedbackSlaState } from "./feedback-sla";
 import { listFeedbackTasks, type FeedbackTask } from "./feedback-workflow";
 import { createProbationDailyCap, type ProbationDailyCap } from "./notification-cap";
+import { isBeforeProbationEmailFreshStart } from "./email-fresh-start";
 
 export type FeedbackSlaSweepResult = {
   scanned: number;
@@ -226,7 +227,11 @@ export async function processFeedbackSlaReminders(
   // Recompute SLA against the same nowIso, anchored at the DV-Day creation time (createdAt) so a
   // late-synced / backfilled DV-Day is not born "overdue" and does not fire a critical escalation the
   // evaluator never had the window to answer.
-  const withSla = tasks.map((t) => ({ ...t, sla: computeFeedbackSla(t.dvDate, nowIso, config.sla, t.createdAt) }));
+  const allWithSla = tasks.map((t) => ({ ...t, sla: computeFeedbackSla(t.dvDate, nowIso, config.sla, t.createdAt) }));
+  // FRESH START (owner directive 2026-07-17): only DV-Days captured on/after the reset instant may
+  // send reminders. This suppresses catch-up reminders for the pre-reset backlog (62 open DV-days at
+  // re-enable) that dedup would NOT have caught (a new due→escalated→overdue transition is a new key).
+  const withSla = allWithSla.filter((t) => !isBeforeProbationEmailFreshStart(t.createdAt));
 
   const [hrApproverHrIds, ceoHrIds, systemAdminHrId, caseInfo, cap] = await Promise.all([
     resolveHrApproverHrIds(),
