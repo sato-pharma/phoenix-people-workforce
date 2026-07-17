@@ -441,23 +441,45 @@ export type LoginSecuritySignals = {
 
 export type AccountIdentity = { name: string | null; role: string | null };
 
+/** Row shape read from app_auth_users to build the account directory. */
+export type AccountDirectoryRow = { login_id?: unknown; hr_id?: unknown; name?: unknown; role?: unknown };
+
+/**
+ * Builds the canonical-id → identity map, indexing each account by BOTH its login_id and its
+ * hr_id. Attempts are keyed by login_id (failed logins) OR hr_id (app errors), and for some
+ * accounts those differ — e.g. the Super Admin logs in as "admin-HR" but has hr_id "PHX-1".
+ * Keying by only one (as this did before) silently dropped the other's rows from the per-user
+ * view AND made the real-account filter treat that account's errors as unknown. Pure +
+ * injectable so the dual-key behavior is unit-testable without a live DB.
+ */
+export function buildAccountDirectory(rows: AccountDirectoryRow[]): Map<string, AccountIdentity> {
+  const map = new Map<string, AccountIdentity>();
+  for (const row of rows) {
+    const identity: AccountIdentity = {
+      name: (row.name as string | null) ?? null,
+      role: (row.role as string | null) ?? null,
+    };
+    const loginKey = canonicalHrIdKey(row.login_id as string);
+    const hrKey = canonicalHrIdKey(row.hr_id as string);
+    if (loginKey) map.set(loginKey, identity);
+    if (hrKey) map.set(hrKey, identity);
+  }
+  return map;
+}
+
 /**
  * Small directory mapping canonical login_id/hr_id → display name + role (app_auth_users is
  * ~150 rows, so fetching all is cheap). Used to show "Ahmed Hassan (Medical Rep)" instead of
  * a bare hr_id, and to resolve names in the security lens. Best-effort — empty on failure.
  */
 export async function getAccountDirectory(): Promise<Map<string, AccountIdentity>> {
-  const map = new Map<string, AccountIdentity>();
   try {
     const { data } = await getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id, name, role");
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      const key = canonicalHrIdKey(row.login_id as string) ?? canonicalHrIdKey(row.hr_id as string);
-      if (key) map.set(key, { name: (row.name as string | null) ?? null, role: (row.role as string | null) ?? null });
-    }
+    return buildAccountDirectory((data ?? []) as AccountDirectoryRow[]);
   } catch (error) {
     console.error("Failed to load account directory:", error);
+    return new Map();
   }
-  return map;
 }
 
 /**
