@@ -10,6 +10,7 @@ import { canSeeEmployee } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
+import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,10 @@ export default async function Employee360IndexPage() {
         hrId: row.hrId,
         displayName: row.displayName || row.fullName,
         jobTitle: row.jobTitle,
-        lineName: row.lineName,
+        // Canonicalize the line name so the duplicate master rows ("Anti Inf"
+        // id=53 vs "Anti infective" id=1) collapse to ONE line in the filter,
+        // cards, and hero. Single source of truth for line spelling.
+        lineName: bridgeEmployeeLineToOfficial(row.lineName),
         areaName: row.areaName,
         regionName: row.regionName,
         managerName: row.managerName,
