@@ -27,7 +27,7 @@ import { Card } from "@/components/ui/card";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { formatDateOnly } from "@/lib/date-only";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -61,7 +61,7 @@ function probationTone(status: "Completed" | "Not Started" | "On Probation") {
 }
 
 export default async function EmployeePortalProfilePage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CustomerMappingWorkspace } from "@/components/sales/customer-mapping-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   listCustomerMapping,
   loadCustomerMappingFilterOptions,
@@ -14,7 +14,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function CustomerMappingPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

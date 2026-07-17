@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { SalesUploadWorkspace } from "@/components/sales/sales-upload-workspace";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   getDistributorProfileSummary,
   listSalesDistributors,
@@ -18,7 +18,7 @@ import { listMappingReferences } from "@/lib/sales/normalizer/service";
 export const dynamic = "force-dynamic";
 
 export default async function SalesUploadPage() {
-  const accessContext = await resolveAccessContextFromPage();
+  const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }

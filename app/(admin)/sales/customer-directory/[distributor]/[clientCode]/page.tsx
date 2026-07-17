@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { loadCustomerSales } from "@/lib/sales/customer-directory";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 
@@ -18,7 +18,7 @@ type PageProps = {
 const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
 
 export default async function CustomerDetailPage({ params }: PageProps) {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }
