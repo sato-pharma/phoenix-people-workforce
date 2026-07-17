@@ -24,7 +24,7 @@ import { test, expect } from "@playwright/test";
  * - Print stylesheet
  * - Error boundary wrapping
  *
- * Run with:  npx playwright test tests/e2e/employee-coaching.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/employee-coaching.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/coaching";

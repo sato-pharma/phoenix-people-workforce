@@ -12,7 +12,7 @@ import { test, expect } from "@playwright/test";
  * - Focus trap in modals
  * - Mobile card view breakpoint
  *
- * Run with:  npx playwright test tests/e2e/marketing-validation.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/marketing-validation.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/marketing-requests/validation";

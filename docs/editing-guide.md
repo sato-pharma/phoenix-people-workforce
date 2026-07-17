@@ -42,7 +42,7 @@ Keep access control in server-side permission checks too. Sidebar visibility imp
 During active editing, use the fast local gate:
 
 ```bash
-npm run check:edit
+pnpm run check:edit
 ```
 
 This keeps TypeScript honest without forcing every existing lint/test hardening rule to pass after each small UI move.
@@ -50,7 +50,7 @@ This keeps TypeScript honest without forcing every existing lint/test hardening 
 Before commit, push, PR, migration, or deployment, switch back to the full hardening gate:
 
 ```bash
-npm run check:harden
+pnpm run check:harden
 ```
 
 Do not relax production-critical protections while editing. Authentication, permissions, RLS, payroll locks, employee lifecycle rules, and deployment checks stay protected even when the UI and configuration are being reshaped.
@@ -64,10 +64,10 @@ For business logic, start in `src/lib/<domain>/` before editing UI. The UI shoul
 Run the smallest useful validation first, then broaden if the change touches shared behavior:
 
 ```bash
-npm run typecheck
-npm run lint
-npm run test
-npm run build
+pnpm run typecheck
+pnpm run lint
+pnpm run test
+pnpm run build
 ```
 
 For production-impacting work, do not push or deploy until validation is clean or the risk is explicitly accepted.

@@ -15,9 +15,9 @@ import { test, expect } from "@playwright/test";
  *
  * Run against a LOCAL dev server whose env points at a SAFE database (staging), NEVER
  * production (this repo's .env.local points at prod — override it before running):
- *   npx playwright test --config playwright.dev-auth.config.ts
+ *   pnpm exec playwright test --config playwright.dev-auth.config.ts
  * Supply a real employee HR_ID per role to also assert the full wizard renders:
- *   PLAYWRIGHT_HRID_DISTRICT_MANAGER=D-123 npx playwright test --config playwright.dev-auth.config.ts
+ *   PLAYWRIGHT_HRID_DISTRICT_MANAGER=D-123 pnpm exec playwright test --config playwright.dev-auth.config.ts
  */
 
 const ROLES = [

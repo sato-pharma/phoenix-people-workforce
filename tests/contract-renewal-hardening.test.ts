@@ -67,7 +67,7 @@ export function runContractRenewalHardeningTests() {
   // (production, preview, `vercel dev`), not just when NODE_ENV happens to say
   // "development" — Vercel always sets NODE_ENV=production, including on Preview, so
   // that check alone is not a safe signal. Only a real local machine (no VERCEL env
-  // var at all) may still bypass an unset secret for `npm run dev` convenience.
+  // var at all) may still bypass an unset secret for `pnpm run dev` convenience.
   const birthdaysRoute = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
   const cronAuthRoutes = { birthdaysRoute, dailyRoute, processRoute, reminderRoute };
   for (const [name, source] of Object.entries(cronAuthRoutes)) {

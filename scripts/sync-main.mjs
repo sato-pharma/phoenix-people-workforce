@@ -7,7 +7,7 @@
 //   - Refuses if the main worktree has uncommitted changes (could lose edits).
 //   - Only ever fast-forwards (`merge --ff-only`) — never creates a merge commit.
 //
-// Usage:  npm run sync:main
+// Usage:  pnpm run sync:main
 import { execFileSync } from "node:child_process";
 
 function git(args, opts = {}) {

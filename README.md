@@ -185,9 +185,9 @@ local-attendance-agent/       # Standalone .NET attendance agent
 ```bash
 git clone <repository-url>
 cd phoenix-workforce
-npm ci
+pnpm install --frozen-lockfile
 cp .env.example .env.local     # Fill in Supabase credentials and auth secret
-npm run dev                    # Opens http://localhost:3000
+pnpm run dev                    # Opens http://localhost:3000
 ```
 
 For dev-mode role switching: `GET /api/dev-auth?role=<role>` (development only). See [docs/setup.md](docs/setup.md) for the full setup guide.
@@ -200,9 +200,9 @@ All variables are documented in [`.env.example`](.env.example) with comments. Se
 
 | Command | Purpose |
 |---|---|
-| `npm run check:edit` | Fast inner loop — TypeScript only |
-| `npm run check:harden` | Full pre-commit gate: lint + typecheck + test + build |
-| `npm run ci` | Same as `check:harden` (CI pipeline) |
+| `pnpm run check:edit` | Fast inner loop — TypeScript only |
+| `pnpm run check:harden` | Full pre-commit gate: lint + typecheck + test + build |
+| `pnpm run ci` | Same as `check:harden` (CI pipeline) |
 
 Run `check:edit` during active development and `check:harden` before every commit, push, or deploy.
 

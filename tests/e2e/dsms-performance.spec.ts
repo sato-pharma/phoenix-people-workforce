@@ -16,7 +16,7 @@ import { test, expect } from "@playwright/test";
  * - Error boundary wrappers
  * - Mobile responsiveness
  *
- * Run with:  npx playwright test tests/e2e/dsms-performance.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/dsms-performance.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/dsms-performance";
