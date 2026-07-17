@@ -231,6 +231,26 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
   }
 }
 
+/**
+ * Badge count + overdue flag derived from ONE getVacationApprovalsForResponder fetch.
+ * countVacationAwaiting and isVacationAwaitingOverdue each fetch the full responder
+ * dataset independently, so calling both (as the per-domain pending-count endpoint
+ * does) fetches it twice per poll — this helper computes both answers, with the same
+ * fallbacks, from a single fetch for the batched badge-counts endpoint.
+ */
+export async function getVacationAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getVacationApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getVacationAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
+  }
+}
+
 // ── Excuse buckets (single-step: no "coming to you") ──────────────────────────
 
 export type ExcuseApprovalsBuckets = {
@@ -269,6 +289,20 @@ export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<bo
   } catch (error) {
     console.error("[approvals-hub] isExcuseAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return false;
+  }
+}
+
+/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
+export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getExcuseApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getExcuseAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
   }
 }
 
@@ -1112,6 +1146,20 @@ export async function countPlanAwaiting(access: AccessContext): Promise<number> 
   } catch (error) {
     console.error("[approvals-hub] countPlanAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return 0;
+  }
+}
+
+/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
+export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+  try {
+    const { awaiting } = await getPlanApprovalsForResponder(access);
+    return {
+      count: awaiting.length,
+      overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
+    };
+  } catch (error) {
+    console.error("[approvals-hub] getPlanAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    return { count: 0, overdue: false };
   }
 }
 
