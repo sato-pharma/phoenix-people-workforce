@@ -233,11 +233,14 @@ export async function fetchCheckinRows(hrId: string, window: Employee360Window):
   return fetchPaged<CheckinRow>("ireports360_checkins", "check_date,lat,lon", hrIdLookupKeys(hrId), "check_date", window.from, window.to);
 }
 
+// check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its clock reading is
+// ALREADY Cairo-local — read day + hour as-is with timeZone "UTC". Converting through Africa/Cairo
+// would double-add the Egypt offset and push the whole check-in histogram / late-night tail 2–3h late.
 function cairoParts(iso: string): { day: string; hourDecimal: number } | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
   const [h, m] = hm.split(":").map((v) => Number(v));
   return { day, hourDecimal: (h % 24) + (Number.isFinite(m) ? m / 60 : 0) };
 }

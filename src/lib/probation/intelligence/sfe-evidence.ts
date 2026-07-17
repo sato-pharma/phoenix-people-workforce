@@ -10,8 +10,6 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const CAIRO_TZ = "Africa/Cairo";
-
 export type SfeMetric = {
   key: string;
   label: string;
@@ -40,9 +38,12 @@ function daysBetween(from: string, to: string): number {
   return Math.max(1, Math.round(ms / 86_400_000) + 1);
 }
 
+// check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its stored clock reading
+// is ALREADY Cairo-local — read it as-is (timeZone "UTC"). Converting through Africa/Cairo would
+// double-add the Egypt offset and make reps look 2–3h late in the probation start-time metric.
 function cairoHour(iso: string): number | null {
   try {
-    const h = new Intl.DateTimeFormat("en-GB", { timeZone: CAIRO_TZ, hour: "2-digit", hour12: false, minute: "2-digit" }).format(new Date(iso));
+    const h = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", hour12: false, minute: "2-digit" }).format(new Date(iso));
     const [hh, mm] = h.split(":").map((x) => Number(x));
     if (!Number.isFinite(hh)) return null;
     return hh + (Number.isFinite(mm) ? mm / 60 : 0);
