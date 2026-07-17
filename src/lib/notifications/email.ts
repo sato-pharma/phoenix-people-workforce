@@ -713,12 +713,32 @@ function templateValue(input: NotificationEmailInput, value: string) {
   return value.replace(/\{([^}]+)\}/g, (_match, key: string) => variables[templateToken(key)] ?? "");
 }
 
+/**
+ * Resolve the greeting for the non-templated (general/probation-alert) notification path.
+ *
+ * Bug (owner report, 2026-07-17): this path always fell back to the generic "Dear {Brand} Team,"
+ * even when the system knew exactly who it was writing to (`input.recipientName` — set by
+ * buildChannelEmailInput for every single-recipient send). The templated-email path already does
+ * this fallback correctly (see the `recipientName` resolution near sendTemplatedEmail); this path
+ * did not. Only fall back to the team greeting when a notification-type policy has an explicit,
+ * genuinely custom greeting (e.g. birthday's "Dear {employee},") or the recipient's name is
+ * unknown (a role-based/HR-inbox send with no single addressee).
+ */
+function resolveGreeting(input: NotificationEmailInput, template?: EmailNotificationPolicy["template"]) {
+  const configured = template?.greeting;
+  const isGenericDefault = !configured || configured === systemNotificationEmailText.teamGreeting;
+  if (isGenericDefault && input.recipientName) {
+    return `Dear ${input.recipientHonorific ?? ""}${input.recipientName},`;
+  }
+  return templateValue(input, configured || systemNotificationEmailText.teamGreeting);
+}
+
 function effectiveTemplate(input: NotificationEmailInput, policy?: EmailNotificationPolicy): EmailTemplateContent {
   const template = policy?.template ?? defaultPolicyForType(input.notificationType ?? "general")?.template;
   return {
     bodyText: templateValue(input, template?.bodyText || "{summary}"),
     closingText: templateValue(input, template?.closingText || "Please review this update."),
-    greeting: templateValue(input, template?.greeting || systemNotificationEmailText.teamGreeting),
+    greeting: resolveGreeting(input, template),
     previewText: templateValue(input, template?.previewText || input.summary),
     subject: templateValue(input, template?.subject || "{subject}"),
     title: templateValue(input, template?.title || "{title}"),
