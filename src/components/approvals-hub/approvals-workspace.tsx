@@ -56,7 +56,6 @@ type Props = {
   // Absent (null/undefined) hides each tab entirely.
   approvalScope?: ApprovalScopeData | null;
   approvalScopeModuleLabel?: string;
-  approvalScopeIncludesSecondLevel?: boolean;
   companyRequests?: CompanyRequestItem[] | null;
   companyRequestsExportTitle?: string;
   companyRequestsEmptyLabel?: string;
@@ -97,7 +96,6 @@ export function ApprovalsWorkspace({
   companyWideExportTitle,
   approvalScope,
   approvalScopeModuleLabel,
-  approvalScopeIncludesSecondLevel,
   companyRequests,
   companyRequestsExportTitle,
   companyRequestsEmptyLabel,
@@ -182,7 +180,6 @@ export function ApprovalsWorkspace({
         <ApprovalScopeList
           data={approvalScope ?? { groups: [], totalPeople: 0 }}
           moduleLabel={approvalScopeModuleLabel ?? "request"}
-          includesSecondLevel={Boolean(approvalScopeIncludesSecondLevel)}
         />
       ) : tab === "company-requests" ? (
         <CompanyRequestsList
