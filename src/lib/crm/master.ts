@@ -16,7 +16,13 @@ import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
-export type CrmMasterDataset = "visits" | "checkins" | "double_visits" | "vacations" | "crm_issues";
+export type CrmMasterDataset =
+  | "visits"
+  | "checkins"
+  | "double_visits"
+  | "vacations"
+  | "regular_no_checkin"
+  | "crm_issues";
 
 /** All datasets a tab can show, in display order. */
 export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: string }> = [
@@ -24,8 +30,14 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "checkins", label: "Check-ins" },
   { id: "double_visits", label: "Double Visits" },
   { id: "vacations", label: "Vacations" },
+  { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "crm_issues", label: "CRM Issues" },
 ];
+
+/** DB view (migration crm_effective_visit_type_view) exposing has_checkin + effective_visit_type +
+ * reclassified_no_checkin. Used only for the "Regular · No Check-in" tab's DB-level filter/count;
+ * the other tabs read the base table and derive the flag in memory. */
+const CRM_VISITS_EFFECTIVE_VIEW = "ireports360_visits_effective";
 
 /** A visit-based dataset (everything except check-ins reads the visits table). */
 function isVisitDataset(dataset: CrmMasterDataset): boolean {
@@ -78,6 +90,7 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "customer_name", kind: "text", label: "Customer Name" },
   { key: "visit_type", kind: "number", label: "Visit Type" },
   { key: "visit_type_description", kind: "text", label: "Visit Type Description" },
+  { key: "effective_type", kind: "text", label: "Effective Type", note: "How the system counts this visit. A Regular visit with NO matching GPS check-in is counted as Campaign — always shown here (flagged), never silently recounted." },
   { key: "call_type", kind: "number", label: "Call Type" },
   { key: "attendance", kind: "number", label: "Attendance" },
   { key: "comment", kind: "text", label: "Comment" },
@@ -126,7 +139,7 @@ const CRM_ISSUE_COLUMNS: readonly CrmMasterColumn[] = [CRM_ISSUE_COLUMN, ...CRM_
 /** Columns shown for a given dataset/tab. */
 function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[] {
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
-  if (dataset === "vacations") return CRM_VISIT_BASE_COLUMNS;
+  if (dataset === "vacations" || dataset === "regular_no_checkin") return CRM_VISIT_BASE_COLUMNS;
   if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
   return CRM_VISIT_COLUMNS; // visits, double_visits
 }
@@ -326,6 +339,21 @@ function attachIssueReason(rows: CrmMasterRow[]): void {
   }
 }
 
+/** Effective visit type: a Regular visit (0) with NO matched GPS check-in is COUNTED as Campaign,
+ * but ALWAYS flagged here — never a silent recount. For regular_no_checkin every row is reclassified
+ * (the tab filters to it); for visits/double it's derived from the in-memory check-in correlation
+ * (checkin_id null). Datasets that don't correlate (vacations, crm_issues) keep the raw type. */
+function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[]): void {
+  const knowsCheckin = dataset === "visits" || dataset === "double_visits" || dataset === "regular_no_checkin";
+  for (const row of rows) {
+    const isRegular = row.visit_type === 0;
+    const reclassified = dataset === "regular_no_checkin" ? true : knowsCheckin && isRegular && row.checkin_id == null;
+    row.effective_type = reclassified
+      ? "Campaign — reclassified (Regular, no check-in)"
+      : (typeof row.visit_type_description === "string" && row.visit_type_description) || String(row.visit_type ?? "—");
+  }
+}
+
 /** Normalize the requested dataset to a known value. */
 function normalizeDataset(value: CrmMasterDataset | undefined): CrmMasterDataset {
   return value && CRM_MASTER_DATASETS.some((d) => d.id === value) ? value : "visits";
@@ -357,6 +385,7 @@ function applyMasterFilters(
   // Dataset scope.
   if (dataset === "double_visits") q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
+  if (dataset === "regular_no_checkin") q = q.eq("reclassified_no_checkin", true);
   if (dataset === "crm_issues") {
     q = q.or("agent_hr_id.is.null,and(double_crm_id.not.is.null,double_crm_id.neq.0,double_hr_id.is.null)");
   }
@@ -389,6 +418,7 @@ function applyMasterFilters(
 async function attachDerived(dataset: CrmMasterDataset, rows: CrmMasterRow[]): Promise<void> {
   if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
   if (dataset === "crm_issues") attachIssueReason(rows);
+  if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
 }
 
 /**
@@ -446,7 +476,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   if (!(await isCrmVisitsSchemaReady())) return empty(false);
 
   const supabase = getSupabaseAdmin();
-  const table = isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
@@ -497,7 +527,7 @@ export async function getCrmMasterExportRows(
   if (!(await isCrmVisitsSchemaReady())) return emptyResult;
 
   const supabase = getSupabaseAdmin();
-  const table = isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
