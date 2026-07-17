@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import {
+  isBeforeProbationEmailFreshStart,
+  isDateBeforeProbationEmailFreshStart,
+  PROBATION_EMAIL_FRESH_START_ISO,
+} from "../src/lib/probation/intelligence/email-fresh-start.ts";
+
 function src(p: string) { return readFileSync(p, "utf8"); }
 
 export function runProbationEmailsTests() {
@@ -86,4 +92,18 @@ export function runProbationEmailsTests() {
   assert.match(cron, /processProbationMilestoneEmails\(\)/, "milestone sweep wired into the notifications cron");
   const dailyRoute = src("app/api/notifications/daily/route.ts");
   assert.match(dailyRoute, /processProbationWeeklyDigest\(\)/, "weekly digest wired into the daily notifications cron");
+
+  // ── FRESH START (owner directive 2026-07-17): no catch-up emails on re-enable ──
+  // Behavioral: the cutoff helpers classify pre-reset vs post-reset activity correctly.
+  const cutoffDay = PROBATION_EMAIL_FRESH_START_ISO.slice(0, 10);
+  assert.equal(isBeforeProbationEmailFreshStart("2026-07-01T09:00:00Z"), true, "a pre-reset timestamp is suppressed");
+  assert.equal(isBeforeProbationEmailFreshStart("2026-08-01T09:00:00Z"), false, "a post-reset timestamp emails");
+  assert.equal(isBeforeProbationEmailFreshStart(null), false, "a null timestamp is not treated as pre-reset");
+  assert.equal(isDateBeforeProbationEmailFreshStart("2026-07-16"), true, "a milestone crossed before the reset day is suppressed");
+  assert.equal(isDateBeforeProbationEmailFreshStart(cutoffDay), false, "a crossing on the reset day itself emails");
+  // Wiring: every sweep honours the cutoff so the 62-DV-day / crossed-milestone backlog stays silent.
+  const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
+  assert.match(sla, /\.filter\(\(t\) => !isBeforeProbationEmailFreshStart\(t\.createdAt\)\)/, "SLA sweep suppresses pre-reset DV-Days");
+  assert.match(emails, /if \(isDateBeforeProbationEmailFreshStart\(crossingDate\)\) continue;/, "milestone sweep suppresses pre-reset crossings");
+  assert.match(emails, /\.gte\("created_at", PROBATION_EMAIL_FRESH_START_ISO\)/, "weekly digest only rolls up post-reset DV-Days");
 }
