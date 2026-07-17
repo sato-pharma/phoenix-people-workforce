@@ -974,7 +974,7 @@ function applyMasterFilters(
   }
   // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
   if (allowedHrIds) {
-    q = q.in("agent_hr_id", allowedHrIds.length > 0 ? allowedHrIds : [" __no_match__"]);
+    q = q.in("agent_hr_id", allowedHrIds.length > 0 ? allowedHrIds : ["__no_match__"]);
   }
   if (dateFrom) q = q.gte(dateColumn, isCheckins ? `${dateFrom}T00:00:00` : dateFrom);
   if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);

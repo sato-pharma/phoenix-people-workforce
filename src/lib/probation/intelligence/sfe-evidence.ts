@@ -8,6 +8,7 @@
 // Metrics that are NOT computable today (e.g. plan adherence — the weekly_plans tables are empty)
 // are reported as unavailable rather than faked.
 
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const CAIRO_TZ = "Africa/Cairo";
@@ -130,6 +131,7 @@ export async function buildSfeEvidence(
   let visitsQuery = supabase
     .from("ireports360_visits")
     .select("visit_date, contact_crm_id")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .ilike("agent_hr_id", hrId)
     .lte("visit_date", window.to);
   if (window.from) visitsQuery = visitsQuery.gte("visit_date", window.from);
@@ -139,6 +141,7 @@ export async function buildSfeEvidence(
   let checkinsQuery = supabase
     .from("ireports360_checkins")
     .select("check_date, contact_crm_id")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .ilike("agent_hr_id", hrId)
     .lte("check_date", `${window.to}T23:59:59Z`);
   if (window.from) checkinsQuery = checkinsQuery.gte("check_date", `${window.from}T00:00:00Z`);

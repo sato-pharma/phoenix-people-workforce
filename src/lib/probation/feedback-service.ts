@@ -1,4 +1,5 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -613,6 +614,7 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   const { data: dvRows } = await db
     .from("ireports360_visits")
     .select("double_hr_id,agent_hr_id")
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .not("double_crm_id", "is", null)
     .neq("double_crm_id", 0)
     .in("visit_type", [0, -8])

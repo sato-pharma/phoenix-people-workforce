@@ -24,6 +24,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { CRM_RESIGNED_IN_LIST } from "@/lib/crm/reads";
+
 /** The CRM mirror table that carries synced visits. */
 export const DV_SOURCE_TABLE = "ireports360_visits";
 export const DV_SOURCE_TYPE = "ireports360" as const;
@@ -96,6 +98,7 @@ export function applyDoubleVisitFilter<T>(query: T): T {
     in: (col: string, vals: readonly unknown[]) => typeof q;
   };
   return q
+    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
     .not("double_crm_id", "is", null)
     .neq("double_crm_id", 0)
     .in("visit_type", [...DV_VISIT_TYPE_CODES]) as unknown as T;
