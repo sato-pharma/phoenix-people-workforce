@@ -12,8 +12,8 @@ import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
+import { processProbationWeeklyDigest } from "@/lib/probation/intelligence/probation-emails";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
-import { runOutstationHighRiskDigest } from "@/lib/outstation/high-risk-digest";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
@@ -48,7 +48,6 @@ async function runDailyNotifications(request: Request) {
     telegramDigest,
     weeklySystemHealthDigest,
     outstationGeocodeWarmup,
-    outstationHighRisk,
     fieldWorkforceComplianceDigest,
     fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
@@ -90,12 +89,14 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "weekly-system-health-digest" } });
       return { delivered: 0, skipped: true, error: String(e), sourceWarnings: [] };
     }),
+    // Probation weekly Double-Visit digest (MOD-1) — self-gates to one Cairo weekday, replacing the
+    // per-DV-day snapshot email. Safe to call daily; a non-digest day is a no-op.
+    processProbationWeeklyDigest().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "probation-weekly-digest" } });
+      return { scanned: 0, sent: 0, error: String(e) };
+    }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
-      return { success: false, error: String(e) };
-    }),
-    runOutstationHighRiskDigest().catch((e: unknown) => {
-      console.error(e, { tags: { cron: "daily-outstation-high-risk-digest" } });
       return { success: false, error: String(e) };
     }),
     runFieldWorkforceComplianceDigest().catch((e: unknown) => {
@@ -146,7 +147,6 @@ async function runDailyNotifications(request: Request) {
     holidayConfirmation,
     marketingSla,
     outstationGeocodeWarmup,
-    outstationHighRisk,
     outstationSla,
     rateLimitPrune,
     errorEventsPrune,

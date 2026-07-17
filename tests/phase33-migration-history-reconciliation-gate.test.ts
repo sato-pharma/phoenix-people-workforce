@@ -9,6 +9,10 @@ export function runPhase33MigrationHistoryReconciliationGateTests() {
   assert.match(gate, /noMigrationApplyExecuted: true/);
   assert.match(gate, /20260518232733/);
   assert.match(gate, /phase21_security_access_governance_hardening/);
+  // Deliberately still `npx` (works identically with pnpm-installed node_modules/.bin):
+  // the doesNotMatch safety net below rejects the literal token "exec" anywhere in the
+  // gate script, so `pnpm exec supabase ...` would trip it. Keeping npx preserves that
+  // safety assertion byte-for-byte.
   assert.match(gate, /npx supabase migration repair/);
   assert.match(gate, /--status applied/);
   assert.match(gate, /supabase_migrations\.schema_migrations/);

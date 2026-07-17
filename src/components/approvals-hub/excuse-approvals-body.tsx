@@ -16,6 +16,11 @@ export function ExcuseApprovalsBody({ data }: { data: ExcuseWorkspaceData }) {
       myRequests={data.myRequests}
       companyWide={data.companyWide}
       companyWideExportTitle="Company-Wide Excuse Decisions"
+      approvalScope={data.approvalScope}
+      approvalScopeModuleLabel="excuse"
+      companyRequests={data.companyRequests}
+      companyRequestsExportTitle="Company Excuse Requests (excl. DM & Medical Rep)"
+      companyRequestsEmptyLabel="No excuse requests found (excluding District Managers and Medical Reps)."
     />
   );
 }

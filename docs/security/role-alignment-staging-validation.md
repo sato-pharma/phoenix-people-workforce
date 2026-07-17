@@ -51,7 +51,7 @@ Disabled in free-only mode:
 Discover a free target:
 
 ```powershell
-npm run db:rls:discover-free-target
+pnpm run db:rls:discover-free-target
 ```
 
 The discovery script only inspects existing environment/local config. It does not create branches, create projects, apply migrations, connect to production, or print secrets.
@@ -108,7 +108,7 @@ Start from `.env.staging.rls.example`. It contains placeholders only and must no
 Create a private local file for your staging values:
 
 ```powershell
-npm run db:rls:create-staging-env
+pnpm run db:rls:create-staging-env
 ```
 
 The helper copies `.env.staging.rls.example` to `.env.staging.rls.local`, adds a local-only warning header, and refuses to overwrite an existing file unless you run the helper script directly with `--force`.
@@ -160,7 +160,7 @@ $env:PHOENIX_RLS_TEST_USERS_JSON='{
 Use the staging-only preparation script to inspect role coverage and populate `PHOENIX_RLS_TEST_USERS_JSON` in `.env.staging.rls.local`:
 
 ```powershell
-npm run db:rls:prepare-test-users
+pnpm run db:rls:prepare-test-users
 ```
 
 The script requires:
@@ -183,7 +183,7 @@ Do not use production values. Do not share `.env.staging.rls.local`.
 Dry-run validation without database connection, migration, backups, authenticated harness, or mutations:
 
 ```powershell
-npm run db:validate:role-alignment:staging:dry-run
+pnpm run db:validate:role-alignment:staging:dry-run
 ```
 
 The dry-run script loads `.env.staging.rls.local` automatically if present.
@@ -191,21 +191,21 @@ The dry-run script loads `.env.staging.rls.local` automatically if present.
 Read validation plus migration/schema/policy validation:
 
 ```powershell
-npm run db:validate:role-alignment:staging
+pnpm run db:validate:role-alignment:staging
 ```
 
 Full validation including staging mutation probes:
 
 ```powershell
-npm run db:validate:role-alignment:staging:mutations
+pnpm run db:validate:role-alignment:staging:mutations
 ```
 
 Local Supabase commands:
 
 ```powershell
-npm run db:validate:role-alignment:local:dry-run
-npm run db:validate:role-alignment:local
-npm run db:validate:role-alignment:local:mutations
+pnpm run db:validate:role-alignment:local:dry-run
+pnpm run db:validate:role-alignment:local
+pnpm run db:validate:role-alignment:local:mutations
 ```
 
 Mutation tests are staging-only. Run them only after read validation passes. They require:
@@ -221,7 +221,7 @@ Mutation probes create clearly marked `PHX_RLS_STAGING_TEST...` rows and must cl
 Dry-run mode is enabled by either:
 
 - Setting `PHOENIX_RLS_DRY_RUN=1`.
-- Running `npm run db:validate:role-alignment:staging:dry-run`.
+- Running `pnpm run db:validate:role-alignment:staging:dry-run`.
 
 Dry-run mode validates:
 

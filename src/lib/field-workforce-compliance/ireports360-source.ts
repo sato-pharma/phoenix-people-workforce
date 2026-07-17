@@ -129,6 +129,21 @@ function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
   return "CP";
 }
 
+/** CRM comment pattern for an AV-type visit that is actually an excuse (e.g. "Afternoon
+ * Excuse", "Morning Excuse"), not real vacation. iReports360 has no separate visit_type for
+ * excuses — both are logged under the same AV-mapped types (-4/-15), distinguished only by
+ * this free-text comment. */
+const EXCUSE_COMMENT_PATTERN = /excuse/i;
+
+/** True when ANY AV-mapped visit that day carries an excuse-labeled comment. Used only to
+ * exclude excuse days from the fingerprint-contradiction recommendation — never affects the
+ * base AV classification/severity, which stays visit_type-driven as before. */
+function dayHasExcuseLabeledAv(visits: IReports360Visit[]): boolean {
+  return visits.some((visit) =>
+    VISIT_TYPE_TO_STATUS.get(visit.visitType) === "AV" &&
+    EXCUSE_COMMENT_PATTERN.test(visit.comment ?? ""));
+}
+
 /**
  * A visit as consumed by the matrix builder. Extends the CRM visit shape with the mirror's
  * already-resolved hr ids (agent_hr_id / double_hr_id). Those come from visits-report's own
@@ -152,17 +167,19 @@ export type FieldWorkforceMatrixVisit = IReports360Visit & {
  * must label it "logged", never "visited".
  */
 
-const FWC_TIME_ZONE = "Africa/Cairo";
 const LATE_START_THRESHOLD_MINUTES = 11 * 60 + 30; // 11:30 AM, owner-confirmed.
 
-/** Cairo-local minute-of-day for a timestamp, using real IANA timezone rules (not a fixed
- * UTC offset) — mirrors the proven technique in src/lib/attendance/punch-minutes.ts. */
+/** Cairo wall-clock minute-of-day for a vendor CRM save timestamp. iReports360 returns saveDate
+ * as a ZONE-LESS Cairo wall-clock ("2026-07-16T18:13:18"); the sync stores that string verbatim in
+ * a timestamptz column, so Postgres tags it +00 and it returns as an ...Z instant whose clock
+ * reading is ALREADY Cairo-local. Read it as-is (timeZone "UTC"); converting through Africa/Cairo
+ * would add the Egypt offset a SECOND time and report every logged time 2–3h late (false "late log"). */
 function cairoMinutesOfDay(date: Date): number | null {
   const parts = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     hourCycle: "h23",
     minute: "2-digit",
-    timeZone: FWC_TIME_ZONE,
+    timeZone: "UTC",
   }).formatToParts(date);
   const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? NaN);
   const hour = value("hour");
@@ -318,6 +335,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   visits: FieldWorkforceMatrixVisit[];
   year: number;
 }): {
+  avExcuseLabeledKeys: Set<string>;
   customerAuthenticityByHrKey: Map<string, FieldWorkforceCustomerAuthenticity>;
   identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
@@ -382,6 +400,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const identityByHrKey = new Map<string, FieldWorkforceCrmIdentity>();
   const loggingTimingByHrKeyAndDate = new Map<string, FieldWorkforceLoggingTiming>();
   const customerAuthenticityByHrKey = new Map<string, FieldWorkforceCustomerAuthenticity>();
+  const avExcuseLabeledKeys = new Set<string>();
 
   const eligible = employees
     .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
@@ -420,6 +439,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       for (const [dayIso, dayVisits] of byDay) {
         const timing = computeLoggingTiming(dayVisits);
         if (timing) loggingTimingByHrKeyAndDate.set(`${hrKey}|${dayIso}`, timing);
+        if (dayHasExcuseLabeledAv(dayVisits)) avExcuseLabeledKeys.add(`${hrKey}|${dayIso}`);
       }
       customerAuthenticityByHrKey.set(hrKey, computeCustomerAuthenticitySignals(agentVisits));
     }
@@ -442,7 +462,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
+  return { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -698,7 +718,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
-  const { customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
+  const { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -735,7 +755,13 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
 
     const timeline = employee.timeline.map((cell) => {
       const timing = hrKey ? loggingTimingByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
-      return timing ? { ...cell, loggingTiming: timing } : cell;
+      const isExcuseLabeledAv = hrKey ? avExcuseLabeledKeys.has(`${hrKey}|${cell.dateIso}`) : false;
+      if (!timing && !isExcuseLabeledAv) return cell;
+      return {
+        ...cell,
+        ...(timing ? { loggingTiming: timing } : {}),
+        ...(isExcuseLabeledAv ? { isExcuseLabeledAv: true } : {}),
+      };
     });
     const loggingTimingSummary = summarizeLoggingTiming(timeline);
     const customerAuthenticity = hrKey ? customerAuthenticityByHrKey.get(hrKey) ?? null : null;

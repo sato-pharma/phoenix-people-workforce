@@ -1,8 +1,9 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Download, FileUp, Loader2, Lock, Pencil, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
 import type {
   WeeklyBatch,
   WeeklyDistributorOption,
@@ -11,7 +12,10 @@ import type {
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
+import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+
+import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -832,6 +836,62 @@ export function WeeklyUploadWorkspace({
 
 // ── Validation result panel (step 2 output + step 3 confirm) ──────────────────────────────────────
 
+// Failure messages quote the exact code/name that needs fixing (master product code, branch name,
+// region code, ...) — pull it out so links can pre-fill the target screen's search box, which is
+// more reliable than the raw sheet value on rows where an alias already remapped it.
+function extractQuoted(message: string): string | null {
+  const match = message.match(/"([^"]*)"/);
+  return match && match[1] ? match[1] : null;
+}
+
+type MapAction = { label: string; kind: "branch" } | { label: string; kind: "products"; search: string | null };
+
+type IssueGroup = {
+  key: string;
+  field: string;
+  message: string;
+  rowNumbers: number[];
+  action: MapAction | null;
+};
+
+// Every blocking field maps to exactly one existing manager that can resolve it inline — an alias
+// resolving to a missing/bad master product is Source of Sales master data, out of Weekly's own
+// tables (see resolveProduct/resolveRegion in parser.ts); an unmapped branch is Weekly's own
+// branch->region table. A Direct-channel region code not in the SoS master region list has no
+// editable UI (regions derive from the brick/area master, not a flat list) — null means "show the
+// valid codes instead of a map action" (see UnresolvedItemRow).
+function actionForIssue(field: string, message: string): MapAction | null {
+  if (field === "productCode" || field === "officialLine" || field === "factoryPrice") {
+    return { label: "Map now", kind: "products", search: extractQuoted(message) };
+  }
+  if (field === "regionCode") {
+    if (message.includes("Source of Sales master region table")) return null;
+    return { label: "Map now", kind: "branch" };
+  }
+  return null;
+}
+
+function groupUnresolvedIssues(result: WeeklySalesValidationResult): IssueGroup[] {
+  const groups = new Map<string, IssueGroup>();
+  for (const issue of result.issues) {
+    if (issue.severity !== "failure") continue;
+    const key = `${issue.field}|${issue.message}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rowNumbers.push(issue.rowNumber);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      field: issue.field,
+      message: issue.message,
+      rowNumbers: [issue.rowNumber],
+      action: actionForIssue(issue.field, issue.message),
+    });
+  }
+  return [...groups.values()];
+}
+
 function downloadUnmapped(result: WeeklySalesValidationResult) {
   const seen = new Set<string>();
   const lines = ["field,value,reason"];
@@ -850,6 +910,207 @@ function downloadUnmapped(result: WeeklySalesValidationResult) {
   link.download = `weekly-unmapped-${result.distributor.code}.csv`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  factoryPrice: "Price",
+  officialLine: "Line",
+  productCode: "Product",
+  regionCode: "Region",
+};
+
+function MapNowModal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+      <div
+        aria-modal="true"
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[6px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        role="dialog"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-[#E2E8F0] bg-white px-5 py-3">
+          <h2 className="text-sm font-black text-[#0F172A]">{title}</h2>
+          <button
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-[#E2E8F0] text-[#64748B] transition hover:border-[#FDBA74]"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Self-fetches the product list on open (the wizard page never loads it up front) so the Products
+// Reference manager can render with real data pre-filtered to the code that's actually broken.
+function InlineSosProductsModal({ onClose, search }: { onClose: () => void; search: string | null }) {
+  const [products, setProducts] = useState<SourceOfSalesProduct[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/sales/source-of-sales/products", { cache: "no-store" });
+        const payload = (await response.json()) as { success?: boolean; data?: SourceOfSalesProduct[]; error?: string };
+        if (cancelled) return;
+        if (payload?.success && payload.data) setProducts(payload.data);
+        else setError(payload?.error ?? "Failed to load Source of Sales products.");
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "Failed to load Source of Sales products.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <MapNowModal onClose={onClose} title="Source of Sales — Products Reference">
+      {error ? (
+        <div className="flex items-start gap-2 p-6 text-sm font-semibold text-rose-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {error}
+        </div>
+      ) : products ? (
+        <SourceOfSalesProductsTab initialProducts={products} initialSearch={search ?? undefined} />
+      ) : (
+        <div className="flex items-center justify-center p-16">
+          <Loader2 className="h-6 w-6 animate-spin text-[#94A3B8]" />
+        </div>
+      )}
+    </MapNowModal>
+  );
+}
+
+// Direct-channel region codes are validated straight against the SoS master region list (see
+// resolveRegion in parser.ts) — there's no flat "regions" table to add a row to (regions derive
+// from the brick/area master), so instead of a map action, let the operator see the valid codes
+// right here and fix the typo in their own file.
+function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }) {
+  const [open, setOpen] = useState(false);
+  const [regions, setRegions] = useState<{ regionCode: string; regionName: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (regions || error) return;
+    try {
+      const params = new URLSearchParams({ distributor: distributorCode, fileType: "any" });
+      const response = await fetch(`/api/sales/weekly/branch-mapping?${params.toString()}`, { cache: "no-store" });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        data?: { masterRegions?: { regionCode: string; regionName: string }[] };
+        error?: string;
+      };
+      if (payload?.success && payload.data?.masterRegions) setRegions(payload.data.masterRegions);
+      else setError(payload?.error ?? "Failed to load region codes.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to load region codes.");
+    }
+  }
+
+  return (
+    <>
+      <button
+        className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+        onClick={() => void toggle()}
+        type="button"
+      >
+        {open ? "Hide" : "Show"} valid region codes
+      </button>
+      {open && (
+        <div className="w-full basis-full">
+          {error ? (
+            <span className="text-xs font-semibold text-rose-600">{error}</span>
+          ) : regions ? (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {regions.map((region) => (
+                <span
+                  className="rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-bold text-[#334155]"
+                  key={region.regionCode}
+                >
+                  {region.regionName} ({region.regionCode})
+                </span>
+              ))}
+            </div>
+          ) : (
+            <Loader2 className="mt-1 h-3.5 w-3.5 animate-spin text-[#94A3B8]" />
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function UnresolvedItemRow({
+  distributorCode,
+  group,
+  onMap,
+}: {
+  distributorCode: string;
+  group: IssueGroup;
+  onMap: (action: MapAction) => void;
+}) {
+  // regionCode with no action is exactly the Direct-channel "not in the SoS master region list" case
+  // (see actionForIssue) — the only unresolved-item type with no editable screen to map into.
+  const showValidRegionCodes = group.field === "regionCode" && group.action === null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] border border-rose-200 bg-white px-3 py-2">
+      <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-rose-700">
+        {FIELD_LABELS[group.field] ?? group.field}
+      </span>
+      <span className="text-sm font-semibold text-[#334155]">{group.message}</span>
+      <span className="text-xs font-medium text-[#94A3B8]">
+        {group.rowNumbers.length} row{group.rowNumbers.length === 1 ? "" : "s"}
+        {" "}(e.g. row {group.rowNumbers[0]})
+      </span>
+      {group.action && (
+        <button
+          className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-[#F97316]"
+          onClick={() => onMap(group.action as MapAction)}
+          type="button"
+        >
+          <Pencil className="h-3 w-3" /> {group.action.label}
+        </button>
+      )}
+      {showValidRegionCodes && <ValidRegionCodesInline distributorCode={distributorCode} />}
+    </div>
+  );
+}
+
+function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult }) {
+  const groups = useMemo(() => groupUnresolvedIssues(result), [result]);
+  const [modal, setModal] = useState<MapAction | null>(null);
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="border-b border-[#E2E8F0] bg-rose-50/60 px-4 py-3">
+      <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-rose-700">
+        Unresolved items ({groups.length}) — map these to unblock the upload
+      </h3>
+      <div className="space-y-2">
+        {groups.map((group) => (
+          <UnresolvedItemRow distributorCode={result.distributor.code} group={group} key={group.key} onMap={setModal} />
+        ))}
+      </div>
+      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+        Map it right here, then click Validate again to re-check this file.
+      </p>
+      {modal?.kind === "branch" && (
+        <MapNowModal onClose={() => setModal(null)} title="Weekly Mapping — Branch → Region">
+          <WeeklyBranchMappingManager initial={null} initialError={null} lockedDistributor={result.distributor.code} />
+        </MapNowModal>
+      )}
+      {modal?.kind === "products" && <InlineSosProductsModal onClose={() => setModal(null)} search={modal.search} />}
+    </div>
+  );
 }
 
 function ValidationResultPanel({
@@ -940,6 +1201,11 @@ function ValidationResultPanel({
           {result.blockingReasons.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+
+      {/* Unresolved items — one row per unique unmapped product/region/price/line problem, each with
+          a direct link to the screen that actually fixes it (Weekly Mapping for aliases/branches,
+          Source of Sales for master product data), instead of making the operator hunt for it. */}
+      {hasFailures && <UnresolvedItemsPanel result={result} />}
 
       {isPS && (
         <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">

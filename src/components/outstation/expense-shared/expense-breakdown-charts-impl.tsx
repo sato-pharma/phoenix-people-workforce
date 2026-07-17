@@ -9,7 +9,7 @@ import type {
   ExpenseCommandKpis,
   ExpenseSource,
 } from "@/components/outstation/expense-shared/types";
-import type { PayrollExpenseGroupRow } from "@/lib/payroll/expense-metrics";
+import type { PayrollExpenseGroupRow } from "@/lib/outstation/expense-metrics";
 
 // Distinct hues so adjacent slices never read as the same colour (orange stays the
 // brand lead, then clearly different colours per slice).

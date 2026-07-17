@@ -25,7 +25,7 @@ export type TelegramGovernanceDecision = {
 const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: true, module: "payroll", notes: "Sensitive payroll Telegram messages must be generic only.", optional: false },
   { enabled: false, genericOnly: false, module: "resignations", notes: "Disabled by default due resignation sensitivity.", optional: false },
-  { enabled: true, genericOnly: false, module: "probation", notes: "Allowed only after governed recipient resolution.", optional: false },
+  { enabled: true, genericOnly: true, module: "probation", notes: "Generic only; probation carries sensitive HR-decision performance data (names, scores, pass/terminate readiness) — full content stays on in-app + email, matching coaching.", optional: false },
   { enabled: true, genericOnly: false, module: "contract_renewal", notes: "Allowed for governed contract renewal recipients.", optional: false },
   { enabled: true, genericOnly: false, module: "vacation", notes: "Allowed for direct manager governed vacation workflows.", optional: false },
   { enabled: true, genericOnly: false, module: "marketing_requests", notes: "Allowed only for assigned approvers/request owners resolved by policy.", optional: false },

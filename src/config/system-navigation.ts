@@ -3,7 +3,6 @@ import {
   Archive,
   BellRing,
   BriefcaseBusiness,
-  Bug,
   Building2,
   CalendarCheck,
   CalendarClock,
@@ -29,6 +28,7 @@ import {
   LifeBuoy,
   Mail,
   MailCheck,
+  MousePointerClick,
   MapPinned,
   Megaphone,
   MessageSquareText,
@@ -202,12 +202,16 @@ const adminNavigationSectionSeeds = [
 
   // ── Approvals Hub: consolidated per-module approval surfaces (near the top —
   // responding to approvals is frequent daily work). Phase 1: Vacation + Excuse.
+  // "Other Approvals" (resignation/outstation/contract/plan combined inbox) was
+  // moved here from the People Management hub page so all approval surfaces are
+  // reachable from one sidebar group.
   {
     id: "approvals-hub",
     items: [
       { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
   },
@@ -249,13 +253,14 @@ const adminNavigationSectionSeeds = [
 
   // ── Tier 4: HR & People ───────────────────────────────────────────────────────
   // Items ordered: time-sensitive actions → headcount records → lifecycle events → compliance
-  // Collapsed to a single standalone sidebar button that opens the People
+  // Mostly collapsed to a single standalone sidebar button that opens the People
   // Management hub (app/(admin)/admin/people-management/page.tsx, items in
   // peopleManagementPageItems below) — same pattern as the other consolidated
-  // sections above. permissions is the union of every card's own gate; the
-  // pending-count navBadge from "Other Approvals" moves to the button itself
-  // (it would otherwise be silently lost — the badge polls independently of
-  // which item it's attached to).
+  // sections above. Organogram/Probation/Workforce Compliance were pulled back
+  // out to direct sidebar links (frequent, standalone lookups), so the button's
+  // permission union only covers the cards still living inside the hub; its
+  // navBadge is a general "something's due" indicator (contract renewals /
+  // resignations), not tied to any single card.
   {
     id: "people-management",
     items: [
@@ -267,16 +272,23 @@ const adminNavigationSectionSeeds = [
         permissions: [
           { resource: "leave", action: "read" },
           { resource: "employees" },
-          { resource: "organogram" },
           { resource: "vacancies" },
-          { resource: "probation" },
           { resource: "contracts" },
           { resource: "resignations" },
           { resource: "weekly_plans" },
-          { resource: "hr_calendar" },
           { resource: "support_requests" },
         ],
       },
+      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
+      // Decision-intelligence surfaces. Dashboard + Analytics require company-wide probation read
+      // (canReadAllProbation → Super Admin / CEO / Training Manager / Marketing Manager); Settings is
+      // administrator-only (isProbationAdministrator → Super Admin). Roles kept in sync with the page gates
+      // so managers/reps who'd be redirected never see a dead link.
+      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
+      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
     ],
     label: "People Management",
   },
@@ -453,7 +465,9 @@ const adminNavigationSectionSeeds = [
   // ── Tier 7b: Master data governance ──────────────────────────────────────────
   // Standalone read-only master-data page. Deliberately NOT nested under the Marketing
   // Requests or Customer Validation surfaces — it governs the customer↔pharmacy relationship
-  // on its own route. Phase 1 is company-wide oversight only (Super Admin + CEO).
+  // on its own route. The page's two cards still grant CEO oversight, but the
+  // sidebar link is Super Admin + SFE Manager only: CEO is hidden from the
+  // sidebar by owner request (see the roles list below).
   {
     id: "master-data",
     items: [
@@ -462,9 +476,11 @@ const adminNavigationSectionSeeds = [
       // masterDataPageItems below). One of its two cards ("Customers Database")
       // is itself another consolidated hub (app/(admin)/admin/customers-
       // database/page.tsx) — nesting a hub-card inside a hub is fine, it still
-      // navigates to that page's own real destination. roles is the union of
-      // both cards' own roles.
-      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // navigates to that page's own real destination. The hub cards still grant
+      // CEO (see masterDataPageItems), but the sidebar link is deliberately
+      // narrowed to Super Admin + SFE Manager: CEO is hidden from the sidebar by
+      // owner request, so this list is intentionally NOT the union of the cards.
+      { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Master Data",
   },
@@ -501,11 +517,6 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-portal",
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
-      { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
-      { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
-      // Residual combined inbox — vacation & excuse now live in the dedicated links above.
-      { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
       { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
@@ -523,6 +534,20 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/team-expenses", icon: ReceiptText, label: "Team Expenses", permissions: [{ resource: "expenses" }], roles: ["National Sales Manager"] },
     ],
     label: "Medical Rep Portal",
+  },
+  // ── Approvals Hub: consolidated per-module approval surfaces, mirroring the
+  // admin sidebar's Approvals Hub section. "Other Approvals" (resignation/
+  // outstation/contract/plan combined inbox) moved here from the flat
+  // "Medical Rep Portal" list.
+  {
+    id: "approvals-hub",
+    items: [
+      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
+      { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
+    ],
+    label: "Approvals Hub",
   },
   {
     id: "payroll",
@@ -904,7 +929,7 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/monitoring",
     icon: Radar,
     label: "Monitoring",
-    description: "Live system health, uptime, and service status monitoring.",
+    description: "Authentication signals and email/notification delivery telemetry.",
     permissions: [{ resource: "admin" }],
     excludedRoles: ["CEO"],
   },
@@ -913,14 +938,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: ScrollText,
     label: "Audit Logs",
     description: "Full audit trail of administrative actions across the platform.",
-    permissions: [{ resource: "admin" }],
-    excludedRoles: ["CEO"],
-  },
-  {
-    href: "/admin/error-monitor",
-    icon: Bug,
-    label: "Error Monitor",
-    description: "Runtime error tracking and exception triage, tagged by module.",
     permissions: [{ resource: "admin" }],
     excludedRoles: ["CEO"],
   },
@@ -990,6 +1007,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: MailCheck,
     label: "Email Delivery",
     description: "See which notification emails have sent vs. not sent, and why.",
+    permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/notifications/email-tracking",
+    icon: MousePointerClick,
+    label: "Email Activity",
+    description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
     permissions: [{ resource: "communication" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
@@ -1423,13 +1447,8 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
 // Management" section (see adminNavigationSectionSeeds above, now collapsed to
 // one link).
 export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
-  {
-    href: "/admin/approvals-hub",
-    icon: Inbox,
-    label: "Other Approvals",
-    description: "Combined approval inbox for resignation, outstation, contract, and plan requests.",
-    permissions: [{ resource: "leave", action: "read" }],
-  },
+  // "Other Approvals" moved to the sidebar's Approvals Hub section — see
+  // adminNavigationSectionSeeds above.
   {
     href: "/employees",
     icon: UsersRound,
@@ -1438,28 +1457,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "employees" }],
     roles: ["Super Admin"],
   },
-  {
-    href: "/organogram",
-    icon: Network,
-    label: "Organogram",
-    description: "Company organizational chart and reporting lines.",
-    permissions: [{ resource: "organogram" }],
-    excludedRoles: ["Marketing Manager"],
-  },
+  // Organogram/Probation moved to direct sidebar links — see the
+  // people-management section in adminNavigationSectionSeeds above.
   {
     href: "/reports/vacancies",
     icon: BriefcaseBusiness,
     label: "Vacancies Report",
     description: "Open and vacant position report.",
     permissions: [{ resource: "vacancies" }],
-    excludedRoles: ["Marketing Manager"],
-  },
-  {
-    href: "/probation",
-    icon: Hourglass,
-    label: "Probation",
-    description: "Track and manage employee probation periods.",
-    permissions: [{ resource: "probation" }],
     excludedRoles: ["Marketing Manager"],
   },
   {
@@ -1484,12 +1489,15 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "weekly_plans" }],
     roles: ["Super Admin"],
   },
+  // Workforce Compliance moved to a direct sidebar link — see the
+  // people-management section in adminNavigationSectionSeeds above.
   {
-    href: "/admin/field-workforce-compliance",
-    icon: ClipboardCheck,
-    label: "Workforce Compliance",
-    description: "Field workforce attendance and compliance tracking.",
-    permissions: [{ resource: "hr_calendar" }],
+    href: "/admin/vacation-report",
+    icon: FileSpreadsheet,
+    label: "Company Vacation Report",
+    description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/support-requests",
@@ -1532,7 +1540,7 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "Finance Manager"],
   },
   {
-    href: "/payroll/expenses/dashboard",
+    href: "/admin/outstation/expenses/dashboard",
     icon: ChartColumnBig,
     label: "Outstation Expenses",
     description: "Outstation expenses dashboard and reporting.",
@@ -1540,7 +1548,7 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     roles: systemAdministratorNavigationRoles,
   },
   {
-    href: "/payroll/expenses",
+    href: "/admin/outstation/expenses",
     icon: FileSpreadsheet,
     label: "Historical Upload",
     description: "Upload historical outstation expense data.",

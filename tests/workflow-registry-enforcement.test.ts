@@ -24,7 +24,7 @@ export function runWorkflowRegistryEnforcementTests() {
   const outstationService = source("src/lib/outstation/service.ts");
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "submit"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
-  assert.match(outstationService, /actionKey: existing\.status === "approved" \? "reject_before_payroll" : "reject"/);
+  assert.match(outstationService, /actionKey: existing\.status\.startsWith\("accepted"\) \? "reject_before_payroll" : "reject"/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "delete_before_payroll"/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);
@@ -41,7 +41,7 @@ export function runWorkflowRegistryEnforcementTests() {
   const payrollRoute = source("app/api/payroll/[id]/workflow/route.ts");
   assert.match(payrollRoute, /runPayrollWorkflow\(id,\s*action,\s*access,\s*actorIdentity,\s*rejectedReason\)/);
 
-  const payrollExpenses = source("src/lib/payroll/expenses.ts");
+  const payrollExpenses = source("src/lib/outstation/expenses.ts");
   assert.match(payrollExpenses, /actionKey: "approve"/);
   assert.match(payrollExpenses, /actionKey: "add_to_payroll"/);
   assert.match(payrollExpenses, /actionKey: "delete_before_payroll"/);

@@ -94,6 +94,9 @@ export function proxy(request: NextRequest) {
       request.nextUrl.pathname === "/api/admin/synthetic-journeys/ingest" ||
       request.nextUrl.pathname === "/api/integrations/telegram/webhook" ||
       request.nextUrl.pathname === "/api/webhooks/resend" ||
+      // Brevo transactional webhook: the provider POSTs cross-origin; a shared secret token
+      // (?token= / x-brevo-token, verified in the route) authorises it, so it is CSRF-exempt.
+      request.nextUrl.pathname === "/api/webhooks/brevo" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")

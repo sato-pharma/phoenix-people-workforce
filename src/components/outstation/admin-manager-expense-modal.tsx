@@ -65,8 +65,6 @@ type CalcPreview = {
   fuelRatePerKm: number;
   overnightDays: number;
   sameDayTrip: boolean;
-  varianceAmount: number;
-  variancePercent: number;
 };
 
 function formatEgp(value: number) {

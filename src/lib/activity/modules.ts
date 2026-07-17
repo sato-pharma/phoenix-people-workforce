@@ -71,7 +71,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/leave-management", key: "leave", label: "Leave Management" },
 
   // ── Payroll & expenses ────────────────────────────────────────────────────
-  { prefix: "/payroll/expenses", key: "outstation", label: "Outstation Expenses" },
+  { prefix: "/admin/outstation/expenses", key: "outstation", label: "Outstation Expenses" },
   { prefix: "/payroll", key: "payroll", label: "Payroll" },
   { prefix: "/payslips", key: "payslips", label: "Payroll & Payslips" },
 

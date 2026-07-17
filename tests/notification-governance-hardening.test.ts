@@ -23,8 +23,7 @@ export function runNotificationGovernanceHardeningTests() {
   const accessRegistrySource = source("src/lib/security/access-registry.ts");
   const offersSource = source("src/lib/offers/service.ts");
   const internalMessagesSource = source("src/lib/internal-messages/service.ts");
-  const payrollExpensesSource = source("src/lib/payroll/expenses.ts");
-  const highRiskDigestSource = source("src/lib/outstation/high-risk-digest.ts");
+  const payrollExpensesSource = source("src/lib/outstation/expenses.ts");
 
   // Finding #39: explicit-recipient resolution must batch the employees/app_auth_users
   // lookups with a single .in("hr_id", ...) query per table instead of issuing one
@@ -96,11 +95,6 @@ export function runNotificationGovernanceHardeningTests() {
     payrollExpensesSource,
     /logNotificationSendFailure\("payroll\.notifyExpensesAddedToPayroll",\s*error\)/,
     "added-to-payroll notification dispatch must log via the shared helper",
-  );
-  assertContains(
-    highRiskDigestSource,
-    /logNotificationSendFailure\("outstation\.highRiskDigest",\s*error\)/,
-    "outstation high-risk digest failure must be logged, not only returned as { ok: false }",
   );
   assertNotContains(offersSource, /\.catch\(\(\) => undefined\)/, "offers notification sends must not swallow errors without logging");
   assertNotContains(internalMessagesSource, /\.catch\(\(\) => undefined\)/, "internal message notification send must not swallow errors without logging");

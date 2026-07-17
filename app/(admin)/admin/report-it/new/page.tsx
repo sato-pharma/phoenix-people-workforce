@@ -4,7 +4,7 @@ import { ShieldAlert } from "lucide-react";
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import { assertPermission } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // into the employee-portal shell. The employee portal keeps its own
 // /employee-portals/report-it route for portal-mode users.
 export default async function AdminReportItNewPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
 
   if (!access.hrId) {
     redirect("/login");

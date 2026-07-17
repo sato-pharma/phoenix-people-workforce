@@ -33,6 +33,9 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CI_NODE_VERSION: "24"
+  # corepack downloads the pinned pnpm on first use; suppress its interactive
+  # confirmation prompt so it can never hang a runner.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
   validate:
@@ -42,34 +45,37 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
+      # setup-node invokes `pnpm store path` during its own execution, and the
+      # pnpm shim only exists once corepack is enabled. corepack then reads the
+      # exact pnpm version from package.json's `packageManager` field.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: npm
-
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
+          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
+          # pnpm's node_modules is a symlink+hardlink layout that does not
+          # round-trip safely through actions/cache tar archives. Restoring the
+          # store and letting `pnpm install` re-link is the supported fast path.
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Check routes
-        run: npm run check:routes
+        run: pnpm run check:routes
 
       - name: Check migrations
-        run: npm run check:migrations
+        run: pnpm run check:migrations
 
       - name: Check no stale Vercel domains/deps in shipped source
-        run: npm run check:no-stale-domains
+        run: pnpm run check:no-stale-domains
 
       - name: Dependency audit (fail on critical vulnerabilities)
-        run: npm audit --audit-level=critical --omit=dev
+        run: pnpm audit --audit-level=critical --prod
 
       - name: Restore .next build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -78,13 +84,13 @@ jobs:
           # Must include every file that can change build output, not just app/src —
           # a change to next.config.ts or proxy.ts (CSP/security headers!) that isn't
           # hashed here would silently restore a stale cache instead of rebuilding.
-          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'public/**', 'package-lock.json', 'next.config.ts', 'proxy.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'tsconfig.json') }}
+          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'public/**', 'pnpm-lock.yaml', 'next.config.ts', 'proxy.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'tsconfig.json') }}
 
       - name: Test
-        run: npm run test
+        run: pnpm run test
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
         if: success()
 
       - name: Upload build artifact
@@ -102,42 +108,45 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
+      # setup-node invokes `pnpm store path` during its own execution, and the
+      # pnpm shim only exists once corepack is enabled. corepack then reads the
+      # exact pnpm version from package.json's `packageManager` field.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: npm
-
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
+          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
+          # pnpm's node_modules is a symlink+hardlink layout that does not
+          # round-trip safely through actions/cache tar archives. Restoring the
+          # store and letting `pnpm install` re-link is the supported fast path.
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Restore ESLint cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
-          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'package-lock.json') }}
+          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
           restore-keys: eslintcache-
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Generate Next.js route types
-        run: npx next typegen
+        run: pnpm exec next typegen
 
       - name: Typecheck
         # tsc --noEmit over this many files can exceed Node's default old-space
         # heap ceiling on the standard GitHub-hosted runner and crash with an
         # OOM before reporting any diagnostics (not a type error). Raise the
         # heap limit rather than let the runner's default silently cap it.
-        run: npm run typecheck
+        run: pnpm run typecheck
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
@@ -150,22 +159,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
+      # setup-node invokes `pnpm store path` during its own execution, and the
+      # pnpm shim only exists once corepack is enabled. corepack then reads the
+      # exact pnpm version from package.json's `packageManager` field.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: npm
-
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
+          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
+          # pnpm's node_modules is a symlink+hardlink layout that does not
+          # round-trip safely through actions/cache tar archives. Restoring the
+          # store and letting `pnpm install` re-link is the supported fast path.
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Download build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -178,18 +190,18 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium
+        run: pnpm exec playwright install chromium
 
       - name: Install Playwright system dependencies
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install-deps chromium
+        run: pnpm exec playwright install-deps chromium
 
       - name: Run Playwright login smoke test
-        run: npm run test:e2e:smoke
+        run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -198,6 +210,36 @@ jobs:
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
           PHOENIX_CI_SMOKE_LOGIN: "true"
+
+      # Best-effort: feed the /admin/synthetic-journeys dashboard from CI. This runs
+      # `pnpm run synthetic:save-report` (scripts/synthetic-save-report.ts →
+      # ingestSyntheticJourneyReport), which writes a run row directly to Supabase using
+      # the service-role key already provided to this job. It is a deliberate NO-OP unless
+      # a report exists at tests/synthetic/report/latest.json — the login smoke test above
+      # does NOT produce one; only a full synthetic run (`pnpm run synthetic:test` against a
+      # deployed target) does. TO ACTIVATE real ingestion: (1) add a repo secret
+      # SYNTHETIC_BASE_URL pointing at the environment to probe, and (2) add a step/job that
+      # runs `pnpm run synthetic:test` to generate the report BEFORE this step. Kept
+      # continue-on-error + guarded so a missing report or missing creds can never fail CI.
+      - name: Ingest synthetic-journey report (best-effort, never fails CI)
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional/not-yet-created secret; empty is fine (script defaults baseUrl to "unknown").
+          SYNTHETIC_BASE_URL: ${{ secrets.SYNTHETIC_BASE_URL }}
+        run: |
+          if [ ! -f tests/synthetic/report/latest.json ]; then
+            echo "No synthetic report at tests/synthetic/report/latest.json — nothing to ingest, skipping."
+            exit 0
+          fi
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]; then
+            echo "Supabase service credentials not configured — skipping synthetic ingest."
+            exit 0
+          fi
+          echo "Ingesting synthetic-journey report into Supabase..."
+          pnpm run synthetic:save-report
 
       - name: Upload Playwright report on failure
         if: failure()
@@ -217,40 +259,43 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
+      # setup-node invokes `pnpm store path` during its own execution, and the
+      # pnpm shim only exists once corepack is enabled. corepack then reads the
+      # exact pnpm version from package.json's `packageManager` field.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
-          cache: npm
-
-      - name: Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
+          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
+          # pnpm's node_modules is a symlink+hardlink layout that does not
+          # round-trip safely through actions/cache tar archives. Restoring the
+          # store and letting `pnpm install` re-link is the supported fast path.
+          cache: pnpm
 
       - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium
+        run: pnpm exec playwright install chromium
 
       - name: Install Playwright system dependencies
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install-deps chromium
+        run: pnpm exec playwright install-deps chromium
 
       - name: Run full Playwright E2E suite
-        run: npm run test:e2e -- -j 4
+        run: pnpm run test:e2e -- -j 4
         env:
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}

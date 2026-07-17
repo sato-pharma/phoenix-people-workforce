@@ -649,25 +649,52 @@ async function lookupEmployeePosition(hrId: string | null | undefined) {
   };
 }
 
-async function assignmentRowsForCandidate(
-  targetType: ModuleControlTargetType,
-  targetKey: string,
+type AssignmentCandidate = { keys: string[]; type: ModuleControlTargetType };
+
+/**
+ * One batched query replacing the old per-candidate probe loop (up to 5 sequential
+ * round trips — all paid for nothing whenever the table is empty). `.in()` filters
+ * are per-column, so a target_key that coincidentally exists under a different
+ * target_type can slip into the result set; the exact (type, key) pair grouping
+ * below restores the loop's per-candidate semantics before precedence is applied.
+ * Rows arrive ordered by sort_order, so each pair's bucket keeps the same order
+ * the per-candidate query produced.
+ */
+async function assignmentRowsForCandidates(
+  candidates: readonly AssignmentCandidate[],
   navigationMode: ModuleControlNavigationMode,
-) {
+): Promise<Map<string, Array<{ module_id?: string | null; sort_order?: number | null }>>> {
+  const pairs = candidates.flatMap((candidate) => candidate.keys.map((key) => ({ key, type: candidate.type })));
+  const byPair = new Map<string, Array<{ module_id?: string | null; sort_order?: number | null }>>();
+  if (pairs.length === 0) return byPair;
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("sidebar_module_assignments")
-    .select("module_id,sort_order,is_enabled")
-    .eq("target_type", targetType)
-    .eq("target_key", targetKey)
+    .select("target_type,target_key,module_id,sort_order,is_enabled")
     .eq("navigation_mode", navigationMode)
     .eq("is_enabled", true)
+    .in("target_type", [...new Set(pairs.map((pair) => pair.type))])
+    .in("target_key", [...new Set(pairs.map((pair) => pair.key))])
     .order("sort_order", { ascending: true });
   if (error) {
-    if ((error as { code?: string }).code === "42P01") return [];
+    // Missing table behaves exactly like the old loop: every probe returns empty.
+    if ((error as { code?: string }).code === "42P01") return byPair;
     throw error;
   }
-  return (data ?? []) as Array<{ module_id?: string | null; sort_order?: number | null }>;
+
+  for (const row of (data ?? []) as Array<{
+    target_type?: string | null;
+    target_key?: string | null;
+    module_id?: string | null;
+    sort_order?: number | null;
+  }>) {
+    const pairKey = `${String(row.target_type ?? "")}:${String(row.target_key ?? "")}`;
+    const bucket = byPair.get(pairKey) ?? [];
+    bucket.push({ module_id: row.module_id, sort_order: row.sort_order });
+    byPair.set(pairKey, bucket);
+  }
+  return byPair;
 }
 
 // Per-request memoized: AppShell resolves the effective sidebar once per navigation, but the same
@@ -681,11 +708,42 @@ export const getEffectiveSidebarModuleIds = cache(async (
 ): Promise<string[] | null> => {
   if (!access.loginId && !access.hrId) return null;
 
-  const user = await lookupUserForAccess(access);
+  // The user lookup, the employees position lookup, and the permission matrix are
+  // dependency-free (the employees lookup is fired speculatively on access.hrId and
+  // reused only when the resolved user row keys to the same employees lookup key),
+  // so run them concurrently. Errors are re-thrown in the original sequential order:
+  // user lookup first, then employee lookup, then permission matrix.
+  const [userSettled, speculativeEmployeeSettled, matrixSettled] = await Promise.all([
+    lookupUserForAccess(access).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+    lookupEmployeePosition(access.hrId ?? null).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+    getPermissionMatrix().then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+  ]);
+
+  if (!userSettled.ok) throw userSettled.error;
+  const user = userSettled.value;
   const userHrId = String(user?.hr_id ?? access.hrId ?? "").trim() || null;
   const userLoginId = String(user?.login_id ?? access.loginId ?? "").trim() || null;
   const userRole = access.role;
-  const employee = await lookupEmployeePosition(userHrId);
+
+  // lookupEmployeePosition keys its query on `hrId ? String(hrId).toUpperCase() : none`;
+  // reuse the speculative result only when both inputs produce that exact same key.
+  const positionLookupKey = (hrId: string | null | undefined) => (hrId ? String(hrId).toUpperCase() : null);
+  let employee: { line: string | null; positionTitle: string | null };
+  if (positionLookupKey(userHrId) === positionLookupKey(access.hrId ?? null)) {
+    if (!speculativeEmployeeSettled.ok) throw speculativeEmployeeSettled.error;
+    employee = speculativeEmployeeSettled.value;
+  } else {
+    employee = await lookupEmployeePosition(userHrId);
+  }
   const line = String(user?.line ?? employee.line ?? "").trim() || null;
   const positionTitle = employee.positionTitle;
 
@@ -697,11 +755,18 @@ export const getEffectiveSidebarModuleIds = cache(async (
   ];
 
   const catalog = moduleById(buildModuleCatalog());
-  const matrix = await getPermissionMatrix();
+  if (!matrixSettled.ok) throw matrixSettled.error;
+  const matrix = matrixSettled.value;
+
+  // ONE batched query for every candidate pair; precedence selection stays in code,
+  // in exactly the order the sequential probe loop used (user:hrId, user:loginId,
+  // role, position, line — first candidate with any DB rows wins, even if catalog
+  // filtering then empties it).
+  const rowsByPair = await assignmentRowsForCandidates(candidates, navigationMode);
 
   for (const candidate of candidates) {
     for (const key of candidate.keys) {
-      const rows = await assignmentRowsForCandidate(candidate.type, key, navigationMode);
+      const rows = rowsByPair.get(`${candidate.type}:${key}`) ?? [];
       if (rows.length === 0) continue;
       return rows
         .map((row) => String(row.module_id ?? ""))

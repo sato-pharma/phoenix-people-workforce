@@ -287,13 +287,6 @@ function ExpenseSnippet({
           <p className="mt-0.5 text-lg font-black text-emerald-700">{approvedPctDisplay}</p>
           <p className="text-[10px] text-slate-400">of total</p>
         </div>
-        <div className={`border px-3 py-2.5 ${(data.highRiskCount ?? 0) > 0 ? "border-rose-200 bg-rose-50" : "border-slate-200"}`}>
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">High-risk</p>
-          <p className={`mt-0.5 text-lg font-black ${(data.highRiskCount ?? 0) > 0 ? "text-rose-700" : "text-slate-400"}`}>
-            {data.highRiskCount ?? "—"}
-          </p>
-          <p className="text-[10px] text-slate-400">trips flagged</p>
-        </div>
       </div>
       {(data.byRegion.length > 0 || data.topSpenders.length > 0) && (
         <CeoExpenseTables

@@ -253,12 +253,12 @@ function verifyEmployeePortalSelfOnlyIsolation() {
 function verifyStaticEntryPoints() {
   const payrollPage = readFileSync("app/(admin)/payroll/page.tsx", "utf8");
   const salesPage = readFileSync("app/(admin)/sales/page.tsx", "utf8");
-  const expensesPage = readFileSync("app/(admin)/payroll/expenses/page.tsx", "utf8");
-  const expensesDashboardPage = readFileSync("app/(admin)/payroll/expenses/dashboard/page.tsx", "utf8");
-  const expensesRoute = readFileSync("app/api/payroll/expenses/route.ts", "utf8");
-  const expensesAnalyzeRoute = readFileSync("app/api/payroll/expenses/analyze/route.ts", "utf8");
-  const expensesImportRoute = readFileSync("app/api/payroll/expenses/import/route.ts", "utf8");
-  const expensesReportsRoute = readFileSync("app/api/payroll/expenses/reports/[id]/route.ts", "utf8");
+  const expensesPage = readFileSync("app/(admin)/admin/outstation/expenses/page.tsx", "utf8");
+  const expensesDashboardPage = readFileSync("app/(admin)/admin/outstation/expenses/dashboard/page.tsx", "utf8");
+  const expensesRoute = readFileSync("app/api/admin/outstation/expenses/route.ts", "utf8");
+  const expensesAnalyzeRoute = readFileSync("app/api/admin/outstation/expenses/analyze/route.ts", "utf8");
+  const expensesImportRoute = readFileSync("app/api/admin/outstation/expenses/import/route.ts", "utf8");
+  const expensesReportsRoute = readFileSync("app/api/admin/outstation/expenses/reports/[id]/route.ts", "utf8");
   const attendanceExceptionsPage = readFileSync("app/(admin)/attendance/exceptions/page.tsx", "utf8");
   const attendanceExceptionRoute = readFileSync("app/api/attendance/exceptions/[id]/route.ts", "utf8");
   const vacationActionCenterPage = readFileSync("app/leave-management/vacation-action-center/page.tsx", "utf8");

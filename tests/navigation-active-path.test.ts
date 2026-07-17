@@ -192,11 +192,13 @@ export function runNavigationActivePathTests() {
   );
 
   // Note: /admin/people-management deliberately isn't in this list — unlike the
-  // other consolidated hubs, several of its cards (Other Approvals, Contract
-  // Renewal, Resignations, Workforce Compliance) have no role restriction, so
-  // e.g. Finance Manager legitimately reaches the hub (for Other Approvals via
-  // leave:read) even though Employees/Weekly Plans/HR Support Requests within
-  // it stay Super-Admin/Talent-Acquisition-only via their own per-card gates.
+  // other consolidated hubs, several of its cards (Vacancies Report, Contract
+  // Renewal, Resignations) have no role restriction, so e.g. Finance Manager
+  // legitimately reaches the hub even though Employees/Weekly Plans/HR Support
+  // Requests within it stay Super-Admin/Talent-Acquisition-only via their own
+  // per-card gates. "Other Approvals" moved to the sidebar's Approvals Hub
+  // section, and Organogram/Probation/Workforce Compliance moved to direct
+  // sidebar links under People Management — none are cards here anymore.
   const sensitiveHrHrefs = ["/admin/recruitment-hiring"] as const;
   // /admin/outstation-expenses and /leave-management moved off this list — both
   // are shared with Finance Manager/CEO now (Outstation Expenses / Leave

@@ -48,14 +48,14 @@ import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy"
 import {
   buildPayrollExpenseDsmSummaries,
   summarizePayrollExpenses,
-} from "@/lib/payroll/expense-metrics";
+} from "@/lib/outstation/expense-metrics";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   dedupeHistoricalExpensesByTrip,
   listOutstationRequestExpenses,
   listPayrollExpenseReports,
   listPayrollExpenses,
-} from "@/lib/payroll/expenses";
+} from "@/lib/outstation/expenses";
 import {
   calculatePayrollParts,
   normalizePayrollPaymentMode,

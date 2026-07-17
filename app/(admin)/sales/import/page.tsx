@@ -18,7 +18,10 @@ import { listMappingReferences, listNormalizerDistributors, type MappingReferenc
 
 export const dynamic = "force-dynamic";
 
-export default async function SalesImportPage() {
+const TAB_KEYS = ["coverage", "dashboard", "mapping", "monthly-sales", "products", "sheets"] as const;
+type SalesImportTab = (typeof TAB_KEYS)[number];
+
+export default async function SalesImportPage({ searchParams }: { searchParams: Promise<{ tab?: string; search?: string }> }) {
   const accessContext = await resolveAccessContextFromPage();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
@@ -30,6 +33,12 @@ export default async function SalesImportPage() {
   if (!(await canAccess(accessContext, "sales", "import"))) {
     redirect("/sales");
   }
+
+  const sp = await searchParams;
+  const initialTab: SalesImportTab | undefined = TAB_KEYS.includes(sp?.tab as SalesImportTab)
+    ? (sp?.tab as SalesImportTab)
+    : undefined;
+  const initialProductsSearch = sp?.search?.trim() || undefined;
 
   let distributors: SalesDistributorOption[] = [];
   let initialBatches: SourceOfSalesUploadBatch[] = [];
@@ -68,6 +77,8 @@ export default async function SalesImportPage() {
       initialDashboard={initialDashboard}
       initialError={initialError}
       initialProducts={initialProducts}
+      initialProductsSearch={initialProductsSearch}
+      initialTab={initialTab}
       mappingReferences={mappingReferences}
       profiledDistributorCodes={listNormalizerDistributors().map((distributor) => distributor.code)}
     />

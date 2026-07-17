@@ -88,7 +88,7 @@ export function runApprovalsHubCompletionTests() {
     "salary_batches",
     "sales_import_batches",
     "marketing_request_approval_steps",
-    "payroll_expenses",
+    "outstation_expenses",
   ]) {
     assert.match(
       actionCenter,

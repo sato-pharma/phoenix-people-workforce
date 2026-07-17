@@ -296,13 +296,17 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "203", crmUsername: null, employmentStatus: "active", fullName: "Timing Four", hireDate: "2024-01-01", hrId: "T-4", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const timingVisits: FieldWorkforceMatrixVisit[] = [
+    // iReports360 stores saveDate as a ZONE-LESS Cairo wall-clock tagged +00 (verified in
+    // production), so a visit logged at 10:15 Cairo is stored — and read back — as 10:15:00Z. The
+    // code reads that clock as-is and must NOT re-convert through Africa/Cairo, so these fixtures
+    // carry the real wall-clock the rep logged at, as a ...Z instant (no offset juggling).
     // T-1: two visits same day, logged 10:15 Cairo (AM-tagged, on-time) and 15:30 Cairo (PM-tagged).
-    { ...baseVisit(200, "x"), ampm: "AM", visitDate: "2026-05-06", saveDate: "2026-05-06T07:15:00Z" },
-    { ...baseVisit(200, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:30:00Z" },
+    { ...baseVisit(200, "x"), ampm: "AM", visitDate: "2026-05-06", saveDate: "2026-05-06T10:15:00Z" },
+    { ...baseVisit(200, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T15:30:00Z" },
     // T-2: single AM-tagged visit logged at 13:15 Cairo — logged past 11:30 -> late start.
-    { ...baseVisit(201, "x"), ampm: "am", visitDate: "2026-05-06", saveDate: "2026-05-06T10:15:00Z" },
+    { ...baseVisit(201, "x"), ampm: "am", visitDate: "2026-05-06", saveDate: "2026-05-06T13:15:00Z" },
     // T-3: only a PM-tagged visit that day -> no AM entry to judge -> isLateStart must be null, not false.
-    { ...baseVisit(202, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T12:00:00Z" },
+    { ...baseVisit(202, "x"), ampm: "PM", visitDate: "2026-05-06", saveDate: "2026-05-06T15:00:00Z" },
     // T-4: visit with no saveDate at all (e.g. a defensive/legacy shape) -> no timing entry.
     { ...baseVisit(203, "x"), ampm: "AM", visitDate: "2026-05-06" },
   ];
@@ -325,6 +329,37 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(timingOf("T-3", "2026-05-06")?.isLateStart, null, "T-3 has no AM-tagged entry that day -> isLateStart is null, not guessed");
 
   assert.equal(timingOf("T-4", "2026-05-06"), undefined, "a visit with no saveDate produces no timing entry for that day");
+
+  // --- 1.1b Excuse-labeled AV detection: iReports360 has no separate visit_type for excuses —
+  // both real vacation and excuses are logged under the same AV-mapped type (-4/-15), told
+  // apart only by free-text comment. This drives which av_with_punch days get excluded from
+  // the fingerprint-contradiction recommendation.
+  const excuseEmployees: FieldWorkforceEmployeeInput[] = [
+    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "Excuse One", hireDate: "2024-01-01", hrId: "E-1", jobTitle: "Medical Representative", positionTitle: null },
+  ];
+  const excuseVisits: FieldWorkforceMatrixVisit[] = [
+    // Real vacation comment on an AV-mapped visit -> not excuse-labeled.
+    { ...visit(300, "2026-05-10", "x"), visitType: -4, comment: "Annual Leave" },
+    // Excuse comment on an AV-mapped visit -> excuse-labeled.
+    { ...visit(300, "2026-05-11", "x"), visitType: -4, comment: "Afternoon Excuse" },
+    // Case-insensitive and substring match ("Morning Excuse").
+    { ...visit(300, "2026-05-12", "x"), visitType: -4, comment: "MORNING EXCUSE" },
+    // A CP-mapped visit (Campaign) whose comment happens to mention "excuse" must NOT count —
+    // only AV-mapped visit types are checked.
+    { ...visit(300, "2026-05-13", "x"), visitType: -8, comment: "Excuse for missing campaign log" },
+    // AV-mapped visit with a null comment -> not excuse-labeled (no false positive on absence of data).
+    { ...visit(300, "2026-05-14", "x"), visitType: -4, comment: null },
+  ];
+  const { avExcuseLabeledKeys } = buildIReports360FieldWorkforceMatrix({
+    employees: excuseEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: excuseVisits,
+  });
+  const excuseKey = canonicalHrIdKey("E-1");
+  assert.equal(avExcuseLabeledKeys.has(`${excuseKey}|2026-05-10`), false, "Annual Leave comment is not excuse-labeled");
+  assert.equal(avExcuseLabeledKeys.has(`${excuseKey}|2026-05-11`), true, "Afternoon Excuse comment is excuse-labeled");
+  assert.equal(avExcuseLabeledKeys.has(`${excuseKey}|2026-05-12`), true, "match is case-insensitive (MORNING EXCUSE)");
+  assert.equal(avExcuseLabeledKeys.has(`${excuseKey}|2026-05-13`), false, "a CP-mapped (Campaign) visit's comment is never checked, even if it contains \"excuse\"");
+  assert.equal(avExcuseLabeledKeys.has(`${excuseKey}|2026-05-14`), false, "an AV-mapped visit with no comment is not excuse-labeled");
+  assert.equal(avExcuseLabeledKeys.size, 2, "exactly the two excuse-labeled days are recorded");
 
   // --- 1.2 Customer-authenticity: repeat-customer / low-variety / PM-recurrence patterns ---
   // May 2026 week boundaries (Mon-Sun) used below: week A = 05-04..05-10, week B = 05-11..05-17.
@@ -449,13 +484,24 @@ export function runFieldWorkforceComplianceEligibilityTests() {
       crossCheckCell("2026-05-08", { countedAsWorkedDay: true, status: "VISITS" }),
       // Ignored day (e.g. holiday/weekly-off) with no punch -> skipped entirely regardless of punch state.
       crossCheckCell("2026-05-09", { countedAsWorkedDay: true, ignored: true, status: "VISITS" }),
-      // AV (vacation signal) day, not punched -> neither branch applies (not "N", not counted as worked).
+      // AV (vacation signal) day, not punched -> consistent (genuinely on leave), no signal.
       crossCheckCell("2026-05-10", { status: "AV" }),
+      // AV day, punched, 6h worked (>= the 5h threshold) -> av_with_punch (full contradiction).
+      crossCheckCell("2026-05-11", { status: "AV" }),
+      // AV day, punched, 2h worked (< the 5h threshold) -> av_with_partial_punch (half-day).
+      crossCheckCell("2026-05-12", { status: "AV" }),
+      // AV day, punched, but duration unresolvable (no workedMinutesByKey entry) -> conservative
+      // default is av_with_partial_punch, never the full contradiction, on incomplete data.
+      crossCheckCell("2026-05-13", { status: "AV" }),
     ]),
   ];
-  const punchedKeys = new Set(["d-1|2026-05-05", "d-1|2026-05-06"]);
+  const punchedKeys = new Set(["d-1|2026-05-05", "d-1|2026-05-06", "d-1|2026-05-11", "d-1|2026-05-12", "d-1|2026-05-13"]);
   const exceptionKeys = new Set(["d-1|2026-05-08"]);
-  const crossCheckResult = computeAttendanceCrossCheck({ employees: acEmployees, exceptionKeys, punchedKeys });
+  const workedMinutesByKey = new Map([
+    ["d-1|2026-05-11", 360],
+    ["d-1|2026-05-12", 120],
+  ]);
+  const crossCheckResult = computeAttendanceCrossCheck({ employees: acEmployees, exceptionKeys, punchedKeys, workedMinutesByKey });
 
   assert.equal(crossCheckResult.get("d-1|2026-05-04"), "visits_no_punch", "worked day with no punch and no exception -> visits_no_punch");
   assert.equal(crossCheckResult.get("d-1|2026-05-05"), undefined, "worked day WITH a punch is consistent -> no signal");
@@ -463,6 +509,9 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(crossCheckResult.get("d-1|2026-05-07"), undefined, "N day with no punch is consistent (genuinely absent) -> no signal");
   assert.equal(crossCheckResult.get("d-1|2026-05-08"), undefined, "an approved exception carves the day out even though visits+no-punch would otherwise flag it");
   assert.equal(crossCheckResult.get("d-1|2026-05-09"), undefined, "an FWC-ignored day (holiday/weekly-off) is skipped entirely, regardless of punch state");
-  assert.equal(crossCheckResult.get("d-1|2026-05-10"), undefined, "an AV (vacation) day never fires either branch");
-  assert.equal(crossCheckResult.size, 2, "exactly the two real disagreements are recorded, nothing else");
+  assert.equal(crossCheckResult.get("d-1|2026-05-10"), undefined, "an AV (vacation) day with no punch is consistent -> no signal");
+  assert.equal(crossCheckResult.get("d-1|2026-05-11"), "av_with_punch", "AV day with a punch and 6h worked (>=5h) -> av_with_punch (full contradiction)");
+  assert.equal(crossCheckResult.get("d-1|2026-05-12"), "av_with_partial_punch", "AV day with a punch and 2h worked (<5h) -> av_with_partial_punch (half-day)");
+  assert.equal(crossCheckResult.get("d-1|2026-05-13"), "av_with_partial_punch", "AV day with a punch but unresolvable duration defaults to the half-day bucket, not the full contradiction");
+  assert.equal(crossCheckResult.size, 5, "exactly the five real disagreements are recorded, nothing else");
 }

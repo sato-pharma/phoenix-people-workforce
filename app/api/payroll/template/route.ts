@@ -11,7 +11,7 @@ import {
   getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { getApprovedExpenseTotalsForPayroll } from "@/lib/payroll/expenses";
+import { getApprovedExpenseTotalsForPayroll } from "@/lib/outstation/expenses";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { calculatePayrollParts, payrollPaymentModeLabel, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";

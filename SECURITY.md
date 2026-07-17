@@ -115,7 +115,7 @@ Key principles:
 
 ## Dependencies
 
-- `npm audit` is expected to report zero vulnerabilities at
+- `pnpm audit` is expected to report zero vulnerabilities at
   `--audit-level=low`.
 - Known transitive vulnerabilities are addressed via `overrides` in
   `package.json` to pin safe versions.
@@ -127,7 +127,7 @@ Key principles:
 ## Deployment Security
 
 - **Production deploys** are only permitted from the `main` branch after
-  passing the full validation gate (`npm run check:harden`: lint, typecheck,
+  passing the full validation gate (`pnpm run check:harden`: lint, typecheck,
   tests, and build).
 - **Preview environments** enforce a read-only guard via the
   `PHOENIX_PREVIEW_READ_ONLY` environment variable, preventing accidental

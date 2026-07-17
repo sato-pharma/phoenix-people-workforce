@@ -1,0 +1,255 @@
+// Probation Case repository + provisioning (Phase 2).
+//
+// The Probation Case is the single source of truth per employee. `ensureProbationCase` is the
+// ONE idempotent entry point every hire path (and the backfill) funnels through so a case is
+// created exactly once — the unique constraint on employee_hr_id is the hard dedup guard, and
+// this function is safe under concurrency (it treats a unique-violation as "already exists").
+
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { normalizeHrId } from "@/lib/auth/permissions";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { probationEndDate, probationStartDate } from "@/lib/probation/date";
+
+import type { ProbationCase } from "./types";
+
+type ProbationCaseRow = {
+  id: string;
+  employee_hr_id: string;
+  employee_name: string | null;
+  job_title: string | null;
+  line_name: string | null;
+  area_name: string | null;
+  manager_hr_id: string | null;
+  hire_date: string | null;
+  probation_start_date: string | null;
+  probation_end_date: string | null;
+  status: string;
+  decision: string | null;
+  decision_reason: string | null;
+  decision_by: string | null;
+  decision_at: string | null;
+  evidence_acknowledged: boolean;
+  side_effects_applied_at: string | null;
+  legacy_probation_id: number | null;
+  source: string;
+  last_crm_sync_at: string | null;
+  last_report_update_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function isProbationCaseSchemaMissing(error: unknown): boolean {
+  const message = String((error as { message?: unknown })?.message ?? error ?? "").toLowerCase();
+  return (
+    message.includes("probation_cases") ||
+    message.includes("could not find the table") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  const message = String((error as { message?: unknown })?.message ?? error ?? "").toLowerCase();
+  return code === "23505" || message.includes("duplicate key") || message.includes("already exists");
+}
+
+export function mapProbationCaseRow(row: ProbationCaseRow): ProbationCase {
+  return {
+    id: row.id,
+    employeeHrId: row.employee_hr_id,
+    employeeName: row.employee_name,
+    jobTitle: row.job_title,
+    lineName: row.line_name,
+    areaName: row.area_name,
+    managerHrId: row.manager_hr_id,
+    hireDate: row.hire_date,
+    probationStartDate: row.probation_start_date,
+    probationEndDate: row.probation_end_date,
+    status: (row.status as ProbationCase["status"]) ?? "active",
+    decision: (row.decision as ProbationCase["decision"]) ?? null,
+    decisionReason: row.decision_reason,
+    decisionBy: row.decision_by,
+    decisionAt: row.decision_at,
+    evidenceAcknowledged: Boolean(row.evidence_acknowledged),
+    sideEffectsAppliedAt: row.side_effects_applied_at,
+    legacyProbationId: row.legacy_probation_id,
+    source: row.source ?? "system",
+    lastCrmSyncAt: row.last_crm_sync_at,
+    lastReportUpdateAt: row.last_report_update_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+const CASE_COLUMNS =
+  "id,employee_hr_id,employee_name,job_title,line_name,area_name,manager_hr_id,hire_date," +
+  "probation_start_date,probation_end_date,status,decision,decision_reason,decision_by,decision_at," +
+  "evidence_acknowledged,side_effects_applied_at,legacy_probation_id,source,last_crm_sync_at," +
+  "last_report_update_at,created_by,created_at,updated_at";
+
+/** Fetch a single case by employee HR_ID (normalized), or null. */
+export async function getProbationCaseByEmployee(
+  employeeHrId: string,
+): Promise<ProbationCase | null> {
+  const hrId = normalizeHrId(employeeHrId);
+  if (!hrId) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .select(CASE_COLUMNS)
+    .ilike("employee_hr_id", hrId)
+    .maybeSingle();
+  if (error) {
+    if (isProbationCaseSchemaMissing(error)) return null;
+    throw error;
+  }
+  return data ? mapProbationCaseRow(data as unknown as ProbationCaseRow) : null;
+}
+
+/**
+ * Post-decision lock (Phase 10): once a case is decided, no further feedback/assessment input is
+ * accepted. Throws a "Conflict" so callers map it to 409. No-op when the case is still active.
+ */
+export async function assertCaseAcceptsSubmissions(caseId: string | null | undefined): Promise<void> {
+  if (!caseId) return;
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .select("status, decision")
+    .eq("id", caseId)
+    .maybeSingle();
+  if (error) return; // best-effort; don't block on a transient read
+  const row = data as { status?: string; decision?: string | null } | null;
+  if (row && (row.status === "decided" || row.decision)) {
+    throw new Error("Conflict: this probation case has already been decided and is locked to further input.");
+  }
+}
+
+/**
+ * Probation is a MEDICAL-REPRESENTATIVE-ONLY workflow (owner rule, 2026-07-17). Managers
+ * (District/Regional/National Sales Manager) and head-office roles must NEVER get a probation case,
+ * even inside the hire+90 window — provisioning them was a scope bug that put 4 non-reps into the
+ * live module. Matched on a normalized "medical rep" substring so title variants (e.g. "Senior
+ * Medical Representative") are covered while every manager/admin title is excluded.
+ */
+export function isMedicalRepresentativeTitle(jobTitle: string | null | undefined): boolean {
+  return String(jobTitle ?? "").trim().toLowerCase().includes("medical rep");
+}
+
+export type EnsureProbationCaseInput = {
+  employeeHrId: string;
+  /** Optional overrides; when omitted, identity + hire date resolve from the employee directory. */
+  hireDate?: string | null;
+  employeeName?: string | null;
+  jobTitle?: string | null;
+  lineName?: string | null;
+  areaName?: string | null;
+  managerHrId?: string | null;
+  legacyProbationId?: number | null;
+  source?: string;
+  createdBy?: string | null;
+};
+
+export type EnsureProbationCaseResult = {
+  case: ProbationCase | null;
+  created: boolean;
+  /** Set when the case could not be created (e.g. unknown employee, missing hire date). */
+  skippedReason?: string;
+};
+
+/**
+ * Idempotently create-or-return the Probation Case for an employee.
+ *
+ * - Returns the existing case unchanged if one already exists (no overwrite).
+ * - Resolves identity + hire date from the employee directory when not supplied.
+ * - Derives probation_end_date via the canonical hire+90 helper.
+ * - Concurrency-safe: a unique-violation on employee_hr_id is treated as "already exists"
+ *   and the existing row is re-read and returned.
+ * - Never throws on a missing hire date or unknown employee; returns skippedReason instead so
+ *   callers (hire paths) stay non-blocking.
+ */
+export async function ensureProbationCase(
+  input: EnsureProbationCaseInput,
+): Promise<EnsureProbationCaseResult> {
+  const employeeHrId = normalizeHrId(input.employeeHrId);
+  if (!employeeHrId) return { case: null, created: false, skippedReason: "missing_employee_hr_id" };
+
+  const existing = await getProbationCaseByEmployee(employeeHrId);
+  if (existing) return { case: existing, created: false };
+
+  // Resolve identity + hire date from the directory when the caller did not supply them.
+  let identity = {
+    employeeName: input.employeeName ?? null,
+    jobTitle: input.jobTitle ?? null,
+    lineName: input.lineName ?? null,
+    areaName: input.areaName ?? null,
+    managerHrId: input.managerHrId ?? null,
+    hireDate: input.hireDate ?? null,
+  };
+  if (
+    !identity.hireDate ||
+    !identity.employeeName ||
+    !identity.jobTitle ||
+    identity.managerHrId === null
+  ) {
+    const rows = await getEmployeeDirectoryRows();
+    const employee = rows.find((row) => normalizeHrId(row.hrId) === employeeHrId) ?? null;
+    if (employee) {
+      identity = {
+        employeeName: identity.employeeName ?? employee.fullName ?? null,
+        jobTitle: identity.jobTitle ?? employee.positionTitle ?? employee.jobTitle ?? null,
+        lineName: identity.lineName ?? employee.lineName ?? null,
+        areaName: identity.areaName ?? employee.areaName ?? null,
+        managerHrId: identity.managerHrId ?? employee.managerHrId ?? null,
+        hireDate: identity.hireDate ?? employee.hireDate ?? null,
+      };
+    }
+  }
+
+  if (!identity.hireDate) {
+    // Cannot anchor the 90-day window without a hire date — surface, don't fabricate.
+    return { case: null, created: false, skippedReason: "missing_hire_date" };
+  }
+
+  // Scope guard (owner rule 2026-07-17): probation is medical-representatives-only. A manager
+  // (DSM/RSM/NSM) or head-office employee never gets a case, even mid hire+90 window. This is the
+  // single choke point for BOTH the backfill and the real-time hire hook (provisioning.ts).
+  if (!isMedicalRepresentativeTitle(identity.jobTitle)) {
+    return { case: null, created: false, skippedReason: "not_medical_representative" };
+  }
+
+  const startDate = probationStartDate(identity.hireDate);
+  const endDate = probationEndDate(identity.hireDate);
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .insert({
+      employee_hr_id: employeeHrId,
+      employee_name: identity.employeeName,
+      job_title: identity.jobTitle,
+      line_name: identity.lineName,
+      area_name: identity.areaName,
+      manager_hr_id: identity.managerHrId,
+      hire_date: identity.hireDate,
+      probation_start_date: startDate,
+      probation_end_date: endDate,
+      status: "active",
+      legacy_probation_id: input.legacyProbationId ?? null,
+      source: input.source ?? "system",
+      created_by: input.createdBy ?? "system",
+    })
+    .select(CASE_COLUMNS)
+    .single();
+
+  if (error) {
+    // Lost a create race — the row now exists; return it.
+    if (isUniqueViolation(error)) {
+      const raced = await getProbationCaseByEmployee(employeeHrId);
+      if (raced) return { case: raced, created: false };
+    }
+    throw error;
+  }
+
+  return { case: mapProbationCaseRow(data as unknown as ProbationCaseRow), created: true };
+}

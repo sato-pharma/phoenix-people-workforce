@@ -40,7 +40,6 @@ export function RouteMapPreview({
         employeeName: request.employeeName,
         employeeRole: request.employeeRole,
         expectedTotalAmount: request.expectedTotalAmount,
-        fraudFlags: request.fraudFlags,
         fuelAmount: request.fuelAmount,
         goTicketAmount: 0,
         id: 0,
@@ -72,7 +71,6 @@ export function RouteMapPreview({
         sameDayTrip: request.sameDayTrip,
         status: request.calculationStatus,
         submittedAt: request.submittedAt,
-        suspiciousLocationScore: request.suspiciousLocationScore,
         territoryValidationReason: request.territoryValidationReason,
         territoryValidationStatus: request.territoryValidationStatus,
         returnTicketAmount: 0,
@@ -97,8 +95,6 @@ export function RouteMapPreview({
         tripEndDate: request.tripEndDate,
         tripStartDate: request.tripStartDate,
         updatedAt: request.submittedAt,
-        varianceAmount: request.varianceAmount,
-        variancePercent: request.variancePercent,
       };
 
   return <OutstationReviewMap request={mapRequest} />;

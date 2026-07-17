@@ -2,9 +2,15 @@
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage, isNonDeliverableEmail } from "@/lib/email/email-safety";
+import {
+  resolveEmailProviders,
+  sendPreparedEmailWithFailover,
+  type PreparedEmail,
+} from "@/lib/email/email-providers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const resendEndpoint = "https://api.resend.com/emails";
+// Re-exported for back-compat: existing callers/tests import these from this module.
+export { parseRetryAfter, RetryableEmailError } from "@/lib/email/email-errors";
 
 export type SendPhoenixEmailAttachment = {
   /** Base64-encoded file content. */
@@ -25,6 +31,12 @@ export type SendPhoenixEmailInput = {
   fanoutToBcc?: boolean;
   from?: string;
   headers?: Record<string, string>;
+  /**
+   * Per-send Reply-To override. When unset, falls back to NOTIFICATION_REPLY_TO / the
+   * system default reply-to. Lets a specific email type (e.g. job offers) route replies
+   * to a dedicated inbox without changing every other email's reply-to.
+   */
+  replyTo?: string;
   html: string;
   idempotencyKey: string;
   subject: string;
@@ -36,32 +48,9 @@ export type SendPhoenixEmailResult =
   | { id?: string; skipped?: false }
   | { reason: string; skipped: true };
 
-/**
- * A send failure that the outbox should RETRY (rate limit / provider 5xx / timeout),
- * optionally honouring a provider-supplied Retry-After delay. Distinct from a permanent
- * 4xx error which should not be retried.
- */
-export class RetryableEmailError extends Error {
-  retryAfterMs?: number;
-  constructor(message: string, retryAfterMs?: number) {
-    super(message);
-    this.name = "RetryableEmailError";
-    this.retryAfterMs = retryAfterMs;
-  }
-}
-
 // Resend caps total payload at ~40MB; keep a margin and also avoid Gmail's ~102KB body
 // clipping by never letting attachments balloon the request unbounded.
 const maxAttachmentBytes = 38 * 1024 * 1024;
-
-export function parseRetryAfter(header: string | null, now = Date.now()): number | undefined {
-  if (!header) return undefined;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  const date = Date.parse(header);
-  if (Number.isFinite(date)) return Math.max(0, date - now);
-  return undefined;
-}
 
 /** Drop attachments that would exceed the total size budget (warn, never fail the send). */
 export function guardAttachments(
@@ -194,10 +183,13 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
   const from = input.from || process.env.NOTIFICATION_EMAIL_FROM || `${systemIdentity.appName} <${systemEmail.defaultFromEmail}>`;
 
-  if (!apiKey) return { reason: "RESEND_API_KEY is missing.", skipped: true };
+  // Skip (don't retry) only when NO provider can send at all — with a backup configured, a
+  // missing primary key just fails over instead of dropping the mail.
+  if (!resolveEmailProviders().some((provider) => provider.isConfigured())) {
+    return { reason: "No email provider is configured (set RESEND_API_KEY, or BREVO_API_KEY for the backup).", skipped: true };
+  }
   if (!from) return { reason: "Email sender is missing.", skipped: true };
 
   // The hosted signature image is cosmetic. Its reachability must NEVER block a send
@@ -230,13 +222,15 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   let cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(removeNonDeliverable(input.cc), suppressed) : undefined;
   let bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(removeNonDeliverable(input.bcc), suppressed) : undefined;
 
+  const resolvedReplyTo = input.replyTo || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
+
   let finalTo = to;
   // Privacy: a multi-recipient fan-out must not expose every recipient to the others.
   // Move them to BCC behind a neutral visible To (never in testing-redirect mode).
   if (input.fanoutToBcc && !testingRecipients && finalTo.length > 1) {
     bcc = Array.from(new Set([...finalTo, ...(bcc ?? [])]));
     cc = undefined;
-    finalTo = [process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo];
+    finalTo = [resolvedReplyTo];
   }
 
   // Always CC omar.anwar@satopharma.com on every automated system email (all modules, all types).
@@ -248,54 +242,23 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;
   const attachments = guardAttachments(input.attachments);
 
-  let response: Response;
-  try {
-    response = await fetch(resendEndpoint, {
-      body: JSON.stringify({
-        attachments,
-        bcc,
-        cc,
-        from,
-        headers: emailHeaders,
-        html: input.html,
-        replyTo: process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo,
-        subject: input.subject,
-        text: input.text,
-        to: finalTo,
-      }),
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": input.idempotencyKey,
-      },
-      method: "POST",
-      // A hung Resend connection must not stall the request forever; a timeout becomes a
-      // retryable failure the outbox re-attempts.
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (networkError) {
-    throw new RetryableEmailError(
-      networkError instanceof Error ? `Resend request failed: ${networkError.message}` : "Resend request failed.",
-    );
-  }
+  const prepared: PreparedEmail = {
+    attachments,
+    bcc,
+    cc,
+    from,
+    headers: emailHeaders,
+    html: input.html,
+    idempotencyKey: input.idempotencyKey,
+    replyTo: resolvedReplyTo,
+    subject: input.subject,
+    text: input.text,
+    to: finalTo,
+  };
 
-  const payload = (await response.json().catch(() => null)) as { error?: string; id?: string; message?: string } | null;
-
-  // Rate limit / provider error → retryable (honour Retry-After on 429).
-  if (response.status === 429) {
-    throw new RetryableEmailError("Resend rate limited (429).", parseRetryAfter(response.headers.get("retry-after")));
-  }
-  if (response.status >= 500) {
-    throw new RetryableEmailError(payload?.message ?? payload?.error ?? `Resend ${response.status}.`);
-  }
-
-  if (!response.ok) {
-    throw new Error(payload?.message ?? payload?.error ?? `Resend request failed with ${response.status}.`);
-  }
-
-  if (!payload?.id) {
-    throw new Error("Resend accepted the request without returning a message id.");
-  }
-
-  return { id: payload.id, skipped: false };
+  // Dispatch through the provider-failover layer: Resend primary, plus an optional independent
+  // backup (Brevo) used ONLY when Resend deterministically did not send (quota/auth). Ambiguous
+  // errors never cross providers, so a send can never be duplicated. See email-providers.ts.
+  const delivered = await sendPreparedEmailWithFailover(prepared);
+  return { id: delivered.id, skipped: false };
 }

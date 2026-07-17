@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
 import {
   buildBulkImportPreview,
   executeBulkImport,
@@ -22,7 +22,12 @@ function bulkApiError(error: unknown, fallback: string) {
 // GET — download the XLSX template
 export async function GET(request: Request) {
   try {
-    await resolveAccessContext(request); // must be authenticated
+    // resolveAccessContext() never throws for a missing/invalid session — it falls back to a
+    // valid anonymousAccessContext (source: "guest") instead, so this check must be explicit.
+    const access = await resolveAccessContext(request);
+    if (access.source === "guest") {
+      throw unauthorizedError();
+    }
     const buffer = await generateBulkUploadTemplate();
     return new Response(buffer, {
       status: 200,
@@ -47,7 +52,15 @@ export async function POST(request: Request) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
 
+    // resolveAccessContext() never throws for a missing/invalid session — it falls back to a
+    // valid anonymousAccessContext (source: "guest") instead, so this check must be explicit.
+    // (executeBulkImport() separately checks for Super Admin below, but the default/preview
+    // path had no gate at all — buildBulkImportPreview() takes no access context and cross-
+    // matches uploaded rows against live marketing reference data.)
     const access = await resolveAccessContext(request);
+    if (access.source === "guest") {
+      throw unauthorizedError();
+    }
     const formData = await request.formData();
     const file = formData.get("file");
     const mode = (formData.get("mode") as string | null) ?? "preview";

@@ -10,7 +10,7 @@ import {
   getOutstationRequestById,
 } from "@/lib/outstation/service";
 import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
-import { isPayrollExpensesSchemaMissing } from "@/lib/payroll/expenses";
+import { isPayrollExpensesSchemaMissing } from "@/lib/outstation/expenses";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteVacationRequestAsAdmin } from "@/lib/vacation/service";
 
@@ -337,7 +337,7 @@ async function getPayrollExpenseRows(tripIds: string[]) {
   if (tripIds.length === 0) return new Map<string, JsonRecord[]>();
 
   const { data, error } = await getSupabaseAdmin()
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id, imported_payroll_batch_id, imported_to_payroll_at, report_id, trip_id")
     .in("trip_id", tripIds);
 
@@ -489,17 +489,14 @@ async function loadOutstationCleanupRecord(recordId: string): Promise<LoadedClea
   const tripId = outstationPayrollTripId(requestId);
   const payrollRows = await getPayrollExpenseRows([tripId]);
   const linkedPayrollRows = payrollRows.get(tripId) ?? [];
-  const locationAudits = await selectChildren("outstation_location_audit_logs", "expense_request_id", requestId);
   const record = outstationRecord(requestRow, linkedPayrollRows);
   const snapshot = {
-    locationAudits,
     payrollRows: linkedPayrollRows,
     request: requestRow,
     serviceRecord,
   };
   const impactSummary = {
     carEvidenceImagePath: nullableText(requestRow.car_evidence_image_path),
-    linkedLocationAuditRows: locationAudits.length,
     linkedPayrollRows: linkedPayrollRows.length,
     payrollTripId: tripId,
     ticketAttachmentCount: Array.isArray(serviceRecord.ticketAttachmentPaths)

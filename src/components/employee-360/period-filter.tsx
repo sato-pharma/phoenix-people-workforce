@@ -1,11 +1,15 @@
 import Link from "next/link";
 
+import { cn } from "@/lib/utils";
 import { PERIOD_PRESETS, type PeriodKey } from "@/lib/employee-360/period";
 
 function chip(active: boolean): string {
-  return active
-    ? "rounded-full border border-primary bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-    : "rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/60";
+  return cn(
+    "rounded-full border px-3 py-1.5 text-xs font-bold transition",
+    active
+      ? "border-orange-500 bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.3)]"
+      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50",
+  );
 }
 
 // Server component. Presets are plain links and the custom range is a GET form,
@@ -24,7 +28,7 @@ export function PeriodFilter({
 }) {
   const base = `/employee-360/${encodeURIComponent(hrId)}`;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-[16px] border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap gap-1.5">
         {PERIOD_PRESETS.map((p) => (
           <Link key={p.key} href={`${base}?preset=${p.key}`} className={chip(activeKey === p.key)}>
@@ -33,10 +37,22 @@ export function PeriodFilter({
         ))}
       </div>
       <form method="get" action={base} className="flex items-center gap-1.5 text-xs">
-        <input type="date" name="from" defaultValue={from} aria-label="From date" className="rounded border border-border bg-background px-2 py-1 text-foreground" />
-        <span className="text-muted-foreground">→</span>
-        <input type="date" name="to" defaultValue={to} aria-label="To date" className="rounded border border-border bg-background px-2 py-1 text-foreground" />
-        <button type="submit" className={chip(activeKey === "custom") + " cursor-pointer"}>
+        <input
+          type="date"
+          name="from"
+          defaultValue={from}
+          aria-label="From date"
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+        />
+        <span className="font-bold text-slate-300">→</span>
+        <input
+          type="date"
+          name="to"
+          defaultValue={to}
+          aria-label="To date"
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+        />
+        <button type="submit" className={cn(chip(activeKey === "custom"), "cursor-pointer")}>
           Apply
         </button>
       </form>

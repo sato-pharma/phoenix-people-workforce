@@ -21,7 +21,7 @@ import { test, expect } from "@playwright/test";
  * - Accessibility: tab roles and aria-selected
  * - Error boundary wrapping
  *
- * Run with:  npx playwright test tests/e2e/vacation-report.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/vacation-report.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/leave-management/vacation-report";

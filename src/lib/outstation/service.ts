@@ -21,11 +21,11 @@ import {
   uploadOutstationTicketAttachments,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
-import { isHighRiskRequest } from "@/lib/outstation/expense-risk";
-import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
+import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/payroll/expenses";
+import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
@@ -37,7 +37,6 @@ import {
 } from "@/lib/outstation/medical-rep-expenses";
 import {
   googleDirectionsRoute,
-  googleDistanceMatrix,
   googleGeocodeAddress,
   googleReverseGeocode,
 } from "@/lib/google-maps/server";
@@ -55,7 +54,6 @@ import type {
   OutstationEligibilityStatus,
   OutstationExpenseType,
   OutstationExpenseRequest,
-  OutstationFraudFlag,
   OutstationHeatmapData,
   OutstationHeatmapMarker,
   OutstationPolicyRule,
@@ -63,12 +61,6 @@ import type {
   OutstationTerritoryValidationStatus,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
-
-type ValidationSignal = {
-  capturedAt: string | null;
-  capturedLatitude: number | null;
-  capturedLongitude: number | null;
-};
 
 type ValidationContext = {
   access: AccessContext;
@@ -191,6 +183,8 @@ function fallbackWorkloadEvidence(params: {
     matchStatus: "stale_import",
     missingDates: start && end ? [start, end].filter((value, index, list) => value && list.indexOf(value) === index) : [],
     pmWorkload: 0,
+    campaignVisits: 0,
+    regularVisits: 0,
     source: "manual",
     sourceLabel: params.sourceLabel,
   };
@@ -243,15 +237,6 @@ function isMissingTolerancePolicyColumn(
       message.includes("does not exist") &&
       message.includes("tolerance_minimum_distance_km"))
   );
-}
-
-function hoursBetween(previousIso: string, currentIso: string) {
-  const previous = new Date(previousIso).getTime();
-  const current = new Date(currentIso).getTime();
-  if (!Number.isFinite(previous) || !Number.isFinite(current) || current <= previous) {
-    return null;
-  }
-  return (current - previous) / 3600000;
 }
 
 function daysBetween(startIso: string, endIso: string) {
@@ -349,13 +334,10 @@ function reportExpectedTotal(input: {
 
 function recommendationForResult(params: {
   eligibilityStatus: OutstationEligibilityStatus;
-  fraudFlags: OutstationFraudFlag[];
   hasTicketAttachments: boolean;
   policy: OutstationPolicyRule;
-  suspiciousLocationScore: number;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   transportationType: OutstationTransportationType;
-  variancePercent: number;
 }) {
   if (params.eligibilityStatus === "not_eligible") {
     return {
@@ -377,31 +359,13 @@ function recommendationForResult(params: {
     };
   }
 
-  if (params.suspiciousLocationScore >= 70) {
-    return {
-      approvalReason:
-        "Suspicious location score is too high for automatic approval and requires manual intervention.",
-      approvalRecommendation: "reject" as OutstationApprovalRecommendation,
-    };
-  }
-
-  if (Math.abs(params.variancePercent) > 50) {
-    return {
-      approvalReason:
-        "Claimed amount materially exceeds the expected amount and should be reviewed by HR.",
-      approvalRecommendation: "hr_review" as OutstationApprovalRecommendation,
-    };
-  }
-
   if (
     params.eligibilityStatus === "needs_review" ||
-    params.suspiciousLocationScore >= 25 ||
-    params.fraudFlags.length > 0 ||
     params.territoryValidationStatus === "outside_expected_territory"
   ) {
     return {
       approvalReason:
-        "Location, territory, or timing checks require manager review before the request can move forward.",
+        "Location or timing checks require manager review before the request can move forward.",
       approvalRecommendation: "manager_review" as OutstationApprovalRecommendation,
     };
   }
@@ -411,6 +375,27 @@ function recommendationForResult(params: {
       "Distance, location, and policy checks are clean enough for automatic approval recommendation.",
     approvalRecommendation: "auto_approve" as OutstationApprovalRecommendation,
   };
+}
+
+// Campaign-visit cap (#11): a TRAVELING expense for a District/Training Manager needs
+// at least one double-visit and at most 2 campaign visits (the rest regular). Meeting /
+// other expense types and all other roles are unaffected. Thresholds are shared with the
+// pure decision engine (decision.ts) so there is a single source of truth.
+function campaignRuleRejection(input: {
+  role: string;
+  expenseType: OutstationExpenseType;
+  evidence: DoubleVisitExpenseWorkloadEvidence;
+}): string | null {
+  if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return null;
+  const campaignVisits = input.evidence.campaignVisits ?? 0;
+  const totalDvVisits = campaignVisits + (input.evidence.regularVisits ?? 0);
+  if (totalDvVisits <= 0) {
+    return "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.";
+  }
+  if (campaignVisits > MAX_CAMPAIGN_VISITS) {
+    return `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${campaignVisits}. The rest must be regular visits.`;
+  }
+  return null;
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -659,25 +644,6 @@ async function getActivePolicyForRole(roleName: string) {
   return fallback;
 }
 
-async function getLatestValidationSignal(employeeHrId: string): Promise<ValidationSignal | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_location_audit_logs")
-    .select("captured_latitude,captured_longitude,previous_captured_at,created_at")
-    .ilike("employee_hr_id", employeeHrId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  return {
-    capturedAt: isoString(data.previous_captured_at || data.created_at) || null,
-    capturedLatitude: nullableNumber(data.captured_latitude),
-    capturedLongitude: nullableNumber(data.captured_longitude),
-  };
-}
-
 async function getCachedRoute(params: {
   capturedLatitude: number;
   capturedLongitude: number;
@@ -738,85 +704,12 @@ async function validateTerritory(input: {
   };
 }
 
-function buildSuspiciousScore(flags: OutstationFraudFlag[]) {
-  const weights: Record<OutstationFraudFlag, number> = {
-    distance_below_policy: 90,
-    impossible_speed: 50,
-    location_permission_denied: 80,
-    missing_residence_location: 90,
-    missing_ticket_attachments: 25,
-    offline_delay: 25,
-    outside_expected_territory: 20,
-    poor_accuracy: 20,
-    repeated_same_coordinates: 15,
-    timestamp_mismatch: 25,
-  };
-
-  return Math.min(
-    100,
-    flags.reduce((sum, flag) => sum + (weights[flag] ?? 0), 0),
-  );
-}
-
-async function insertAuditLog(input: {
-  capturedAccuracyMeters: number;
-  capturedLatitude: number;
-  capturedLongitude: number;
-  distanceKm: number | null;
-  durationMinutes: number | null;
-  employeeHrId: string;
-  expenseRequestId?: number | null;
-  fraudFlags: OutstationFraudFlag[];
-  previousCapturedAt: string | null;
-  previousLatitude: number | null;
-  previousLongitude: number | null;
-  residenceLatitude: number | null;
-  residenceLongitude: number | null;
-  speedCheckResult: string;
-  suspiciousLocationScore: number;
-  territoryCheckResult: string;
-  timestampCheckResult: string;
-  validationReason: string;
-  validationResult: OutstationEligibilityStatus | "error";
-}) {
-  const supabase = getSupabaseAdmin();
-  await supabase.from("outstation_location_audit_logs").insert({
-    accuracy_check_result: input.fraudFlags.includes("poor_accuracy") ? "poor_accuracy" : "ok",
-    calculated_distance_km: input.distanceKm,
-    captured_accuracy_meters: input.capturedAccuracyMeters,
-    captured_latitude: roundCoordinate(input.capturedLatitude),
-    captured_longitude: roundCoordinate(input.capturedLongitude),
-    created_at: new Date().toISOString(),
-    distance_km: input.distanceKm,
-    duration_minutes: input.durationMinutes,
-    employee_hr_id: input.employeeHrId,
-    expense_request_id: input.expenseRequestId ?? null,
-    fraud_flags_json: JSON.stringify(input.fraudFlags),
-    previous_captured_at: input.previousCapturedAt,
-    previous_latitude:
-      input.previousLatitude != null ? roundCoordinate(input.previousLatitude) : null,
-    previous_longitude:
-      input.previousLongitude != null ? roundCoordinate(input.previousLongitude) : null,
-    residence_latitude:
-      input.residenceLatitude != null ? roundCoordinate(input.residenceLatitude) : null,
-    residence_longitude:
-      input.residenceLongitude != null ? roundCoordinate(input.residenceLongitude) : null,
-    speed_check_result: input.speedCheckResult,
-    suspicious_location_score: input.suspiciousLocationScore,
-    territory_check_result: input.territoryCheckResult,
-    timestamp_check_result: input.timestampCheckResult,
-    validation_reason: input.validationReason,
-    validation_result: input.validationResult,
-  });
-}
-
 async function validateCapturedLocation(
   params: ValidationContext,
 ): Promise<ValidatedLocationBundle> {
   const identity = await getEmployeeIdentity(params.access);
   const policy = await getActivePolicyForRole(identity.employeeRole);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
-  const fraudFlags: OutstationFraudFlag[] = [];
   const submittedAt = new Date().toISOString();
 
   if (
@@ -824,69 +717,14 @@ async function validateCapturedLocation(
     residence.residenceLatitude == null ||
     residence.residenceLongitude == null
   ) {
-    fraudFlags.push("missing_residence_location");
-    const reason =
-      "Your registered residence location is missing or invalid. Please contact HR before submitting an outstation request.";
-    const score = buildSuspiciousScore(fraudFlags);
-    await insertAuditLog({
-      capturedAccuracyMeters: params.capturedAccuracyMeters,
-      capturedLatitude: params.capturedLatitude,
-      capturedLongitude: params.capturedLongitude,
-      distanceKm: null,
-      durationMinutes: null,
-      employeeHrId: identity.employeeHrId,
-      fraudFlags,
-      previousCapturedAt: null,
-      previousLatitude: null,
-      previousLongitude: null,
-      residenceLatitude: residence?.residenceLatitude ?? null,
-      residenceLongitude: residence?.residenceLongitude ?? null,
-      speedCheckResult: "missing_residence_location",
-      suspiciousLocationScore: score,
-      territoryCheckResult: "not_available",
-      timestampCheckResult: "missing_residence_location",
-      validationReason: reason,
-      validationResult: "error",
-    });
-    throw new Error(reason);
+    throw new Error(
+      "Your registered residence location is missing or invalid. Please contact HR before submitting an outstation request.",
+    );
   }
 
   let eligibilityStatus: OutstationEligibilityStatus = "eligible";
   let eligibilityReason = "Captured location is eligible for outstation calculation.";
-
-  if (params.capturedAccuracyMeters > policy.gpsAccuracyThresholdMeters) {
-    fraudFlags.push("poor_accuracy");
-    eligibilityStatus = "needs_review";
-    eligibilityReason =
-      "Captured GPS accuracy is weaker than the policy threshold and requires manager review.";
-  }
-
   const capturedAt = isoString(params.capturedAt) || submittedAt;
-  const capturedAgeHours = hoursBetween(capturedAt, submittedAt);
-  if (capturedAgeHours != null) {
-    if (params.offlineCaptured && capturedAgeHours > policy.maxOfflineSyncDelayHours) {
-      fraudFlags.push("offline_delay");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Offline-captured trip was synced too late and now requires manual review.";
-    } else if (!params.offlineCaptured && capturedAgeHours > 0.25) {
-      fraudFlags.push("timestamp_mismatch");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Captured timestamp differs materially from the server timestamp and needs review.";
-    }
-  }
-
-  const latestSignal = await getLatestValidationSignal(identity.employeeHrId);
-  if (
-    latestSignal?.capturedLatitude != null &&
-    latestSignal?.capturedLongitude != null &&
-    latestSignal.capturedAt !== capturedAt &&
-    roundCoordinate(latestSignal.capturedLatitude) === roundCoordinate(params.capturedLatitude) &&
-    roundCoordinate(latestSignal.capturedLongitude) === roundCoordinate(params.capturedLongitude)
-  ) {
-    fraudFlags.push("repeated_same_coordinates");
-  }
 
   let polyline: string | null = null;
   let durationMinutes: number | null = null;
@@ -951,39 +789,6 @@ async function validateCapturedLocation(
     }
   }
 
-  let speedCheckResult = "no_previous_signal";
-  if (
-    latestSignal?.capturedAt &&
-    latestSignal.capturedAt !== capturedAt &&
-    latestSignal.capturedLatitude != null &&
-    latestSignal.capturedLongitude != null
-  ) {
-    const previousDistance = await googleDistanceMatrix(
-      {
-        lat: latestSignal.capturedLatitude,
-        lng: latestSignal.capturedLongitude,
-      },
-      {
-        lat: params.capturedLatitude,
-        lng: params.capturedLongitude,
-      },
-    );
-    const hours = hoursBetween(latestSignal.capturedAt, capturedAt);
-    const previousDistanceKm =
-      previousDistance.distanceMeters != null ? previousDistance.distanceMeters / 1000 : null;
-    const speedKmPerHour =
-      previousDistanceKm != null && hours && hours > 0 ? previousDistanceKm / hours : null;
-    if (speedKmPerHour != null && speedKmPerHour > 180) {
-      fraudFlags.push("impossible_speed");
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Movement speed between captured points is too high to trust automatically.";
-      speedCheckResult = `impossible_speed:${speedKmPerHour.toFixed(1)}kmh`;
-    } else if (speedKmPerHour != null) {
-      speedCheckResult = `ok:${speedKmPerHour.toFixed(1)}kmh`;
-    }
-  }
-
   const distanceEligibility = classifyOutstationExpenseEligibility({
     actualDistanceKm: distanceKm,
     policy: {
@@ -997,25 +802,12 @@ async function validateCapturedLocation(
       : distanceEligibility.reason;
 
   if (distanceEligibility.classification === "not_eligible") {
-    fraudFlags.push("distance_below_policy");
     eligibilityStatus = "not_eligible";
     eligibilityReason = distanceReason;
-  } else if (distanceEligibility.classification === "tolerance_eligible") {
-    eligibilityReason =
-      eligibilityStatus === "eligible"
-        ? distanceReason
-        : `${eligibilityReason} ${distanceReason}`;
+  } else if (distanceEligibility.classification !== "eligible") {
+    // tolerance / missing / invalid / manual-exception — accept but flag for review.
     eligibilityStatus = "needs_review";
-  } else if (
-    distanceEligibility.classification === "missing_distance" ||
-    distanceEligibility.classification === "invalid_distance" ||
-    distanceEligibility.classification === "manual_exception"
-  ) {
-    eligibilityReason =
-      eligibilityStatus === "eligible"
-        ? distanceReason
-        : `${eligibilityReason} ${distanceReason}`;
-    eligibilityStatus = "needs_review";
+    eligibilityReason = distanceReason;
   }
 
   const reverse = await googleReverseGeocode({
@@ -1029,16 +821,26 @@ async function validateCapturedLocation(
     employeeArea: identity.employeeArea,
   });
 
-  if (territory.status === "outside_expected_territory") {
-    fraudFlags.push("outside_expected_territory");
-    if (eligibilityStatus === "eligible") {
-      eligibilityStatus = "needs_review";
-      eligibilityReason =
-        "Captured destination is outside the expected territory and needs manager review.";
-    }
+  // Residence-vs-destination governorate rule: a trip must be OUTSIDE the
+  // employee's residence governorate. Canonicalize both via resolveGovernorate so a
+  // plain compare is valid; only reject when both resolve and match (fail-open).
+  const residenceGovernorate =
+    resolveGovernorate(
+      residence.residenceCity ?? residence.residenceArea ?? residence.residenceAddress ?? "",
+    ) ?? null;
+  const destinationGovernorate =
+    resolveGovernorate(reverse?.governorate ?? reverse?.formattedAddress ?? reverse?.city ?? "") ??
+    null;
+  if (
+    eligibilityStatus !== "not_eligible" &&
+    residenceGovernorate &&
+    destinationGovernorate &&
+    residenceGovernorate === destinationGovernorate
+  ) {
+    eligibilityStatus = "not_eligible";
+    eligibilityReason = `Destination is within the same governorate as your residence (${residenceGovernorate}) and is not eligible for an outstation expense.`;
   }
 
-  const suspiciousLocationScore = buildSuspiciousScore(fraudFlags);
   const result: OutstationCaptureResult = {
     capturedAccuracyMeters: params.capturedAccuracyMeters,
     capturedAt,
@@ -1054,7 +856,6 @@ async function validateCapturedLocation(
     employeeLine: identity.employeeLine,
     employeeName: identity.employeeName,
     employeeRole: identity.employeeRole,
-    fraudFlags,
     minimumRequiredDistanceKm: policy.minimumDistanceKm,
     residenceLatitude: residence.residenceLatitude,
     residenceLongitude: residence.residenceLongitude,
@@ -1065,37 +866,12 @@ async function validateCapturedLocation(
     selectedRouteIndex,
     selectedRouteReason,
     submittedAt,
-    suspiciousLocationScore,
     territoryValidationReason: territory.reason,
     territoryValidationStatus: territory.status,
     toArea: reverse?.area ?? null,
     toCity: reverse?.city ?? null,
     toLabel: reverse?.formattedAddress ?? null,
   };
-
-  await insertAuditLog({
-    capturedAccuracyMeters: params.capturedAccuracyMeters,
-    capturedLatitude: params.capturedLatitude,
-    capturedLongitude: params.capturedLongitude,
-    distanceKm,
-    durationMinutes,
-    employeeHrId: identity.employeeHrId,
-    fraudFlags,
-    previousCapturedAt: latestSignal?.capturedAt ?? null,
-    previousLatitude: latestSignal?.capturedLatitude ?? null,
-    previousLongitude: latestSignal?.capturedLongitude ?? null,
-    residenceLatitude: residence.residenceLatitude,
-    residenceLongitude: residence.residenceLongitude,
-    speedCheckResult,
-    suspiciousLocationScore,
-    territoryCheckResult: territory.status,
-    timestampCheckResult:
-      fraudFlags.includes("offline_delay") || fraudFlags.includes("timestamp_mismatch")
-        ? "review_required"
-        : "ok",
-    validationReason: eligibilityReason,
-    validationResult: eligibilityStatus,
-  });
 
   return {
     employee: identity.employee,
@@ -1156,9 +932,6 @@ export async function calculateOutstationExpense(
       numberValue(input.goTicketAmount) + numberValue(input.returnTicketAmount),
     );
     if (policy.requiresTicketAttachment && !input.hasTicketAttachments) {
-      if (!result.fraudFlags.includes("missing_ticket_attachments")) {
-        result.fraudFlags.push("missing_ticket_attachments");
-      }
       if (result.eligibilityStatus === "eligible") {
         result.eligibilityStatus = "needs_review";
         result.eligibilityReason =
@@ -1182,22 +955,14 @@ export async function calculateOutstationExpense(
   const inputClaimedTotalAmount = numberValue(input.claimedTotalAmount);
   const claimedTotalAmount =
     inputClaimedTotalAmount > 0 ? inputClaimedTotalAmount : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
   const calculationStatus =
     result.eligibilityStatus === "not_eligible" ? "blocked" : "calculated";
   const recommendation = recommendationForResult({
     eligibilityStatus: result.eligibilityStatus,
-    fraudFlags: result.fraudFlags,
     hasTicketAttachments: Boolean(input.hasTicketAttachments),
     policy,
-    suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     territoryValidationStatus: result.territoryValidationStatus,
     transportationType: input.transportationType,
-    variancePercent,
   });
 
   const calculation: OutstationCalculationResult = {
@@ -1232,96 +997,141 @@ export async function calculateOutstationExpense(
       sameDayTrip: allowance.sameDayTrip,
     }),
     sameDayTrip: allowance.sameDayTrip,
-    suspiciousLocationScore: buildSuspiciousScore(result.fraudFlags),
     ticketAmount,
     carEvidenceImagePath: null,
     carEvidenceMetadata: input.carEvidenceMetadata,
     transportationType: input.transportationType,
     tripEndDate,
     tripStartDate,
-    varianceAmount,
-    variancePercent,
   };
 
   return calculation;
 }
 
 // ── Approval notifications ────────────────────────────────────────────────────
-// The expenses/outstation workflow historically sent NO notifications (a confirmed
-// gap in the workflow map). These best-effort dispatch helpers close that gap:
-// on submit we alert the submitter's direct manager + HR manager(s) ("approval
-// needed"); on a decision we tell the submitting employee the outcome. Every send
-// is wrapped so a notification failure can never roll back or fail the underlying
-// submit/approve/reject. We use module "outstation" (already Telegram-enabled, maps
-// to the in-app "general" bell category and the "general" email type) with explicit
-// recipients + channels, so no notification policy/governance changes are needed.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function outstationActionCenterUrl(requestId: number | string) {
-  return `/admin/approvals-hub?module=outstation&id=${encodeURIComponent(String(requestId))}`;
-}
+// Submission auto-approves in the same request (no pending-approval step for a
+// human to act on), so instead of a "needs approval" alert we notify every active
+// Super Admin, on every fresh submission, with the full request details — a live
+// audit feed rather than an action queue. Every send is best-effort: a
+// notification failure must never roll back or fail the underlying submit.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
+const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
 
 function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 
-type OutstationNotifyRecipient = { email: string | null; hrId: string; name: string; role: "direct_manager" | "hr" };
-
-// Resolve who must act when an expense/outstation request is submitted: the
-// submitter's direct manager + the approver(s) (Super Admin accounts, e.g. the B-10 HR
-// manager). A-16 is intentionally excluded because it has no
-// outstation "approve" authority, so an "approval needed" alert there is a dead end.
-// Best-effort: a missing manager or a failed approver lookup is logged and skipped,
-// never thrown — notifications must not block a submit.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function resolveOutstationApprovalRecipients(
-  directory: EmployeeDirectoryData,
-  employee: EmployeeDirectoryRow,
-): Promise<OutstationNotifyRecipient[]> {
-  const byHrId = (hrId: string | null | undefined) =>
-    hrId
-      ? directory.employees.find(
-          (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(hrId),
-        ) ?? null
-      : null;
-
-  const recipients = new Map<string, OutstationNotifyRecipient>();
-  const add = (hrId: string | null | undefined, name: string | null | undefined, email: string | null | undefined, role: OutstationNotifyRecipient["role"]) => {
-    const key = normalizeHrIdForAccess(hrId);
-    if (!key || recipients.has(key)) return;
-    recipients.set(key, { email: pickDeliverableEmail(email), hrId: String(hrId), name: name?.trim() || String(hrId), role });
-  };
-
-  // 1. Direct manager of the submitter.
-  if (employee.managerHrId) {
-    const manager = byHrId(employee.managerHrId);
-    if (manager?.hrId) add(manager.hrId, manager.fullName, manager.workEmail, "direct_manager");
-    else console.warn("[outstation] direct manager unresolved; manager notification skipped", { employeeHrId: employee.hrId, managerHrId: employee.managerHrId });
-  }
-
-  // 2. Approver(s): Super Admin accounts only. A-16 is
-  //    deliberately NOT included: A-16 is HR review/follow-up and holds NO outstation
-  //    "approve" permission (see 20260522203000_hr_manager_approval_authority.sql), so an
-  //    "approval needed" alert to A-16 would be a dead end. B-10 is the Super Admin HR
-  //    approver and is covered by this query.
+// Owner decision (2026-07-13): the submit alert must reach Super Admin (system oversight) AND
+// the CEO, not Super Admin alone — the original Super-Admin-only scoping silently dropped the
+// CEO from every outstation alert. Finance Manager stays excluded (not requested).
+async function resolveOutstationSubmitAlertHrIds(): Promise<string[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("hr_id,role,is_active")
       .eq("is_active", true)
-      .eq("role", "Super Admin");
+      .in("role", ["Super Admin", "CEO"]);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
+    const hrIds = new Set<string>();
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
       const hrId = text(row.hr_id);
-      if (!hrId || text(row.role) !== "Super Admin") continue;
-      const directoryRow = byHrId(hrId);
-      add(directoryRow?.hrId ?? hrId, directoryRow?.fullName ?? hrId, directoryRow?.workEmail, "hr");
+      if (hrId) hrIds.add(hrId);
     }
+    return Array.from(hrIds);
   } catch (error) {
-    console.error("[outstation] approver lookup failed; approval alert may be incomplete", error);
+    console.error("[outstation] submit-alert recipient lookup failed; submit notification skipped", error);
+    return [];
   }
+}
 
-  return [...recipients.values()];
+// Fires once per fresh submission: the employee wizard, offline sync, the
+// Medical Rep simple-ticket flow, and admin-created manual entries all route
+// through approveOutstationRequestForPayroll immediately after insert (that
+// immediate auto-approve is what actually makes the request "submitted" in
+// practice). Not fired on later edits to an already-approved request.
+async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
+  try {
+    const recipients = await resolveOutstationSubmitAlertHrIds();
+    if (recipients.length === 0) return;
+
+    const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
+    const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
+    const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
+
+    const metrics = [
+      { label: "Employee", value: `${request.employeeName} (${request.employeeHrId})` },
+      { label: "Role", value: request.employeeRole },
+      { label: "Line / Area", value: `${text(request.employeeLine) || "—"} / ${text(request.employeeArea) || "—"}` },
+      { label: "Transportation", value: request.transportationType },
+      { label: "Expense type", value: request.expenseType },
+      { label: "Trip dates", value: `${request.tripStartDate} to ${request.tripEndDate}` },
+      { label: "Trip length", value: request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)` },
+      { label: "Destination", value: destination },
+      {
+        label: "Distance from residence",
+        value: request.distanceFromResidenceKm != null ? `${request.distanceFromResidenceKm.toFixed(1)} km` : "—",
+      },
+      { label: "Fuel amount", value: formatEgp(request.fuelAmount) },
+      { label: "Ticket amount", value: formatEgp(request.ticketAmount) },
+      { label: "Allowance amount", value: formatEgp(request.allowanceAmount) },
+      { label: "Meeting amount", value: formatEgp(request.meetingAmount) },
+      { label: "Other amount", value: formatEgp(request.otherAmount) },
+      { label: "Expected total", value: formatEgp(request.expectedTotalAmount) },
+      { label: "Claimed total", value: claimedAmount },
+      { label: "Eligibility", value: `${request.eligibilityStatus} — ${text(request.eligibilityReason) || "—"}` },
+      {
+        label: "Approval recommendation",
+        value: `${request.approvalRecommendation} — ${text(request.approvalReason) || "—"}`,
+      },
+      {
+        label: "Territory validation",
+        value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
+      },
+      {
+        label: "GPS capture",
+        value: `${request.capturedLatitude}, ${request.capturedLongitude} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`,
+      },
+      { label: "Notes", value: text(request.notes) || "—" },
+    ];
+
+    const messageLines = [
+      `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
+      `Trip: ${request.tripStartDate} to ${request.tripEndDate} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
+      "",
+      ...metrics.map((row) => `${row.label}: ${row.value}`),
+    ];
+
+    await Promise.allSettled(
+      recipients.map((recipientHrId) =>
+        createSystemNotification({
+          actionUrl,
+          category: "general",
+          channels: ["email", "telegram"],
+          email: { metrics },
+          eventType: "request_submitted",
+          message: messageLines.join("\n"),
+          metadata: {
+            actionUrl,
+            claimedAmount,
+            employeeHrId: request.employeeHrId,
+            employeeName: request.employeeName,
+            idempotencyKey: `outstation:${request.id}:request_submitted:${recipientHrId.toUpperCase()}`,
+            requestId: String(request.id),
+            status: "Submitted",
+          },
+          module: "outstation",
+          priority: "normal",
+          recipientHrId,
+          recordId: String(request.id),
+          telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
+          title: `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("[outstation] submitted notification dispatch failed (non-blocking)", error);
+  }
 }
 
 // Rejection notification to the submitting employee. This is the ONLY email sent for
@@ -1391,10 +1201,6 @@ export async function submitOutstationRequest(
     throw new Error(evidenceValidation.message);
   }
 
-  if (calculation.eligibilityStatus === "not_eligible") {
-    throw new Error(calculation.eligibilityReason);
-  }
-
   await assertOutstationExpenseWorkflowTransition({
     access,
     actionKey: "submit",
@@ -1434,15 +1240,29 @@ export async function submitOutstationRequest(
     tripEndDate: calculation.tripEndDate,
     tripStartDate: calculation.tripStartDate,
   });
+  const campaignRejectionReason = campaignRuleRejection({
+    role: calculation.employeeRole,
+    expenseType: calculation.expenseType,
+    evidence: workloadPayload.workload_evidence_snapshot,
+  });
+  // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
+  // campaign rule; otherwise accept. Rejected requests are PERSISTED (not thrown) so the
+  // employee sees them in their expense list with a reason, and a Super Admin can override.
+  const systemRejectionReason =
+    calculation.eligibilityStatus === "not_eligible"
+      ? calculation.eligibilityReason
+      : campaignRejectionReason;
+  const decisionStatus = systemRejectionReason ? "rejected_by_system" : "accepted_by_system";
+  const decisionReason = systemRejectionReason ?? calculation.approvalReason;
 
   const insertPayload = {
     allowance_amount: calculation.allowanceAmount,
     allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
     attachment_count: calculation.attachmentCount,
-    approval_reason: calculation.approvalReason,
+    approval_reason: decisionReason,
     approval_recommendation: calculation.approvalRecommendation,
     area: calculation.employeeArea,
-    calculation_status: "submitted",
+    calculation_status: decisionStatus,
     captured_accuracy_meters: calculation.capturedAccuracyMeters,
     captured_at: calculation.capturedAt,
     captured_latitude: calculation.capturedLatitude,
@@ -1461,7 +1281,6 @@ export async function submitOutstationRequest(
     employee_name: calculation.employeeName,
     employee_role: calculation.employeeRole,
     expected_total_amount: calculation.expectedTotalAmount,
-    fraud_flags_json: JSON.stringify(calculation.fraudFlags),
     fuel_amount: calculation.fuelAmount,
     kilometer_reading: calculation.kilometerReading,
     line: calculation.employeeLine,
@@ -1486,9 +1305,8 @@ export async function submitOutstationRequest(
     residence_longitude: residence?.residenceLongitude ?? null,
     route_polyline: calculation.routePolyline,
     same_day_trip: calculation.sameDayTrip,
-    status: "submitted",
+    status: decisionStatus,
     submitted_at: calculation.submittedAt,
-    suspicious_location_score: calculation.suspiciousLocationScore,
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
     ...workloadPayload,
@@ -1501,8 +1319,6 @@ export async function submitOutstationRequest(
     transportation_type: calculation.transportationType,
     trip_end_date: calculation.tripEndDate,
     trip_start_date: calculation.tripStartDate,
-    variance_amount: calculation.varianceAmount,
-    variance_percent: calculation.variancePercent,
   };
 
   const { data, error } = await supabase
@@ -1539,35 +1355,6 @@ export async function submitOutstationRequest(
     }
   }
 
-  const previousSignal = await getLatestValidationSignal(calculation.employeeHrId);
-  await insertAuditLog({
-    capturedAccuracyMeters: calculation.capturedAccuracyMeters,
-    capturedLatitude: calculation.capturedLatitude,
-    capturedLongitude: calculation.capturedLongitude,
-    distanceKm: calculation.distanceFromResidenceKm,
-    durationMinutes: calculation.durationMinutes,
-    employeeHrId: calculation.employeeHrId,
-    expenseRequestId: Number(data.id),
-    fraudFlags: calculation.fraudFlags,
-    previousCapturedAt: previousSignal?.capturedAt ?? null,
-    previousLatitude: previousSignal?.capturedLatitude ?? null,
-    previousLongitude: previousSignal?.capturedLongitude ?? null,
-    residenceLatitude: residence?.residenceLatitude ?? null,
-    residenceLongitude: residence?.residenceLongitude ?? null,
-    speedCheckResult: calculation.fraudFlags.includes("impossible_speed")
-      ? "impossible_speed"
-      : "ok",
-    suspiciousLocationScore: calculation.suspiciousLocationScore,
-    territoryCheckResult: calculation.territoryValidationStatus,
-    timestampCheckResult:
-      calculation.fraudFlags.includes("offline_delay") ||
-      calculation.fraudFlags.includes("timestamp_mismatch")
-        ? "review_required"
-        : "ok",
-    validationReason: calculation.eligibilityReason,
-    validationResult: calculation.eligibilityStatus,
-  });
-
   const submitted = mapOutstationRequestRow({
     ...data,
     car_evidence_image_path: carEvidenceImagePath,
@@ -1576,7 +1363,13 @@ export async function submitOutstationRequest(
       ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
       : data.notes,
   });
-  await approveOutstationRequestForPayroll(submitted.id, systemAccessContext);
+  if (decisionStatus === "rejected_by_system") {
+    // Persisted, employee notified, no payroll push. Super Admin can override later.
+    await notifyOutstationDecision({ comment: decisionReason, decision: "reject", request: submitted });
+    return submitted;
+  }
+  await pushAcceptedOutstationExpenseToPayroll(submitted, systemAccessContext);
+  await notifyOutstationSubmitted(submitted);
   return submitted;
 }
 
@@ -1669,7 +1462,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     employeeName: text(row.employee_name),
     employeeRole: text(row.employee_role),
     expectedTotalAmount: numberValue(row.expected_total_amount),
-    fraudFlags: safeJsonParse<OutstationFraudFlag[]>(row.fraud_flags_json, []),
     fuelAmount: numberValue(row.fuel_amount),
     goTicketAmount: numberValue(row.go_ticket_amount),
     id: Number(row.id),
@@ -1699,7 +1491,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     sameDayTrip: Boolean(row.same_day_trip),
     status: text(row.status),
     submittedAt: isoString(row.submitted_at) || null,
-    suspiciousLocationScore: numberValue(row.suspicious_location_score),
     territoryValidationReason: text(row.territory_validation_reason),
     territoryValidationStatus:
       text(row.territory_validation_status) as OutstationTerritoryValidationStatus,
@@ -1731,8 +1522,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     tripEndDate: isoString(row.trip_end_date),
     tripStartDate: isoString(row.trip_start_date),
     updatedAt: isoString(row.updated_at),
-    varianceAmount: numberValue(row.variance_amount),
-    variancePercent: numberValue(row.variance_percent),
   };
 }
 
@@ -1887,7 +1676,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         employee_role: "Medical Rep",
         expected_total_amount: normalized.ticketAmount,
         expense_type: "traveling",
-        fraud_flags_json: JSON.stringify([]),
         fuel_amount: 0,
         go_ticket_amount: normalized.goTicketAmount,
         line: identity.employeeLine,
@@ -1905,7 +1693,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         same_day_trip: sameDayTrip,
         status: "submitted",
         submitted_at: now,
-        suspicious_location_score: 0,
         ticket_amount: normalized.ticketAmount,
         ticket_attachment_metadata: uploadedAttachments,
         ticket_attachment_paths: attachmentPaths,
@@ -1919,8 +1706,6 @@ export async function submitMedicalRepSimpleExpenseRequest(
         trip_end_date: normalized.tripEndDate,
         trip_start_date: normalized.tripStartDate,
         updated_at: now,
-        variance_amount: 0,
-        variance_percent: 0,
       })
       .select("*")
       .single();
@@ -1952,7 +1737,7 @@ async function getLinkedOutstationPayrollExpense(
   requestId: number,
 ): Promise<LinkedOutstationPayrollExpense | null> {
   const { data, error } = await getSupabaseAdmin()
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", outstationPayrollTripId(requestId))
     .maybeSingle();
@@ -1983,7 +1768,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
   request: OutstationExpenseRequest;
 }) {
   if (!input.linkedPayroll) return 0;
-  if (input.request.status !== "approved") return 0;
+  if (!input.request.status.startsWith("accepted")) return 0;
   if (input.linkedPayroll.importedPayrollBatchId || input.linkedPayroll.importedToPayrollAt) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
@@ -2000,6 +1785,43 @@ async function syncLinkedOutstationPayrollExpense(input: {
   return saved.length;
 }
 
+// Pushes an already-accepted outstation request into payroll (idempotent — skips if the
+// linked expense row was already imported into a paid batch). Used by the auto-accept at
+// submit and by a Super Admin's accept override.
+async function pushAcceptedOutstationExpenseToPayroll(
+  request: OutstationExpenseRequest,
+  access: AccessContext,
+): Promise<number> {
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
+  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+    return 0;
+  }
+  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
+    reportId: linkedPayroll?.reportId ?? null,
+  });
+  const savedExpenses = await savePayrollExpenseApprovals({
+    fileName: `outstation-request-${request.id}.workflow`,
+    records: [expenseRecord],
+    reportId: linkedPayroll?.reportId ?? null,
+  }, access);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(request.id),
+    entityType: "outstation_request",
+    newValues: {
+      expenseTripId: expenseRecord.tripId,
+      payrollExpenseRows: savedExpenses.length,
+      status: request.status,
+    },
+    summary: `Outstation request ${request.id} accepted; expense pushed to payroll.`,
+  });
+  return savedExpenses.length;
+}
+
+// Accept an outstation request and push it to payroll. At submit this runs as the system
+// (accepted_by_system); a Super Admin may also call it to OVERRIDE a system rejection
+// (accepted_by_admin). It intentionally does not block on the prior status — accepting a
+// rejected request is the whole point of the override.
 export async function approveOutstationRequestForPayroll(
   requestId: number,
   access: AccessContext,
@@ -2009,18 +1831,16 @@ export async function approveOutstationRequestForPayroll(
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
-  if (existing.status === "rejected") {
-    throw new Error("Rejected outstation requests cannot be approved for payroll.");
-  }
-  if (existing.eligibilityStatus === "not_eligible") {
-    throw new Error("Not eligible outstation requests cannot be approved for payroll.");
-  }
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
   if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
-    throw new Error("This outstation expense has already been added to payroll and cannot be approved again.");
+    throw new Error("This outstation expense has already been added to payroll and cannot be changed.");
   }
 
-  if (existing.status !== "approved") {
+  // Validate the accept transition through the workflow registry for the normal path (a
+  // freshly submitted / needs-review request). A Super Admin OVERRIDE of an already-decided
+  // request skips it — accepting a rejected request is not a registry transition, and the
+  // Super-Admin code gate above is the control.
+  if (!existing.status.startsWith("rejected") && !existing.status.startsWith("accepted")) {
     await assertOutstationExpenseWorkflowTransition({
       access,
       actionKey: "approve",
@@ -2029,18 +1849,17 @@ export async function approveOutstationRequestForPayroll(
     });
   }
 
+  const acceptedStatus = access.scope === "system" ? "accepted_by_system" : "accepted_by_admin";
   const now = new Date().toISOString();
-  const approvedBy = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .update({
       approval_reason: cleanText(options.comment) ?? existing.approvalReason,
-      calculation_status: "approved",
-      status: "approved",
+      calculation_status: acceptedStatus,
+      status: acceptedStatus,
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "approved"])
     .select("*")
     .maybeSingle();
 
@@ -2050,33 +1869,24 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
-  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
-    reportId: linkedPayroll?.reportId ?? null,
-  });
-  const savedExpenses = await savePayrollExpenseApprovals({
-    fileName: `outstation-request-${request.id}.workflow`,
-    records: [expenseRecord],
-    reportId: linkedPayroll?.reportId ?? null,
-  }, access);
+  const payrollExpenseRows = await pushAcceptedOutstationExpenseToPayroll(request, access);
 
   await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? approvedBy,
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
     entityId: String(request.id),
     entityType: "outstation_request",
-    newValues: {
-      expenseTripId: expenseRecord.tripId,
-      payrollExpenseRows: savedExpenses.length,
-      status: request.status,
-    },
-    oldValues: {
-      status: existing.status,
-    },
-    summary: `Outstation request ${request.id} approved for payroll expense import.`,
+    newValues: { status: request.status },
+    oldValues: { status: existing.status },
+    summary: `Outstation request ${request.id} accepted (${acceptedStatus}).`,
   });
 
+  if (!existing.status.startsWith("accepted")) {
+    await notifyOutstationSubmitted(request);
+  }
+
   return {
-    expenseTripId: expenseRecord.tripId,
-    payrollExpenseRows: savedExpenses.length,
+    expenseTripId: outstationPayrollTripId(request.id),
+    payrollExpenseRows,
     request,
   };
 }
@@ -2128,7 +1938,6 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       longitude: request.capturedLongitude,
       recommendation: request.approvalRecommendation,
       status: request.eligibilityStatus,
-      varianceAmount: request.varianceAmount,
     }));
 
   return {
@@ -2141,10 +1950,10 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
       byArea: groupNumeric(
         requests,
         (request) => request.toArea ?? request.employeeArea ?? "Unassigned",
-        (request) => request.varianceAmount,
+        (request) => request.claimedTotalAmount,
       ).map((row) => ({
         label: row.label,
-        totalVariance: roundMoney(row.value),
+        totalExpenses: roundMoney(row.value),
         trips: row.trips,
       })),
       byCity: groupNumeric(
@@ -2165,24 +1974,11 @@ export async function getOutstationHeatmapData(): Promise<OutstationHeatmapData>
         totalExpenses: roundMoney(row.value),
         trips: row.trips,
       })),
-      highRiskByLocation: groupNumeric(
-        // Canonical high-risk predicate (reject recommendation OR GPS-suspicion ≥ threshold
-        // OR any fraud flag) — keeps this heatmap aligned with the command-center and the
-        // daily-digest cron instead of undercounting on reject-recommendation alone.
-        requests.filter(isHighRiskRequest),
-        (request) => request.toCity ?? request.toArea ?? "Unknown",
-        () => 1,
-      ).map((row) => ({
-        highRiskTrips: row.trips,
-        label: row.label,
-      })),
     },
     kpis: {
-      highRiskRequests: requests.filter(isHighRiskRequest).length,
       totalClaimed: roundMoney(sumBy(requests, (request) => request.claimedTotalAmount)),
       totalExpected: roundMoney(sumBy(requests, (request) => request.expectedTotalAmount)),
       totalRequests: requests.length,
-      totalVariance: roundMoney(sumBy(requests, (request) => request.varianceAmount)),
     },
     markers,
   };
@@ -2201,8 +1997,6 @@ export type ManagerExpenseCalculationPreview = {
   overnightDays: number;
   travelCost: number;
   sameDayTrip: boolean;
-  varianceAmount: number;
-  variancePercent: number;
 };
 
 /**
@@ -2267,10 +2061,6 @@ export async function previewManagerExpenseCalculation(
   const claimedInput = Number(input.claimedTotalAmount ?? 0);
   const claimedTotalAmount =
     Number.isFinite(claimedInput) && claimedInput > 0 ? claimedInput : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0 ? roundMoney((varianceAmount / expectedTotalAmount) * 100) : 0;
-
   return {
     allowanceAmount: allowance.allowanceAmount,
     allowanceBreakdown: allowance.breakdown,
@@ -2284,8 +2074,6 @@ export async function previewManagerExpenseCalculation(
     overnightDays: allowance.overnightDays,
     travelCost,
     sameDayTrip: allowance.sameDayTrip,
-    varianceAmount,
-    variancePercent,
   };
 }
 
@@ -2344,12 +2132,6 @@ export async function createManagerExpenseAsAdmin(
     });
   const claimedTotalAmount =
     input.claimedTotalAmount > 0 ? input.claimedTotalAmount : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
-
   const now = new Date().toISOString();
   const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
   const workloadPayload = await resolveOutstationWorkloadPayload({
@@ -2384,7 +2166,6 @@ export async function createManagerExpenseAsAdmin(
       employee_role: resolveJobFunctionRole(employee.jobTitle ?? ""),
       expected_total_amount: expectedTotalAmount,
       expense_type: input.expenseType,
-      fraud_flags_json: JSON.stringify([]),
       fuel_amount: fuelAmount,
       go_ticket_amount: 0,
       line: employee.lineName ?? null,
@@ -2414,7 +2195,6 @@ export async function createManagerExpenseAsAdmin(
       same_day_trip: allowance.sameDayTrip,
       status: "submitted",
       submitted_at: now,
-      suspicious_location_score: 0,
       territory_validation_reason: "Admin-created expense; territory check not applicable.",
       territory_validation_status: "not_available",
       ...workloadPayload,
@@ -2431,8 +2211,6 @@ export async function createManagerExpenseAsAdmin(
       trip_end_date: input.tripEndDate,
       trip_start_date: input.tripStartDate,
       updated_at: now,
-      variance_amount: varianceAmount,
-      variance_percent: variancePercent,
     })
     .select("*")
     .single();
@@ -2573,11 +2351,6 @@ export async function updateManagerExpenseAsAdmin(
   const claimedTotalAmount = claimedTotal != null && claimedTotal > 0
     ? claimedTotal
     : expectedTotalAmount;
-  const varianceAmount = roundMoney(claimedTotalAmount - expectedTotalAmount);
-  const variancePercent =
-    expectedTotalAmount > 0
-      ? roundMoney((varianceAmount / expectedTotalAmount) * 100)
-      : 0;
   const workloadPayload = await resolveOutstationWorkloadPayload({
     employeeHrId,
     tripEndDate,
@@ -2615,8 +2388,6 @@ export async function updateManagerExpenseAsAdmin(
     trip_end_date: tripEndDate,
     trip_start_date: tripStartDate,
     updated_at: now,
-    variance_amount: varianceAmount,
-    variance_percent: variancePercent,
   };
 
   if (destination) {
@@ -2690,7 +2461,7 @@ export async function rejectOutstationRequestAsAdmin(
   const expenseTripId = outstationPayrollTripId(existing.id);
   const supabase = getSupabaseAdmin();
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", expenseTripId);
 
@@ -2711,10 +2482,10 @@ export async function rejectOutstationRequestAsAdmin(
     throw new Error("A rejection reason is required.");
   }
 
-  if (existing.status !== "rejected") {
+  if (!existing.status.startsWith("rejected")) {
     await assertOutstationExpenseWorkflowTransition({
       access,
-      actionKey: existing.status === "approved" ? "reject_before_payroll" : "reject",
+      actionKey: existing.status.startsWith("accepted") ? "reject_before_payroll" : "reject",
       expectedNextStatus: "rejected",
       status: existing.status,
     });
@@ -2730,9 +2501,9 @@ export async function rejectOutstationRequestAsAdmin(
     ),
   );
 
-  if (existing.status === "approved" && linkedRows.length > 0) {
+  if (existing.status.startsWith("accepted") && linkedRows.length > 0) {
     const { error: deletePayrollError } = await supabase
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .delete()
       .eq("trip_id", expenseTripId);
 
@@ -2740,7 +2511,7 @@ export async function rejectOutstationRequestAsAdmin(
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("id", { count: "exact", head: true })
         .eq("report_id", reportId);
 
@@ -2748,7 +2519,7 @@ export async function rejectOutstationRequestAsAdmin(
       if ((remainingRows ?? 0) > 0) continue;
 
       const { error: deleteReportError } = await supabase
-        .from("payroll_expense_reports")
+        .from("outstation_expense_reports")
         .delete()
         .eq("id", reportId);
 
@@ -2761,12 +2532,12 @@ export async function rejectOutstationRequestAsAdmin(
     .update({
       approval_reason: comment,
       approval_recommendation: "reject",
-      calculation_status: "rejected",
-      status: "rejected",
+      calculation_status: "rejected_by_admin",
+      status: "rejected_by_admin",
       updated_at: now,
     })
     .eq("id", requestId)
-    .in("status", ["submitted", "approved", "rejected"])
+    .in("status", ["submitted", "approved", "rejected", "needs_review", "accepted_by_system", "accepted_by_admin", "rejected_by_system", "rejected_by_admin"])
     .select("*")
     .maybeSingle();
 
@@ -2783,7 +2554,7 @@ export async function rejectOutstationRequestAsAdmin(
     entityType: "outstation_request",
     newValues: {
       approvalReason: comment,
-      removedPayrollExpenseRows: existing.status === "approved" ? linkedRows.length : 0,
+      removedPayrollExpenseRows: existing.status.startsWith("accepted") ? linkedRows.length : 0,
       status: rejected.status,
     },
     oldValues: {
@@ -2810,7 +2581,7 @@ export async function deleteOutstationRequestAsAdmin(
   const supabase = getSupabaseAdmin();
 
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
-    .from("payroll_expenses")
+    .from("outstation_expenses")
     .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
     .eq("trip_id", expenseTripId);
 
@@ -2844,7 +2615,7 @@ export async function deleteOutstationRequestAsAdmin(
 
   if (linkedRows.length > 0) {
     const { count, error: deletePayrollError } = await supabase
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .delete({ count: "exact" })
       .eq("trip_id", expenseTripId);
 
@@ -2853,7 +2624,7 @@ export async function deleteOutstationRequestAsAdmin(
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("id", { count: "exact", head: true })
         .eq("report_id", reportId);
 
@@ -2861,7 +2632,7 @@ export async function deleteOutstationRequestAsAdmin(
       if ((remainingRows ?? 0) > 0) continue;
 
       const { error: deleteReportError } = await supabase
-        .from("payroll_expense_reports")
+        .from("outstation_expense_reports")
         .delete()
         .eq("id", reportId);
 

@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test";
  * When these env vars are unset, this file is ignored by playwright.config.ts
  * (the chromium-data-user project is conditionally registered).
  *
- * Run with:  npx playwright test tests/e2e/expense-dashboard.data-bearing.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/expense-dashboard.data-bearing.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/expense-dashboard";

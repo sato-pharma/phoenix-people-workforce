@@ -20,6 +20,8 @@ import {
 import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
+import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
+import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -319,6 +321,12 @@ function dedupeChannels(channels: SystemNotificationChannel[]) {
 }
 
 function basePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
+  // Hard, fallback-proof guarantee: a payslip notification is NEVER emailed, whatever the policy,
+  // explicit channels, or Telegram-failure fallbacks resolve to. See payslip-channel-guard.ts.
+  return enforcePayslipEmailBlock(resolveBasePolicyChannels(input, preferred), input.eventType);
+}
+
+function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
   if (input.channels?.length) return dedupeChannels(input.channels);
   const policy = resolveNotificationPolicy(input);
   if (policy.channels.length > 0) {
@@ -707,6 +715,30 @@ async function claimDelivery(input: {
     // Fail-open on unexpected errors so a legitimate notification isn't silently dropped.
     console.error("Notification delivery claim failed", error);
     return { alreadySent: false, claimed: true };
+  }
+}
+
+// Flip a live `connected` Telegram link to `failed` (recording the reason) when the bot can no
+// longer deliver to it. Only touches a currently-`connected` row — never a pending/failed one —
+// and keeps the stored chat_id so a later reconnect simply overwrites it. Best-effort: a
+// bookkeeping failure here must never break the notification send that triggered it.
+async function markTelegramConnectionNeedsRelink(recipient: RecipientProfile, reason: string): Promise<void> {
+  const userId = cleanText(recipient.userId);
+  const hrId = cleanHrId(recipient.hrId);
+  if (!userId && !hrId) return;
+  try {
+    const now = new Date().toISOString();
+    let query = getSupabaseAdmin()
+      .from("telegram_connections")
+      .update({ failure_reason: reason, status: "failed", updated_at: now })
+      .eq("status", "connected");
+    query = userId ? query.ilike("user_id", userId) : query.eq("hr_id", hrId);
+    const { error } = await query;
+    if (error) throw error;
+  } catch (error) {
+    if (!schemaMissing(error, "telegram_connections")) {
+      console.error("Failed to flag Telegram connection for re-link", error);
+    }
   }
 }
 
@@ -1605,6 +1637,35 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           });
           await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_template_governance" });
           deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
+          continue;
+        }
+        // Permanent unreachable error (chat not found / bot blocked / user deactivated): retrying
+        // will never succeed and the connection would otherwise stay `connected` and keep failing
+        // silently. Flag it for re-link, record a terminal skipped delivery (no retry churn), and
+        // still fall through to the email/in-app fallback so the recipient is not left uncovered.
+        if (isPermanentTelegramDeliveryError(message)) {
+          await markTelegramConnectionNeedsRelink(recipient, message);
+          await upsertDelivery({
+            channel,
+            eventId,
+            idempotencyKey,
+            lastError: message,
+            metadata: { needsRelink: true, permanent: true },
+            provider: "telegram",
+            recipient,
+            recipientAddress: String(connection.telegram_chat_id),
+            status: "skipped",
+          });
+          await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_permanent_needs_relink" });
+          deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
+          if (!emailAttempted && preferences.email_enabled) {
+            const fallback = await createSystemNotification({
+              ...input,
+              channels: ["email", "in_app"],
+              metadata: { ...(input.metadata ?? {}), fallbackFrom: "telegram", idempotencyKey: `${eventKey}:telegram-fallback` },
+            });
+            deliveries.push(...fallback.deliveries);
+          }
           continue;
         }
         await upsertDelivery({

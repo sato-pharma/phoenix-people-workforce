@@ -1,0 +1,209 @@
+name: Deploy to Google Cloud Run (Staging)
+
+# Build once, deploy twice: staging no longer builds anything on its normal path.
+# It waits for the prod deploy workflow ("Deploy to Google Cloud Run") to finish for
+# a commit on main and deploys the exact image that workflow already built and
+# pushed to Artifact Registry (tag sha-<first 8 of head_sha>). Mirrors
+# deploy-cloud-run.yml's safety pattern (no-traffic tag deploy, smoke test, then
+# promote) but targets the isolated staging Cloud Run service.
+#
+# Before this change the workflow ran its own full `gcloud run deploy --source .`
+# build of the same commit (~7 min, with NO build args at all — so every
+# NEXT_PUBLIC_* value was baked into staging's client bundle as an empty string).
+# Reusing the prod-built image removes that second Cloud Build entirely (staging
+# goes live ~2-3 min after prod promotes instead of ~7 min later) and gives
+# staging's client bundle real NEXT_PUBLIC_* values instead of empty strings.
+# Server-side behavior is unchanged: this workflow still omits --set-env-vars, so
+# the staging service's own runtime env vars (staging Supabase project, staging
+# PHOENIX_AUTH_SECRET, etc.) are carried forward untouched — it ships new code,
+# never new secrets. No STAGING_* GitHub secrets exist or are needed. Known
+# pre-existing limitation: staging's client-side Google Maps stays broken-as-today
+# unless the staging origin is added to the Maps browser key's referrer allowlist
+# (the baked key used to be an empty string; now it is the prod key, which Maps
+# rejects for non-allowlisted referrers). See AGENTS.md § Stable Environment Facts
+# for the staging project details.
+#
+# The workflow_run gate (`if` below) only skips when prod's job itself never ran
+# (conclusion "skipped", meaning the upstream CI run it depends on failed). A prod
+# deploy *attempt* that failed does not block staging: if prod failed AFTER pushing
+# its image, the image exists and staging deploys it (staging still re-validates
+# independently via its own no-traffic-deploy + smoke-test gate); if prod failed
+# BEFORE the image was pushed, the "Resolve image" guard below fails with a clear
+# message.
+on:
+  workflow_run:
+    workflows: ["Deploy to Google Cloud Run"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_from_source:
+        description: >-
+          Escape hatch: build a fresh staging image from this ref via
+          cloudbuild.yaml instead of reusing a prod-built image. Use when staging
+          must deploy a commit prod never built.
+        type: boolean
+        required: false
+        default: false
+
+# Own concurrency group (prod uses cloud-run-deploy-prod). The two deploy workflows
+# used to share one group ("cloud-run-source-deploy") because BOTH ran a Cloud Build
+# in the same GCP project, and gcloud's build-status polling reliably 429'd against
+# Cloud Build's "Get requests per minute" quota (59/project) whenever two builds
+# polled concurrently (see PR #1029/#1032/#1097). With build-once image reuse,
+# staging runs no Cloud Build at all on the normal path, so there is at most one
+# Cloud Build at a time project-wide and sharing a group would only make staging
+# queue behind the next prod deploy for no reason. (The manual build_from_source
+# fallback CAN overlap a prod build; that rare path still goes through
+# scripts/retry-transient.sh, which absorbs transient 429s.)
+# cancel-in-progress:false never aborts an in-flight deploy.
+concurrency:
+  group: cloud-run-deploy-staging
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: phoenix-workforce-498619
+  REGION: us-central1
+  SERVICE_NAME: phoenix-hr-staging
+  # The PROD service's image path — the image reused on the normal path (staging
+  # deploys the exact artifact the prod workflow built for the same commit).
+  # Prod builds/pushes in europe-west3 since the 2026-07-17 region cutover; the
+  # staging SERVICE stays in us-central1 for now and pulls this image cross-region
+  # (supported by Cloud Run; only slightly slower cold starts on staging).
+  PROD_IMAGE_PATH: europe-west3-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr
+  # Where the manual build_from_source fallback pushes its image and BuildKit cache
+  # tags — kept separate from PROD_IMAGE_PATH so a staging-args build can never
+  # overwrite the prod image or its :deps-cache/:latest-cache tags.
+  STAGING_IMAGE_PATH: us-central1-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr-staging
+
+jobs:
+  deploy:
+    # Gate: skip only when prod's own job never ran (its upstream CI failed); a
+    # prod deploy *attempt* that failed still lets staging try independently.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Deploy the exact commit CI validated (workflow_run), else the dispatched ref.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Resolve image (reuse the prod-built image for this commit)
+        id: image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_from_source != true }}
+        run: |
+          set -euo pipefail
+          RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
+          IMAGE="${{ env.PROD_IMAGE_PATH }}:$SHA_TAG"
+          if ! gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+            echo "::error::Image $IMAGE not found in Artifact Registry. The prod deploy workflow for this commit most likely failed before pushing its image. Fix/re-run the prod deploy first, or run this workflow manually with build_from_source=true to build a staging image from source."
+            exit 1
+          fi
+          echo "Reusing prod-built image: $IMAGE"
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build image from source (manual escape hatch only)
+        id: fallback_build
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_from_source == true }}
+        run: |
+          set -euo pipefail
+          SHA_TAG="sha-$(echo "${{ github.sha }}" | cut -c1-8)"
+          IMAGE="${{ env.STAGING_IMAGE_PATH }}:$SHA_TAG"
+          echo "Building $IMAGE from source with staging build args"
+          # Staging build args: the URLs are public and pinned here; the key-shaped
+          # NEXT_PUBLIC_* values are deliberately empty because no STAGING_* GitHub
+          # secrets exist — this matches what the old `gcloud run deploy --source .`
+          # staging build produced (every NEXT_PUBLIC_* baked in empty). If staging's
+          # client bundle ever needs real values, add staging secrets and wire them
+          # in here. retry-transient.sh absorbs transient Cloud Build 429/5xx (this
+          # manual path may overlap a prod build; see the concurrency comment above).
+          bash scripts/retry-transient.sh gcloud builds submit . \
+            --config cloudbuild.yaml \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.STAGING_IMAGE_PATH }}",_NEXT_PUBLIC_APP_URL=https://phoenix-hr-staging-897559113412.us-central1.run.app,_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=,_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=,_NEXT_PUBLIC_SMI_USE_FACT_TABLES=,_NEXT_PUBLIC_SUPABASE_ANON_KEY=,_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=,_NEXT_PUBLIC_SUPABASE_URL=https://cifwmndunmlxjhyjugxa.supabase.co
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy new revision (no traffic) with a commit-SHA tag
+        id: deploy
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.image.outputs.image || steps.fallback_build.outputs.image }}"
+          SHA_TAG="${{ steps.image.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}"
+          echo "Deploying $IMAGE as tag $SHA_TAG (no traffic) to ${{ env.SERVICE_NAME }}"
+          # --startup-probe pins the probe already live on the staging service
+          # (applied by hand 2026-07-17, identical to prod's) so a future service
+          # recreate keeps it. Deliberately NO --min here: staging runs with
+          # service-level min instances 0 (scale to zero) by design — only prod
+          # keeps a warm instance.
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image "$IMAGE" \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --startup-probe httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=12,initialDelaySeconds=0 \
+            --no-traffic \
+            --tag "$SHA_TAG"
+          TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
+            | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
+          echo "Tag URL: $TAG_URL"
+          test -n "$TAG_URL"
+          echo "tag_url=$TAG_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Post-deploy smoke test (isolated new revision, before routing traffic)
+        # Deliberately narrower than prod's smoke test: it does NOT hit
+        # /api/webhooks/resend or /api/notifications/daily. Those checks assert a
+        # 401 that depends on RESEND_WEBHOOK_SECRET / CRON_SECRET being configured,
+        # which staging intentionally does not have (no shared third-party
+        # secrets). Without those secrets, the webhook route 500s instead of
+        # 401ing, and the cron route's unauthenticated-bypass-in-non-production
+        # fallback would actually execute the daily notifications job on every
+        # deploy instead of rejecting the request.
+        run: |
+          set -euo pipefail
+          URL="${{ steps.deploy.outputs.tag_url }}"
+          fail() { echo "SMOKE FAILED: $1"; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/healthz"); echo "GET /api/healthz -> $code"; [ "$code" = "200" ] || fail "healthz not 200"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/login"); echo "GET /login -> $code"; [ "$code" = "200" ] || fail "login not 200"
+          echo "Smoke passed."
+
+      - name: Promote validated revision to 100% traffic
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --to-latest
+
+      - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
+        # Staging chains off every prod deploy (see header comment above), so it
+        # accumulates a sha-* tag just as fast as phoenix-hr and was found with 16
+        # piled up (vs. phoenix-hr's 4) during the 2026-07-14 incident triage. It has
+        # no --min-instances set (defaults to 0), so it isn't at the same acute
+        # CPU-quota-exhaustion risk as phoenix-hr today — but pruning here keeps both
+        # services' cleanup logic identical and avoids unbounded revision growth if
+        # min-instances is ever added to staging later. Best-effort: never fails an
+        # already-live deploy.
+        continue-on-error: true
+        run: |
+          python3 scripts/cleanup-stale-cloud-run-tags.py \
+            --service ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --keep 3

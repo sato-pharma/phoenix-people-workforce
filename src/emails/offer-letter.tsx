@@ -1,6 +1,5 @@
 import {
   PhoenixEmailLayout,
-  escapeEmailHtml,
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
@@ -33,18 +32,14 @@ Please review the offer details below. If you are interested, use the secure rev
 }
 
 function offerBodyHtml(props: OfferLetterEmailProps) {
-  return `
-    ${renderEmailParagraphs(offerBodyText(props))}
-    ${
-      props.expiresAt
-        ? `<div style="margin:18px 0 0;border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:12px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;font-weight:700">
-            This secure offer link expires on ${escapeEmailHtml(props.expiresAt)}. Please confirm your decision before then.
-          </div>`
-        : ""
-    }`;
+  // Expiry is surfaced as a dedicated "Offer Expires" row in the details table below, so no
+  // separate callout box here (a light inline box also renders low-contrast in dark clients).
+  return renderEmailParagraphs(offerBodyText(props));
 }
 
 function metadataRows(props: OfferLetterEmailProps) {
+  // Deliberately NO salary rows in the email body — compensation lives on the secure
+  // offer page and inside the attached offer-letter PDF only.
   return [
     { label: "Offer ID", value: props.offerCode },
     { label: "Position", value: props.jobTitle },
@@ -52,10 +47,8 @@ function metadataRows(props: OfferLetterEmailProps) {
     { label: "Area", value: props.territory },
     { label: "Direct Manager", value: props.reportingManager },
     { label: "Hiring Date", value: props.startDate },
-    { label: "Base Salary", value: props.baseSalary },
-    { label: "Basic Salary", value: props.basicSalary },
-    { label: "Net Salary", value: props.netSalary },
     { label: "Issued Date", value: props.issueDate },
+    ...(props.expiresAt ? [{ label: "Offer Expires", value: props.expiresAt }] : []),
   ];
 }
 

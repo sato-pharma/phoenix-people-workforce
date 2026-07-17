@@ -9,6 +9,17 @@
  * worked day look like a false "visits_no_punch" — that false-positive risk is why this
  * intentionally does NOT use the broader isAttendanceTracked() eligibility check.
  *
+ * Also flags the reverse-of-trust case: a day FWC classified "AV" (vacation signal) where the
+ * employee has a matching fingerprint punch — the CRM calendar and physical attendance
+ * disagree. This only ever fires for device-mapped employees, which in practice means
+ * office-based (Head Office) staff, since field reps are not enrolled on a fingerprint device.
+ * That signal is further split by how much of the day was actually worked (last punch minus
+ * first punch, Cairo-local): under AV_HALF_DAY_MAX_WORKED_MINUTES reads as a half-day vacation
+ * (av_with_partial_punch) rather than a full contradiction (av_with_punch) — owner-confirmed
+ * threshold: HO's Ramadan schedule was 10:00-16:00 (6h) with a 1h grace, and the same 5h
+ * threshold was confirmed for non-Ramadan months too, so one constant covers both.
+ *
+
  * A day with an approved attendance exception is never flagged either way — HR already
  * reviewed and explained it.
  *
@@ -20,6 +31,7 @@
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   FieldWorkforceAttendanceCrossCheckResult,
@@ -29,6 +41,12 @@ import type {
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
+
+/** Owner-confirmed threshold (2026-07): under 5 worked hours on an AV-tagged day reads as a
+ * half-day vacation, not a full attendance/calendar contradiction. Derived from HO's Ramadan
+ * schedule (10:00-16:00 = 6h, minus 1h grace = 5h) and separately confirmed as the same 5h
+ * figure for non-Ramadan months — one constant, no month-of-year branching needed. */
+const AV_HALF_DAY_MAX_WORKED_MINUTES = 5 * 60;
 
 export type FieldWorkforceAttendanceCrossCheckOutcome = {
   /** Keyed "<canonicalHrKey>|<dateIso>". Only present for device-mapped employees' non-ignored,
@@ -76,10 +94,12 @@ export async function buildFieldWorkforceAttendanceCrossCheck(input: {
 
   let report: Awaited<ReturnType<typeof getFingerprintAttendanceReport>>;
   let exceptions: Awaited<ReturnType<typeof getAttendanceExceptions>>;
+  let dayPunchMinutes: Awaited<ReturnType<typeof loadEmployeeDayPunchMinutes>>;
   try {
-    [report, exceptions] = await Promise.all([
+    [report, exceptions, dayPunchMinutes] = await Promise.all([
       getFingerprintAttendanceReport({ dateFrom, dateTo, employeeHrIds: trackedEmployees.map((employee) => employee.hrId) }),
       getAttendanceExceptions({ dateFrom, dateTo, status: "approved" }),
+      loadEmployeeDayPunchMinutes({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds: trackedEmployees.map((employee) => employee.hrId) }),
     ]);
   } catch (error) {
     return emptyOutcome(`Attendance cross-check unavailable this month: ${error instanceof Error ? error.message : "fingerprint report unavailable"}.`);
@@ -97,8 +117,28 @@ export async function buildFieldWorkforceAttendanceCrossCheck(input: {
     if (key) exceptionKeys.add(`${key}|${exception.exceptionDate.slice(0, 10)}`);
   }
 
+  // Worked minutes = last punch minus first punch that Cairo-local day (null when we can't
+  // compute it — e.g. a single visible punch). Only ever consulted for the AV+punch case, to
+  // decide half-day vs. full contradiction; every other branch stays boolean punched/not.
+  const workedMinutesByKey = new Map<string, number | null>();
+  for (const [hrId, byDate] of dayPunchMinutes) {
+    const key = canonicalHrIdKey(hrId);
+    if (!key) continue;
+    for (const [dateIso, punches] of byDate) {
+      const span = punches.firstPunchMinutes != null && punches.lastPunchMinutes != null
+        ? punches.lastPunchMinutes - punches.firstPunchMinutes
+        : null;
+      // A negative span can only arise from the October DST fall-back minute-of-day wrap; treat
+      // it as unknown (null). The AV+punch branch already defaults unknown worked time to
+      // av_with_partial_punch, so this is behaviour-neutral, it just makes the intent explicit
+      // and never lets a garbled negative masquerade as a sub-threshold "partial" measurement.
+      const worked = span != null && span >= 0 ? span : null;
+      workedMinutesByKey.set(`${key}|${dateIso}`, worked);
+    }
+  }
+
   return {
-    crossCheckByHrKeyAndDate: computeAttendanceCrossCheck({ employees: trackedEmployees, exceptionKeys, punchedKeys }),
+    crossCheckByHrKeyAndDate: computeAttendanceCrossCheck({ employees: trackedEmployees, exceptionKeys, punchedKeys, workedMinutesByKey }),
     warning: null,
   };
 }
@@ -109,12 +149,20 @@ export async function buildFieldWorkforceAttendanceCrossCheck(input: {
  * sets (both "<canonicalHrKey>|<dateIso>"), decides visits_no_punch / punch_no_visits per day.
  * Skips FWC-ignored days (pre-hire/post-exit/holiday/weekly-off — already resolved in the
  * timeline) and any day with an approved exception (already reviewed by HR).
+ *
+ * workedMinutesByKey (same "<canonicalHrKey>|<dateIso>" keying) is only consulted for the
+ * AV+punch case, to split it into av_with_partial_punch (< AV_HALF_DAY_MAX_WORKED_MINUTES
+ * worked, or unknown — the conservative default) vs. av_with_punch (proven >= the threshold).
+ * Defaulting an unresolvable duration to the half-day bucket avoids ever wrongly zeroing out a
+ * genuine vacation day on incomplete data.
  */
 export function computeAttendanceCrossCheck(input: {
   employees: FieldWorkforceEmployeeSummary[];
   exceptionKeys: Set<string>;
   punchedKeys: Set<string>;
+  workedMinutesByKey?: Map<string, number | null>;
 }): Map<string, FieldWorkforceAttendanceCrossCheckResult> {
+  const workedMinutesByKey = input.workedMinutesByKey ?? new Map<string, number | null>();
   const crossCheckByHrKeyAndDate = new Map<string, FieldWorkforceAttendanceCrossCheckResult>();
   for (const employee of input.employees) {
     const hrKey = canonicalHrIdKey(employee.hrId);
@@ -129,6 +177,14 @@ export function computeAttendanceCrossCheck(input: {
         crossCheckByHrKeyAndDate.set(dayKey, "visits_no_punch");
       } else if (cell.status === "N" && punched) {
         crossCheckByHrKeyAndDate.set(dayKey, "punch_no_visits");
+      } else if (cell.status === "AV" && punched) {
+        const workedMinutes = workedMinutesByKey.get(dayKey) ?? null;
+        crossCheckByHrKeyAndDate.set(
+          dayKey,
+          workedMinutes != null && workedMinutes >= AV_HALF_DAY_MAX_WORKED_MINUTES
+            ? "av_with_punch"
+            : "av_with_partial_punch",
+        );
       }
     }
   }

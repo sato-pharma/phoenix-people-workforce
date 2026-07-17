@@ -7,7 +7,7 @@
 // before the (separate, approval-gated) write importer runs against staging.
 //
 // Usage:
-//   MARKETING_ROI_SHEET_XLSX="../ROIxx.xlsx" npm run marketing:roi-preview
+//   MARKETING_ROI_SHEET_XLSX="../ROIxx.xlsx" pnpm run marketing:roi-preview
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

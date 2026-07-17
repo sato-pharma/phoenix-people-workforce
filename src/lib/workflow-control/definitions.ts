@@ -174,7 +174,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
     status: "Active",
     riskLevel: "Medium",
     summary: "Standard expenses and outstation travel: validation, evidence, approval, payroll import.",
-    modulesAffected: n("outstation_expense_requests", "outstation_location_audit_logs", "payroll_expenses", "storage (evidence)"),
+    modulesAffected: n("outstation_expense_requests", "outstation_expenses", "storage (evidence)"),
     subflows: [
       {
         key: "expense",
@@ -286,7 +286,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             statusProduced: "approved",
             notificationRecipients: [],
             emailRecipients: [],
-            sideEffects: "Creates/updates the linked payroll_expenses row. Approval is silent — no notification is sent (only rejection notifies the submitter).",
+            sideEffects: "Creates/updates the linked outstation_expenses row. Approval is silent — no notification is sent (only rejection notifies the submitter).",
           },
         ],
       },

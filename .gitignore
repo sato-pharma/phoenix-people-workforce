@@ -36,6 +36,7 @@ Phoenix Workforce/
 # Data files (store in cloud, not git)
 *.xlsx
 *.csv
+!Source of sales area database.xlsx
 !.env.*.example
 
 # Generated output

@@ -57,6 +57,7 @@ export default async function SystemIssuesPage() {
             initialAppErrors={issuesResult.appErrors}
             initialAttempts={attemptsResult}
             initialGcpLogs={issuesResult.gcpLogs}
+            initialServiceHealth={issuesResult.serviceHealth}
           />
         ) : (
           <Card className="border-rose-200 bg-[linear-gradient(135deg,#FFF1F2_0%,#FFFFFF_100%)] p-6 shadow-[0_16px_36px_rgba(244,63,94,0.10)]">

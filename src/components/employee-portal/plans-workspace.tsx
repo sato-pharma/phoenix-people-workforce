@@ -1733,6 +1733,7 @@ export function PlansWorkspace({
     <>
       {visitDetailsPlan && (
         <VisitDetailsModal
+          isSubmitting={isPending}
           onClose={() => setVisitDetailsPlan(null)}
           onSubmit={(details) => runAction(() => doSubmitVisitDetails(visitDetailsPlan.id, details))}
           plan={visitDetailsPlan}
@@ -3176,10 +3177,12 @@ function makeEntry(): VisitEntry {
 }
 
 function VisitDetailsModal({
+  isSubmitting,
   onClose,
   onSubmit,
   plan,
 }: {
+  isSubmitting: boolean;
   onClose: () => void;
   onSubmit: (details: VisitDetailInput[]) => void;
   plan: EmployeePlan;
@@ -3239,7 +3242,7 @@ function VisitDetailsModal({
         });
       }
     }
-    if (details.length === 0) return;
+    if (details.length === 0 || isSubmitting) return;
     onSubmit(details);
   }
 
@@ -3365,12 +3368,17 @@ function VisitDetailsModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
-          <button onClick={onClose} className="text-xs font-bold text-slate-500 hover:text-slate-800" type="button">
+          <button
+            className="text-xs font-bold text-slate-500 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isSubmitting}
+            onClick={onClose}
+            type="button"
+          >
             Cancel
           </button>
-          <Button disabled={!allFilled} onClick={handleSubmit}>
+          <Button disabled={!allFilled || isSubmitting} onClick={handleSubmit}>
             <Send className="mr-2 h-4 w-4" />
-            Submit Visit Details
+            {isSubmitting ? "Submitting…" : "Submit Visit Details"}
           </Button>
         </div>
       </div>

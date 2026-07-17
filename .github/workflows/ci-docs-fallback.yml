@@ -1,12 +1,13 @@
 name: CI (docs-only fallback)
 
-# ci.yml's `validate` job uses paths-ignore for this same list, so it never
-# queues for PRs that touch only these paths. main's branch protection requires
-# a `validate` check, which then blocks those PRs forever (no run == no status).
-# This workflow's job is also named `validate` and triggers on the inverse
-# filter, so a PR whose changes are entirely docs/templates gets a fast,
-# trivially-passing `validate` run instead. For mixed PRs (code + docs), both
-# this workflow and ci.yml trigger; both must succeed, which is correct.
+# ci.yml's `validate` and `lint-typecheck` jobs use paths-ignore for this same
+# list, so they never queue for PRs that touch only these paths. main's branch
+# protection requires both checks, which then block those PRs forever (no run
+# == no status). This workflow's jobs share those same names and trigger on
+# the inverse filter, so a PR whose changes are entirely docs/templates gets
+# fast, trivially-passing `validate`/`lint-typecheck` runs instead. For mixed
+# PRs (code + docs), both this workflow and ci.yml trigger; all must succeed,
+# which is correct.
 #
 # See https://github.com/Phoenix-HR/phoenix-people-workforce/issues/679
 
@@ -28,3 +29,9 @@ jobs:
     steps:
       - name: Skip full validation for docs-only changes
         run: echo "Only documentation/template files changed in this PR -- full lint/typecheck/test/build runs in ci.yml when code changes are present. Satisfying the required 'validate' check here so docs-only PRs are mergeable."
+
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip lint/typecheck for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- there is no app code for lint/typecheck to check. Satisfying the required 'lint-typecheck' check here so docs-only PRs are mergeable."

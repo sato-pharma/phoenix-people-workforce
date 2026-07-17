@@ -4,7 +4,7 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } 
 
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { compactEgp, egp, formatPeriodLabel } from "@/components/outstation/expense-shared/formatters";
-import type { PayrollExpenseTrendPoint } from "@/lib/payroll/expense-metrics";
+import type { PayrollExpenseTrendPoint } from "@/lib/outstation/expense-metrics";
 
 type TrendDatum = { period: string; amount: number; rows: number; label: string };
 

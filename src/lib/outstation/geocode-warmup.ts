@@ -22,12 +22,12 @@ async function listDistinctDestinations(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const seen = new Set<string>();
 
-  // 1. Historical payroll_expenses rows — to_location is the precise destination,
+  // 1. Historical outstation_expenses rows — to_location is the precise destination,
   //    location is the fallback when the upload didn't separate from/to.
   try {
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .select("to_location, location")
         .range(from, from + PAGE_SIZE - 1);
       if (error) break;
@@ -58,7 +58,7 @@ async function listDistinctDestinations(): Promise<string[]> {
       if (rows.length < PAGE_SIZE) break;
     }
   } catch {
-    // Table missing — return what we have from payroll_expenses.
+    // Table missing — return what we have from outstation_expenses.
   }
 
   return Array.from(seen);

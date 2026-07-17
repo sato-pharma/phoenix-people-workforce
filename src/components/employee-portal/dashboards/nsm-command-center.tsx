@@ -50,6 +50,18 @@ function cairoTime(iso: string): string {
   });
 }
 
+// Early-bird `at` comes from the vendor's crm_save_date — a zone-less Cairo wall-clock stored as
+// +00, so its clock reading is ALREADY Cairo-local. Render as-is (timeZone "UTC"); using cairoTime
+// here (as lastSyncAt correctly does for the true-UTC synced_at) would double-add the offset and
+// show submission times 2–3h late.
+function vendorLocalTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-GB", {
+    timeZone: "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /* ── National performance keycards ─────────────────────────────────── */
 
 function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["nsmNational"] }) {
@@ -193,7 +205,7 @@ function CrmBoard({ crm }: { crm: CrmData }) {
                   >
                     <span className="font-black text-emerald-600">{i + 1}</span>
                     {b.name}
-                    <span className="font-normal text-emerald-600/70">{cairoTime(b.at)}</span>
+                    <span className="font-normal text-emerald-600/70">{vendorLocalTime(b.at)}</span>
                   </span>
                 ))}
               </div>
@@ -267,6 +279,11 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <NationalKeycards nsmNational={nsmNational} />
 
       <DashboardsGrid items={DASHBOARDS} />
+
+      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        Incentives shown below are not yet confirmed by HR.
+      </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <RankingPanel

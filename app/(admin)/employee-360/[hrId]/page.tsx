@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AlertTriangle, ArrowLeft, UserX } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
@@ -9,8 +10,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
+import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { isExpenseAnalysisRole } from "@/lib/employees/job-function";
+import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
@@ -33,11 +36,15 @@ export default async function Employee360DetailPage({
   if (!target) {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <Card>
-          <h1 className="text-lg font-semibold text-foreground">Employee not found</h1>
-          <p className="mt-1 text-sm text-muted-foreground">No employee record matches “{hrId}”.</p>
-          <Link href="/employee-360" className="mt-3 inline-block text-sm text-primary underline">
-            ← Back to Employee 360
+        <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+            <UserX className="h-5 w-5" />
+          </span>
+          <h1 className="mt-3 text-lg font-black text-slate-900">Employee not found</h1>
+          <p className="mt-1 text-sm text-slate-500">No employee record matches “{hrId}”.</p>
+          <Link href="/employee-360" className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Employee 360
           </Link>
         </Card>
       </div>
@@ -48,11 +55,37 @@ export default async function Employee360DetailPage({
     redirect("/employee-360");
   }
 
+  // Employee 360 covers only the six field-force role families. A person outside
+  // that scope (HR, Finance, CEO, admin, office…) has no tailored report — show a
+  // clear out-of-scope state instead of a half-empty generic one.
+  const roleCategory = resolveEmployee360RoleCategory(target.jobTitle ?? target.positionTitle);
+  if (!roleCategory) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+            <UserX className="h-5 w-5" />
+          </span>
+          <h1 className="mt-3 text-lg font-black text-slate-900">{target.displayName || target.fullName}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {target.jobTitle || "This role"} isn’t covered by Employee 360. The report is scoped to the field force — Medical
+            Reps, District / Regional / National Sales Managers, Product &amp; Group Product Managers, and Training Managers.
+          </p>
+          <Link href="/employee-360" className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Employee 360
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
   const subject: Employee360Subject = {
     hrId: target.hrId,
     displayName: target.displayName || target.fullName,
     jobTitle: target.jobTitle,
-    lineName: target.lineName,
+    // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
+    lineName: bridgeEmployeeLineToOfficial(target.lineName),
     areaName: target.areaName,
     regionName: target.regionName,
     managerName: target.managerName,
@@ -60,10 +93,11 @@ export default async function Employee360DetailPage({
     hireDate: target.hireDate,
   };
 
-  // Expense analysis is a MANAGER view (DM / RM / NSM / TM / PM / GPM). Hide the whole
-  // Expenses & Outstation section when the subject is a Medical Rep. Job-function
-  // classification (not the security role parser) is the right, sanctioned source here.
-  const showExpenses = resolveJobFunctionRole(target.jobTitle ?? target.positionTitle) !== "Medical Rep";
+  // Expense analysis is a MANAGER view (DM / RM / NSM / TM / PM / GPM) — an explicit
+  // allowlist, not "anyone who isn't a Medical Rep" (HR/Finance/CEO/admin titles
+  // must not see or fetch this section either). Job-function classification (not
+  // the security role parser) is the right, sanctioned source here.
+  const showExpenses = isExpenseAnalysisRole(target.jobTitle ?? target.positionTitle);
 
   const nameByHrId = new Map<string, string>(
     rows.map((row) => [row.hrId.trim().toLowerCase(), row.displayName || row.fullName]),
@@ -98,7 +132,7 @@ export default async function Employee360DetailPage({
   let error: string | null = null;
   try {
     const [cur, prev] = await Promise.all([
-      getEmployee360Profile(target.hrId, nameByHrId, period.current, teamHrIds),
+      getEmployee360Profile(target.hrId, nameByHrId, period.current, teamHrIds, showExpenses, access.role, roleCategory),
       getEmployee360Summary(target.hrId, period.previous),
     ]);
     summary = cur;
@@ -109,8 +143,12 @@ export default async function Employee360DetailPage({
 
   const backAndFilter = (
     <div className="mx-auto max-w-5xl space-y-3 px-4 pt-4 sm:px-6">
-      <Link href="/employee-360" className="text-sm text-muted-foreground hover:text-foreground">
-        ← All employees
+      <Link
+        href="/employee-360"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition hover:text-orange-600"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        All employees
       </Link>
       <PeriodFilter hrId={subject.hrId} activeKey={period.key} from={period.current.from} to={period.current.to} />
     </div>
@@ -121,9 +159,16 @@ export default async function Employee360DetailPage({
       <div>
         {backAndFilter}
         <div className="mx-auto max-w-3xl p-6">
-          <Card>
-            <h1 className="text-lg font-semibold text-foreground">{subject.displayName}</h1>
-            <p className="mt-2 text-sm text-destructive">{error ?? "No data."}</p>
+          <Card className="rounded-[20px] border-red-200 bg-red-50/60 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-red-100 text-red-600 ring-1 ring-inset ring-red-200">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h1 className="text-base font-black text-slate-900">{subject.displayName}</h1>
+                <p className="mt-1 text-sm text-red-700">{error ?? "No data."}</p>
+              </div>
+            </div>
           </Card>
         </div>
       </div>
@@ -145,7 +190,13 @@ export default async function Employee360DetailPage({
   return (
     <div>
       {backAndFilter}
-      <Employee360View subject={subject} summary={summary} comparison={comparison} showExpenses={showExpenses} />
+      <Employee360View
+        subject={subject}
+        summary={summary}
+        comparison={comparison}
+        showExpenses={showExpenses}
+        category={roleCategory}
+      />
     </div>
   );
 }

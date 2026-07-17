@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export function runPhase18FixtureHygieneTests() {
   const fixtureHygieneSource = readFileSync("src/lib/fixture-hygiene.ts", "utf8");
   const payrollServiceSource = readFileSync("src/lib/payroll/service.ts", "utf8");
-  const payrollExpensesSource = readFileSync("src/lib/payroll/expenses.ts", "utf8");
+  const payrollExpensesSource = readFileSync("src/lib/outstation/expenses.ts", "utf8");
   const salesServiceSource = readFileSync("src/lib/sales/service.ts", "utf8");
   const adminServiceSource = readFileSync("src/lib/admin/service.ts", "utf8");
   const commandCenterSource = readFileSync("src/lib/admin/command-center.ts", "utf8");

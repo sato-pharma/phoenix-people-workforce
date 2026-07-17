@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight, MapPinned, ChartColumnBig } from "lucide-react";
 
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
@@ -116,7 +116,7 @@ const MODULES = [
 ] as const;
 
 export default async function AnalyticsHubPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }

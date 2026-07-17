@@ -455,7 +455,6 @@ export type CeoLandingDeferredData = {
   expense: {
     totalAmount: number;
     approvedPct: number;
-    highRiskCount: number | null;
     windowLabel: string;
     byRegion: Array<{ label: string; amount: number }>;
     topSpenders: Array<{ label: string; amount: number }>;
@@ -563,7 +562,6 @@ export async function getCeoLandingDeferred(
         totalAmount: expense.kpis.totalAmount,
         approvedPct:
           expense.kpis.totalAmount > 0 ? expense.kpis.approvedAmount / expense.kpis.totalAmount : 0,
-        highRiskCount: expense.kpis.highRiskRows,
         windowLabel: expense.windowLabel,
         byRegion: expense.breakdowns.byRegion.slice(0, 7).map((r) => ({ label: r.key, amount: r.total })),
         topSpenders: expense.leaderboards.topSpenders
