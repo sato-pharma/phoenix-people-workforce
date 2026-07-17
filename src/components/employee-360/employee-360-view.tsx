@@ -204,6 +204,12 @@ function fmtHourView(h: number | null): string {
 }
 
 const DOW_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+// Field-force work week (owner-confirmed, matches production data): Sat–Wed are
+// full working days, Thursday is AM-only (half day), Friday is off. Index order
+// is getUTCDay(): 0=Sun … 4=Thu, 5=Fri, 6=Sat. Saturday (6) is a FULL working
+// day and must never be dimmed.
+const OFF_DAY = 5; // Friday
+const HALF_DAY = 4; // Thursday (AM only)
 function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
   const max = Math.max(1, ...counts);
   return (
@@ -214,12 +220,15 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
           <div key={i} className="flex flex-1 flex-col items-center gap-1">
             <div className="flex w-full flex-1 items-end">
               <div
-                className={cn("w-full rounded-t", i === 5 || i === 6 ? "bg-slate-300" : "bg-sky-500/80")}
+                className={cn(
+                  "w-full rounded-t",
+                  i === OFF_DAY ? "bg-slate-300" : i === HALF_DAY ? "bg-sky-400/45" : "bg-sky-500/80",
+                )}
                 style={{ height: `${(c / max) * 100}%` }}
-                title={`${c}`}
+                title={i === OFF_DAY ? `${c} (Fri — off)` : i === HALF_DAY ? `${c} (Thu — AM only)` : `${c}`}
               />
             </div>
-            <span className="text-[10px] font-semibold text-slate-400">{DOW_LABELS[i]}</span>
+            <span className={cn("text-[10px] font-semibold", i === OFF_DAY ? "text-slate-300" : "text-slate-400")}>{DOW_LABELS[i]}</span>
           </div>
         ))}
       </div>
@@ -416,7 +425,7 @@ export function Employee360View({
 
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <div>
-            <DayOfWeekBars counts={summary.dayOfWeek} title="Visits by day of week (Fri/Sat dimmed)" />
+            <DayOfWeekBars counts={summary.visitDayOfWeek} title="Visits by day of week — Sat–Wed full · Thu AM · Fri off" />
             <div className="mt-3 text-xs text-slate-400">Single visits {intFmt.format(summary.singleVisits)} · Double visits {intFmt.format(summary.doublesReceived)}</div>
             {summary.topCustomers.length > 0 ? (
               <div className="mt-3">
@@ -533,7 +542,7 @@ export function Employee360View({
             </div>
 
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
-              <DayOfWeekBars counts={summary.dayOfWeek} title="Check-ins by day of week (Fri/Sat dimmed)" />
+              <DayOfWeekBars counts={summary.checkinDayOfWeek} title="Check-ins by day of week — Sat–Wed full · Thu AM · Fri off" />
               <div>
                 <div className="mb-1.5 text-xs font-bold text-slate-500">GPS coverage by month</div>
                 <LineChart

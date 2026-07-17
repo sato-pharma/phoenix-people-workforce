@@ -163,6 +163,7 @@ import { runSalesRestrictedProductsTests } from "./sales-restricted-products.tes
 import { runEmployee360ExpenseRoleTests } from "./employee-360-expense-role.test.ts";
 import { runEmployee360SalesMaskingTests } from "./employee-360-sales-masking.test.ts";
 import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.test.ts";
+import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runCustomerDirectoryTests } from "./customer-directory.test.ts";
@@ -572,6 +573,7 @@ await runTest("employee 360 expense-analysis role allowlist", runEmployee360Expe
 await runTest("employee 360 visit classification (CRM Unknown-type labeling)", runEmployee360VisitClassificationTests);
 await runTest("employee 360 sales confidential-product masking", runEmployee360SalesMaskingTests);
 await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
+await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sos customer key", runSosCustomerKeyTests);
