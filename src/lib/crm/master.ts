@@ -278,8 +278,14 @@ export type CrmMasterData = {
   dataset: CrmMasterDataset;
   dateFrom: string | null;
   dateTo: string | null;
+  halfDaysOnly: boolean;
+  hireFrom: string | null;
+  hireTo: string | null;
   latestSyncRuns: VisitsSyncRun[];
+  line: string | null;
+  lineOptions: readonly string[];
   mappingStatus: CrmMasterMappingStatus;
+  minDuration: number | null;
   page: number;
   pageSize: number;
   pageSizeOptions: readonly number[];
@@ -297,7 +303,12 @@ export type CrmMasterFilter = {
   dataset?: CrmMasterDataset;
   dateFrom?: string | null;
   dateTo?: string | null;
+  halfDaysOnly?: boolean | null;
+  hireFrom?: string | null;
+  hireTo?: string | null;
+  line?: string | null;
   mappingStatus?: CrmMasterMappingStatus | null;
+  minDuration?: number | null;
   page?: number;
   pageSize?: number;
   search?: string | null;
@@ -316,6 +327,7 @@ type MasterQuery = {
   ilike: (...args: any[]) => MasterQuery;
   is: (...args: any[]) => MasterQuery;
   lte: (...args: any[]) => MasterQuery;
+  in: (...args: any[]) => MasterQuery;
   neq: (...args: any[]) => MasterQuery;
   not: (...args: any[]) => MasterQuery;
   or: (...args: any[]) => MasterQuery;
@@ -673,6 +685,91 @@ function attachAgentMeta(rows: CrmMasterRow[], metaByHrId: Map<string, AgentMeta
   }
 }
 
+/** Distinct product-line names for the "Line" filter dropdown (small `lines` table). */
+async function loadLineOptions(): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin().from("lines").select("name").order("name", { ascending: true });
+  if (error || !data) return [];
+  const names = (data as Array<{ name: string | null }>).map((r) => r.name).filter((v): v is string => Boolean(v && v.trim()));
+  return Array.from(new Set(names));
+}
+
+/** Resolve the employee HR ids matching the Line and/or Hiring-date-range filters. Returns null when
+ * neither is active (no restriction). Returns raw hr_id strings (for the mirror `agent_hr_id` `.in`)
+ * plus canonical keys (for in-memory filtering of the computed tabs). An active filter that matches no
+ * employee returns empty sets → callers show zero rows. */
+async function resolveAllowedHrIds(opts: {
+  line: string | null;
+  hireFrom: string | null;
+  hireTo: string | null;
+}): Promise<{ hrIds: string[]; keys: Set<string> } | null> {
+  if (!opts.line && !opts.hireFrom && !opts.hireTo) return null;
+  const supabase = getSupabaseAdmin();
+  const empty = { hrIds: [] as string[], keys: new Set<string>() };
+
+  let lineIds: number[] | null = null;
+  if (opts.line) {
+    const { data: lineRows } = await supabase.from("lines").select("id").ilike("name", opts.line);
+    lineIds = ((lineRows ?? []) as Array<{ id: number | null }>).map((l) => l.id).filter((v): v is number => typeof v === "number");
+    if (lineIds.length === 0) return empty; // unknown line → nobody matches
+  }
+
+  /* eslint-disable @typescript-eslint/no-explicit-any -- conditional builder chain, same pattern as elsewhere. */
+  let query: any = supabase.from("employees").select("hr_id");
+  if (lineIds) query = query.in("line_id", lineIds);
+  if (opts.hireFrom) query = query.gte("hire_date", opts.hireFrom);
+  if (opts.hireTo) query = query.lte("hire_date", opts.hireTo);
+  const { data, error } = await query.limit(5000);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  if (error || !data) return empty;
+
+  const hrIds: string[] = [];
+  const keys = new Set<string>();
+  for (const e of data as Array<{ hr_id: string | null }>) {
+    if (!e.hr_id) continue;
+    hrIds.push(e.hr_id);
+    const k = canonicalHrIdKey(e.hr_id);
+    if (k) keys.add(k);
+  }
+  return { hrIds, keys };
+}
+
+/** In-memory filters for the computed tabs (vacations, triples) — their rows aren't produced by the
+ * DB query path, so the advanced filters are applied here: agent-HR-id substring, free-text search,
+ * a line/hiring-date allow-set (by hr id), and (vacations) minimum Duration + half-days-only.
+ * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples). */
+function filterComputedRows(
+  rows: CrmMasterRow[],
+  opts: {
+    agentHrId: string | null;
+    allowed: Set<string> | null;
+    halfDaysOnly: boolean;
+    hrIdField: string;
+    minDuration: number | null;
+    search: string | null;
+  },
+): CrmMasterRow[] {
+  const agentNeedle = opts.agentHrId ? opts.agentHrId.trim().toLowerCase() : null;
+  const searchNeedle = opts.search ? opts.search.trim().toLowerCase() : null;
+  return rows.filter((row) => {
+    const hrRaw = typeof row[opts.hrIdField] === "string" ? (row[opts.hrIdField] as string) : null;
+    if (opts.allowed) {
+      const k = canonicalHrIdKey(hrRaw);
+      if (!k || !opts.allowed.has(k)) return false;
+    }
+    if (agentNeedle && !(hrRaw && hrRaw.toLowerCase().includes(agentNeedle))) return false;
+    if (searchNeedle) {
+      const hay = [row.agent_name, row.base_name, row.mid_name, row.top_name, row.contact_name, row.comment]
+        .filter((v): v is string => typeof v === "string")
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(searchNeedle)) return false;
+    }
+    if (opts.minDuration != null && !(typeof row.duration === "number" && row.duration >= opts.minDuration)) return false;
+    if (opts.halfDaysOnly && !(typeof row.half_days === "number" && row.half_days > 0)) return false;
+    return true;
+  });
+}
+
 /** A vacation day-row from the mirror, used to group vacation periods. */
 type VacationDayRow = {
   crm_visit_id: number | null;
@@ -805,6 +902,7 @@ function applyMasterFilters(
   query: MasterQuery,
   opts: {
     agentHrId: string | null;
+    allowedHrIds: string[] | null;
     ampm: CrmMasterAmpm;
     dataset: CrmMasterDataset;
     dateFrom: string | null;
@@ -814,7 +912,7 @@ function applyMasterFilters(
     visitType: string | null;
   },
 ): MasterQuery {
-  const { agentHrId, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType } = opts;
+  const { agentHrId, allowedHrIds, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType } = opts;
   const isCheckins = dataset === "checkins";
   const isVisits = isVisitDataset(dataset);
   const dateColumn = isCheckins ? "check_date" : "visit_date";
@@ -823,6 +921,10 @@ function applyMasterFilters(
   // Resigned agents (owner-flagged) are invisible across every CRM tab — visits + check-ins alike.
   if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
     q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+  }
+  // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
+  if (allowedHrIds) {
+    q = q.in("agent_hr_id", allowedHrIds.length > 0 ? allowedHrIds : [" __no_match__"]);
   }
   if (dateFrom) q = q.gte(dateColumn, isCheckins ? `${dateFrom}T00:00:00` : dateFrom);
   if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);
@@ -900,12 +1002,42 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   const agentHrId = input.agentHrId?.trim() || null;
   const ampm: CrmMasterAmpm = input.ampm === "AM" || input.ampm === "PM" ? input.ampm : "all";
   const visitType = input.visitType?.trim() || null;
+  const line = input.line?.trim() || null;
+  const hireFrom = input.hireFrom || null;
+  const hireTo = input.hireTo || null;
+  const minDuration = typeof input.minDuration === "number" && input.minDuration > 0 ? input.minDuration : null;
+  const halfDaysOnly = input.halfDaysOnly === true;
   const mappingStatus: CrmMasterMappingStatus =
     input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped" ? input.mappingStatus : "all";
   const configured = isIReports360Configured();
 
   const columns = columnsForDataset(dataset);
-  const filterOpts = { agentHrId, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType };
+
+  // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab); load the line
+  // options for the dropdown alongside it.
+  const [allowed, lineOptions] = await Promise.all([
+    resolveAllowedHrIds({ line, hireFrom, hireTo }),
+    loadLineOptions(),
+  ]);
+  const filterOpts = {
+    agentHrId,
+    allowedHrIds: allowed ? allowed.hrIds : null,
+    ampm,
+    dataset,
+    dateFrom,
+    dateTo,
+    mappingStatus,
+    search,
+    visitType,
+  };
+  // For the computed tabs (vacations, triples), the advanced filters run in memory over the rows.
+  const computedFilter = {
+    agentHrId,
+    allowed: allowed ? allowed.keys : null,
+    halfDaysOnly,
+    minDuration,
+    search,
+  };
 
   // Fields echoed back so the UI can seed its filter inputs.
   const echo = {
@@ -916,7 +1048,13 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
     dataset,
     dateFrom,
     dateTo,
+    halfDaysOnly,
+    hireFrom,
+    hireTo,
+    line,
+    lineOptions,
     mappingStatus,
+    minDuration,
     page,
     pageSize,
     pageSizeOptions: CRM_MASTER_PAGE_SIZE_OPTIONS,
@@ -943,15 +1081,17 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       getLatestVisitsSyncRuns(6),
       loadAgentMetaByHrId(),
     ]);
+    // Advanced filters apply to the rep (base) of each triple; Duration/half are vacation-only.
+    const filtered = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     const start = (page - 1) * pageSize;
-    const pageRows = allTriples.slice(start, start + pageSize);
+    const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
     return {
       ...echo,
       latestSyncRuns,
       rows: pageRows,
       schemaReady: true,
-      totalCount: allTriples.length,
+      totalCount: filtered.length,
     };
   }
 
@@ -962,15 +1102,16 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       getLatestVisitsSyncRuns(6),
       loadAgentMetaByHrId(),
     ]);
+    const filtered = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     const start = (page - 1) * pageSize;
-    const pageRows = allPeriods.slice(start, start + pageSize);
+    const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "agent_hr_id");
     return {
       ...echo,
       latestSyncRuns,
       rows: pageRows,
       schemaReady: true,
-      totalCount: allPeriods.length,
+      totalCount: filtered.length,
     };
   }
 
@@ -1009,8 +1150,21 @@ export async function getCrmMasterExportRows(
   const dataset = normalizeDataset(input.dataset);
   const isCheckins = dataset === "checkins";
   const columns = columnsForDataset(dataset);
+  const agentHrId = input.agentHrId?.trim() || null;
+  const search = input.search?.trim() || null;
+  const line = input.line?.trim() || null;
+  const hireFrom = input.hireFrom || null;
+  const hireTo = input.hireTo || null;
+  const minDuration = typeof input.minDuration === "number" && input.minDuration > 0 ? input.minDuration : null;
+  const halfDaysOnly = input.halfDaysOnly === true;
+
+  const emptyResult = { columns, dataset, rows: [] as CrmMasterRow[], truncated: false };
+  if (!(await isCrmVisitsSchemaReady())) return emptyResult;
+
+  const allowed = await resolveAllowedHrIds({ line, hireFrom, hireTo });
   const filterOpts = {
-    agentHrId: input.agentHrId?.trim() || null,
+    agentHrId,
+    allowedHrIds: allowed ? allowed.hrIds : null,
     ampm: (input.ampm === "AM" || input.ampm === "PM" ? input.ampm : "all") as CrmMasterAmpm,
     dataset,
     dateFrom: input.dateFrom || null,
@@ -1018,29 +1172,29 @@ export async function getCrmMasterExportRows(
     mappingStatus: (input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped"
       ? input.mappingStatus
       : "all") as CrmMasterMappingStatus,
-    search: input.search?.trim() || null,
+    search,
     visitType: input.visitType?.trim() || null,
   };
-
-  const emptyResult = { columns, dataset, rows: [] as CrmMasterRow[], truncated: false };
-  if (!(await isCrmVisitsSchemaReady())) return emptyResult;
+  const computedFilter = { agentHrId, allowed: allowed ? allowed.keys : null, halfDaysOnly, minDuration, search };
 
   // Triple visits: computed in memory (self-join), so export all detected triples for the range.
   if (dataset === "triple_visits") {
-    const [{ rows }, agentMeta] = await Promise.all([
+    const [{ rows: allTriples }, agentMeta] = await Promise.all([
       computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
+    const rows = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
     return { columns, dataset, rows, truncated: false };
   }
 
   // Vacations: grouped into periods, so export all periods for the range.
   if (dataset === "vacations") {
-    const [rows, agentMeta] = await Promise.all([
+    const [allPeriods, agentMeta] = await Promise.all([
       computeVacationPeriods({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
+    const rows = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     attachAgentMeta(rows, agentMeta, "agent_hr_id");
     return { columns, dataset, rows, truncated: false };
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Braces, ChevronLeft, ChevronRight, Database, Download, Info, Loader2, Search, SlidersHorizontal } from "lucide-react";
 
@@ -98,10 +98,30 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const [visitTypeText, setVisitTypeText] = useState(data.visitType ?? "");
   const [ampmValue, setAmpmValue] = useState<CrmMasterAmpm>(data.ampm);
   const [mappingValue, setMappingValue] = useState<CrmMasterMappingStatus>(data.mappingStatus);
+  const [lineValue, setLineValue] = useState(data.line ?? "");
+  const [hireFromText, setHireFromText] = useState(data.hireFrom ?? "");
+  const [hireToText, setHireToText] = useState(data.hireTo ?? "");
+  const [minDurationText, setMinDurationText] = useState(data.minDuration != null ? String(data.minDuration) : "");
+  const [halfDaysOnly, setHalfDaysOnly] = useState(data.halfDaysOnly);
   const advancedActive =
-    Boolean(data.agentHrId) || data.ampm !== "all" || Boolean(data.visitType) || data.mappingStatus !== "all";
+    Boolean(data.agentHrId) ||
+    data.ampm !== "all" ||
+    Boolean(data.visitType) ||
+    data.mappingStatus !== "all" ||
+    Boolean(data.line) ||
+    Boolean(data.hireFrom) ||
+    Boolean(data.hireTo) ||
+    data.minDuration != null ||
+    data.halfDaysOnly;
   const [showAdvanced, setShowAdvanced] = useState(advancedActive);
   const [exportBusy, setExportBusy] = useState(false);
+
+  // Tab / navigation responsiveness: a pending transition dims the table + highlights the tab you
+  // clicked immediately, so switching tabs never feels dead while the server round-trips. The
+  // optimistic dataset is trusted only while the navigation is in flight; data.dataset is the truth.
+  const [isPending, startTransition] = useTransition();
+  const [pendingDataset, setPendingDataset] = useState<CrmMasterDataset | null>(null);
+  const activeDataset = isPending && pendingDataset ? pendingDataset : data.dataset;
 
   // Synced top horizontal scrollbar: a thin bar directly above the table whose scroll position
   // mirrors the table body's, so wide columns can be panned without scrolling to the bottom.
@@ -112,12 +132,26 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const syncLock = useRef(false);
 
   useEffect(() => {
-    const measure = () => setScrollWidth(tableRef.current?.scrollWidth ?? 0);
+    // Width of the scrolling content = the widest of the table element and its scroll container. The
+    // table can reflow WIDER a beat after first paint (nowrap columns, late font/RTL layout); a single
+    // synchronous read then captures a too-small width and the top scrollbar goes missing (this is why
+    // narrower tabs sometimes showed no bar). So re-measure across a few frames + short timeouts, and
+    // keep a ResizeObserver on the table for anything after that.
+    const measure = () => {
+      const width = Math.max(tableRef.current?.scrollWidth ?? 0, bodyRef.current?.scrollWidth ?? 0);
+      setScrollWidth((prev) => (prev === width ? prev : width));
+    };
     measure();
+    const raf = requestAnimationFrame(measure);
+    const t1 = setTimeout(measure, 150);
+    const t2 = setTimeout(measure, 450);
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     if (observer && tableRef.current) observer.observe(tableRef.current);
     window.addEventListener("resize", measure);
     return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t1);
+      clearTimeout(t2);
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
@@ -145,13 +179,14 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       if (value === null || value === "") params.delete(key);
       else params.set(key, value);
     }
-    router.push(`${pathname}?${params.toString()}`);
+    startTransition(() => router.push(`${pathname}?${params.toString()}`));
   }
 
   function switchDataset(dataset: CrmMasterDataset) {
     if (dataset === data.dataset) return;
-    // Reset page + the visits-only filters that don't apply to check-ins; keep date range + agent.
-    navigate({ dataset, page: null, search: null, ampm: null, visitType: null, mappingStatus: null });
+    setPendingDataset(dataset); // highlight the clicked tab instantly, before the server responds
+    // Reset page + filters that are dataset-specific; keep the date range + agent + line + hiring.
+    navigate({ dataset, page: null, search: null, ampm: null, visitType: null, mappingStatus: null, minDuration: null, halfDaysOnly: null });
   }
 
   function applyFilters() {
@@ -160,7 +195,12 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       ampm: ampmValue === "all" ? null : ampmValue,
       dateFrom: fromText || null,
       dateTo: toText || null,
+      halfDaysOnly: halfDaysOnly ? "1" : null,
+      hireFrom: hireFromText || null,
+      hireTo: hireToText || null,
+      line: lineValue || null,
       mappingStatus: mappingValue === "all" ? null : mappingValue,
+      minDuration: minDurationText.trim() || null,
       page: null,
       search: searchText || null,
       visitType: visitTypeText || null,
@@ -175,12 +215,22 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     setVisitTypeText("");
     setAmpmValue("all");
     setMappingValue("all");
+    setLineValue("");
+    setHireFromText("");
+    setHireToText("");
+    setMinDurationText("");
+    setHalfDaysOnly(false);
     navigate({
       agentHrId: null,
       ampm: null,
       dateFrom: null,
       dateTo: null,
+      halfDaysOnly: null,
+      hireFrom: null,
+      hireTo: null,
+      line: null,
       mappingStatus: null,
+      minDuration: null,
       page: null,
       search: null,
       visitType: null,
@@ -271,20 +321,28 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     <div className="space-y-4">
       {/* Dataset toggle + freshness */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex overflow-hidden border border-slate-200">
-          {datasets.map((ds) => (
-            <button
-              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold transition ${
-                ds.id === data.dataset ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-              key={ds.id}
-              onClick={() => switchDataset(ds.id)}
-              type="button"
-            >
-              <Database aria-hidden="true" className="h-3.5 w-3.5" />
-              {ds.label}
-            </button>
-          ))}
+        <div className="inline-flex flex-wrap overflow-hidden border border-slate-200">
+          {datasets.map((ds) => {
+            const isActive = ds.id === activeDataset;
+            const isLoadingTab = isPending && ds.id === pendingDataset;
+            return (
+              <button
+                className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold transition ${
+                  isActive ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+                key={ds.id}
+                onClick={() => switchDataset(ds.id)}
+                type="button"
+              >
+                {isLoadingTab ? (
+                  <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Database aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {ds.label}
+              </button>
+            );
+          })}
         </div>
         <p className="text-xs text-slate-500">
           Last successful sync:{" "}
@@ -370,6 +428,39 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               value={agentText}
             />
           </label>
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Line
+            <select
+              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              onChange={(event) => setLineValue(event.target.value)}
+              value={lineValue}
+            >
+              <option value="">All lines</option>
+              {data.lineOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Hired from
+            <input
+              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              onChange={(event) => setHireFromText(event.target.value)}
+              type="date"
+              value={hireFromText}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Hired to
+            <input
+              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+              onChange={(event) => setHireToText(event.target.value)}
+              type="date"
+              value={hireToText}
+            />
+          </label>
           {data.dataset !== "checkins" ? (
             <>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -413,6 +504,34 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               </label>
             </>
           ) : null}
+          {data.dataset === "vacations" ? (
+            <>
+              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Min Duration (days)
+                <input
+                  className="w-28 border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                  min="0"
+                  onChange={(event) => setMinDurationText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") applyFilters();
+                  }}
+                  placeholder="e.g. 2"
+                  step="0.5"
+                  type="number"
+                  value={minDurationText}
+                />
+              </label>
+              <label className="flex items-center gap-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <input
+                  checked={halfDaysOnly}
+                  className="h-4 w-4 accent-orange-600"
+                  onChange={(event) => setHalfDaysOnly(event.target.checked)}
+                  type="checkbox"
+                />
+                Half-days only
+              </label>
+            </>
+          ) : null}
           <button className="bg-orange-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-orange-700" onClick={applyFilters} type="button">
             Apply filters
           </button>
@@ -421,10 +540,17 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
       {/* Count + page size + pagination */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-        <p>
-          <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span> records
-          {data.totalCount > 0 ? (
-            <span className="text-slate-400"> · showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
+        <p className="flex items-center gap-2">
+          <span>
+            <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span> records
+            {data.totalCount > 0 ? (
+              <span className="text-slate-400"> · showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
+            ) : null}
+          </span>
+          {isPending ? (
+            <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
+              <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Updating…
+            </span>
           ) : null}
         </p>
         <div className="flex items-center gap-3">
@@ -478,7 +604,8 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
         </div>
       </div>
 
-      {/* Master table with a synced top scrollbar + sticky header */}
+      {/* Master table with a synced top scrollbar + sticky header. Dims during a pending navigation. */}
+      <div className={isPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
       {!data.schemaReady ? (
         <div className="border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
           The iReports360 mirror is not set up yet — no CRM data to show.
@@ -534,6 +661,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

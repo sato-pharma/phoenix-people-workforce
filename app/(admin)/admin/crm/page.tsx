@@ -57,6 +57,11 @@ export default async function CrmHubPage({
   const visitType = stringParam(params.visitType);
   const mappingStatus: CrmMasterMappingStatus | null =
     params.mappingStatus === "agent_mapped" || params.mappingStatus === "agent_unmapped" ? params.mappingStatus : null;
+  const line = stringParam(params.line);
+  const hireFrom = dateParam(params.hireFrom);
+  const hireTo = dateParam(params.hireTo);
+  const minDuration = typeof params.minDuration === "string" && Number.isFinite(Number(params.minDuration)) ? Number(params.minDuration) : null;
+  const halfDaysOnly = params.halfDaysOnly === "1";
 
   const data = await getCrmMasterData({
     agentHrId,
@@ -64,7 +69,12 @@ export default async function CrmHubPage({
     dataset,
     dateFrom,
     dateTo,
+    halfDaysOnly,
+    hireFrom,
+    hireTo,
+    line,
     mappingStatus,
+    minDuration,
     page,
     pageSize,
     search,
@@ -72,7 +82,7 @@ export default async function CrmHubPage({
   });
 
   // Remount the client table when any URL-derived input changes so its filter inputs re-seed.
-  const tableKey = `${dataset}:${dateFrom}:${dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}`;
+  const tableKey = `${dataset}:${dateFrom}:${dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}:${line}:${hireFrom}:${hireTo}:${minDuration}:${halfDaysOnly}`;
 
   return (
     <div className="space-y-5">
