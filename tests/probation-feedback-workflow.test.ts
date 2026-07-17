@@ -81,7 +81,28 @@ export function runProbationFeedbackWorkflowTests() {
   const rem = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
   assert.match(rem, /idempotencyKey: `\$\{slaReminderKey\(task\.dvDayId, state\)\}:\$\{recipientHrId\}`/,
     "one notification per (DV-Day, state, recipient) — no uncontrolled repeats");
-  assert.match(rem, /state === "escalated" \|\| state === "overdue"/, "HR added on escalation/overdue");
+  // Volume fix (2026-07-16 owner report): HR/Super Admin were CC'd on every "escalated" mid-way
+  // warning across the whole company (118 emails to 2 accounts) — trained recipients to stop
+  // opening probation email. HR now only joins at the genuinely urgent "overdue" state; the
+  // evaluator still gets every state so they never lose visibility of their own open task.
+  assert.match(rem, /if \(state === "overdue"\) \{\s*\n\s*for \(const hr of hrApproverHrIds\)/,
+    "HR/Super Admin are only added at the overdue state, not at the escalated warning");
+  assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
+    "HR must not be CC'd on the escalated warning (volume fix)");
+  // REGRESSION GUARD (2026-07-16 owner report): SLA reminder title/message/metrics used the raw
+  // employeeHrId (e.g. "AI-0002") instead of the employee's name, and carried no link to the case
+  // report. Both are fixed by resolving employeeName up front and threading it through, plus a
+  // ctaHref/actionUrl to the live report.
+  assert.match(rem, /resolveEmployeeNames/, "employee names are bulk-resolved for the sweep");
+  assert.match(rem, /const title = `Probation feedback \$\{stateLabel\} — \$\{employeeName\}`/,
+    "title uses the resolved employee name, not the raw HR_ID");
+  assert.match(rem, /const message = `Probation feedback for \$\{employeeName\} \(DV day \$\{task\.dvDate\}\) is \$\{state\}\.`/,
+    "message uses the resolved employee name, not the raw HR_ID");
+  assert.doesNotMatch(rem, /message = `Probation feedback for \$\{task\.employeeHrId\}/,
+    "message must not fall back to interpolating the raw HR_ID");
+  assert.match(rem, /label: "Employee", value: employeeName/, "email metrics show the name, not the code");
+  assert.match(rem, /ctaHref: ctaUrl/, "SLA reminder email links to the live case report");
+  assert.match(rem, /actionUrl: ctaUrl/, "SLA reminder in-app notification links to the live case report");
 
   // ── Routes: coarse gate is probation:read; mutations CSRF-guarded ──
   const submitRoute = src("app/api/probation/dv/[dvDayId]/feedback/route.ts");
