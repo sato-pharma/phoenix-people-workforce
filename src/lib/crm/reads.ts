@@ -54,8 +54,9 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
 ];
 
-/** PostgREST `in` list literal for the resigned ids, e.g. "(832,851,...)". */
-const RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
+/** PostgREST `in` list literal for the resigned ids, e.g. "(832,851,...)" — consumers that query
+ * ireports360 directly use it to `.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)`. */
+export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 
 const DEFAULT_PAGE_SIZE = 1000;
 
@@ -93,7 +94,7 @@ type VisitFilterableQuery = {
 function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): VisitFilterableQuery {
   let result = query;
   // Resigned agents are invisible across every CRM read (single source).
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", RESIGNED_IN_LIST);
+  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
@@ -214,7 +215,7 @@ type CheckinFilterableQuery = {
 function applyCheckinFilter(query: CheckinFilterableQuery, filter: CrmCheckinFilter): CheckinFilterableQuery {
   let result = query;
   // Resigned agents are invisible across every CRM read (single source).
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", RESIGNED_IN_LIST);
+  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
