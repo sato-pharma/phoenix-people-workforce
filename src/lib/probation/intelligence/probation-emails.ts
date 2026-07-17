@@ -15,6 +15,7 @@ import { systemDeployment } from "@/config/system-settings";
 import { getProbationConfig } from "./config";
 import { computeDvProgress, currentProbationDay, type DvDayLite } from "./report-metrics";
 import { createProbationDailyCap, type ProbationDailyCap } from "./notification-cap";
+import { isDateBeforeProbationEmailFreshStart, PROBATION_EMAIL_FRESH_START_ISO } from "./email-fresh-start";
 import { getCaseScore } from "./scoring-service";
 import { probationDaysRemaining } from "@/lib/probation/date";
 import type { ProbationEvaluatorRole } from "./types";
@@ -315,6 +316,9 @@ export async function processProbationWeeklyDigest(nowIso: string = new Date().t
     .select("id, case_id, dv_date, evaluator_role, visit_count, dv_status")
     .gte("dv_date", weekStart)
     .lte("dv_date", today)
+    // FRESH START (owner directive 2026-07-17): the first digests only summarise DV-Days captured
+    // on/after the reset instant — never a catch-up roll-up of pre-reset history.
+    .gte("created_at", PROBATION_EMAIL_FRESH_START_ISO)
     .in("dv_status", ["validated", "feedback_completed"]);
   const dvs = (dvRows ?? []) as Array<{ id: string; case_id: string | null; dv_date: string; evaluator_role: string | null; visit_count: number; dv_status: string }>;
 
@@ -398,6 +402,11 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
           // rep near their decision, and a Resend daily-cap risk). The dedup key still makes re-runs
           // within the window no-ops.
           if (day < m.day || day > m.day + MILESTONE_GRACE_DAYS) continue;
+          // FRESH START (owner directive 2026-07-17): a milestone crossed BEFORE the reset instant
+          // must not fire a catch-up email. crossing date = today − (day − m.day) days.
+          const crossingDate = new Date(new Date(`${today}T00:00:00Z`).getTime() - (day - m.day) * 86_400_000)
+            .toISOString().slice(0, 10);
+          if (isDateBeforeProbationEmailFreshStart(crossingDate)) continue;
           const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
           const recipients = await resolveStakeholders(c.employee_hr_id, { includeSfe: true });
           const employeeName = c.employee_name ?? c.employee_hr_id;
