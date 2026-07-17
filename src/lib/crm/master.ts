@@ -233,6 +233,7 @@ export const CRM_VACATION_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "to_date", kind: "date", label: "To" },
   { key: "duration", kind: "number", label: "Duration (days)", note: "Total days in the period. A half-day (AM or PM only) counts as 0.5, so a period can be 0.5, 1, 1.5, 2 …" },
   { key: "half_days", kind: "number", label: "Half Days", note: "How many of the days in this period were half-days (logged AM or PM only)." },
+  { key: "national_holiday", kind: "text", label: "National Holiday", note: "Set when this leave falls on an official Egyptian holiday (by date) OR the comment names one (Eid, Revolution, Labour Day, Sinai Liberation, Coptic Christmas, official/رسمي…). These rows are tinted amber." },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
   { key: "agent_name", kind: "text", label: "Agent Name" },
@@ -789,6 +790,54 @@ function isNextCalendarDay(prev: string, cur: string): boolean {
   return Number.isFinite(p) && Number.isFinite(c) && c - p === 86_400_000;
 }
 
+/** Official Egyptian public holidays for 2026 (YYYY-MM-DD → name), for flagging "national vacations"
+ * by date. Gregorian-fixed dates are firm; the Islamic/Coptic ones (Eid, Hijri New Year, Sham
+ * El-Nessim, Mawlid) shift by moon/calendar and are best-effort — edit here if the observed dates
+ * differ. Comment-based detection (below) catches the actually-logged holidays regardless of date. */
+const NATIONAL_HOLIDAYS_2026: ReadonlyMap<string, string> = new Map([
+  ["2026-01-07", "Coptic Christmas"],
+  ["2026-01-25", "25 January Revolution / Police Day"],
+  ["2026-03-20", "Eid al-Fitr"],
+  ["2026-03-21", "Eid al-Fitr"],
+  ["2026-03-22", "Eid al-Fitr"],
+  ["2026-04-13", "Sham El-Nessim"],
+  ["2026-04-25", "Sinai Liberation Day"],
+  ["2026-05-01", "Labour Day"],
+  ["2026-05-27", "Eid al-Adha"],
+  ["2026-05-28", "Eid al-Adha"],
+  ["2026-05-29", "Eid al-Adha"],
+  ["2026-05-30", "Eid al-Adha"],
+  ["2026-06-17", "Islamic New Year"],
+  ["2026-06-18", "Islamic New Year"],
+  ["2026-06-30", "30 June Revolution"],
+  ["2026-07-23", "23 July Revolution"],
+  ["2026-08-26", "Prophet's Birthday"],
+  ["2026-10-06", "Armed Forces Day"],
+]);
+
+/** Comment fragments (Arabic is case-insensitive; English lowercased) that mark an official/national
+ * holiday in a leave note — how agents actually log them ("اجازة رسمي", "عيد العمال", "Eid vacation",
+ * "عيد تحرير سيناء", "ثورة ٣٠ يونيو", "Holiday"). */
+const NATIONAL_HOLIDAY_KEYWORDS: readonly string[] = [
+  "رسمي", "عيد", "ثورة", "تحرير", "الهجرية", "المسيح", "النسيم", "مولد", "القوات المسلحة",
+  "official holiday", "national holiday", "national vacation", "public holiday", "holiday", "eid",
+  "feast", "revolution", "liberation", "labour day", "labor day", "christmas", "sinai", "mawlid", "sham el",
+];
+
+/** Flag a vacation period as a national/official holiday if ANY of its days falls on an official
+ * holiday date OR its comment names one. Returns the holiday name (date match preferred) or null. */
+function detectNationalHoliday(run: VacationDayRow[]): string | null {
+  let byDate: string | null = null;
+  let byComment = false;
+  for (const r of run) {
+    const named = NATIONAL_HOLIDAYS_2026.get(String(r.visit_date).slice(0, 10));
+    if (named && !byDate) byDate = named;
+    const c = (r.comment ?? "").toLowerCase();
+    if (c && NATIONAL_HOLIDAY_KEYWORDS.some((kw) => c.includes(kw))) byComment = true;
+  }
+  return byDate ?? (byComment ? "National Holiday" : null);
+}
+
 /** Build one vacation-period row from a run of consecutive day-rows (same agent, sorted by date).
  * Duration sums each day (0.5 for an AM/PM half-day, else 1). Vacation ID = earliest CRM visit id. */
 function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
@@ -816,6 +865,7 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
     agent_name: first.agent_name,
     visit_type_description: first.visit_type_description,
     comment: first.comment,
+    national_holiday: detectNationalHoliday(run),
     raw_payload: {
       visit_ids: ids,
       days: run.map((r) => ({ date: String(r.visit_date).slice(0, 10), ampm: r.ampm || "full", crm_visit_id: r.crm_visit_id })),
