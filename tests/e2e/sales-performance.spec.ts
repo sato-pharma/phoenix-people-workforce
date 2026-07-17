@@ -5,7 +5,7 @@ import { test, expect } from "@playwright/test";
  * Uses the dev preview route (/dev/employee-portals/sales) which renders
  * the SalesPerformancePage with fixture data — no auth required.
  *
- * Run with:  npx playwright test tests/e2e/sales-performance.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/sales-performance.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/dev/employee-portals/sales";

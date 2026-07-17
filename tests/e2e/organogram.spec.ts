@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test";
  * - Mobile responsiveness
  * - Error boundary verification
  *
- * Run with:  npx playwright test tests/e2e/organogram.spec.ts
+ * Run with:  pnpm exec playwright test tests/e2e/organogram.spec.ts
  */
 
 const BASE_URL = "http://localhost:3000/employee-portals/organogram";

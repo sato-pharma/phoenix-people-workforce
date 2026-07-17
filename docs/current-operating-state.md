@@ -89,7 +89,7 @@ If the Vercel plan is ever downgraded to Hobby, fold outbox draining back into t
 
 Current dependency status:
 
-- `npm audit --audit-level=low`: 0 vulnerabilities
+- `pnpm audit --audit-level=low`: 0 vulnerabilities
 - GitHub Dependabot open alerts: 0
 - `xlsx` was removed and replaced with `exceljs`
 - Next.js is pinned to `16.2.6`
@@ -101,10 +101,10 @@ If GitHub reports new security alerts, treat them as a separate security cleanup
 Before pushing code or deploying production, run the relevant checks:
 
 ```bash
-npm run typecheck
-npm run test
-npm run build
-npm audit --audit-level=low
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm audit --audit-level=low
 ```
 
 For documentation-only changes, a full build is optional, but `git diff --check` should still pass.

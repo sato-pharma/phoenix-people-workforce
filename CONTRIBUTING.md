@@ -11,11 +11,11 @@ Phoenix Workforce is a private enterprise HR/workforce platform. This repository
 
 ## Development Workflow
 
-1. Clone the repo and run `npm install`.
+1. Clone the repo and run `pnpm install`.
 2. Copy `.env.example` to `.env.local` and fill in the required environment variables.
-3. Start the dev server with `npm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
-4. Use `npm run check:edit` (typecheck only) as the fast inner loop while editing.
-5. Run `npm run check:harden` (lint + typecheck + test + build) before every commit, push, or PR.
+3. Start the dev server with `pnpm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
+4. Use `pnpm run check:edit` (typecheck only) as the fast inner loop while editing.
+5. Run `pnpm run check:harden` (lint + typecheck + test + build) before every commit, push, or PR.
 6. Never push a broken build.
 
 ## Commit Messages
@@ -50,7 +50,7 @@ Use conventional commit format: `type(scope): description`.
 - Each test file exports a `run<Name>Tests()` function using `node:assert/strict`.
 - Wire new test functions into `tests/run-tests.ts` or they will not execute.
 - E2E tests use Playwright and live in `tests/e2e/`. See `playwright.config.ts` for setup.
-- Run `npm run test` before pushing. Do not merge with failing tests.
+- Run `pnpm run test` before pushing. Do not merge with failing tests.
 
 ## Database & Migration Rules
 
@@ -81,5 +81,5 @@ Automated tooling may be used during development. All changes -- whether manuall
 - Do not hardcode secrets or credentials. Use environment variables.
 - Do not bypass RLS with the service-role client for user-scoped data access.
 - Do not add Vercel crons without approval. Four are already in use; see [docs/deployment.md](docs/deployment.md).
-- Do not skip `npm run check:harden` before pushing or opening a PR.
+- Do not skip `pnpm run check:harden` before pushing or opening a PR.
 - Do not re-implement domain business logic inside components or pages.

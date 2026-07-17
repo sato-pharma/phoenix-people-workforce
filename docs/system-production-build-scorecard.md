@@ -1740,11 +1740,11 @@ Final apply recommendation:
 Prepared commands, not executed:
 
 ```powershell
-npx supabase db push --db-url "$env:SUPABASE_DB_URL" --dry-run
+pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --dry-run
 ```
 
 ```powershell
-npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
 ```
 
 Apply condition:
@@ -1853,7 +1853,7 @@ Reason:
 Blocked apply command:
 
 ```powershell
-npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
 ```
 
 Backup/PITR status:
@@ -1975,7 +1975,7 @@ Recommendation:
 Blocked apply command:
 
 ```powershell
-npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
 ```
 
 Phase 32 score updates:
@@ -2052,7 +2052,7 @@ Reconciliation recommendation:
 Preferred command, prepared but not run:
 
 ```powershell
-npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+pnpm exec supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
 ```
 
 SQL fallback, prepared but not run:
@@ -2149,12 +2149,12 @@ Reason:
 
 Safe checks completed:
 
-- `npm run typecheck` passed.
-- `npm run test` passed.
-- `npm run build` passed.
-- `npm run phase32:production-migration-queue-review` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run test` passed.
+- `pnpm run build` passed.
+- `pnpm run phase32:production-migration-queue-review` passed.
 - Supabase migration dry-run still lists Phase 21 and Phase 28.
-- `npm run phase33:migration-history-reconciliation-gate` passed.
+- `pnpm run phase33:migration-history-reconciliation-gate` passed.
 
 Repair result:
 
@@ -2163,7 +2163,7 @@ Repair result:
 Prepared repair command, not run:
 
 ```powershell
-npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+pnpm exec supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
 ```
 
 Post-repair dry-run output:
@@ -2202,7 +2202,7 @@ Start Phase 35: Approved Phase 21 Migration History Repair Execution.
 
 I confirm Phoenix production backup/PITR is ready, and I explicitly approve running only:
 
-`npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"`
+`pnpm exec supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"`
 
 Do not apply migrations and do not deploy. After repair, run Supabase dry-run only and confirm only Phase 28 remains pending.
 
@@ -2213,7 +2213,7 @@ Approved Phase 21 migration-history repair was executed after explicit approval 
 - Ran only the approved command:
 
 ```powershell
-npx supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
+pnpm exec supabase migration repair 20260518232733 --status applied --db-url "$env:SUPABASE_DB_URL"
 ```
 
 - Supabase CLI result:
@@ -2332,7 +2332,7 @@ Phase 28 apply recommendation:
 Exact blocked apply command:
 
 ```powershell
-npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
+pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --yes
 ```
 
 Apply condition:
@@ -2376,7 +2376,7 @@ Start Phase 36: Approved Phase 28 Production Schema Parity Apply + Post-Apply Ve
 
 I confirm Phoenix production backup/PITR remains ready, and I explicitly approve running only:
 
-`npx supabase db push --db-url "$env:SUPABASE_DB_URL" --yes`
+`pnpm exec supabase db push --db-url "$env:SUPABASE_DB_URL" --yes`
 
 Do not deploy. Do not run any policy cleanup. Apply only the pending Phase 28 schema parity migration, then run post-apply verification.
 

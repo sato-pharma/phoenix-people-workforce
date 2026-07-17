@@ -1,6 +1,6 @@
 // Post-upload health check for the marketing ROI pipeline. Run after every monthly
 // Sales Upload to confirm ROI updated and nothing was silently dropped.
-//   npm run marketing:roi-verify
+//   pnpm run marketing:roi-verify
 // Read-only: calls the STABLE function public.phx_marketing_roi_health().
 
 import { existsSync, readFileSync } from "node:fs";

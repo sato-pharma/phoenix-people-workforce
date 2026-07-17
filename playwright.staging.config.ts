@@ -11,7 +11,7 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Run:
  *   PLAYWRIGHT_BASE_URL="https://phoenix-hr-staging-...run.app" \
- *     npx playwright test --config playwright.staging.config.ts submit-expense
+ *     pnpm exec playwright test --config playwright.staging.config.ts submit-expense
  */
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;

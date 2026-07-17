@@ -6,13 +6,30 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
-RUN npm ci
+# corepack (bundled with node:24) provisions the exact pnpm pinned in
+# package.json's `packageManager` field — no separately-maintained version here.
+# These two layers are deliberately BEFORE the COPY so they stay cached across
+# lockfile changes; the actual pnpm download happens inside the install layer.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+# CACHE KEY (do not reorder): cloudbuild.yaml builds this `deps` stage alone and
+# pushes it as $_CACHE_REPO:deps-cache. This COPY is what keys that layer — it
+# must name pnpm-lock.yaml (NOT package-lock.json, which no longer exists) plus
+# pnpm-workspace.yaml (overrides + allowBuilds change resolution/build behavior),
+# so the expensive install below is reused until one of these three files changes.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# Copy package.json first and bake the pinned pnpm into its own cached layer
+# (`corepack install` reads packageManager) so `pnpm run build` below does not
+# re-download pnpm on every source change.
+COPY package.json ./
+RUN corepack enable && corepack install
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -26,7 +43,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # — gcloud run deploy --source's --set-build-env-vars only reaches the build when Cloud
 # Build picks the Buildpacks path; a Dockerfile like this one gets a plain `docker build`
 # with no --build-arg at all unless the caller passes it explicitly). Declared here and
-# re-exported as ENV so `RUN npm run build` below can see them.
+# re-exported as ENV so `RUN pnpm run build` below can see them.
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
@@ -42,8 +59,7 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 
-# If using npm
-RUN npm run build
+RUN pnpm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -85,6 +101,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # package installed above; PUPPETEER_SKIP_DOWNLOAD prevents a browser download. Installed in a
 # temp dir and merged in so the existing traced node_modules is not pruned. Keep the version in
 # sync with package.json.
+# DELIBERATELY still npm (repo package manager is pnpm): this is an isolated throwaway
+# install of ONE pinned package into /tmp with its own generated package.json — no repo
+# lockfile or workspace settings are involved, npm ships inside node:24-alpine anyway,
+# and pnpm here would need corepack + a store for zero benefit in this final image layer.
 RUN cd /tmp && npm init -y >/dev/null 2>&1 \
  && npm install --omit=dev puppeteer-core@23.11.1 >/dev/null 2>&1 \
  && cp -R /tmp/node_modules/. /app/node_modules/ \
