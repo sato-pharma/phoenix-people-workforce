@@ -177,6 +177,7 @@ const adminNavigationSectionSeeds = [
     id: "command-center",
     items: [
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
+      { href: "/admin/sfe-command-center", icon: LayoutDashboard, label: "SFE Manager Overview", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["SFE Manager"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO"] },
     ],
