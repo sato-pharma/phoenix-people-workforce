@@ -9,12 +9,14 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
 export const dynamic = "force-dynamic";
 
+// Roles that can actually reach AND pass the analytics company-scope gate today
+// (assertCompanyWideSalesAnalyticsAccess). National Sales Manager / Product Manager / Group
+// Product Manager are the intended FUTURE audience but are portal-nav + line-scoped, so they are
+// gated out — re-add them only alongside per-viewer scoping + admin routing (see
+// docs/analytics/role-security.md § Roadmap).
 const SALES_ANALYTICS_BROAD_ROLES = [
   "Super Admin",
   "CEO",
-  "National Sales Manager",
-  "Product Manager",
-  "Group Product Manager",
   "SFE Manager",
 ] as const satisfies readonly PhoenixRole[];
 
@@ -39,7 +41,7 @@ const MODULES = [
       "manager hierarchy, and territory drill-down.",
     badge: "Closing",
     accent: "#059669",
-    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] as const satisfies readonly PhoenixRole[],
+    roles: ["Super Admin", "CEO", "SFE Manager"] as const satisfies readonly PhoenixRole[],
   },
   {
     href: "/admin/analytics/weekly-sales",
