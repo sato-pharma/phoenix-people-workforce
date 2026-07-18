@@ -575,9 +575,13 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     const dateCompare = right.submittedDate.localeCompare(left.submittedDate);
     return dateCompare || left.employeeName.localeCompare(right.employeeName);
   });
-  const payrollCandidates = (candidatesResult.data ?? []).map((row) =>
-    mapPayrollResignationCandidate(row as PayrollResignationCandidateRow),
-  );
+  const payrollCandidates = (candidatesResult.data ?? []).map((row) => {
+    const candidate = mapPayrollResignationCandidate(row as PayrollResignationCandidateRow);
+    return {
+      ...candidate,
+      employeeName: employeesByHrId.get(normalizeHrId(candidate.hrId))?.displayName ?? candidate.employeeName,
+    };
+  });
   const employees = directory.employees
     .map((employee) => ({
       jobTitle: employee.positionTitle ?? employee.jobTitle ?? null,

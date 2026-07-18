@@ -105,8 +105,10 @@ export async function buildConsolidatedReport(
   const feedbacks = (fbRows ?? []) as FeedbackRow[];
   const feedbackByDvDay = new Map(feedbacks.map((f) => [f.dv_day_id, f]));
 
-  // Resolve display names for evaluators AND development-action owners (show names, not HR codes).
+  // Resolve display names for the case's own employee, evaluators, AND development-action owners
+  // (show names, not HR codes).
   const nameHrIds = Array.from(new Set([
+    probationCase.employeeHrId,
     ...dvDays.map((d) => d.evaluator_hr_id),
     ...developmentActions.map((a) => a.ownerHrId),
   ].filter((x): x is string => Boolean(x))));
@@ -189,6 +191,7 @@ export async function buildConsolidatedReport(
   return {
     case: {
       ...probationCase,
+      employeeName: evaluatorNameByHrId.get(probationCase.employeeHrId.toLowerCase()) ?? probationCase.employeeName,
       currentProbationDay: currentProbationDay(probationCase.hireDate, today),
       daysRemaining: probationDaysRemaining(probationCase.hireDate),
     },

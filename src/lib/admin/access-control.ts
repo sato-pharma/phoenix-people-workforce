@@ -156,7 +156,7 @@ function toUser(row: AccessUserDbRow, employee?: EmployeeDirectoryRow): AccessUs
   const line = normalizeLine(row.line ?? employee?.lineName);
   const managerHrId = row.manager_hr_id ?? employee?.managerHrId ?? null;
   const hrId = row.hr_id ?? null;
-  const name = row.name ?? employee?.fullName ?? row.login_id;
+  const name = row.name ?? employee?.displayName ?? row.login_id;
 
   return {
     createdAt: row.created_at,

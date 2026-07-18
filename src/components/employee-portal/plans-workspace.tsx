@@ -3508,7 +3508,7 @@ function ReviewCard({
             <div className="border border-slate-200 p-3" key={p.id}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-black text-slate-900">{p.employeeName}</p>
+                  <p className="font-black text-slate-900">{p.employeeDisplayName || p.employeeName}</p>
                   <p className="text-xs font-semibold text-slate-500">
                     {p.planKind} {p.periodKey} — {statusLabels[p.status]}
                   </p>

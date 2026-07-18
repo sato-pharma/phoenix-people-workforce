@@ -203,6 +203,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
     employeeJobTitle: "Product Manager",
     endDate: "2026-06-21",
     lineName: "Line A",
+    medicalRepDisplayName: "Ahmed Rep",
     medicalRepHrId: "MR-1",
     medicalRepName: "Ahmed Rep",
     notes: null,

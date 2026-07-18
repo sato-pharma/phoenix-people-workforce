@@ -685,7 +685,7 @@ async function medicalRepOptionsForEmployee(
     )
     .map((candidate) => ({
       areaName: candidate.areaName,
-      fullName: candidate.fullName,
+      fullName: candidate.displayName,
       hrId: candidate.hrId,
       lineName: candidate.lineName,
       regionName: candidate.regionName,

@@ -39,6 +39,11 @@ export type PlanningCalendarPlanItem = {
   lineName: string | null;
   medicalRepHrId: string | null;
   medicalRepName: string | null;
+  // Nickname-aware display name for the double-visit medical rep (nickname when
+  // set, else medicalRepName), resolved live against the current employee
+  // directory. Falls back to medicalRepName when the rep can't be resolved
+  // (e.g. a vacant seat or a rep no longer in the directory).
+  medicalRepDisplayName: string | null;
   notes: string | null;
   planId: string;
   planKind: EmployeePlanKind;
@@ -159,7 +164,7 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
 
     const first = group[0];
     const employeeNames = uniqueSorted(group.map((item) => item.employeeDisplayName));
-    const medicalRepName = cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
+    const medicalRepName = cleanText(first.medicalRepDisplayName) || cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
     const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
     const lineName = conflictLineNames.length === 1 ? (conflictLineNames[0] || "Unassigned line") : conflictLineNames.join(" / ");
