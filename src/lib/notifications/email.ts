@@ -15,6 +15,7 @@ import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail, typ
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailNotificationTypes = [
@@ -548,7 +549,7 @@ async function loadEmployeeContact(hrId: string | null | undefined) {
     .from("employees")
     .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
     .eq("hr_id", cleanHrId)
-    .not("employment_status", "in", "(resigned,terminated,inactive)")
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .maybeSingle();
 
   if (error) throw error;
@@ -572,7 +573,7 @@ async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) 
     .from("employees")
     .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
     .not("work_email", "is", null)
-    .not("employment_status", "in", "(resigned,terminated,inactive)");
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`);
 
   if (error) throw error;
 

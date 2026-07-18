@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       hrId: data.hr_id,
+      isActive: !isTerminalEmploymentStatus(data.employment_status),
       jobTitle: data.job_title ?? null,
       name: resolveEmployeeDisplayName(data.full_name, data.nickname),
       status: data.employment_status,
