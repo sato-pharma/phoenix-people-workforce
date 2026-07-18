@@ -101,7 +101,7 @@ export default async function TargetsPage({
     lineTotal = line ? { actualValue: line.actualValue, targetValue: line.targetValue, achievementValue: line.achievementValue } : null;
     byRegion = rollupAchievementByRegion(lineRows)
       .map((entry) => ({
-        region: regionName(entry.key.startsWith(selectedLine) ? entry.key.slice(selectedLine.length) : entry.key),
+        region: regionName(entry.regionCode),
         actualValue: entry.actualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,

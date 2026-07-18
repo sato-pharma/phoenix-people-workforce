@@ -391,9 +391,29 @@ export function rollupAchievementByDm(rows: AchievementRow[]): KeyedAchievement[
   return toKeyed(foldAchievement(rows, (row) => row.dmHrId));
 }
 
-/** Achievement per (line, region). */
-export function rollupAchievementByRegion(rows: AchievementRow[]): KeyedAchievement[] {
-  return toKeyed(foldAchievement(rows, (row) => (row.lineCode && row.regionCode ? `${row.lineCode}${row.regionCode}` : null)));
+/** Separator for the (line, region) composite roll-up key (a control char, never in a code). */
+const REGION_ROLLUP_SEPARATOR = "\u0001";
+
+export type RegionAchievement = KeyedAchievement & { lineCode: string; regionCode: string };
+
+/**
+ * Achievement per (line, region). Carries the CLEAN line/region codes alongside the composite
+ * key so callers display the region straight through regionName(regionCode) — never by parsing
+ * the key (whose separator previously leaked the raw region code into the UI).
+ */
+export function rollupAchievementByRegion(rows: AchievementRow[]): RegionAchievement[] {
+  const folded = foldAchievement(rows, (row) =>
+    row.lineCode && row.regionCode ? `${row.lineCode}${REGION_ROLLUP_SEPARATOR}${row.regionCode}` : null,
+  );
+  return [...folded.entries()].map(([key, total]) => {
+    const at = key.indexOf(REGION_ROLLUP_SEPARATOR);
+    return {
+      key,
+      lineCode: at >= 0 ? key.slice(0, at) : key,
+      regionCode: at >= 0 ? key.slice(at + 1) : "",
+      ...total,
+    };
+  });
 }
 
 /** Achievement per line. */
