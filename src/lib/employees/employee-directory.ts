@@ -669,7 +669,7 @@ async function loadAllOptions(table: string, label = "name") {
 
   const select =
     table === "areas"
-      ? `id,${label},line_id`
+      ? `id,${label},line_id,is_active`
       : table === "teams"
         ? `id,${label},area_id,is_active`
         : `id,${label}`;
@@ -2097,6 +2097,21 @@ async function reassignLiveManagerOwnership(input: {
   );
 }
 
+// Server-side backstop: an area_id must reference an existing, ACTIVE area (the 42 canonical areas).
+// The picker only offers active areas, but a raw API call could still send a retired/unknown id — reject it.
+// null is allowed (managers/office staff carry no sales area).
+async function assertActiveCanonicalArea(areaId: number | null | undefined): Promise<void> {
+  if (areaId == null) return;
+  const rows = await supabaseRest<Array<{ id: number; is_active: boolean | null }>>(
+    `areas?id=eq.${areaId}&select=id,is_active`,
+  );
+  const found = rows[0];
+  if (!found) throw new Error(`Area ${areaId} does not exist.`);
+  if (found.is_active === false) {
+    throw new Error(`Area ${areaId} is inactive (retired) and cannot be assigned.`);
+  }
+}
+
 export async function upsertEmployee(input: EmployeeMutationInput) {
   const hrId = normalizeHrId(input.hrId);
   const originalHrId = normalizeHrId(input.originalHrId);
@@ -2127,6 +2142,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   }
 
   const payload = await employeePayload(input, isUpdate);
+  await assertActiveCanonicalArea(payload.area_id);
   const params = new URLSearchParams({
     on_conflict: "hr_id",
   });
@@ -2204,6 +2220,10 @@ export async function bulkUpdateEmployees(
 
   if (employmentStatus !== undefined && !statusOptions.includes(employmentStatus)) {
     throw new Error(`Employment status ${employmentStatus} is not allowed.`);
+  }
+
+  if (values.areaId !== undefined) {
+    await assertActiveCanonicalArea(numberOrNull(values.areaId));
   }
 
   const payload = {
