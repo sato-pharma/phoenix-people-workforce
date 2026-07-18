@@ -1,4 +1,5 @@
 import { getRequiredEnv } from "@/lib/env";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import {
   normalizePayrollPaymentMode,
   resolveFixedSalaryAmounts,
@@ -2045,7 +2046,7 @@ async function reassignLiveManagerOwnership(input: {
   };
 
   await patchOptionalTable(
-    `employees?manager_hr_id=eq.${previous}&employment_status=not.in.(resigned,terminated,inactive)`,
+    `employees?manager_hr_id=eq.${previous}&or=(employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST})`,
     nextPayload,
   );
 
