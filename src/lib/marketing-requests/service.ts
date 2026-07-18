@@ -709,6 +709,23 @@ export function resolveStoredEmployeeHrId(
   return resolveStoredHrId(value, byHrId);
 }
 
+/**
+ * Whether `value` is present in `byHrId` — i.e. currently an ACTIVE employee, since
+ * `byHrId` is always built from the active-only directory in production. Distinct from
+ * `resolveStoredEmployeeHrId`, which deliberately returns a value even when the id is
+ * absent (so a write referencing an already-resigned employee's own historical row still
+ * satisfies the employees FK). Use this wherever a NEW assignment specifically requires a
+ * currently active employee — `resolveStoredEmployeeHrId`'s return value alone cannot
+ * distinguish "found and active" from "resigned, but the FK-safe fallback still applies".
+ */
+export function isActiveEmployeeHrId(
+  value: string | null | undefined,
+  byHrId?: Map<string, EmployeeDirectoryRow>,
+): boolean {
+  const key = normalizeHrId(value);
+  return Boolean(key && byHrId?.has(key));
+}
+
 export function sameEmployeeDepartment(viewer: EmployeeDirectoryRow | undefined, target: EmployeeDirectoryRow | undefined) {
   if (!viewer || !target) return true;
 
@@ -1611,10 +1628,14 @@ async function createMarketingApprovalSteps(params: {
   }) => {
     // Store the approver against the employee master's real casing — the
     // `assigned_hr_id` FK to employees(hr_id) is case-sensitive. A gating approver that
-    // is not a current employee is a hard configuration error (fail loudly, before the
-    // generic FK violation); a non-employee CC reviewer is advisory, so silently skip it.
+    // is not a CURRENT (active) employee is a hard configuration error (fail loudly,
+    // before the generic FK violation); a non-employee CC reviewer is advisory, so
+    // silently skip it. `resolveStoredEmployeeHrId` alone can't detect "resigned": it
+    // deliberately still returns a display-cased HR_ID when the id is absent from
+    // `byHrId` (e.g. a stale `direct_manager` scope pointing at someone who has since
+    // resigned), so active status is checked separately via `isActiveEmployeeHrId`.
     const storedHrId = resolveStoredEmployeeHrId(input.assignedHrId, byHrId);
-    if (!storedHrId) {
+    if (!isActiveEmployeeHrId(input.assignedHrId, byHrId) || !storedHrId) {
       if (input.isCc) return;
       throw validationError(
         `The approver for the "${input.stepName}" step is not a current employee. Ask an administrator to assign an active employee to the ${input.assignedRole} role before submitting this marketing request.`,
