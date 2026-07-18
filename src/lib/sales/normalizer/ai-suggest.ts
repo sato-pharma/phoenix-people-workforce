@@ -13,6 +13,7 @@
 // With no key it is a no-op and the UI hides the button.
 
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
+import { recordAiCall } from "@/lib/observability/ai-metrics";
 
 export type AiCandidate = { code: string; label: string };
 // rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
@@ -149,30 +150,54 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
     temperature: 0,
   });
 
-  for (let attempt = 0; ; attempt += 1) {
-    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-      body: body_,
-      headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
-      method: "POST",
-    });
-    if (res.ok) {
-      const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-      return json.choices?.[0]?.message?.content ?? "{}";
-    }
-    const respBody = await res.text().catch(() => "");
-    if (res.status === 429 && !isQuotaExhausted(respBody)) {
-      if (attempt < MAX_RATE_LIMIT_RETRIES) {
-        // Exponential backoff with jitter: base, 2x base, 4x base (+ up to 250ms jitter).
-        await delay(2 ** attempt * rateLimitRetryBaseMs() + Math.floor(Math.random() * 250));
-        continue;
+  const startedAt = Date.now();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+        body: body_,
+        headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          choices?: { message?: { content?: string } }[];
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+        recordAiCall({
+          component: "sales_normalizer_ai_suggest",
+          inputTokens: json.usage?.prompt_tokens,
+          latencyMs: Date.now() - startedAt,
+          model: provider.model,
+          outputTokens: json.usage?.completion_tokens,
+          purpose: `ai_suggest_${kind}`,
+          status: "success",
+        });
+        return json.choices?.[0]?.message?.content ?? "{}";
       }
-      throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+      const respBody = await res.text().catch(() => "");
+      if (res.status === 429 && !isQuotaExhausted(respBody)) {
+        if (attempt < MAX_RATE_LIMIT_RETRIES) {
+          // Exponential backoff with jitter: base, 2x base, 4x base (+ up to 250ms jitter).
+          await delay(2 ** attempt * rateLimitRetryBaseMs() + Math.floor(Math.random() * 250));
+          continue;
+        }
+        throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+      }
+      if (res.status === 429) {
+        throw new Error("AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.");
+      }
+      if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
+      throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(respBody)}`);
     }
-    if (res.status === 429) {
-      throw new Error("AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.");
-    }
-    if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
-    throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(respBody)}`);
+  } catch (error) {
+    recordAiCall({
+      component: "sales_normalizer_ai_suggest",
+      latencyMs: Date.now() - startedAt,
+      model: provider.model,
+      purpose: `ai_suggest_${kind}`,
+      status: "error",
+    });
+    throw error;
   }
 }
 
