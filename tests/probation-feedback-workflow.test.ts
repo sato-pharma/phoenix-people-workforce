@@ -81,6 +81,9 @@ export function runProbationFeedbackWorkflowTests() {
   const rem = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
   assert.match(rem, /idempotencyKey: `\$\{slaReminderKey\(task\.dvDayId, state\)\}:\$\{recipientHrId\}`/,
     "one notification per (DV-Day, state, recipient) — no uncontrolled repeats");
+  // TRAINING-MANAGER OPT-OUT (owner rule 2026-07-18): TM feedback is optional — a TM-evaluated DV-Day
+  // never generates an SLA reminder or escalation (paired with requirements.tm = 0).
+  assert.match(rem, /t\.evaluatorRole !== "tm"/, "TM-evaluated DV-Days are excluded from the SLA reminder sweep");
   // RECIPIENT LADDER (MOD-2, 2026-07-17 owner report): the 3 SLA reminders (timings unchanged
   // 24/48/72h) now widen the audience per stage instead of CC'ing HR company-wide from the middle
   // warning (118 emails to 2 accounts trained recipients to stop opening probation email):

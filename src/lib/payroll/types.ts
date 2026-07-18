@@ -200,6 +200,13 @@ export type PayrollDashboardData = {
   flags: SalaryFlag[];
   previousRecords: SalaryRecord[];
   records: SalaryRecord[];
+  resignationCandidateCount: number;
+  resignationCandidates: Array<{
+    fullName: string;
+    hrId: string;
+    lastPayoutMonth: number;
+    lastPayoutYear: number;
+  }>;
   scope: "all_time" | "batch";
   summary: {
     anomalyCount: number;

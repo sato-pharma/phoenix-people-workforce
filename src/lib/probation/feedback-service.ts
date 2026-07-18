@@ -1,4 +1,5 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -654,12 +655,15 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   const probationVisited = visitedHrIds.filter(hrId => probByHrId.has(hrId));
   if (probationVisited.length === 0) return;
 
-  // Load visitor roles from app_auth_users
+  // Load visitor roles from app_auth_users. normalizeHrId lowercases, but app_auth_users.hr_id is
+  // stored UPPERCASE and PostgREST `.in` is case-SENSITIVE — so expand every casing/alias variant
+  // (same fix dv-sync uses for its cohort scope). Without this the role map is always empty and NO
+  // checkbox ever auto-ticks (a silent no-op, previously masked by 0 active probation rows).
   const visitorHrIds = Array.from(new Set(rows.map(r => normalizeHrId(r.double_visitor_hr_id)).filter(Boolean) as string[]));
   const { data: authUsers } = await db
     .from("app_auth_users")
     .select("hr_id,role")
-    .in("hr_id", visitorHrIds)
+    .in("hr_id", Array.from(new Set(visitorHrIds.flatMap(hrIdLookupKeys))))
     .eq("is_active", true);
 
   type AuthRow = { hr_id: string; role: string };
@@ -667,11 +671,12 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
     (authUsers ?? [] as AuthRow[]).map((u: AuthRow) => [normalizeHrId(u.hr_id) ?? u.hr_id, u.role]),
   );
 
-  // Load employees table for DM resolution (manager_hr_id)
+  // Load employees table for DM resolution (manager_hr_id). Same casing fix — employees.hr_id is
+  // UPPERCASE, probationVisited is lowercase; expand variants so the case-sensitive `.in` matches.
   const { data: employees } = await db
     .from("employees")
     .select("hr_id,manager_hr_id")
-    .in("hr_id", probationVisited);
+    .in("hr_id", Array.from(new Set(probationVisited.flatMap(hrIdLookupKeys))));
 
   type EmpRow = { hr_id: string; manager_hr_id: string | null };
   const empByHrId = new Map<string, EmpRow>(

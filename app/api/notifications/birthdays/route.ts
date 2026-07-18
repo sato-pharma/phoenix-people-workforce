@@ -3,6 +3,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
+import { isBirthdayEligibleEmployee } from "@/lib/notifications/birthday-eligibility";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -58,10 +59,7 @@ export async function runBirthdayNotifications(request: Request) {
 
   if (error) throw error;
 
-  const activeEmployees = ((data ?? []) as BirthdayEmployeeRow[]).filter((employee) => {
-    const active = !employee.employment_status || employee.employment_status === "active";
-    return active && employee.birth_date;
-  });
+  const activeEmployees = ((data ?? []) as BirthdayEmployeeRow[]).filter(isBirthdayEligibleEmployee);
   const [monthText, dayText] = today.split("-");
   const birthdayEvents = buildHrCalendarEvents(
     activeEmployees.map((employee) => ({

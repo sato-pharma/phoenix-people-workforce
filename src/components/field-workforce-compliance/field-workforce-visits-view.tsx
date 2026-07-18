@@ -14,7 +14,7 @@ type Visit = {
   contactName: string | null;
   customerName: string | null;
   id: number;
-  kind: "campaign" | "regular";
+  kind: "campaign" | "regular" | "other";
   mode: "single" | "double";
   partnerName: string | null;
   role: "primary" | "double";
@@ -126,10 +126,12 @@ export function FieldWorkforceVisitsView({
                       className={
                         visit.kind === "campaign"
                           ? "inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700"
-                          : "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
+                          : visit.kind === "regular"
+                            ? "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
+                            : "inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
                       }
                     >
-                      {visit.kind === "campaign" ? "Campaign" : "Regular"}
+                      {visit.kind === "campaign" ? "Campaign" : visit.kind === "regular" ? "Regular" : "Other"}
                     </span>
                     <div className="mt-0.5 text-[10px] text-slate-400">
                       {visit.visitTypeDescription ?? `type:${visit.visitType}`}

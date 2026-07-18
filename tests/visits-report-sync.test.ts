@@ -217,4 +217,36 @@ export function runVisitsReportSyncTests() {
     /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(error: unknown\) => \{\s*console\.error\(error, \{ tags: \{ cron: "ireports360-visits-sync-dv-tick" \} \}\);\s*\}\);/,
     "a failed DV-tick must still be reported to Sentry, isolated from the otherwise-successful visits sync",
   );
+
+  // Fix #10: the WIDE reconcile must ALSO feed probation — a DV landed >10 days old (past the daily
+  // sync's window) reaches probation only here; otherwise it shows in DV Analytics but never on a
+  // probation checkbox. Both steps run over the reconcile's own slice window, each isolated so a
+  // probation failure can't fail the reconcile.
+  const reconcileRouteSource = readFileSync("app/api/cron/ireports360-visits-reconcile/route.ts", "utf8");
+  assert.match(
+    reconcileRouteSource,
+    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(/,
+    "the wide reconcile must run the DV-checkbox tick over its slice window (isolated with .catch)",
+  );
+  assert.match(
+    reconcileRouteSource,
+    /syncProbationDvDays\(getSupabaseAdmin\(\), \{ dateFrom, dateTo \}\)\.catch\(/,
+    "the wide reconcile must run the probation DV-day sync over its slice window (isolated with .catch)",
+  );
+
+  // Fix #8: tickDvCheckboxesFromSync builds hr-id lists via normalizeHrId (lowercase) but
+  // app_auth_users / employees store hr_id UPPERCASE and PostgREST .in is case-sensitive — it must
+  // expand every casing variant (hrIdLookupKeys), or every role/DM lookup returns [] and NO checkbox
+  // ever ticks (a silent no-op).
+  const feedbackServiceSource = readFileSync("src/lib/probation/feedback-service.ts", "utf8");
+  assert.match(
+    feedbackServiceSource,
+    /\.in\("hr_id", Array\.from\(new Set\(visitorHrIds\.flatMap\(hrIdLookupKeys\)\)\)\)/,
+    "the app_auth_users role lookup must expand hr-id casing variants so the case-sensitive .in matches",
+  );
+  assert.match(
+    feedbackServiceSource,
+    /\.in\("hr_id", Array\.from\(new Set\(probationVisited\.flatMap\(hrIdLookupKeys\)\)\)\)/,
+    "the employees DM lookup must expand hr-id casing variants so the case-sensitive .in matches",
+  );
 }

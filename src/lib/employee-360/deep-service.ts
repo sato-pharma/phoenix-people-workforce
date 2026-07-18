@@ -841,6 +841,9 @@ export type LeadershipActivity = {
   /** Bounded before/after aggregate across double-visited reps (Training Managers only); null otherwise or when the sample is empty. */
   impact: ImpactSet | null;
   impactRepCount: number;
+  /** True when any underlying read hit its cap (impact 12k / dv 8k / coaching 3k) — the counts may
+   * undercount; surfaced in summaryText. */
+  truncated: boolean;
   summaryText: string;
 };
 
@@ -888,15 +891,15 @@ function foldImpactMetricsAcross(list: ImpactMetrics[]): ImpactMetrics {
 // page-load-safe read. `dvByRep` is keyed by lower(agent_hr_id).
 async function computeLeaderImpact(
   dvByRep: Map<string, { exactIds: Set<string>; dates: string[] }>,
-): Promise<{ impact: ImpactSet | null; repCount: number }> {
+): Promise<{ impact: ImpactSet | null; repCount: number; truncated: boolean }> {
   const capped = Array.from(dvByRep.entries())
     .sort((a, b) => b[1].dates.length - a[1].dates.length)
     .slice(0, MAX_IMPACT_REPS);
-  if (capped.length === 0) return { impact: null, repCount: 0 };
+  if (capped.length === 0) return { impact: null, repCount: 0, truncated: false };
 
   const exactIds = Array.from(new Set(capped.flatMap(([, v]) => Array.from(v.exactIds)))).filter(Boolean);
   const allDates = capped.flatMap(([, v]) => v.dates).sort();
-  if (exactIds.length === 0 || allDates.length === 0) return { impact: null, repCount: 0 };
+  if (exactIds.length === 0 || allDates.length === 0) return { impact: null, repCount: 0, truncated: false };
   const minDate = addDays(allDates[0], -(IMPACT_WINDOW_DAYS + 1));
   const maxDate = addDays(allDates[allDates.length - 1], IMPACT_WINDOW_DAYS + 1);
 
@@ -908,6 +911,8 @@ async function computeLeaderImpact(
     columns: "agent_hr_id, visit_date, visit_type, visit_type_description, comment, contact_crm_id, contact_name, customer_name",
     limit: 12000,
   });
+  // The 12,000-row cap (newest-first) can silently drop older rows and skew the before/after window.
+  const truncated = data.length >= 12000;
 
   const rowsByRep = new Map<string, ProductiveRow[]>();
   for (const r of data) {
@@ -928,7 +933,7 @@ async function computeLeaderImpact(
     if (rows.length === 0) continue;
     perRep.push(poolImpact(rows, v.dates, IMPACT_WINDOW_DAYS));
   }
-  if (perRep.length === 0) return { impact: null, repCount: 0 };
+  if (perRep.length === 0) return { impact: null, repCount: 0, truncated: false };
 
   return {
     impact: {
@@ -938,6 +943,7 @@ async function computeLeaderImpact(
       after: foldImpactMetricsAcross(perRep.map((p) => p.after)),
     },
     repCount: perRep.length,
+    truncated,
   };
 }
 
@@ -959,9 +965,10 @@ async function getLeadershipActivity(
       .gte("coaching_date", window.from)
       .lte("coaching_date", window.to)
       .limit(3000),
-    // Double visits CONDUCTED by this leader — read through the CRM single door.
+    // Double visits CONDUCTED by this leader — read through the CRM single door (which matches
+    // hr ids case-insensitively, so the raw id suffices; `keys` stays for the coaching query).
     queryVisitsLimited<ConductedDvRow>({
-      doubleHrIds: keys,
+      doubleHrIds: [hrId],
       dateFrom: window.from,
       dateTo: window.to,
       columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
@@ -1041,17 +1048,22 @@ async function getLeadershipActivity(
   recentCoaching.sort((a, b) => b.date.localeCompare(a.date));
   recentDv.sort((a, b) => b.date.localeCompare(a.date));
 
-  const { impact, repCount } = computeImpact
+  const { impact, repCount, truncated: impactTruncated } = computeImpact
     ? await computeLeaderImpact(dvByRepForImpact)
-    : { impact: null, repCount: 0 };
+    : { impact: null, repCount: 0, truncated: false };
+  // Honest cap signal across all three underlying reads (impact 12k, dv 8k, coaching 3k).
+  const truncated = impactTruncated || dvRows.length >= 8000 || (coachRes.data?.length ?? 0) >= 3000;
 
   const avgScoreGiven = scoreCountAll > 0 ? scoreSumAll / scoreCountAll : null;
   const hasData = coachRows.length > 0 || dvRows.length > 0;
-  const summaryText = !hasData
+  const baseSummaryText = !hasData
     ? "No coaching reports authored or double-visits conducted in this period."
     : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvRows.length} double-visit${dvRows.length === 1 ? "" : "s"}, ` +
       `reaching ${distinctRepsReached} distinct rep${distinctRepsReached === 1 ? "" : "s"}` +
       (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".");
+  const summaryText = truncated
+    ? `${baseSummaryText} Some rows were capped for performance, so these figures may undercount.`
+    : baseSummaryText;
 
   return {
     hasData,
@@ -1066,6 +1078,7 @@ async function getLeadershipActivity(
     recentDv: recentDv.slice(0, 12),
     impact,
     impactRepCount: repCount,
+    truncated,
     summaryText,
   };
 }
