@@ -13,6 +13,7 @@ import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notification
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { processProbationWeeklyDigest } from "@/lib/probation/intelligence/probation-emails";
+import { runDvPlannerWeeklyDigest } from "@/lib/double-visit-analytics/weekly-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
@@ -48,6 +49,12 @@ async function runDailyNotifications(request: Request) {
     recruitment,
     telegramDigest,
     weeklySystemHealthDigest,
+    // Pre-existing off-by-one (found 2026-07-18 while wiring in dvPlannerWeeklyDigest below): this
+    // name was missing, so every result from here on was captured one position off (e.g.
+    // outstationGeocodeWarmup actually held the probation digest's result). The jobs themselves
+    // were unaffected — each has its own .catch() and runs regardless of destructuring position —
+    // only this diagnostic JSON response was mislabeled.
+    probationWeeklyDigest,
     outstationGeocodeWarmup,
     fieldWorkforceComplianceDigest,
     fieldWorkforceComplianceDeductionsAutoSync,
@@ -58,6 +65,7 @@ async function runDailyNotifications(request: Request) {
     excuseDrift,
     rateLimitPrune,
     errorEventsPrune,
+    dvPlannerWeeklyDigest,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-birthday" } });
@@ -137,6 +145,12 @@ async function runDailyNotifications(request: Request) {
       logError("app_error_events retention prune failed", { labels: { event: "cron_failed", job: "error-events-prune" }, error: e });
       return { deleted: null, error: String(e) };
     }),
+    // DV Planner weekly review digest (Wave 2, F4) — self-gates to one Cairo weekday, same
+    // convention as processProbationWeeklyDigest above. Safe to call daily; a non-digest day is a no-op.
+    runDvPlannerWeeklyDigest().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "dv-planner-weekly-digest" } });
+      return { scanned: 0, sent: 0, error: String(e) };
+    }),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -147,6 +161,7 @@ async function runDailyNotifications(request: Request) {
   return NextResponse.json({
     birthdays,
     contractRenewals,
+    dvPlannerWeeklyDigest,
     excuseSla,
     fieldWorkforceComplianceDeductionsAutoSync,
     fieldWorkforceComplianceDigest,
@@ -154,6 +169,7 @@ async function runDailyNotifications(request: Request) {
     marketingSla,
     outstationGeocodeWarmup,
     outstationSla,
+    probationWeeklyDigest,
     rateLimitPrune,
     errorEventsPrune,
     recruitment,
