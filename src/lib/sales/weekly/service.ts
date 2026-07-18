@@ -1376,7 +1376,7 @@ export async function loadWeeklyProductScopeAdmin(): Promise<WeeklyProductScopeA
     const key = canonicalHrIdKey(employee.hrId);
     if (!key) continue;
     const role = normalizeRole(employee.positionTitle ?? employee.jobTitle);
-    byHrKey.set(key, { name: employee.fullName || employee.hrId, role });
+    byHrKey.set(key, { name: employee.displayName || employee.hrId, role });
   }
 
   const assignments = [...assignmentsByHrId.entries()]
