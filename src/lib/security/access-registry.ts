@@ -287,6 +287,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/comment", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/resubmit", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Super-Admin-only direct-sales tracking toggle (Phase D). GET reads the flag; POST is
+  // the mutation (Super-Admin gate enforced in the service). csrf is applied to the POST.
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/marketing-requests/:id/track-direct-sales", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/marketing-requests/**", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // Customer Pharmacy Mapping — standalone read-only master-data governance. Role gate lives in the
   // domain helper (assertCustomerPharmacyMappingAccess); Phase 1 is Super Admin + CEO only.
