@@ -11,14 +11,14 @@
 //  - Productive visits = visit_type ∈ {0 Regular, -8 Campaign}. Everything else
 //    (Meeting -11, Vacation -4, Training -9, …) is admin/non-visit and is bucketed
 //    explicitly — NEVER defaulted to campaign.
-//  - agent_hr_id casing is inconsistent in the CRM feed; match via hrIdLookupKeys.
+//  - agent_hr_id casing is inconsistent in the CRM feed; the CRM read door matches it
+//    case-insensitively, so callers pass the raw hr id.
 //  - Field-force work week (owner-confirmed, matches the CRM data): Sat–Wed are
 //    full working days, Thursday is AM-only (half day), Friday is off. Saturday
 //    IS a working day. Only Friday is excluded from working-days (utilization);
 //    the day-of-week charts dim Friday and lighten Thursday.
 
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
   COMPANY_CHECKIN_HOUR_SHARE,
@@ -199,7 +199,8 @@ export function defaultWindow(): Employee360Window {
 
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
   return queryVisits<VisitRow>({
-    agentHrIds: hrIdLookupKeys(hrId),
+    // The CRM read door matches hr ids case-insensitively — pass the raw id.
+    agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
     columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
@@ -208,7 +209,7 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
 
 export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
   return queryCheckins<CheckinRow>({
-    agentHrIds: hrIdLookupKeys(hrId),
+    agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
     columns: "check_date,lat,lon",

@@ -30,7 +30,7 @@ import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
 export type IReports360RepDayVisit = IReports360Visit & {
-  kind: "campaign" | "regular";
+  kind: "campaign" | "regular" | "other";
   mode: "single" | "double";
   partnerName: string | null;
   role: "primary" | "double";
@@ -204,7 +204,10 @@ async function buildRepDayResult(
         : null;
       return {
         ...visit,
-        kind: visit.visitType === 0 ? "regular" : "campaign",
+        // Only Regular (0) and Campaign (-8) are fieldwork; everything else (Vacation, Meeting,
+        // Training, …) is "other" — labeling it "campaign" was wrong. The real vendor label still
+        // shows via visitTypeDescription.
+        kind: visit.visitType === 0 ? "regular" : visit.visitType === -8 ? "campaign" : "other",
         mode: hasPartner ? "double" : "single",
         partnerName,
         role,
