@@ -7,6 +7,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { normalizeHrId } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { probationEndDate, probationStartDate } from "@/lib/probation/date";
 
@@ -106,6 +107,65 @@ export async function getProbationCaseByEmployee(
     throw error;
   }
   return data ? mapProbationCaseRow(data as unknown as ProbationCaseRow) : null;
+}
+
+/**
+ * Defense-in-depth cross-check for the legacy-decision desync bug.
+ *
+ * The LEGACY probation workflow (runProbationWorkflow → applyDecisionSideEffects) resolves an
+ * employee by writing `employee_probation.status` and `employees.employment_status`, but historically
+ * never mirrored the outcome into `probation_cases`. That leaves a `probation_cases` row stranded at
+ * status='active' / decision=null, so the CEO dashboard and the milestone-email sweep (both of which
+ * read only `.eq("status","active")`) keep treating a fully-resolved rep as an open case.
+ *
+ * Given a set of "active" case rows, this drops any whose employee is in fact already resolved:
+ *   - `employee_probation.status IN ('passed','terminated')` — this is the ONLY signal that catches a
+ *     legacy PASS, which leaves `employment_status = 'active'` and is otherwise indistinguishable
+ *     from a genuinely undecided case; and
+ *   - `employees.employment_status` terminal (outside the active/on_leave set) — catches a legacy
+ *     termination / resignation.
+ *
+ * FAILS OPEN: any lookup error (or a completely clean cohort) returns the input array unchanged, so a
+ * transient monitoring-query failure can never crash the caller or hide a live case. HR_IDs are
+ * compared case-insensitively.
+ */
+export async function filterResolvedProbationCases<T extends { employee_hr_id: string }>(
+  rows: T[],
+): Promise<T[]> {
+  if (rows.length === 0) return rows;
+  const hrIds = Array.from(
+    new Set(rows.map((r) => r.employee_hr_id).filter((x): x is string => Boolean(x))),
+  );
+  if (hrIds.length === 0) return rows;
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const [empRes, probRes] = await Promise.all([
+      supabase.from("employees").select("hr_id, employment_status").in("hr_id", hrIds),
+      supabase.from("employee_probation").select("employee_hr_id, status").in("employee_hr_id", hrIds),
+    ]);
+    // Fail open: never hide data (or crash) on a monitoring-query error.
+    if (empRes.error || probRes.error) return rows;
+
+    const terminalEmp = new Set<string>();
+    for (const e of (empRes.data ?? []) as Array<{ hr_id: string; employment_status: string | null }>) {
+      if (isTerminalEmploymentStatus(e.employment_status)) terminalEmp.add(e.hr_id.toLowerCase());
+    }
+    const resolvedProbation = new Set<string>();
+    for (const p of (probRes.data ?? []) as Array<{ employee_hr_id: string; status: string | null }>) {
+      const status = String(p.status ?? "").trim().toLowerCase();
+      if (status === "passed" || status === "terminated") resolvedProbation.add(p.employee_hr_id.toLowerCase());
+    }
+    if (terminalEmp.size === 0 && resolvedProbation.size === 0) return rows;
+
+    return rows.filter((r) => {
+      const key = r.employee_hr_id.toLowerCase();
+      return !terminalEmp.has(key) && !resolvedProbation.has(key);
+    });
+  } catch {
+    // Fail open on any unexpected error (schema missing, transient network) — behave as today.
+    return rows;
+  }
 }
 
 /**

@@ -66,6 +66,54 @@ function optionsFor(
   }
 }
 
+// Owns the in-progress keystroke locally instead of mirroring `values[key]` directly —
+// that prop only updates ~300ms later via the debounce → router.push → server round-trip,
+// so a plain controlled input snaps back to the stale value mid-keystroke. `lastPushedRef`
+// tracks what THIS field last typed so its own round-trip confirmation doesn't clobber
+// newer local typing; an external change (e.g. a "clear filters" action elsewhere) still
+// gets adopted because it won't match the ref.
+function TextSearchFilterField({
+  current,
+  descriptorKey,
+  label,
+  onDebouncedChange,
+  placeholder,
+}: {
+  current: string;
+  descriptorKey: string;
+  label: string;
+  onDebouncedChange: (key: string, value: string) => void;
+  placeholder?: string;
+}) {
+  const [localValue, setLocalValue] = React.useState(current);
+  const lastPushedRef = React.useRef(current);
+
+  React.useEffect(() => {
+    if (current !== lastPushedRef.current) {
+      setLocalValue(current);
+      lastPushedRef.current = current;
+    }
+  }, [current]);
+
+  return (
+    <label className="flex h-[58px] min-w-[180px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]">
+      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</span>
+      <input
+        type="text"
+        value={localValue}
+        placeholder={placeholder}
+        onChange={(event) => {
+          const value = event.target.value;
+          setLocalValue(value);
+          lastPushedRef.current = value;
+          onDebouncedChange(descriptorKey, value);
+        }}
+        className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"
+      />
+    </label>
+  );
+}
+
 export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false, visibility }: AnalyticsFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -173,19 +221,14 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
         const currentRaw = values[descriptor.key];
         const current = typeof currentRaw === "string" ? currentRaw : "";
         return (
-          <label
+          <TextSearchFilterField
             key={descriptor.key}
-            className="flex h-[58px] min-w-[180px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
-          >
-            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
-            <input
-              type="text"
-              defaultValue={current}
-              placeholder={descriptor.placeholder}
-              onChange={(event) => setDebouncedValue(descriptor.key, event.target.value)}
-              className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"
-            />
-          </label>
+            current={current}
+            descriptorKey={descriptor.key}
+            label={descriptor.label}
+            onDebouncedChange={setDebouncedValue}
+            placeholder={descriptor.placeholder}
+          />
         );
       })}
       {comparable ? (

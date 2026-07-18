@@ -4,7 +4,10 @@ import { NextRequest } from "next/server";
 
 import {
   clearSessionActivity,
+  handlePossibleSessionDeath,
+  isSessionInvalidated,
   markSessionActivity,
+  markSessionInvalidated,
   phoenixLastActivityStorageKey,
   phoenixSessionTimeoutReason,
   readSessionActivityAt,
@@ -78,6 +81,69 @@ export async function runAuthSessionTests() {
   assert.equal(readSessionActivityAt(storage), 1_800_000_000_000);
   clearSessionActivity(storage);
   assert.equal(readSessionActivityAt(storage), null);
+
+  // ===========================================================================
+  // Heartbeat/logout race guard: distinguishes "your session just died" from a
+  // genuine permission-denied 403 (see src/lib/auth/client-session.ts).
+  // ===========================================================================
+  assert.equal(isSessionInvalidated(), false, "session must not start invalidated");
+  assert.equal(
+    handlePossibleSessionDeath({ status: 403 }),
+    false,
+    "handlePossibleSessionDeath is a no-op outside a browser (no window)",
+  );
+
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  const assignedUrls: string[] = [];
+  (globalThis as { window?: unknown }).window = {
+    location: {
+      assign(url: string) {
+        assignedUrls.push(url);
+      },
+    },
+  };
+  try {
+    assert.equal(
+      handlePossibleSessionDeath({ status: 403 }),
+      false,
+      "a plain 403 is not treated as a session death before the guard has been tripped",
+    );
+    assert.equal(assignedUrls.length, 0, "no redirect for a genuine permission-denied 403");
+
+    assert.equal(
+      handlePossibleSessionDeath({ status: 401 }),
+      true,
+      "401 is always treated as a session death",
+    );
+    assert.equal(assignedUrls.at(-1), `/login?reason=${phoenixSessionTimeoutReason}`);
+
+    markSessionInvalidated("test_reason");
+    assert.equal(isSessionInvalidated(), true, "marking invalidation must be observable");
+    assert.equal(
+      handlePossibleSessionDeath({ status: 403 }),
+      true,
+      "a 403 counts as a session death once the guard has been tripped",
+    );
+    assert.equal(assignedUrls.at(-1), `/login?reason=${phoenixSessionTimeoutReason}`);
+  } finally {
+    if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = originalWindow;
+  }
+
+  const sessionSecurityGuardSource = readFileSync(
+    new URL("../src/components/auth/session-security-guard.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    sessionSecurityGuardSource,
+    /markSessionInvalidated\("client_idle_timeout"\)/,
+    "client-detected idle timeout must mark the session invalidated before clearing cookies",
+  );
+  assert.match(
+    sessionSecurityGuardSource,
+    /markSessionInvalidated\("heartbeat_401"\)/,
+    "heartbeat 401 must mark the session invalidated before the logout redirect",
+  );
 
   // ===========================================================================
   // WP-3: read-time session lifecycle governance.

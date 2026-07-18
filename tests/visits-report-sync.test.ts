@@ -217,4 +217,59 @@ export function runVisitsReportSyncTests() {
     /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(error: unknown\) => \{\s*console\.error\(error, \{ tags: \{ cron: "ireports360-visits-sync-dv-tick" \} \}\);\s*\}\);/,
     "a failed DV-tick must still be reported to Sentry, isolated from the otherwise-successful visits sync",
   );
+
+  // Fix #10: the WIDE reconcile must ALSO feed probation — a DV landed >10 days old (past the daily
+  // sync's window) reaches probation only here; otherwise it shows in DV Analytics but never on a
+  // probation checkbox. Both steps run over the reconcile's own slice window, each isolated so a
+  // probation failure can't fail the reconcile.
+  const reconcileRouteSource = readFileSync("app/api/cron/ireports360-visits-reconcile/route.ts", "utf8");
+  assert.match(
+    reconcileRouteSource,
+    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(/,
+    "the wide reconcile must run the DV-checkbox tick over its slice window (isolated with .catch)",
+  );
+  assert.match(
+    reconcileRouteSource,
+    /syncProbationDvDays\(getSupabaseAdmin\(\), \{ dateFrom, dateTo \}\)\.catch\(/,
+    "the wide reconcile must run the probation DV-day sync over its slice window (isolated with .catch)",
+  );
+
+  // Fix #8: tickDvCheckboxesFromSync builds hr-id lists via normalizeHrId (lowercase) but
+  // app_auth_users / employees store hr_id UPPERCASE and PostgREST .in is case-sensitive — it must
+  // expand every casing variant (hrIdLookupKeys), or every role/DM lookup returns [] and NO checkbox
+  // ever ticks (a silent no-op).
+  const feedbackServiceSource = readFileSync("src/lib/probation/feedback-service.ts", "utf8");
+  assert.match(
+    feedbackServiceSource,
+    /\.in\("hr_id", Array\.from\(new Set\(visitorHrIds\.flatMap\(hrIdLookupKeys\)\)\)\)/,
+    "the app_auth_users role lookup must expand hr-id casing variants so the case-sensitive .in matches",
+  );
+  assert.match(
+    feedbackServiceSource,
+    /\.in\("hr_id", Array\.from\(new Set\(probationVisited\.flatMap\(hrIdLookupKeys\)\)\)\)/,
+    "the employees DM lookup must expand hr-id casing variants so the case-sensitive .in matches",
+  );
+
+  // Fix B (2026-07-18 data-fidelity audit): the legacy checkbox auto-tick must apply the SAME
+  // probation-window gate as the authoritative probation_dv_days path — a DV outside the
+  // employee's window [hire_date, probation_end_date] must NOT tick a checkbox that DV-Day
+  // validation would reject as outside_probation_window (they diverged silently before).
+  assert.match(
+    feedbackServiceSource,
+    /import \{ withinWindow \} from "\.\/intelligence\/dv-validation";/,
+    "the checkbox tick must reuse the DV-Day validation window predicate (one source of window semantics)",
+  );
+  assert.match(
+    feedbackServiceSource,
+    /withinWindow\(dvRow\.visit_date, empByHrId\.get\(visitedHrId\)\?\.hire_date \?\? null, probRecord\.probation_end_date\)/,
+    "each DV must be window-gated against the employee's probation window before ticking a checkbox",
+  );
+  // Fix B (deeper, 2026-07-18): PM/GPM checkbox tick must skip the CNS line the SAME way
+  // probation_dv_days does (dv-validation keys on line_name === 'cns'), not only via the legacy
+  // NULL-column sentinel — so the two can't disagree on whether a PM/GPM DV counts.
+  assert.match(
+    feedbackServiceSource,
+    /const isCns = String\(visitedEmp\?\.line_name \?\? ""\)\.trim\(\)\.toLowerCase\(\) === "cns";/,
+    "PM/GPM checkbox tick must determine CNS via line_name, matching probation_dv_days",
+  );
 }

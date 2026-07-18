@@ -15,7 +15,10 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
+import {
+  getProbationCaseByEmployee,
+  isMedicalRepresentativeTitle,
+} from "@/lib/probation/intelligence/cases";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
@@ -1206,5 +1209,57 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
       .eq("category", "probation")
       .in("status", ["scheduled", "pending"]);
     if (error && !isProbationSchemaMissing(error)) throw error;
+  }
+
+  // Write-through to the NEW probation_cases model. The legacy workflow above resolves the employee
+  // (employee_probation + employees), but the CEO Probation Decision Dashboard and the milestone-email
+  // sweep read `probation_cases`. Without this a legacy-decided rep stays a permanently "active" case:
+  // it keeps getting milestone emails and keeps accepting feedback. Best-effort — never let a mirror
+  // failure break the legacy decision that already succeeded.
+  await mirrorLegacyDecisionToProbationCase(record);
+}
+
+/**
+ * Mirror a completed LEGACY probation decision into the new `probation_cases` model so the two
+ * systems stay in sync. Idempotent and non-overwriting: only the FIRST writer (decision still null,
+ * status still active) records the outcome. `side_effects_applied_at` is set so the new module's
+ * `decideProbation` will NOT re-drive side effects (resignation/employee update already happened via
+ * the legacy path). Best-effort: any failure is recorded to the provisioning-failure monitoring sink
+ * and swallowed, never propagated into the legacy decision flow.
+ */
+async function mirrorLegacyDecisionToProbationCase(record: ProbationWorkflowRecord) {
+  if (!record.decision) return;
+  try {
+    const probationCase = await getProbationCaseByEmployee(record.employeeHrId);
+    if (!probationCase) return; // non-med-rep / pre-module employee — nothing to mirror
+    if (probationCase.decision || probationCase.status !== "active") return; // already decided elsewhere — never overwrite
+    const now = new Date().toISOString();
+    const { error } = await getSupabaseAdmin()
+      .from("probation_cases")
+      .update({
+        decision: record.decision, // "pass" | "terminate" — same vocabulary, no translation
+        decision_reason: record.decisionReason ?? null,
+        decision_by: record.completedBy ?? record.approvedBy ?? "legacy_probation",
+        decision_at: now,
+        status: "decided",
+        // Load-bearing: tells the NEW module its side effects were already applied via the legacy
+        // path, so decideProbation won't re-drive them (double resignation / employee update).
+        side_effects_applied_at: now,
+        updated_at: now,
+      })
+      .eq("id", probationCase.id)
+      .is("decision", null); // idempotency: only the first writer sets the decision
+    if (error) throw error;
+  } catch (error) {
+    // Best-effort monitoring only — never let mirroring failure break the legacy decision.
+    try {
+      await getSupabaseAdmin().from("probation_provisioning_failures").insert({
+        employee_hr_id: record.employeeHrId,
+        source: "legacy_decision_writethrough",
+        error_message: String((error as { message?: unknown })?.message ?? error),
+      });
+    } catch {
+      /* best-effort */
+    }
   }
 }
