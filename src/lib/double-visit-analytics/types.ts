@@ -265,6 +265,43 @@ export type DoubleVisitFocusProbationEntry = {
   probationEndDate: string;
 };
 
+// ── DV Planner: every active Medical Rep in the viewer's scope, one row each, for a
+// chosen period — not just the ones who happen to have activity in that window. ────
+
+export type DoubleVisitCadenceBand = "healthy" | "warning" | "critical";
+
+export type DoubleVisitRosterEntry = {
+  areaName: string | null;
+  /** Cadence band from days-since-last-DV (regardless of the selected window): healthy <=30,
+   * warning 31-60, critical >60 or never (reuses the buildMrScores 30/60 thresholds). */
+  cadenceBand: DoubleVisitCadenceBand;
+  /** Convenience flag: cadenceBand !== "healthy". Drives the "overdue only" filter + digest count. */
+  cadenceOverdue: boolean;
+  daysSinceHire: number | null;
+  /** Days since this rep's most recent double visit measured from TODAY (not dateTo), looked back
+   * over CADENCE_LOOKBACK_DAYS. Null when no DV found within the lookback window. */
+  daysSinceLastVisit: number | null;
+  /** Never visited in the selected period AND overdue (daysSinceHire >= NEVER_VISITED_FLAG_DAYS). */
+  flagged: boolean;
+  hireDate: string | null;
+  hrId: string;
+  /** Most recent activityDate among this rep's double visits in the selected period, else null. */
+  lastVisitDate: string | null;
+  /** Most recent double-visit date within the cadence lookback, even if before the selected
+   * window — this is what distinguishes "getting stale" from "truly never visited". */
+  lastVisitDateEver: string | null;
+  lineName: string | null;
+  managerHrId: string | null;
+  managerName: string | null;
+  name: string;
+  onProbation: boolean;
+  probationDaysRemaining: number | null;
+  probationDvDone: boolean | null;
+  /** Count of double-visit records for this rep within the selected period. */
+  visitCount: number;
+  visited: boolean;
+};
+
 export type DoubleVisitScopeFocus = {
   coveragePct: number | null;
   coveredCount: number;
@@ -324,6 +361,8 @@ export type DoubleVisitReportData = {
   };
   neverVisited: DoubleVisitFocusRosterEntry[];
   probation: DoubleVisitFocusProbationEntry[];
+  /** Every active Medical Rep in the viewer's scope for [dateFrom, dateTo] — see DV Planner. */
+  roster: DoubleVisitRosterEntry[];
   rows: DoubleVisitReportRow[];
   schemaReady: boolean;
 };

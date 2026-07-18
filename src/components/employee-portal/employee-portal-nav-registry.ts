@@ -2,6 +2,7 @@ import {
   Activity,
   BriefcaseBusiness,
   Building2,
+  CalendarCheck2,
   CalendarClock,
   CalendarCheck2,
   CalendarDays,
