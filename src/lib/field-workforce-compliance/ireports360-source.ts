@@ -69,6 +69,7 @@ export type FieldWorkforceEmployeeInput = Pick<
   DirectoryRow,
   | "crmId"
   | "crmUsername"
+  | "displayName"
   | "employmentStatus"
   | "fullName"
   | "hireDate"
@@ -442,7 +443,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     });
 
     matrix.push([
-      employee.fullName ?? "",
+      employee.displayName ?? "",
       employee.hrId,
       employee.hireDate ? String(employee.hireDate).slice(0, 10) : "",
       month,
@@ -516,7 +517,7 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
     areaName: employee.areaName,
     departmentName: employee.departmentName,
     employmentStatus: employee.employmentStatus,
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hireDate: employee.hireDate,
     hrId: employee.hrId,
     jobTitle: employee.jobTitle,
@@ -567,6 +568,7 @@ export type VisitsMirrorRow = {
   agent_hr_id?: string | null;
   agent_name: string | null;
   ampm?: string | null;
+  comment?: string | null;
   contact_crm_id?: number | null;
   contact_name?: string | null;
   crm_save_date?: string | null;
@@ -580,7 +582,9 @@ export type VisitsMirrorRow = {
 /** Maps a mirror row (ireports360_visits) onto the matrix-builder visit shape. Carries the
  * mirror's already-resolved agent_hr_id / double_hr_id (visits-report's sync-time
  * override->crm_id->username resolution) so the matrix builder can trust them for identity.
- * Other CRM fields are unused by the matrix builder and left null. visit_type is never null
+ * The `comment` is carried through because the excuse-labeled-AV detector (dayHasExcuseLabeledAv)
+ * reads it to tell a real vacation apart from an "Afternoon Excuse"; other unused CRM fields are
+ * left null. visit_type is never null
  * in production today (verified), so a null here fails loudly rather than silently defaulting
  * to a "regular visit" and miscounting compliance. Exported for the mirror-row-mapping parity
  * test in tests/field-workforce-compliance-eligibility.test.ts. */
@@ -595,7 +599,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     ampm: row.ampm ?? null,
     attendance: null,
     callType: null,
-    comment: null,
+    comment: row.comment ?? null,
     contactID: row.contact_crm_id ?? null,
     contactName: row.contact_name ?? null,
     customerName: null,
@@ -639,7 +643,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
     dateFrom: startDate,
     dateTo: endDate,
     columns:
-      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, " +
+      "agent_crm_id, agent_hr_id, agent_name, ampm, comment, contact_crm_id, contact_name, crm_save_date, " +
       "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
   });
 }

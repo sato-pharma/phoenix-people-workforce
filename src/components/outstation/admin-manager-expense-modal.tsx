@@ -44,7 +44,7 @@ type DistanceResult = {
 type EmployeeLookup =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "found"; name: string; jobTitle: string | null }
+  | { status: "found"; name: string; jobTitle: string | null; isActive: boolean }
   | { status: "not_found" }
   | { status: "error"; message: string };
 
@@ -199,7 +199,7 @@ export function AdminManagerExpenseModal({
 
   const initialName = targetName ?? request?.employeeName ?? null;
   const [employeeLookup, setEmployeeLookup] = useState<EmployeeLookup>(
-    initialName ? { status: "found", name: initialName, jobTitle: null } : { status: "idle" },
+    initialName ? { status: "found", name: initialName, jobTitle: null, isActive: true } : { status: "idle" },
   );
   const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -217,6 +217,7 @@ export function AdminManagerExpenseModal({
       const response = await fetch(url.toString());
       const payload = (await response.json()) as {
         hrId?: string;
+        isActive?: boolean;
         jobTitle?: string | null;
         message?: string;
         name?: string;
@@ -228,7 +229,12 @@ export function AdminManagerExpenseModal({
             : { status: "error", message: payload.message ?? "Lookup failed." },
         );
       } else {
-        setEmployeeLookup({ status: "found", jobTitle: payload.jobTitle ?? null, name: payload.name });
+        setEmployeeLookup({
+          isActive: payload.isActive !== false,
+          jobTitle: payload.jobTitle ?? null,
+          name: payload.name,
+          status: "found",
+        });
       }
     } catch {
       setEmployeeLookup({ status: "error", message: "Could not reach the server." });
@@ -524,12 +530,22 @@ export function AdminManagerExpenseModal({
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-[#F97316]" />
                   Looking up employee...
                 </div>
-              ) : employeeLookup.status === "found" ? (
+              ) : employeeLookup.status === "found" && employeeLookup.isActive ? (
                 <div className="mt-2 flex items-center gap-2 rounded-md bg-[#F0FDF4] px-3 py-2 text-xs font-black text-[#047857]">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   {employeeLookup.name}
                   {employeeLookup.jobTitle ? (
                     <span className="font-semibold text-[#047857]/70">
+                      {" — "}{employeeLookup.jobTitle}
+                    </span>
+                  ) : null}
+                </div>
+              ) : employeeLookup.status === "found" && !employeeLookup.isActive ? (
+                <div className="mt-2 flex items-center gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#9A3412]">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-[#EA580C]" />
+                  Found — but not currently active: {employeeLookup.name}
+                  {employeeLookup.jobTitle ? (
+                    <span className="font-semibold text-[#9A3412]/70">
                       {" — "}{employeeLookup.jobTitle}
                     </span>
                   ) : null}

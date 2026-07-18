@@ -40,7 +40,7 @@ async function employeeNameByHrId(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const row of rows) {
     const key = canonicalHrIdKey(row.hrId);
-    if (key) map.set(key, row.fullName);
+    if (key) map.set(key, row.displayName);
   }
   return map;
 }

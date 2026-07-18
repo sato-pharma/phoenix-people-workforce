@@ -15,7 +15,10 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
+import {
+  getProbationCaseByEmployee,
+  isMedicalRepresentativeTitle,
+} from "@/lib/probation/intelligence/cases";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
@@ -484,15 +487,15 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
           tm_dv_done_at: probation.tm_dv_done_at ?? null,
           tm_dv_done_manually: probation.tm_dv_done_manually ?? false,
         } : null,
-        full_name: employee.fullName,
+        full_name: employee.displayName,
         hire_date: employee.hireDate ?? "",
         hr_id: employee.hrId,
         job_title: employee.positionTitle ?? employee.jobTitle ?? "Unassigned",
         line_name: employee.lineName ?? "Unassigned",
         manager_hr_id: employee.managerHrId,
         manager_manager_hr_id: managerManager?.hrId ?? null,
-        manager_manager_name: managerManager?.fullName ?? null,
-        manager_name: employee.managerName ?? manager?.fullName ?? null,
+        manager_manager_name: managerManager?.displayName ?? null,
+        manager_name: employee.managerName ?? manager?.displayName ?? null,
         has_durable_probation_record: Boolean(probation),
         probation_end_date: probationEndDate,
         probation_id: probation?.id === undefined ? null : String(probation.id),
@@ -523,7 +526,7 @@ async function insertHistory(
   if (error && !isProbationSchemaMissing(error)) throw error;
 }
 
-async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: string, tone: "success" | "warning" | "danger") {
+async function notifyProbationWorkflow(record: ProbationWorkflowRecord, employeeDisplayName: string, title: string, tone: "success" | "warning" | "danger") {
   await createSystemNotification({
     actionUrl: "/api/probation/redirect",
     actorId: "system",
@@ -532,20 +535,20 @@ async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: s
       ctaLabel: "Open probation tracker",
       employeeHrId: record.employeeHrId,
       metrics: [
-        { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
+        { label: "Employee", value: `${employeeDisplayName} (${record.employeeHrId})` },
         { label: "Status", value: record.status },
         { label: "Decision", value: record.decision ?? "Pending" },
       ],
       notificationType: "probation",
-      subject: `Phoenix ${title} - ${record.employeeName}`,
-      summary: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+      subject: `Phoenix ${title} - ${employeeDisplayName}`,
+      summary: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
       // The admin-editable probation_workflow template renders an employee detail table
       // ({{line}}/{{jobTitle}}/{{endDate}}); the generic metric→context mapping leaves
       // those tokens empty. Fill them from the workflow record so the email is not blank.
       templateContext: {
         area: record.areaName ?? "—",
         employeeHrId: record.employeeHrId,
-        employeeName: record.employeeName,
+        employeeName: employeeDisplayName,
         endDate: record.probationEndDate ?? "—",
         jobTitle: record.jobTitle ?? "—",
         line: record.lineName ?? "—",
@@ -554,7 +557,7 @@ async function notifyProbationWorkflow(record: ProbationWorkflowRecord, title: s
       tone,
     },
     eventType: "workflow_updated",
-    message: `Probation review for ${record.employeeName} is now ${record.status.replace(/_/g, " ")}.`,
+    message: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
     metadata: {
       decision: record.decision ?? null,
       employeeHrId: record.employeeHrId,
@@ -706,8 +709,8 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
       event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
       metadata: {
         href: `/api/probation/redirect?action=feedback&employeeHrId=${employee.hrId}&cycle=${cycleNumber}`,
-        message: `${employee.fullName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
-        title: `${employee.fullName}'s probation feedback is due`,
+        message: `${employee.displayName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
+        title: `${employee.displayName}'s probation feedback is due`,
         days_after_hire: reminder.daysAfterHire,
         days_remaining: reminder.daysRemaining,
         hire_date: employee.hireDate,
@@ -716,7 +719,7 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
         cycle_number: cycleNumber,
         workflowApproverHrIds,
         details: [
-          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+          { label: "Employee", value: `${employee.displayName} (${employee.hrId})` },
           { label: "Days remaining", value: `${reminder.daysRemaining}` },
           { label: "Status", value: "Feedback required" },
           { label: "Action", value: "Submit feedback" },
@@ -725,7 +728,7 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
       recipients,
       scheduled_for: reminder.scheduledFor,
       status: "pending",
-      subject: `${employee.fullName}'s probation feedback is due`,
+      subject: `${employee.displayName}'s probation feedback is due`,
       updated_at: now,
     };
   });
@@ -876,7 +879,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
     const daysRemainingValue = Number.isFinite(daysRemaining) ? daysRemaining : row.days_remaining;
-    const reminderManagerName = employee.managerName ?? managerOf(employee, employees)?.fullName ?? "Team";
+    const reminderManagerName = employee.managerName ?? managerOf(employee, employees)?.displayName ?? "Team";
     const actionUrl = `/api/probation/redirect?employeeHrId=${encodeURIComponent(employee.hrId)}`;
     const notificationResult = await createSystemNotification({
       actionUrl,
@@ -886,13 +889,13 @@ export async function processDueProbationReminderEvents(limit = 25) {
         ctaLabel: "Open Probation Review",
         employeeHrId: employee.hrId,
         metrics: [
-          { label: "Employee", value: `${employee.fullName} (${employee.hrId})` },
+          { label: "Employee", value: `${employee.displayName} (${employee.hrId})` },
           { label: "Hire date", value: employee.hireDate ?? "-" },
           { label: "Days remaining", value: String(daysRemainingValue) },
         ],
         notificationType: "probation",
-        subject: event.subject ?? `Probation reminder: ${employee.fullName}`,
-        summary: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+        subject: event.subject ?? `Probation reminder: ${employee.displayName}`,
+        summary: `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
         // The admin-editable probation_reminder template renders a detail table whose
         // cells use {{line}}/{{jobTitle}}/{{area}}/{{hireDate}}/{{endDate}}/{{duration}}
         // plus a "Dear {{managerName}}" greeting. The generic metric→context mapping in
@@ -903,7 +906,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
           area: employee.areaName ?? "—",
           duration: `${daysRemainingValue} day${daysRemainingValue === 1 ? "" : "s"} remaining`,
           employeeHrId: employee.hrId,
-          employeeName: employee.fullName,
+          employeeName: employee.displayName,
           endDate: row.probation_end_date ?? "—",
           hireDate: employee.hireDate ?? "—",
           jobTitle: employee.jobTitle ?? "—",
@@ -914,19 +917,19 @@ export async function processDueProbationReminderEvents(limit = 25) {
         tone: row.days_remaining <= 15 ? "danger" : "warning",
       },
       eventType: "reminder_due",
-      message: `${employee.fullName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+      message: `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
       metadata: {
         ...metadata,
         actionUrl,
         area: employee.areaName ?? null,
         department: employee.departmentName ?? null,
         employeeHrId: employee.hrId,
-        employeeName: employee.fullName,
+        employeeName: employee.displayName,
         eventDate: todayDateOnly(),
         hiringDate: employee.hireDate ?? null,
         idempotencyKey: `probation-reminder:${event.id}:policy`,
         line: employee.lineName ?? null,
-        managerName: employee.managerName ?? managerOf(employee, employees)?.fullName ?? null,
+        managerName: employee.managerName ?? managerOf(employee, employees)?.displayName ?? null,
         requestUrl: actionUrl,
         status: "Feedback required",
         team: employee.teamName ?? null,
@@ -1054,7 +1057,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
   const record = mapEvaluation(data as ProbationEvaluationDbRow);
   await ensureProbationReminderEvents(employee, employees);
   await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
-  await notifyProbationWorkflow(record, "Probation Evaluation Created", "warning");
+  await notifyProbationWorkflow(record, employee.displayName, "Probation Evaluation Created", "warning");
   invalidateExecutiveDashboardCache("probation evaluation created", ["probation"]);
   return record;
 }
@@ -1146,6 +1149,7 @@ export async function runProbationWorkflow(
   await insertHistory(updated, action, actor, row.status, { decisionReason: cleanText(input.decisionReason), note });
   await notifyProbationWorkflow(
     updated,
+    employee.displayName,
     action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
     updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
   );
@@ -1205,5 +1209,57 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
       .eq("category", "probation")
       .in("status", ["scheduled", "pending"]);
     if (error && !isProbationSchemaMissing(error)) throw error;
+  }
+
+  // Write-through to the NEW probation_cases model. The legacy workflow above resolves the employee
+  // (employee_probation + employees), but the CEO Probation Decision Dashboard and the milestone-email
+  // sweep read `probation_cases`. Without this a legacy-decided rep stays a permanently "active" case:
+  // it keeps getting milestone emails and keeps accepting feedback. Best-effort — never let a mirror
+  // failure break the legacy decision that already succeeded.
+  await mirrorLegacyDecisionToProbationCase(record);
+}
+
+/**
+ * Mirror a completed LEGACY probation decision into the new `probation_cases` model so the two
+ * systems stay in sync. Idempotent and non-overwriting: only the FIRST writer (decision still null,
+ * status still active) records the outcome. `side_effects_applied_at` is set so the new module's
+ * `decideProbation` will NOT re-drive side effects (resignation/employee update already happened via
+ * the legacy path). Best-effort: any failure is recorded to the provisioning-failure monitoring sink
+ * and swallowed, never propagated into the legacy decision flow.
+ */
+async function mirrorLegacyDecisionToProbationCase(record: ProbationWorkflowRecord) {
+  if (!record.decision) return;
+  try {
+    const probationCase = await getProbationCaseByEmployee(record.employeeHrId);
+    if (!probationCase) return; // non-med-rep / pre-module employee — nothing to mirror
+    if (probationCase.decision || probationCase.status !== "active") return; // already decided elsewhere — never overwrite
+    const now = new Date().toISOString();
+    const { error } = await getSupabaseAdmin()
+      .from("probation_cases")
+      .update({
+        decision: record.decision, // "pass" | "terminate" — same vocabulary, no translation
+        decision_reason: record.decisionReason ?? null,
+        decision_by: record.completedBy ?? record.approvedBy ?? "legacy_probation",
+        decision_at: now,
+        status: "decided",
+        // Load-bearing: tells the NEW module its side effects were already applied via the legacy
+        // path, so decideProbation won't re-drive them (double resignation / employee update).
+        side_effects_applied_at: now,
+        updated_at: now,
+      })
+      .eq("id", probationCase.id)
+      .is("decision", null); // idempotency: only the first writer sets the decision
+    if (error) throw error;
+  } catch (error) {
+    // Best-effort monitoring only — never let mirroring failure break the legacy decision.
+    try {
+      await getSupabaseAdmin().from("probation_provisioning_failures").insert({
+        employee_hr_id: record.employeeHrId,
+        source: "legacy_decision_writethrough",
+        error_message: String((error as { message?: unknown })?.message ?? error),
+      });
+    } catch {
+      /* best-effort */
+    }
   }
 }

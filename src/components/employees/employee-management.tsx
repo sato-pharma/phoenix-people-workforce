@@ -1307,7 +1307,7 @@ export function EmployeeManagement({
             }
           : current,
       );
-      setNotice(`Resignation recorded for ${resigningEmployee.fullName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
+      setNotice(`Resignation recorded for ${resigningEmployee.displayName}. Vacancy ${payload.data?.vacancyCode ?? "opened"} created and employee moved to ${resignationForm.employeeStatus}.`);
       closeResignation();
     } catch {
       setResignationError("Unable to process employee resignation.");
@@ -2634,7 +2634,7 @@ export function EmployeeManagement({
                 </div>
               ) : null}
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                <p className="font-semibold text-rose-900">{resigningEmployee.fullName}</p>
+                <p className="font-semibold text-rose-900">{resigningEmployee.displayName}</p>
                 <p className="mt-1 text-sm text-rose-800">
                   {resigningEmployee.hrId} · {emptyText(resigningEmployee.positionTitle ?? resigningEmployee.jobTitle)} · {emptyText(resigningEmployee.areaName)}
                 </p>

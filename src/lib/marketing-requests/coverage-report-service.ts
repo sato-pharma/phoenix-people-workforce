@@ -429,7 +429,7 @@ async function buildCoverageIndex(access: AccessContext, revealRestricted: boole
       requestId: request.id,
       requestCode: request.requestCode,
       requesterHrId: requesterKey,
-      requesterName: requesterRow?.fullName ?? null,
+      requesterName: requesterRow?.displayName ?? null,
       managerHrId: request.managerHrId,
       status: request.status,
       requestTypeId: request.requestTypeId,

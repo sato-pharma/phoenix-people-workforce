@@ -14,6 +14,7 @@ import {
   type VacancyReportData,
   type VacancyReportDiagnostic,
 } from "@/lib/reports/vacancies";
+import { buildOrganogramSeatReport, scopeAuOrganogramRows } from "@/lib/reports/organogram-au-source";
 
 export type OrganogramScopeMode = "company" | "line";
 
@@ -298,14 +299,17 @@ export async function getOrganogramReport(
     });
   }
 
-  const report = await getVacancyReport();
-  const scoped = scopeOrganogramReportData(report, options);
+  // Area-unification rebuild: organogram rows now come from the seat model (au),
+  // not the manager_hr_id + job-title heuristics. Access scoping + Head Office
+  // stripping are preserved.
+  const seatReport = await buildOrganogramSeatReport();
+  let scopedRows = scopeAuOrganogramRows(seatReport.organogramRows, options);
 
   if (options.mode === "company" && !canAccessHeadOffice(access)) {
-    return stripHeadOfficeRows(scoped);
+    scopedRows = scopedRows.filter((row) => !isHeadOfficeRow(row));
   }
 
-  return scoped;
+  return { organogramRows: scopedRows, rows: [], summary: seatReport.summary };
 }
 
 /**

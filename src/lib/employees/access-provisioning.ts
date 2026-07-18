@@ -73,7 +73,7 @@ export async function provisionNewHireAccess(input: {
           line: employee.lineName,
           loginId: hrId,
           managerHrId: employee.managerHrId,
-          name: employee.fullName,
+          name: employee.displayName,
           role: resolveEmployeeAccessRole(employee),
         },
         input.actor,

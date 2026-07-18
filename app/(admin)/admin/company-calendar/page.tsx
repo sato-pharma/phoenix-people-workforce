@@ -22,7 +22,7 @@ export default async function AdminCompanyCalendarPage() {
   // resource permission either (the workspace is company-visible by design), and the CEO
   // role does not hold hr_calendar in the effective permission matrix. Mutations still go
   // through /api/calendar, which enforces its own checks.
-  if (!(access.role === "CEO" || canAccessSystemAdministratorWorkspace(access))) {
+  if (!canAccessSystemAdministratorWorkspace(access)) {
     redirect("/admin");
   }
 

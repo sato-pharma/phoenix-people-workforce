@@ -280,7 +280,7 @@ function downloadCsv(filename: string, csvContent: string) {
 function exportEntitlementsCSV(data: VacationEmployeeEligibilityRow[]) {
   const header = ["HR ID", "Full Name", "Department", "Line", "Hire Date", "Days Since Hire", "6-Month Date", "Eligibility", "Entitlement Days", "Used Days", "Balance Days", "Manager", "Review Flags"];
   const rows = data.map((r) => [
-    csvEscape(r.hrId), csvEscape(r.fullName), csvEscape(r.departmentName), csvEscape(r.lineName),
+    csvEscape(r.hrId), csvEscape(r.displayName), csvEscape(r.departmentName), csvEscape(r.lineName),
     csvEscape(r.hireDate), csvEscape(r.daysSinceHire), csvEscape(r.sixMonthAnniversary),
     csvEscape(eligibilityStatusLabel(r.eligibilityStatus)),
     csvEscape(r.annualEntitlementDays), csvEscape(r.annualUsedDays), csvEscape(r.annualBalanceDays),
@@ -800,7 +800,7 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-900">{row.fullName}</p>
+          <p className="text-[13px] font-bold text-slate-900">{row.displayName}</p>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
             {row.hrId} {[row.departmentName, row.lineName].filter(Boolean).join(" / ") ? ` · ${[row.departmentName, row.lineName].filter(Boolean).join(" / ")}` : ""}
           </p>
@@ -1798,7 +1798,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <tr key={row.hrId} className="bg-white transition hover:bg-emerald-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[12px] font-bold text-slate-900">{row.hrId}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-bold text-slate-900">{row.fullName}</p>
+                          <p className="font-bold text-slate-900">{row.displayName}</p>
                           <p className="mt-0.5 text-[11px] font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
                           <p className="text-[11px] text-slate-400">{row.employmentStatus ?? "-"}</p>
                         </td>

@@ -399,7 +399,7 @@ async function notifyManagerOfExcuse(input: {
   const managerActionUrl = actionCenterHref(input.request.id);
   const title = input.type === "resubmitted" ? "Excuse resubmitted for approval" : "Excuse approval required";
   const verb = input.type === "resubmitted" ? "resubmitted" : "submitted";
-  const message = `${input.request.employeeName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
+  const message = `${input.employee.displayName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
   const occurrenceKey = input.occurrenceKey ?? input.request.createdAt;
   await createSystemNotification({
     actionUrl: managerActionUrl,
@@ -411,14 +411,14 @@ async function notifyManagerOfExcuse(input: {
       employeeHrId: input.request.employeeHrId,
       includeHrInbox: true,
       metrics: [
-        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Employee", value: `${input.employee.displayName} (${input.request.employeeHrId})` },
         { label: "Excuse type", value: typeLabel },
         { label: "Date", value: input.request.excuseDate },
         { label: "Duration", value: `${input.request.durationHours} hours` },
       ],
       notificationType: "general",
       recipients: [input.manager.workEmail as string],
-      subject: `Excuse approval: ${input.request.employeeName}`,
+      subject: `Excuse approval: ${input.employee.displayName}`,
       summary: message,
       // The manager-facing editable template shows Job Title/Line/Area/Duration; the metric
       // mapping does not fill those fields, so supply them explicitly to avoid blank cells.
@@ -504,7 +504,7 @@ async function notifyDecisionRecipients(input: {
         templateContext: {
           duration: `${input.request.durationHours} hours`,
           employeeHrId: input.request.employeeHrId,
-          employeeName: input.request.employeeName,
+          employeeName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName ?? input.request.employeeName,
           excuseDate: input.request.excuseDate,
           excuseType: excuseTypeLabel,
           line: input.request.lineName ?? "—",
@@ -536,7 +536,7 @@ async function notifyDecisionRecipients(input: {
     actionUrl,
     directory: input.directory,
     eventType: "request_decided",
-    message: `${input.request.employeeName}'s ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by the direct manager.${noteSuffix}`,
+    message: `${findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName ?? input.request.employeeName}'s ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by the direct manager.${noteSuffix}`,
     metadata: {
       employeeHrId: input.request.employeeHrId,
       idempotencyKey: `excuse:hr-decision:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
@@ -808,6 +808,100 @@ export async function decideExcuseRequestAsManager(
       employeeWorkEmail: (updated as { employee_work_email?: string | null }).employee_work_email,
     },
   });
+
+  return request;
+}
+
+// Active-status check mirroring the D4 drift semantics (employment_status IN active/on_leave;
+// empty is treated as active). Kept local since excuses/service has no other active-check helper.
+function isActiveExcuseManager(employee: EmployeeDirectoryRow) {
+  const status = cleanText(employee.employmentStatus)?.toLowerCase() ?? "";
+  return status === "" || status === "active" || status === "on_leave";
+}
+
+// HR/Super-Admin (or a system actor) re-routes a stuck excuse to a new active manager when the
+// assigned manager resigned before deciding. This is REASSIGNMENT, not deciding-in-place: it only
+// changes WHO the assigned manager is (manager_hr_id/manager_name/manager_work_email); it never
+// sets manager_decision or status. The new manager must still be the literal assigned manager to
+// decide (decideExcuseRequestAsManager is unchanged). Excuse has NO permission-matrix entry and NO
+// HR-acknowledge stage, so the narrowest possible new grant is system-actor OR Super Admin — this
+// deliberately does NOT let Super Admin decide an excuse in a manager's place (owner-locked model).
+export async function reassignExcuseManager(
+  access: AccessContext,
+  input: { requestId: string; newManagerHrId: string },
+): Promise<EmployeeExcuseRequest> {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: only Super Admin can reassign a stuck excuse approver.");
+  }
+
+  const newManagerHrId = cleanText(input.newManagerHrId);
+  if (!newManagerHrId) {
+    throw new Error("A new manager is required.");
+  }
+
+  const requestRow = await fetchRequestById(input.requestId);
+  if (!requestRow) throw new Error("Excuse request was not found.");
+  if (requestRow.status !== "pending_manager") {
+    throw new Error("This excuse request has already been decided.");
+  }
+
+  const directory = await getEmployeeDirectory();
+  const byHrId = employeeRowByHrId(directory);
+  const newManager = findEmployeeByHrId(directory, newManagerHrId);
+  if (!newManager) {
+    throw new Error("The selected manager is not available in the employee directory.");
+  }
+  if (!isActiveExcuseManager(newManager)) {
+    throw new Error("The selected manager is not active. Choose an active manager to receive this request.");
+  }
+  if (!cleanText(newManager.workEmail)) {
+    throw new Error("The selected manager has no work email on record. Choose a manager with a work email.");
+  }
+
+  const storedManagerHrId = resolveStoredHrId(newManager.hrId, byHrId) ?? newManager.hrId;
+  const previousManagerHrId = requestRow.manager_hr_id;
+  const previousManagerName = requestRow.manager_name;
+  const now = new Date().toISOString();
+
+  const { data: updated, error: updateError } = await getSupabaseAdmin()
+    .from("v2_excuse_requests")
+    .update({
+      manager_hr_id: storedManagerHrId,
+      manager_name: newManager.fullName,
+      manager_work_email: newManager.workEmail,
+      updated_at: now,
+    })
+    .eq("id", input.requestId)
+    .eq("status", "pending_manager")
+    .select("id,employee_hr_id,employee_name,employee_work_email,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  if (!updated) throw conflictError("This excuse request has already been decided.");
+
+  const request = mapExcuseRequestRow(updated as ExcuseRequestRow);
+  await writeAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: request.id,
+    entityType: excuseAuditEntityType,
+    oldValues: { managerHrId: previousManagerHrId, managerName: previousManagerName, status: requestRow.status },
+    newValues: { managerHrId: storedManagerHrId, managerName: newManager.fullName, status: request.status },
+    summary: `Excuse request approver reassigned from ${previousManagerHrId ?? "unassigned"} to ${storedManagerHrId}`,
+  });
+
+  // Retarget the standard manager-stage alert to the newly-assigned manager. A fresh
+  // occurrenceKey keeps the notification idempotency key distinct from the original submission.
+  const employee = findEmployeeByHrId(directory, request.employeeHrId);
+  if (employee) {
+    await notifyManagerOfExcuse({
+      directory,
+      employee,
+      manager: newManager,
+      occurrenceKey: now,
+      request,
+      type: "submitted",
+    });
+  }
 
   return request;
 }

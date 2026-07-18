@@ -259,6 +259,33 @@ async function loadAreaState(supabase: SupabaseClient) {
   return { areaCodeToId, areaCodes, areaIdToCode };
 }
 
+async function loadCanonicalAreaState(
+  supabase: SupabaseClient,
+): Promise<{ canonicalAreas: Array<{ code: string; name: string }> }> {
+  // Every area a sales-line import row is allowed to resolve to: all currently active
+  // public.areas rows — the 42 canonical field-rep areas PLUS the small set of non-field
+  // "kept" areas (region/office designations like Cairo, Egypt, Head office) used by
+  // DSM/RSM/NSM/PM/GPM rows. This must stay in sync with assertActiveCanonicalArea() in
+  // employee-directory.ts (the single-record edit path), which already accepts any active
+  // area — querying au_v_canonical_areas alone (42 only) would incorrectly reject every
+  // manager-tier row. If the table can't be queried, degrade to an empty list so the import
+  // simply skips area-canonicalization rather than failing.
+  const { data, error } = await supabase
+    .from("areas")
+    .select("code, name")
+    .eq("is_active", true);
+  if (error) {
+    return { canonicalAreas: [] };
+  }
+  const canonicalAreas: Array<{ code: string; name: string }> = [];
+  for (const row of (data ?? []) as Array<{ code: string | null; name: string | null }>) {
+    if (row.code && row.name) {
+      canonicalAreas.push({ code: row.code, name: row.name });
+    }
+  }
+  return { canonicalAreas };
+}
+
 async function loadTeamRows(supabase: SupabaseClient) {
   let result = await supabase.from("teams").select("id,code,name,area_id,is_active");
 
@@ -330,12 +357,14 @@ export async function loadEmployeeImportExistingState(
   const [
     departmentCodes,
     areaState,
+    canonicalAreaState,
     lineState,
     positionState,
     activeDepartments,
   ] = await Promise.all([
     loadCodeSet(supabase, "departments"),
     loadAreaState(supabase),
+    loadCanonicalAreaState(supabase),
     loadCodeLookup(supabase, "lines"),
     loadPositionState(supabase),
     loadActiveDepartments(supabase),
@@ -355,6 +384,7 @@ export async function loadEmployeeImportExistingState(
     departmentCodeToName: activeDepartments.codeToName,
     departmentNameToCode: activeDepartments.nameToCode,
     lineCodes: lineState.codes,
+    canonicalAreas: canonicalAreaState.canonicalAreas,
     positionCodes: positionState.positionCodes,
     ...teamState,
   };

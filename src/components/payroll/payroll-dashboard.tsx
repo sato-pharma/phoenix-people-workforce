@@ -28,6 +28,7 @@ import {
 import { PayrollHistory } from "@/components/payroll/dashboard/payroll-history";
 import {
   PayrollGovernanceAlerts,
+  PayrollResignationCandidatesBanner,
   PayrollWorkflowPanel,
 } from "@/components/payroll/dashboard/payroll-workflow-governance";
 import {
@@ -3289,6 +3290,10 @@ export function PayrollDashboard({
   const allBatches = useMemo(() => data?.batches ?? [], [data?.batches]);
   const records = useMemo(() => data?.records ?? [], [data?.records]);
   const flags = useMemo(() => data?.flags ?? [], [data?.flags]);
+  const resignationCandidates = useMemo(
+    () => data?.resignationCandidates ?? [],
+    [data?.resignationCandidates],
+  );
   const payrollYears = Array.from({ length: 7 }, (_, index) =>
     String(currentYear - 3 + index),
   );
@@ -3893,6 +3898,11 @@ export function PayrollDashboard({
           onAction={(action) => void handlePayrollWorkflowAction(action)}
         />
       )}
+
+      <PayrollResignationCandidatesBanner
+        candidates={resignationCandidates}
+        count={data?.resignationCandidateCount ?? 0}
+      />
 
       <PayrollGovernanceAlerts flags={flags} />
 

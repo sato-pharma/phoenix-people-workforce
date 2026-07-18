@@ -513,7 +513,7 @@ export function runNotificationRecipientIsolationTests() {
   assert.match(probationSource, /Submit manager probation feedback\./, "probation reminder must state the required action");
   assert.match(
     probationSource,
-    /title: `\$\{employee\.fullName\}'s probation feedback is due`/,
+    /title: `\$\{employee\.displayName\}'s probation feedback is due`/,
     "probation reminder title must lead with the employee name",
   );
   assert.match(probationSource, /label: "Action", value: "Submit feedback"/, "probation details include the submit-feedback action");

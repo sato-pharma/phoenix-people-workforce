@@ -70,9 +70,11 @@ export function isHeadOfficeLine(line: string | null | undefined): boolean {
 const MARKETING_OVERSIGHT_LINE_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
 
 /** The Marketing department's product lines, as Source-of-Sales official line names (see the
- *  `lines` table: Anti infective / Pedia / CNS). Head Office is excluded — it carries no product
- *  sales. Update this set if the Marketing department's line portfolio changes. */
-const MARKETING_OVERSIGHT_OFFICIAL_LINES = ["Anti infective", "Pedia", "CNS"] as const;
+ *  `lines` table: Anti Infective / Pedia / CNS). Head Office is excluded — it carries no product
+ *  sales. Update this set if the Marketing department's line portfolio changes. Matching against
+ *  official_line data is case-insensitive (every consumer maps through `normalizeLineKey` or the
+ *  RPC's `lower(btrim())`), so the display casing here is safe to standardize. */
+const MARKETING_OVERSIGHT_OFFICIAL_LINES = ["Anti Infective", "Pedia", "CNS"] as const;
 
 export function isRestrictedProductCode(code: string | null | undefined): boolean {
   if (!code) return false;
@@ -132,15 +134,15 @@ export function __resetRestrictedNameCacheForTests(): void {
   restrictedNameCache = null;
 }
 
-// Employee `lines.name` values ("Anti infective", "Pedia", "CNS", "Head Office") → Source of Sales
-// `official_line` values ("Anti infective", "CNS", "Head Office", "Pedia") — all four now match
+// Employee `lines.name` values ("Anti Infective", "Pedia", "CNS", "Head Office") → Source of Sales
+// `official_line` values ("Anti Infective", "CNS", "Head Office", "Pedia") — all four now match
 // verbatim. The map is keyed by a case/whitespace-insensitive key and still carries the legacy
 // "anti inf"/"office" abbreviations (kept so pre-rename data and the import codes anti_inf/office
 // keep resolving), so any variant resolves to the exact SoS official line string (which is what the
 // line-scope filter passes into SQL).
 const OFFICIAL_LINE_BY_KEY: Record<string, string> = {
-  "anti inf": "Anti infective",
-  "anti infective": "Anti infective",
+  "anti inf": "Anti Infective",
+  "anti infective": "Anti Infective",
   cns: "CNS",
   office: "Head Office",
   "head office": "Head Office",

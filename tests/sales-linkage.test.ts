@@ -201,6 +201,38 @@ function abbreviatedAntiInfectiveLineStillMatches() {
   );
 }
 
+// Item E — loadDirectory()'s try/catch fallback (raw supabase query, used only when the richer
+// getEmployeeDirectoryRows() path throws) previously had NO status filter at all, so a
+// resigned/terminated employee's row could still link fresh sales data whenever the fallback
+// path was exercised. isInactiveEmploymentStatus also hand-rolled its own substring denylist
+// instead of delegating to the canonical isTerminalEmploymentStatus predicate. Source-regex
+// style, matching this file's existing singleEngineSource()/consumersShareTheEngine() checks — a
+// behavioral test of the fallback path itself would require mocking getEmployeeDirectoryRows to
+// throw, which this file's existing conventions don't otherwise reach for.
+function employeeDirectoryFallbackStaysActiveOnly() {
+  const source = read("../src/lib/sales/employees.ts");
+  assert.match(
+    source,
+    /import \{ ACTIVE_EMPLOYMENT_STATUSES_IN_LIST, isTerminalEmploymentStatus \} from "@\/lib\/auth\/session-lifecycle";/,
+    "employees.ts must import the canonical active-status constant and terminal-status predicate",
+  );
+  assert.match(
+    source,
+    /function isInactiveEmploymentStatus\(status: string \| null \| undefined\) \{\s*return isTerminalEmploymentStatus\(status\);\s*\}/,
+    "isInactiveEmploymentStatus must delegate to the canonical isTerminalEmploymentStatus predicate",
+  );
+  assert.doesNotMatch(
+    source,
+    /\["inactive", "resigned", "terminated", "left", "suspended", "vacant"\]/,
+    "isInactiveEmploymentStatus must no longer hand-roll its own denylist array",
+  );
+  assert.match(
+    source,
+    /\.or\(`employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}`\)/,
+    "loadDirectory's raw-query fallback must filter to active-or-null employment_status, matching the primary getEmployeeDirectoryRows() path",
+  );
+}
+
 export function runSalesLinkageTests() {
   singleEngineSource();
   consumersShareTheEngine();
@@ -211,4 +243,5 @@ export function runSalesLinkageTests() {
   vacancyPlaceholdersDoNotPersistAsManagers();
   normalRowsStillMapByEmployeeHrId();
   abbreviatedAntiInfectiveLineStillMatches();
+  employeeDirectoryFallbackStaysActiveOnly();
 }

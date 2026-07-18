@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { resolveStoredEmployeeHrId } from "@/lib/marketing-requests/service";
+import { isActiveEmployeeHrId, resolveStoredEmployeeHrId } from "@/lib/marketing-requests/service";
 
 function source(relPath: string): string {
   return readFileSync(relPath, "utf8");
@@ -57,6 +57,29 @@ export async function runMarketingApproverHrIdCasingTests() {
   assert.equal(resolveStoredEmployeeHrId(null), null);
   assert.equal(resolveStoredEmployeeHrId(undefined), null);
 
+  /**
+   * Regression guard for the resigned-`direct_manager`-approver bug: a marketing
+   * approval step scoped to "direct_manager" resolves its gating approver straight from
+   * the request's stored `manager_hr_id`, with no active-employee filtering upstream.
+   * `pushRow` is meant to fail loudly when that approver "is not a current employee" —
+   * but `resolveStoredEmployeeHrId` alone can't detect that: it deliberately still
+   * returns a display-cased fallback HR_ID when the id is absent from the (active-only)
+   * `byHrId` map, which is exactly the resigned-employee case. `isActiveEmployeeHrId`
+   * checks directory membership directly, independent of that fallback.
+   */
+  assert.equal(isActiveEmployeeHrId("a-9", directory), true);
+  assert.equal(isActiveEmployeeHrId("A-9", directory), true);
+  assert.equal(isActiveEmployeeHrId("  a-9  ", directory), true);
+  // Not in the directory map (e.g. a resigned direct_manager) → false, even though
+  // resolveStoredEmployeeHrId still returns a plausible-looking fallback for the same input.
+  assert.equal(isActiveEmployeeHrId("z-1", directory), false);
+  assert.equal(resolveStoredEmployeeHrId("z-1", directory), "Z-1");
+  assert.equal(isActiveEmployeeHrId("z-1"), false); // no directory map at all
+  assert.equal(isActiveEmployeeHrId(""), false);
+  assert.equal(isActiveEmployeeHrId("   "), false);
+  assert.equal(isActiveEmployeeHrId(null), false);
+  assert.equal(isActiveEmployeeHrId(undefined), false);
+
   // ── Source-pinned guarantees so a refactor cannot silently regress the FK fix ──
   const service = source("src/lib/marketing-requests/service.ts");
 
@@ -76,6 +99,13 @@ export async function runMarketingApproverHrIdCasingTests() {
     service,
     /marketing_approver_not_employee/,
     "a non-employee gating approver must throw a named, actionable error",
+  );
+  // The gate must independently verify ACTIVE status — resolveStoredEmployeeHrId's return
+  // value alone cannot tell "found and active" apart from "resigned, FK-safe fallback used".
+  assert.match(
+    service,
+    /if \(!isActiveEmployeeHrId\(input\.assignedHrId, byHrId\) \|\| !storedHrId\)/,
+    "pushRow must reject a resolvable-but-resigned approver, not just a wholly unresolvable one",
   );
 
   // 2. The decision path resolves the actor ONCE and writes the resolved casing into EVERY
