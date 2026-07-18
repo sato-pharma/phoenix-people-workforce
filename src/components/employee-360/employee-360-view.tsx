@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Award,
   BadgeCheck,
+  CalendarClock,
+  ClipboardCheck,
   Clock,
   Footprints,
   GraduationCap,
@@ -26,6 +28,10 @@ import type {
   LeadershipActivity,
   SalesMonthPoint,
 } from "@/lib/employee-360/deep-service";
+import type { TeamHealthSummary } from "@/lib/employee-360/team-health";
+import type { TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
+import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
+import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 
@@ -131,6 +137,31 @@ const KPI_EXPLAIN: Record<string, string> = {
   "Double-visits conducted": "How many times this manager went into the field alongside a team member.",
   "Reps reached": "How many different team members this manager coached or joined in the field.",
   "Avg score given": "The average coaching score this manager awarded to their team.",
+  // Team development (manager) & Training-Manager effectiveness
+  "Reps on team": "How many Medical Reps roll up to this manager — the team whose development they're responsible for.",
+  Coached: "How many of their reps received at least one coaching session this period.",
+  "Never coached": "How many of their reps were not coached at all this period — the ones being missed.",
+  "Avg coaching score": "The average coaching score across their reps who were coached.",
+  "Field-force pool": "Every active Medical Rep — the full set this Training Manager is expected to develop.",
+  "Reps coached": "How many of all active reps this Training Manager coached at least once this period.",
+  "Sessions delivered": "The total number of coaching sessions this Training Manager ran this period.",
+  "Top-5 focus share": "The share of all their coaching that went to just their five most-coached reps — high means effort is concentrated on a few.",
+  "Over-focused reps": "Reps coached three or more times — a sign of over-focus when many others were never coached.",
+  Coverage: "The share of the whole field-force pool this Training Manager reached with coaching.",
+  "Double-visited": "How many of this manager's reps they personally joined in the field (a double-visit) this period.",
+  "DV coverage": "The share of this manager's reps they double-visited at least once this period.",
+  "Fully neglected": "Reps who got NEITHER a coaching session NOR a double-visit this period — the ones being completely missed.",
+  "Team reach": "The share of the team touched at least once this period — coached or double-visited.",
+  // Team compliance (manager) — plans, field discipline, probation
+  "Plans submitted": "How many of this manager's reps submitted a weekly plan for this period — weekly-planning compliance.",
+  "Plans approved": "How many of their reps had a weekly plan fully approved this period.",
+  "No-activity flags": "How many of their reps were flagged for confirmed no-activity days — the field-force equivalent of absence — this period.",
+  "In probation": "How many of their reps are still inside their first 90 days (probation window), soonest to finish first.",
+  // Marketing ROI (PM/GPM)
+  Requests: "How many marketing requests this Product Manager has submitted.",
+  "Est. spend": "The total estimated cost of the marketing requests they submitted.",
+  "Expected ROI": "The forecast sales return expected from those marketing investments.",
+  "Realized value": "The actual sales value realized so far, versus the required return.",
   // Sales
   "Total sales": "The total sales value achieved in this period.",
   "Team sales": "The combined sales value of this manager's whole team.",
@@ -435,12 +466,20 @@ export function Employee360View({
   comparison,
   showExpenses = true,
   category,
+  teamHealth = null,
+  teamLifecycle = null,
+  tmAnalytics = null,
+  pmMarketing = null,
 }: {
   subject: Employee360Subject;
   summary: Employee360Profile;
   comparison?: Employee360Comparison | null;
   showExpenses?: boolean;
   category: Employee360RoleCategory;
+  teamHealth?: TeamHealthSummary | null;
+  teamLifecycle?: TeamLifecycleSummary | null;
+  tmAnalytics?: TrainingManagerAnalytics | null;
+  pmMarketing?: PmMarketingSummary | null;
 }) {
   const b = summary.benchmarks;
   const tenure = tenureLabel(subject.hireDate);
@@ -452,7 +491,11 @@ export function Employee360View({
   // leads with their own field work and the received-side coaching/impact.
   const isLeader = category !== "medical-rep";
   const showCampaign = category === "medical-rep" || category === "product-manager";
-  const showCheckin = category !== "product-manager";
+  // Only Medical Reps submit their own regular visits, so only they log GPS
+  // check-ins. Managers (DM/RM/NSM) and Product Managers coach/join in the field
+  // via double-visits (shown in Leadership Activity) — a GPS check-in section for
+  // them would be empty and misleading, so it is a Medical-Rep authenticity view.
+  const showCheckin = category === "medical-rep";
   const showReceivedSide = category === "medical-rep";
 
   return (
@@ -463,7 +506,9 @@ export function Employee360View({
       {/* Trust strip */}
       <div className="flex flex-wrap gap-2 text-xs">
         <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this HR_ID" />
-        <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
+        {showCheckin ? (
+          <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
+        ) : null}
         {category !== "training-manager" ? (
           <TrustChip ok={summary.sales.hasData} okText="Sales linked" badText="No validated sales yet" />
         ) : null}
@@ -486,8 +531,20 @@ export function Employee360View({
         <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} />
       ) : null}
 
+      {/* Training Manager god-mode: coverage / neglect / concentration + verdict. */}
+      {tmAnalytics ? <TrainingManagerSection a={tmAnalytics} /> : null}
+
       {/* Team / line sales — leaders show it up top (reps see their own further down). */}
       {isLeader && category !== "training-manager" ? <SalesSection sales={summary.sales} /> : null}
+
+      {/* Team development — coaching coverage of a field manager's own reps. */}
+      {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
+
+      {/* Team compliance — weekly plans, field discipline & probation of their reps. */}
+      {teamLifecycle ? <TeamLifecycleSection lifecycle={teamLifecycle} /> : null}
+
+      {/* PM / Group PM — ROI on the marketing requests they submitted. */}
+      {pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null}
 
       {/* Visits & Coverage — reps: full field performance; leaders: their OWN field presence. */}
       <Card className={PREMIUM_CARD}>
@@ -496,7 +553,7 @@ export function Employee360View({
           tone="sky"
           sub={
             isLeader
-              ? "This manager's OWN field visits — their days in the field, not their team's. Team output is in Leadership Activity above."
+              ? "This manager's OWN field visits — occasional single/campaign calls, not their team's output. Managers coach in the field via double-visits (Leadership Activity above); they don't log GPS check-ins."
               : "Productive = Regular + Campaign. Admin/non-visit codes excluded."
           }
         >
@@ -1087,6 +1144,331 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
   );
 }
 
+const TM_VERDICT: Record<TrainingManagerAnalytics["verdict"], { label: string; tone: string; bg: string }> = {
+  efficient: { label: "Efficient", tone: "text-emerald-700", bg: "border-emerald-200 bg-emerald-50" },
+  adequate: { label: "Adequate", tone: "text-amber-700", bg: "border-amber-200 bg-amber-50" },
+  needs_improvement: { label: "Needs improvement", tone: "text-rose-700", bg: "border-rose-200 bg-rose-50" },
+};
+
+function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
+  const v = TM_VERDICT[a.verdict];
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={GraduationCap}
+        tone="violet"
+        sub="Coaching effectiveness across the WHOLE field force — who this trainer reaches, who's neglected, how focused the effort is, and the bottom line."
+      >
+        Training-Manager Effectiveness
+      </SectionHeader>
+      {!a.hasData ? (
+        <EmptyState>No active Medical Reps to assess coverage against.</EmptyState>
+      ) : (
+        <>
+          <div className={cn("mb-4 rounded-[14px] border p-4", v.bg)}>
+            <div className="text-[11px] font-black uppercase tracking-wide text-slate-400">Efficiency verdict</div>
+            <div className={cn("text-xl font-black", v.tone)}>
+              {v.label} · {a.efficiencyScore}/100
+            </div>
+            <p className="mt-1 text-xs text-slate-600">{a.rationale}</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Field-force pool" value={intFmt.format(a.poolSize)} hint="active Medical Reps" />
+            <KpiTile label="Reps coached" value={intFmt.format(a.coachedByTm)} hint={`${Math.round(a.coverageRate * 100)}% coverage`} goodWhenAbove={a.coverageRate >= 0.5} />
+            <KpiTile label="Never coached" value={intFmt.format(a.neglectedByTm)} goodWhenAbove={a.neglectedByTm === 0} />
+            <KpiTile label="Sessions delivered" value={intFmt.format(a.sessionsDelivered)} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Avg score given" value={a.avgScoreGiven == null ? "—" : `${Math.round(a.avgScoreGiven)}%`} />
+            <KpiTile label="Top-5 focus share" value={a.topFocusShare == null ? "—" : `${Math.round(a.topFocusShare * 100)}%`} goodWhenAbove={a.topFocusShare == null ? null : !(a.topFocusShare > 0.5)} hint="lower = effort spread wider" />
+            <KpiTile label="Over-focused reps" value={intFmt.format(a.overFocusedCount)} hint="coached 3+ times" />
+            <KpiTile label="Coverage" value={`${Math.round(a.coverageRate * 100)}%`} goodWhenAbove={a.coverageRate >= 0.5} />
+          </div>
+
+          {a.monthly.length > 1 ? (
+            <div className="mt-5">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Coaching cadence — sessions &amp; reps reached per month</div>
+              <LineChart
+                labels={a.monthly.map((m) => m.month.slice(5))}
+                series={[
+                  { name: "Sessions", color: CHART_COLORS.regular, points: a.monthly.map((m) => m.sessions), area: true },
+                  { name: "Reps", color: CHART_COLORS.campaign, points: a.monthly.map((m) => m.reps) },
+                ]}
+                height={160}
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-5 grid gap-5 sm:grid-cols-2">
+            <div>
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Most-coached reps (their focus)</div>
+              {a.concentratedReps.length > 0 ? (
+                <div className="space-y-1">
+                  {a.concentratedReps.map((r) => (
+                    <div key={r.hrId} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="min-w-0 truncate text-slate-600">
+                        {r.name}
+                        {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-400">{r.count}×</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">No coaching delivered in this period.</div>
+              )}
+            </div>
+            <div>
+              <div className="mb-1.5 text-xs font-bold text-amber-600">Neglected — never coached ({a.neglectedByTm})</div>
+              {a.neglectedReps.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {a.neglectedReps.map((r) => (
+                    <span key={r.hrId} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700" title={r.line ?? undefined}>
+                      {r.name}
+                    </span>
+                  ))}
+                  {a.neglectedByTm > a.neglectedReps.length ? (
+                    <span className="self-center text-xs text-slate-400">+{a.neglectedByTm - a.neglectedReps.length} more</span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-xs font-semibold text-emerald-600">Every active rep was coached at least once. 🎯</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function MarketingRoiSection({ m }: { m: PmMarketingSummary }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={Megaphone}
+        tone="orange"
+        sub="Return on the marketing investments this Product Manager requested — spend, expected vs realized value, and how the requests are tracking."
+      >
+        Marketing ROI — Requests Submitted
+      </SectionHeader>
+      {!m.hasData ? (
+        <EmptyState>This Product Manager has not submitted any marketing requests.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Requests" value={intFmt.format(m.requestCount)} />
+            <KpiTile label="Est. spend" value={compactFmt.format(m.totalEstimatedCost)} />
+            <KpiTile label="Expected ROI" value={compactFmt.format(m.totalExpectedRoi)} hint="forecast return" />
+            <KpiTile
+              label="Realized value"
+              value={compactFmt.format(m.totalActualValue)}
+              hint={`${Math.round(m.coverageRatio * 100)}% of required`}
+              goodWhenAbove={m.coverageRatio >= 1}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="font-bold text-slate-400">Tracking:</span>
+            <span className="font-semibold text-emerald-600">● {intFmt.format(m.onTrack)} on track</span>
+            <span className="font-semibold text-amber-600">● {intFmt.format(m.behind)} behind</span>
+            <span className="text-slate-400">● {intFmt.format(m.awaiting)} awaiting data</span>
+            <span className="text-slate-400">● {intFmt.format(m.noData)} no data</span>
+          </div>
+          {m.topRequests.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Largest requests by spend</div>
+              <div className="space-y-1">
+                {m.topRequests.map((r) => (
+                  <div key={r.code} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-slate-600">
+                      {r.code}
+                      {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      {compactFmt.format(r.estimatedCost)} spend · {compactFmt.format(r.actual)} realized
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
+  const cov = teamHealth.coverageRate;
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={GraduationCap}
+        tone="violet"
+        sub="How well this manager's OWN reps are being developed — coaching AND field double-visit coverage this period. The headline gap: reps who got neither."
+      >
+        Team Development — Coaching &amp; Double-Visits
+      </SectionHeader>
+      {!teamHealth.hasData ? (
+        <EmptyState>No Medical Reps roll up to this manager, so there is no team development coverage to show.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Reps on team" value={intFmt.format(teamHealth.repCount)} />
+            <KpiTile label="Coached" value={intFmt.format(teamHealth.coachedCount)} hint={`${Math.round(cov * 100)}% coverage`} goodWhenAbove={cov >= 0.6} />
+            <KpiTile label="Never coached" value={intFmt.format(teamHealth.neverCoachedCount)} goodWhenAbove={teamHealth.neverCoachedCount === 0} />
+            <KpiTile label="Avg coaching score" value={teamHealth.avgScore == null ? "—" : `${Math.round(teamHealth.avgScore)}%`} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Double-visited" value={intFmt.format(teamHealth.dvCoveredCount)} hint={`${Math.round(teamHealth.dvCoverageRate * 100)}% of reps`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
+            <KpiTile label="DV coverage" value={`${Math.round(teamHealth.dvCoverageRate * 100)}%`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
+            <KpiTile label="Fully neglected" value={intFmt.format(teamHealth.fullyNeglectedCount)} goodWhenAbove={teamHealth.fullyNeglectedCount === 0} hint="no coaching AND no double-visit" />
+            <KpiTile label="Team reach" value={`${Math.round(((teamHealth.repCount - teamHealth.fullyNeglectedCount) / Math.max(1, teamHealth.repCount)) * 100)}%`} hint="touched at least once" goodWhenAbove={teamHealth.fullyNeglectedCount === 0} />
+          </div>
+          {teamHealth.fullyNeglected.length > 0 ? (
+            <div className="mt-4 rounded-[14px] border border-rose-200 bg-rose-50/60 p-3">
+              <div className="mb-1.5 text-xs font-black text-rose-700">Fully neglected — neither coached nor double-visited ({teamHealth.fullyNeglected.length})</div>
+              <div className="flex flex-wrap gap-1.5">
+                {teamHealth.fullyNeglected.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-xs text-rose-700">{r.name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {teamHealth.neglected.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-1.5 text-xs font-bold text-amber-600">Never coached this period ({teamHealth.neglected.length})</div>
+              <div className="flex flex-wrap gap-1.5">
+                {teamHealth.neglected.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{r.name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {teamHealth.coached.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Coached — most recent first</div>
+              <div className="space-y-1">
+                {teamHealth.coached.map((r) => (
+                  <div key={r.hrId} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-slate-600">{r.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      {r.coachingCount}× · {r.averageScore == null ? "—" : `${Math.round(r.averageScore)}%`}
+                      {r.latestCoachingDate ? ` · ${r.latestCoachingDate}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Team Compliance — the operational (non-development) side of a manager's team:
+// are their reps planning, showing up in the field, and who is still on probation.
+function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }) {
+  const cov = lifecycle.planCoverageRate;
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={ClipboardCheck}
+        tone="amber"
+        sub="The operational health of this manager's reps — weekly-plan compliance, confirmed field no-activity flags, and who is still inside their 90-day probation."
+      >
+        Team Compliance — Plans, Field Discipline &amp; Probation
+      </SectionHeader>
+      {!lifecycle.hasData ? (
+        <EmptyState>No Medical Reps roll up to this manager, so there is no team compliance to show.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile
+              label="Plans submitted"
+              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(lifecycle.repCount)}`}
+              hint={`${Math.round(cov * 100)}% of reps`}
+              goodWhenAbove={cov >= 0.6}
+            />
+            <KpiTile label="Plans approved" value={intFmt.format(lifecycle.planApprovedCount)} />
+            <KpiTile
+              label="No-activity flags"
+              value={lifecycle.disciplineHasData ? intFmt.format(lifecycle.disciplineFlaggedReps) : "—"}
+              hint={lifecycle.disciplineHasData ? `${intFmt.format(lifecycle.disciplineNoActivityDays)} days flagged` : undefined}
+              goodWhenAbove={lifecycle.disciplineHasData ? lifecycle.disciplineFlaggedReps === 0 : null}
+            />
+            <KpiTile label="In probation" value={intFmt.format(lifecycle.probationCount)} hint="within first 90 days" />
+          </div>
+          {lifecycle.probationReps.length > 0 ? (
+            <div className="mt-4 rounded-[14px] border border-blue-200 bg-blue-50/50 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-black text-blue-700">
+                <CalendarClock className="h-3.5 w-3.5" />
+                On probation — soonest to finish first ({lifecycle.probationReps.length})
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lifecycle.probationReps.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-700">
+                    {r.name} · <span className="tabular-nums text-blue-500">{r.daysRemaining}d left</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Compare-by-month: trips, cost, cost/trip, and the month-over-month cost change.
+// For expenses a rise is unfavourable (rose) and a drop favourable (emerald).
+function MonthCompareTable({ months }: { months: { month: string; cost: number; trips: number }[] }) {
+  return (
+    <div className="mt-5">
+      <div className="mb-1.5 text-xs font-bold text-slate-500">Month-by-month — trips, cost &amp; change vs the previous month</div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[440px] border-collapse text-sm">
+          <thead>
+            <tr className="text-[11px] font-black uppercase tracking-wide text-slate-400">
+              <th className="py-1.5 pr-3 text-left">Month</th>
+              <th className="px-3 py-1.5 text-right">Trips</th>
+              <th className="px-3 py-1.5 text-right">Cost</th>
+              <th className="px-3 py-1.5 text-right">Cost / trip</th>
+              <th className="py-1.5 pl-3 text-right">Δ cost vs prev</th>
+            </tr>
+          </thead>
+          <tbody>
+            {months.map((m, i) => {
+              const prev = i > 0 ? months[i - 1] : null;
+              const delta = prev && prev.cost > 0 ? (m.cost - prev.cost) / prev.cost : null;
+              const costPerTrip = m.trips > 0 ? m.cost / m.trips : null;
+              const up = delta != null && delta > 0;
+              return (
+                <tr key={m.month} className="border-t border-slate-100">
+                  <td className="py-1.5 pr-3 text-left font-semibold tabular-nums text-slate-600">{m.month}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{intFmt.format(m.trips)}</td>
+                  <td className="px-3 py-1.5 text-right font-bold tabular-nums text-slate-800">{compactFmt.format(m.cost)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{costPerTrip == null ? "—" : compactFmt.format(costPerTrip)}</td>
+                  <td
+                    className={cn(
+                      "py-1.5 pl-3 text-right font-bold tabular-nums",
+                      delta == null ? "text-slate-300" : up ? "text-rose-600" : "text-emerald-600",
+                    )}
+                  >
+                    {delta == null ? "—" : `${up ? "▲ +" : "▼ "}${Math.abs(Math.round(delta * 100))}%`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ExpensesSection({
   expenses,
   activity,
@@ -1154,6 +1536,8 @@ function ExpensesSection({
                   <LineChart labels={payroll.monthly.map((m) => m.month.slice(5))} series={[{ name: "Cost", color: "#f43f5e", points: payroll.monthly.map((m) => m.cost), area: true }]} height={160} yFormat={(n) => compactFmt.format(n)} />
                 </div>
               ) : null}
+
+              {payroll.monthly.length > 1 ? <MonthCompareTable months={payroll.monthly} /> : null}
 
               <div className="mt-5 grid gap-5 sm:grid-cols-2">
                 <div>

@@ -445,6 +445,14 @@ function findEmployeeByHrId(directory: EmployeeDirectoryData, hrId: string | nul
   return directory.employees.find((employee) => canonicalHrId(employee.hrId) === canonical) ?? null;
 }
 
+// Active-status check mirroring the D4 drift semantics (employment_status IN active/on_leave;
+// empty treated as active). Used to confirm a stuck approver has genuinely resigned before
+// allowing HR to reassign a pending_manager request.
+function isVacationEmployeeActive(employee: EmployeeDirectoryRow) {
+  const status = (employee.employmentStatus ?? "").trim().toLowerCase();
+  return status === "" || status === "active" || status === "on_leave";
+}
+
 function accessIdentityCandidates(access: AccessContext) {
   const candidates = [
     access.hrId,
@@ -3825,7 +3833,14 @@ export async function assignVacationManagementApprover(
   if (!isSequentialWorkflowType(request.vacationType)) {
     throw new Error("Approver assignment only applies to Annual, Other, and Compensatory requests.");
   }
-  if (request.status !== "needs_assignment") {
+  // Widened guard. `needs_assignment` is the original no-approver-yet case. A request already at
+  // `pending_manager` is ALSO reassignable, but ONLY when its assigned first-management approver
+  // (manager_hr_id) has since resigned / gone inactive AND that first step is still pending —
+  // otherwise the record is pinned to a dead approver with no route forward and no one can act.
+  // We never touch a request whose approver is still active (that would yank a live pending
+  // decision, out of scope), and never reopen an approver who already decided.
+  const isResignedManagerReassignment = request.status === "pending_manager";
+  if (request.status !== "needs_assignment" && !isResignedManagerReassignment) {
     throw new Error("This vacation request does not need an approver assignment.");
   }
 
@@ -3833,6 +3848,32 @@ export async function assignVacationManagementApprover(
   const approver = findEmployeeByHrId(directory, approverHrId);
   if (!approver) {
     throw new Error("The selected approver is not available in the employee directory.");
+  }
+
+  if (isResignedManagerReassignment) {
+    const currentManager = findEmployeeByHrId(directory, request.managerHrId);
+    if (currentManager && isVacationEmployeeActive(currentManager)) {
+      throw new Error(
+        "The current approver is still active. Reassignment is only for a resigned or inactive approver.",
+      );
+    }
+    const existingSteps = await fetchVacationApprovalStepsForRequest(request.id);
+    const pendingFirstStep = existingSteps.find(
+      (step) => step.stepKey === "direct_manager" && step.status === "pending",
+    );
+    if (!pendingFirstStep) {
+      throw new Error("This request has no pending first-management step to reassign.");
+    }
+    // Drop the stale pending first-management step so the fresh assignment below leaves exactly
+    // one (same end state as the needs_assignment path); later manager-of-manager / HR steps and
+    // any already-decided steps are preserved.
+    const { error: deleteStepError } = await getSupabaseAdmin()
+      .from(vacationApprovalStepsTable)
+      .delete()
+      .eq("request_id", request.id)
+      .eq("step_key", "direct_manager")
+      .eq("status", "pending");
+    if (deleteStepError) throwVacationDatabaseError(deleteStepError);
   }
 
   // Create the first management approval step, then resume the flow at pending_manager.
@@ -3859,7 +3900,7 @@ export async function assignVacationManagementApprover(
       updated_at: now,
     })
     .eq("id", request.id)
-    .eq("status", "needs_assignment")
+    .eq("status", request.status)
     .select("*")
     .single();
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
@@ -3869,8 +3910,14 @@ export async function assignVacationManagementApprover(
     actorHrId: resolveEmployeeIdentityId(access),
     actorLoginId: access.loginId,
     eventType: "manager_assigned",
-    message: `HR assigned ${approver.displayName} as the first management approver.`,
-    metadata: { approverHrId: approver.hrId, genericStep: "management_approval_1" },
+    message: isResignedManagerReassignment
+      ? `HR reassigned the stuck approver to ${approver.displayName} (previous approver resigned).`
+      : `HR assigned ${approver.displayName} as the first management approver.`,
+    metadata: {
+      approverHrId: approver.hrId,
+      genericStep: "management_approval_1",
+      reassignment: isResignedManagerReassignment,
+    },
     requestId: updated.id,
   });
   await writeRequiredAuditLog({
@@ -3879,7 +3926,9 @@ export async function assignVacationManagementApprover(
     entityType: "vacation_request",
     newValues: { managerHrId: approver.hrId, status: updated.status },
     oldValues: { managerHrId: request.managerHrId, status: request.status },
-    summary: `HR assigned management approver ${approver.displayName}.`,
+    summary: isResignedManagerReassignment
+      ? `HR reassigned stuck management approver to ${approver.displayName}.`
+      : `HR assigned management approver ${approver.displayName}.`,
   });
 
   invalidateExecutiveDashboardCache("leave request approver assigned", ["leave"]);

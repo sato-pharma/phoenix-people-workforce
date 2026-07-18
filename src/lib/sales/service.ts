@@ -8,7 +8,8 @@ import { formatUnits } from "@/lib/sales/format";
 import { isSalesOthersBucket } from "@/lib/sales/others";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { getSalesScope, normalizeHrId, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
+import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getSalesScope, normalizeHrId, normalizeHrIdForAccess, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
   canViewRestrictedProducts,
@@ -28,7 +29,7 @@ import {
   type SalesOwnershipContext,
   type SalesOwnershipResult,
 } from "@/lib/workforce-classification";
-import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { isWithinManagerHierarchy, reportsToManagerSeat, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import {
   type SalesBatch,
   type SalesBatchDetail,
@@ -102,33 +103,58 @@ function normalizeFilterToken(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
-function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
+// Seat-continuity-aware TEAM / HIERARCHY resolution, delegating to the canonical
+// workforce resolver (src/lib/workforce/hierarchy-resolver.ts) instead of a private
+// naive `manager_hr_id` adjacency walk. The naive walk was correct only because a DB
+// trigger writes `manager_hr_id` + `pending_manager_replacement_for_hr_id` atomically;
+// when a manager seat is vacant/reassigned it would attach reports to the wrong seat.
+// The resolver additionally recognizes the departed manager's vacant seat, so a report
+// orphaned upward after a resignation still resolves to the correct owner. Behaviour is
+// unchanged for today's data (no pending marker) — it only becomes correct on vacancy.
+
+/** Canonical hrId -> employee row, for isWithinManagerHierarchy's byCanonicalHrId input. */
+function buildCanonicalHrIdIndex(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+): Map<string, EmployeeDirectoryRow> {
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
   directory.employees.forEach((employee) => {
-    const managerId = normalizeHrId(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!employeeId || !managerId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
   });
-  return managerMap;
+  return byCanonicalHrId;
 }
 
-function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
-  const allowedHrIds = new Set<string>();
-  const queue: string[] = [rootHrId];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      if (!allowedHrIds.has(subordinateId)) {
-        allowedHrIds.add(subordinateId);
-        queue.push(subordinateId);
-      }
+/** Direct reports of the viewer's seat — TEAM scope. Seat-continuity aware. */
+export function collectDirectReports(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  directory.employees.forEach((employee) => {
+    if (reportsToManagerSeat({ employee, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
     }
-  }
-  return allowedHrIds;
+  });
+  return allowed;
+}
+
+/** Every employee in the viewer's full downward chain — HIERARCHY scope. Cycle-safe. */
+export function collectHierarchy(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  const byCanonicalHrId = buildCanonicalHrIdIndex(directory);
+  directory.employees.forEach((employee) => {
+    if (isWithinManagerHierarchy({ employee, byCanonicalHrId, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
+    }
+  });
+  return allowed;
 }
 
 async function getPersistedSalesScopeOverride(accessContext: AccessContext): Promise<BusinessScope | null> {
@@ -180,11 +206,11 @@ async function resolveSalesAccessFilter(accessContext?: AccessContext | null): P
     return { all: false, allowedHrIds: new Set([currentHrId]) };
   }
 
-  const managerMap = buildManagerMap(directory);
+  const canonicalViewerId = normalizeHrIdForAccess(currentHrId) ?? "";
   if (salesScope === "TEAM") {
     return {
       all: false,
-      allowedHrIds: new Set(managerMap.get(currentHrId) ?? []),
+      allowedHrIds: collectDirectReports(directory, canonicalViewerId),
       includeManagerOwnedHrId: currentHrId,
     };
   }
@@ -192,7 +218,7 @@ async function resolveSalesAccessFilter(accessContext?: AccessContext | null): P
   if (salesScope === "HIERARCHY") {
     return {
       all: false,
-      allowedHrIds: collectHierarchy(managerMap, currentHrId),
+      allowedHrIds: collectHierarchy(directory, canonicalViewerId),
       includeManagerOwnedHrId: currentHrId,
     };
   }

@@ -20,6 +20,15 @@ function oversightRolesBlock() {
   return match[0];
 }
 
+/** Slice out a named function's body: from its declaration up to (not including) the next marker. */
+function functionBody(startMarker: string, endMarker: string) {
+  const start = coachingServiceSource.indexOf(startMarker);
+  assert.ok(start >= 0, `could not locate ${JSON.stringify(startMarker)} in coaching service.ts`);
+  const end = coachingServiceSource.indexOf(endMarker, start + startMarker.length);
+  assert.ok(end > start, `could not locate the end of ${JSON.stringify(startMarker)}`);
+  return coachingServiceSource.slice(start, end);
+}
+
 export function runCoachingAccessScopeTests() {
   assert.doesNotMatch(
     lineRolesBlock(),
@@ -56,4 +65,43 @@ export function runCoachingAccessScopeTests() {
     /A coach can only update and submit their own coaching drafts\./,
     "coaching draft updates must remain scoped to the owning coach",
   );
+
+  // Item C: getCoachingReportById, getCoachingReportsByIds, and filterSummariesForAccess must
+  // resolve the employee directory with includeInactive: true — a resigned/terminated Medical
+  // Rep's own historical coaching report(s) must still resolve here. The real access-scope gate
+  // (assertCanAccessEmployee / canAccessCoachingEmployee) operates correctly on the employee row
+  // regardless of status, so this can only widen visibility of already-existing records, never
+  // weaken the access check itself.
+  const getCoachingReportByIdBody = functionBody(
+    "export async function getCoachingReportById(",
+    "\nexport async function getCoachingReportsByIds(",
+  );
+  const getCoachingReportsByIdsBody = functionBody(
+    "export async function getCoachingReportsByIds(",
+    "\nasync function filterSummariesForAccess(",
+  );
+  const filterSummariesForAccessBody = functionBody(
+    "async function filterSummariesForAccess(",
+    "\nexport async function getCoachingReports(",
+  );
+
+  const includeInactiveCall = /getEmployeeDirectoryRows\(\{\s*includeInactive:\s*true\s*\}\)/;
+  const bareCall = /getEmployeeDirectoryRows\(\)/;
+
+  for (const [name, body] of [
+    ["getCoachingReportById", getCoachingReportByIdBody],
+    ["getCoachingReportsByIds", getCoachingReportsByIdsBody],
+    ["filterSummariesForAccess", filterSummariesForAccessBody],
+  ] as const) {
+    assert.match(
+      body,
+      includeInactiveCall,
+      `${name} must call getEmployeeDirectoryRows({ includeInactive: true })`,
+    );
+    assert.doesNotMatch(
+      body,
+      bareCall,
+      `${name} must no longer call the bare no-args getEmployeeDirectoryRows()`,
+    );
+  }
 }

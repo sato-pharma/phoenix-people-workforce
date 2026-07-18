@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeftRight, CalendarRange, Download, ExternalLink, R
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MarketingRoiViewSales, MarketingRoiViewSalesAggregate, MarketingRoiViewSalesRow } from "@/lib/marketing-requests/roi-report-types";
+import { DirectTrackingToggle } from "@/components/marketing-requests/direct-tracking-toggle";
 import { MarketingRoiExplainPanel } from "@/components/marketing-requests/roi-explain-panel";
 import { cn } from "@/lib/utils";
 
@@ -219,6 +220,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                   Promoted products: <span className="text-[#475569]">{data.context.products.map((product) => product.name).join(", ")}</span>
                 </p>
               ) : null}
+              <DirectTrackingToggle requestId={requestId} />
             </section>
 
             {/* Range controls */}

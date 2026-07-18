@@ -5,11 +5,13 @@ import { useEffect, useRef } from "react";
 import {
   clearSessionActivity,
   markSessionActivity,
+  markSessionInvalidated,
   phoenixSessionTimeoutReason,
   readSessionActivityAt,
 } from "@/lib/auth/client-session";
 
 async function logoutForTimeout() {
+  markSessionInvalidated("client_idle_timeout");
   try {
     await fetch("/api/auth/logout", { method: "POST" });
   } catch {
@@ -36,10 +38,13 @@ export function SessionSecurityGuard({
 
       try {
         const response = await fetch("/api/auth/heartbeat", { method: "POST" });
-        if (response.status === 401 && !loggingOutRef.current) {
-          loggingOutRef.current = true;
-          clearSessionActivity();
-          window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
+        if (response.status === 401) {
+          markSessionInvalidated("heartbeat_401");
+          if (!loggingOutRef.current) {
+            loggingOutRef.current = true;
+            clearSessionActivity();
+            window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
+          }
         }
       } catch {
         // Keep client-side timeout enforcement active when the heartbeat is temporarily unavailable.

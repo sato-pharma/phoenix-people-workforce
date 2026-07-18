@@ -495,4 +495,50 @@ export function runWorkforceHierarchyContinuityTests() {
     /isDistrictManagerEmployee\(employee\) && lineScopeIncludesEmployee\(viewer, employee\)/,
     "NSM team expenses line scope must be department-safe",
   );
+
+  // ===========================================================================
+  // WP-3: Approvals Hub + Outstation Expenses adopt the canonical resolver.
+  // ===========================================================================
+
+  // "Who I Approve" must stay TEAM-only (direct reports). It routes through the
+  // seat-continuity TEAM helper and must NEVER widen to the full management chain
+  // (isWithinManagerHierarchy) — that would surface manager-of-manager reports the
+  // owner rule explicitly excludes. We check for the CALL, not the bare word, so a
+  // cautionary code comment naming the helper does not defeat the guard.
+  const approvalsHubSource = readFileSync(
+    new URL("../src/lib/approvals-hub/service.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    approvalsHubSource,
+    /reportsToManagerSeat\(\{/,
+    "Approvals Hub 'Who I Approve' must use the seat-continuity TEAM helper",
+  );
+  assert.doesNotMatch(
+    approvalsHubSource,
+    /isWithinManagerHierarchy\(/,
+    "Approvals Hub must NOT call isWithinManagerHierarchy — 'Who I Approve' stays direct-reports-only",
+  );
+
+  // Outstation expenses TEAM + HIERARCHY both route through the canonical resolver,
+  // and the naive manager-map join is fully retired.
+  const expensesSource = readFileSync(
+    new URL("../src/lib/outstation/expenses.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    expensesSource,
+    /reportsToManagerSeat\(\{/,
+    "Outstation expenses TEAM scope must use the seat-continuity helper",
+  );
+  assert.match(
+    expensesSource,
+    /isWithinManagerHierarchy\(\{/,
+    "Outstation expenses HIERARCHY scope must use the seat-continuity helper",
+  );
+  assert.doesNotMatch(
+    expensesSource,
+    /function buildManagerMap/,
+    "Outstation expenses must retire the naive buildManagerMap join",
+  );
 }

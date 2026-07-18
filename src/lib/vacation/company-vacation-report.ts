@@ -17,14 +17,16 @@
  * AV counts. This report covers every CRM identity org-wide (including Head Office admin/HR
  * roles FWC excludes by design).
  *
- * Owner-confirmed trigger rule (2026-07): the ONLY thing that counts a day as CRM leave is the
- * CRM's own AV marking (visit_type -4) — after excuse-comment and public-holiday exclusion, an
- * AV day is a full vacation day at face value. A regular/campaign visit-count heuristic (e.g.
- * "fewer than 5 PM visits") must NEVER be used to downgrade or zero out an AV day for a normal
- * employee — that inference was tried and explicitly rejected as too aggressive. The ONLY
- * exception is a device-mapped employee with a real fingerprint punch that day, which is
- * physical proof, not a soft inference — attendance-cross-check.ts's 5h threshold still applies
- * there. Report rows with 0 working days are never returned — see getCompanyVacationReport.
+ * Owner-confirmed trigger rule (2026-07, ampm half-day added 2026-07-18): the ONLY thing that
+ * counts a day as CRM leave is the CRM's own AV marking (visit_type -4) — after excuse-comment and
+ * public-holiday exclusion, an AV day counts at the value the CRM itself recorded: a full day, or
+ * 0.5 when the CRM marked it AM/PM. Honoring the CRM's own ampm half-day is NOT a heuristic — it's
+ * the recorded value, the same reading the CRM master Vacations tab uses. What must NEVER be used
+ * is a regular/campaign visit-count heuristic (e.g. "fewer than 5 PM visits") to downgrade or zero
+ * out an AV day — that inference was tried and explicitly rejected as too aggressive. The other
+ * downgrade is a device-mapped employee with a real fingerprint punch that day, which is physical
+ * proof, not a soft inference — attendance-cross-check.ts's 5h threshold still applies there.
+ * Report rows with 0 working days are never returned — see getCompanyVacationReport.
  *
  * Historical caching (2026-07, owner-requested): re-scanning the whole date range on every page
  * view is wasteful once a month is closed — that data essentially never changes. Every date-range
@@ -52,7 +54,12 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 const AV_HALF_DAY_MAX_WORKED_MINUTES = 5 * 60;
 const EXCUSE_COMMENT_PATTERN = /excuse/i;
 /** CRM visit_type for "Annual Vacation" — see VISIT_TYPE_TO_STATUS in ireports360-source.ts.
- * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave. */
+ * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave.
+ * NOTE: this is intentionally NARROWER than the CRM master "Vacations" tab (crm/master.ts
+ * computeVacationPeriods), which matches any 'vacation'-worded description. BOTH honor the CRM's
+ * ampm half-day (0.5). This report additionally drops public-holiday / excuse-labeled /
+ * proven-worked days and merges HR-approved leave, so its counts stay narrower than the raw tab
+ * by design — see that function's docstring. */
 const ANNUAL_VACATION_VISIT_TYPE = -4;
 /** Historical (closed-month) data is "pinned" for 6 hours — long enough to avoid re-scanning
  * on every page view, short enough that a same-day HR correction or late CRM sync still shows
@@ -303,6 +310,10 @@ export type ClassifiedAvDate = {
  */
 export function classifyAvDate(input: {
   comments: Array<string | null>;
+  /** Parallel to `comments` (same order/length): the CRM `ampm` flag of each AV row that day.
+   * An "AM"/"PM" row is a CRM-marked HALF day; anything else (null/empty) is a full day. Optional
+   * so older callers/tests that don't pass it fall back to whole-day behavior. */
+  ampms?: Array<string | null>;
   isDeviceMapped: boolean;
   isHoliday: boolean;
   workedMinutes: number | null;
@@ -311,9 +322,19 @@ export function classifyAvDate(input: {
 
   // Only rows NOT labeled as an excuse count toward this date being a real leave day — if even
   // one non-excuse AV row survives, the date still counts. Only an all-excuse day is dropped.
-  const nonExcuseComments = input.comments.filter((comment) => !EXCUSE_COMMENT_PATTERN.test(comment ?? ""));
-  if (nonExcuseComments.length === 0) return null;
-  const comment = nonExcuseComments.find((value) => value) ?? "";
+  // Keep each surviving row's ampm alongside its comment so the half-day marking stays aligned.
+  const ampms = input.ampms ?? [];
+  const nonExcuseRows = input.comments
+    .map((comment, i) => ({ comment, ampm: ampms[i] ?? null }))
+    .filter((row) => !EXCUSE_COMMENT_PATTERN.test(row.comment ?? ""));
+  if (nonExcuseRows.length === 0) return null;
+  const comment = nonExcuseRows.map((row) => row.comment).find((value) => value) ?? "";
+
+  // The CRM's OWN half-day marking (ampm), honored the same way the CRM master Vacations tab does:
+  // each AM/PM row is 0.5, each unmarked row is a full day; a single calendar day is capped at 1.0.
+  // This is the CRM's recorded value, NOT a visit-count inference (which is still never used here).
+  const isHalf = (ampm: string | null) => ampm === "AM" || ampm === "PM";
+  const crmDayValue = Math.min(1, nonExcuseRows.reduce((sum, row) => sum + (isHalf(row.ampm) ? 0.5 : 1), 0));
 
   const hasFingerprintData = input.isDeviceMapped && input.workedMinutes != null;
   if (hasFingerprintData) {
@@ -329,13 +350,14 @@ export function classifyAvDate(input: {
     };
   }
 
-  // No fingerprint proof available (not device-mapped, or no punch that day) — the CRM AV
-  // marking is trusted at face value as a full vacation day. No visit-count inference: a
-  // regular/campaign visit-count heuristic must never downgrade or zero an AV day here.
+  // No fingerprint proof available (not device-mapped, or no punch that day) — trust the CRM AV
+  // marking, including its own AM/PM half-day flag. No visit-count inference: a regular/campaign
+  // visit-count heuristic must never downgrade or zero an AV day here.
+  const isCrmHalfDay = crmDayValue <= 0.5;
   return {
-    detail: comment || "Annual Vacation",
+    detail: isCrmHalfDay ? `${comment || "Annual Vacation"} (half-day — CRM AM/PM)` : (comment || "Annual Vacation"),
     source: "CRM Signal — Vacation",
-    workingDays: 1,
+    workingDays: crmDayValue,
   };
 }
 
@@ -455,6 +477,7 @@ async function buildCrmSignalRows(input: {
       const workedMinutes = isDeviceMapped ? workedMinutesByKeyAndDate.get(`${key}|${dateIso}`) ?? null : null;
       const classified = classifyAvDate({
         comments: dayVisits.map((visit) => visit.comment),
+        ampms: dayVisits.map((visit) => visit.ampm),
         isDeviceMapped,
         isHoliday: holidayDates.has(dateIso),
         workedMinutes,

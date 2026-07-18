@@ -21,6 +21,14 @@
 export const ACTIVE_EMPLOYMENT_STATUSES = new Set(["active", "on_leave"]);
 
 /**
+ * PostgREST literal form of ACTIVE_EMPLOYMENT_STATUSES, for query filters that need a
+ * literal rather than a JS predicate (supabase-js .in()/.or(), or raw PostgREST query
+ * strings). Derived from the same Set so the two can never drift.
+ */
+export const ACTIVE_EMPLOYMENT_STATUSES_IN_LIST = `(${Array.from(ACTIVE_EMPLOYMENT_STATUSES).join(",")})`;
+// => "(active,on_leave)"
+
+/**
  * True when a linked employee record carries a TERMINAL lifecycle status
  * (resigned / terminated / inactive / not_renewed / anything outside the active
  * set). An unset/empty status is treated as active (NOT terminal) so legacy rows

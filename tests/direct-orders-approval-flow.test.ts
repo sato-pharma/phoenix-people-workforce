@@ -1,0 +1,126 @@
+import assert from "node:assert/strict";
+
+import {
+  computeDirectOrderSalesValue,
+  computeDiscountSalesValue,
+  directOrderExpectedRoleChain,
+  directOrderExpectedStepCount,
+  directOrderManagementLadder,
+  evaluateStepAction,
+  maxBonusUnits,
+  resolveActionAvailability,
+  resolveActiveStep,
+  validateBonus,
+  validateDiscount,
+} from "../src/lib/direct-orders/approval-flow.ts";
+import type { DirectOrderStepState } from "../src/lib/direct-orders/types.ts";
+
+function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; status: DirectOrderStepState["status"] }>): DirectOrderStepState[] {
+  return defs.map((d) => ({
+    order: d.order,
+    kind: d.kind ?? "person",
+    role: d.role ?? null,
+    approverHrId: d.approverHrId ?? `MGR-${d.order}`,
+    label: d.label ?? `Level ${d.order}`,
+    status: d.status,
+  }));
+}
+
+export function runDirectOrdersApprovalFlowTests() {
+  // ── Ladder per requester role (owner-locked) ────────────────────────────────
+  assert.deepEqual(directOrderManagementLadder("District Manager"), ["Regional Manager", "National Sales Manager"]);
+  assert.deepEqual(directOrderManagementLadder("Regional Manager"), ["National Sales Manager"]);
+  assert.deepEqual(directOrderManagementLadder("National Sales Manager"), []);
+  assert.deepEqual(directOrderManagementLadder("Product Manager"), []);
+  assert.deepEqual(directOrderManagementLadder("Group Product Manager"), []);
+
+  // Every chain ends at the CEO.
+  assert.deepEqual(directOrderExpectedRoleChain("District Manager"), ["Regional Manager", "National Sales Manager", "CEO"]);
+  assert.deepEqual(directOrderExpectedRoleChain("Product Manager"), ["CEO"]);
+  assert.equal(directOrderExpectedStepCount("District Manager"), 3);
+  assert.equal(directOrderExpectedStepCount("Regional Manager"), 2);
+  assert.equal(directOrderExpectedStepCount("National Sales Manager"), 1);
+  assert.equal(directOrderExpectedStepCount("Group Product Manager"), 1);
+
+  // ── Bonus cap: config-driven percentage (25% default, 30% for an Ivyronc override) ──
+  assert.equal(maxBonusUnits({ qty: 100, capPct: 25 }), 25);
+  assert.equal(maxBonusUnits({ qty: 200, capPct: 25 }), 50);
+  assert.equal(maxBonusUnits({ qty: 100, capPct: 30 }), 30);
+  assert.equal(maxBonusUnits({ qty: 200, capPct: 30 }), 60);
+  assert.equal(maxBonusUnits({ qty: 90, capPct: 25 }), 22); // floor(22.5)
+
+  assert.equal(validateBonus({ qty: 100, bonus: 25, capPct: 25 }).withinCap, true);
+  assert.equal(validateBonus({ qty: 100, bonus: 26, capPct: 25 }).withinCap, false);
+  assert.equal(validateBonus({ qty: 100, bonus: 30, capPct: 30 }).withinCap, true);
+  assert.equal(validateBonus({ qty: 100, bonus: 31, capPct: 30 }).withinCap, false);
+
+  // ── Discount cap + value ────────────────────────────────────────────────────
+  assert.equal(validateDiscount({ discountPct: 25, capPct: 25 }).withinCap, true);
+  assert.equal(validateDiscount({ discountPct: 26, capPct: 25 }).withinCap, false);
+  // owner example: 100 Roya × public 92 = 9200 gross → 25% off → 6900
+  assert.equal(computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 25 }), 6900);
+  assert.equal(computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 0 }), 9200);
+
+  // ── Bonus-mode value = qty × factory price, bonus NEVER counted ─────────────
+  assert.equal(computeDirectOrderSalesValue({ qty: 100, factoryPrice: 111.15 }), 11115);
+  assert.equal(computeDirectOrderSalesValue({ qty: 0, factoryPrice: 50 }), 0);
+  assert.equal(computeDirectOrderSalesValue({ qty: 200, factoryPrice: 30.375 }), 6075);
+
+  // ── resolveActiveStep ───────────────────────────────────────────────────────
+  const chain = steps(
+    { order: 1, status: "approved" },
+    { order: 2, status: "pending" },
+    { order: 3, status: "pending", kind: "role", role: "CEO", approverHrId: null, label: "CEO" },
+  );
+  assert.equal(resolveActiveStep(chain)?.order, 2);
+  assert.equal(resolveActiveStep(steps({ order: 1, status: "approved" }, { order: 2, status: "approved" })), null);
+
+  // ── Sequential gating ───────────────────────────────────────────────────────
+  // Order-2 cannot act while order-1 is still pending.
+  const fresh = steps(
+    { order: 1, status: "pending" },
+    { order: 2, status: "pending" },
+    { order: 3, status: "pending", kind: "role", role: "CEO" },
+  );
+  assert.equal(evaluateStepAction({ steps: fresh, actorOrder: 2, decision: "approve" }).allowed, false);
+  const l1 = evaluateStepAction({ steps: fresh, actorOrder: 1, decision: "approve" });
+  assert.equal(l1.allowed, true);
+  assert.equal(l1.nextStatus, "pending_approval");
+  assert.equal(l1.isFinal, false);
+
+  // After 1 & 2 approved, CEO approve finalizes.
+  const atCeo = steps(
+    { order: 1, status: "approved" },
+    { order: 2, status: "approved" },
+    { order: 3, status: "pending", kind: "role", role: "CEO" },
+  );
+  const ceo = evaluateStepAction({ steps: atCeo, actorOrder: 3, decision: "approve" });
+  assert.equal(ceo.allowed, true);
+  assert.equal(ceo.nextStatus, "approved");
+  assert.equal(ceo.isFinal, true);
+
+  // Reject is terminal; return sends back.
+  assert.equal(evaluateStepAction({ steps: fresh, actorOrder: 1, decision: "reject" }).nextStatus, "rejected");
+  assert.equal(evaluateStepAction({ steps: fresh, actorOrder: 1, decision: "reject" }).isFinal, true);
+  assert.equal(evaluateStepAction({ steps: fresh, actorOrder: 1, decision: "return" }).nextStatus, "returned");
+  assert.equal(evaluateStepAction({ steps: fresh, actorOrder: 1, decision: "return" }).isFinal, false);
+
+  // Single-rung (PM/GPM/NSM → CEO): approving the only rung finalizes.
+  const single = steps({ order: 1, status: "pending", kind: "role", role: "CEO", approverHrId: null });
+  const only = evaluateStepAction({ steps: single, actorOrder: 1, decision: "approve" });
+  assert.equal(only.nextStatus, "approved");
+  assert.equal(only.isFinal, true);
+
+  // Already-decided step cannot act again.
+  assert.equal(evaluateStepAction({ steps: atCeo, actorOrder: 1, decision: "approve" }).allowed, false);
+
+  // ── Button availability ─────────────────────────────────────────────────────
+  const availActive = resolveActionAvailability({ status: "pending_approval", steps: fresh, actorOrder: 1 });
+  assert.equal(availActive.approve.enabled, true);
+  const availBlocked = resolveActionAvailability({ status: "pending_approval", steps: fresh, actorOrder: 2 });
+  assert.equal(availBlocked.approve.enabled, false);
+  const availClosed = resolveActionAvailability({ status: "approved", steps: atCeo, actorOrder: 3 });
+  assert.equal(availClosed.approve.enabled, false);
+  const availReturned = resolveActionAvailability({ status: "returned", steps: fresh, actorOrder: 1 });
+  assert.equal(availReturned.approve.enabled, false);
+}

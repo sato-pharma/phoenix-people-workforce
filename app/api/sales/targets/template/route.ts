@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { SALES_LINES, loadTargetableAreas } from "@/lib/sales/monthly-targets";
+import { SALES_LINES, loadTargetableAreas, loadTargetableProducts } from "@/lib/sales/monthly-targets";
 import { generateTargetsTemplate } from "@/lib/sales/targets-template";
 
 export const runtime = "nodejs";
@@ -16,12 +16,17 @@ export async function GET(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const url = new URL(request.url);
-    const lineCode = url.searchParams.get("line");
-    const line = SALES_LINES.find((entry) => entry.code === lineCode) ?? null;
-    const areas = line ? await loadTargetableAreas(line.code) : [];
+    const requested = url.searchParams.get("line");
+    // The smart template is per-line (its dropdowns + auto-fill need that line's products
+    // and areas), so resolve to a concrete line — defaulting to the first when none is given.
+    const line = SALES_LINES.find((entry) => entry.code === requested) ?? SALES_LINES[0];
+    const [areas, products] = await Promise.all([
+      loadTargetableAreas(line.code),
+      loadTargetableProducts(line.code),
+    ]);
 
-    const buffer = await generateTargetsTemplate({ lineLabel: line?.label, areas });
-    const fileName = `targets-template${line ? `-${line.code}` : ""}.xlsx`;
+    const buffer = await generateTargetsTemplate({ lineLabel: line.label, areas, products });
+    const fileName = `targets-template-${line.code}.xlsx`;
     return new NextResponse(buffer, {
       status: 200,
       headers: {

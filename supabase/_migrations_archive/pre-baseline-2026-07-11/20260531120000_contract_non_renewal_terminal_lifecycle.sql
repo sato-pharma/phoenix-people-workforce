@@ -1,4 +1,4 @@
--- DRAFT - WP-6 - DO NOT APPLY YET. Contract non-renewal terminal lifecycle traceability.
+-- APPLIED - WP-6. Contract non-renewal terminal lifecycle traceability.
 --
 -- Purpose
 --   When a contract renewal request reaches the terminal status "not_renewed"
@@ -13,14 +13,19 @@
 --     change, no enum value added (we reuse the existing "terminated" employment
 --     status value).
 --   - Grants are restricted to service_role; no grant to anon/authenticated/public.
---   - Application code is gated by WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED
---     which defaults to false. The migration can land before the flag is flipped.
+--   - Application code is gated by WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED.
 --
--- Apply order (do NOT apply yet):
---   1. Review with reviewer + ops.
---   2. Apply on staging Supabase first.
---   3. Run smoke tests against staging.
---   4. Only then schedule production apply through the standard migration approval gate.
+-- Status (confirmed 2026-07-18): this file's DDL is LIVE on both staging
+-- (cifwmndunmlxjhyjugxa) and production — folded into
+-- the 2026-07-11 baseline reset, which is why the file lives in this archive
+-- directory rather than an active supabase/migrations/ timestamp. Confirmed by
+-- direct schema inspection: the contract_renewal_request_id column, its index,
+-- and the phx_terminate_employee_for_non_renewal RPC (service_role-only grant)
+-- all exist on both projects. Note the application code path
+-- (maybeRunNonRenewalTerminalLifecycle in src/lib/contracts/service.ts) calls
+-- resignEmployeeAndOpenVacancy directly and does not invoke this migration's
+-- wrapper RPC; the RPC remains available for future direct-SQL traceability
+-- use but is not currently exercised by the app. Do not re-apply this file.
 
 -- ------------------------------------------------------------
 -- 1) Traceability column on employee_resignations

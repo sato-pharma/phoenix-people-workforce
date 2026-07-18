@@ -10,6 +10,9 @@ import type { FeedbackSlaState } from "@/lib/probation/intelligence/feedback-sla
 // Double-Visit day — that repeats the same 2 probationer names 20+ times. Instead show ONE card per
 // PROBATIONER, and under it the numbered list of that person's still-missing DV-Day feedbacks, each
 // deep-linking into the structured DV-Day feedback form (/employee-portals/probation/feedback/[dvDayId]).
+//
+// Owner rule (2026-07-18): Training Manager feedback is OPTIONAL — a TM-evaluated DV-day is shown as
+// "Optional" (a TM may still submit if they want) and is NEVER counted as overdue or SLA-pressured.
 
 export type FeedbackTaskView = {
   dvDayId: string;
@@ -22,6 +25,12 @@ export type FeedbackTaskView = {
   hoursUntilDue: number;
   hoursOverdue: number;
 };
+
+// Evaluator roles whose feedback is OPTIONAL (no SLA / not required). Training Manager only, per owner.
+const OPTIONAL_EVALUATOR_ROLES = new Set(["tm"]);
+function isOptional(t: FeedbackTaskView): boolean {
+  return t.evaluatorRole != null && OPTIONAL_EVALUATOR_ROLES.has(t.evaluatorRole);
+}
 
 const SLA_STYLE: Record<FeedbackSlaState, string> = {
   pending: "bg-slate-100 text-slate-600 border-slate-200",
@@ -64,8 +73,17 @@ function groupByProbationer(tasks: FeedbackTaskView[]): ProbationerGroup[] {
   }
   const groups: ProbationerGroup[] = [];
   for (const [employeeHrId, items] of byEmployee) {
-    items.sort((a, b) => SLA_ORDER[a.slaState] - SLA_ORDER[b.slaState] || a.dvDate.localeCompare(b.dvDate));
-    const worst = items.reduce<FeedbackSlaState>(
+    // Required (SLA) tasks first — by SLA severity; optional (TM) tasks always sort last.
+    items.sort(
+      (a, b) =>
+        Number(isOptional(a)) - Number(isOptional(b)) ||
+        SLA_ORDER[a.slaState] - SLA_ORDER[b.slaState] ||
+        a.dvDate.localeCompare(b.dvDate),
+    );
+    // Worst SLA + overdue count are computed over REQUIRED tasks only — an optional TM task must never
+    // make a probationer look overdue.
+    const required = items.filter((t) => !isOptional(t));
+    const worst = required.reduce<FeedbackSlaState>(
       (acc, t) => (SLA_ORDER[t.slaState] < SLA_ORDER[acc] ? t.slaState : acc),
       "pending",
     );
@@ -73,7 +91,7 @@ function groupByProbationer(tasks: FeedbackTaskView[]): ProbationerGroup[] {
       employeeHrId,
       employeeName: items.find((t) => t.employeeName)?.employeeName ?? null,
       items,
-      overdue: items.filter((t) => t.slaState === "overdue").length,
+      overdue: required.filter((t) => t.slaState === "overdue").length,
       worst,
     });
   }
@@ -91,7 +109,8 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
   const groups = useMemo(() => groupByProbationer(tasks), [tasks]);
 
   if (tasks.length === 0) return null;
-  const overdue = tasks.filter((t) => t.slaState === "overdue").length;
+  // Optional (TM) tasks never count as overdue.
+  const overdue = tasks.filter((t) => !isOptional(t) && t.slaState === "overdue").length;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
@@ -128,33 +147,44 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
               </div>
 
               <ol className="mt-2 space-y-1.5">
-                {group.items.map((t, index) => (
-                  <li
-                    key={t.dvDayId}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-700">Feedback {index + 1} — missing</span>
-                        <span
-                          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${SLA_STYLE[t.slaState]}`}
-                        >
-                          {SLA_LABEL[t.slaState]} · {timing(t)}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Double-Visit {t.dvDate} · {t.visitCount} visit{t.visitCount === 1 ? "" : "s"}
-                        {t.evaluatorRole ? ` · as ${t.evaluatorRole}` : ""}
-                      </div>
-                    </div>
-                    <Link
-                      href={`/employee-portals/probation/feedback/${encodeURIComponent(t.dvDayId)}`}
-                      className="rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                {group.items.map((t, index) => {
+                  const optional = isOptional(t);
+                  return (
+                    <li
+                      key={t.dvDayId}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2"
                     >
-                      Give feedback
-                    </Link>
-                  </li>
-                ))}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-700">
+                            Feedback {index + 1} — {optional ? "optional" : "missing"}
+                          </span>
+                          {optional ? (
+                            <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                              Optional
+                            </span>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${SLA_STYLE[t.slaState]}`}
+                            >
+                              {SLA_LABEL[t.slaState]} · {timing(t)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Double-Visit {t.dvDate} · {t.visitCount} visit{t.visitCount === 1 ? "" : "s"}
+                          {t.evaluatorRole ? ` · as ${t.evaluatorRole}` : ""}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/employee-portals/probation/feedback/${encodeURIComponent(t.dvDayId)}`}
+                        className="rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                      >
+                        Give feedback
+                      </Link>
+                    </li>
+                  );
+                })}
               </ol>
             </li>
           ))}

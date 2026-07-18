@@ -103,7 +103,7 @@ export function runProbationEmailsTests() {
   assert.equal(isDateBeforeProbationEmailFreshStart(cutoffDay), false, "a crossing on the reset day itself emails");
   // Wiring: every sweep honours the cutoff so the 62-DV-day / crossed-milestone backlog stays silent.
   const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
-  assert.match(sla, /\.filter\(\(t\) => !isBeforeProbationEmailFreshStart\(t\.createdAt\)\)/, "SLA sweep suppresses pre-reset DV-Days");
+  assert.match(sla, /!isBeforeProbationEmailFreshStart\(t\.createdAt\)/, "SLA sweep suppresses pre-reset DV-Days");
   assert.match(emails, /if \(isDateBeforeProbationEmailFreshStart\(crossingDate\)\) continue;/, "milestone sweep suppresses pre-reset crossings");
   assert.match(emails, /\.gte\("created_at", PROBATION_EMAIL_FRESH_START_ISO\)/, "weekly digest only rolls up post-reset DV-Days");
 }

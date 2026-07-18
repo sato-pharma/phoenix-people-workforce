@@ -1,4 +1,5 @@
 ﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST, isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
@@ -42,11 +43,7 @@ function compact(value: unknown) {
 }
 
 function isInactiveEmploymentStatus(status: string | null | undefined) {
-  const normalized = normalize(status);
-  if (!normalized) return false;
-  return ["inactive", "resigned", "terminated", "left", "suspended", "vacant"].some((token) =>
-    normalized.includes(token)
-  );
+  return isTerminalEmploymentStatus(status);
 }
 
 function employeeLabel(employee: EmployeeDirectoryRow) {
@@ -271,6 +268,7 @@ async function loadDirectory() {
   const { data, error } = await supabase
     .from("employees")
     .select("hr_id, crm_id, crm_username, full_name, nickname, employment_status, manager_hr_id, job_title, line_id, area_id")
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .order("full_name", { ascending: true });
 
   if (error) return [] as EmployeeDirectoryRow[];

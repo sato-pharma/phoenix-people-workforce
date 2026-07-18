@@ -231,7 +231,14 @@ export async function processFeedbackSlaReminders(
   // FRESH START (owner directive 2026-07-17): only DV-Days captured on/after the reset instant may
   // send reminders. This suppresses catch-up reminders for the pre-reset backlog (62 open DV-days at
   // re-enable) that dedup would NOT have caught (a new due→escalated→overdue transition is a new key).
-  const withSla = allWithSla.filter((t) => !isBeforeProbationEmailFreshStart(t.createdAt));
+  //
+  // TRAINING-MANAGER OPT-OUT (owner directive 2026-07-18): Training Manager feedback is OPTIONAL, so a
+  // TM-evaluated Double-Visit day never generates an SLA reminder or escalation. The task still exists
+  // (a TM may submit feedback if they choose) but is never chased. Pairs with requirements.tm = 0 in
+  // the probation config, which drops TM from the required/decision-readiness components.
+  const withSla = allWithSla.filter(
+    (t) => !isBeforeProbationEmailFreshStart(t.createdAt) && t.evaluatorRole !== "tm",
+  );
 
   const [hrApproverHrIds, ceoHrIds, systemAdminHrId, caseInfo, cap] = await Promise.all([
     resolveHrApproverHrIds(),

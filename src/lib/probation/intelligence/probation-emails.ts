@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemDeployment } from "@/config/system-settings";
 
 import { getProbationConfig } from "./config";
+import { filterResolvedProbationCases } from "./cases";
 import { computeDvProgress, currentProbationDay, type DvDayLite } from "./report-metrics";
 import { createProbationDailyCap, type ProbationDailyCap } from "./notification-cap";
 import { isDateBeforeProbationEmailFreshStart, PROBATION_EMAIL_FRESH_START_ISO } from "./email-fresh-start";
@@ -337,7 +338,11 @@ export async function processProbationWeeklyDigest(nowIso: string = new Date().t
     .from("probation_cases")
     .select("id, employee_hr_id, employee_name, hire_date, line_name, status")
     .in("id", Array.from(byCase.keys()));
-  const cases = (caseRows ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null; line_name: string | null; status: string }>;
+  const loadedCases = (caseRows ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null; line_name: string | null; status: string }>;
+  // Defense-in-depth (legacy-decision desync): same guard as the milestone sweep — drop any case whose
+  // employee was resolved via the LEGACY workflow but never mirrored into probation_cases, so a
+  // legacy-decided rep with recent DV activity stops receiving weekly digests. Fails OPEN.
+  const cases = await filterResolvedProbationCases(loadedCases);
 
   const cap = await createProbationDailyCap(now);
 
@@ -383,7 +388,13 @@ export async function processProbationMilestoneEmails(nowIso: string = new Date(
   const supabase = getSupabaseAdmin();
   const { data: cases } = await supabase
     .from("probation_cases").select("id, employee_hr_id, employee_name, hire_date").eq("status", "active");
-  const rows = (cases ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null }>;
+  // Defense-in-depth (legacy-decision desync): skip any "active" case whose employee is already
+  // resolved via the LEGACY workflow (employee_probation passed/terminated OR terminal employment
+  // status) but whose outcome wasn't mirrored into probation_cases — otherwise a legacy-decided rep
+  // keeps receiving milestone emails forever. Fails OPEN.
+  const rows = await filterResolvedProbationCases(
+    (cases ?? []) as Array<{ id: string; employee_hr_id: string; employee_name: string | null; hire_date: string | null }>,
+  );
   const cap = await createProbationDailyCap(new Date(nowIso));
 
   // Cases are independent — fan out in parallel instead of a serial per-case await chain. At most

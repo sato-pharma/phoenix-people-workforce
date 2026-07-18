@@ -29,6 +29,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import type {
   EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
@@ -209,38 +210,49 @@ type ExpenseAccessFilter = {
   allowedHrIds: Set<string>;
 };
 
-export function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
+/** Canonical hrId -> employee row, for isWithinManagerHierarchy's byCanonicalHrId input. */
+function buildCanonicalHrIdIndex(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+): Map<string, EmployeeDirectoryRow> {
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
   directory.employees.forEach((employee) => {
-    const managerId = normalizeHrIdForAccess(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!managerId || !employeeId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
   });
-  return managerMap;
+  return byCanonicalHrId;
 }
 
-export function collectHierarchy(managerMap: Map<string, string[]>, rootHrId: string) {
-  const allowedHrIds = new Set<string>();
-  const canonicalRoot = normalizeHrIdForAccess(rootHrId);
-  if (!canonicalRoot) return allowedHrIds;
-
-  const queue: string[] = [canonicalRoot];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      const normalizedSub = normalizeHrId(subordinateId);
-      if (normalizedSub && !allowedHrIds.has(normalizedSub)) {
-        allowedHrIds.add(normalizedSub);
-        const canonicalSub = normalizeHrIdForAccess(normalizedSub);
-        if (canonicalSub) queue.push(canonicalSub);
-      }
+/** Direct reports of the viewer's seat — TEAM scope. Seat-continuity aware. */
+export function collectDirectReports(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  directory.employees.forEach((employee) => {
+    if (reportsToManagerSeat({ employee, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
     }
-  }
-  return allowedHrIds;
+  });
+  return allowed;
+}
+
+/** Every employee in the viewer's full downward chain — HIERARCHY scope. Cycle-safe. */
+export function collectHierarchy(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  const byCanonicalHrId = buildCanonicalHrIdIndex(directory);
+  directory.employees.forEach((employee) => {
+    if (isWithinManagerHierarchy({ employee, byCanonicalHrId, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
+    }
+  });
+  return allowed;
 }
 
 type LineFallbackOptions = {
@@ -298,21 +310,19 @@ async function resolveExpenseAccessFilter(
   const directory = await getEmployeeDirectory();
   const canonicalViewerId = normalizeHrIdForAccess(currentHrId);
   const viewer = canonicalViewerId ? directory.employees.find(e => normalizeHrIdForAccess(e.hrId) === canonicalViewerId) : null;
-  const managerMap = buildManagerMap(directory);
 
   if (scope === "SELF") {
     return { all: false, allowedHrIds: new Set([currentHrId]) };
   }
 
   if (scope === "TEAM") {
-    const canonicalId = normalizeHrIdForAccess(currentHrId);
-    const allowed = new Set(canonicalId ? managerMap.get(canonicalId) ?? [] : []);
+    const allowed = collectDirectReports(directory, canonicalViewerId ?? "");
     allowed.add(currentHrId);
     return { all: false, allowedHrIds: allowed };
   }
 
   if (scope === "HIERARCHY") {
-    const allowed = collectHierarchy(managerMap, currentHrId);
+    const allowed = collectHierarchy(directory, canonicalViewerId ?? "");
     allowed.add(currentHrId);
     return { all: false, allowedHrIds: allowed };
   }
