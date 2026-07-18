@@ -872,6 +872,15 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
  * row per run of consecutive calendar days for the same agent (a gap starts a new period; two rows on
  * the same date — an AM + a PM half — stay in the same run). Resigned agents excluded. Duration counts
  * half-days as 0.5. Walks paginated rows (PostgREST caps a single request). Newest period first.
+ *
+ * SCOPE — this is the RAW CRM vacation view and is DELIBERATELY broader than the Company Vacation
+ * Report (src/lib/vacation/company-vacation-report.ts). This tab matches ANY vacation-worded
+ * description (ILIKE '%vacation%'). The Company Vacation Report is narrower: only Annual Vacation
+ * (visit_type = -4, NOT Health Day -15), and it drops public-holiday / excuse-labeled /
+ * proven-worked days and merges in HR-approved leave. BOTH honor the CRM's own AM/PM half-day
+ * marking (ampm → 0.5 day). So this raw tab still shows more/other rows than that de-noised,
+ * advisory report — they answer different questions and are kept in sync by intent, never by
+ * forcing the numbers to match.
  */
 async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();

@@ -18,7 +18,7 @@
 //    IS a working day. Only Friday is excluded from working-days (utilization);
 //    the day-of-week charts dim Friday and lighten Thursday.
 
-import { queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
   COMPANY_CHECKIN_HOUR_SHARE,
@@ -55,6 +55,10 @@ export type VisitRow = {
   contact_crm_id: number | null;
   contact_name: string | null;
   customer_name: string | null;
+  // `double_crm_id` is the raw CRM partner id — the canonical double-visit signal
+  // (see isCrmDoubleVisitRow). `double_hr_id` is only the resolved employee id and
+  // may be null even when a real partner rode along, so it must NOT gate DV counts.
+  double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
   comment: string | null;
@@ -203,7 +207,7 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
-    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment",
   });
 }
 
@@ -300,10 +304,14 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
     else if (bucket === "training") trainingVisits += 1;
     else adminVisits += 1;
 
-    if (row.double_hr_id) doublesReceived += 1;
+    // A double visit is a real partner (double_crm_id) on a fieldwork type {0,-8}
+    // — the canonical crm/reads predicate. Do NOT count a partner riding along on
+    // a Meeting/Vacation/Training row, and key on double_crm_id (raw partner), not
+    // the resolved double_hr_id which can be null for a real, unmapped partner.
+    if (isCrmDoubleVisitRow(row)) doublesReceived += 1;
 
     if (isProductive) {
-      if (row.double_hr_id) productiveDoubles += 1;
+      if (isCrmDoubleVisitRow(row)) productiveDoubles += 1;
       if (row.visit_date) {
         activeDaySet.add(row.visit_date);
         productiveDates.push(row.visit_date);

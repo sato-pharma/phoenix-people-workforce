@@ -109,4 +109,55 @@ export function runCompanyVacationReportTests() {
     isHoliday: false,
     workedMinutes: 480,
   }), null, "well over the threshold is also dropped entirely");
+
+  // ── ampm half-day (2026-07-18): the report now honors the CRM's OWN AM/PM half-day marking —
+  //    the same reading the CRM master Vacations tab uses, NOT a visit-count heuristic. ──
+  const amHalf = classifyAvDate({
+    comments: ["Annual Leave"],
+    ampms: ["AM"],
+    isDeviceMapped: false,
+    isHoliday: false,
+    workedMinutes: null,
+  });
+  assert.ok(amHalf);
+  assert.equal(amHalf.workingDays, 0.5, "a CRM AV row marked AM is a half-day (0.5)");
+  assert.equal(amHalf.source, "CRM Signal — Vacation");
+
+  const pmHalf = classifyAvDate({ comments: ["Annual Leave"], ampms: ["PM"], isDeviceMapped: false, isHoliday: false, workedMinutes: null });
+  assert.equal(pmHalf?.workingDays, 0.5, "a CRM AV row marked PM is a half-day (0.5)");
+
+  // AM + PM on the same date = a full day (0.5 + 0.5), capped at 1.0.
+  const amPlusPm = classifyAvDate({
+    comments: ["Annual Leave", "Annual Leave"],
+    ampms: ["AM", "PM"],
+    isDeviceMapped: false,
+    isHoliday: false,
+    workedMinutes: null,
+  });
+  assert.equal(amPlusPm?.workingDays, 1, "AM + PM halves on the same day sum to a full day");
+
+  // An unmarked (no ampm) AV row is still a full day — unchanged face-value behavior.
+  const noAmpm = classifyAvDate({ comments: ["Annual Leave"], ampms: [null], isDeviceMapped: false, isHoliday: false, workedMinutes: null });
+  assert.equal(noAmpm?.workingDays, 1, "an AV row with no ampm marking stays a full day");
+
+  // ampm stays index-aligned with comments through excuse filtering: dropping the PM "Morning
+  // Excuse" row leaves the surviving AM "Annual Leave" row, which is a half-day.
+  const excusePlusAmHalf = classifyAvDate({
+    comments: ["Morning Excuse", "Annual Leave"],
+    ampms: ["PM", "AM"],
+    isDeviceMapped: false,
+    isHoliday: false,
+    workedMinutes: null,
+  });
+  assert.equal(excusePlusAmHalf?.workingDays, 0.5, "after dropping the excuse row, the surviving AM row drives 0.5");
+
+  // Device fingerprint proving <5h still forces 0.5 even if the CRM marked a full day.
+  const fingerprintOverridesFullDay = classifyAvDate({
+    comments: ["Annual Leave"],
+    ampms: [null],
+    isDeviceMapped: true,
+    isHoliday: false,
+    workedMinutes: 119,
+  });
+  assert.equal(fingerprintOverridesFullDay?.workingDays, 0.5, "a <5h fingerprint still downgrades a CRM full day to a half-day");
 }
