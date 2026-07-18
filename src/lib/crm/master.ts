@@ -14,7 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_DOUBLE_VISIT_TYPE_CODES, CRM_RESIGNED_AGENT_CRM_IDS, queryCheckins } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
@@ -501,6 +501,7 @@ async function computeTriplesInRange(range: {
   dateTo: string | null;
 }): Promise<{ rows: CrmMasterRow[]; byVisitId: Map<number, { third: string; unspecified: boolean }>; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   // Walk pages of double-visit rows (PostgREST caps a single request's row count, so a lone
   // .limit() would silently truncate and miss triples) — same paging pattern as the export.
   const PAGE = 1000;
@@ -516,8 +517,8 @@ async function computeTriplesInRange(range: {
       .neq("double_crm_id", 0)
       .in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
     let q = base as unknown as MasterQuery;
-    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    if (excludedInList) {
+      q = q.not("agent_crm_id", "in", excludedInList);
     }
     if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
     if (range.dateTo) q = q.lte("visit_date", range.dateTo);
@@ -874,6 +875,7 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
  */
 async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
   const MAX_ROWS = 60000;
   const days: VacationDayRow[] = [];
@@ -883,8 +885,8 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
       .select("crm_visit_id, visit_date, ampm, agent_crm_id, agent_name, agent_hr_id, visit_type_description, comment")
       .ilike("visit_type_description", "%vacation%");
     let q = base as unknown as MasterQuery;
-    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    if (excludedInList) {
+      q = q.not("agent_crm_id", "in", excludedInList);
     }
     if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
     if (range.dateTo) q = q.lte("visit_date", range.dateTo);
@@ -954,6 +956,7 @@ function applyMasterFilters(
     search: string | null;
     visitType: string | null;
   },
+  excludedInList: string = CRM_RESIGNED_IN_LIST,
 ): MasterQuery {
   const { agentHrId, allowedHrIds, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType } = opts;
   const isCheckins = dataset === "checkins";
@@ -961,9 +964,11 @@ function applyMasterFilters(
   const dateColumn = isCheckins ? "check_date" : "visit_date";
 
   let q = query;
-  // Resigned agents (owner-flagged) are invisible across every CRM tab — visits + check-ins alike.
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-    q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+  // Resigned/departed agents (owner-flagged + live status) are invisible across every CRM tab —
+  // visits + check-ins alike. `excludedInList` is the effective (static ∪ live) list; defaults to
+  // the static safety-net.
+  if (excludedInList) {
+    q = q.not("agent_crm_id", "in", excludedInList);
   }
   // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
   if (allowedHrIds) {
@@ -1171,8 +1176,9 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
 
+  const excludedInList = await getEffectiveExcludedInList();
   const base = supabase.from(table).select(select, { count: "exact" });
-  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
+  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
   const ordered = (filtered as unknown as typeof base)
     .order(dateColumn, { ascending: false })
     .order(idColumn, { ascending: false })
@@ -1255,13 +1261,14 @@ export async function getCrmMasterExportRows(
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
 
+  const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
   const MAX_ROWS = 50000;
   const rows: CrmMasterRow[] = [];
   let truncated = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const base = supabase.from(table).select(select);
-    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
+    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
     const { data, error } = await (filtered as unknown as typeof base)
       .order(dateColumn, { ascending: false })
       .order(idColumn, { ascending: false })
