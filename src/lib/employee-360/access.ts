@@ -22,6 +22,7 @@
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import {
@@ -61,13 +62,24 @@ export type Employee360Scope = {
   viewer: EmployeeDirectoryRow | null;
   /** Seat-continuity map keyed by canonicalHrIdKey(hrId), for hierarchy climbs. */
   byCanonicalHrId: ReadonlyMap<string, SeatContinuitySubject>;
+  /** Lowercased line names this line-scoped viewer may see (from the per-user
+   *  line_scope_override) — lets a Group PM span MULTIPLE lines. null = fall back
+   *  to the viewer's own single line. */
+  allowedLineKeys: ReadonlySet<string> | null;
 };
 
+/** Line-scoped roles whose visibility can be widened by a line_scope_override. */
+const LINE_SCOPED_ROLES = new Set<PhoenixRole>([
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+]);
+
 /** Build the reusable scope lookups from the full directory for one viewer. */
-export function buildEmployee360Scope(
+export async function buildEmployee360Scope(
   rows: EmployeeDirectoryRow[],
   context: AccessContext,
-): Employee360Scope {
+): Promise<Employee360Scope> {
   const viewerKey = canonicalHrIdKey(context.hrId);
   let viewer: EmployeeDirectoryRow | null = null;
   const byCanonicalHrId = new Map<string, SeatContinuitySubject>();
@@ -80,7 +92,16 @@ export function buildEmployee360Scope(
     });
     if (viewerKey && key === viewerKey) viewer = row;
   }
-  return { viewer, byCanonicalHrId };
+  // A Group PM (or a two-line PM / NSM) can carry a line_scope_override listing
+  // every line they oversee. Only fetch it for the line-scoped roles that use it.
+  let allowedLineKeys: ReadonlySet<string> | null = null;
+  if (LINE_SCOPED_ROLES.has(context.role)) {
+    const lines = await resolveViewerAllowedLines(context);
+    if (lines && lines.length > 0) {
+      allowedLineKeys = new Set(lines.map((l) => l.trim().toLowerCase()).filter(Boolean));
+    }
+  }
+  return { viewer, byCanonicalHrId, allowedLineKeys };
 }
 
 /**
@@ -133,12 +154,17 @@ export function canViewEmployee360Subject(
     });
   }
 
-  // NSM / PM / GPM: their own line (department-safe).
+  // NSM / PM / GPM: their line(s). A line_scope_override (e.g. a Group PM spanning
+  // multiple lines) replaces the own-single-line rule with its explicit line set.
   if (
     role === "National Sales Manager" ||
     role === "Product Manager" ||
     role === "Group Product Manager"
   ) {
+    if (scope.allowedLineKeys) {
+      const subjectLine = String(subject.lineName ?? "").trim().toLowerCase();
+      return subjectLine !== "" && scope.allowedLineKeys.has(subjectLine);
+    }
     if (!scope.viewer) return false;
     return lineScopeIncludesEmployee(
       {
@@ -164,10 +190,10 @@ export function canViewEmployee360Subject(
  * The field-force rows a viewer may see on the Employee 360 index: in-scope AND a
  * covered role family. This is the single door the index page uses.
  */
-export function resolveEmployee360VisibleRows(
+export async function resolveEmployee360VisibleRows(
   rows: EmployeeDirectoryRow[],
   context: AccessContext,
-): EmployeeDirectoryRow[] {
-  const scope = buildEmployee360Scope(rows, context);
+): Promise<EmployeeDirectoryRow[]> {
+  const scope = await buildEmployee360Scope(rows, context);
   return rows.filter((row) => isEmployee360Subject(row) && canViewEmployee360Subject(context, row, scope));
 }
