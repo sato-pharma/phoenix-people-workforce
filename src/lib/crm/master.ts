@@ -14,7 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_DOUBLE_VISIT_TYPE_CODES, CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
+import { CRM_DOUBLE_VISIT_TYPE_CODES, CRM_RESIGNED_AGENT_CRM_IDS, queryCheckins } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
@@ -396,19 +396,23 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   const from = days.reduce((a, b) => (a < b ? a : b));
   const to = days.reduce((a, b) => (a > b ? a : b));
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_CHECKINS_TABLE)
-    .select("crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at")
-    .in("agent_crm_id", agentIds)
-    .gte("check_date", `${from}T00:00:00`)
-    .lte("check_date", `${to}T23:59:59`)
-    .limit(20000);
-  if (error || !data) return;
+  // Full keyset scan via queryCheckins — complete check-in coverage for the page's agents + dates
+  // (no silent 20k cap). Best-effort overlay: any failure leaves the check-in columns null.
+  let data: CheckinLite[];
+  try {
+    data = await queryCheckins<CheckinLite>({
+      agentCrmIds: agentIds,
+      dateFrom: from,
+      dateTo: to,
+      columns: "crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at",
+    });
+  } catch {
+    return;
+  }
 
   // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
   // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
-  const index = indexCheckinsByAgentContactDay(data as CheckinLite[]);
+  const index = indexCheckinsByAgentContactDay(data);
   for (const row of rows) {
     const best = pickCheckinForVisit(
       {

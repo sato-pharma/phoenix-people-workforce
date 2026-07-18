@@ -416,16 +416,16 @@ type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number |
 async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, dateTo: string): Promise<VisitsReportRow[]> {
   if (rows.length === 0) return rows;
   const agentIds = Array.from(new Set(rows.map((row) => row.agentCrmId)));
-  const supabase = getSupabaseAdmin();
-  const { data: checkinRows } = await supabase
-    .from(CRM_CHECKINS_TABLE)
-    .select("agent_crm_id, contact_crm_id, check_date, address")
-    .in("agent_crm_id", agentIds)
-    .gte("check_date", `${dateFrom}T00:00:00`)
-    .lte("check_date", `${dateTo}T23:59:59`)
-    .limit(20000);
+  // Full keyset scan via queryCheckins — every check-in for these agents in the window, so the
+  // nearest-check-in correlation is complete (no silent 20k cap).
+  const checkinRows = await queryCheckins<NearestCheckinRow>({
+    agentCrmIds: agentIds,
+    dateFrom,
+    dateTo,
+    columns: "agent_crm_id, contact_crm_id, check_date, address",
+  });
 
-  const index = indexCheckinsByAgentContactDay((checkinRows ?? []) as NearestCheckinRow[]);
+  const index = indexCheckinsByAgentContactDay(checkinRows);
   return rows.map((row) => {
     const match = pickCheckinForVisit(
       { agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId, visitDay: row.visitDate, crmSaveDate: row.crmSaveDate },
@@ -473,16 +473,33 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
 }
 
 async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("visit_type_description")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(5000);
-  return Array.from(
-    new Set(((data ?? []) as Array<{ visit_type_description: string | null }>).map((row) => row.visit_type_description).filter((value): value is string => Boolean(value))),
-  ).sort();
+  // Full keyset scan (order by `id`) — every distinct visit-type label in the window, GUARANTEED
+  // complete (no silent cap). Distinct cardinality is tiny (~10), so this is a bounded one-pass scan.
+  const supabase = getSupabaseAdmin();
+  const types = new Set<string>();
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, visit_type_description")
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; visit_type_description: string | null }>;
+    for (const row of page) if (row.visit_type_description) types.add(row.visit_type_description);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+  return Array.from(types).sort();
 }
 
 export async function getVisitsReportData(
@@ -574,31 +591,36 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
 // Purpose-built reads that keep a consumer's exact query semantics (and its performance
 // tuning) inside the CRM module, so no module runs its own `.from("ireports360_*")`.
 
-const DISTINCT_AGENT_NAMES_CAP = 25000;
-
 /**
  * Distinct agent names in [dateFrom, dateTo], resigned/excluded agents removed — feeds the CRM
- * Integrity agent-filter dropdown. A single flat, capped, UNORDERED fetch (not a keyset scan):
- * ordering by the random-uuid `id` abandons the `(visit_date)` index and is measurably slower
- * (6.9s vs 3.9s on a real 30-day window), and only the small distinct-name set is needed, not
- * every row. An unusually wide range could in theory truncate before every name is seen, which
- * only narrows the dropdown — never the report's own rows. Returns `[]` if the schema is missing.
+ * Integrity agent-filter dropdown. Full keyset scan (order by `id`), so it returns EVERY distinct
+ * name in the window with no silent cap. Distinct-name cardinality is small (low hundreds), so this
+ * is a bounded one-pass scan of the row set. Returns `[]` if the schema is missing.
  */
 export async function getVisitAgentNames(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("agent_name")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(DISTINCT_AGENT_NAMES_CAP);
-  if (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw new Error(error.message);
-  }
+  const supabase = getSupabaseAdmin();
   const names = new Set<string>();
-  for (const row of (data ?? []) as Array<{ agent_name: string | null }>) {
-    if (row.agent_name) names.add(row.agent_name);
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, agent_name")
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_name: string | null }>;
+    for (const row of page) if (row.agent_name) names.add(row.agent_name);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
   }
   return Array.from(names).sort();
 }
