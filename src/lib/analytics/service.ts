@@ -370,6 +370,8 @@ export type WeeklyFilters = {
   regions?: string[];
   products?: string[];
   families?: string[];
+  /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
+  canViewHeadOffice?: boolean;
 };
 
 async function loadWeeklyFactUncached(filters: WeeklyFilters): Promise<WeeklyFactRow[]> {
@@ -384,7 +386,8 @@ async function loadWeeklyFactUncached(filters: WeeklyFilters): Promise<WeeklyFac
     p_families:     filters.families?.length     ? filters.families     : null,
   } as never);
   if (error) throw new Error(`Weekly fact: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapWeeklyRow);
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapWeeklyRow);
+  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
 }
 
 // ── Cross-source comparison loader ────────────────────────────────────────────
