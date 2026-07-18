@@ -19,7 +19,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
-import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
@@ -86,7 +86,8 @@ async function ByProductContent({
       <AnalyticsFilterBar
         descriptors={SOS_FILTERS}
         values={filters}
-        dimensions={dimensions}
+        dimensions={scopeAnalyticsDimensions(dimensions, scope)}
+        visibility={computeAnalyticsFilterVisibility(scope)}
         basePath="/admin/analytics/source-sales/by-product"
       />
 

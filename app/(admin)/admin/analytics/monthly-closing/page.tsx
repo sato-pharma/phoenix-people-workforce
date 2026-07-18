@@ -20,7 +20,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { CLOSING_FILTERS } from "@/lib/analytics/sales-filter-config";
-import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { computePeriodDelta, shiftPeriod } from "@/lib/analytics/compare";
 import { formatPctOrDash, safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
@@ -115,7 +115,8 @@ async function ClosingDashboardContent({
       <AnalyticsFilterBar
         descriptors={CLOSING_FILTERS}
         values={filters}
-        dimensions={dimensions}
+        dimensions={scopeAnalyticsDimensions(dimensions, scope)}
+        visibility={computeAnalyticsFilterVisibility(scope)}
         basePath="/admin/analytics/monthly-closing"
         comparable
       />

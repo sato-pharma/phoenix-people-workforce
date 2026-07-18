@@ -22,7 +22,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
-import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { computePeriodDelta, shiftPeriod } from "@/lib/analytics/compare";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import {
@@ -133,7 +133,8 @@ async function SosDashboardContent({
       <AnalyticsFilterBar
         descriptors={SOS_FILTERS}
         values={filters}
-        dimensions={dimensions}
+        dimensions={scopeAnalyticsDimensions(dimensions, scope)}
+        visibility={computeAnalyticsFilterVisibility(scope)}
         basePath="/admin/analytics/source-sales"
         comparable
       />
