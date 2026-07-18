@@ -69,7 +69,7 @@ const DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
 type JsonRecord = Record<string, unknown>;
 
-type DoubleVisitDbRow = {
+export type DoubleVisitDbRow = {
   activity_date: string;
   area_name: string | null;
   double_visitor_hr_id: string | null;
@@ -291,7 +291,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   };
 }
 
-function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, employees: EmployeeDirectoryRow[]) {
+export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = resolveDoubleVisitAccessScope(access, employees);
   if (scope.all) return rows;
   return rows.filter((row) => {
@@ -305,7 +305,7 @@ function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessContext, em
   });
 }
 
-function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectoryRow[], access: AccessContext) {
+export function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectoryRow[], access: AccessContext) {
   const scope = resolveDoubleVisitAccessScope(access, employees);
   if (scope.all) return employees;
   return employees.filter((employee) => {
@@ -616,7 +616,7 @@ function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
     .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
-function isActiveEmployee(employee: EmployeeDirectoryRow) {
+export function isActiveEmployee(employee: EmployeeDirectoryRow) {
   const status = text(employee.employmentStatus).toLowerCase();
   return status === "active" || status === "on_leave";
 }
@@ -633,7 +633,7 @@ const allowedDoubleVisitorRoles = [
   "Training Manager",
 ] as const;
 
-function isMedicalRep(employee: EmployeeDirectoryRow) {
+export function isMedicalRep(employee: EmployeeDirectoryRow) {
   return /medical\s*rep|medical\s*representative/i.test(`${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`);
 }
 
@@ -1562,6 +1562,41 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
 // ── Double Visit Report page: flat, filterable, sortable, exportable drill-down ────
 
 /**
+ * Build the DV-scoped probation watchlist (onProbation / dvDone / dvCount per row) for a manager
+ * scope. Exported + reused by the weekly digest (Wave 2) so a manager's probationDvPending count
+ * in the email matches the live page exactly.
+ */
+export async function buildDvPlannerProbationEntries(params: {
+  access: AccessContext;
+  employees: EmployeeDirectoryRow[];
+  scopedRows: Pick<DoubleVisitDbRow, "visited_employee_hr_id" | "visit_count">[];
+}): Promise<DoubleVisitFocusProbationEntry[]> {
+  const { access, employees, scopedRows } = params;
+  const probationRowsRaw = (await getProbationRows(access).catch(() => [])).filter((row) =>
+    isMedicalRepProbationRow(row, employees),
+  );
+  const dvField = PROBATION_DV_FIELD_BY_ROLE[access.role ?? ""];
+  const probationDvCountByKey = new Map<string, number>();
+  for (const row of scopedRows) {
+    const key = canonicalHrIdKey(row.visited_employee_hr_id);
+    if (!key) continue;
+    probationDvCountByKey.set(key, (probationDvCountByKey.get(key) ?? 0) + asNumber(row.visit_count));
+  }
+  return probationRowsRaw.map((row) => {
+    const key = canonicalHrIdKey(row.hr_id);
+    return {
+      daysRemaining: row.days_remaining,
+      dvCount: key ? probationDvCountByKey.get(key) ?? 0 : 0,
+      dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
+      hireDate: row.hire_date,
+      hrId: row.hr_id,
+      name: row.full_name,
+      probationEndDate: row.probation_end_date,
+    } satisfies DoubleVisitFocusProbationEntry;
+  });
+}
+
+/**
  * Build the DV Planner roster (one entry per active Medical Rep) from already-scoped inputs.
  * Exported + pure so the weekly digest can reproduce the exact page roster for any manager scope.
  *
@@ -1573,7 +1608,11 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
  */
 export function buildDvPlannerRosterEntries(params: {
   activeMedicalReps: EmployeeDirectoryRow[];
-  inWindowRows: DoubleVisitReportRow[];
+  // Only visitedHrId + activityDate are read below — narrowed to a Pick (rather than the full
+  // DoubleVisitReportRow) so the weekly digest can feed it directly from the wide DV scan without
+  // building the fully-enriched report row (area/region/doubleVisitorRole/visitKind), which it has
+  // no other use for.
+  inWindowRows: Pick<DoubleVisitReportRow, "visitedHrId" | "activityDate">[];
   cadenceLastVisitByKey: Map<string, string>;
   probation: DoubleVisitFocusProbationEntry[];
   dateTo: string;
@@ -1777,28 +1816,7 @@ export async function getDoubleVisitReportData(input: {
     })
     .sort((a, b) => (b.daysSinceHire ?? -1) - (a.daysSinceHire ?? -1));
 
-  const probationRowsRaw = (await getProbationRows(input.access).catch(() => [])).filter((row) =>
-    isMedicalRepProbationRow(row, employees),
-  );
-  const dvField = PROBATION_DV_FIELD_BY_ROLE[input.access.role ?? ""];
-  const probationDvCountByKey = new Map<string, number>();
-  for (const row of scopedRows) {
-    const key = canonicalHrIdKey(row.visited_employee_hr_id);
-    if (!key) continue;
-    probationDvCountByKey.set(key, (probationDvCountByKey.get(key) ?? 0) + asNumber(row.visit_count));
-  }
-  const probation: DoubleVisitFocusProbationEntry[] = probationRowsRaw.map((row) => {
-    const key = canonicalHrIdKey(row.hr_id);
-    return {
-      daysRemaining: row.days_remaining,
-      dvCount: key ? probationDvCountByKey.get(key) ?? 0 : 0,
-      dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
-      hireDate: row.hire_date,
-      hrId: row.hr_id,
-      name: row.full_name,
-      probationEndDate: row.probation_end_date,
-    } satisfies DoubleVisitFocusProbationEntry;
-  });
+  const probation = await buildDvPlannerProbationEntries({ access: input.access, employees, scopedRows });
 
   // DV Planner roster: every active Medical Rep in scope, one row each. Built by the shared,
   // exported buildDvPlannerRosterEntries so the weekly digest (Wave 2) computes an identical roster
