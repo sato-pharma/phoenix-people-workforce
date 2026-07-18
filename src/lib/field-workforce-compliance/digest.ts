@@ -15,7 +15,7 @@
 
 import { fieldWorkforceMonthKey } from "@/lib/field-workforce-compliance/archive";
 import {
-  getFieldWorkforceComplianceLiveSnapshot,
+  getFieldWorkforceComplianceLiveView,
   summarizeFieldWorkforceMirrorFreshness,
 } from "@/lib/field-workforce-compliance/live-snapshots";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
@@ -70,7 +70,7 @@ export async function runFieldWorkforceComplianceDigest(): Promise<FieldWorkforc
   try {
     const monthKey = previousFieldWorkforceMonthKey(nowIso);
     const [snapshot, syncRuns] = await Promise.all([
-      getFieldWorkforceComplianceLiveSnapshot({ monthKey }),
+      getFieldWorkforceComplianceLiveView({ monthKey }),
       getLatestVisitsSyncRuns(10),
     ]);
 

@@ -47,7 +47,7 @@ import type {
   FieldWorkforceSeverity,
   FieldWorkforceValidationIssue,
 } from "@/lib/field-workforce-compliance/types";
-import type { FieldWorkforceEmployeeTrend, FieldWorkforceLiveSnapshotDetail, FieldWorkforceLiveSnapshotListItem, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
+import type { FieldWorkforceEmployeeTrend, FieldWorkforceLiveMonthOption, FieldWorkforceLiveViewResult, FieldWorkforceMirrorFreshness } from "@/lib/field-workforce-compliance/live-snapshots";
 import {
   buildFieldWorkforceLineScorecards,
   buildFieldWorkforceManagerScorecards,
@@ -68,15 +68,15 @@ type PreviewResponse = {
   warnings?: FieldWorkforceValidationIssue[];
 };
 
-type LiveSnapshotListResponse = {
-  data?: FieldWorkforceLiveSnapshotListItem[];
+type LiveMonthsListResponse = {
+  data?: FieldWorkforceLiveMonthOption[];
   error?: string;
   message?: string;
   success: boolean;
 };
 
-type LiveSnapshotDetailResponse = {
-  data?: FieldWorkforceLiveSnapshotDetail;
+type LiveViewResponse = {
+  data?: FieldWorkforceLiveViewResult;
   error?: string;
   message?: string;
   mirrorFreshness?: FieldWorkforceMirrorFreshness;
@@ -2244,13 +2244,12 @@ export function FieldWorkforceComplianceWorkspace() {
   const [archiveActiveTab, setArchiveActiveTab] = useState<WorkspaceTab>("timeline");
   const [sourceMode, setSourceMode] = useState<SourceMode | null>(null);
   const [liveMirrorMonthKey, setLiveMirrorMonthKey] = useState<string | null>(null);
-  const [mirrorLastSyncedAt, setMirrorLastSyncedAt] = useState<string | null>(null);
   const [mirrorFreshness, setMirrorFreshness] = useState<FieldWorkforceMirrorFreshness | null>(null);
-  const [liveSnapshots, setLiveSnapshots] = useState<FieldWorkforceLiveSnapshotListItem[]>([]);
-  const [isLoadingLiveSnapshots, setIsLoadingLiveSnapshots] = useState(false);
-  const [liveSnapshotsError, setLiveSnapshotsError] = useState<string | null>(null);
+  const [recentMonths, setRecentMonths] = useState<FieldWorkforceLiveMonthOption[]>([]);
+  const [isLoadingMonthOptions, setIsLoadingMonthOptions] = useState(false);
+  const [monthOptionsError, setMonthOptionsError] = useState<string | null>(null);
   const [selectedMonthKey, setSelectedMonthKey] = useState("");
-  const [isLoadingSnapshotDetail, setIsLoadingSnapshotDetail] = useState(false);
+  const [isLoadingLiveView, setIsLoadingLiveView] = useState(false);
 
   const loadArchives = useCallback(async () => {
     setIsLoadingArchives(true);
@@ -2352,53 +2351,37 @@ export function FieldWorkforceComplianceWorkspace() {
     }
   }
 
-  // Only safe to call from an event handler (e.g. the Refresh button) — invoking this
-  // directly from a useEffect body trips the "no synchronous setState in effect" lint rule,
-  // since its very first statement sets state. The mount-time initial load below has its
-  // own inline loader for that reason, matching the pattern used elsewhere in this codebase
-  // (e.g. action-center-hub.tsx's loadContext).
-  const loadLiveSnapshots = useCallback(async () => {
-    setIsLoadingLiveSnapshots(true);
-    setLiveSnapshotsError(null);
-    try {
-      const response = await fetch("/api/admin/field-workforce-compliance/live-snapshots", { method: "GET" });
-      const payload = await readJsonResponse<LiveSnapshotListResponse>(response);
-      if (payload.success && payload.data) {
-        setLiveSnapshots(payload.data);
-      } else {
-        setLiveSnapshotsError(payload.message ?? payload.error ?? "Saved compliance months could not be loaded.");
-      }
-    } catch (error) {
-      setLiveSnapshotsError(error instanceof Error ? error.message : "Saved compliance months could not be loaded.");
-    } finally {
-      setIsLoadingLiveSnapshots(false);
-    }
-  }, []);
-
+  // Cheap month-options list (no computation, just calendar math server-side) for the picker —
+  // does not need re-fetching after selecting a month, since it's never tied to what's been
+  // viewed. Only called once, from the mount effect below.
   useEffect(() => {
     let cancelled = false;
 
-    async function loadInitialLiveSnapshots() {
-      setIsLoadingLiveSnapshots(true);
-      setLiveSnapshotsError(null);
+    async function loadRecentMonths() {
+      setIsLoadingMonthOptions(true);
+      setMonthOptionsError(null);
       try {
         const response = await fetch("/api/admin/field-workforce-compliance/live-snapshots", { method: "GET" });
-        const payload = await readJsonResponse<LiveSnapshotListResponse>(response);
+        const payload = await readJsonResponse<LiveMonthsListResponse>(response);
         if (cancelled) return;
         if (payload.success && payload.data) {
-          setLiveSnapshots(payload.data);
-          if (payload.data.length > 0) void handleSelectLiveMonth(payload.data[0].monthKey);
+          setRecentMonths(payload.data);
         } else {
-          setLiveSnapshotsError(payload.message ?? payload.error ?? "Saved compliance months could not be loaded.");
+          setMonthOptionsError(payload.message ?? payload.error ?? "Recent months could not be loaded.");
         }
       } catch (error) {
-        if (!cancelled) setLiveSnapshotsError(error instanceof Error ? error.message : "Saved compliance months could not be loaded.");
+        if (!cancelled) setMonthOptionsError(error instanceof Error ? error.message : "Recent months could not be loaded.");
       } finally {
-        if (!cancelled) setIsLoadingLiveSnapshots(false);
+        if (!cancelled) setIsLoadingMonthOptions(false);
       }
     }
 
-    void loadInitialLiveSnapshots();
+    // Every month is computed live now (no saved-snapshot list to consult first), so the
+    // current month can be selected immediately on mount.
+    const now = new Date();
+    const currentMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    void handleSelectLiveMonth(currentMonthKey);
+    void loadRecentMonths();
     return () => {
       cancelled = true;
     };
@@ -2450,9 +2433,9 @@ export function FieldWorkforceComplianceWorkspace() {
    * sync (cron + manual backfill) recomputes whichever month(s) it touches, and a one-time
    * historical backfill covers everything before that. `forceRefresh` recomputes the chosen
    * month on the spot (e.g. the user's own "Refresh" action) rather than serving the cached copy. */
-  async function handleSelectLiveMonth(monthKey: string, forceRefresh = false) {
-    if (!monthKey || isLoadingSnapshotDetail) return;
-    setIsLoadingSnapshotDetail(true);
+  async function handleSelectLiveMonth(monthKey: string) {
+    if (!monthKey || isLoadingLiveView) return;
+    setIsLoadingLiveView(true);
     setResult(null);
     setErrors([]);
     setWarnings([]);
@@ -2465,26 +2448,23 @@ export function FieldWorkforceComplianceWorkspace() {
     setRecommendationsError(null);
 
     try {
-      const url = `/api/admin/field-workforce-compliance/live-snapshots/${monthKey}${forceRefresh ? "?force=true" : ""}`;
-      const response = await fetch(url, { method: "GET" });
-      const payload = await readJsonResponse<LiveSnapshotDetailResponse>(response);
+      const response = await fetch(`/api/admin/field-workforce-compliance/live-snapshots/${monthKey}`, { method: "GET" });
+      const payload = await readJsonResponse<LiveViewResponse>(response);
       if (payload.success && payload.data) {
         setResult(payload.data.preview);
         setSourceMode("live-mirror");
         setLiveMirrorMonthKey(payload.data.monthKey);
-        setMirrorLastSyncedAt(payload.data.computedAt);
         setMirrorFreshness(payload.mirrorFreshness ?? null);
         setSelectedMonthKey(payload.data.monthKey);
         setActiveTab("timeline");
-        if (forceRefresh) void loadLiveSnapshots();
       } else {
         setActiveTab("overview");
-        setMessage(payload.message ?? payload.error ?? "The saved compliance report could not be loaded.");
+        setMessage(payload.message ?? payload.error ?? "This month's compliance data could not be computed.");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The saved compliance report could not be loaded.");
+      setMessage(error instanceof Error ? error.message : "This month's compliance data could not be computed.");
     } finally {
-      setIsLoadingSnapshotDetail(false);
+      setIsLoadingLiveView(false);
     }
   }
 
@@ -2665,11 +2645,11 @@ export function FieldWorkforceComplianceWorkspace() {
         </div>
 
         <AdminTableShell
-          description="Auto-updated whenever the iReports360 visits mirror syncs — every month self-refreshes in the background, so picking one here is instant. Nothing is archived automatically. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
+          description="Always computed live from the iReports360 visits mirror — every month, including past ones, reflects the mirror as it stands right now. Nothing is cached or pre-saved. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
           title="Live View (Visits Mirror)"
         >
           <div className="flex flex-wrap items-end gap-3 p-4">
-            {liveSnapshots.length > 0 ? (
+            {recentMonths.length > 0 ? (
               <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                 Month
                 <SearchableSelect
@@ -2677,46 +2657,33 @@ export function FieldWorkforceComplianceWorkspace() {
                   value={selectedMonthKey}
                   onChange={(event) => void handleSelectLiveMonth(event.target.value)}
                 >
-                  {liveSnapshots.map((snapshot) => (
-                    <option key={snapshot.monthKey} value={snapshot.monthKey}>
-                      {snapshot.monthKey} · {snapshot.employeeCount} employees
+                  {recentMonths.map((option) => (
+                    <option key={option.monthKey} value={option.monthKey}>
+                      {option.monthKey}
                     </option>
                   ))}
                 </SearchableSelect>
               </label>
             ) : (
               <p className="text-sm text-slate-500">
-                {isLoadingLiveSnapshots
-                  ? "Loading saved compliance months..."
-                  : "No saved compliance months yet — they appear automatically once the visits mirror syncs."}
+                {isLoadingMonthOptions ? "Loading months…" : "Recent months could not be loaded."}
               </p>
             )}
-            {selectedMonthKey ? (
-              <Button
-                className="gap-2 rounded-xl font-black"
-                disabled={isLoadingSnapshotDetail}
-                type="button"
-                variant="secondary"
-                onClick={() => void handleSelectLiveMonth(selectedMonthKey, true)}
-              >
-                {isLoadingSnapshotDetail ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Refresh
-              </Button>
-            ) : null}
-            {sourceMode === "live-mirror" && mirrorLastSyncedAt ? (
+            {isLoadingLiveView ? (
+              <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Computing live from the visits mirror…
+              </span>
+            ) : sourceMode === "live-mirror" && mirrorFreshness?.ageHours != null ? (
               <span className="text-xs font-semibold text-slate-500">
-                Report last computed {displayDateTime(mirrorLastSyncedAt)}
-                {mirrorFreshness?.ageHours != null
-                  ? ` · Visits mirror synced ${formatSyncAge(mirrorFreshness.ageHours)}`
-                  : ""}
+                Visits mirror synced {formatSyncAge(mirrorFreshness.ageHours)}
               </span>
             ) : null}
           </div>
-          {liveSnapshotsError ? (
+          {monthOptionsError ? (
             <div className="border-t border-slate-100 p-4">
               <AdminCallout tone="warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4" />
-                <p>{liveSnapshotsError}</p>
+                <p>{monthOptionsError}</p>
               </AdminCallout>
             </div>
           ) : null}
