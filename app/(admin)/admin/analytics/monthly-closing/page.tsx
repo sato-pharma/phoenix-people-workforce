@@ -56,7 +56,6 @@ async function ClosingDashboardContent({
     families:     Array.isArray(filters.families)          ? filters.families      : [],
     employeeHrId: typeof filters.employeeHrId === "string" ? filters.employeeHrId : null,
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
-    batchStatus:  Array.isArray(filters.batchStatus)        ? filters.batchStatus  : [],
     batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
@@ -195,7 +194,7 @@ export default async function MonthlyClosingAnalyticsPage({ searchParams }: { se
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Closing</p>
           <h1 className="text-2xl font-bold text-foreground leading-tight">Monthly Closing Analytics</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Employee-attributed sales vs target. Filter by period, line, employee, territory, or batch.
+            Employee-attributed sales vs target — approved closing batches only. Filter by period, line, employee, territory, or batch.
           </p>
         </div>
       </div>
