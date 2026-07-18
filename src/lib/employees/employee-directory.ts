@@ -353,7 +353,7 @@ function normalizeLifecycleStatus(value: string | null | undefined) {
   return compact(value)?.toLowerCase() ?? "active";
 }
 
-function isActiveLifecycleStatus(value: string | null | undefined) {
+export function isActiveLifecycleStatus(value: string | null | undefined) {
   return activeLifecycleStatuses.has(normalizeLifecycleStatus(value));
 }
 
