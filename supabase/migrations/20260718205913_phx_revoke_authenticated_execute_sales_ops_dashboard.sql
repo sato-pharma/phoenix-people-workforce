@@ -1,0 +1,27 @@
+-- Default-ACL hardening follow-up (see 20260718205253_phx_revoke_authenticated_execute_marketing
+-- _import_and_direct_order_decision for the root cause: a public-schema pg_default_acl entry
+-- auto-grants EXECUTE on every NEW function to `authenticated`).
+--
+-- sales_ops_dashboard(p_period text) is SECURITY DEFINER and returns the full company-wide
+-- (line_scope = 'ALL') sales snapshot for any period requested, with no caller-role/scope
+-- filtering inside the function. It reads the same table (sales_ops_dashboard_snapshot) whose
+-- blanket `authenticated` RLS read policy was deliberately revoked in
+-- 20260712010000_revoke_blanket_authenticated_read_sales_reference.sql specifically because it
+-- let any Supabase-Auth-JWT holder bypass line/region sales scoping over sales_ops_* -- that
+-- hardening pass fixed the direct-table path but missed this SECURITY DEFINER RPC, an equally
+-- capable side door to the same data (SECURITY DEFINER functions do not respect the caller's RLS
+-- on the underlying table).
+--
+-- Current actual exposure is low: as of this migration the table holds exactly one row
+-- (~152 bytes, period 2026-04) -- still the placeholder the original
+-- 20260619150000_security_hardening_sales_ops_anon_revoke_and_advisor_cleanup.sql migration's own
+-- comment flagged and explicitly deferred ("the door is open for when the new sales-ops platform
+-- fills it with real aggregates"). That has not happened yet, and there are currently zero
+-- callers of this RPC anywhere in src/ or app/ -- nothing in the live app uses it. Revoking now
+-- has zero functional cost and closes the door before this snapshot is ever populated with real,
+-- unscoped company-wide data behind a stale grant that predates the M3 audit finding above.
+--
+-- Applied to staging (cifwmndunmlxjhyjugxa) and verified via pg_proc.proacl before being written
+-- here. Production apply requires separate explicit owner approval per AGENTS.md.
+
+revoke execute on function public.sales_ops_dashboard(text) from authenticated;

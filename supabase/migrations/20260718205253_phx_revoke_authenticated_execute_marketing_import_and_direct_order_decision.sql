@@ -1,0 +1,43 @@
+-- Default-ACL hardening follow-up. Root cause: the public schema on this project carries a
+-- pg_default_acl entry (defaclobjtype='f') that auto-grants EXECUTE on every NEW function
+-- created in public to `authenticated` -- a direct grant, not routed through PUBLIC, so the
+-- standard `revoke execute ... from public` pattern used elsewhere in this codebase does not
+-- remove it. See 20260718203619_phx_resign_employee_and_open_vacancy_revoke_authenticated for
+-- the first instance of this found while authoring the resignation RPC. Both functions below
+-- were subsequently found to carry the same live grant on a broader `pg_proc.proacl` sweep.
+--
+-- Both are SECURITY DEFINER and perform zero internal authorization or state-machine validation
+-- of their own -- they trust the caller entirely, relying on the app layer to have already
+-- checked permissions before invoking them. Called directly via supabase.rpc() from a plain
+-- authenticated (non-service-role) session, with attacker-chosen parameters, both bypass checks
+-- the app performs before calling them:
+--
+--   - import_marketing_request_atomic(jsonb, jsonb, jsonb, jsonb): inserts a marketing_requests
+--     row plus products/pharmacies/approval-steps entirely from caller-supplied JSON --
+--     status, approved_at, created_by_hr_id, requester_hr_id, and every approval-step decision
+--     state are all attacker-settable. The only gate is canAccessSystemAdministratorWorkspace()
+--     (Super Admin only) inside executeBulkImport() (src/lib/marketing-requests/bulk-import.ts),
+--     which a direct RPC call skips entirely -- any authenticated employee could insert a fully
+--     fabricated, pre-"approved" marketing request with fake approval history.
+--
+--   - phx_apply_direct_order_decision(uuid, integer, text, text, text, text, text, timestamptz,
+--     text): only checks optimistic concurrency (p_expected_status matches the row's current
+--     status). It does NOT verify the caller is the assigned approver, holds the
+--     direct_orders:approve permission, or that the workflow-registry transition / step-sequence
+--     / CEO bonus-discount-cap override is legal -- all of that lives in decideDirectOrder()
+--     (src/lib/direct-orders/service.ts), bypassed by a direct RPC call. p_decided_by_hr_id is
+--     fully attacker-controlled (approver impersonation), and p_next_status can jump straight to
+--     'approved', skipping intermediate steps. On approval it atomically calls
+--     phx_rebuild_direct_order_sos_batch, injecting into the Source-of-Sales
+--     attribution/achievement rollup -- a money-critical path per the app code's own comment.
+--
+-- Verified safe to revoke: the app calls both exclusively via the service-role admin client
+-- (getSupabaseAdmin()), never the RLS-respecting user client, so removing the `authenticated`
+-- grant has zero impact on the legitimate app flow.
+--
+-- Applied to staging (cifwmndunmlxjhyjugxa) and verified via pg_proc.proacl before being written
+-- here. Production apply requires separate explicit owner approval per AGENTS.md.
+
+revoke execute on function public.import_marketing_request_atomic(jsonb, jsonb, jsonb, jsonb) from authenticated;
+
+revoke execute on function public.phx_apply_direct_order_decision(uuid, integer, text, text, text, text, text, timestamp with time zone, text) from authenticated;
