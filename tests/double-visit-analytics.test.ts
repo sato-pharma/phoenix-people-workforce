@@ -82,6 +82,7 @@ function employee(input: Partial<EmployeeDirectoryRow>): EmployeeDirectoryRow {
     areaName: null,
     crmId: null,
     departmentName: null,
+    displayName: input.displayName ?? input.fullName ?? "Employee",
     employmentStatus: "active",
     fullName: input.fullName ?? "Employee",
     hrId: input.hrId ?? "E-1",

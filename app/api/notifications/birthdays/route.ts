@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ type BirthdayEmployeeRow = {
   employment_status: string | null;
   full_name: string;
   hr_id: string;
+  nickname: string | null;
 };
 
 function cairoMonthDay() {
@@ -51,7 +53,7 @@ export async function runBirthdayNotifications(request: Request) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,birth_date,employment_status")
+    .select("hr_id,full_name,nickname,birth_date,employment_status")
     .not("birth_date", "is", null);
 
   if (error) throw error;
@@ -65,7 +67,7 @@ export async function runBirthdayNotifications(request: Request) {
     activeEmployees.map((employee) => ({
       areaName: "",
       birthDate: employee.birth_date ?? "",
-      fullName: employee.full_name,
+      fullName: resolveEmployeeDisplayName(employee.full_name, employee.nickname),
       hireDate: "",
       hrId: employee.hr_id,
       jobTitle: "",

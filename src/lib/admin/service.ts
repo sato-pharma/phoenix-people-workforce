@@ -311,7 +311,7 @@ function employeeToNodeInput(employee: Awaited<ReturnType<typeof getEmployeeDire
     crmId: employee.crmId,
     crmUsername: employee.crmUsername,
     employmentStatus: employee.employmentStatus,
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hrId: employee.hrId,
     jobTitle: employee.jobTitle,
     lineId: employee.lineId,
@@ -495,7 +495,7 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
 
     if (healthStatus !== "ok") {
       employeeIssues.push({
-        full_name: rowText(employee, "fullName") ?? rowText(employee, "full_name") ?? "Unknown employee",
+        full_name: rowText(employee, "displayName") ?? rowText(employee, "display_name") ?? rowText(employee, "fullName") ?? rowText(employee, "full_name") ?? "Unknown employee",
         has_access_profile: hasAccessProfile,
         has_auth_user: hasAuthUser,
         health_status: healthStatus,

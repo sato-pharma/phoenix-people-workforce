@@ -38,6 +38,7 @@
 import { unstable_cache } from "next/cache";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
@@ -98,6 +99,7 @@ type EmployeeRow = {
   hr_id: string;
   job_title: string | null;
   line_name: string | null;
+  nickname: string | null;
 };
 
 export type HrVacationRequestRow = {
@@ -269,7 +271,7 @@ async function loadAnnualVacationVisitsSplit(startDate: string, endDate: string)
 }
 
 async function loadEmployeesRaw(): Promise<EmployeeRow[]> {
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name,job_title,line_name");
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name,job_title,line_name,nickname");
   if (error) throw new Error(`Failed to load employees: ${error.message}`);
   return (data ?? []) as EmployeeRow[];
 }
@@ -461,7 +463,7 @@ async function buildCrmSignalRows(input: {
 
       rows.push({
         detail: classified.detail,
-        employeeName: employee?.full_name ?? dayVisits[0]?.agent_name ?? key,
+        employeeName: resolveEmployeeDisplayName(employee?.full_name ?? dayVisits[0]?.agent_name ?? key, employee?.nickname),
         endDate: dateIso,
         hrId: employee?.hr_id ?? key,
         jobTitle: employee?.job_title ?? null,

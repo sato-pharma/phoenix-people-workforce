@@ -7,6 +7,7 @@
  *                         visibility (null = use line scope, [] = sees nothing, [...] = those codes only).
  */
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "./permissions";
@@ -21,6 +22,7 @@ export type UserScopeOverride = {
   loginId: string;
   hrId: string | null;
   fullName: string | null;
+  displayName: string | null;
   role: string | null;
   lineNames: string[] | null;
   productCodes: string[] | null;
@@ -116,29 +118,39 @@ export async function listUserScopeOverrides(): Promise<UserScopeOverride[]> {
   // Load names from employees table
   const hrIds = rows.map((r) => r.hr_id).filter(Boolean) as string[];
   const nameByHrId = new Map<string, string | null>();
+  const nicknameByHrId = new Map<string, string | null>();
   if (hrIds.length > 0) {
     const { data: empData } = await supabase
       .from("employees")
-      .select("hr_id, full_name")
+      .select("hr_id, full_name, nickname")
       .in("hr_id", hrIds);
-    for (const row of (empData ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      if (row.hr_id) nameByHrId.set(canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase(), row.full_name ?? null);
+    for (const row of (empData ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
+      if (row.hr_id) {
+        const key = canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase();
+        nameByHrId.set(key, row.full_name ?? null);
+        nicknameByHrId.set(key, row.nickname ?? null);
+      }
     }
   }
 
-  return rows.map((row) => ({
-    loginId: row.login_id,
-    hrId: row.hr_id ?? null,
-    fullName: row.hr_id ? (nameByHrId.get(canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase()) ?? null) : null,
-    role: row.role ?? null,
-    lineNames: Array.isArray(row.line_scope_override) && row.line_scope_override.length > 0
-      ? row.line_scope_override
-      : null,
-    productCodes: Array.isArray(row.product_scope_override)
-      ? row.product_scope_override
-      : null,
-    salesScopeOverride: row.sales_scope_override ?? null,
-  }));
+  return rows.map((row) => {
+    const key = row.hr_id ? canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase() : null;
+    const fullName = key ? nameByHrId.get(key) ?? null : null;
+    return {
+      loginId: row.login_id,
+      hrId: row.hr_id ?? null,
+      fullName,
+      displayName: fullName ? resolveEmployeeDisplayName(fullName, key ? nicknameByHrId.get(key) ?? null : null) : null,
+      role: row.role ?? null,
+      lineNames: Array.isArray(row.line_scope_override) && row.line_scope_override.length > 0
+        ? row.line_scope_override
+        : null,
+      productCodes: Array.isArray(row.product_scope_override)
+        ? row.product_scope_override
+        : null,
+      salesScopeOverride: row.sales_scope_override ?? null,
+    };
+  });
 }
 
 // ─── write ────────────────────────────────────────────────────────────────────

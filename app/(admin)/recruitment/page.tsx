@@ -65,7 +65,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     dashboard = dashboardData;
     openVacancies = vacancies;
     managers = employeeRows
-      .map((row) => ({ hrId: row.hrId, fullName: row.fullName }))
+      .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
     if (canViewCandidates) {
       candidates = await listCandidates();

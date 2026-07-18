@@ -232,7 +232,7 @@ export function canReadPrivateCalendarEmployee(
 export function mapPrivateCalendarEmployee(employee: EmployeeDirectoryRow): PrivateCalendarEmployeeOption {
   return {
     departmentName: employee.departmentName,
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hrId: employee.hrId,
     jobTitle: employee.jobTitle || employee.positionTitle,
     lineName: employee.lineName,

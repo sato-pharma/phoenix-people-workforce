@@ -645,7 +645,23 @@ function deciderDisplayName(
   if (!hrId) return null;
   const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
   if (!employee) return hrId;
-  return employee.jobTitle ? `${employee.fullName} (${employee.jobTitle})` : employee.fullName;
+  return employee.jobTitle ? `${employee.displayName} (${employee.jobTitle})` : employee.displayName;
+}
+
+/**
+ * Resolves a persisted employee_name snapshot to the employee's live nickname-aware
+ * display name when they're still in the active directory, else falls back to the raw
+ * snapshot (e.g. an employee who has since left). Keeps the persisted column itself raw
+ * (audit trail) while every-day list/card views show the current display name.
+ */
+function liveEmployeeName(
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  hrId: string | null | undefined,
+  rawName: string,
+): string {
+  if (!hrId) return rawName;
+  const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
+  return employee?.displayName ?? rawName;
 }
 
 /**
@@ -692,7 +708,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
     items.push({
       id: `history:leave:${id}`,
       module: "leave",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
       decision,
@@ -713,7 +729,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
     items.push({
       id: `history:leave:${reqId}`,
       module: "leave",
-      employeeName: String(req.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(req.employee_hr_id ?? ""), String(req.employee_name ?? "Unknown")),
       employeeHrId: String(req.employee_hr_id ?? ""),
       title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
       decision,
@@ -752,7 +768,7 @@ export async function getAllExcuseDecisionsCompanyWide(access: AccessContext): P
     items.push({
       id: `history:excuse:${id}`,
       module: "excuse",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
       decision,
@@ -937,7 +953,7 @@ export async function getCompanyVacationRequestsExcludingFieldForce(access: Acce
     items.push({
       id: row.id,
       href: vacationApprovalHref(access, row.id),
-      employeeName: row.employeeName,
+      employeeName: liveEmployeeName(directory?.employees ?? [], row.employeeHrId, row.employeeName),
       employeeHrId: row.employeeHrId,
       submitterTitle: title,
       typeLabel: vacationTypeLabel(row.vacationType),
@@ -986,7 +1002,7 @@ export async function getCompanyExcuseRequestsExcludingFieldForce(access: Access
     items.push({
       id,
       href: excuseApprovalHref(access, id),
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory?.employees ?? [], employeeHrId, String(row.employee_name ?? "Unknown")),
       employeeHrId,
       submitterTitle: title,
       typeLabel: row.excuse_type === "morning" ? "Morning" : "Afternoon",
@@ -1064,12 +1080,15 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const isCeo = access.role === "CEO";
   const hrActor = isPlanHrActor(access);
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at")
-    .in("status", PLAN_ACTIVE_STATUSES)
-    .order("submitted_at", { ascending: true })
-    .limit(PLAN_BUCKET_LIMIT);
+  const [{ data, error }, directory] = await Promise.all([
+    getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at")
+      .in("status", PLAN_ACTIVE_STATUSES)
+      .order("submitted_at", { ascending: true })
+      .limit(PLAN_BUCKET_LIMIT),
+    getEmployeeDirectory(),
+  ]);
   if (error) {
     console.error("[approvals-hub] getPlanApprovalsForResponder query failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return { awaiting: [], upcoming: [] };
@@ -1086,7 +1105,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     const managerHrId = raw.manager_hr_id ? String(raw.manager_hr_id) : null;
     const base = {
       id: String(raw.id ?? ""),
-      employeeName: String(raw.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, employeeHrId, String(raw.employee_name ?? "Unknown")),
       employeeHrId,
       planKind: (String(raw.plan_kind ?? "weekly") === "monthly" ? "monthly" : "weekly") as EmployeePlanKind,
       periodKey: String(raw.period_key ?? ""),
@@ -1510,7 +1529,7 @@ function buildPlanTrackerSteps(
       stepKey: "submitted",
       genericStep: "submitted",
       status: "approved",
-      approverName: String(row.employee_name ?? "Employee"),
+      approverName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Employee")),
       approverTitle: null,
       decidedAt: submittedAt,
       decisionComment: null,
@@ -1622,7 +1641,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   return {
     notFound: false,
     planId: id,
-    employeeName: String(row.employee_name ?? "Unknown"),
+    employeeName: liveEmployeeName(directory.employees, employeeHrId, String(row.employee_name ?? "Unknown")),
     employeeHrId,
     employeeJobTitle: row.employee_job_title ? String(row.employee_job_title) : null,
     managerName: row.manager_name ? String(row.manager_name) : null,
@@ -1688,7 +1707,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
     items.push({
       id: `history:weekly_plan:${id}`,
       module: "weekly_plan",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `${kindLabel} plan · ${row.period_key ?? ""}`,
       decision,
@@ -1721,12 +1740,15 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
   if (!canSeeCeoApprovalTabs(access)) {
     throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
   }
-  const { data, error } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
-    .neq("status", "draft")
-    .order("submitted_at", { ascending: false })
-    .limit(1000);
+  const [{ data, error }, directory] = await Promise.all([
+    getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
+      .neq("status", "draft")
+      .order("submitted_at", { ascending: false })
+      .limit(1000),
+    getEmployeeDirectory(),
+  ]);
   if (error) {
     console.error("[approvals-hub] getCompanyPlanRequests query failed", { role: access.role, error });
     return [];
@@ -1739,7 +1761,7 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
     items.push({
       id,
       href: planApprovalHref(access, id),
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       submitterTitle: row.employee_job_title ? String(row.employee_job_title) : null,
       typeLabel: String(row.plan_kind ?? "weekly") === "monthly" ? "Monthly" : "Weekly",

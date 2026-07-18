@@ -352,7 +352,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                 return (
                   <tr key={row.loginId} className="align-top">
                     <td className="py-3 pr-4">
-                      <p className="font-medium text-slate-900">{row.fullName ?? row.loginId}</p>
+                      <p className="font-medium text-slate-900">{row.displayName ?? row.fullName ?? row.loginId}</p>
                       <p className="text-[11px] text-slate-400">
                         {row.loginId}
                         {row.hrId ? ` · ${row.hrId}` : ""}

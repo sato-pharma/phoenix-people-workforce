@@ -1,5 +1,6 @@
 ﻿import { getRequiredEnv } from "@/lib/env";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 import {
   applyOrganogramMirrorSafety,
@@ -17,6 +18,7 @@ type LookupRow = {
 type EmployeeLookupRow = {
   full_name: string | null;
   hr_id: string;
+  nickname?: string | null;
 };
 
 type EmployeeReplacementOwnerRow = {
@@ -275,13 +277,13 @@ async function loadEmployeeNames(hrIds: string[]) {
   }
 
   const params = new URLSearchParams({
-    select: "hr_id,full_name",
+    select: "hr_id,full_name,nickname",
     hr_id: textInFilter(hrIds),
   });
   const rows = await supabaseRest<EmployeeLookupRow[]>(`employees?${params}`);
 
   return new Map(
-    rows.map((row) => [String(row.hr_id), String(row.full_name ?? "")]),
+    rows.map((row) => [String(row.hr_id), resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname)]),
   );
 }
 
@@ -398,9 +400,9 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id ?? null,
     managerReplacementForHrId: row.manager_replacement_for_hr_id ?? null,
-    managerName:
-      row.manager_name ??
-      (row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null),
+    managerName: row.manager_hr_id
+      ? managerNames.get(row.manager_hr_id) ?? row.manager_name ?? null
+      : row.manager_name ?? null,
     note: row.note,
     positionId: row.position_id,
     positionTitle: row.position_id

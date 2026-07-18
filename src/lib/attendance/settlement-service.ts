@@ -20,6 +20,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
   getDigestSettings,
   resolveDisputeCc,
@@ -76,8 +77,10 @@ async function loadDigest(digestId: number): Promise<WeeklyDigestRow> {
 
 async function loadEmployeeName(employeeHrId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase.from("employees").select("full_name").eq("hr_id", employeeHrId).maybeSingle();
-  return (data as { full_name?: string | null } | null)?.full_name?.trim() || employeeHrId;
+  const { data } = await supabase.from("employees").select("full_name,nickname").eq("hr_id", employeeHrId).maybeSingle();
+  const row = data as { full_name?: string | null; nickname?: string | null } | null;
+  const fullName = row?.full_name?.trim();
+  return fullName ? resolveEmployeeDisplayName(fullName, row?.nickname) : employeeHrId;
 }
 
 export async function loadDeductibleLines(digestId: number): Promise<DigestTableLine[]> {

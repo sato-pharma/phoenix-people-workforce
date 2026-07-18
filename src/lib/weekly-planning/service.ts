@@ -287,6 +287,11 @@ export type EmployeePlan = {
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName). Only
+  // populated by callers with employee-directory access (see
+  // getEmployeePlansWorkspace); other mapPlan() callers leave this undefined and
+  // consumers should fall back to employeeName.
+  employeeDisplayName?: string;
   finalApprovedAt: string | null;
   id: string;
   items: Array<{
@@ -309,6 +314,11 @@ export type EmployeePlan = {
   }>;
   managerHrId: string | null;
   managerName: string | null;
+  // Nickname-aware display name (nickname when set, else managerName). Only
+  // populated by callers with employee-directory access (see
+  // getEmployeePlansWorkspace); other mapPlan() callers leave this undefined and
+  // consumers should fall back to managerName.
+  managerDisplayName?: string | null;
   periodEndDate: string;
   periodKey: string;
   periodStartDate: string;
@@ -675,7 +685,7 @@ async function medicalRepOptionsForEmployee(
     )
     .map((candidate) => ({
       areaName: candidate.areaName,
-      fullName: candidate.fullName,
+      fullName: candidate.displayName,
       hrId: candidate.hrId,
       lineName: candidate.lineName,
       regionName: candidate.regionName,
@@ -1520,7 +1530,7 @@ async function mapPlanComments(rows: PlanCommentRow[]): Promise<EmployeePlanComm
   const byHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
   return rows.map((row) => ({
     authorHrId: row.author_hr_id,
-    authorName: byHrId.get(normalizeHrId(row.author_hr_id))?.fullName ?? null,
+    authorName: byHrId.get(normalizeHrId(row.author_hr_id))?.displayName ?? null,
     authorRole: row.author_role,
     body: row.body,
     createdAt: row.created_at,
@@ -1645,6 +1655,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   await assertPermission(access, "employee_profile", "read");
   await assertPermission(access, "weekly_plans", "read");
   const directory = await getEmployeeDirectory();
+  const directoryByHrId = new Map(directory.employees.map((item) => [normalizeHrId(item.hrId), item]));
   const viewerHrId = normalizeHrId(access.hrId);
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
@@ -1667,13 +1678,17 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const hasMorePlans = loadedRows.length > WORKSPACE_PLAN_LIMIT;
     const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
     const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan));
-    const plans = visible.map(mapPlan);
+    const plans = visible.map(mapPlan).map((plan) => ({
+      ...plan,
+      employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,
+      managerDisplayName: directoryByHrId.get(normalizeHrId(plan.managerHrId))?.displayName || plan.managerName,
+    }));
     return {
       canAcknowledgeHr,
       canSubmitPlans,
       currentEmployee: employee
         ? {
-            fullName: employee.fullName,
+            fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
@@ -1700,7 +1715,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canSubmitPlans,
       currentEmployee: employee
         ? {
-            fullName: employee.fullName,
+            fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
@@ -1776,10 +1791,18 @@ export type ApproverPendingPlan = {
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName), resolved
+  // live against the current employee directory. employeeName stays the persisted
+  // submission-time snapshot.
+  employeeDisplayName: string;
   id: string;
   itemCount: number;
   items: ApproverPlanItem[];
   managerName: string | null;
+  // Nickname-aware display name for the manager (nickname when set, else
+  // managerName), resolved live against the current employee directory.
+  // managerName stays the persisted submission-time snapshot.
+  managerDisplayName: string | null;
   periodEndDate: string;
   periodKey: string;
   periodStartDate: string;
@@ -1901,6 +1924,9 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
       > & { employee_plan_items?: PlanItemRow[] }
     >;
 
+    const directory = await getEmployeeDirectory();
+    const directoryByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+
     const items: ApproverPendingPlan[] = [];
     for (const row of rows) {
       const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access);
@@ -1913,10 +1939,12 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
         employeeHrId: row.employee_hr_id,
         employeeJobTitle: row.employee_job_title,
         employeeName: row.employee_name,
+        employeeDisplayName: directoryByHrId.get(normalizeHrId(row.employee_hr_id))?.displayName || row.employee_name,
         id: row.id,
         itemCount: planItems.length,
         items: planItems,
         managerName: row.manager_name,
+        managerDisplayName: directoryByHrId.get(normalizeHrId(row.manager_hr_id))?.displayName || row.manager_name,
         periodEndDate: row.period_end_date,
         periodKey: row.period_key,
         periodStartDate: row.period_start_date,
