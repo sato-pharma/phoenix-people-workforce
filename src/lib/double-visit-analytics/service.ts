@@ -8,7 +8,7 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
 import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
-import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -238,15 +238,24 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   const allowedAreas = new Set<string>();
   const allowedLines = new Set<string>();
 
-  if (access.role === "Regional Manager" && viewer?.regionName) {
-    for (const employee of employees) {
-      if (normalizeLabelKey(employee.regionName) !== normalizeLabelKey(viewer.regionName)) continue;
-      const key = normalizedHrKey(employee.hrId);
-      if (key) allowedHrIds.add(key);
-      const area = normalizeLabelKey(employee.areaName);
-      const line = normalizeLabelKey(employee.lineName);
-      if (area) allowedAreas.add(area);
-      if (line) allowedLines.add(line);
+  if (access.role === "Regional Manager" && viewer && viewerKey) {
+    // Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific
+    // set of regions — their scope is Medical Reps on the RM's own line whose region is one their
+    // own management subtree actually covers. Shared with employee-portal + weekly-planning (see
+    // workforce/hierarchy-resolver.ts for why the RM's own region_name can't be used directly).
+    // The previous area/line label expansion leaked BOTH ways (cross-line reps in the same area,
+    // and same-line reps in regions he doesn't cover), so it is removed — allowedAreas/allowedLines
+    // stay empty and scoping is by hrId only. descendantHrIds (above) still carries the RM + his
+    // subtree so rows where THEY are the double-visitor stay in scope.
+    const rmRegionKeys = regionsWithinManagerHierarchy(employees, viewerKey, normalizedHrKey);
+    if (rmRegionKeys.size > 0) {
+      for (const employee of employees) {
+        if (!sameWorkforceLine(viewer, employee)) continue;
+        const region = normalizeRegionLabel(employee.regionName);
+        if (!region || !rmRegionKeys.has(region)) continue;
+        const key = normalizedHrKey(employee.hrId);
+        if (key) allowedHrIds.add(key);
+      }
     }
   }
 
