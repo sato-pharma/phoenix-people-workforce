@@ -8,8 +8,9 @@ import type { FilterDescriptor } from "./filter-registry";
 export const PERIOD_FILTER: FilterDescriptor = {
   key: "period",
   label: "Period (Month)",
-  type: "single-select",
+  type: "multi-select",
   source: "periods",
+  multiple: true,
   placeholder: "All periods",
   pipeline: "all",
 };
@@ -38,8 +39,9 @@ export const PERIOD_TO_FILTER: FilterDescriptor = {
 export const YEAR_FILTER: FilterDescriptor = {
   key: "year",
   label: "Year",
-  type: "single-select",
+  type: "multi-select",
   source: "static",
+  multiple: true,
   staticOptions: [
     { value: "2025", label: "2025" },
     { value: "2026", label: "2026" },
@@ -51,8 +53,9 @@ export const YEAR_FILTER: FilterDescriptor = {
 export const WEEK_FILTER: FilterDescriptor = {
   key: "week",
   label: "Week",
-  type: "single-select",
+  type: "multi-select",
   source: "weeks",
+  multiple: true,
   placeholder: "All weeks",
   pipeline: "weekly",
 };
@@ -128,8 +131,9 @@ export const FAMILY_FILTER: FilterDescriptor = {
 export const CHANNEL_FILTER: FilterDescriptor = {
   key: "channel",
   label: "Channel",
-  type: "single-select",
+  type: "multi-select",
   source: "static",
+  multiple: true,
   staticOptions: [
     { value: "Distributor", label: "Distributor" },
     { value: "Direct", label: "Direct" },

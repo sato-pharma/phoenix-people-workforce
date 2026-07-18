@@ -42,7 +42,7 @@ async function ByCustomerContent({
   // analytics_sos_by_customer only filters on period / line / region / customer — build exactly
   // those (see SOS_CUSTOMER_FILTERS). Other SoS dimensions are not accepted by that RPC.
   const sosFilters = {
-    period:      typeof filters.period      === "string" ? filters.period      : null,
+    period:      Array.isArray(filters.period)      ? filters.period      : [],
     periodFrom:  typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
     periodTo:    typeof filters.periodTo    === "string" ? filters.periodTo    : null,
     lines:       Array.isArray(filters.lines)       ? filters.lines       : [],

@@ -40,10 +40,10 @@ async function ByProductContent({
   const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
 
   const sosFilters = {
-    period:       typeof filters.period      === "string" ? filters.period      : null,
+    period:       Array.isArray(filters.period)      ? filters.period      : [],
     periodFrom:   typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
     periodTo:     typeof filters.periodTo    === "string" ? filters.periodTo    : null,
-    channel:      typeof filters.channel     === "string" ? filters.channel     : null,
+    channel:      Array.isArray(filters.channel)     ? filters.channel     : [],
     distributors: Array.isArray(filters.distributors) ? filters.distributors : [],
     lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],

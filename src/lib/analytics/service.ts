@@ -192,7 +192,7 @@ export async function loadAnalyticsDimensions(role: PhoenixRole): Promise<Analyt
 // ── SoS loaders ───────────────────────────────────────────────────────────────
 
 export type SosFilters = {
-  period?: string | null;
+  period?: string[];
   periodFrom?: string | null;
   periodTo?: string | null;
   distributors?: string[];
@@ -201,7 +201,7 @@ export type SosFilters = {
   areas?: string[];
   products?: string[];
   families?: string[];
-  channel?: string | null;
+  channel?: string[];
   clientCodes?: string[];
   /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
   canViewHeadOffice?: boolean;
@@ -220,10 +220,10 @@ export type SosByLineRow = {
 async function loadSosByLineUncached(filters: SosFilters): Promise<SosByLineRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_line" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -253,10 +253,10 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
   // postgrest schema override. Supabase JS client defaults to public schema;
   // we call a helper SQL function instead.
   const { data, error } = await db.rpc("analytics_sos_by_period" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -275,10 +275,10 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
 async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_area" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -297,10 +297,10 @@ async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[
 async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProductRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_product" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -317,7 +317,7 @@ async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProdu
 async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCustomerRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_customer" as never, {
-    p_period:       filters.period      ?? null,
+    p_periods:      filters.period?.length      ? filters.period      : null,
     p_period_from:  filters.periodFrom  ?? null,
     p_period_to:    filters.periodTo    ?? null,
     p_lines:        filters.lines?.length       ? filters.lines       : null,
@@ -333,7 +333,7 @@ async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCust
 // ── Monthly closing loaders ───────────────────────────────────────────────────
 
 export type ClosingFilters = {
-  period?: string | null;
+  period?: string[];
   periodFrom?: string | null;
   periodTo?: string | null;
   lines?: string[];
@@ -350,7 +350,7 @@ export type ClosingFilters = {
 async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<ClosingByEmployeeRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_closing_by_employee" as never, {
-    p_period:       filters.period      ?? null,
+    p_periods:      filters.period?.length      ? filters.period      : null,
     p_period_from:  filters.periodFrom  ?? null,
     p_period_to:    filters.periodTo    ?? null,
     p_lines:        filters.lines?.length    ? filters.lines    : null,
@@ -370,8 +370,8 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
 // ── Weekly loaders ────────────────────────────────────────────────────────────
 
 export type WeeklyFilters = {
-  weekStart?: string | null;
-  year?: number | null;
+  weekStart?: string[];
+  year?: number[];
   distributors?: string[];
   lines?: string[];
   regions?: string[];
@@ -384,8 +384,8 @@ export type WeeklyFilters = {
 async function loadWeeklyFactUncached(filters: WeeklyFilters): Promise<WeeklyFactRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_weekly_fact" as never, {
-    p_week_start:   filters.weekStart   ?? null,
-    p_year:         filters.year        ?? null,
+    p_week_starts:  filters.weekStart?.length ? filters.weekStart : null,
+    p_years:        filters.year?.length      ? filters.year      : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_lines:        filters.lines?.length        ? filters.lines        : null,
     p_regions:      filters.regions?.length      ? filters.regions      : null,

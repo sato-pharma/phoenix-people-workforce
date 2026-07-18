@@ -61,10 +61,10 @@ async function SosDashboardContent({
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
 
   const sosFilters = {
-    period:       typeof filters.period      === "string" ? filters.period      : null,
+    period:       Array.isArray(filters.period)      ? filters.period      : [],
     periodFrom:   typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
     periodTo:     typeof filters.periodTo    === "string" ? filters.periodTo    : null,
-    channel:      typeof filters.channel     === "string" ? filters.channel     : null,
+    channel:      Array.isArray(filters.channel)     ? filters.channel     : [],
     distributors: Array.isArray(filters.distributors) ? filters.distributors : [],
     lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
@@ -98,9 +98,9 @@ async function SosDashboardContent({
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
-    if (scoped.filters.period) {
-      const priorPeriod = shiftPeriod(scoped.filters.period, 1);
-      const priorRows = await loadSosByPeriod({ ...scoped.filters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
+    if (scoped.filters.period?.length === 1) {
+      const priorPeriod = shiftPeriod(scoped.filters.period[0], 1);
+      const priorRows = await loadSosByPeriod({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(() => []);
       priorTotal = priorRows.reduce((s, r) => s + r.value, 0);
     }
   }

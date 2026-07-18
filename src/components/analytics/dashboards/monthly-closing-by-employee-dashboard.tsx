@@ -37,7 +37,7 @@ async function ByEmployeeContent({
   const filters = parseAnalyticsFilters(searchParams, CLOSING_FILTERS);
 
   const closingFilters = {
-    period:       typeof filters.period       === "string" ? filters.period       : null,
+    period:       Array.isArray(filters.period)       ? filters.period       : [],
     periodFrom:   typeof filters.periodFrom   === "string" ? filters.periodFrom   : null,
     periodTo:     typeof filters.periodTo     === "string" ? filters.periodTo     : null,
     lines:        Array.isArray(filters.lines)             ? filters.lines         : [],
