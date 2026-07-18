@@ -406,6 +406,7 @@ import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
+import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -831,6 +832,7 @@ await runTest("payroll copilot expense review (month-lag: pays prior month's out
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("premium offer email (no salary in body + zebra details table)", runOfferEmailPremiumTests);
+await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
