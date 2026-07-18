@@ -17,7 +17,9 @@ import {
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
+import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
@@ -632,6 +634,40 @@ export async function getExcuseWorkspaceData(access: AccessContext): Promise<Exc
     approvalScope,
     companyRequests,
   };
+}
+
+// ── Stuck approvals — needs reassignment (HR / Super Admin only) ──────────────
+//
+// Cross-module surface (weekly/monthly plans + excuses) listing requests pinned to a resigned or
+// missing approver, so HR can re-route each to an active manager. Gated identically to the two
+// reassignment routes (isAllVacationVisibility = system scope OR Super Admin) so anyone who can SEE
+// this panel can actually act on it. This is REASSIGNMENT only: the panel changes WHO owns the
+// pending step; it never decides a request in place (owner-locked approver model).
+
+export type StuckApprovalManagerOption = { hrId: string; name: string };
+
+export type StuckApprovalsData = {
+  weeklyPlans: WeeklyPlanManagerGapRecord[];
+  excuses: ExcuseManagerGapRecord[];
+  managerOptions: StuckApprovalManagerOption[];
+};
+
+export async function getStuckApprovalsForReassignment(access: AccessContext): Promise<StuckApprovalsData> {
+  if (!isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only HR or Super Admin can view stuck approvals for reassignment.");
+  }
+  const [weeklyPlans, excuses, directoryRows] = await Promise.all([
+    listWeeklyPlanManagerGapRecords().catch(() => [] as WeeklyPlanManagerGapRecord[]),
+    listExcuseManagerGapRecords().catch(() => [] as ExcuseManagerGapRecord[]),
+    getEmployeeDirectoryRows().catch(() => [] as EmployeeDirectoryRow[]),
+  ]);
+  // Active employees only (getEmployeeDirectoryRows default) — the picker must never offer an
+  // inactive manager, and the service functions re-validate the choice server-side anyway.
+  const managerOptions: StuckApprovalManagerOption[] = directoryRows
+    .map((row) => ({ hrId: row.hrId, name: row.displayName || row.fullName || row.hrId }))
+    .filter((option) => Boolean(option.hrId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { weeklyPlans, excuses, managerOptions };
 }
 
 // ── Company-wide "All Decisions" (Super Admin / system-scope oversight only) ──

@@ -260,6 +260,50 @@ export async function runExcusesTests() {
     "excuse decision/resubmit UPDATEs must use maybeSingle so a lost status race can be detected, not single()",
   );
 
+  // --- reassignExcuseManager: Super-Admin/system re-routes a stuck excuse (never decides it) --
+  assert.match(
+    serviceSource,
+    /export async function reassignExcuseManager/,
+    "excuses service must export reassignExcuseManager",
+  );
+  // Narrowest possible new grant: system-actor OR Super Admin (excuse has no permission-matrix
+  // entry and no HR step). Deciding-in-place stays impossible.
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,400}access\.scope === "system" \|\| access\.role === "Super Admin"/,
+    "reassignExcuseManager must gate on system-actor OR Super Admin only",
+  );
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,800}requestRow\.status !== "pending_manager"/,
+    "reassignExcuseManager must only reassign a pending_manager request",
+  );
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,1200}isActiveExcuseManager\(newManager\)/,
+    "reassignExcuseManager must reject an inactive new manager",
+  );
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,1900}manager_hr_id: storedManagerHrId[\s\S]{0,140}manager_name: newManager\.fullName[\s\S]{0,140}manager_work_email: newManager\.workEmail/,
+    "reassignExcuseManager must update manager_hr_id/manager_name/manager_work_email",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,1700}manager_decision:/,
+    "reassignExcuseManager must never set manager_decision (reassignment is not deciding-in-place)",
+  );
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,2600}writeAuditLog/,
+    "reassignExcuseManager must write an audit-log entry with the old→new manager",
+  );
+  assert.match(
+    serviceSource,
+    /reassignExcuseManager[\s\S]{0,3300}notifyManagerOfExcuse\(\{[\s\S]{0,200}occurrenceKey: now/,
+    "reassignExcuseManager must retarget the manager notification with a fresh occurrence key",
+  );
+
   // --- Telegram governance: both singular and plural module names must be allowed -------
   const telegramSource = readFileSync("src/lib/notifications/telegram-governance.ts", "utf8");
   assert.match(telegramSource, /module: "excuse"/, "telegram governance must allow the singular excuse module used by notifications");

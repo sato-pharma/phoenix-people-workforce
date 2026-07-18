@@ -456,4 +456,34 @@ export function runVacationModuleTests() {
   assert.match(complianceMigrationSource, /enable row level security/);
   assert.doesNotMatch(complianceMigrationSource, /drop table|drop function|drop policy .*leave/i);
 
+  // --- assignVacationManagementApprover widened to cover a resigned pending_manager approver ---
+  // The original tool only handled needs_assignment (no approver yet). It now ALSO re-routes a
+  // request already at pending_manager when its assigned approver has resigned — reassignment
+  // only, never yanking a live decision from an active approver.
+  assert.match(
+    serviceSource,
+    /export async function assignVacationManagementApprover/,
+    "vacation service must export assignVacationManagementApprover",
+  );
+  assert.match(
+    serviceSource,
+    /const isResignedManagerReassignment = request\.status === "pending_manager"/,
+    "assignVacationManagementApprover must recognise a pending_manager request as reassignable",
+  );
+  assert.match(
+    serviceSource,
+    /isResignedManagerReassignment[\s\S]{0,600}isVacationEmployeeActive\(currentManager\)/,
+    "reassignment must be gated on the current approver being inactive/resigned (not active)",
+  );
+  assert.match(
+    serviceSource,
+    /\.from\(vacationApprovalStepsTable\)\s*\.delete\(\)\s*\.eq\("request_id", request\.id\)\s*\.eq\("step_key", "direct_manager"\)\s*\.eq\("status", "pending"\)/,
+    "reassignment must drop the stale pending first-management step before re-assigning",
+  );
+  assert.match(
+    serviceSource,
+    /\.eq\("id", request\.id\)\s*\.eq\("status", request\.status\)/,
+    "the approver update must compare-and-swap on the request's actual status (needs_assignment OR pending_manager)",
+  );
+
 }
