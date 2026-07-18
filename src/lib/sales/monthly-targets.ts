@@ -451,6 +451,21 @@ export async function loadProductNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
+/** product_code (upper) -> factory price (EGP). Powers the grid's inline Units × Price → Value. */
+export async function loadProductPriceMap(): Promise<Map<string, number>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,factory_price");
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.product_code).trim().toUpperCase();
+    const price = optNum(record.factory_price);
+    if (code && price != null) map.set(code, price);
+  }
+  return map;
+}
+
 /** hr_id -> employee display name (full name, else nickname), for rep/DM display. */
 export async function loadEmployeeNameMap(): Promise<Map<string, string>> {
   const supabase = getSupabaseAdmin();
@@ -659,6 +674,49 @@ export async function loadTargetableAreas(lineCode: string): Promise<TargetableA
       areaState: str(record.area_state) || null,
     };
   });
+}
+
+export type TargetableProduct = {
+  productCode: string;
+  productName: string;
+  factoryPrice: number | null;
+};
+
+/** lineCode -> normalized_line as stored on source_of_sales_products (anti_infective → "anti infective"). */
+const LINE_TO_NORMALIZED_LINE: Record<string, string> = {
+  cns: "cns",
+  pedia: "pedia",
+  anti_infective: "anti infective",
+};
+
+/**
+ * Products that may carry a field target for a line: active + non-confidential, with their
+ * factory price. Feeds the smart upload template's Product dropdown and the unit-price /
+ * value auto-fill. Confidential products (LA003/LA004/SS001) are excluded here for the same
+ * reason validateTargetRows rejects them — a target row would otherwise surface the name.
+ */
+export async function loadTargetableProducts(lineCode: string): Promise<TargetableProduct[]> {
+  const supabase = getSupabaseAdmin();
+  const normalizedLine = LINE_TO_NORMALIZED_LINE[lineCode] ?? lineCode;
+  const { data, error } = await supabase
+    .from("source_of_sales_products")
+    .select("product_code,product_name,factory_price,active,normalized_line")
+    .eq("normalized_line", normalizedLine)
+    .eq("active", true)
+    .order("product_name");
+  if (error) throw error;
+  const products: TargetableProduct[] = [];
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.product_code).trim().toUpperCase();
+    if (!code || CONFIDENTIAL_PRODUCT_CODES.has(code)) continue;
+    products.push({
+      productCode: code,
+      productName: str(record.product_name).trim() || code,
+      factoryPrice: optNum(record.factory_price),
+    });
+  }
+  return products;
 }
 
 /**
