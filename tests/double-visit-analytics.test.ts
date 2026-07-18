@@ -330,11 +330,20 @@ export function runDoubleVisitAnalyticsTests() {
     assert.ok(!dsmScope.allowedHrIds.has(k("M-9")), "DSM does NOT get the PM's line-wide widening");
   }
 
-  // Regional Manager scope = same region.
+  // Regional Manager scope (owner rule 2026-07-18) = the RM's OWN line ∩ the regions his
+  // direct-report DMs cover. His own region label is a coarse parent ("Alexandria + Delta") that
+  // need not match the finer rep region labels, so the region set is derived from his DMs; the line
+  // is bound by line_id. The previous area/line-label expansion leaked BOTH across lines and across
+  // regions, so it is gone (allowedAreas/allowedLines stay empty).
   const regionEmployees = [
-    employee({ areaName: "Cairo", fullName: "RM Owner", hrId: "R-1", regionName: "Greater Cairo" }),
-    employee({ areaName: "Cairo", fullName: "Rep In Region", hrId: "M-40", managerHrId: "B-40", regionName: "Greater Cairo" }),
-    employee({ areaName: "Delta", fullName: "Rep Outside Region", hrId: "M-41", managerHrId: "B-41", regionName: "Delta" }),
+    employee({ fullName: "RM Owner", hrId: "R-1", jobTitle: "Regional Sales Manager", lineId: 1, regionName: "Alexandria + Delta" }),
+    employee({ fullName: "His DM", hrId: "D-1", jobTitle: "District Sales Manager", lineId: 1, managerHrId: "R-1", regionName: "Delta (1)" }),
+    // Same line, in a region his DM covers, but reports to a DIFFERENT DM — still in scope via line∩region.
+    employee({ fullName: "In-Line In-Region", hrId: "M-40", lineId: 1, managerHrId: "B-99", regionName: "Delta (1)" }),
+    // Same line, in a region he does NOT cover.
+    employee({ fullName: "In-Line Out-Region", hrId: "M-41", lineId: 1, managerHrId: "B-99", regionName: "Upper Egypt" }),
+    // Different line, in his region — must NOT leak across the line boundary.
+    employee({ fullName: "Cross-Line In-Region", hrId: "M-42", lineId: 2, managerHrId: "B-99", regionName: "Delta (1)" }),
   ];
   const rmScope = resolveDoubleVisitAccessScope(
     { hrId: "R-1", loginId: "R-1", role: "Regional Manager", scope: "region", source: "session" } as unknown as Parameters<typeof resolveDoubleVisitAccessScope>[0],
@@ -342,8 +351,11 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.equal(rmScope.all, false, "Regional Manager is not granted org-wide double-visit access");
   if (rmScope.all === false) {
-    assert.ok(rmScope.allowedHrIds.has(k("M-40")), "RM sees a rep in the same region");
-    assert.ok(!rmScope.allowedHrIds.has(k("M-41")), "RM does NOT see a rep in a different region");
+    assert.ok(rmScope.allowedHrIds.has(k("M-40")), "RM sees a same-line rep in a region his DM covers");
+    assert.ok(!rmScope.allowedHrIds.has(k("M-41")), "RM does NOT see a same-line rep in a region he doesn't cover");
+    assert.ok(!rmScope.allowedHrIds.has(k("M-42")), "RM does NOT see a different-line rep even in his region");
+    assert.equal(rmScope.allowedAreas.size, 0, "RM area allow-set stays empty (no cross-line area leak)");
+    assert.equal(rmScope.allowedLines.size, 0, "RM line allow-set stays empty (no line-label leak)");
   }
 
   // line_name fallback: when line_id is absent, widening matches on the normalized line name.

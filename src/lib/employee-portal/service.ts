@@ -37,6 +37,8 @@ import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle
 import {
   formatVacantSeatLabel,
   lineScopeIncludesEmployee,
+  normalizeRegionLabel,
+  regionsWithinManagerHierarchy,
   reportsToManagerSeat,
   resolveSeatGrouping,
   sameWorkforceLine,
@@ -2795,13 +2797,36 @@ function isCompanyWorkforceRole(role: PhoenixRole) {
 function isLineWorkforceRole(role: PhoenixRole) {
   return (
     role === "National Sales Manager" ||
-    role === "Regional Manager" ||
     role === "Product Manager" ||
     role === "Group Product Manager" ||
     role === "SFE Manager" ||
     role === "Training Manager" ||
     role === "Marketing Manager"
   );
+}
+
+/**
+ * Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific set
+ * of regions — unlike the other line-workforce roles above, RM is also REGION-bounded, so it is
+ * NOT part of isLineWorkforceRole. The region set is derived from the RM's own management subtree
+ * (regionsWithinManagerHierarchy), since the RM's own region_name is a coarse parent label that
+ * doesn't string-match the finer labels on their reports. Shared with double-visit-analytics +
+ * weekly-planning so the same reps count everywhere.
+ */
+function regionalManagerScopeRows<T extends { hrId: string; lineId?: number | null; lineName?: string | null; managerHrId?: string | null; regionName?: string | null }>(
+  rows: readonly T[],
+  employee: EmployeeDirectoryRow,
+  directory: readonly EmployeeDirectoryRow[],
+  currentCanonicalHrId: string | null,
+): T[] {
+  if (!currentCanonicalHrId) return [];
+  const regionKeys = regionsWithinManagerHierarchy(directory, currentCanonicalHrId, normalizeHrIdForAccess);
+  if (regionKeys.size === 0) return [];
+  return rows.filter((row) => {
+    if (!sameWorkforceLine(employee, row)) return false;
+    const region = normalizeRegionLabel(row.regionName);
+    return Boolean(region && regionKeys.has(region));
+  });
 }
 
 function isTeamWorkforceRole(role: PhoenixRole) {
@@ -2823,6 +2848,10 @@ function resolvePortalWorkforceRows({
   const activeRows = directory.employees.filter(isActiveDirectoryEmployee);
 
   if (isCompanyWorkforceRole(role)) return activeRows;
+
+  if (role === "Regional Manager") {
+    return regionalManagerScopeRows(activeRows, employee, directory.employees, currentCanonicalHrId);
+  }
 
   if (isLineWorkforceRole(role)) {
     return activeRows.filter((row) => {
@@ -2856,6 +2885,7 @@ function resolvePortalWorkforceScopeLabel({
 }) {
   const role = normalizeRole(currentUser.role);
   if (isCompanyWorkforceRole(role)) return "Company";
+  if (role === "Regional Manager") return "Your regions";
   if (isLineWorkforceRole(role)) return employee.lineName ?? currentUser.line ?? "Your line";
   if (isTeamWorkforceRole(role)) return "Your team";
   return employee.displayName;
@@ -2937,14 +2967,20 @@ function emptyPortalVacancySummary(): PortalVacancySummary {
 
 async function fetchOpenVacancySummaryForScope({
   currentUser,
+  directory,
   employee,
 }: {
   currentUser: PortalCurrentUser;
+  directory: EmployeeDirectoryData;
   employee: EmployeeDirectoryRow;
 }): Promise<PortalVacancySummary> {
   const role = normalizeRole(currentUser.role);
   const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
   const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+  const regionalManagerRegionKeys =
+    role === "Regional Manager" && currentCanonicalHrId
+      ? regionsWithinManagerHierarchy(directory.employees, currentCanonicalHrId, normalizeHrIdForAccess)
+      : null;
   const supabase = getSupabaseAdmin();
 
   try {
@@ -2968,7 +3004,9 @@ async function fetchOpenVacancySummaryForScope({
 
       if (isTeamWorkforceRole(role) && currentUser.hrId) {
         query = query.eq("manager_hr_id", currentUser.hrId);
-      } else if (isLineWorkforceRole(role) && typeof employee.lineId === "number") {
+      } else if ((role === "Regional Manager" || isLineWorkforceRole(role)) && typeof employee.lineId === "number") {
+        // RM's authoritative region bound is applied client-side below (regionalManagerRegionKeys);
+        // this is only the coarse line_id pre-filter, same as the other line-workforce roles.
         query = query.eq("line_id", employee.lineId);
       }
 
@@ -2977,6 +3015,12 @@ async function fetchOpenVacancySummaryForScope({
 
     const scopedRows = rows.filter((row) => {
       if (isCompanyWorkforceRole(role)) return true;
+      if (role === "Regional Manager") {
+        if (!regionalManagerRegionKeys || regionalManagerRegionKeys.size === 0) return false;
+        if (typeof employee.lineId !== "number" || row.line_id !== employee.lineId) return false;
+        const region = normalizeRegionLabel(row.region_name);
+        return Boolean(region && regionalManagerRegionKeys.has(region));
+      }
       if (isLineWorkforceRole(role)) {
         if (typeof employee.lineId === "number" && typeof row.line_id === "number") {
           return row.line_id === employee.lineId;
@@ -3554,6 +3598,7 @@ export async function getMedicalRepPortalData(
   const vacancySummary = shouldBuildScopeSummaries
     ? await fetchOpenVacancySummaryForScope({
         currentUser,
+        directory,
         employee,
       })
     : emptyPortalVacancySummary();
