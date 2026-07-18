@@ -1330,6 +1330,24 @@ export async function assertAttendanceSetupPermission(
 }
 
 /**
+ * Fingerprint Attendance Report: a page-scoped exception to the "employees"
+ * hard boundary (Super Admin only — see hardBoundaryAllowedActions). CEO is
+ * explicitly allowed onto this one report/export even though CEO does not
+ * otherwise hold employees:read; every other "employees"-gated surface
+ * (employee directory, Attendance Setup, etc.) stays Super Admin-only.
+ */
+export async function canAccessFingerprintReport(context: AccessContext) {
+  if (context.role === "CEO") return true;
+  return canAccess(context, "employees", "read");
+}
+
+export async function assertFingerprintReportPermission(context: AccessContext) {
+  if (!(await canAccessFingerprintReport(context))) {
+    throw new Error(`Forbidden: ${context.role} cannot read the fingerprint attendance report.`);
+  }
+}
+
+/**
  * Workflow Control Center (Admin / Governance) access design.
  *
  * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
