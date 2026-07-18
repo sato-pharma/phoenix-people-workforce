@@ -1201,6 +1201,15 @@ export async function resignEmployeeAndOpenVacancy(
   });
   await ensureResignationVacancyOwnership(supabase, employee, result.vacancy_code ?? vacancyCode);
   await normalizeTerminalEmployeeLifecycleFlags(supabase, employeeHrId);
+  // Telegram deactivation is an external API call and cannot run inside the RPC's SQL
+  // transaction, so it must happen here unconditionally — not only on the JS fallback
+  // path (resignEmployeeWithFallback -> deactivateEmployeeAccessIfSupported), or every
+  // RPC-path resignation would silently stop disabling the employee's Telegram access.
+  await disableTelegramForIdentity({
+    actorLoginId: "system",
+    hrId: employeeHrId,
+    reason: "Employee resigned, terminated, or deactivated.",
+  });
 
   const { data: existingAuditRows, error: auditLookupError } = await supabase
     .from("audit_logs")
