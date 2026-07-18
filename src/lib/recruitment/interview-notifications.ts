@@ -8,6 +8,7 @@
 
 import { createSystemNotification } from "@/lib/notifications/system";
 import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Interview } from "@/lib/recruitment/types";
 
@@ -42,10 +43,11 @@ async function interviewerName(hrId: string | null): Promise<string | null> {
   try {
     const { data } = await getSupabaseAdmin()
       .from("employees")
-      .select("full_name")
+      .select("full_name,nickname")
       .eq("hr_id", hrId)
       .maybeSingle();
-    return (data as { full_name?: string } | null)?.full_name ?? hrId;
+    const row = data as { full_name?: string; nickname?: string | null } | null;
+    return row?.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname) : hrId;
   } catch {
     return hrId;
   }

@@ -4,6 +4,7 @@ import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type Ac
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
@@ -92,6 +93,7 @@ type HistoricalResignedEmployeeRow = {
   exit_reason?: string | null;
   exit_status?: string | null;
   full_name: string;
+  nickname?: string | null;
   hr_id: string;
   job_title: string | null;
   last_working_date?: string | null;
@@ -304,7 +306,7 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     createdBy: null,
     effectiveDate,
     employeeHrId: row.hr_id,
-    employeeName: row.full_name,
+    employeeName: resolveEmployeeDisplayName(row.full_name, row.nickname),
     employeeStatus: row.employment_status ?? null,
     id: `legacy:${row.hr_id}`,
     jobTitle: row.job_title ?? firstRelationName(row.positions, "title"),
@@ -330,7 +332,7 @@ async function loadHistoricalResignedEmployees(supabase: SupabaseClient) {
   const joinedResult = await supabase
     .from("employees")
     .select(
-      "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
+      "hr_id,full_name,nickname,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
     )
     .in("employment_status", terminalEmployeeStatuses)
     .order("updated_at", { ascending: false });
@@ -342,7 +344,7 @@ async function loadHistoricalResignedEmployees(supabase: SupabaseClient) {
     const fallbackResult = await supabase
       .from("employees")
       .select(
-        "hr_id,full_name,job_title,employment_status,created_at,updated_at",
+        "hr_id,full_name,nickname,job_title,employment_status,created_at,updated_at",
       )
       .in("employment_status", terminalEmployeeStatuses)
       .order("updated_at", { ascending: false });
@@ -579,7 +581,7 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   const employees = directory.employees
     .map((employee) => ({
       jobTitle: employee.positionTitle ?? employee.jobTitle ?? null,
-      label: `${employee.fullName} (${employee.hrId})`,
+      label: `${employee.displayName} (${employee.hrId})`,
       lineName: employee.lineName ?? null,
       value: employee.hrId,
     }))
@@ -624,7 +626,7 @@ async function assertResignationRuntimeSchema(
       label: "employees.hr_id/full_name/employment_status",
       query: supabase
         .from("employees")
-        .select("hr_id,full_name,employment_status")
+        .select("hr_id,full_name,nickname,employment_status")
         .limit(1),
     },
     ...(options.requireVacancies
@@ -1067,7 +1069,7 @@ async function createResignationForEmployee(
     {
       effectiveDate,
       employeeHrId: employee.hrId,
-      employeeName: employee.fullName,
+      employeeName: employee.displayName,
       id: resignationId,
       status: "submitted",
     },
@@ -1233,7 +1235,7 @@ export async function resignEmployeeAndOpenVacancy(
       {
         effectiveDate,
         employeeHrId: employee.hrId,
-        employeeName: employee.fullName,
+        employeeName: employee.displayName,
         id: result.resignation_id,
         status: "submitted",
       },
@@ -1315,7 +1317,7 @@ async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hr
   const joinedResult = await supabase
     .from("employees")
     .select(
-      "hr_id,full_name,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
+      "hr_id,full_name,nickname,job_title,employment_status,resignation_date,last_working_date,exit_reason,exit_status,created_at,updated_at,lines(name),positions(title)",
     )
     .eq("hr_id", dbHrId)
     .maybeSingle();
@@ -1326,7 +1328,7 @@ async function loadHistoricalResignedEmployeeByHrId(supabase: SupabaseClient, hr
   if (error && (error.message.toLowerCase().includes("relationship") || isMissingSchemaMessage(error))) {
     const fallbackResult = await supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,employment_status,created_at,updated_at,resignation_date,last_working_date")
+      .select("hr_id,full_name,nickname,job_title,employment_status,created_at,updated_at,resignation_date,last_working_date")
       .eq("hr_id", dbHrId)
       .maybeSingle();
 

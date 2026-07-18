@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
 import type {
   CreateHiringDocumentDefinitionInput,
@@ -21,6 +22,7 @@ type EmployeeDbRow = {
   job_title: string | null;
   line_id: number | null;
   manager_hr_id: string | null;
+  nickname: string | null;
 };
 
 type LineDbRow = {
@@ -124,14 +126,14 @@ async function loadManagerNames(managerHrIds: string[]) {
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name")
+    .select("hr_id,full_name,nickname")
     .in("hr_id", uniqueHrIds);
 
   if (error) throw new Error(error.message);
 
-  return new Map((data as Array<{ full_name: string | null; hr_id: string }>).map((row) => [
+  return new Map((data as Array<{ full_name: string | null; hr_id: string; nickname: string | null }>).map((row) => [
     normalizeHrId(row.hr_id) ?? "",
-    row.full_name ?? "",
+    resolveEmployeeDisplayName(row.full_name ?? "", row.nickname),
   ]));
 }
 
@@ -175,7 +177,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   const [employeeResult, documents] = await Promise.all([
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,hire_date,employment_status,line_id,manager_hr_id")
+      .select("hr_id,full_name,nickname,job_title,hire_date,employment_status,line_id,manager_hr_id")
       .order("full_name", { ascending: true }),
     loadDocumentDefinitions(),
   ]);
@@ -239,7 +241,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     return {
       documents: documentsById,
       employmentStatus: row.employment_status,
-      fullName: row.full_name ?? "",
+      fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname),
       hireDate: row.hire_date,
       hrId,
       jobTitle: row.job_title,

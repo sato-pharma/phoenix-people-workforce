@@ -216,9 +216,9 @@ export function runWeeklyMonthlyPlansV1Tests() {
     title: "placeholder",
   } satisfies Omit<PlanningCalendarPlanItem, "employeeHrId" | "employeeName" | "id">;
   const conflictItems: PlanningCalendarPlanItem[] = [
-    { ...baseItem, employeeHrId: "E-1", employeeName: "Russia Sabri", id: "plan-item-1" },
-    { ...baseItem, employeeHrId: "E-2", employeeName: "Nahid Hatab", id: "plan-item-2" },
-    { ...baseItem, conflictKey: planningConflictKey("2026-06-21", "Line B", "MR-1"), employeeHrId: "E-3", employeeName: "Other Line", id: "plan-item-3", lineName: "Line B" },
+    { ...baseItem, employeeDisplayName: "Russia Sabri", employeeHrId: "E-1", employeeName: "Russia Sabri", id: "plan-item-1" },
+    { ...baseItem, employeeDisplayName: "Nahid Hatab", employeeHrId: "E-2", employeeName: "Nahid Hatab", id: "plan-item-2" },
+    { ...baseItem, conflictKey: planningConflictKey("2026-06-21", "Line B", "MR-1"), employeeDisplayName: "Other Line", employeeHrId: "E-3", employeeName: "Other Line", id: "plan-item-3", lineName: "Line B" },
   ];
   const conflicts = buildPlanningCalendarConflicts(conflictItems);
   assert.equal(conflicts.length, 1, "same date + same Medical Rep must warn once — cross-line conflicts are now detected");
@@ -233,6 +233,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
           activityTitle: "Double Visit",
           area: "Munufia 2",
           date: "2026-06-21",
+          employeeDisplayName: "Nahid Hatab",
           employeeHrId: "E-2",
           employeeName: "Nahid Hatab",
           lineName: "Line A",

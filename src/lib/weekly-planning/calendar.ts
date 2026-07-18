@@ -72,6 +72,9 @@ export type SameLinePlanBooking = {
   date: string;
   employeeHrId: string;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName). Use this
+  // for live UI rendering; legal/audit contexts keep using employeeName.
+  employeeDisplayName: string;
   lineName: string | null;
   medicalRepHrId: string;
   medicalRepName: string;
@@ -155,7 +158,7 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
     if (employeeHrIds.length < 2) continue;
 
     const first = group[0];
-    const employeeNames = uniqueSorted(group.map((item) => item.employeeName));
+    const employeeNames = uniqueSorted(group.map((item) => item.employeeDisplayName));
     const medicalRepName = cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
     const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
@@ -217,7 +220,7 @@ export function sameLineBookingWarning(input: {
   });
   if (matches.length === 0) return null;
 
-  const employeeNames = uniqueSorted(matches.map((booking) => booking.employeeName));
+  const employeeNames = uniqueSorted(matches.map((booking) => booking.employeeDisplayName));
   const repName = cleanText(input.medicalRepName) || matches[0]?.medicalRepName || "this Medical Rep";
   return `${employeeNames.join(", ")} already planned with ${repName} on this date. This is a warning only; it does not block submission.`;
 }

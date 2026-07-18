@@ -402,7 +402,7 @@ function dbRowFromMirrorVisit(
     activity_date: visit.visit_date,
     area_name: visitedEmployee?.areaName ?? label.areaName,
     double_visitor_hr_id: visit.double_hr_id ?? (visit.double_crm_id ? `CRM:${visit.double_crm_id}` : null),
-    double_visitor_name: doubleEmployee?.fullName ?? visit.double_name ?? null,
+    double_visitor_name: doubleEmployee?.displayName ?? visit.double_name ?? null,
     id: visit.id,
     line_name: visitedEmployee?.lineName ?? label.lineName,
     period: periodFromAmpm(visit.ampm),
@@ -411,7 +411,7 @@ function dbRowFromMirrorVisit(
     source_type: "ireports360",
     visit_count: 1,
     visited_employee_hr_id: effectiveVisitedHrId,
-    visited_employee_name: visitedEmployee?.fullName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
+    visited_employee_name: visitedEmployee?.displayName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
     visited_employee_status: visitedStatus,
     resolved_via_chain: resolution ? true : undefined,
     chain_hinge_hr_id: resolution?.hingeHrId ?? undefined,
@@ -703,7 +703,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       lineName: employee.lineName,
       managerHrId: employee.managerHrId,
       managerName: employee.managerName,
-      mrName: employee.fullName,
+      mrName: employee.displayName,
       totalDvs: mrRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0),
       trendDirection,
     } satisfies DoubleVisitMrScore;
@@ -800,7 +800,7 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       latestDvDate,
       lineName: group.manager.lineName,
       managerHrId: group.manager.hrId || managerHrId,
-      managerName: group.manager.fullName || group.manager.hrId || managerHrId,
+      managerName: group.manager.displayName || group.manager.hrId || managerHrId,
       neglectedMrCount: group.mrs.filter((mr) => mr.band !== "healthy").length,
       overFocusedMrCount: group.mrs.filter((mr) => averageDvs > 0 && mr.totalDvs >= Math.max(5, averageDvs * 2)).length,
       touchedMrCount: touched.length,
@@ -948,7 +948,7 @@ export function buildManagerSummariesDetailed(
       lastDvDate,
       lineName: employee?.lineName ?? nullableText(visitorRows.find((row) => nullableText(row.line_name))?.line_name),
       managerHrId: visitorKey,
-      managerName: nullableText(employee?.fullName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
+      managerName: nullableText(employee?.displayName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
       neglectedMrCount,
       overFocusedMrCount,
       pmVisits,
@@ -1124,7 +1124,7 @@ export function buildExecutiveSummary(
       areaName: employee.areaName,
       hrId: key,
       lineName: employee.lineName,
-      name: employee.fullName || employee.hrId || key,
+      name: employee.displayName || employee.hrId || key,
       role: dv.role,
       roleCode: dv.roleCode,
     });
@@ -1486,7 +1486,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
         flagged: !visited && daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         visited,
       };
     });
@@ -1640,7 +1640,7 @@ export async function getDoubleVisitReportData(input: {
         flagged: daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         visited: false,
       } satisfies DoubleVisitFocusRosterEntry;
     })

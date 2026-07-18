@@ -5,6 +5,7 @@
 // in memory per case — no per-case DB round-trips and no per-case report build. Read-only.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 import { getProbationConfig } from "./config";
 import { computeProbationScore, type FeedbackScoreInput } from "./scoring";
@@ -119,8 +120,8 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     supabase.from("probation_feedback").select("case_id, dv_day_id, evaluator_role, scores, recommendation").in("case_id", caseIds),
     supabase.from("probation_assessments").select("case_id, kind, score, status").in("case_id", caseIds),
     managerHrIds.length > 0
-      ? supabase.from("employees").select("hr_id, full_name").in("hr_id", managerHrIds)
-      : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null }> }),
+      ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", managerHrIds)
+      : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null; nickname: string | null }> }),
     supabase.from("probation_development_actions").select("case_id, status").in("case_id", caseIds),
     // CRM identity-mapping check (E6): which probation reps actually appear as a CRM agent, via the
     // CRM single-door presence reader. No resigned-exclusion here on purpose — a present-but-excluded
@@ -134,8 +135,8 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
   const daByCase = groupBy((daRes.data ?? []) as Array<{ case_id: string | null; status: string }>, (r) => r.case_id);
   const mappedAgentKeys = buildMappedAgentKeySet(mappedAgentHrIds);
   const mgrName = new Map<string, string>();
-  for (const m of ((mgrRes.data ?? []) as Array<{ hr_id: string; full_name: string | null }>)) {
-    if (m.full_name) mgrName.set(m.hr_id.toLowerCase(), m.full_name);
+  for (const m of ((mgrRes.data ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>)) {
+    if (m.full_name) mgrName.set(m.hr_id.toLowerCase(), resolveEmployeeDisplayName(m.full_name, m.nickname));
   }
 
   const rows: DashboardRow[] = cases.map((c) => {

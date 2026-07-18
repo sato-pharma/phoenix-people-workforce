@@ -35,7 +35,7 @@ export function runNotificationGovernanceHardeningTests() {
   );
   assertContains(
     policySource,
-    /\.from\("employees"\)\s*\n?\s*\.select\("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status"\)\s*\n?\s*\.in\("hr_id",\s*normalized\)/,
+    /\.from\("employees"\)\s*\n?\s*\.select\("hr_id,full_name,nickname,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status"\)\s*\n?\s*\.in\("hr_id",\s*normalized\)/,
     "batched candidate lookup must fetch employees via a single .in() query",
   );
   assertContains(

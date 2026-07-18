@@ -1651,7 +1651,7 @@ async function createMarketingApprovalSteps(params: {
         requester: requesterRow,
       });
       if (chain.length === 0) {
-        throw validationError(`No approving manager could be resolved for ${requesterRow.fullName}.`, "marketing_approver_not_resolved");
+        throw validationError(`No approving manager could be resolved for ${requesterRow.displayName}.`, "marketing_approver_not_resolved");
       }
       for (const node of chain) {
         pushRow({ assignedHrId: node.assignedHrId, assignedRole: node.assignedRole, isCc: false, step, stepName: node.stepName });
@@ -1956,7 +1956,7 @@ async function loadMarketingRequestTypeName(supabase: SupabaseClient, requestTyp
 function employeeNameByHrId(employeeRows: EmployeeDirectoryRow[], hrId: string | null | undefined) {
   const normalized = normalizeHrId(hrId);
   if (!normalized) return "";
-  return employeeRowByHrId(employeeRows).get(normalized)?.fullName ?? normalized;
+  return employeeRowByHrId(employeeRows).get(normalized)?.displayName ?? normalized;
 }
 
 /**
@@ -2025,7 +2025,7 @@ function marketingNotificationVariables(params: {
     department: requester?.departmentName ?? "",
     dueDate: params.request.payDate,
     employeeHrId: params.request.requesterHrId,
-    employeeName: requester?.fullName ?? params.request.requesterHrId,
+    employeeName: requester?.displayName ?? params.request.requesterHrId,
     employeePortalUrl: "/employee-portals/marketing-requests",
     eventDate: new Date().toISOString().slice(0, 10),
     line: requester?.lineName ?? String(params.request.lineId ?? ""),
@@ -2036,7 +2036,7 @@ function marketingNotificationVariables(params: {
     recipientHrId: params.currentStep?.assignedHrId ?? "",
     recipientName: employeeNameByHrId(params.employeeRows, params.currentStep?.assignedHrId),
     requesterHrId: params.request.requesterHrId,
-    requesterName: requester?.fullName ?? params.request.requesterHrId,
+    requesterName: requester?.displayName ?? params.request.requesterHrId,
     rejectUrl: marketingActionUrl(params.request.id, "reject"),
     requestCode: params.request.requestCode,
     requestId: params.request.requestCode,
@@ -2689,7 +2689,7 @@ export function buildMarketingApprovedRequestRows(params: {
     const finance = financeByRequestId.get(request.id);
 
     return {
-      contactForMoneyTransfer: requester?.fullName ?? request.requesterHrId,
+      contactForMoneyTransfer: requester?.displayName ?? request.requesterHrId,
       customerName: customer?.displayName ?? request.customerId,
       financeProofFileName: finance?.moneyTransferProofOriginalFileName ?? null,
       financeProofStoragePath: finance?.moneyTransferProofStoragePath ?? null,

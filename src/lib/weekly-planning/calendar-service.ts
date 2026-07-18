@@ -384,6 +384,7 @@ export async function getSameLinePlanBookings(
       date: item.startDate,
       employeeHrId: item.employeeHrId,
       employeeName: item.employeeName,
+      employeeDisplayName: item.employeeDisplayName,
       lineName: item.lineName,
       medicalRepHrId: medicalRepIdentity,
       medicalRepName: item.medicalRepName ?? medicalRepIdentity,

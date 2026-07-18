@@ -7,6 +7,7 @@
 // repeated CRM sync or cron run never re-sends the same email.
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -206,8 +207,9 @@ export async function sendDvSnapshotEmail(dvDayId: string, nowIso: string = new 
   // Evaluator display name.
   let evaluatorName: string | null = null;
   if (d.evaluator_hr_id) {
-    const { data: emp } = await supabase.from("employees").select("full_name").ilike("hr_id", d.evaluator_hr_id).maybeSingle();
-    evaluatorName = (emp as { full_name?: string | null } | null)?.full_name ?? d.evaluator_hr_id;
+    const { data: emp } = await supabase.from("employees").select("full_name, nickname").ilike("hr_id", d.evaluator_hr_id).maybeSingle();
+    const empRow = emp as { full_name?: string | null; nickname?: string | null } | null;
+    evaluatorName = empRow?.full_name ? resolveEmployeeDisplayName(empRow.full_name, empRow.nickname) : d.evaluator_hr_id;
   }
 
   const ctx = await buildCaseContext(d.case_id, d.employee_hr_id, hireDate, today);

@@ -12,6 +12,7 @@ import { getEmailTemplateCatalog } from "@/lib/email-templates/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isDisposableFixtureText } from "@/lib/fixture-hygiene";
 import { countHrWorkingDays } from "@/lib/hr-calendar/calendar-logic";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getHiringDocumentsDashboard } from "@/lib/hiring-documents/service";
 import { buildLifecycleRiskMetrics, type LifecycleRiskAlert } from "@/lib/lifecycle-risk/metrics";
 import { getEmailNotificationOutboxStats } from "@/lib/notifications/email";
@@ -398,26 +399,30 @@ async function getLifecycleRiskMetrics(accessContext: AccessContext): Promise<Pl
     canAccess(accessContext, "probation", "read"),
   ]);
 
-  const [contracts, probations] = await Promise.all([
+  const [contracts, probations, directory] = await Promise.all([
     canReadContracts
       ? getContractRenewalDashboardData(accessContext).then((dashboard) => dashboard.rows).catch(() => [])
       : Promise.resolve([]),
     canReadProbation
       ? getProbationRows(accessContext).catch(() => [])
       : Promise.resolve([]),
+    getEmployeeDirectory(),
   ]);
+  const displayNameByHrId = new Map(
+    directory.employees.map((employee) => [canonicalHrIdKey(employee.hrId), employee.displayName]),
+  );
 
   return buildLifecycleRiskMetrics({
     contracts: contracts.map((row) => ({
       contractRenewalDate: row.contract_renewal_date,
       employeeHrId: row.hr_id,
-      employeeName: row.full_name,
+      employeeName: displayNameByHrId.get(canonicalHrIdKey(row.hr_id)) ?? row.full_name,
       workflowStatus: row.workflow?.status ?? null,
     })),
     probations: probations.map((row) => ({
       daysRemaining: row.days_remaining,
       employeeHrId: row.hr_id,
-      employeeName: row.full_name,
+      employeeName: displayNameByHrId.get(canonicalHrIdKey(row.hr_id)) ?? row.full_name,
       hireDate: row.hire_date,
       probationEndDate: row.probation_end_date,
       workflowDecision: row.workflow?.decision ?? null,
