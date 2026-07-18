@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Award,
   BadgeCheck,
+  CalendarClock,
+  ClipboardCheck,
   Clock,
   Footprints,
   GraduationCap,
@@ -27,6 +29,7 @@ import type {
   SalesMonthPoint,
 } from "@/lib/employee-360/deep-service";
 import type { TeamHealthSummary } from "@/lib/employee-360/team-health";
+import type { TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
 import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
@@ -149,6 +152,11 @@ const KPI_EXPLAIN: Record<string, string> = {
   "DV coverage": "The share of this manager's reps they double-visited at least once this period.",
   "Fully neglected": "Reps who got NEITHER a coaching session NOR a double-visit this period — the ones being completely missed.",
   "Team reach": "The share of the team touched at least once this period — coached or double-visited.",
+  // Team compliance (manager) — plans, field discipline, probation
+  "Plans submitted": "How many of this manager's reps submitted a weekly plan for this period — weekly-planning compliance.",
+  "Plans approved": "How many of their reps had a weekly plan fully approved this period.",
+  "No-activity flags": "How many of their reps were flagged for confirmed no-activity days — the field-force equivalent of absence — this period.",
+  "In probation": "How many of their reps are still inside their first 90 days (probation window), soonest to finish first.",
   // Marketing ROI (PM/GPM)
   Requests: "How many marketing requests this Product Manager has submitted.",
   "Est. spend": "The total estimated cost of the marketing requests they submitted.",
@@ -459,6 +467,7 @@ export function Employee360View({
   showExpenses = true,
   category,
   teamHealth = null,
+  teamLifecycle = null,
   tmAnalytics = null,
   pmMarketing = null,
 }: {
@@ -468,6 +477,7 @@ export function Employee360View({
   showExpenses?: boolean;
   category: Employee360RoleCategory;
   teamHealth?: TeamHealthSummary | null;
+  teamLifecycle?: TeamLifecycleSummary | null;
   tmAnalytics?: TrainingManagerAnalytics | null;
   pmMarketing?: PmMarketingSummary | null;
 }) {
@@ -529,6 +539,9 @@ export function Employee360View({
 
       {/* Team development — coaching coverage of a field manager's own reps. */}
       {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
+
+      {/* Team compliance — weekly plans, field discipline & probation of their reps. */}
+      {teamLifecycle ? <TeamLifecycleSection lifecycle={teamLifecycle} /> : null}
 
       {/* PM / Group PM — ROI on the marketing requests they submitted. */}
       {pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null}
@@ -1345,6 +1358,60 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
                       {r.latestCoachingDate ? ` · ${r.latestCoachingDate}` : ""}
                     </span>
                   </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Team Compliance — the operational (non-development) side of a manager's team:
+// are their reps planning, showing up in the field, and who is still on probation.
+function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }) {
+  const cov = lifecycle.planCoverageRate;
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={ClipboardCheck}
+        tone="amber"
+        sub="The operational health of this manager's reps — weekly-plan compliance, confirmed field no-activity flags, and who is still inside their 90-day probation."
+      >
+        Team Compliance — Plans, Field Discipline &amp; Probation
+      </SectionHeader>
+      {!lifecycle.hasData ? (
+        <EmptyState>No Medical Reps roll up to this manager, so there is no team compliance to show.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile
+              label="Plans submitted"
+              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(lifecycle.repCount)}`}
+              hint={`${Math.round(cov * 100)}% of reps`}
+              goodWhenAbove={cov >= 0.6}
+            />
+            <KpiTile label="Plans approved" value={intFmt.format(lifecycle.planApprovedCount)} />
+            <KpiTile
+              label="No-activity flags"
+              value={lifecycle.disciplineHasData ? intFmt.format(lifecycle.disciplineFlaggedReps) : "—"}
+              hint={lifecycle.disciplineHasData ? `${intFmt.format(lifecycle.disciplineNoActivityDays)} days flagged` : undefined}
+              goodWhenAbove={lifecycle.disciplineHasData ? lifecycle.disciplineFlaggedReps === 0 : null}
+            />
+            <KpiTile label="In probation" value={intFmt.format(lifecycle.probationCount)} hint="within first 90 days" />
+          </div>
+          {lifecycle.probationReps.length > 0 ? (
+            <div className="mt-4 rounded-[14px] border border-blue-200 bg-blue-50/50 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-black text-blue-700">
+                <CalendarClock className="h-3.5 w-3.5" />
+                On probation — soonest to finish first ({lifecycle.probationReps.length})
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lifecycle.probationReps.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-700">
+                    {r.name} · <span className="tabular-nums text-blue-500">{r.daysRemaining}d left</span>
+                  </span>
                 ))}
               </div>
             </div>
