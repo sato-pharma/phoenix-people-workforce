@@ -104,6 +104,10 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
 
     if (loginReason === phoenixSessionTimeoutReason) {
       clearSessionActivity();
+      frames.push(window.requestAnimationFrame(() => {
+        setError("Your session expired. Please sign in again.");
+        setErrorField("form");
+      }));
     }
 
     if (loginError && loginErrorMessages[loginError]) {
