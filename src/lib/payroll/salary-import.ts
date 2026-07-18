@@ -12,6 +12,21 @@ import {
   type PayrollSalarySource,
 } from "./salary-source-model.ts";
 
+/**
+ * Canonicalize the anti-infective line label on payroll import so a payroll sheet can never
+ * (re)introduce the "Anti Inf" abbreviation (or the lowercase / hyphenated / trailing-dot
+ * spellings). Every other line value passes through unchanged. Matches the org-import canonical
+ * "Anti Infective" (src/lib/imports/org-rules.ts) — owner decision 2026-07-18.
+ */
+export function canonicalizeSalaryLineLabel<T extends string | null>(line: T): T {
+  if (line == null) return line;
+  const key = line.trim().toLowerCase().replace(/[.\-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (key === "anti inf" || key === "anti infective" || key === "anti infectious" || key === "antiinfective") {
+    return "Anti Infective" as T;
+  }
+  return line;
+}
+
 export type SalaryValidationIssue = {
   code: string;
   column?: string;
@@ -677,7 +692,7 @@ export async function validateSalaryWorkbook(
             jobTitle: String(rowValue(raw, columnAliases.jobTitle)).trim() || null,
             lastPayoutMonth: payoutMonth,
             lastPayoutYear: payoutYear,
-            line: String(rowValue(raw, columnAliases.line)).trim() || null,
+            line: canonicalizeSalaryLineLabel(String(rowValue(raw, columnAliases.line)).trim() || null),
             nameAr: String(rowValue(raw, columnAliases.nameAr)).trim() || null,
             row: rowNumber,
           });
@@ -1007,7 +1022,7 @@ export async function validateSalaryWorkbook(
       hireDate,
       incentive,
       jobTitle: String(rowValue(raw, columnAliases.jobTitle)).trim() || "Unassigned",
-      line: String(rowValue(raw, columnAliases.line)).trim() || "Unassigned",
+      line: canonicalizeSalaryLineLabel(String(rowValue(raw, columnAliases.line)).trim() || "Unassigned"),
       loans,
       medicalInsurance,
       monthSalary,
