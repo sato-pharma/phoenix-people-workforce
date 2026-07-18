@@ -32,6 +32,9 @@ export const PERIOD_TO_FILTER: FilterDescriptor = {
   pipeline: "all",
 };
 
+// Weekly-only: analytics_weekly_fact accepts p_year, but the SoS / Closing / Executive RPCs are
+// period-scoped (YYYY-MM) and ignore year — so YEAR_FILTER belongs only in WEEKLY_FILTERS. Adding
+// it to a period-scoped set produces a dead, no-op control.
 export const YEAR_FILTER: FilterDescriptor = {
   key: "year",
   label: "Year",
@@ -42,7 +45,7 @@ export const YEAR_FILTER: FilterDescriptor = {
     { value: "2026", label: "2026" },
     { value: "2027", label: "2027" },
   ],
-  pipeline: "all",
+  pipeline: "weekly",
 };
 
 export const WEEK_FILTER: FilterDescriptor = {
@@ -167,22 +170,10 @@ export const CUSTOMER_FILTER: FilterDescriptor = {
   pipeline: "sos",
 };
 
-// ── Batch (closing only — real workflow states: staged/approved/rejected) ────
-
-export const BATCH_STATUS_FILTER: FilterDescriptor = {
-  key: "batchStatus",
-  label: "Batch Status",
-  type: "multi-select",
-  source: "batchStatuses",
-  multiple: true,
-  staticOptions: [
-    { value: "staged", label: "Staged" },
-    { value: "approved", label: "Approved" },
-    { value: "rejected", label: "Rejected" },
-  ],
-  placeholder: "All statuses",
-  pipeline: "closing",
-};
+// ── Batch (closing only) ─────────────────────────────────────────────────────
+// NOTE: no Batch Status filter by design. The analytics.closing_fact view is hard-filtered to
+// approved batches (WHERE b.status = 'approved'), so Staged/Rejected options would always return
+// zero rows. Closing analytics reflects APPROVED closings only.
 
 export const BATCH_ID_FILTER: FilterDescriptor = {
   key: "batchId",
@@ -199,7 +190,6 @@ export const SOS_FILTERS: FilterDescriptor[] = [
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
-  YEAR_FILTER,
   DISTRIBUTOR_FILTER,
   LINE_FILTER,
   REGION_FILTER,
@@ -210,17 +200,27 @@ export const SOS_FILTERS: FilterDescriptor[] = [
   CUSTOMER_FILTER,
 ];
 
+// The Customers tab reads analytics_sos_by_customer, which only accepts period / line / region /
+// customer filters. Expose ONLY those so the controls aren't dead — distributor / area / product /
+// family / channel are silently ignored by that RPC.
+export const SOS_CUSTOMER_FILTERS: FilterDescriptor[] = [
+  PERIOD_FILTER,
+  PERIOD_FROM_FILTER,
+  PERIOD_TO_FILTER,
+  LINE_FILTER,
+  REGION_FILTER,
+  CUSTOMER_FILTER,
+];
+
 export const CLOSING_FILTERS: FilterDescriptor[] = [
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
-  YEAR_FILTER,
   LINE_FILTER,
   PRODUCT_FILTER,
   FAMILY_FILTER,
   EMPLOYEE_FILTER,
   TERRITORY_FILTER,
-  BATCH_STATUS_FILTER,
   BATCH_ID_FILTER,
 ];
 
@@ -237,7 +237,6 @@ export const WEEKLY_FILTERS: FilterDescriptor[] = [
 export const EXECUTIVE_FILTERS: FilterDescriptor[] = [
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
-  YEAR_FILTER,
   LINE_FILTER,
   REGION_FILTER,
   DISTRIBUTOR_FILTER,
