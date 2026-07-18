@@ -563,14 +563,6 @@ export function CeoCommandCenter({
             href="/sales/weekly/dashboard"
           />
 
-          {/* Marketing ROI — instant link card */}
-          <QuickLinkCard
-            title="Marketing ROI"
-            icon={<Megaphone className="h-3.5 w-3.5" />}
-            headline="Coverage, spend at risk, top risk accounts"
-            sub="Click to open ROI Tracking"
-            href="/admin/marketing-requests/roi-tracking"
-          />
         </div>
 
         {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
@@ -616,13 +608,6 @@ export function CeoCommandCenter({
             headline="Coverage, AM/PM split, per-rep intensity"
             sub="Open Double-Visit Analytics"
             href="/admin/double-visit-analytics"
-          />
-          <QuickLinkCard
-            title="Events Calendar"
-            icon={<CalendarClock className="h-3.5 w-3.5" />}
-            headline="Company events, leave, plans, birthdays"
-            sub="Open the company events calendar"
-            href="/admin/company-calendar"
           />
         </div>
       </SectionShell>

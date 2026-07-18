@@ -5,9 +5,7 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
-  Clock,
   DollarSign,
-  ExternalLink,
   ShieldCheck,
   TrendingDown,
   TrendingUp,
@@ -409,11 +407,6 @@ function AttendanceWidget({
           <p className="mt-1 text-[9px] text-slate-400">Latest: {data.weeklyTrend[data.weeklyTrend.length - 1]?.lateRate.toFixed(1) ?? "—"}% late rate</p>
         </div>
       )}
-      <div className="flex gap-2 px-5 pb-5">
-        <Link href="/attendance/analytics" className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700">
-          Full Attendance <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
     </div>
   );
 }
@@ -425,13 +418,11 @@ const NAV_ITEMS = [
   { href: "/admin/m-payroll",                        icon: Wallet,       label: "Payroll",            sub: "Salary & flags" },
   { href: "/admin/analytics/monthly-closing",        icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
   { href: "/sales/weekly/dashboard",                 icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
-  { href: "/admin/marketing-requests/roi-tracking",  icon: TrendingUp,   label: "ROI Tracking",       sub: "Marketing investment returns" },
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/admin/outstation/expense-command",       icon: DollarSign,   label: "Expense Command",    sub: "Company-wide outstation spend" },
   { href: "/coaching/analytics",                     icon: ShieldCheck,  label: "Coaching",           sub: "Rep performance & KPIs" },
   { href: "/admin/approvals-hub",                    icon: CheckCircle2, label: "Approvals Hub",      sub: "Pending approvals" },
   { href: "/organogram",                             icon: Users,        label: "Organogram",         sub: "Org chart & hierarchy" },
-  { href: "/attendance/analytics",                   icon: Clock,        label: "Attendance",         sub: "Today & trend" },
   { href: "/admin/data-health",                      icon: ShieldCheck,  label: "Data Health",        sub: "System quality score" },
 ];
 
@@ -634,14 +625,6 @@ export async function CeoPhaseBWidgets({
       <Section
         title="Marketing ROI Signal"
         description="Who started strong, who started weak, who is still at zero."
-        action={
-          <Link
-            href="/admin/marketing-requests/roi-tracking"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
-          >
-            ROI Tracking <ArrowRight className="h-3 w-3" />
-          </Link>
-        }
       >
         {landing.roiSignal ? (
           <RoiBrief data={landing.roiSignal} />
@@ -654,14 +637,6 @@ export async function CeoPhaseBWidgets({
       <Section
         title="Attendance & Leave"
         description="Today's absentees, managers on leave, chronic late offenders, and 7-week trend."
-        action={
-          <Link
-            href="/attendance/analytics"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
-          >
-            Attendance <ArrowRight className="h-3 w-3" />
-          </Link>
-        }
       >
         {landing.attendance ? (
           <AttendanceWidget data={landing.attendance} managersOnLeave={landing.managersOnLeave} />

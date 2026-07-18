@@ -16,11 +16,23 @@ function employeeRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// The real import path (app/api/imports/employees/confirm) always loads the 42 canonical areas
+// before validating, so sales-line rows can resolve their Area. Supply that context here or the
+// Phase-7 fail-closed guard blocks every sales-line row with "canonical_area_unavailable" (by
+// design) and masks the seat/CRM/salary logic this test actually covers.
+const canonicalAreas = [
+  { code: "AB1", name: "Cairo" },
+  { code: "AB2", name: "Giza" },
+];
+
 export function runEmployeeImportSeatValidationTests() {
-  const duplicateUpload = validateEmployeeImportRows([
-    employeeRow({ HR_ID: "T-001", "Full Name": "First Rep" }),
-    employeeRow({ HR_ID: "T-002", "Full Name": "Second Rep" }),
-  ]);
+  const duplicateUpload = validateEmployeeImportRows(
+    [
+      employeeRow({ HR_ID: "T-001", "Full Name": "First Rep" }),
+      employeeRow({ HR_ID: "T-002", "Full Name": "Second Rep" }),
+    ],
+    { existingState: { canonicalAreas } },
+  );
 
   assert.equal(duplicateUpload.failedRows, 1);
   assert.equal(
@@ -36,9 +48,11 @@ export function runEmployeeImportSeatValidationTests() {
     [employeeRow({ HR_ID: "T-003", "Full Name": "Third Rep" })],
     {
       existingState: {
+        canonicalAreas,
         employeeOrgSeats: [
           {
-            areaCode: createOrgCode("Cairo"),
+            // Post-cutover existing employees carry the canonical area code that "Cairo" resolves to.
+            areaCode: canonicalAreas[0].code,
             hrId: "T-000",
             jobTitle: "Medical Representative",
             lineCode: createOrgCode("Pedia"),
@@ -56,28 +70,34 @@ export function runEmployeeImportSeatValidationTests() {
     true,
   );
 
-  const differentRegion = validateEmployeeImportRows([
-    employeeRow({ HR_ID: "T-004", Region: "Cairo" }),
-    employeeRow({ HR_ID: "T-005", Region: "Giza" }),
-  ]);
+  const differentRegion = validateEmployeeImportRows(
+    [
+      employeeRow({ HR_ID: "T-004", Region: "Cairo" }),
+      employeeRow({ HR_ID: "T-005", Region: "Giza" }),
+    ],
+    { existingState: { canonicalAreas } },
+  );
 
   assert.equal(
     differentRegion.validationErrors.some((issue) => issue.code.startsWith("duplicate_employee_org_seat")),
     false,
   );
 
-  const salaryFormula = validateEmployeeImportRows([
-    employeeRow({
-      "Base Salary": 14000,
-      "Basic Salary": 1,
-      "Full Name": "Salary Formula Rep",
-      "Gross Salary": 999,
-      HR_ID: "T-006",
-      "Net Salary": 999,
-      "Social Insurance": 1200,
-      Taxes: 800,
-    }),
-  ]);
+  const salaryFormula = validateEmployeeImportRows(
+    [
+      employeeRow({
+        "Base Salary": 14000,
+        "Basic Salary": 1,
+        "Full Name": "Salary Formula Rep",
+        "Gross Salary": 999,
+        HR_ID: "T-006",
+        "Net Salary": 999,
+        "Social Insurance": 1200,
+        Taxes: 800,
+      }),
+    ],
+    { existingState: { canonicalAreas } },
+  );
   const compensation = salaryFormula.rowsToInsert[0].compensation;
 
   assert.equal(compensation.baseSalary, 14000);
@@ -95,18 +115,21 @@ export function runEmployeeImportSeatValidationTests() {
     true,
   );
 
-  const duplicateCrmUsernameUpload = validateEmployeeImportRows([
-    employeeRow({ "CRM Username": "Rep.One", HR_ID: "T-007", Region: "Cairo" }),
-    employeeRow({
-      Area: "Giza",
-      "CRM Username": "rep.one",
-      "Full Name": "CRM Duplicate Rep",
-      HR_ID: "T-008",
-      Line: "Derma",
-      Position: "Senior Product Specialist",
-      Region: "Giza",
-    }),
-  ]);
+  const duplicateCrmUsernameUpload = validateEmployeeImportRows(
+    [
+      employeeRow({ "CRM Username": "Rep.One", HR_ID: "T-007", Region: "Cairo" }),
+      employeeRow({
+        Area: "Giza",
+        "CRM Username": "rep.one",
+        "Full Name": "CRM Duplicate Rep",
+        HR_ID: "T-008",
+        Line: "Derma",
+        Position: "Senior Product Specialist",
+        Region: "Giza",
+      }),
+    ],
+    { existingState: { canonicalAreas } },
+  );
 
   assert.equal(duplicateCrmUsernameUpload.failedRows, 2);
   assert.equal(
@@ -122,6 +145,7 @@ export function runEmployeeImportSeatValidationTests() {
     [employeeRow({ "CRM Username": "Rep.Ten", HR_ID: "T-010" })],
     {
       existingState: {
+        canonicalAreas,
         crmUsernameToHrId: new Map([["rep.ten", "T-000"]]),
       },
     },

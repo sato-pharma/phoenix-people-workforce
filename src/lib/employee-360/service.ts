@@ -12,7 +12,10 @@
 //    (Meeting -11, Vacation -4, Training -9, …) is admin/non-visit and is bucketed
 //    explicitly — NEVER defaulted to campaign.
 //  - agent_hr_id casing is inconsistent in the CRM feed; match via hrIdLookupKeys.
-//  - Egypt work week is Sun–Thu (Fri/Sat weekend) — used for utilization.
+//  - Field-force work week (owner-confirmed, matches the CRM data): Sat–Wed are
+//    full working days, Thursday is AM-only (half day), Friday is off. Saturday
+//    IS a working day. Only Friday is excluded from working-days (utilization);
+//    the day-of-week charts dim Friday and lighten Thursday.
 
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -152,7 +155,7 @@ export type VisitSummary = {
   repeatCustomers: number;
   oneTimeCustomers: number;
   topCustomers: NamedCount[];
-  dayOfWeek: number[]; // 0=Sun … 6=Sat, productive counts
+  visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
   workingDaysInWindow: number;
   utilization: number | null;
   visitsSummaryText: string;
@@ -172,7 +175,7 @@ export type CheckinSummary = {
   avgLastHour: number | null;
   avgSpanHours: number | null;
   checkinsPerActiveDay: number | null;
-  dayOfWeek: number[];
+  checkinDayOfWeek: number[]; // 0=Sun … 6=Sat, GPS check-in counts (distinct from the visit dayOfWeek)
   coverageTrend: { month: string; coverage: number | null }[];
   uncorroboratedDays: number;
   distinctLocations: number;
@@ -244,12 +247,15 @@ function addDays(date: string, delta: number): string {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
-function countWorkingDays(from: string, to: string): number {
+export function countWorkingDays(from: string, to: string): number {
   let count = 0;
   let cursor = from;
   for (let i = 0; i < 400 && cursor <= to; i += 1) {
     const dow = dowOf(cursor);
-    if (dow !== 5 && dow !== 6) count += 1; // exclude Fri/Sat
+    // Field-force work week: only Friday is off. Sat–Wed are full days and
+    // Thursday is a working half-day (AM only) — all of them count. Saturday is
+    // a WORKING day (owner-confirmed; ~16k Sat visits in production).
+    if (dow !== 5) count += 1;
     cursor = addDays(cursor, 1);
   }
   return count;
@@ -406,7 +412,7 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
     repeatCustomers,
     oneTimeCustomers,
     topCustomers,
-    dayOfWeek: dow,
+    visitDayOfWeek: dow,
     workingDaysInWindow,
     utilization,
     visitsSummaryText: summaryText,
@@ -512,7 +518,7 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
     avgLastHour,
     avgSpanHours,
     checkinsPerActiveDay: distinctCheckinDays > 0 ? checkinCount / distinctCheckinDays : null,
-    dayOfWeek: dow,
+    checkinDayOfWeek: dow,
     coverageTrend,
     uncorroboratedDays,
     distinctLocations: locations.size,

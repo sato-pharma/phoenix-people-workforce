@@ -303,11 +303,11 @@ export function runPrivateCalendarTests() {
   assert.match(accessRegistrySource, /\/admin\/private-calendars/, "private calendar admin page must be in access registry");
 
   const portalLayoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-  assert.match(portalLayoutSource, /Private Calendar/, "employee sidebar must include Private Calendar");
+  assert.doesNotMatch(portalLayoutSource, /Private Calendar/, "Private Calendar is hidden from the employee sidebar for all roles");
   assert.match(portalLayoutSource, /\/employee-portals\/plans\/calendar/, "plan users must get the Planning Calendar route");
 
   const navRegistrySource = readFileSync("src/components/employee-portal/employee-portal-nav-registry.ts", "utf8");
-  assert.match(navRegistrySource, /\/employee-portals\/private-calendar/, "bottom nav registry must include Private Calendar");
+  assert.doesNotMatch(navRegistrySource, /\/employee-portals\/private-calendar/, "Private Calendar is removed from the bottom-nav registry for all roles");
   assert.match(navRegistrySource, /Planning Calendar/, "bottom nav registry must include Planning Calendar for plan users");
 
   const privateCalendarUiSource = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
