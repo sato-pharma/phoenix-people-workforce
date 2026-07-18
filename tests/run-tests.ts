@@ -128,6 +128,7 @@ import { runDoubleVisitReportExportTests } from "./double-visit-report-export.te
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
+import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
@@ -547,6 +548,7 @@ await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitR
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
+await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
