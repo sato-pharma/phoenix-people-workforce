@@ -204,9 +204,19 @@ jobs:
         run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # This test logs in as the hardcoded CI_SMOKE_LOGIN_ID account ("a-12", see
+          # app/api/auth/login/route.ts). PHOENIX_CI_SMOKE_LOGIN mode deliberately skips
+          # creating an app_sessions row, but SessionSecurityGuard still mounts for real on
+          # the landed page and heartbeats that orphaned session — which correctly logs a
+          # "Session rejected: app session not found" audit row wherever these Supabase
+          # credentials point. Pointed at the isolated STAGING project (not production) so
+          # this expected CI noise never lands in the live production audit trail (it used to
+          # — see memory/ci-smoke-login-prod-audit-noise.md). URL and anon key are
+          # public/non-secret (RLS-protected), mirroring the value already committed in
+          # deploy-cloud-run-staging.yml:141; only the service-role key is a real secret.
+          NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZndtbmR1bm1seGpoeWp1Z3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzQxMzEsImV4cCI6MjA5OTM1MDEzMX0.2bWjOI1gH67H8Fj1wr2XheQjlDhM5pOQ6xPD8YLd5lc"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
           PHOENIX_CI_SMOKE_LOGIN: "true"
