@@ -217,7 +217,11 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
       <div className="mb-1.5 text-xs font-bold text-slate-500">{title}</div>
       <div className="flex items-end gap-1.5" style={{ height: 56 }}>
         {counts.map((c, i) => (
-          <div key={i} className="flex flex-1 flex-col items-center gap-1">
+          // h-full gives each column the row's definite 56px height. Without it, the
+          // row's items-end leaves columns content-sized (indefinite), so the inner
+          // flex-1 bar track collapses and each bar's height:% resolves against 0 —
+          // the chart rendered empty even with correct counts.
+          <div key={i} className="flex h-full flex-1 flex-col items-center gap-1">
             <div className="flex w-full flex-1 items-end">
               <div
                 className={cn(
