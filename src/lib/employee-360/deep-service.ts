@@ -17,6 +17,7 @@ import { queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
+import { getPmProductCodes, resolvePmProductNames } from "@/lib/employee-360/pm-products";
 import {
   CAMPAIGN_TYPE,
   classifyVisit,
@@ -110,7 +111,37 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   const subjectKey = String(teamHrIds[0] ?? "").trim().toLowerCase();
   const contributingReps = new Set(rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && k !== subjectKey));
   const isTeamRollup = teamHrIds.length > 1 && contributingReps.size > 0;
+  return aggregateSalesRows(rows, isTeamRollup, contributingReps.size);
+}
 
+/**
+ * PM / Group PM sales attributed by the PRODUCTS they own (from the product-manager
+ * master), not by a team roll-up — a PM has no direct reports, so the team path
+ * returns nothing. `productNames` are resolved from the assigned product codes.
+ */
+export async function getEmployeeSalesByProducts(
+  productNames: string[],
+  viewerRole: PhoenixRole,
+): Promise<SalesSummary> {
+  const names = Array.from(new Set(productNames.map((n) => String(n).trim()).filter(Boolean)));
+  if (names.length === 0) return aggregateSalesRows([], false, 0);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("sales_records")
+    .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+    .in("product", names)
+    .limit(50000);
+  if (error) throw new Error(`Employee 360 product sales: ${error.message}`);
+  let rows = (data ?? []) as SalesRow[];
+  if (!canViewRestrictedProducts(viewerRole)) {
+    rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
+  }
+  return aggregateSalesRows(rows, false, 0);
+}
+
+/** Pure aggregation of sales rows into the SalesSummary shape (shared by the
+ *  team-roll-up and product-based sales paths). */
+function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, contributingRepCount: number): SalesSummary {
   const monthMap = new Map<string, { sales: number; target: number }>();
   const productMap = new Map<string, { family: string | null; sales: number; target: number }>();
   const familyMap = new Map<string, { sales: number; target: number }>();
@@ -156,7 +187,7 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   const growthPct = monthly.length > 1 && monthly[0].sales > 0 ? ((monthly[monthly.length - 1].sales - monthly[0].sales) / monthly[0].sales) * 100 : null;
   const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
   const top = topProducts[0];
-  const teamPrefix = isTeamRollup ? `Team roll-up (${contributingReps.size} rep${contributingReps.size === 1 ? "" : "s"}): ` : "";
+  const teamPrefix = isTeamRollup ? `Team roll-up (${contributingRepCount} rep${contributingRepCount === 1 ? "" : "s"}): ` : "";
   const summaryText =
     rows.length === 0
       ? "No validated sales records for this employee yet (only ~2/3 of reps have linked sales)."
@@ -181,7 +212,7 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
     topProducts,
     byFamily,
     isTeamRollup,
-    teamRepCount: contributingReps.size,
+    teamRepCount: contributingRepCount,
     summaryText,
   };
 }
@@ -1104,10 +1135,19 @@ export async function getEmployee360Profile(
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
   const isLeader = isFieldLeaderCategory(roleCategory);
+  // PM / Group PM: attribute sales by the PRODUCTS they own (product master), not a
+  // team roll-up (they have no reports). Falls back to the team path when a PM has
+  // no assignments yet (or before the pm_product_assignments migration is applied).
+  const pmProductNames =
+    roleCategory === "product-manager" ? await resolvePmProductNames(await getPmProductCodes(hrId)) : [];
+  const salesPromise =
+    pmProductNames.length > 0
+      ? getEmployeeSalesByProducts(pmProductNames, viewerRole)
+      : getEmployeeSales(salesTeam, viewerRole);
   const [visits, checkins, sales, tmIds, expenses, leadership] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
-    getEmployeeSales(salesTeam, viewerRole),
+    salesPromise,
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
     isLeader
