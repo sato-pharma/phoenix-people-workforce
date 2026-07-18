@@ -1701,7 +1701,11 @@ function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   };
 }
 
-async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) {
+async function employeePayload(
+  input: EmployeeMutationInput,
+  isUpdate: boolean,
+  previousManagerHrId: string | null = null,
+) {
   const fullName = compact(input.fullName);
   if (!fullName) {
     throw new Error("Full name is required.");
@@ -1755,7 +1759,14 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   }
 
   const managerHrId = normalizeHrId(input.managerHrId);
-  await ensureManagerIsValid(managerHrId, hrId);
+  // Only validate the manager when it is actually being assigned or changed (or on create).
+  // Re-validating an UNCHANGED manager on every save would block unrelated edits (phone,
+  // salary, etc.) for any employee whose manager has since resigned or been hidden from the
+  // organogram — a stale reference the seat-continuity flow reconciles separately, not a
+  // reason to reject an edit that never touched the manager field.
+  if (!isUpdate || managerHrId !== previousManagerHrId) {
+    await ensureManagerIsValid(managerHrId, hrId);
+  }
   const crmId = compact(input.crmId);
   const crmUsername = compact(input.crmUsername);
   await ensureCrmIdIsUnique(crmId, hrId);
@@ -2116,6 +2127,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
   const hrId = normalizeHrId(input.hrId);
   const originalHrId = normalizeHrId(input.originalHrId);
   const isUpdate = Boolean(originalHrId);
+  let previousManagerHrId: string | null = null;
 
   if (isUpdate) {
     if (!hrId) {
@@ -2126,12 +2138,13 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
       throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
     }
 
-    const existing = await supabaseRest<Array<{ hr_id: string }>>(
-      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id`,
+    const existing = await supabaseRest<Array<{ hr_id: string; manager_hr_id: string | null }>>(
+      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id`,
     );
     if (existing.length === 0) {
       throw new Error(`Employee ${originalHrId} was not found.`);
     }
+    previousManagerHrId = normalizeHrId(existing[0].manager_hr_id);
   } else if (hrId) {
     const existing = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
@@ -2141,7 +2154,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     }
   }
 
-  const payload = await employeePayload(input, isUpdate);
+  const payload = await employeePayload(input, isUpdate, previousManagerHrId);
   await assertActiveCanonicalArea(payload.area_id);
   const params = new URLSearchParams({
     on_conflict: "hr_id",
