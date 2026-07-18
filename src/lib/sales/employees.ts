@@ -1,5 +1,6 @@
 ﻿import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import { canonicalSalesLine, isSalesOthersBucket } from "@/lib/sales/others";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
@@ -49,7 +50,7 @@ function isInactiveEmploymentStatus(status: string | null | undefined) {
 }
 
 function employeeLabel(employee: EmployeeDirectoryRow) {
-  const name = compact(employee.full_name) || "Unknown employee";
+  const name = compact(employee.display_name) || compact(employee.full_name) || "Unknown employee";
   const hrId = compact(employee.hr_id);
   return hrId ? `${name} [HR ${hrId}]` : name;
 }
@@ -250,6 +251,7 @@ async function loadDirectory() {
       hr_id: employee.hrId,
       crm_id: employee.crmId,
       crm_username: employee.crmUsername,
+      display_name: employee.displayName,
       full_name: employee.fullName,
       job_title: employee.jobTitle,
       line: employee.lineName,
@@ -268,7 +270,7 @@ async function loadDirectory() {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id, crm_id, crm_username, full_name, employment_status, manager_hr_id, job_title, line_id, area_id")
+    .select("hr_id, crm_id, crm_username, full_name, nickname, employment_status, manager_hr_id, job_title, line_id, area_id")
     .order("full_name", { ascending: true });
 
   if (error) return [] as EmployeeDirectoryRow[];
@@ -277,6 +279,7 @@ async function loadDirectory() {
     hr_id: String(row.hr_id),
     crm_id: row.crm_id ? String(row.crm_id) : null,
     crm_username: row.crm_username ? String(row.crm_username) : null,
+    display_name: resolveEmployeeDisplayName(row.full_name ? String(row.full_name) : "", (row as { nickname?: string | null }).nickname ?? null) || null,
     full_name: row.full_name ? String(row.full_name) : null,
     job_title: row.job_title ? String(row.job_title) : null,
     line: null,
@@ -373,7 +376,7 @@ export function linkSalesRecordAgainstDirectory(
       employeeHrId: match.hr_id,
       employeeCrmId: match.crm_id ?? null,
       employeeLookupKey: match.crm_username ?? source.employeeLookupKey ?? null,
-      employeeName: match.full_name ?? source.employeeName ?? null,
+      employeeName: match.display_name ?? match.full_name ?? source.employeeName ?? null,
       linkStatus: "linked",
       linkConfidence: confidence,
       line: match.line ?? source.line ?? null,
