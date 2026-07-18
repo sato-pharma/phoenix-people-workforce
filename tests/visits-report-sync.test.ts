@@ -249,4 +249,19 @@ export function runVisitsReportSyncTests() {
     /\.in\("hr_id", Array\.from\(new Set\(probationVisited\.flatMap\(hrIdLookupKeys\)\)\)\)/,
     "the employees DM lookup must expand hr-id casing variants so the case-sensitive .in matches",
   );
+
+  // Fix B (2026-07-18 data-fidelity audit): the legacy checkbox auto-tick must apply the SAME
+  // probation-window gate as the authoritative probation_dv_days path — a DV outside the
+  // employee's window [hire_date, probation_end_date] must NOT tick a checkbox that DV-Day
+  // validation would reject as outside_probation_window (they diverged silently before).
+  assert.match(
+    feedbackServiceSource,
+    /import \{ withinWindow \} from "\.\/intelligence\/dv-validation";/,
+    "the checkbox tick must reuse the DV-Day validation window predicate (one source of window semantics)",
+  );
+  assert.match(
+    feedbackServiceSource,
+    /withinWindow\(dvRow\.visit_date, empByHrId\.get\(visitedHrId\)\?\.hire_date \?\? null, probRecord\.probation_end_date\)/,
+    "each DV must be window-gated against the employee's probation window before ticking a checkbox",
+  );
 }

@@ -1,6 +1,7 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { withinWindow } from "./intelligence/dv-validation";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -615,10 +616,10 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
 
   // Load every double visit (Regular/Campaign with a double-visit partner — same canonical
   // definition as double-visit-analytics) in the just-synced window, through the CRM single door.
-  const dvRows = await getDoubleVisitRows<{ agent_hr_id: string; double_hr_id: string }>({
+  const dvRows = await getDoubleVisitRows<{ agent_hr_id: string; double_hr_id: string; visit_date: string | null }>({
     dateFrom,
     dateTo,
-    columns: "double_hr_id, agent_hr_id",
+    columns: "double_hr_id, agent_hr_id, visit_date",
     requireAgentHrId: true,
     requireDoubleHrId: true,
   });
@@ -628,12 +629,15 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   const rows = dvRows.map((row) => ({
     double_visitor_hr_id: row.double_hr_id,
     visited_employee_hr_id: row.agent_hr_id,
+    visit_date: row.visit_date,
   }));
 
-  // Load all active probation employees
+  // Load all active probation employees, with the probation-window END (probation_end_date) so a DV
+  // outside the window never ticks a checkbox (parity with probation_dv_days — see the window gate
+  // below). The window START (hire_date) comes from the employees query already loaded further down.
   const { data: activeProbation } = await db
     .from("employee_probation")
-    .select("id,hr_id,dm_dv_done,nsm_dv_done,pm_gpm_dv_done,tm_dv_done")
+    .select("id,hr_id,probation_end_date,dm_dv_done,nsm_dv_done,pm_gpm_dv_done,tm_dv_done")
     .eq("status", "active");
 
   if (!activeProbation || activeProbation.length === 0) return;
@@ -641,6 +645,7 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   type ProbRow = {
     id: number;
     hr_id: string;
+    probation_end_date: string | null;
     dm_dv_done: boolean | null;
     nsm_dv_done: boolean | null;
     pm_gpm_dv_done: boolean | null;
@@ -675,10 +680,10 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   // UPPERCASE, probationVisited is lowercase; expand variants so the case-sensitive `.in` matches.
   const { data: employees } = await db
     .from("employees")
-    .select("hr_id,manager_hr_id")
+    .select("hr_id,manager_hr_id,hire_date")
     .in("hr_id", Array.from(new Set(probationVisited.flatMap(hrIdLookupKeys))));
 
-  type EmpRow = { hr_id: string; manager_hr_id: string | null };
+  type EmpRow = { hr_id: string; manager_hr_id: string | null; hire_date: string | null };
   const empByHrId = new Map<string, EmpRow>(
     (employees ?? [] as EmpRow[]).map((e: EmpRow) => [normalizeHrId(e.hr_id) ?? e.hr_id, e]),
   );
@@ -696,6 +701,14 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
     for (const dvRow of visitingRows) {
       const visitorHrId = normalizeHrId(dvRow.double_visitor_hr_id);
       if (!visitorHrId) continue;
+
+      // Window gate (same predicate as probation_dv_days validateDvDay): a DV outside the
+      // employee's probation window [hire_date, probation_end_date] is NOT a probation double
+      // visit and must not tick a checkbox — otherwise the legacy checkbox shows a DV "done"
+      // that the authoritative probation_dv_days path rejects as outside_probation_window.
+      if (dvRow.visit_date && !withinWindow(dvRow.visit_date, empByHrId.get(visitedHrId)?.hire_date ?? null, probRecord.probation_end_date)) {
+        continue;
+      }
 
       const visitorRole = roleByHrId.get(visitorHrId) ?? "";
       const visitedEmp = empByHrId.get(visitedHrId);
