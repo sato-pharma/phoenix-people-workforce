@@ -2760,6 +2760,84 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   return mapPlan(updated);
 }
 
+// Plans stuck on the manager stage — awaiting the assigned manager's decision. These mirror
+// the D4 drift detector (scripts/weekly-plans-drift.sql) exactly. A `manager_returned` /
+// `ceo_returned` plan is editable and, on resubmit (updateEmployeePlan), keeps its existing
+// manager_hr_id verbatim — it is never re-resolved — so if that manager has since resigned the
+// plan stays pinned to a dead approver just like a `submitted` one. All three therefore need
+// reassignment.
+const REASSIGNABLE_PLAN_STATUSES: EmployeePlanStatus[] = ["submitted", "manager_returned", "ceo_returned"];
+
+// HR/Super-Admin re-routes a stuck plan to a new active manager when the assigned manager has
+// resigned before deciding. This is REASSIGNMENT, not deciding-in-place: it only changes WHO
+// owns the pending manager step (manager_hr_id/manager_name) and never touches `status` or runs
+// a decision RPC. The newly-assigned manager must still pass the exact same assertManagerReviewer
+// identity gate as any manager when they later decide — nothing here lets HR/Super-Admin approve,
+// return, or reject in another manager's place (owner-locked approver model).
+export async function reassignWeeklyPlanManager(
+  access: AccessContext,
+  input: { planId: string; newManagerHrId: string },
+) {
+  // Two-part gate, mirroring vacation's assertVacationAdminManagement: the standing weekly_plans
+  // approve grant AND Super-Admin (isHrReviewer). Neither alone is sufficient.
+  await assertPermission(access, "weekly_plans", "approve");
+  if (!isHrReviewer(access, null)) {
+    throw new Error("Forbidden: only HR or Super Admin can reassign a stuck plan approver.");
+  }
+
+  const newManagerHrId = cleanText(input.newManagerHrId);
+  if (!newManagerHrId) {
+    throw new Error("A new manager HR_ID is required.");
+  }
+
+  const plan = await loadPlanRow(input.planId);
+  if (!REASSIGNABLE_PLAN_STATUSES.includes(plan.status)) {
+    throw new Error(
+      "Only plans awaiting a manager decision (submitted, manager_returned, ceo_returned) can be reassigned.",
+    );
+  }
+
+  const directory = await getEmployeeDirectory();
+  const newManager = directory.employees.find((emp) => hrIdsMatch(emp.hrId, newManagerHrId));
+  if (!newManager) {
+    throw new Error("The selected manager was not found in the employee directory.");
+  }
+  if (!isActiveEmployee(newManager)) {
+    throw new Error("The selected manager is not active. Choose an active manager to receive this plan.");
+  }
+
+  const previousManagerHrId = plan.manager_hr_id;
+  const previousManagerName = plan.manager_name;
+
+  // Direct column update only — NOT rpcDecidePlan / any status transition.
+  const { error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .update({
+      manager_hr_id: newManager.hrId,
+      manager_name: newManager.fullName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", plan.id);
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: plan.id,
+    entityType: "weekly_plan",
+    newValues: { managerHrId: newManager.hrId, managerName: newManager.fullName },
+    oldValues: { managerHrId: previousManagerHrId, managerName: previousManagerName },
+    summary: `${plan.plan_kind} plan approver reassigned from ${previousManagerHrId ?? "unassigned"} to ${newManager.hrId}`,
+  });
+
+  const updated = await loadPlanRow(plan.id);
+  // Retarget the standard manager-stage alert to the newly-assigned manager (best-effort;
+  // notifyManager reads the freshly-updated manager_hr_id off `updated`).
+  await notifyManager(updated).catch((err) =>
+    console.error(`[weekly-plans] reassign notify failed for plan ${plan.id}`, err),
+  );
+  return mapPlan(updated);
+}
+
 export async function acknowledgeEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
   const employee = await currentEmployee(access);
   if (!isHrReviewer(access, employee)) {
