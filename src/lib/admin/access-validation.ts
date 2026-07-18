@@ -10,7 +10,7 @@ import {
 import { validationError } from "@/lib/http/api-errors";
 
 const businessScopes: BusinessScope[] = ["SELF", "TEAM", "HIERARCHY", "LINE", "COMPANY", "NONE"];
-const phoenixLines = ["CNS", "Pedia", "Anti-Infective", "Office", "Other"] as const;
+const phoenixLines = ["CNS", "Pedia", "Anti Infective", "Office", "Other"] as const;
 
 export type GovernanceRequest = {
   governanceReason?: string | null;
