@@ -6,6 +6,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -75,7 +76,13 @@ export async function getUnmappedCrmIdentities(): Promise<UnmappedCrmIdentityRow
   // such exclusion: their visit rows get agent_hr_id/double_hr_id stamped immediately, so the
   // `.is(..., null)` scans below naturally stop returning them.
   const resolutions = await getCrmIdentityResolutions();
-  const resignedCrmIds = new Set(resolutions.filter((r) => r.status === "resigned").map((r) => r.crmId));
+  const resignedCrmIds = new Set<number>([
+    ...resolutions.filter((r) => r.status === "resigned").map((r) => r.crmId),
+    // Also drop the statically owner-excluded / resigned agents (the same CRM_RESIGNED_AGENT_CRM_IDS
+    // every CRM read hides) so a never-mapped excluded agent can't linger on the punch-list asking an
+    // admin to map someone deliberately kept out.
+    ...CRM_RESIGNED_AGENT_CRM_IDS,
+  ]);
 
   let agentCursor: string | null = null;
   for (;;) {

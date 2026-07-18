@@ -420,7 +420,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     isMr && hrId
       ? wrapPromise(
           queryVisitsLimited<{ visit_date: string }>({
-            agentHrIds: [canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()],
+            // The CRM read door matches hr ids case-insensitively — pass the raw id, no UPPER guess.
+            agentHrIds: [hrId],
             doubleOnly: true,
             visitTypes: [0, -8],
             columns: "visit_date",
