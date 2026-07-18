@@ -39,6 +39,11 @@ export type PlanningCalendarPlanItem = {
   lineName: string | null;
   medicalRepHrId: string | null;
   medicalRepName: string | null;
+  // Nickname-aware display name for the double-visit medical rep (nickname when
+  // set, else medicalRepName), resolved live against the current employee
+  // directory. Falls back to medicalRepName when the rep can't be resolved
+  // (e.g. a vacant seat or a rep no longer in the directory).
+  medicalRepDisplayName: string | null;
   notes: string | null;
   planId: string;
   planKind: EmployeePlanKind;
@@ -72,6 +77,9 @@ export type SameLinePlanBooking = {
   date: string;
   employeeHrId: string;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName). Use this
+  // for live UI rendering; legal/audit contexts keep using employeeName.
+  employeeDisplayName: string;
   lineName: string | null;
   medicalRepHrId: string;
   medicalRepName: string;
@@ -155,8 +163,8 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
     if (employeeHrIds.length < 2) continue;
 
     const first = group[0];
-    const employeeNames = uniqueSorted(group.map((item) => item.employeeName));
-    const medicalRepName = cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
+    const employeeNames = uniqueSorted(group.map((item) => item.employeeDisplayName));
+    const medicalRepName = cleanText(first.medicalRepDisplayName) || cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
     const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
     const lineName = conflictLineNames.length === 1 ? (conflictLineNames[0] || "Unassigned line") : conflictLineNames.join(" / ");
@@ -217,7 +225,7 @@ export function sameLineBookingWarning(input: {
   });
   if (matches.length === 0) return null;
 
-  const employeeNames = uniqueSorted(matches.map((booking) => booking.employeeName));
+  const employeeNames = uniqueSorted(matches.map((booking) => booking.employeeDisplayName));
   const repName = cleanText(input.medicalRepName) || matches[0]?.medicalRepName || "this Medical Rep";
   return `${employeeNames.join(", ")} already planned with ${repName} on this date. This is a warning only; it does not block submission.`;
 }
