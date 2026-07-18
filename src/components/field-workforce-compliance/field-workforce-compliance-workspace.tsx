@@ -54,6 +54,7 @@ import {
   type FieldWorkforceGroupScorecard,
 } from "@/lib/field-workforce-compliance/scorecards";
 import { cn } from "@/lib/utils";
+import { handlePossibleSessionDeath } from "@/lib/auth/client-session";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -208,6 +209,13 @@ function decisionStatusOptionsForRecommendation(
 }
 
 async function readJsonResponse<T extends { message?: string; success: boolean }>(response: Response): Promise<T> {
+  // A 401, or a 403 right after SessionSecurityGuard's heartbeat/idle-timeout logout has
+  // fired, means the session died out from under this request rather than the user
+  // genuinely lacking access — redirect to sign in instead of showing a confusing
+  // "you do not have access" error on a page that's about to navigate away anyway.
+  if (handlePossibleSessionDeath(response)) {
+    return { message: "Your session expired — redirecting you to sign in…", success: false } as T;
+  }
   const text = await response.text();
   if (!text) return { message: response.statusText, success: response.ok } as T;
   try {
