@@ -77,18 +77,36 @@ export async function listPmProductOptions(): Promise<PmProductOption[]> {
   }
 }
 
-/** Resolve assigned product codes to the product NAMES sales_records is keyed by. */
-export async function resolvePmProductNames(productCodes: string[]): Promise<string[]> {
+// sales_records has NO product code — only a SKU-level `product` name (which carries
+// dosage/pack suffixes and typos) plus a SKU-agnostic `family`. The product master's
+// `family` matches the sales_records families EXCEPT one spelling variant (master
+// "Dopaminict" vs sales "Dopaminect"). So mapping assigned CODES -> families ->
+// sales_records.family is the reliable "by product id" attribution: a PM owns a whole
+// brand/family, and family avoids the SKU-name drift that made exact-name matching
+// undercount (e.g. master "Royafloxacin" vs sales "Royafloxacin 500mg tab").
+const FAMILY_SALES_ALIASES: Record<string, string[]> = {
+  // masterFamily(lowercased) -> the family spelling(s) that appear in sales_records
+  dopaminict: ["Dopaminect", "Dopaminict"],
+};
+
+/** Resolve assigned product codes to the sales_records `family` values they belong to. */
+export async function resolvePmSalesFamilies(productCodes: string[]): Promise<string[]> {
   const codes = Array.from(new Set(productCodes.map((c) => String(c).trim()).filter(Boolean)));
   if (codes.length === 0) return [];
   try {
     const { data } = await getSupabaseAdmin()
       .from("source_of_sales_products")
-      .select("product_name")
+      .select("family")
       .in("product_code", codes);
-    return (data ?? [])
-      .map((r) => String((r as Record<string, unknown>).product_name ?? "").trim())
-      .filter(Boolean);
+    const families = new Set<string>();
+    for (const row of data ?? []) {
+      const fam = String((row as Record<string, unknown>).family ?? "").trim();
+      if (!fam || fam.toUpperCase() === "IGNORE") continue;
+      const aliases = FAMILY_SALES_ALIASES[fam.toLowerCase()];
+      if (aliases) aliases.forEach((a) => families.add(a));
+      else families.add(fam);
+    }
+    return [...families];
   } catch {
     return [];
   }

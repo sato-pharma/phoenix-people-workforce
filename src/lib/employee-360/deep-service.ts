@@ -17,7 +17,7 @@ import { queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
-import { getPmProductCodes, resolvePmProductNames } from "@/lib/employee-360/pm-products";
+import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
   CAMPAIGN_TYPE,
   classifyVisit,
@@ -98,13 +98,23 @@ export function applyRestrictedProductFilter(
 async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
   const supabase = getSupabaseAdmin();
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
-  const { data, error } = await supabase
-    .from("sales_records")
-    .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-    .in("employee_hr_id", keys)
-    .limit(20000);
-  if (error) throw new Error(`Employee 360 sales: ${error.message}`);
-  let rows = (data ?? []) as SalesRow[];
+  // PostgREST caps a response at ~1000 rows regardless of .limit(), and a large
+  // team (e.g. an NSM's whole line ≈ 3.7k sales rows) exceeds that — so PAGE with
+  // .range() or the manager sales roll-up silently under-counts.
+  const PAGE = 1000;
+  let rows: SalesRow[] = [];
+  for (let from = 0; from < 100000; from += PAGE) {
+    const { data, error } = await supabase
+      .from("sales_records")
+      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+      .in("employee_hr_id", keys)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Employee 360 sales: ${error.message}`);
+    const batch = (data ?? []) as SalesRow[];
+    rows = rows.concat(batch);
+    if (batch.length < PAGE) break;
+  }
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }
@@ -115,24 +125,37 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
 }
 
 /**
- * PM / Group PM sales attributed by the PRODUCTS they own (from the product-manager
- * master), not by a team roll-up — a PM has no direct reports, so the team path
- * returns nothing. `productNames` are resolved from the assigned product codes.
+ * PM / Group PM sales attributed by the PRODUCTS they own (product-manager master),
+ * not a team roll-up — a PM has no reports, so the team path returns nothing.
+ * sales_records has no product code, so we attribute by `family` — the SKU-agnostic
+ * grouping that matches the master's family (resolved from the assigned codes). This
+ * is exact for a PM who owns a whole brand and avoids the SKU-level name drift/typos
+ * in sales_records.product (e.g. "Royafloxacin 500mg tab", "Tebofrtin drops").
  */
-export async function getEmployeeSalesByProducts(
-  productNames: string[],
+export async function getEmployeeSalesByFamilies(
+  families: string[],
   viewerRole: PhoenixRole,
 ): Promise<SalesSummary> {
-  const names = Array.from(new Set(productNames.map((n) => String(n).trim()).filter(Boolean)));
-  if (names.length === 0) return aggregateSalesRows([], false, 0);
+  const fams = Array.from(new Set(families.map((f) => String(f).trim()).filter(Boolean)));
+  if (fams.length === 0) return aggregateSalesRows([], false, 0);
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("sales_records")
-    .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-    .in("product", names)
-    .limit(50000);
-  if (error) throw new Error(`Employee 360 product sales: ${error.message}`);
-  let rows = (data ?? []) as SalesRow[];
+  // A whole family spans 2 sales channels × SKUs × months (thousands of rows), and
+  // PostgREST caps a single response (~1000 rows) regardless of .limit(), so we MUST
+  // page through with .range() or the total silently under-counts by ~half.
+  const PAGE = 1000;
+  let rows: SalesRow[] = [];
+  for (let from = 0; from < 100000; from += PAGE) {
+    const { data, error } = await supabase
+      .from("sales_records")
+      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+      .in("family", fams)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Employee 360 product sales: ${error.message}`);
+    const batch = (data ?? []) as SalesRow[];
+    rows = rows.concat(batch);
+    if (batch.length < PAGE) break;
+  }
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }
@@ -1138,11 +1161,11 @@ export async function getEmployee360Profile(
   // PM / Group PM: attribute sales by the PRODUCTS they own (product master), not a
   // team roll-up (they have no reports). Falls back to the team path when a PM has
   // no assignments yet (or before the pm_product_assignments migration is applied).
-  const pmProductNames =
-    roleCategory === "product-manager" ? await resolvePmProductNames(await getPmProductCodes(hrId)) : [];
+  const pmSalesFamilies =
+    roleCategory === "product-manager" ? await resolvePmSalesFamilies(await getPmProductCodes(hrId)) : [];
   const salesPromise =
-    pmProductNames.length > 0
-      ? getEmployeeSalesByProducts(pmProductNames, viewerRole)
+    pmSalesFamilies.length > 0
+      ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
       : getEmployeeSales(salesTeam, viewerRole);
   const [visits, checkins, sales, tmIds, expenses, leadership] = await Promise.all([
     fetchVisitRows(hrId, window),
