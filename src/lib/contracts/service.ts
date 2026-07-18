@@ -464,8 +464,7 @@ async function notifyContractWorkflow(
 // the vacancy via the canonical resignations helper. Behavior-gated by the
 // WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED kill switch — when the flag is
 // false, this helper is a strict no-op (no DB call, no mutation, no side
-// effect). The flag should only be flipped after the WP-6 migration is applied
-// and staging smoke is green.
+// effect).
 async function maybeRunNonRenewalTerminalLifecycle(
   record: ContractRenewalRecord,
   access: AccessContext | undefined,
@@ -599,9 +598,9 @@ export async function runContractRenewalWorkflow(
   if (error) throw new ContractRenewalValidationError(error.message);
   const updated = mapRenewalRequest(data as RenewalRequestDbRow);
 
-  // WP-6: terminate the employee + open vacancy on non-renewal. Strict no-op
-  // when WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED is false (default), so this
-  // is behavior-preserving until the WP-6 migration is applied.
+  // WP-6: terminate the employee + open vacancy on non-renewal, gated by
+  // WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED (a kill switch, not a readiness
+  // gate — the underlying schema is confirmed live on staging + production).
   if (action === "not_renew") {
     await maybeRunNonRenewalTerminalLifecycle(updated, input.access, actor);
   }
