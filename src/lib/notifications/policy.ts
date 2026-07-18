@@ -100,6 +100,7 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "birthday.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
+  "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
