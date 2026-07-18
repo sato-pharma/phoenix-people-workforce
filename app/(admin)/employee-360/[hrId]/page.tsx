@@ -10,6 +10,7 @@ import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
+import { getPmMarketingRoi, type PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
@@ -193,6 +194,8 @@ export default async function Employee360DetailPage({
         teamHrIds,
         employees: rows,
         window: { from: period.current.from, to: period.current.to },
+        // Reps this manager double-visited (from the leadership activity already loaded).
+        dvRepHrIds: (summary.leadership?.byRep ?? []).filter((r) => r.doubleVisits > 0).map((r) => r.hrId),
       });
     } catch {
       teamHealth = null;
@@ -211,6 +214,16 @@ export default async function Employee360DetailPage({
       });
     } catch {
       tmAnalytics = null;
+    }
+  }
+
+  // PM / Group PM: ROI on the marketing requests they submitted.
+  let pmMarketing: PmMarketingSummary | null = null;
+  if (summary && roleCategory === "product-manager") {
+    try {
+      pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
+    } catch {
+      pmMarketing = null;
     }
   }
 
@@ -237,6 +250,7 @@ export default async function Employee360DetailPage({
         category={roleCategory}
         teamHealth={teamHealth}
         tmAnalytics={tmAnalytics}
+        pmMarketing={pmMarketing}
       />
     </div>
   );
