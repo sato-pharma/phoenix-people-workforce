@@ -173,27 +173,30 @@ export function HeadOfficeAttendancePanel() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError(null);
-    fetch(`/api/admin/field-workforce-compliance/head-office-attendance?month=${month}&year=${year}`)
-      .then((response) => response.json() as Promise<ApiResponse>)
-      .then((payload) => {
+
+    async function loadHeadOfficeAttendance() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/admin/field-workforce-compliance/head-office-attendance?month=${month}&year=${year}`);
+        const payload = (await response.json()) as ApiResponse;
         if (!active) return;
         if (payload.success && payload.data) setResult(payload.data);
         else setError(payload.message ?? payload.error ?? "Head Office attendance could not be loaded.");
-      })
-      .catch((caught) => {
+      } catch (caught) {
         if (active) setError(caught instanceof Error ? caught.message : "Head Office attendance could not be loaded.");
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    }
+
+    void loadHeadOfficeAttendance();
     return () => {
       active = false;
     };
   }, [month, year]);
 
-  const employees = result?.employees ?? [];
+  const employees = useMemo(() => result?.employees ?? [], [result]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return employees;
