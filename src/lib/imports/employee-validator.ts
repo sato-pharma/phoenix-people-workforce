@@ -544,9 +544,10 @@ function resolveCanonicalArea(
   record: EmployeeImportRecord,
   canonicalByKey: Map<string, { code: string; name: string }>,
 ) {
-  // Area unification: for SALES-line rows the Area must resolve to one of the 42 canonical
-  // areas (canonicalize the spelling) or the row is rejected — areas are never auto-created.
-  // Office / non-sales lines are unaffected.
+  // Area unification: for SALES-line rows the Area must resolve to a currently active area
+  // (the 42 canonical field-rep areas, or one of the kept region/office designations used by
+  // manager-tier rows) or the row is rejected — areas are never auto-created. Office / non-sales
+  // lines are unaffected.
   const lineKey = normalizeDepartmentLookupKey(
     record.rawOrganizationValues.line ?? record.lineName ?? record.codes.lineCode,
   );
@@ -557,14 +558,14 @@ function resolveCanonicalArea(
   if (!areaText) {
     return null;
   }
-  // Fail-closed: a sales-line row carries an area, so we MUST verify it against the 42. If the
-  // canonical reference could not be loaded, block the row rather than importing it unverified.
+  // Fail-closed: a sales-line row carries an area, so we MUST verify it against the active set.
+  // If that reference could not be loaded, block the row rather than importing it unverified.
   if (canonicalByKey.size === 0) {
     return {
       rowNumber: record.rowNumber,
       field: "area" as const,
       code: "canonical_area_unavailable",
-      message: `Cannot verify area "${areaText}" against the 42 canonical areas (reference set unavailable). Import blocked to avoid unverified areas — retry once the area reference loads.`,
+      message: `Cannot verify area "${areaText}" against the active area reference (reference set unavailable). Import blocked to avoid unverified areas — retry once the area reference loads.`,
     };
   }
   const hit = canonicalByKey.get(normalizeDepartmentLookupKey(areaText));
@@ -573,7 +574,7 @@ function resolveCanonicalArea(
       rowNumber: record.rowNumber,
       field: "area" as const,
       code: "unmapped_area",
-      message: `Area "${areaText}" is not one of the 42 canonical areas. Fix the spelling or use a valid area — areas are never auto-created.`,
+      message: `Area "${areaText}" is not a currently active area. Fix the spelling or use a valid area — areas are never auto-created.`,
     };
   }
   record.codes.areaCode = hit.code;

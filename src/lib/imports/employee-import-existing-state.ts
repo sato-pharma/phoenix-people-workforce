@@ -262,19 +262,25 @@ async function loadAreaState(supabase: SupabaseClient) {
 async function loadCanonicalAreaState(
   supabase: SupabaseClient,
 ): Promise<{ canonicalAreas: Array<{ code: string; name: string }> }> {
-  // The fixed 42 canonical areas (au model, exposed via the public.au_v_canonical_areas
-  // wrapper). If the view is absent (older environment), degrade to an empty list so the
-  // import simply skips area-canonicalization rather than failing.
+  // Every area a sales-line import row is allowed to resolve to: all currently active
+  // public.areas rows — the 42 canonical field-rep areas PLUS the small set of non-field
+  // "kept" areas (region/office designations like Cairo, Egypt, Head office) used by
+  // DSM/RSM/NSM/PM/GPM rows. This must stay in sync with assertActiveCanonicalArea() in
+  // employee-directory.ts (the single-record edit path), which already accepts any active
+  // area — querying au_v_canonical_areas alone (42 only) would incorrectly reject every
+  // manager-tier row. If the table can't be queried, degrade to an empty list so the import
+  // simply skips area-canonicalization rather than failing.
   const { data, error } = await supabase
-    .from("au_v_canonical_areas")
-    .select("area_code, area_name");
+    .from("areas")
+    .select("code, name")
+    .eq("is_active", true);
   if (error) {
     return { canonicalAreas: [] };
   }
   const canonicalAreas: Array<{ code: string; name: string }> = [];
-  for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
-    if (row.area_code && row.area_name) {
-      canonicalAreas.push({ code: row.area_code, name: row.area_name });
+  for (const row of (data ?? []) as Array<{ code: string | null; name: string | null }>) {
+    if (row.code && row.name) {
+      canonicalAreas.push({ code: row.code, name: row.name });
     }
   }
   return { canonicalAreas };
