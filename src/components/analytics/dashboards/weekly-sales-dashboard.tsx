@@ -52,8 +52,8 @@ async function WeeklyDashboardContent({
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
 
   const weeklyFilters = {
-    weekStart:    typeof filters.week         === "string" ? filters.week         : null,
-    year:         typeof filters.year         === "string" ? Number(filters.year) : null,
+    weekStart:    Array.isArray(filters.week)         ? filters.week         : [],
+    year:         Array.isArray(filters.year)         ? filters.year.map(Number) : [],
     distributors: Array.isArray(filters.distributors) ? filters.distributors : [],
     lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
@@ -79,9 +79,9 @@ async function WeeklyDashboardContent({
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
-    if (scoped.filters.weekStart) {
-      const priorWeek = shiftWeek(scoped.filters.weekStart, 1);
-      const priorRows = await loadWeeklyFact({ ...scoped.filters, weekStart: priorWeek }).catch(() => []);
+    if (scoped.filters.weekStart?.length === 1) {
+      const priorWeek = shiftWeek(scoped.filters.weekStart[0], 1);
+      const priorRows = await loadWeeklyFact({ ...scoped.filters, weekStart: [priorWeek] }).catch(() => []);
       priorTotal = priorRows.reduce((s, r) => s + r.salesValue, 0);
     }
   }

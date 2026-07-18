@@ -43,8 +43,8 @@ async function WeeklyDetailContent({
   const filters = parseAnalyticsFilters(searchParams, WEEKLY_FILTERS);
 
   const weeklyFilters = {
-    weekStart:    typeof filters.week         === "string" ? filters.week         : null,
-    year:         typeof filters.year         === "string" ? Number(filters.year) : null,
+    weekStart:    Array.isArray(filters.week)         ? filters.week         : [],
+    year:         Array.isArray(filters.year)         ? filters.year.map(Number) : [],
     distributors: Array.isArray(filters.distributors) ? filters.distributors : [],
     lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
