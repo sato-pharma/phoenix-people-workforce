@@ -14,6 +14,7 @@ import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import { loadAnalyticsDimensions, loadCrossSource, type AnalyticsDimensions, type CrossSourceRow } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoCrossSource } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
@@ -30,12 +31,22 @@ function fmt(n: number | null): string {
 async function ReconciliationContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
+
+  const crossSourceFilters = {
+    periodFrom: typeof filters.periodFrom === "string" ? filters.periodFrom : null,
+    periodTo:   typeof filters.periodTo   === "string" ? filters.periodTo   : null,
+    lines:      Array.isArray(filters.lines) ? filters.lines : [],
+    canViewHeadOffice: canViewHeadOfficeLine(role),
+  };
+  const scoped = scopeAnalyticsFilters(crossSourceFilters, scope);
 
   let rows: CrossSourceRow[];
   let dimensions: AnalyticsDimensions;
@@ -43,14 +54,12 @@ async function ReconciliationContent({
   if (demo) {
     rows = demoCrossSource();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    rows = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [rows, dimensions] = await Promise.all([
-      loadCrossSource({
-        periodFrom: typeof filters.periodFrom === "string" ? filters.periodFrom : null,
-        periodTo:   typeof filters.periodTo   === "string" ? filters.periodTo   : null,
-        lines:      Array.isArray(filters.lines) ? filters.lines : [],
-        canViewHeadOffice: canViewHeadOfficeLine(role),
-      }).catch(() => []),
+      loadCrossSource(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
@@ -149,6 +158,7 @@ export default async function ReconciliationPage({ searchParams }: { searchParam
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -167,7 +177,7 @@ export default async function ReconciliationPage({ searchParams }: { searchParam
       </div>
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ReconciliationContent searchParams={resolvedParams} role={access.role} />
+        <ReconciliationContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );

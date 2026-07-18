@@ -20,6 +20,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { CLOSING_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { computePeriodDelta, shiftPeriod } from "@/lib/analytics/compare";
 import { formatPctOrDash, safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
@@ -38,9 +39,11 @@ function fmt(n: number): string {
 async function ClosingDashboardContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, CLOSING_FILTERS);
@@ -59,6 +62,7 @@ async function ClosingDashboardContent({
     batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  const scoped = scopeAnalyticsFilters(closingFilters, scope);
 
   let rows: ClosingByEmployeeRow[];
   let dimensions: AnalyticsDimensions;
@@ -67,15 +71,18 @@ async function ClosingDashboardContent({
   if (demo) {
     rows = demoClosingByEmployee();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    rows = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [rows, dimensions] = await Promise.all([
-      loadClosingByEmployee(closingFilters).catch(() => []),
+      loadClosingByEmployee(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
-    if (closingFilters.period) {
-      const priorPeriod = shiftPeriod(closingFilters.period, 1);
-      const priorRows = await loadClosingByEmployee({ ...closingFilters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
+    if (scoped.filters.period) {
+      const priorPeriod = shiftPeriod(scoped.filters.period, 1);
+      const priorRows = await loadClosingByEmployee({ ...scoped.filters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
       priorTotal = priorRows.reduce((s, r) => s + r.salesValue, 0);
     }
   }
@@ -183,6 +190,7 @@ export default async function MonthlyClosingAnalyticsPage({ searchParams }: { se
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -202,7 +210,7 @@ export default async function MonthlyClosingAnalyticsPage({ searchParams }: { se
       <AnalyticsModuleNav tabs={CLOSING_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ClosingDashboardContent searchParams={resolvedParams} role={access.role} />
+        <ClosingDashboardContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );

@@ -19,6 +19,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_CUSTOMER_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByCustomer } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
@@ -30,9 +31,11 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 async function ByCustomerContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, SOS_CUSTOMER_FILTERS);
@@ -48,6 +51,7 @@ async function ByCustomerContent({
     clientCodes: Array.isArray(filters.clientCodes) ? filters.clientCodes : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
   let byCustomer: SosByCustomerRow[];
   let dimensions: AnalyticsDimensions;
@@ -55,9 +59,12 @@ async function ByCustomerContent({
   if (demo) {
     byCustomer = demoSosByCustomer();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    byCustomer = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [byCustomer, dimensions] = await Promise.all([
-      loadSosByCustomer(sosFilters).catch(() => []),
+      loadSosByCustomer(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
@@ -107,6 +114,7 @@ export default async function SosByCustomerPage({ searchParams }: { searchParams
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -126,7 +134,7 @@ export default async function SosByCustomerPage({ searchParams }: { searchParams
       <AnalyticsModuleNav tabs={SOS_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ByCustomerContent searchParams={resolvedParams} role={access.role} />
+        <ByCustomerContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );
