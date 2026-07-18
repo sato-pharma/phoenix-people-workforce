@@ -74,7 +74,7 @@ export function runAnalyticsFilterContextualizationTests() {
     "reconciliation/page.tsx",
   ];
   for (const rel of dashboards) {
-    const src = readSource(`../app/(admin)/admin/analytics/${rel}`);
+    const src = readSource(`../app/(analytics)/admin/analytics/${rel}`);
     assert.ok(src.includes("scopeAnalyticsDimensions(dimensions, scope)"), `${rel} must trim its filter dropdowns to scope`);
     assert.ok(src.includes("computeAnalyticsFilterVisibility(scope)"), `${rel} must pass per-viewer filter visibility`);
     // The raw, untrimmed dimensions must NOT reach the filter bar.

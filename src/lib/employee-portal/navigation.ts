@@ -46,6 +46,11 @@ export type EmployeePortalNavVisibility = {
   showSourceOfSalesTab?: boolean;
   // Weekly Sales — de-cumulated weekly distributor sell-in, same role set as Source of Sales.
   showWeeklyTab?: boolean;
+  // Sales Analytics — the unified admin analytics module (Source of Sales + Monthly Closing +
+  // Weekly + executive comparison + reconciliation). Opened to line-scoped managers who live in
+  // the employee portal. Each page enforces sales:read AND the per-viewer AnalyticsViewerScope
+  // server-side; this flag only surfaces the sidebar link, it is never the security boundary.
+  showSalesAnalyticsTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -296,6 +301,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager",
+    // Unified admin analytics module. Initial go-live audience: the line-scoped managers
+    // (National Sales / Product / Group Product / Marketing) — the owner's "their line" scope tier,
+    // and the same managers who already have scoped Source-of-Sales + Weekly in-portal. Each is
+    // confirmed to hold sales:read AND weekly_sales:read, so every analytics page's assertPermission
+    // passes. District / Regional Managers (the region tier) can be added here after staging review.
+    showSalesAnalyticsTab:
+      isNationalSalesManager || isProductManager || isGroupProductManager || isMarketingManager,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate

@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
@@ -9,8 +8,9 @@ import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banne
 import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { AnalyticsDualShell } from "@/components/analytics/analytics-dual-shell";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
@@ -210,31 +210,32 @@ async function SosDashboardContent({
 
 export default async function SourceSalesAnalyticsPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
   const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Source of Sales Analytics</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Distributor invoice aggregates — bricks, areas, regions, products, families, lines, distributors.
-            Confidential products excluded unless you have CEO / Super Admin access.
-          </p>
+    <AnalyticsDualShell access={access}>
+      <div className="p-6 max-w-7xl mx-auto space-y-5">
+        <div className="flex items-center gap-3 border-b border-border pb-5">
+          <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
+            <h1 className="text-2xl font-bold text-foreground leading-tight">Source of Sales Analytics</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Distributor invoice aggregates — bricks, areas, regions, products, families, lines, distributors.
+              Confidential products excluded unless you have CEO / Super Admin access.
+            </p>
+          </div>
         </div>
+
+        <AnalyticsModuleNav tabs={SOS_TABS} />
+
+        <Suspense fallback={<AppRouteLoadingState />}>
+          <SosDashboardContent searchParams={resolvedParams} role={access.role} scope={scope} />
+        </Suspense>
       </div>
-
-      <AnalyticsModuleNav tabs={SOS_TABS} />
-
-      <Suspense fallback={<AppRouteLoadingState />}>
-        <SosDashboardContent searchParams={resolvedParams} role={access.role} scope={scope} />
-      </Suspense>
-    </div>
+    </AnalyticsDualShell>
   );
 }

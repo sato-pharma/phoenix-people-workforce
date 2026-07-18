@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
@@ -8,8 +7,9 @@ import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar"
 import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banner";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { AnalyticsDualShell } from "@/components/analytics/analytics-dual-shell";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
@@ -216,28 +216,29 @@ async function ExecComparisonContent({
 
 export default async function ExecutiveComparisonPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
   const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Exec</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Executive Comparison</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
-          </p>
+    <AnalyticsDualShell access={access}>
+      <div className="p-6 max-w-7xl mx-auto space-y-5">
+        <div className="flex items-center gap-3 border-b border-border pb-5">
+          <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Exec</p>
+            <h1 className="text-2xl font-bold text-foreground leading-tight">Executive Comparison</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <Suspense fallback={<AppRouteLoadingState />}>
-        <ExecComparisonContent searchParams={resolvedParams} role={access.role} scope={scope} />
-      </Suspense>
-    </div>
+        <Suspense fallback={<AppRouteLoadingState />}>
+          <ExecComparisonContent searchParams={resolvedParams} role={access.role} scope={scope} />
+        </Suspense>
+      </div>
+    </AnalyticsDualShell>
   );
 }

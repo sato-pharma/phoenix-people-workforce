@@ -1,23 +1,29 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight, MapPinned, ChartColumnBig } from "lucide-react";
 
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { AnalyticsDualShell } from "@/components/analytics/analytics-dual-shell";
 import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
 export const dynamic = "force-dynamic";
 
-// Roles that can actually reach AND pass the analytics company-scope gate today
-// (assertCompanyWideSalesAnalyticsAccess). National Sales Manager / Product Manager / Group
-// Product Manager are the intended FUTURE audience but are portal-nav + line-scoped, so they are
-// gated out — re-add them only alongside per-viewer scoping + admin routing (see
-// docs/analytics/role-security.md § Roadmap).
+// Hub tiles are role-filtered below. The "broad" set is every role that can open the core scoped
+// dashboards: the company-wide roles (Super Admin / CEO / SFE Manager) PLUS the line-scoped managers
+// (National Sales / Product / Group Product / Marketing Manager) who now reach the analytics module
+// from the employee portal. Each dashboard still enforces sales:read + the per-viewer
+// AnalyticsViewerScope server-side, so a line manager only ever sees their own line/region.
+// Executive Comparison, Reconciliation, and the company-scope field re-hosts stay CEO / Super Admin
+// only (below).
 const SALES_ANALYTICS_BROAD_ROLES = [
   "Super Admin",
   "CEO",
   "SFE Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
 ] as const satisfies readonly PhoenixRole[];
 
 const MODULES = [
@@ -41,7 +47,7 @@ const MODULES = [
       "manager hierarchy, and territory drill-down.",
     badge: "Closing",
     accent: "#059669",
-    roles: ["Super Admin", "CEO", "SFE Manager"] as const satisfies readonly PhoenixRole[],
+    roles: SALES_ANALYTICS_BROAD_ROLES,
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -119,9 +125,6 @@ const MODULES = [
 
 export default async function AnalyticsHubPage() {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals");
-  }
   await assertPermission(access, "sales", "read");
   const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
@@ -130,61 +133,63 @@ export default async function AnalyticsHubPage() {
     : MODULES.filter((mod) => (mod.roles as readonly string[]).includes(access.role));
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4 border-b border-border pb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-1 h-12 bg-[#0F172A] shrink-0" />
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#0F172A] mb-0.5">BI Foundation</p>
-            <h1 className="text-2xl font-bold text-foreground leading-tight">Sales Analytics</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Three sales pipelines, unified dimension filters, comparison mode.
-              Add <code>?demo=1</code> to any dashboard to preview it with fake sample data.
-            </p>
-          </div>
-        </div>
-        {canOpenMetabase ? <OpenInMetabaseLink /> : null}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {visibleModules.map((mod) => (
-          <Link
-            key={mod.href}
-            href={mod.href}
-            className="group border border-border bg-card hover:shadow-md transition-all flex flex-col overflow-hidden"
-            style={{ borderTopWidth: 3, borderTopColor: mod.accent }}
-          >
-            <div className="p-5 flex flex-col gap-3 flex-1">
-              <div className="flex items-center justify-between">
-                <mod.icon className="h-6 w-6" style={{ color: mod.accent }} />
-                <span
-                  className="text-[10px] font-black uppercase tracking-widest text-white px-1.5 py-0.5"
-                  style={{ backgroundColor: mod.accent }}
-                >
-                  {mod.badge}
-                </span>
-              </div>
-              <div>
-                <p className="font-semibold text-foreground group-hover:text-orange-600 transition-colors">
-                  {mod.label}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{mod.description}</p>
-              </div>
+    <AnalyticsDualShell access={access}>
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        <div className="flex items-center justify-between gap-4 border-b border-border pb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-1 h-12 bg-[#0F172A] shrink-0" />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#0F172A] mb-0.5">BI Foundation</p>
+              <h1 className="text-2xl font-bold text-foreground leading-tight">Sales Analytics</h1>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Three sales pipelines, unified dimension filters, comparison mode.
+                Add <code>?demo=1</code> to any dashboard to preview it with fake sample data.
+              </p>
             </div>
-          </Link>
-        ))}
-      </div>
+          </div>
+          {canOpenMetabase ? <OpenInMetabaseLink /> : null}
+        </div>
 
-      <AnalyticsSection title="Data pipelines connected">
-        <ul className="list-disc list-inside space-y-1 ml-1 text-xs text-muted-foreground">
-          <li>Source of Sales — distributor invoice aggregates via <code>source_of_sales_fact_rollup</code></li>
-          <li>Monthly Closing — employee target/actual via <code>sales_records</code></li>
-          <li>Weekly Sales — distributor weekly sell-out via <code>weekly_sales_rows</code></li>
-        </ul>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Confidential products (LA003, LA004, SS001) are excluded from all views unless you have CEO / Super Admin access.
-        </p>
-      </AnalyticsSection>
-    </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {visibleModules.map((mod) => (
+            <Link
+              key={mod.href}
+              href={mod.href}
+              className="group border border-border bg-card hover:shadow-md transition-all flex flex-col overflow-hidden"
+              style={{ borderTopWidth: 3, borderTopColor: mod.accent }}
+            >
+              <div className="p-5 flex flex-col gap-3 flex-1">
+                <div className="flex items-center justify-between">
+                  <mod.icon className="h-6 w-6" style={{ color: mod.accent }} />
+                  <span
+                    className="text-[10px] font-black uppercase tracking-widest text-white px-1.5 py-0.5"
+                    style={{ backgroundColor: mod.accent }}
+                  >
+                    {mod.badge}
+                  </span>
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground group-hover:text-orange-600 transition-colors">
+                    {mod.label}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{mod.description}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        <AnalyticsSection title="Data pipelines connected">
+          <ul className="list-disc list-inside space-y-1 ml-1 text-xs text-muted-foreground">
+            <li>Source of Sales — distributor invoice aggregates via <code>source_of_sales_fact_rollup</code></li>
+            <li>Monthly Closing — employee target/actual via <code>sales_records</code></li>
+            <li>Weekly Sales — distributor weekly sell-out via <code>weekly_sales_rows</code></li>
+          </ul>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Confidential products (LA003, LA004, SS001) are excluded from all views unless you have CEO / Super Admin access.
+          </p>
+        </AnalyticsSection>
+      </div>
+    </AnalyticsDualShell>
   );
 }

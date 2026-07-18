@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
@@ -8,27 +7,28 @@ import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banne
 import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { AnalyticsDualShell } from "@/components/analytics/analytics-dual-shell";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
-  loadSosByArea,
+  loadSosByProduct,
   type AnalyticsDimensions,
-  type SosByAreaRow,
+  type SosByProductRow,
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
-import { demoAnalyticsDimensions, demoSosByArea } from "@/lib/analytics/demo-fixtures";
+import { demoAnalyticsDimensions, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
-import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-async function ByAreaContent({
+async function ByProductContent({
   searchParams,
   role,
   scope,
@@ -56,30 +56,28 @@ async function ByAreaContent({
   };
   const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
-  let byArea: SosByAreaRow[];
+  let byProduct: SosByProductRow[];
   let dimensions: AnalyticsDimensions;
 
   if (demo) {
-    byArea = demoSosByArea();
+    byProduct = demoSosByProduct();
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
-    byArea = [];
+    byProduct = [];
     dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
-    [byArea, dimensions] = await Promise.all([
-      loadSosByArea(scoped.filters).catch(() => []),
+    [byProduct, dimensions] = await Promise.all([
+      loadSosByProduct(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
 
-  const regionMap = new Map<string, { units: number; value: number }>();
-  for (const r of byArea) {
-    const cur = regionMap.get(r.regionName) ?? { units: 0, value: 0 };
-    regionMap.set(r.regionName, { units: cur.units + r.units, value: cur.value + r.value });
+  const prodMap = new Map<string, { productName: string; family: string; line: string; units: number; value: number }>();
+  for (const r of byProduct) {
+    const cur = prodMap.get(r.productCode) ?? { productName: r.productName, family: r.family, line: r.line, units: 0, value: 0 };
+    prodMap.set(r.productCode, { ...cur, units: cur.units + r.units, value: cur.value + r.value });
   }
-  const regionTotals = [...regionMap.entries()]
-    .map(([regionName, t]) => ({ regionName, ...t }))
-    .sort((a, b) => b.value - a.value);
+  const productTotals = [...prodMap.values()].sort((a, b) => b.value - a.value);
 
   return (
     <div className="space-y-5">
@@ -90,45 +88,48 @@ async function ByAreaContent({
         values={filters}
         dimensions={scopeAnalyticsDimensions(dimensions, scope)}
         visibility={computeAnalyticsFilterVisibility(scope)}
-        basePath="/admin/analytics/source-sales/by-area"
+        basePath="/admin/analytics/source-sales/by-product"
       />
 
-      <AnalyticsSection title="Region Summary" count={regionTotals.length}>
-        {regionTotals.length === 0 ? (
+      <AnalyticsSection title="Product Mix (Aggregated)" count={productTotals.length}>
+        {productTotals.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["regionName"]}
+            searchKeys={["productName", "family", "line"]}
             columns={[
-              { key: "regionName", label: "Region", sortable: true },
-              { key: "units",      label: "Units",  align: "right", sortable: true, formatKind: "number" },
-              { key: "value",      label: "Value (EGP)", align: "right", sortable: true, formatKind: "number" },
+              { key: "line",        label: "Line",    sortable: true },
+              { key: "family",      label: "Family",  sortable: true },
+              { key: "productName", label: "Product", sortable: true },
+              { key: "units",       label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",       label: "Value (EGP)", align: "right", sortable: true, formatKind: "number" },
             ]}
-            rows={regionTotals}
-            totals={{ value: regionTotals.reduce((s, r) => s + r.value, 0) }}
-            exportTitle="SoS By Region"
-            exportSubtitle="Source of Sales aggregated by region"
+            rows={productTotals}
+            totals={{ value: productTotals.reduce((s, r) => s + r.value, 0) }}
+            exportTitle="SoS Product Mix"
+            exportSubtitle="Source of Sales aggregated by product"
           />
         )}
       </AnalyticsSection>
 
-      <AnalyticsSection title="Region / Area Detail" count={byArea.length}>
-        {byArea.length === 0 ? (
+      <AnalyticsSection title="Period × Product Detail" count={byProduct.length}>
+        {byProduct.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["regionName", "areaName"]}
+            searchKeys={["productName", "family", "line"]}
             columns={[
-              { key: "period",     label: "Period",  sortable: true },
-              { key: "regionName", label: "Region",  sortable: true },
-              { key: "areaName",   label: "Area",    sortable: true },
-              { key: "channel",    label: "Channel" },
-              { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
-              { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "period",      label: "Period",   sortable: true },
+              { key: "line",        label: "Line",     sortable: true },
+              { key: "family",      label: "Family",   sortable: true },
+              { key: "productName", label: "Product",  sortable: true },
+              { key: "channel",     label: "Channel" },
+              { key: "units",       label: "Units",    align: "right", sortable: true, formatKind: "number" },
+              { key: "value",       label: "Value",    align: "right", sortable: true, formatKind: "number" },
             ]}
-            rows={byArea}
-            exportTitle="SoS By Region-Area Detail"
-            exportSubtitle="Period-level SoS by region and area"
+            rows={byProduct}
+            exportTitle="SoS By Product Detail"
+            exportSubtitle="Period-level SoS by product"
           />
         )}
       </AnalyticsSection>
@@ -136,32 +137,33 @@ async function ByAreaContent({
   );
 }
 
-export default async function SosByAreaPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function SosByProductPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
   const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Region / Area</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Geography-level SoS breakdown. Drill from region summary to period × area detail.
-          </p>
+    <AnalyticsDualShell access={access}>
+      <div className="p-6 max-w-7xl mx-auto space-y-5">
+        <div className="flex items-center gap-3 border-b border-border pb-5">
+          <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
+            <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Product</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Product mix analysis. Aggregated totals and period-level detail across all products.
+            </p>
+          </div>
         </div>
+
+        <AnalyticsModuleNav tabs={SOS_TABS} />
+
+        <Suspense fallback={<AppRouteLoadingState />}>
+          <ByProductContent searchParams={resolvedParams} role={access.role} scope={scope} />
+        </Suspense>
       </div>
-
-      <AnalyticsModuleNav tabs={SOS_TABS} />
-
-      <Suspense fallback={<AppRouteLoadingState />}>
-        <ByAreaContent searchParams={resolvedParams} role={access.role} scope={scope} />
-      </Suspense>
-    </div>
+    </AnalyticsDualShell>
   );
 }

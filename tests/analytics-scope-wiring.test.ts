@@ -30,7 +30,7 @@ export function runAnalyticsScopeWiringTests() {
   ];
 
   for (const rel of dashboards) {
-    const src = readSource(`../app/(admin)/admin/analytics/${rel}`);
+    const src = readSource(`../app/(analytics)/admin/analytics/${rel}`);
     assert.ok(src.includes("resolveAnalyticsViewerScope(access)"), `${rel} must resolve the viewer scope`);
     assert.ok(src.includes("scopeAnalyticsFilters("), `${rel} must fold scope into its filters`);
     assert.ok(/scoped\.empty/.test(src), `${rel} must short-circuit on scoped.empty (fail-closed)`);
@@ -43,6 +43,6 @@ export function runAnalyticsScopeWiringTests() {
   }
 
   // The hub landing page has no data loaders → it needs no scoping and must not falsely look scoped.
-  const hub = readSource("../app/(admin)/admin/analytics/page.tsx");
+  const hub = readSource("../app/(analytics)/admin/analytics/page.tsx");
   assert.ok(!hub.includes("scopeAnalyticsFilters("), "hub page has no loaders and needs no scoping");
 }
