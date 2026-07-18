@@ -112,6 +112,7 @@ export type VacationBalanceSnapshot = {
 export type VacationEmployeeSummary = {
   departmentName: string | null;
   fullName: string;
+  displayName: string;
   hireDate: string | null;
   hrId: string;
   lineName: string | null;
@@ -335,6 +336,7 @@ export type VacationEmployeeEligibilityRow = {
   eligibleForAnnualPaidLeave: boolean;
   employmentStatus: string | null;
   fullName: string;
+  displayName: string;
   hireDate: string | null;
   hrId: string;
   lineName: string | null;

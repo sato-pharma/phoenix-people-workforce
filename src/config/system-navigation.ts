@@ -24,6 +24,7 @@ import {
   Hourglass,
   IdCard,
   Inbox,
+  Package,
   LayoutDashboard,
   LifeBuoy,
   Mail,
@@ -190,6 +191,13 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Probation",
   },
+  {
+    id: "ceo-company-calendar",
+    items: [
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Company Calendar",
+  },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
   // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
@@ -204,6 +212,13 @@ const adminNavigationSectionSeeds = [
         icon: IdCard,
         label: "Employee 360",
         permissions: [{ resource: "employee_profile", action: "read" }],
+      },
+      {
+        href: "/admin/pm-products",
+        icon: Package,
+        label: "PM Product Master",
+        permissions: [{ resource: "employee_profile", action: "read" }],
+        roles: ["Super Admin", "CEO", "SFE Manager"],
       },
     ],
     label: "Employee 360",
@@ -220,6 +235,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -436,6 +452,10 @@ const adminNavigationSectionSeeds = [
       // which only Super Admin/SFE Manager hold) — so CEO must NOT be excluded
       // at the button level, or they'd never reach the one card they can open.
       { href: "/sales/source-of-sales-tools", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/admin/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }] },
+      { href: "/admin/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }] },
+      { href: "/admin/direct-orders/caps", icon: Settings2, label: "Bonus & Discount Caps", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+      { href: "/admin/direct-orders/pharmacy-variances", icon: MapPinned, label: "Pharmacy Variances", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Source of Sales",
   },
@@ -460,6 +480,13 @@ const adminNavigationSectionSeeds = [
     label: "Sales Queue",
   },
   {
+    id: "sales-targets-module",
+    items: [
+      { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Targets",
+  },
+  {
     id: "sales-analytics",
     items: [
       // Collapsed to a single standalone sidebar button. Unlike every other
@@ -468,7 +495,7 @@ const adminNavigationSectionSeeds = [
       // module-card grid (app/(admin)/admin/analytics/page.tsx). That page's
       // MODULES list has been extended with the 4 field-dashboard cards and now
       // filters cards per-role, so it doubles as this section's hub directly.
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Sales Analytics",
   },
@@ -528,7 +555,6 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-portal",
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
@@ -556,6 +582,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -572,6 +599,8 @@ const employeePortalNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/employee-portals/source-of-sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Sales Operations",
@@ -841,6 +870,12 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
 // comment there). "Analytics Hub" itself is omitted here since its destination
 // IS that page; this array exists purely so the command palette can still find
 // every module by name (see hubPageItemGroups below).
+//
+// Roles reflect who can actually reach AND pass the analytics company-scope gate today: Super
+// Admin, CEO, SFE Manager (Exec/Recon stay CEO/Super-Admin-only). National Sales Manager /
+// Product Manager / Group Product Manager are the intended FUTURE audience but are portal-nav +
+// line-scoped, so they are gated out — do NOT re-add them here until per-viewer scoping + admin
+// routing land (see docs/analytics/role-security.md § Roadmap).
 export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/analytics/source-sales",
@@ -848,7 +883,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "SoS Analytics",
     description: "Source of Sales analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/monthly-closing",
@@ -856,7 +891,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Closing Analytics",
     description: "Monthly closing analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -864,7 +899,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Weekly Analytics",
     description: "Weekly sales analytics dashboard.",
     permissions: [{ resource: "weekly_sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/executive-comparison",
@@ -1171,6 +1206,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Fingerprint Report",
     description: "Raw fingerprint clock-in/clock-out punches per employee.",
     permissions: [{ resource: "employees" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/attendance/monthly-summary",
@@ -1178,6 +1214,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Monthly Summary",
     description: "Monthly attendance summary and totals per employee.",
     permissions: [{ resource: "employees" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/attendance/analytics",
@@ -1185,6 +1222,15 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Attendance Analytics",
     description: "Attendance trends and patterns across the organization.",
     permissions: [{ resource: "attendance", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/weekly-plans/calendar",
+    icon: CalendarRange,
+    label: "Company Planning Calendar",
+    description: "Company-wide submitted weekly and monthly plans, holidays, and conflicts.",
+    permissions: [{ resource: "weekly_plans", action: "read" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/hr-calendar",
@@ -1199,7 +1245,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Events Calendar",
     description: "Admin host of the portal events calendar — events, holidays, leave, and birthdays.",
     permissions: [{ resource: "attendance", action: "read" }],
-    roles: ["CEO", "Super Admin"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/private-calendars",
@@ -1365,7 +1411,7 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartColumnBig,
     label: "ROI Tracking",
     description: "Read-only executive report to filter and audit individual marketing requests.",
-    roles: ["Super Admin", "CEO"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/marketing-roi-report",

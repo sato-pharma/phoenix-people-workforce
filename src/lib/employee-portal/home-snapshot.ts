@@ -153,18 +153,32 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       return { ...emptyRoleExtras, mmOverview: { ...overview, upcoming, asOf: Date.now() } };
     }
     if (role === "District Manager") {
-      const [team, approvals] = await Promise.all([
+      const [team, approvals, directoryRows] = await Promise.all([
         getDsmTeamPerformance(access, {}),
         getAwaitingMyActionItems(access, "portal").catch(() => []),
+        getEmployeeDirectoryRows().catch(() => []),
       ]);
       if (!team) return emptyRoleExtras;
+
+      // Show the nickname when set, else the full name. The performance services return
+      // raw full names, so resolve the directory's nickname-aware displayName by a
+      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
+      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const displayByKey = new Map<string, string>();
+      for (const row of directoryRows) {
+        const key = nameKey(row.hrId);
+        if (key) displayByKey.set(key, row.displayName);
+      }
+      const display = (hrId: string | null | undefined, fallback: string) =>
+        displayByKey.get(nameKey(hrId)) ?? fallback;
+
       const members = (team.members ?? [])
         .slice()
         .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
         .slice(0, 10)
         .map((m) => ({
           hrId: m.hrId,
-          name: m.name,
+          name: display(m.hrId, m.name),
           achievementPercent: m.achievementPercent,
           totalSales: m.totalSales,
           totalTarget: m.totalTarget,
@@ -406,7 +420,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     isMr && hrId
       ? wrapPromise(
           queryVisitsLimited<{ visit_date: string }>({
-            agentHrIds: [canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()],
+            // The CRM read door matches hr ids case-insensitively — pass the raw id, no UPPER guess.
+            agentHrIds: [hrId],
             doubleOnly: true,
             visitTypes: [0, -8],
             columns: "visit_date",

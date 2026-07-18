@@ -17,7 +17,10 @@ import {
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
+import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
+import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
@@ -634,6 +637,40 @@ export async function getExcuseWorkspaceData(access: AccessContext): Promise<Exc
   };
 }
 
+// ── Stuck approvals — needs reassignment (HR / Super Admin only) ──────────────
+//
+// Cross-module surface (weekly/monthly plans + excuses) listing requests pinned to a resigned or
+// missing approver, so HR can re-route each to an active manager. Gated identically to the two
+// reassignment routes (isAllVacationVisibility = system scope OR Super Admin) so anyone who can SEE
+// this panel can actually act on it. This is REASSIGNMENT only: the panel changes WHO owns the
+// pending step; it never decides a request in place (owner-locked approver model).
+
+export type StuckApprovalManagerOption = { hrId: string; name: string };
+
+export type StuckApprovalsData = {
+  weeklyPlans: WeeklyPlanManagerGapRecord[];
+  excuses: ExcuseManagerGapRecord[];
+  managerOptions: StuckApprovalManagerOption[];
+};
+
+export async function getStuckApprovalsForReassignment(access: AccessContext): Promise<StuckApprovalsData> {
+  if (!isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only HR or Super Admin can view stuck approvals for reassignment.");
+  }
+  const [weeklyPlans, excuses, directoryRows] = await Promise.all([
+    listWeeklyPlanManagerGapRecords().catch(() => [] as WeeklyPlanManagerGapRecord[]),
+    listExcuseManagerGapRecords().catch(() => [] as ExcuseManagerGapRecord[]),
+    getEmployeeDirectoryRows().catch(() => [] as EmployeeDirectoryRow[]),
+  ]);
+  // Active employees only (getEmployeeDirectoryRows default) — the picker must never offer an
+  // inactive manager, and the service functions re-validate the choice server-side anyway.
+  const managerOptions: StuckApprovalManagerOption[] = directoryRows
+    .map((row) => ({ hrId: row.hrId, name: row.displayName || row.fullName || row.hrId }))
+    .filter((option) => Boolean(option.hrId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { weeklyPlans, excuses, managerOptions };
+}
+
 // ── Company-wide "All Decisions" (Super Admin / system-scope oversight only) ──
 
 export type CompanyWideDecisionItem = ResponderHistoryItem & { decidedByName: string | null };
@@ -645,7 +682,23 @@ function deciderDisplayName(
   if (!hrId) return null;
   const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
   if (!employee) return hrId;
-  return employee.jobTitle ? `${employee.fullName} (${employee.jobTitle})` : employee.fullName;
+  return employee.jobTitle ? `${employee.displayName} (${employee.jobTitle})` : employee.displayName;
+}
+
+/**
+ * Resolves a persisted employee_name snapshot to the employee's live nickname-aware
+ * display name when they're still in the active directory, else falls back to the raw
+ * snapshot (e.g. an employee who has since left). Keeps the persisted column itself raw
+ * (audit trail) while every-day list/card views show the current display name.
+ */
+function liveEmployeeName(
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  hrId: string | null | undefined,
+  rawName: string,
+): string {
+  if (!hrId) return rawName;
+  const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
+  return employee?.displayName ?? rawName;
 }
 
 /**
@@ -692,7 +745,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
     items.push({
       id: `history:leave:${id}`,
       module: "leave",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
       decision,
@@ -713,7 +766,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
     items.push({
       id: `history:leave:${reqId}`,
       module: "leave",
-      employeeName: String(req.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(req.employee_hr_id ?? ""), String(req.employee_name ?? "Unknown")),
       employeeHrId: String(req.employee_hr_id ?? ""),
       title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
       decision,
@@ -752,7 +805,7 @@ export async function getAllExcuseDecisionsCompanyWide(access: AccessContext): P
     items.push({
       id: `history:excuse:${id}`,
       module: "excuse",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
       decision,
@@ -811,8 +864,8 @@ export type ApprovalScopeData = {
  * from the org directory (employee.managerHrId), never a hard-coded list.
  */
 async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
-  const viewerHrId = access.hrId?.trim() ?? "";
-  if (!viewerHrId) return { groups: [], totalPeople: 0 };
+  const viewerCanonicalHrId = normalizeHrId(access.hrId);
+  if (!viewerCanonicalHrId) return { groups: [], totalPeople: 0 };
 
   const directory = await getEmployeeDirectory().catch((error) => {
     console.error("[approvals-hub] buildApprovalScope directory load failed", { role: access.role, error });
@@ -821,13 +874,7 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
   const employees = directory?.employees ?? [];
   if (employees.length === 0) return { groups: [], totalPeople: 0 };
 
-  const people: ApprovalScopePerson[] = [];
-  for (const employee of employees) {
-    if (hrIdsMatch(employee.hrId, viewerHrId)) continue; // never list the viewer themselves
-    if (hrIdsMatch(employee.managerHrId, viewerHrId)) {
-      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
-    }
-  }
+  const people = computeApprovalScopePeople(employees, viewerCanonicalHrId);
 
   // Group by job title (the human answer to "which roles do I approve"), most-populated first.
   const groupsByTitle = new Map<string, ApprovalScopePerson[]>();
@@ -845,6 +892,28 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
     .sort((a, b) => b.people.length - a.people.length || a.title.localeCompare(b.title));
 
   return { groups, totalPeople: people.length };
+}
+
+/**
+ * Pure, unit-testable core of "Who I Approve": the viewer's DIRECT reports only.
+ * Extracted from buildApprovalScope so it can be tested without the getEmployeeDirectory()
+ * I/O that function performs. Seat-continuity aware — a report orphaned up to a grandparent
+ * after a sub-manager resignation is still owned by the vacant seat — but strictly ONE level
+ * (never the manager-of-manager chain), per the owner rule documented above.
+ */
+export function computeApprovalScopePeople(
+  employees: EmployeeDirectoryRow[],
+  viewerCanonicalHrId: string,
+): ApprovalScopePerson[] {
+  const people: ApprovalScopePerson[] = [];
+  for (const employee of employees) {
+    if (hrIdsMatch(employee.hrId, viewerCanonicalHrId)) continue; // never list the viewer themselves
+    // TEAM-only (direct reports) per the owner rule above — do NOT widen to isWithinManagerHierarchy.
+    if (reportsToManagerSeat({ employee, viewerCanonicalHrId, canonicalize: normalizeHrId })) {
+      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
+    }
+  }
+  return people;
 }
 
 export function getVacationApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
@@ -937,7 +1006,7 @@ export async function getCompanyVacationRequestsExcludingFieldForce(access: Acce
     items.push({
       id: row.id,
       href: vacationApprovalHref(access, row.id),
-      employeeName: row.employeeName,
+      employeeName: liveEmployeeName(directory?.employees ?? [], row.employeeHrId, row.employeeName),
       employeeHrId: row.employeeHrId,
       submitterTitle: title,
       typeLabel: vacationTypeLabel(row.vacationType),
@@ -986,7 +1055,7 @@ export async function getCompanyExcuseRequestsExcludingFieldForce(access: Access
     items.push({
       id,
       href: excuseApprovalHref(access, id),
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory?.employees ?? [], employeeHrId, String(row.employee_name ?? "Unknown")),
       employeeHrId,
       submitterTitle: title,
       typeLabel: row.excuse_type === "morning" ? "Morning" : "Afternoon",
@@ -1064,12 +1133,15 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const isCeo = access.role === "CEO";
   const hrActor = isPlanHrActor(access);
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at")
-    .in("status", PLAN_ACTIVE_STATUSES)
-    .order("submitted_at", { ascending: true })
-    .limit(PLAN_BUCKET_LIMIT);
+  const [{ data, error }, directory] = await Promise.all([
+    getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at")
+      .in("status", PLAN_ACTIVE_STATUSES)
+      .order("submitted_at", { ascending: true })
+      .limit(PLAN_BUCKET_LIMIT),
+    getEmployeeDirectory(),
+  ]);
   if (error) {
     console.error("[approvals-hub] getPlanApprovalsForResponder query failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
     return { awaiting: [], upcoming: [] };
@@ -1086,7 +1158,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     const managerHrId = raw.manager_hr_id ? String(raw.manager_hr_id) : null;
     const base = {
       id: String(raw.id ?? ""),
-      employeeName: String(raw.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, employeeHrId, String(raw.employee_name ?? "Unknown")),
       employeeHrId,
       planKind: (String(raw.plan_kind ?? "weekly") === "monthly" ? "monthly" : "weekly") as EmployeePlanKind,
       periodKey: String(raw.period_key ?? ""),
@@ -1510,7 +1582,7 @@ function buildPlanTrackerSteps(
       stepKey: "submitted",
       genericStep: "submitted",
       status: "approved",
-      approverName: String(row.employee_name ?? "Employee"),
+      approverName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Employee")),
       approverTitle: null,
       decidedAt: submittedAt,
       decisionComment: null,
@@ -1622,7 +1694,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   return {
     notFound: false,
     planId: id,
-    employeeName: String(row.employee_name ?? "Unknown"),
+    employeeName: liveEmployeeName(directory.employees, employeeHrId, String(row.employee_name ?? "Unknown")),
     employeeHrId,
     employeeJobTitle: row.employee_job_title ? String(row.employee_job_title) : null,
     managerName: row.manager_name ? String(row.manager_name) : null,
@@ -1688,7 +1760,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
     items.push({
       id: `history:weekly_plan:${id}`,
       module: "weekly_plan",
-      employeeName: String(row.employee_name ?? "Unknown"),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
       title: `${kindLabel} plan · ${row.period_key ?? ""}`,
       decision,
@@ -1702,6 +1774,60 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   return items;
 }
 
+/** Maps every plan status to the same tone vocabulary the vacation/excuse company views use. */
+function planStatusTone(status: string): CompanyRequestStatusTone {
+  if (status === "manager_rejected" || status === "ceo_rejected") return "rejected";
+  if (status === "manager_returned" || status === "ceo_returned") return "returned";
+  if (status === "final_approved" || status === "hr_acknowledged" || status === "ceo_approved") return "approved";
+  if (status === "submitted" || status === "edit_requested" || status === "details_requested" || status === "manager_approved") return "pending";
+  return "neutral";
+}
+
+/**
+ * Every submitted plan company-wide (pending AND decided) — CEO + Super Admin oversight only.
+ * Unlike the vacation/excuse "Company Requests" views, this does NOT exclude the field force:
+ * a District Manager's plans belong here just like anyone else's. Excludes only "draft" rows
+ * (never actually submitted, or currently back under revision after a `revise` action).
+ */
+export async function getCompanyPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
+  if (!canSeeCeoApprovalTabs(access)) {
+    throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
+  }
+  const [{ data, error }, directory] = await Promise.all([
+    getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
+      .neq("status", "draft")
+      .order("submitted_at", { ascending: false })
+      .limit(1000),
+    getEmployeeDirectory(),
+  ]);
+  if (error) {
+    console.error("[approvals-hub] getCompanyPlanRequests query failed", { role: access.role, error });
+    return [];
+  }
+
+  const items: CompanyRequestItem[] = [];
+  for (const row of (data as Array<Record<string, unknown>> | null) ?? []) {
+    const status = String(row.status ?? "");
+    const id = String(row.id ?? "");
+    items.push({
+      id,
+      href: planApprovalHref(access, id),
+      employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
+      employeeHrId: String(row.employee_hr_id ?? ""),
+      submitterTitle: row.employee_job_title ? String(row.employee_job_title) : null,
+      typeLabel: String(row.plan_kind ?? "weekly") === "monthly" ? "Monthly" : "Weekly",
+      requestDate: String(row.period_start_date ?? ""),
+      submittedAt: String(row.submitted_at ?? ""),
+      status,
+      statusLabel: humanizeStatus(status),
+      statusTone: planStatusTone(status),
+    });
+  }
+  return items;
+}
+
 // ── Plan workspace (page-ready data for the 4-tab body) ───────────────────────
 
 export type PlanWorkspaceData = {
@@ -1711,6 +1837,8 @@ export type PlanWorkspaceData = {
   history: ResponderHistoryItem[];
   pendingCount: number;
   companyWide: CompanyWideDecisionItem[] | null;
+  // CEO + Super Admin only — the "Company Plans" oversight tab (pending AND decided, all roles).
+  companyRequests: CompanyRequestItem[] | null;
 };
 
 function planStageStatusLabel(stage: PlanApprovalStage): string {
@@ -1722,11 +1850,13 @@ function planStageStatusLabel(stage: PlanApprovalStage): string {
 
 export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanWorkspaceData> {
   const showCompanyWide = isPlanHrActor(access);
-  const [buckets, myRequests, history, companyWide] = await Promise.all([
+  const showCeoTabs = canSeeCeoApprovalTabs(access);
+  const [buckets, myRequests, history, companyWide, companyRequests] = await Promise.all([
     getPlanApprovalsForResponder(access),
     getMyPlanRequestItems(access),
     getResponderPlanHistory(access),
     showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
+    showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
   ]);
   const toCard = (item: PlanBucketItem): ApprovalPendingCard => ({
     id: item.id,
@@ -1743,5 +1873,6 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     history,
     pendingCount: buckets.awaiting.length,
     companyWide,
+    companyRequests,
   };
 }

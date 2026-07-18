@@ -550,6 +550,14 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               <span className="text-slate-400"> · showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
             ) : null}
           </span>
+          {data.truncated ? (
+            <span
+              className="inline-flex items-center gap-1 font-semibold text-amber-600"
+              title="This tab is computed in memory and hit its 60,000 source-row cap; some rows may be missing. Narrow the date range for a complete view."
+            >
+              ⚠ capped at 60,000 source rows — some may be missing
+            </span>
+          ) : null}
           {isPending ? (
             <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
               <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Updating…

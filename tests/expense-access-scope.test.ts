@@ -1,31 +1,50 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildManagerMap, collectHierarchy } from "../src/lib/outstation/expenses.ts";
-import { normalizeHrId } from "../src/lib/auth/permissions.ts";
+import { collectDirectReports, collectHierarchy } from "../src/lib/outstation/expenses.ts";
+import { normalizeHrId, normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
 
 // A fake org: NSM-1 → {GPM-1, OTHER-1}; GPM-1 → {PM-1}; PM-1 → {MR-1, MR-2}.
-// Only hrId + managerHrId are read by buildManagerMap, so a partial row is enough.
+// hrId, managerHrId and pendingManagerReplacementForHrId are the only fields the
+// seat-continuity resolver reads, so a partial row is enough.
 const fakeDirectory = {
   employees: [
-    { hrId: "NSM-1", managerHrId: null },
-    { hrId: "GPM-1", managerHrId: "NSM-1" },
-    { hrId: "OTHER-1", managerHrId: "NSM-1" },
-    { hrId: "PM-1", managerHrId: "GPM-1" },
-    { hrId: "MR-1", managerHrId: "PM-1" },
-    { hrId: "MR-2", managerHrId: "PM-1" },
+    { hrId: "NSM-1", managerHrId: null, pendingManagerReplacementForHrId: null },
+    { hrId: "GPM-1", managerHrId: "NSM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "OTHER-1", managerHrId: "NSM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "PM-1", managerHrId: "GPM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "MR-1", managerHrId: "PM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "MR-2", managerHrId: "PM-1", pendingManagerReplacementForHrId: null },
   ],
-} as unknown as Parameters<typeof buildManagerMap>[0];
+} as unknown as Parameters<typeof collectHierarchy>[0];
 
+// After PM-1 resigns: the resignation trigger reassigns her reps UP to her manager
+// (GPM-1) AND stamps each with the vacant-seat continuity marker pointing at the
+// departed PM-1 seat; PM-1's own row is gone. Mirrors the atomic reassign+stamp.
+const afterPmResignation = {
+  employees: [
+    { hrId: "NSM-1", managerHrId: null, pendingManagerReplacementForHrId: null },
+    { hrId: "GPM-1", managerHrId: "NSM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "OTHER-1", managerHrId: "NSM-1", pendingManagerReplacementForHrId: null },
+    { hrId: "MR-1", managerHrId: "GPM-1", pendingManagerReplacementForHrId: "PM-1" },
+    { hrId: "MR-2", managerHrId: "GPM-1", pendingManagerReplacementForHrId: "PM-1" },
+  ],
+} as unknown as Parameters<typeof collectHierarchy>[0];
+
+// Set membership uses the stored normalizeHrId (canonicalHrIdKey) form.
 function key(id: string) {
   return normalizeHrId(id) as string;
 }
 
-export async function runExpenseAccessScopeTests() {
-  const managerMap = buildManagerMap(fakeDirectory);
+// The viewer argument is canonicalized the way the resolver canonicalizes edges
+// (normalizeHrIdForAccess — symbol-stripped), matching resolveExpenseAccessFilter.
+function canonical(id: string) {
+  return normalizeHrIdForAccess(id) as string;
+}
 
+export async function runExpenseAccessScopeTests() {
   // --- GPM sees the full downward chain (PM + the PM's reports), excludes siblings ---
-  const gpmDescendants = collectHierarchy(managerMap, "GPM-1");
+  const gpmDescendants = collectHierarchy(fakeDirectory, canonical("GPM-1"));
   assert.ok(gpmDescendants.has(key("PM-1")), "GPM must see the PM reporting to her");
   assert.ok(gpmDescendants.has(key("MR-1")), "GPM must see reps under her PM");
   assert.ok(gpmDescendants.has(key("MR-2")), "GPM must see reps under her PM");
@@ -41,7 +60,7 @@ export async function runExpenseAccessScopeTests() {
   assert.ok(!gpmDescendants.has(key("GPM-1")), "collectHierarchy excludes the root itself");
 
   // --- PM sees only her direct + indirect reports ---
-  const pmDescendants = collectHierarchy(managerMap, "PM-1");
+  const pmDescendants = collectHierarchy(fakeDirectory, canonical("PM-1"));
   assert.deepEqual(
     [...pmDescendants].sort(),
     [key("MR-1"), key("MR-2")].sort(),
@@ -49,8 +68,41 @@ export async function runExpenseAccessScopeTests() {
   );
 
   // --- A manager with zero reports (an MR) gets an empty descendant set → self only ---
-  const leafDescendants = collectHierarchy(managerMap, "MR-1");
+  const leafDescendants = collectHierarchy(fakeDirectory, canonical("MR-1"));
   assert.equal(leafDescendants.size, 0, "a rep with no reports sees no descendants (self only)");
+
+  // --- TEAM (direct reports) returns exactly one level, never the whole chain ---
+  const gpmDirect = collectDirectReports(fakeDirectory, canonical("GPM-1"));
+  assert.deepEqual(
+    [...gpmDirect].sort(),
+    [key("PM-1")].sort(),
+    "GPM's direct reports are exactly the PM (one level)",
+  );
+  assert.ok(
+    !gpmDirect.has(key("MR-1")),
+    "collectDirectReports must NOT include grandchildren (TEAM is one level, not the chain)",
+  );
+  const nsmDirect = collectDirectReports(fakeDirectory, canonical("NSM-1"));
+  assert.deepEqual(
+    [...nsmDirect].sort(),
+    [key("GPM-1"), key("OTHER-1")].sort(),
+    "NSM's direct reports are exactly its two children",
+  );
+
+  // --- Vacant-seat continuity: after PM-1 resigns, the vacant PM seat STILL owns its
+  //     reassigned reports (via the continuity marker), even though PM-1's row is gone
+  //     and the reps' manager edge now points at GPM-1. ---
+  const vacantSeatReports = collectDirectReports(afterPmResignation, canonical("PM-1"));
+  assert.deepEqual(
+    [...vacantSeatReports].sort(),
+    [key("MR-1"), key("MR-2")].sort(),
+    "the vacant PM seat still owns its reassigned reports after the manager resigned",
+  );
+  const gpmAfter = collectHierarchy(afterPmResignation, canonical("GPM-1"));
+  assert.ok(
+    gpmAfter.has(key("MR-1")) && gpmAfter.has(key("MR-2")),
+    "GPM's downward chain still includes the orphaned reps after the PM resigned",
+  );
 
   // --- Source invariant: PM/GPM/TM are routed to HIERARCHY scope, matrix untouched -----
   const src = readFileSync("src/lib/outstation/expenses.ts", "utf8");

@@ -5,6 +5,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { systemIdentity } from "@/config/system-settings";
 import { renderTelegramConnectEmailHtml, renderTelegramConnectEmailText } from "@/emails/telegram-connect";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -172,7 +173,7 @@ export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?
   const supabase = getSupabaseAdmin();
   const [usersRes, employeesRes, connectionsRes] = await Promise.all([
     supabase.from("app_auth_users").select("login_id,hr_id,is_active").eq("is_active", true),
-    supabase.from("employees").select("hr_id,full_name,work_email,employment_status").not("work_email", "is", null),
+    supabase.from("employees").select("hr_id,full_name,nickname,work_email,employment_status").not("work_email", "is", null),
     supabase.from("telegram_connections").select("user_id,status"),
   ]);
   if (usersRes.error) throw usersRes.error;
@@ -180,13 +181,13 @@ export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?
   if (connectionsRes.error) throw connectionsRes.error;
 
   const contactByHr = new Map<string, { email: string; name: string | null }>();
-  for (const row of (employeesRes.data ?? []) as Array<{ employment_status: string | null; full_name: string | null; hr_id: string | null; work_email: string | null }>) {
+  for (const row of (employeesRes.data ?? []) as Array<{ employment_status: string | null; full_name: string | null; hr_id: string | null; nickname: string | null; work_email: string | null }>) {
     const hrId = String(row.hr_id ?? "").trim();
     const email = String(row.work_email ?? "").trim().toLowerCase();
     // Never invite terminal/offboarding employees, even if they still have an active
     // auth row + work email (this path bypasses the directory active-filter gate).
     if (terminalLifecycleStatuses.has(String(row.employment_status ?? "").trim().toLowerCase())) continue;
-    if (hrId && email) contactByHr.set(hrId, { email, name: row.full_name ?? null });
+    if (hrId && email) contactByHr.set(hrId, { email, name: row.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname) : null });
   }
 
   const connectedUserIds = new Set<string>();

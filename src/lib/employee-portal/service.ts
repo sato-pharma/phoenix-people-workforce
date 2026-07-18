@@ -1078,7 +1078,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       currentUser.hrId = employee.hrId;
       currentUser.line = currentUser.line ?? employee.lineName;
       currentUser.managerHrId = currentUser.managerHrId ?? employee.managerHrId;
-      currentUser.name = currentUser.name ?? employee.fullName;
+      currentUser.name = currentUser.name ?? employee.displayName;
     }
   } catch {
     // Keep the auth-derived identity if the directory is temporarily unavailable.
@@ -2575,7 +2575,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       openVacancies: 0,
       pendingApprovals: 0,
       probationDue: 0,
-      scopeLabel: employee.fullName,
+      scopeLabel: employee.displayName,
     },
     empty: {
       payroll: (payrollDashboard?.records.length ?? 0) === 0,
@@ -2858,7 +2858,7 @@ function resolvePortalWorkforceScopeLabel({
   if (isCompanyWorkforceRole(role)) return "Company";
   if (isLineWorkforceRole(role)) return employee.lineName ?? currentUser.line ?? "Your line";
   if (isTeamWorkforceRole(role)) return "Your team";
-  return employee.fullName;
+  return employee.displayName;
 }
 
 function countRowsWithUpcomingDate(
@@ -3100,7 +3100,7 @@ async function resolvePortalStructureSummary({
     scope: isNsm ? "line" : "team",
     scopeLabel: isNsm
       ? employee.lineName ?? currentUser.line ?? "Your line"
-      : employee.fullName,
+      : employee.displayName,
     totalStructure: actualNow + vacancyCount,
     vacancies: vacancyCount,
   };
@@ -3299,7 +3299,7 @@ async function resolveSalesRankInTeam(params: {
 
   const nameByHrId = new Map(
     directory.employees
-      .map((employee) => [resolveTeamHrId(employee.hrId), employee.fullName] as const)
+      .map((employee) => [resolveTeamHrId(employee.hrId), employee.displayName] as const)
       .filter(([hrId]) => Boolean(hrId)) as Array<[string, string]>,
   );
   const teamNameToHrId = new Map<string, string>();
@@ -4024,7 +4024,7 @@ export async function getMedicalRepPortalData(
         const empExpenses = expenses.filter((e) => e.hrId === hrId);
         const emp = findDirectoryEmployeeByHrId(directory, hrId);
         return {
-          name: emp?.fullName ?? hrId!,
+          name: emp?.displayName ?? hrId!,
           role: emp?.jobTitle ?? "N/A",
           trips: empExpenses.length,
           distance: empExpenses.reduce((sum, e) => sum + (e.km || 0), 0),
@@ -4069,7 +4069,7 @@ export async function getMedicalRepPortalData(
         distance: e.km || 0,
         cost: e.total || 0,
       })),
-      availableEmployees: visibleTeamMembers.map((m) => ({ id: m.hrId, name: m.fullName })),
+      availableEmployees: visibleTeamMembers.map((m) => ({ id: m.hrId, name: m.displayName })),
       availableTerritories: Array.from(new Set(expenses.map((e) => e.location).filter(Boolean))) as string[],
     },
   };
@@ -4265,7 +4265,7 @@ async function buildTeamPerformanceForScope(input: {
       if (canonical) {
         if (normalized) hrIdToCanonical.set(normalized, canonical);
         hrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.fullName);
+        canonicalToName.set(canonical, emp.displayName);
       }
     });
 
@@ -4411,7 +4411,7 @@ async function buildTeamPerformanceForScope(input: {
       membersMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
-        name: emp.fullName,
+        name: emp.displayName,
         managerHrId: seatHrId,
         managerName: grouping.seatName,
         position: 0,
@@ -4551,7 +4551,7 @@ export async function getCompanyMedRepPerformance(
         return {
           lineId: info.lineId,
           lineName: info.lineName,
-          nsmName: nsmEmployee?.fullName ?? null,
+          nsmName: nsmEmployee?.displayName ?? null,
           performance,
         };
       }),
@@ -4657,7 +4657,7 @@ export async function getCompanyLineTopAchievers(
 
 async function computeLineTopAchievers(
   lineName: string,
-  reps: Array<{ areaName: string | null; fullName: string; hrId: string }>,
+  reps: Array<{ areaName: string | null; displayName: string; hrId: string }>,
   perLine: number,
 ): Promise<LineTopAchiever[]> {
   const hrIdToCanonical = new Map<string, string>();
@@ -4668,7 +4668,7 @@ async function computeLineTopAchievers(
     const normalized = normalizeHrId(emp.hrId);
     if (normalized) hrIdToCanonical.set(normalized, canonical);
     hrIdToCanonical.set(canonical, canonical);
-    meta.set(canonical, { areaName: emp.areaName, name: emp.fullName });
+    meta.set(canonical, { areaName: emp.areaName, name: emp.displayName });
   }
 
   const repHrIds = reps.map((emp) => emp.hrId).filter(Boolean) as string[];
@@ -5066,7 +5066,7 @@ export async function getEmployeePortalVacancies(
           ? hasMultiLineOverride
             ? viewerAllowedLines!.join(" + ")
             : currentEmployee.lineName ?? currentUser.line ?? "Your line"
-          : currentEmployee.fullName,
+          : currentEmployee.displayName,
       summary: {
         districtManagerVacancies: vacancies.filter((row) => row.isDistrictManagerVacancy).length,
         openVacancies: vacancies.length,
@@ -5147,7 +5147,7 @@ async function buildDsmPerformanceForLineScope(input: {
       if (canonical) {
         if (normalized) dsmHrIdToCanonical.set(normalized, canonical);
         dsmHrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.fullName);
+        canonicalToName.set(canonical, emp.displayName);
       }
     });
     const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
@@ -5311,7 +5311,7 @@ async function buildDsmPerformanceForLineScope(input: {
       dsmsMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
-        name: emp.fullName,
+        name: emp.displayName,
         managerHrId: null, // NSM is the manager
         managerName,
         position: 0,
@@ -5453,13 +5453,13 @@ export async function getCompanyDsmPerformance(
           directory,
           lineScope,
           nsmCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
-          managerName: nsmEmployee?.fullName ?? `${info.lineName} (NSM seat vacant)`,
+          managerName: nsmEmployee?.displayName ?? `${info.lineName} (NSM seat vacant)`,
           period: options.period ?? null,
         });
         return {
           lineId: info.lineId,
           lineName: info.lineName,
-          nsmName: nsmEmployee?.fullName ?? null,
+          nsmName: nsmEmployee?.displayName ?? null,
           performance,
         };
       }),
@@ -5540,7 +5540,7 @@ export async function getNsmTeamExpenses(
 
     const dsmByCanonicalHrId = new Map<
       string,
-      Pick<EmployeeDirectoryRow, "fullName" | "hrId" | "lineName">
+      Pick<EmployeeDirectoryRow, "displayName" | "hrId" | "lineName">
     >();
 
     scopedDsms.forEach((employee) => {
@@ -5657,7 +5657,7 @@ export async function getNsmTeamExpenses(
 
         return {
           ...expense,
-          dsmName: employee?.fullName ?? expense.specialist ?? expense.hrId ?? "Unknown DSM",
+          dsmName: employee?.displayName ?? expense.specialist ?? expense.hrId ?? "Unknown DSM",
           lineName: employee?.lineName ?? null,
         };
       })

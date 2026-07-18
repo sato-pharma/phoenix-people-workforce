@@ -6,6 +6,7 @@ import { notificationHrefForViewerRole } from "../src/lib/notifications/hrefs.ts
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "../src/lib/payroll/links.ts";
 import {
   canAccess,
+  canAccessFingerprintReport,
   createAccessContext,
   isRolePermissionWithinHardBoundary,
   permissionActions,
@@ -154,6 +155,35 @@ export async function runCeoAccountContractTests() {
     attendanceAnalyticsCard?.permissions,
     [{ resource: "attendance", action: "read" }],
     "Attendance Analytics navigation must be keyed by attendance:read, not employee-master access",
+  );
+
+  // Fingerprint Report gets a page-scoped exception: CEO can view/export it
+  // specifically, without the general employees:read hard boundary moving at
+  // all (asserted above via ceoBlockedHighRiskResources).
+  assert.equal(
+    await canAccessFingerprintReport(ceo),
+    true,
+    "CEO must be able to view the Fingerprint Report via its page-scoped exception",
+  );
+  const fingerprintReportCard = attendanceManagementPageItems.find((item) => item.href === "/attendance/fingerprint-report");
+  assert.ok(fingerprintReportCard, "Fingerprint Report hub card must exist");
+  const fingerprintReportPageSource = readFileSync("app/(admin)/attendance/fingerprint-report/page.tsx", "utf8");
+  assert.match(
+    fingerprintReportPageSource,
+    /canAccessFingerprintReport\(access\)/,
+    "Fingerprint Report page must gate via the CEO-aware helper, not raw employees:read",
+  );
+  const fingerprintExportRouteSourceForCeo = readFileSync("app/api/attendance/fingerprint-report/export/route.ts", "utf8");
+  assert.match(
+    fingerprintExportRouteSourceForCeo,
+    /assertFingerprintReportPermission\(access\)/,
+    "Fingerprint Report export route must gate via the CEO-aware helper",
+  );
+  const attendanceHubPageSource = readFileSync("app/(admin)/attendance/page.tsx", "utf8");
+  assert.match(
+    attendanceHubPageSource,
+    /canAccessFingerprintReport/,
+    "Attendance Management hub must use the CEO-aware helper to surface the Fingerprint Report card",
   );
 
   const usersRouteSource = readFileSync("app/api/admin/users/route.ts", "utf8");

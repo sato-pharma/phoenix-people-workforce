@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { normalizeHrId } from "../src/lib/auth/permissions.ts";
 import {
+  computeApprovalScopePeople,
   excuseApprovalHref,
   vacationApprovalHref,
   vacationApprovalsBasePath,
@@ -33,6 +35,40 @@ export function runApprovalsHubTests() {
   assert.equal(vacationApprovalHref(districtManager, "abc"), "/employee-portals/approvals/vacation/abc");
   assert.equal(excuseApprovalHref(medicalRep, "req 12/x"), "/employee-portals/approvals/excuse/req%2012%2Fx");
   assert.equal(excuseApprovalHref(superAdmin, "e-1"), "/admin/approvals/excuse/e-1");
+
+  // ── "Who I Approve" (computeApprovalScopePeople): direct reports only, seat-aware ──
+  // Org: CEO-1 → DSM-1 → MR-DEEP (MR-DEEP is two levels below the CEO). Separately,
+  // DSM-2 resigned: its report MR-HELD was reassigned UP to RM-1 and stamped with the
+  // vacant-seat marker pointing at DSM-2; DSM-2's own row is gone.
+  const approvalScopeFixture = [
+    { hrId: "CEO-1", managerHrId: null, pendingManagerReplacementForHrId: null, displayName: "Chief Exec", fullName: "Chief Exec", jobTitle: "CEO" },
+    { hrId: "DSM-1", managerHrId: "CEO-1", pendingManagerReplacementForHrId: null, displayName: "District One", fullName: "District One", jobTitle: "District Manager" },
+    { hrId: "MR-DEEP", managerHrId: "DSM-1", pendingManagerReplacementForHrId: null, displayName: "Rep Deep", fullName: "Rep Deep", jobTitle: "Medical Rep" },
+    { hrId: "RM-1", managerHrId: null, pendingManagerReplacementForHrId: null, displayName: "Regional One", fullName: "Regional One", jobTitle: "Regional Manager" },
+    { hrId: "MR-HELD", managerHrId: "RM-1", pendingManagerReplacementForHrId: "DSM-2", displayName: "Rep Held", fullName: "Rep Held", jobTitle: "Medical Rep" },
+  ] as unknown as Parameters<typeof computeApprovalScopePeople>[0];
+
+  // (a) The vacant DSM-2 seat still "approves" the report it held before resigning,
+  // via the continuity marker — even though DSM-2's row no longer exists.
+  const vacantSeatScope = computeApprovalScopePeople(approvalScopeFixture, normalizeHrId("DSM-2") as string);
+  assert.deepEqual(
+    vacantSeatScope.map((person) => person.hrId).sort(),
+    ["MR-HELD"],
+    "the vacant DSM seat still approves the report it held before the manager resigned",
+  );
+
+  // (b) The CEO approves only their DIRECT report (DSM-1), never the rep two levels
+  // down (MR-DEEP). Locks "Who I Approve" to TEAM-only — no manager-of-manager chain.
+  const ceoScope = computeApprovalScopePeople(approvalScopeFixture, normalizeHrId("CEO-1") as string);
+  assert.deepEqual(
+    ceoScope.map((person) => person.hrId).sort(),
+    ["DSM-1"],
+    "the CEO approves only their direct report, not the rep two levels down (TEAM-only)",
+  );
+  assert.ok(
+    !ceoScope.some((person) => person.hrId === "MR-DEEP"),
+    "a report two levels below the viewer is never in the direct-approval set",
+  );
 
   // ── Service module exposes the responder buckets + view builders ─────────────
   const svc = readFileSync("src/lib/approvals-hub/service.ts", "utf8");
@@ -266,6 +302,25 @@ export function runApprovalsHubTests() {
     "company-wide plan query is gated to Super Admin / system-scope",
   );
 
+  // ── "Company Plans" tab: CEO + Super Admin, ALL roles (pending + decided), no action buttons ──
+  assert.match(
+    svc,
+    /export async function getCompanyPlanRequests[\s\S]*?if \(!canSeeCeoApprovalTabs\(access\)\) \{\s*throw new Error\("Forbidden: only the CEO or Super Admin can view the company-wide request feed\."\);/,
+    "getCompanyPlanRequests is gated by the same canSeeCeoApprovalTabs check as the vacation/excuse company-requests views",
+  );
+  {
+    const companyPlanFnMatch = svc.match(/export async function getCompanyPlanRequests[\s\S]*?return items;\n}/);
+    assert.ok(companyPlanFnMatch, "getCompanyPlanRequests function body is present");
+    assert.doesNotMatch(
+      companyPlanFnMatch![0],
+      /isExcludedFieldForce/,
+      "unlike vacation/excuse, plan company requests must NOT exclude the field force — a District Manager's own plans belong here",
+    );
+  }
+  assert.match(svc, /companyRequests: CompanyRequestItem\[\] \| null;/, "PlanWorkspaceData exposes the Company Plans data alongside companyWide");
+  assert.match(planBody, /companyRequestsTabLabel="Company Plans"/, "the plan hub's oversight tab is labeled 'Company Plans', not the generic 'Company Requests'");
+  assert.match(workspaceSource, /companyRequestsTabLabel/, "ApprovalsWorkspace supports overriding the Company Requests tab label per module");
+
   // The self-contained per-plan page reuses the extracted shared calendar renderer (one source).
   const planDetail = readFileSync("src/components/approvals-hub/plan-request-detail.tsx", "utf8");
   assert.match(planDetail, /import \{ WeeklyPlanCalendar \} from "@\/components\/action-center\/weekly-plan-calendar"/, "plan detail reuses the extracted shared WeeklyPlanCalendar, not a re-built grid");
@@ -417,4 +472,50 @@ export function runApprovalsHubTests() {
   assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean\) => void;/, "the badge poll store threads overdue through to listeners");
 
   assert.match(sidebarSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
+
+  // ── Stuck approvals — needs reassignment (HR / Super Admin only, Part C) ──────
+  assert.match(
+    svc,
+    /export async function getStuckApprovalsForReassignment\(/,
+    "service must export getStuckApprovalsForReassignment",
+  );
+  assert.match(
+    svc,
+    /export async function getStuckApprovalsForReassignment[\s\S]*?if \(!isAllVacationVisibility\(access\)\) \{\s*throw new Error\("Forbidden: only HR or Super Admin can view stuck approvals for reassignment\."\);/,
+    "stuck-approvals data is gated to HR / Super Admin (isAllVacationVisibility), defense-in-depth alongside the page gate",
+  );
+  assert.match(
+    svc,
+    /getStuckApprovalsForReassignment[\s\S]*?listWeeklyPlanManagerGapRecords\(\)/,
+    "stuck approvals aggregate the weekly-plan gap listing",
+  );
+  assert.match(
+    svc,
+    /getStuckApprovalsForReassignment[\s\S]*?listExcuseManagerGapRecords\(\)/,
+    "stuck approvals aggregate the excuse gap listing",
+  );
+
+  // Page gates to HR / Super Admin on the server BEFORE fetching (sidebar visibility is UX only).
+  const stuckPage = readFileSync("app/(admin)/admin/approvals/stuck/page.tsx", "utf8");
+  assert.match(
+    stuckPage,
+    /if \(!isAllVacationVisibility\(access\)\) redirect\(/,
+    "the stuck-approvals page redirects non-HR/Super-Admin viewers before any data fetch",
+  );
+  assert.match(stuckPage, /getStuckApprovalsForReassignment\(access\)/, "the page loads the gated stuck-approvals data");
+  assert.match(stuckPage, /<StuckApprovalsPanel/, "the page renders the StuckApprovalsPanel");
+
+  // The panel's Reassign action calls the two new reassignment routes (reassignment, not deciding).
+  const stuckPanel = readFileSync("src/components/approvals-hub/stuck-approvals-panel.tsx", "utf8");
+  assert.match(
+    stuckPanel,
+    /\/api\/weekly-plans\/\$\{encodeURIComponent\(plan\.planId\)\}\/reassign/,
+    "the panel reassigns plans via the new weekly-plan reassign route",
+  );
+  assert.match(
+    stuckPanel,
+    /\/api\/excuses\/\$\{encodeURIComponent\(excuse\.requestId\)\}\/reassign/,
+    "the panel reassigns excuses via the new excuse reassign route",
+  );
+  assert.match(stuckPanel, /newManagerHrId/, "the panel sends the picked new active manager to the reassign route");
 }

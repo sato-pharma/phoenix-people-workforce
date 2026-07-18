@@ -1811,7 +1811,7 @@ async function loadContacts(): Promise<Contact[]> {
       hrId: employee.hrId,
       line: employee.lineName,
       managerHrId: employee.managerHrId,
-      name: employee.fullName,
+      name: employee.displayName,
       role: authRoles.get(employee.hrId.toLowerCase()) ?? employee.jobTitle ?? employee.positionTitle ?? null,
       title: employee.positionTitle ?? employee.jobTitle,
     }))

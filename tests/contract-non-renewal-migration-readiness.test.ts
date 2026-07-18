@@ -21,9 +21,11 @@ export async function runContractNonRenewalMigrationReadinessTests() {
   const sql = readFileSync(MIGRATION_PATH, "utf8");
   const firstLine = sql.split(/\r?\n/, 1)[0] ?? "";
 
-  // (b) header has DRAFT and DO NOT APPLY
-  assert.match(firstLine, /DRAFT/, "first line must contain DRAFT");
-  assert.match(firstLine, /DO NOT APPLY/, "first line must contain DO NOT APPLY");
+  // (b) header confirms the migration is APPLIED (not a draft). Confirmed live via
+  // direct schema inspection on staging + production on 2026-07-18 — see
+  // WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED in src/lib/contracts/feature-flags.ts.
+  assert.match(firstLine, /APPLIED/, "first line must contain APPLIED");
+  assert.doesNotMatch(firstLine, /DO NOT APPLY/, "first line must not still say DO NOT APPLY");
 
   // (c) additive column
   assert.match(

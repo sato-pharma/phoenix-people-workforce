@@ -14,7 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_DOUBLE_VISIT_TYPE_CODES, CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
@@ -295,6 +295,10 @@ export type CrmMasterData = {
   schemaReady: boolean;
   search: string | null;
   totalCount: number;
+  /** True when a computed tab (triples/vacations) hit its 60k in-memory row cap and may be missing
+   * rows — the UI shows a "first N" banner. Absent/false for the uncapped (paginated + counted)
+   * datasets. */
+  truncated?: boolean;
   visitType: string | null;
   visitTypeOptions: readonly string[];
 };
@@ -392,19 +396,23 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   const from = days.reduce((a, b) => (a < b ? a : b));
   const to = days.reduce((a, b) => (a > b ? a : b));
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_CHECKINS_TABLE)
-    .select("crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at")
-    .in("agent_crm_id", agentIds)
-    .gte("check_date", `${from}T00:00:00`)
-    .lte("check_date", `${to}T23:59:59`)
-    .limit(20000);
-  if (error || !data) return;
+  // Full keyset scan via queryCheckins — complete check-in coverage for the page's agents + dates
+  // (no silent 20k cap). Best-effort overlay: any failure leaves the check-in columns null.
+  let data: CheckinLite[];
+  try {
+    data = await queryCheckins<CheckinLite>({
+      agentCrmIds: agentIds,
+      dateFrom: from,
+      dateTo: to,
+      columns: "crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at",
+    });
+  } catch {
+    return;
+  }
 
   // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
   // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
-  const index = indexCheckinsByAgentContactDay(data as CheckinLite[]);
+  const index = indexCheckinsByAgentContactDay(data);
   for (const row of rows) {
     const best = pickCheckinForVisit(
       {
@@ -491,8 +499,9 @@ type TripleDvRow = {
 async function computeTriplesInRange(range: {
   dateFrom: string | null;
   dateTo: string | null;
-}): Promise<{ rows: CrmMasterRow[]; byVisitId: Map<number, { third: string; unspecified: boolean }> }> {
+}): Promise<{ rows: CrmMasterRow[]; byVisitId: Map<number, { third: string; unspecified: boolean }>; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   // Walk pages of double-visit rows (PostgREST caps a single request's row count, so a lone
   // .limit() would silently truncate and miss triples) — same paging pattern as the export.
   const PAGE = 1000;
@@ -508,8 +517,8 @@ async function computeTriplesInRange(range: {
       .neq("double_crm_id", 0)
       .in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
     let q = base as unknown as MasterQuery;
-    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    if (excludedInList) {
+      q = q.not("agent_crm_id", "in", excludedInList);
     }
     if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
     if (range.dateTo) q = q.lte("visit_date", range.dateTo);
@@ -518,7 +527,7 @@ async function computeTriplesInRange(range: {
       .order("crm_visit_id", { ascending: false })
       .range(from, from + PAGE - 1);
     if (error || !data) {
-      if (dv.length === 0) return { rows: [], byVisitId: new Map() };
+      if (dv.length === 0) return { rows: [], byVisitId: new Map(), truncated: false };
       break;
     }
     const pageRows = data as unknown as TripleDvRow[];
@@ -598,7 +607,9 @@ async function computeTriplesInRange(range: {
   }
 
   rows.sort((x, y) => String(y.visit_date).localeCompare(String(x.visit_date)));
-  return { rows, byVisitId };
+  // `dv` reaches MAX_ROWS only when the cap is hit (a short page breaks the loop first), so this is
+  // the honest "we may have missed some double-visit rows → some triples may be absent" signal.
+  return { rows, byVisitId, truncated: dv.length >= MAX_ROWS };
 }
 
 /** Double Visits tab: set `triple_flag` from the triple membership map (naming the third person). */
@@ -861,9 +872,19 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
  * row per run of consecutive calendar days for the same agent (a gap starts a new period; two rows on
  * the same date — an AM + a PM half — stay in the same run). Resigned agents excluded. Duration counts
  * half-days as 0.5. Walks paginated rows (PostgREST caps a single request). Newest period first.
+ *
+ * SCOPE — this is the RAW CRM vacation view and is DELIBERATELY broader than the Company Vacation
+ * Report (src/lib/vacation/company-vacation-report.ts). This tab matches ANY vacation-worded
+ * description (ILIKE '%vacation%'). The Company Vacation Report is narrower: only Annual Vacation
+ * (visit_type = -4, NOT Health Day -15), and it drops public-holiday / excuse-labeled /
+ * proven-worked days and merges in HR-approved leave. BOTH honor the CRM's own AM/PM half-day
+ * marking (ampm → 0.5 day). So this raw tab still shows more/other rows than that de-noised,
+ * advisory report — they answer different questions and are kept in sync by intent, never by
+ * forcing the numbers to match.
  */
-async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<CrmMasterRow[]> {
+async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
   const MAX_ROWS = 60000;
   const days: VacationDayRow[] = [];
@@ -873,8 +894,8 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
       .select("crm_visit_id, visit_date, ampm, agent_crm_id, agent_name, agent_hr_id, visit_type_description, comment")
       .ilike("visit_type_description", "%vacation%");
     let q = base as unknown as MasterQuery;
-    if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-      q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+    if (excludedInList) {
+      q = q.not("agent_crm_id", "in", excludedInList);
     }
     if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
     if (range.dateTo) q = q.lte("visit_date", range.dateTo);
@@ -883,7 +904,7 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
       .order("visit_date", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error || !data) {
-      if (days.length === 0) return [];
+      if (days.length === 0) return { periods: [], truncated: false };
       break;
     }
     const rows = data as unknown as VacationDayRow[];
@@ -922,7 +943,7 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
   }
 
   periods.sort((x, y) => String(y.from_date).localeCompare(String(x.from_date)));
-  return periods;
+  return { periods, truncated: days.length >= MAX_ROWS };
 }
 
 /** Normalize the requested dataset to a known value. */
@@ -944,6 +965,7 @@ function applyMasterFilters(
     search: string | null;
     visitType: string | null;
   },
+  excludedInList: string = CRM_RESIGNED_IN_LIST,
 ): MasterQuery {
   const { agentHrId, allowedHrIds, ampm, dataset, dateFrom, dateTo, mappingStatus, search, visitType } = opts;
   const isCheckins = dataset === "checkins";
@@ -951,9 +973,11 @@ function applyMasterFilters(
   const dateColumn = isCheckins ? "check_date" : "visit_date";
 
   let q = query;
-  // Resigned agents (owner-flagged) are invisible across every CRM tab — visits + check-ins alike.
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
-    q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
+  // Resigned/departed agents (owner-flagged + live status) are invisible across every CRM tab —
+  // visits + check-ins alike. `excludedInList` is the effective (static ∪ live) list; defaults to
+  // the static safety-net.
+  if (excludedInList) {
+    q = q.not("agent_crm_id", "in", excludedInList);
   }
   // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
   if (allowedHrIds) {
@@ -1114,7 +1138,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   // Triple visits are a derived analytic (a self-join across visit rows), not a single-table filter:
   // detect them in memory over the date range, then paginate the computed result.
   if (dataset === "triple_visits") {
-    const [{ rows: allTriples }, latestSyncRuns, agentMeta] = await Promise.all([
+    const [{ rows: allTriples, truncated }, latestSyncRuns, agentMeta] = await Promise.all([
       computeTriplesInRange({ dateFrom, dateTo }),
       getLatestVisitsSyncRuns(6),
       loadAgentMetaByHrId(),
@@ -1130,12 +1154,13 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       rows: pageRows,
       schemaReady: true,
       totalCount: filtered.length,
+      truncated,
     };
   }
 
   // Vacations are grouped into periods (consecutive days), not shown per day — compute + paginate.
   if (dataset === "vacations") {
-    const [allPeriods, latestSyncRuns, agentMeta] = await Promise.all([
+    const [{ periods: allPeriods, truncated }, latestSyncRuns, agentMeta] = await Promise.all([
       computeVacationPeriods({ dateFrom, dateTo }),
       getLatestVisitsSyncRuns(6),
       loadAgentMetaByHrId(),
@@ -1150,6 +1175,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       rows: pageRows,
       schemaReady: true,
       totalCount: filtered.length,
+      truncated,
     };
   }
 
@@ -1159,8 +1185,9 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
 
+  const excludedInList = await getEffectiveExcludedInList();
   const base = supabase.from(table).select(select, { count: "exact" });
-  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
+  const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
   const ordered = (filtered as unknown as typeof base)
     .order(dateColumn, { ascending: false })
     .order(idColumn, { ascending: false })
@@ -1217,24 +1244,24 @@ export async function getCrmMasterExportRows(
 
   // Triple visits: computed in memory (self-join), so export all detected triples for the range.
   if (dataset === "triple_visits") {
-    const [{ rows: allTriples }, agentMeta] = await Promise.all([
+    const [{ rows: allTriples, truncated }, agentMeta] = await Promise.all([
       computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
     const rows = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
-    return { columns, dataset, rows, truncated: false };
+    return { columns, dataset, rows, truncated };
   }
 
   // Vacations: grouped into periods, so export all periods for the range.
   if (dataset === "vacations") {
-    const [allPeriods, agentMeta] = await Promise.all([
+    const [{ periods: allPeriods, truncated }, agentMeta] = await Promise.all([
       computeVacationPeriods({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
     const rows = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     attachAgentMeta(rows, agentMeta, "agent_hr_id");
-    return { columns, dataset, rows, truncated: false };
+    return { columns, dataset, rows, truncated };
   }
 
   const supabase = getSupabaseAdmin();
@@ -1243,13 +1270,14 @@ export async function getCrmMasterExportRows(
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
 
+  const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
   const MAX_ROWS = 50000;
   const rows: CrmMasterRow[] = [];
   let truncated = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const base = supabase.from(table).select(select);
-    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts);
+    const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
     const { data, error } = await (filtered as unknown as typeof base)
       .order(dateColumn, { ascending: false })
       .order(idColumn, { ascending: false })

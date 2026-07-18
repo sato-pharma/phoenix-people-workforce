@@ -307,6 +307,7 @@ async function sendBalanceSettlementEmailSafely(candidate: UnpaidVacationCandida
     const cc = hrRecipients.map((recipient) => recipient.email).filter((email): email is string => Boolean(email));
 
     await sendVacationBalanceSettlementEmail({
+      employeeDisplayName: employee.displayName,
       employeeEmail: employee.workEmail,
       managerEmail: manager?.workEmail ?? employee.workEmail,
       cc,

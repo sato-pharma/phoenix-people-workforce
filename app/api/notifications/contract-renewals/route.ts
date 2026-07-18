@@ -116,14 +116,14 @@ export async function runContractRenewalNotifications(request: Request) {
         email: {
           employeeHrId: row.hr_id,
           metrics: [
-            { label: "Employee", value: `${row.full_name} (${row.hr_id})` },
+            { label: "Employee", value: `${employee.displayName} (${row.hr_id})` },
             { label: "Renewal date", value: row.contract_renewal_date },
             { label: "Reminder", value: dueText },
             { label: "Run date", value: runDate },
           ],
           notificationType: "contract_renewal",
-          subject: `Contract Renewal Reminder - ${row.full_name} - ${row.contract_renewal_date}`,
-          summary: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+          subject: `Contract Renewal Reminder - ${employee.displayName} - ${row.contract_renewal_date}`,
+          summary: `Contract renewal for ${employee.displayName} is ${dueText}. Pending manager recommendation is required.`,
           // The admin-edited contract_renewal template shows Area/Line/Position; this reminder
           // only sent those values in `metadata`, so the cells rendered blank. Supply them.
           templateContext: {
@@ -135,18 +135,18 @@ export async function runContractRenewalNotifications(request: Request) {
           tone: row.daysUntil <= 7 ? "danger" : "warning",
         },
         eventType: "renewal_reminder",
-        message: `Contract renewal for ${row.full_name} is ${dueText}. Pending manager recommendation is required.`,
+        message: `Contract renewal for ${employee.displayName} is ${dueText}. Pending manager recommendation is required.`,
         metadata: {
           actionUrl,
           area: employee.areaName ?? null,
           department: employee.departmentName ?? null,
           directManagerHrId: cleanHrId(directManager?.hrId) || null,
-          employeeName: row.full_name,
+          employeeName: employee.displayName,
           employeeHrId: row.hr_id,
           eventDate: runDate,
           idempotencyKey: `contract-renewal-reminder:${row.hr_id}:${row.contract_renewal_date}:${runDate}`,
           line: employee.lineName ?? row.line ?? null,
-          managerName: employee.managerName ?? directManager?.fullName ?? null,
+          managerName: employee.managerName ?? directManager?.displayName ?? null,
           managerOfManagerHrId: cleanHrId(managerOfManager?.hrId) || null,
           renewalDate: row.contract_renewal_date,
           requestUrl: actionUrl,

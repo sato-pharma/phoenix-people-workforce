@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import { normalizeAttendanceHrId, summarizeAttendancePolicies } from "@/lib/attendance/metrics";
 import {
@@ -196,7 +197,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     supabase
       .from("employees")
       .select("hr_id,full_name,job_title")
-      .not("employment_status", "in", "(resigned,terminated,inactive)")
+      .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
       .order("full_name"),
     loadActiveDeviceMappedHrIds(),
   ]);

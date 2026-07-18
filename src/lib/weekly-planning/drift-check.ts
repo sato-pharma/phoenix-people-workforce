@@ -3,10 +3,83 @@
 // Managers when any of the 6 impossible-state queries returns a non-zero count.
 // Empty result → no notification (no zero-row spam). Idempotent via dedupe key.
 
+import { normalizeHrId } from "@/lib/auth/permissions";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type DriftCounts = Record<"D1" | "D2" | "D3" | "D4" | "D5" | "D6", number>;
+
+// Plan statuses awaiting a manager decision — the exact set the D4 detector flags.
+const MANAGER_GAP_PLAN_STATUSES = ["submitted", "manager_returned", "ceo_returned"] as const;
+
+export type WeeklyPlanManagerGapRecord = {
+  planId: string;
+  employeeHrId: string;
+  employeeName: string;
+  managerHrId: string | null;
+  managerName: string | null;
+  status: string;
+  submittedAt: string | null;
+};
+
+// Active per the D4 SQL semantics: employment_status IN (active, on_leave); empty treated as active.
+function isActiveEmploymentStatus(status: string | null | undefined) {
+  const normalized = (status ?? "").trim().toLowerCase();
+  return normalized === "" || normalized === "active" || normalized === "on_leave";
+}
+
+// JS-client twin of the D4 drift detector (scripts/weekly-plans-drift.sql): plans awaiting a
+// manager decision whose manager_hr_id is null / missing from the directory / resigned or inactive.
+// Enriches the D4 alert with real plan IDs + links and backs the Approvals Hub "stuck approvals"
+// surface. Read-only — it never touches the SQL RPC.
+export async function listWeeklyPlanManagerGapRecords(): Promise<WeeklyPlanManagerGapRecord[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,employee_hr_id,employee_name,manager_hr_id,manager_name,status,submitted_at")
+    .in("status", MANAGER_GAP_PLAN_STATUSES as unknown as string[]);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{
+    id: string;
+    employee_hr_id: string;
+    employee_name: string | null;
+    manager_hr_id: string | null;
+    manager_name: string | null;
+    status: string;
+    submitted_at: string | null;
+  }>;
+  if (rows.length === 0) return [];
+
+  // includeInactive:true so we can tell "resigned/inactive" (present but not active) apart from
+  // "missing" — both are gaps, matching D4's (manager IS NULL OR e.hr_id IS NULL OR status NOT IN…).
+  const directoryRows = await getEmployeeDirectoryRows({ includeInactive: true });
+  const statusByHrId = new Map<string, string | null>();
+  for (const emp of directoryRows) {
+    const key = normalizeHrId(emp.hrId);
+    if (key) statusByHrId.set(key, emp.employmentStatus);
+  }
+
+  const gaps: WeeklyPlanManagerGapRecord[] = [];
+  for (const row of rows) {
+    const managerKey = normalizeHrId(row.manager_hr_id);
+    const managerActive =
+      !!managerKey &&
+      statusByHrId.has(managerKey) &&
+      isActiveEmploymentStatus(statusByHrId.get(managerKey) ?? null);
+    if (!managerActive) {
+      gaps.push({
+        planId: row.id,
+        employeeHrId: row.employee_hr_id,
+        employeeName: row.employee_name ?? row.employee_hr_id,
+        managerHrId: row.manager_hr_id,
+        managerName: row.manager_name,
+        status: row.status,
+        submittedAt: row.submitted_at,
+      });
+    }
+  }
+  return gaps;
+}
 
 const DRIFT_DESCRIPTIONS: Record<keyof DriftCounts, string> = {
   D1: "final_approved plans missing final_approved_at timestamp",
@@ -60,6 +133,30 @@ export async function runWeeklyPlansDriftCheck(): Promise<WeeklyPlansDriftResult
     anomalous.forEach(([code, count]) => {
       lines.push(`${code} (${count}): ${DRIFT_DESCRIPTIONS[code]}`);
     });
+
+    // Enrich D4 (stuck manager approvals) with the actual plan IDs + reassignment links so the
+    // alert is actionable, not just a count. Best-effort — a listing failure never blocks the alert.
+    if (driftCodes.includes("D4")) {
+      try {
+        const gapRecords = await listWeeklyPlanManagerGapRecords();
+        if (gapRecords.length > 0) {
+          lines.push("");
+          lines.push("D4 stuck plans — needs reassignment (Approvals Hub → Stuck approvals):");
+          for (const record of gapRecords.slice(0, 25)) {
+            const manager = record.managerName ?? record.managerHrId ?? "no manager";
+            lines.push(
+              `- ${record.employeeName} (${record.employeeHrId}) — ${record.status} — approver: ${manager} — /admin/weekly-plans?plan=${record.planId}`,
+            );
+          }
+          if (gapRecords.length > 25) {
+            lines.push(`…and ${gapRecords.length - 25} more.`);
+          }
+        }
+      } catch (listError) {
+        console.error("[weekly-plans] D4 gap listing failed", listError);
+      }
+    }
+
     lines.push("");
     lines.push("Investigate before the next deploy. See scripts/weekly-plans-drift.sql for the full queries.");
     lines.push("Dashboard: /admin/weekly-plans");

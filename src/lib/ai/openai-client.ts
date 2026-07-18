@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 
+import { recordAiCall } from "@/lib/observability/ai-metrics";
+
 type OpenAiEnv = Record<string, string | undefined>;
 type ResponseCreateInput = Parameters<OpenAI["responses"]["create"]>[0];
 
@@ -158,6 +160,7 @@ export async function createOpenAiResponseText(params: {
   text: NonNullable<ResponseCreateInput["text"]>;
 }) {
   const model = params.model?.trim() || resolveOpenAiEmailModel();
+  const startedAt = Date.now();
 
   try {
     const request = {
@@ -171,12 +174,31 @@ export async function createOpenAiResponseText(params: {
     } satisfies ResponseCreateInput;
     const { data, request_id: requestId } = await openAiClient().responses.create(request).withResponse();
 
+    recordAiCall({
+      component: "openai_client",
+      inputTokens: data.usage?.input_tokens,
+      latencyMs: Date.now() - startedAt,
+      model,
+      outputTokens: data.usage?.output_tokens,
+      purpose: params.purpose,
+      status: "success",
+    });
+
     return {
       model,
       outputText: data.output_text ?? "",
       requestId: requestId || (data as { _request_id?: string })._request_id,
     };
   } catch (error) {
-    throw normalizeOpenAiError(error, params.purpose);
+    const normalized = normalizeOpenAiError(error, params.purpose);
+    recordAiCall({
+      component: "openai_client",
+      errorCode: normalized.code,
+      latencyMs: Date.now() - startedAt,
+      model,
+      purpose: params.purpose,
+      status: "error",
+    });
+    throw normalized;
   }
 }

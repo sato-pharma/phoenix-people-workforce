@@ -10,6 +10,7 @@ import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadWeeklyFact,
@@ -44,6 +45,7 @@ async function WeeklyDetailContent({
     regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
     products:     Array.isArray(filters.products)      ? filters.products      : [],
     families:     Array.isArray(filters.families)      ? filters.families      : [],
+    canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
   let rows: WeeklyFactRow[];

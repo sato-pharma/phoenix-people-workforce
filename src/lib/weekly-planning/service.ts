@@ -287,6 +287,11 @@ export type EmployeePlan = {
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName). Only
+  // populated by callers with employee-directory access (see
+  // getEmployeePlansWorkspace); other mapPlan() callers leave this undefined and
+  // consumers should fall back to employeeName.
+  employeeDisplayName?: string;
   finalApprovedAt: string | null;
   id: string;
   items: Array<{
@@ -309,6 +314,11 @@ export type EmployeePlan = {
   }>;
   managerHrId: string | null;
   managerName: string | null;
+  // Nickname-aware display name (nickname when set, else managerName). Only
+  // populated by callers with employee-directory access (see
+  // getEmployeePlansWorkspace); other mapPlan() callers leave this undefined and
+  // consumers should fall back to managerName.
+  managerDisplayName?: string | null;
   periodEndDate: string;
   periodKey: string;
   periodStartDate: string;
@@ -675,7 +685,7 @@ async function medicalRepOptionsForEmployee(
     )
     .map((candidate) => ({
       areaName: candidate.areaName,
-      fullName: candidate.fullName,
+      fullName: candidate.displayName,
       hrId: candidate.hrId,
       lineName: candidate.lineName,
       regionName: candidate.regionName,
@@ -1520,7 +1530,7 @@ async function mapPlanComments(rows: PlanCommentRow[]): Promise<EmployeePlanComm
   const byHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
   return rows.map((row) => ({
     authorHrId: row.author_hr_id,
-    authorName: byHrId.get(normalizeHrId(row.author_hr_id))?.fullName ?? null,
+    authorName: byHrId.get(normalizeHrId(row.author_hr_id))?.displayName ?? null,
     authorRole: row.author_role,
     body: row.body,
     createdAt: row.created_at,
@@ -1645,6 +1655,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   await assertPermission(access, "employee_profile", "read");
   await assertPermission(access, "weekly_plans", "read");
   const directory = await getEmployeeDirectory();
+  const directoryByHrId = new Map(directory.employees.map((item) => [normalizeHrId(item.hrId), item]));
   const viewerHrId = normalizeHrId(access.hrId);
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
@@ -1667,13 +1678,17 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const hasMorePlans = loadedRows.length > WORKSPACE_PLAN_LIMIT;
     const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
     const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan));
-    const plans = visible.map(mapPlan);
+    const plans = visible.map(mapPlan).map((plan) => ({
+      ...plan,
+      employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,
+      managerDisplayName: directoryByHrId.get(normalizeHrId(plan.managerHrId))?.displayName || plan.managerName,
+    }));
     return {
       canAcknowledgeHr,
       canSubmitPlans,
       currentEmployee: employee
         ? {
-            fullName: employee.fullName,
+            fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
@@ -1700,7 +1715,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canSubmitPlans,
       currentEmployee: employee
         ? {
-            fullName: employee.fullName,
+            fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
@@ -1776,10 +1791,18 @@ export type ApproverPendingPlan = {
   employeeHrId: string;
   employeeJobTitle: string | null;
   employeeName: string;
+  // Nickname-aware display name (nickname when set, else employeeName), resolved
+  // live against the current employee directory. employeeName stays the persisted
+  // submission-time snapshot.
+  employeeDisplayName: string;
   id: string;
   itemCount: number;
   items: ApproverPlanItem[];
   managerName: string | null;
+  // Nickname-aware display name for the manager (nickname when set, else
+  // managerName), resolved live against the current employee directory.
+  // managerName stays the persisted submission-time snapshot.
+  managerDisplayName: string | null;
   periodEndDate: string;
   periodKey: string;
   periodStartDate: string;
@@ -1901,6 +1924,9 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
       > & { employee_plan_items?: PlanItemRow[] }
     >;
 
+    const directory = await getEmployeeDirectory();
+    const directoryByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+
     const items: ApproverPendingPlan[] = [];
     for (const row of rows) {
       const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access);
@@ -1913,10 +1939,12 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
         employeeHrId: row.employee_hr_id,
         employeeJobTitle: row.employee_job_title,
         employeeName: row.employee_name,
+        employeeDisplayName: directoryByHrId.get(normalizeHrId(row.employee_hr_id))?.displayName || row.employee_name,
         id: row.id,
         itemCount: planItems.length,
         items: planItems,
         managerName: row.manager_name,
+        managerDisplayName: directoryByHrId.get(normalizeHrId(row.manager_hr_id))?.displayName || row.manager_name,
         periodEndDate: row.period_end_date,
         periodKey: row.period_key,
         periodStartDate: row.period_start_date,
@@ -2729,6 +2757,84 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   if (input.action.includes("return") || input.action.includes("reject")) {
     await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null);
   }
+  return mapPlan(updated);
+}
+
+// Plans stuck on the manager stage — awaiting the assigned manager's decision. These mirror
+// the D4 drift detector (scripts/weekly-plans-drift.sql) exactly. A `manager_returned` /
+// `ceo_returned` plan is editable and, on resubmit (updateEmployeePlan), keeps its existing
+// manager_hr_id verbatim — it is never re-resolved — so if that manager has since resigned the
+// plan stays pinned to a dead approver just like a `submitted` one. All three therefore need
+// reassignment.
+const REASSIGNABLE_PLAN_STATUSES: EmployeePlanStatus[] = ["submitted", "manager_returned", "ceo_returned"];
+
+// HR/Super-Admin re-routes a stuck plan to a new active manager when the assigned manager has
+// resigned before deciding. This is REASSIGNMENT, not deciding-in-place: it only changes WHO
+// owns the pending manager step (manager_hr_id/manager_name) and never touches `status` or runs
+// a decision RPC. The newly-assigned manager must still pass the exact same assertManagerReviewer
+// identity gate as any manager when they later decide — nothing here lets HR/Super-Admin approve,
+// return, or reject in another manager's place (owner-locked approver model).
+export async function reassignWeeklyPlanManager(
+  access: AccessContext,
+  input: { planId: string; newManagerHrId: string },
+) {
+  // Two-part gate, mirroring vacation's assertVacationAdminManagement: the standing weekly_plans
+  // approve grant AND Super-Admin (isHrReviewer). Neither alone is sufficient.
+  await assertPermission(access, "weekly_plans", "approve");
+  if (!isHrReviewer(access, null)) {
+    throw new Error("Forbidden: only HR or Super Admin can reassign a stuck plan approver.");
+  }
+
+  const newManagerHrId = cleanText(input.newManagerHrId);
+  if (!newManagerHrId) {
+    throw new Error("A new manager HR_ID is required.");
+  }
+
+  const plan = await loadPlanRow(input.planId);
+  if (!REASSIGNABLE_PLAN_STATUSES.includes(plan.status)) {
+    throw new Error(
+      "Only plans awaiting a manager decision (submitted, manager_returned, ceo_returned) can be reassigned.",
+    );
+  }
+
+  const directory = await getEmployeeDirectory();
+  const newManager = directory.employees.find((emp) => hrIdsMatch(emp.hrId, newManagerHrId));
+  if (!newManager) {
+    throw new Error("The selected manager was not found in the employee directory.");
+  }
+  if (!isActiveEmployee(newManager)) {
+    throw new Error("The selected manager is not active. Choose an active manager to receive this plan.");
+  }
+
+  const previousManagerHrId = plan.manager_hr_id;
+  const previousManagerName = plan.manager_name;
+
+  // Direct column update only — NOT rpcDecidePlan / any status transition.
+  const { error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .update({
+      manager_hr_id: newManager.hrId,
+      manager_name: newManager.fullName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", plan.id);
+  if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: plan.id,
+    entityType: "weekly_plan",
+    newValues: { managerHrId: newManager.hrId, managerName: newManager.fullName },
+    oldValues: { managerHrId: previousManagerHrId, managerName: previousManagerName },
+    summary: `${plan.plan_kind} plan approver reassigned from ${previousManagerHrId ?? "unassigned"} to ${newManager.hrId}`,
+  });
+
+  const updated = await loadPlanRow(plan.id);
+  // Retarget the standard manager-stage alert to the newly-assigned manager (best-effort;
+  // notifyManager reads the freshly-updated manager_hr_id off `updated`).
+  await notifyManager(updated).catch((err) =>
+    console.error(`[weekly-plans] reassign notify failed for plan ${plan.id}`, err),
+  );
   return mapPlan(updated);
 }
 

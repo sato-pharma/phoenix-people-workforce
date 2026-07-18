@@ -251,6 +251,8 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     const activityTitle = activityDisplayLabel(row.activity_type, row.activity_title);
     const medicalRepHrId = cleanText(row.double_visit_medical_rep_hr_id) || null;
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
+    const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
+    const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const item: PlanningCalendarPlanItem = {
       activityTitle,
@@ -267,6 +269,7 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       lineName,
       medicalRepHrId,
       medicalRepName,
+      medicalRepDisplayName,
       notes: cleanText(row.notes) || null,
       planId: header.id,
       planKind: header.plan_kind,
@@ -384,6 +387,7 @@ export async function getSameLinePlanBookings(
       date: item.startDate,
       employeeHrId: item.employeeHrId,
       employeeName: item.employeeName,
+      employeeDisplayName: item.employeeDisplayName,
       lineName: item.lineName,
       medicalRepHrId: medicalRepIdentity,
       medicalRepName: item.medicalRepName ?? medicalRepIdentity,
