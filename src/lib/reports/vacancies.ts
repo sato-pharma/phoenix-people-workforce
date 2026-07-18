@@ -400,9 +400,9 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
     managerHrId: row.manager_hr_id ?? null,
     managerReplacementForHrId: row.manager_replacement_for_hr_id ?? null,
-    managerName:
-      row.manager_name ??
-      (row.manager_hr_id ? managerNames.get(row.manager_hr_id) ?? null : null),
+    managerName: row.manager_hr_id
+      ? managerNames.get(row.manager_hr_id) ?? row.manager_name ?? null
+      : row.manager_name ?? null,
     note: row.note,
     positionId: row.position_id,
     positionTitle: row.position_id

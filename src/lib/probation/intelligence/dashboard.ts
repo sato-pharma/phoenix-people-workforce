@@ -104,6 +104,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
 
   // Bulk-load the children + manager names.
   const managerHrIds = Array.from(new Set(cases.map((c) => c.manager_hr_id).filter((x): x is string => Boolean(x))));
+  const nameLookupHrIds = Array.from(new Set([...cases.map((c) => c.employee_hr_id), ...managerHrIds]));
   // Widen the CRM lookup with casing variants so a real casing difference between probation_cases and
   // ireports360_visits doesn't produce a false "unmapped" badge (canonical compare happens after).
   const caseHrIds = Array.from(
@@ -119,8 +120,8 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     supabase.from("probation_dv_days").select("case_id, evaluator_role, dv_date, dv_status").in("case_id", caseIds),
     supabase.from("probation_feedback").select("case_id, dv_day_id, evaluator_role, scores, recommendation").in("case_id", caseIds),
     supabase.from("probation_assessments").select("case_id, kind, score, status").in("case_id", caseIds),
-    managerHrIds.length > 0
-      ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", managerHrIds)
+    nameLookupHrIds.length > 0
+      ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", nameLookupHrIds)
       : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null; nickname: string | null }> }),
     supabase.from("probation_development_actions").select("case_id, status").in("case_id", caseIds),
     // CRM identity-mapping check (E6): which probation reps actually appear as a CRM agent, via the
@@ -196,7 +197,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     return {
       caseId: c.id,
       employeeHrId: c.employee_hr_id,
-      employeeName: c.employee_name,
+      employeeName: mgrName.get(c.employee_hr_id.toLowerCase()) ?? c.employee_name,
       jobTitle: c.job_title,
       lineName: c.line_name,
       managerName: c.manager_hr_id ? mgrName.get(c.manager_hr_id.toLowerCase()) ?? null : null,

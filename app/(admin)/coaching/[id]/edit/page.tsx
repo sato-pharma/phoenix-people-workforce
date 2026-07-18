@@ -91,7 +91,7 @@ export default async function EditCoachingReportPage({ params }: PageProps) {
     .filter((employee) => (employee.employmentStatus ?? "active") === "active")
     .map((employee) => ({
       areaName: employee.areaName,
-      fullName: employee.fullName,
+      fullName: employee.displayName,
       hrId: employee.hrId,
       jobTitle: employee.jobTitle,
       lineName: employee.lineName,
@@ -106,7 +106,7 @@ export default async function EditCoachingReportPage({ params }: PageProps) {
     if (rep) {
       activeEmployees.push({
         areaName: rep.areaName,
-        fullName: rep.fullName,
+        fullName: rep.displayName,
         hrId: rep.hrId,
         jobTitle: rep.jobTitle,
         lineName: rep.lineName,

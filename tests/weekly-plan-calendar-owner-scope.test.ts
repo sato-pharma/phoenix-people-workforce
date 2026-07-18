@@ -29,6 +29,7 @@ function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: str
     lineName: "Pedia",
     medicalRepHrId: null,
     medicalRepName: null,
+    medicalRepDisplayName: null,
     notes: null,
     planId: "header-1",
     planKind: "weekly",
