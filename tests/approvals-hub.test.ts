@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { normalizeHrId } from "../src/lib/auth/permissions.ts";
 import {
+  computeApprovalScopePeople,
   excuseApprovalHref,
   vacationApprovalHref,
   vacationApprovalsBasePath,
@@ -33,6 +35,40 @@ export function runApprovalsHubTests() {
   assert.equal(vacationApprovalHref(districtManager, "abc"), "/employee-portals/approvals/vacation/abc");
   assert.equal(excuseApprovalHref(medicalRep, "req 12/x"), "/employee-portals/approvals/excuse/req%2012%2Fx");
   assert.equal(excuseApprovalHref(superAdmin, "e-1"), "/admin/approvals/excuse/e-1");
+
+  // ── "Who I Approve" (computeApprovalScopePeople): direct reports only, seat-aware ──
+  // Org: CEO-1 → DSM-1 → MR-DEEP (MR-DEEP is two levels below the CEO). Separately,
+  // DSM-2 resigned: its report MR-HELD was reassigned UP to RM-1 and stamped with the
+  // vacant-seat marker pointing at DSM-2; DSM-2's own row is gone.
+  const approvalScopeFixture = [
+    { hrId: "CEO-1", managerHrId: null, pendingManagerReplacementForHrId: null, displayName: "Chief Exec", fullName: "Chief Exec", jobTitle: "CEO" },
+    { hrId: "DSM-1", managerHrId: "CEO-1", pendingManagerReplacementForHrId: null, displayName: "District One", fullName: "District One", jobTitle: "District Manager" },
+    { hrId: "MR-DEEP", managerHrId: "DSM-1", pendingManagerReplacementForHrId: null, displayName: "Rep Deep", fullName: "Rep Deep", jobTitle: "Medical Rep" },
+    { hrId: "RM-1", managerHrId: null, pendingManagerReplacementForHrId: null, displayName: "Regional One", fullName: "Regional One", jobTitle: "Regional Manager" },
+    { hrId: "MR-HELD", managerHrId: "RM-1", pendingManagerReplacementForHrId: "DSM-2", displayName: "Rep Held", fullName: "Rep Held", jobTitle: "Medical Rep" },
+  ] as unknown as Parameters<typeof computeApprovalScopePeople>[0];
+
+  // (a) The vacant DSM-2 seat still "approves" the report it held before resigning,
+  // via the continuity marker — even though DSM-2's row no longer exists.
+  const vacantSeatScope = computeApprovalScopePeople(approvalScopeFixture, normalizeHrId("DSM-2") as string);
+  assert.deepEqual(
+    vacantSeatScope.map((person) => person.hrId).sort(),
+    ["MR-HELD"],
+    "the vacant DSM seat still approves the report it held before the manager resigned",
+  );
+
+  // (b) The CEO approves only their DIRECT report (DSM-1), never the rep two levels
+  // down (MR-DEEP). Locks "Who I Approve" to TEAM-only — no manager-of-manager chain.
+  const ceoScope = computeApprovalScopePeople(approvalScopeFixture, normalizeHrId("CEO-1") as string);
+  assert.deepEqual(
+    ceoScope.map((person) => person.hrId).sort(),
+    ["DSM-1"],
+    "the CEO approves only their direct report, not the rep two levels down (TEAM-only)",
+  );
+  assert.ok(
+    !ceoScope.some((person) => person.hrId === "MR-DEEP"),
+    "a report two levels below the viewer is never in the direct-approval set",
+  );
 
   // ── Service module exposes the responder buckets + view builders ─────────────
   const svc = readFileSync("src/lib/approvals-hub/service.ts", "utf8");

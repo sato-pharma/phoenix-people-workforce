@@ -18,6 +18,7 @@ import {
 } from "@/lib/excuses/service";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
@@ -827,8 +828,8 @@ export type ApprovalScopeData = {
  * from the org directory (employee.managerHrId), never a hard-coded list.
  */
 async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
-  const viewerHrId = access.hrId?.trim() ?? "";
-  if (!viewerHrId) return { groups: [], totalPeople: 0 };
+  const viewerCanonicalHrId = normalizeHrId(access.hrId);
+  if (!viewerCanonicalHrId) return { groups: [], totalPeople: 0 };
 
   const directory = await getEmployeeDirectory().catch((error) => {
     console.error("[approvals-hub] buildApprovalScope directory load failed", { role: access.role, error });
@@ -837,13 +838,7 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
   const employees = directory?.employees ?? [];
   if (employees.length === 0) return { groups: [], totalPeople: 0 };
 
-  const people: ApprovalScopePerson[] = [];
-  for (const employee of employees) {
-    if (hrIdsMatch(employee.hrId, viewerHrId)) continue; // never list the viewer themselves
-    if (hrIdsMatch(employee.managerHrId, viewerHrId)) {
-      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
-    }
-  }
+  const people = computeApprovalScopePeople(employees, viewerCanonicalHrId);
 
   // Group by job title (the human answer to "which roles do I approve"), most-populated first.
   const groupsByTitle = new Map<string, ApprovalScopePerson[]>();
@@ -861,6 +856,28 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
     .sort((a, b) => b.people.length - a.people.length || a.title.localeCompare(b.title));
 
   return { groups, totalPeople: people.length };
+}
+
+/**
+ * Pure, unit-testable core of "Who I Approve": the viewer's DIRECT reports only.
+ * Extracted from buildApprovalScope so it can be tested without the getEmployeeDirectory()
+ * I/O that function performs. Seat-continuity aware — a report orphaned up to a grandparent
+ * after a sub-manager resignation is still owned by the vacant seat — but strictly ONE level
+ * (never the manager-of-manager chain), per the owner rule documented above.
+ */
+export function computeApprovalScopePeople(
+  employees: EmployeeDirectoryRow[],
+  viewerCanonicalHrId: string,
+): ApprovalScopePerson[] {
+  const people: ApprovalScopePerson[] = [];
+  for (const employee of employees) {
+    if (hrIdsMatch(employee.hrId, viewerCanonicalHrId)) continue; // never list the viewer themselves
+    // TEAM-only (direct reports) per the owner rule above — do NOT widen to isWithinManagerHierarchy.
+    if (reportsToManagerSeat({ employee, viewerCanonicalHrId, canonicalize: normalizeHrId })) {
+      people.push({ hrId: employee.hrId, name: employee.displayName || employee.fullName, jobTitle: employee.jobTitle });
+    }
+  }
+  return people;
 }
 
 export function getVacationApprovalScope(access: AccessContext): Promise<ApprovalScopeData> {
