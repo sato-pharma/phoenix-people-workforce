@@ -436,4 +436,50 @@ export function runApprovalsHubTests() {
   assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean\) => void;/, "the badge poll store threads overdue through to listeners");
 
   assert.match(sidebarSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
+
+  // ── Stuck approvals — needs reassignment (HR / Super Admin only, Part C) ──────
+  assert.match(
+    svc,
+    /export async function getStuckApprovalsForReassignment\(/,
+    "service must export getStuckApprovalsForReassignment",
+  );
+  assert.match(
+    svc,
+    /export async function getStuckApprovalsForReassignment[\s\S]*?if \(!isAllVacationVisibility\(access\)\) \{\s*throw new Error\("Forbidden: only HR or Super Admin can view stuck approvals for reassignment\."\);/,
+    "stuck-approvals data is gated to HR / Super Admin (isAllVacationVisibility), defense-in-depth alongside the page gate",
+  );
+  assert.match(
+    svc,
+    /getStuckApprovalsForReassignment[\s\S]*?listWeeklyPlanManagerGapRecords\(\)/,
+    "stuck approvals aggregate the weekly-plan gap listing",
+  );
+  assert.match(
+    svc,
+    /getStuckApprovalsForReassignment[\s\S]*?listExcuseManagerGapRecords\(\)/,
+    "stuck approvals aggregate the excuse gap listing",
+  );
+
+  // Page gates to HR / Super Admin on the server BEFORE fetching (sidebar visibility is UX only).
+  const stuckPage = readFileSync("app/(admin)/admin/approvals/stuck/page.tsx", "utf8");
+  assert.match(
+    stuckPage,
+    /if \(!isAllVacationVisibility\(access\)\) redirect\(/,
+    "the stuck-approvals page redirects non-HR/Super-Admin viewers before any data fetch",
+  );
+  assert.match(stuckPage, /getStuckApprovalsForReassignment\(access\)/, "the page loads the gated stuck-approvals data");
+  assert.match(stuckPage, /<StuckApprovalsPanel/, "the page renders the StuckApprovalsPanel");
+
+  // The panel's Reassign action calls the two new reassignment routes (reassignment, not deciding).
+  const stuckPanel = readFileSync("src/components/approvals-hub/stuck-approvals-panel.tsx", "utf8");
+  assert.match(
+    stuckPanel,
+    /\/api\/weekly-plans\/\$\{encodeURIComponent\(plan\.planId\)\}\/reassign/,
+    "the panel reassigns plans via the new weekly-plan reassign route",
+  );
+  assert.match(
+    stuckPanel,
+    /\/api\/excuses\/\$\{encodeURIComponent\(excuse\.requestId\)\}\/reassign/,
+    "the panel reassigns excuses via the new excuse reassign route",
+  );
+  assert.match(stuckPanel, /newManagerHrId/, "the panel sends the picked new active manager to the reassign route");
 }
