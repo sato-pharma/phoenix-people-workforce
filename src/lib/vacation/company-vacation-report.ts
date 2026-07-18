@@ -52,7 +52,12 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 const AV_HALF_DAY_MAX_WORKED_MINUTES = 5 * 60;
 const EXCUSE_COMMENT_PATTERN = /excuse/i;
 /** CRM visit_type for "Annual Vacation" — see VISIT_TYPE_TO_STATUS in ireports360-source.ts.
- * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave. */
+ * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave.
+ * NOTE: this is intentionally NARROWER than the CRM master "Vacations" tab (crm/master.ts
+ * computeVacationPeriods), which matches any 'vacation'-worded description and honors the CRM's
+ * ampm half-days (0.5). This report counts an AV day as a full day at face value (half-days come
+ * only from a device fingerprint, never ampm). The two report different counts BY DESIGN — see
+ * that function's docstring. Do not "align" them by changing this owner-confirmed rule. */
 const ANNUAL_VACATION_VISIT_TYPE = -4;
 /** Historical (closed-month) data is "pinned" for 6 hours — long enough to avoid re-scanning
  * on every page view, short enough that a same-day HR correction or late CRM sync still shows

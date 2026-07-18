@@ -1,6 +1,7 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runOfferEmailPremiumTests } from "./offer-email-premium.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
+import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
@@ -595,6 +596,7 @@ await runTest("au targets validation (map-or-reject + confidential guard)", runA
 await runTest("targets template round-trip (smart banner/dropdowns + legacy header)", runTargetsTemplateRoundtripTests);
 await runTest("employee 360 expense-analysis role allowlist", runEmployee360ExpenseRoleTests);
 await runTest("employee 360 visit classification (CRM Unknown-type labeling)", runEmployee360VisitClassificationTests);
+await runTest("employee 360 double-visit count (canonical double_crm_id + type {0,-8}, no over-count)", runEmployee360DoubleVisitCountTests);
 await runTest("employee 360 sales confidential-product masking", runEmployee360SalesMaskingTests);
 await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);

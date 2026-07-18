@@ -13,7 +13,7 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { queryVisitsLimited } from "@/lib/crm/reads";
+import { isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
@@ -400,7 +400,11 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
   const events: DoubleVisitEvent[] = [];
   const byVisitor = new Map<string, { name: string | null; count: number; isTm: boolean }>();
   for (const v of visits) {
-    if (!v.double_hr_id || !v.visit_date) continue;
+    // Only real double visits: a genuine partner (double_crm_id) on a fieldwork
+    // type {0,-8}. A partner riding along on a Meeting/Vacation/Training row is
+    // NOT a double visit (matches the canonical crm/reads predicate). We still
+    // require a resolved double_hr_id here because this history names the partner.
+    if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
     const isTm = tmIds.has(key);
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
@@ -1187,7 +1191,7 @@ export async function getEmployee360Profile(
   const coachingDates = coaching.reports.map((r) => r.date);
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
   const tmDvDates = visits
-    .filter((v) => v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
+    .filter((v) => isCrmDoubleVisitRow(v) && v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
     .map((v) => v.visit_date as string);
 
   const impact: InterventionImpact = {
