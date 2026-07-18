@@ -185,6 +185,19 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   });
   assert.deepEqual(mirrorMatrix, directMatrix, "mirror-row mapping must produce an identical matrix to the direct IReports360Visit shape");
 
+  // Fix #6: the mirror mapping must carry `comment` through so the excuse-labeled-AV detector
+  // (dayHasExcuseLabeledAv) can fire on the live path — it was hardcoded null before, silently
+  // disabling excuse detection for the whole production preview path.
+  const excuseRow: VisitsMirrorRow = {
+    agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null,
+    visit_date: "2026-05-12", visit_type: -4, comment: "Afternoon Excuse",
+  };
+  assert.equal(
+    visitFromMirrorRow(excuseRow).comment,
+    "Afternoon Excuse",
+    "mirror mapping must carry the CRM comment so excuse-labeled AV is detectable, not hardcoded null",
+  );
+
   const mirrorRepRow = mirrorMatrix.find((row) => row[1] === "A-1")!;
   const mirrorMgrRow = mirrorMatrix.find((row) => row[1] === "A-6")!;
   // Column layout: [TM, HR ID, Hiring Date, Month, Year, day1..dayN]; 05-04=idx8, 05-11=idx15, 05-18=idx22.
