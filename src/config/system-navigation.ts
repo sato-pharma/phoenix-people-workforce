@@ -227,6 +227,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -443,6 +444,10 @@ const adminNavigationSectionSeeds = [
       // which only Super Admin/SFE Manager hold) — so CEO must NOT be excluded
       // at the button level, or they'd never reach the one card they can open.
       { href: "/sales/source-of-sales-tools", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/admin/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }] },
+      { href: "/admin/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }] },
+      { href: "/admin/direct-orders/caps", icon: Settings2, label: "Bonus & Discount Caps", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+      { href: "/admin/direct-orders/pharmacy-variances", icon: MapPinned, label: "Pharmacy Variances", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Source of Sales",
   },
@@ -569,6 +574,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
+      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -585,6 +591,8 @@ const employeePortalNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/employee-portals/source-of-sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
+      { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Sales Operations",
