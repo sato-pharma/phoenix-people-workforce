@@ -177,6 +177,7 @@ function buildEmployeePortalSections({
   showRoiIntelligenceTab = false,
   showSourceOfSalesTab = false,
   showWeeklyTab = false,
+  showSalesAnalyticsTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
   showCoachingAnalyticsTab = false,
@@ -237,6 +238,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
+        ...(showSalesAnalyticsTab ? [{ href: "/admin/analytics", label: "Sales Analytics", icon: Activity }] : []),
       ],
     },
     {

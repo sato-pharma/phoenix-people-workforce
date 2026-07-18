@@ -479,7 +479,7 @@ const adminNavigationSectionSeeds = [
       // Collapsed to a single standalone sidebar button. Unlike every other
       // consolidated section, this one needs NO new hub page — "Analytics Hub"
       // already pointed at /admin/analytics, a bespoke landing page with its own
-      // module-card grid (app/(admin)/admin/analytics/page.tsx). That page's
+      // module-card grid (app/(analytics)/admin/analytics/page.tsx). That page's
       // MODULES list has been extended with the 4 field-dashboard cards and now
       // filters cards per-role, so it doubles as this section's hub directly.
       { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
@@ -846,7 +846,7 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
-// ── Sales Analytics cards (app/(admin)/admin/analytics/page.tsx) ────────────────
+// ── Sales Analytics cards (app/(analytics)/admin/analytics/page.tsx) ────────────────
 // The tools formerly listed individually under the sidebar's "Sales Analytics"
 // section (see adminNavigationSectionSeeds above, now collapsed to one link
 // pointing directly at the pre-existing /admin/analytics landing page — see the

@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
@@ -8,27 +7,28 @@ import { AnalyticsDemoBanner } from "@/components/analytics/analytics-demo-banne
 import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
+import { AnalyticsDualShell } from "@/components/analytics/analytics-dual-shell";
 import {
   loadAnalyticsDimensions,
-  loadSosByLine,
+  loadSosByArea,
   type AnalyticsDimensions,
-  type SosByLineRow,
+  type SosByAreaRow,
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
-import { demoAnalyticsDimensions, demoSosByLine } from "@/lib/analytics/demo-fixtures";
+import { demoAnalyticsDimensions, demoSosByArea } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
+import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-async function ByLineContent({
+async function ByAreaContent({
   searchParams,
   role,
   scope,
@@ -56,32 +56,30 @@ async function ByLineContent({
   };
   const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
-  let byLine: SosByLineRow[];
+  let byArea: SosByAreaRow[];
   let dimensions: AnalyticsDimensions;
 
   if (demo) {
-    byLine = demoSosByLine();
+    byArea = demoSosByArea();
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
-    byLine = [];
+    byArea = [];
     dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
-    [byLine, dimensions] = await Promise.all([
-      loadSosByLine(scoped.filters).catch(() => []),
+    [byArea, dimensions] = await Promise.all([
+      loadSosByArea(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
 
-  const lineTotalsMap = new Map<string, { units: number; value: number }>();
-  for (const r of byLine) {
-    const cur = lineTotalsMap.get(r.line) ?? { units: 0, value: 0 };
-    lineTotalsMap.set(r.line, { units: cur.units + r.units, value: cur.value + r.value });
+  const regionMap = new Map<string, { units: number; value: number }>();
+  for (const r of byArea) {
+    const cur = regionMap.get(r.regionName) ?? { units: 0, value: 0 };
+    regionMap.set(r.regionName, { units: cur.units + r.units, value: cur.value + r.value });
   }
-  const lineTotals = [...lineTotalsMap.entries()]
-    .map(([line, t]) => ({ line, ...t }))
+  const regionTotals = [...regionMap.entries()]
+    .map(([regionName, t]) => ({ regionName, ...t }))
     .sort((a, b) => b.value - a.value);
-
-  const grandTotal = lineTotals.reduce((s, r) => s + r.value, 0);
 
   return (
     <div className="space-y-5">
@@ -92,44 +90,45 @@ async function ByLineContent({
         values={filters}
         dimensions={scopeAnalyticsDimensions(dimensions, scope)}
         visibility={computeAnalyticsFilterVisibility(scope)}
-        basePath="/admin/analytics/source-sales/by-line"
+        basePath="/admin/analytics/source-sales/by-area"
       />
 
-      <AnalyticsSection title="Line Totals (Aggregated)" count={lineTotals.length}>
-        {lineTotals.length === 0 ? (
+      <AnalyticsSection title="Region Summary" count={regionTotals.length}>
+        {regionTotals.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["line"]}
+            searchKeys={["regionName"]}
             columns={[
-              { key: "line",  label: "Line",  sortable: true },
-              { key: "units", label: "Units", align: "right", sortable: true, formatKind: "number" },
-              { key: "value", label: "Value (EGP)", align: "right", sortable: true, formatKind: "number" },
+              { key: "regionName", label: "Region", sortable: true },
+              { key: "units",      label: "Units",  align: "right", sortable: true, formatKind: "number" },
+              { key: "value",      label: "Value (EGP)", align: "right", sortable: true, formatKind: "number" },
             ]}
-            rows={lineTotals}
-            totals={{ value: grandTotal }}
-            exportTitle="SoS By Line"
-            exportSubtitle="Source of Sales aggregated by product line"
+            rows={regionTotals}
+            totals={{ value: regionTotals.reduce((s, r) => s + r.value, 0) }}
+            exportTitle="SoS By Region"
+            exportSubtitle="Source of Sales aggregated by region"
           />
         )}
       </AnalyticsSection>
 
-      <AnalyticsSection title="Period × Line Detail" count={byLine.length}>
-        {byLine.length === 0 ? (
+      <AnalyticsSection title="Region / Area Detail" count={byArea.length}>
+        {byArea.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["line", "period"]}
+            searchKeys={["regionName", "areaName"]}
             columns={[
-              { key: "period",      label: "Period",  sortable: true },
-              { key: "line",        label: "Line",    sortable: true },
-              { key: "channel",     label: "Channel", sortable: true },
-              { key: "units",       label: "Units",   align: "right", sortable: true, formatKind: "number" },
-              { key: "value",       label: "Value",   align: "right", sortable: true, formatKind: "number" },
+              { key: "period",     label: "Period",  sortable: true },
+              { key: "regionName", label: "Region",  sortable: true },
+              { key: "areaName",   label: "Area",    sortable: true },
+              { key: "channel",    label: "Channel" },
+              { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
+              { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
             ]}
-            rows={byLine}
-            exportTitle="SoS By Line — Detail"
-            exportSubtitle="Period-level SoS breakdown by line"
+            rows={byArea}
+            exportTitle="SoS By Region-Area Detail"
+            exportSubtitle="Period-level SoS by region and area"
           />
         )}
       </AnalyticsSection>
@@ -137,32 +136,33 @@ async function ByLineContent({
   );
 }
 
-export default async function SosByLinePage({ searchParams }: { searchParams: SearchParams }) {
+export default async function SosByAreaPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
   const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Line</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Source of Sales aggregated by product line. Filter periods, distributors, and regions.
-          </p>
+    <AnalyticsDualShell access={access}>
+      <div className="p-6 max-w-7xl mx-auto space-y-5">
+        <div className="flex items-center gap-3 border-b border-border pb-5">
+          <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">SoS</p>
+            <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Region / Area</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Geography-level SoS breakdown. Drill from region summary to period × area detail.
+            </p>
+          </div>
         </div>
+
+        <AnalyticsModuleNav tabs={SOS_TABS} />
+
+        <Suspense fallback={<AppRouteLoadingState />}>
+          <ByAreaContent searchParams={resolvedParams} role={access.role} scope={scope} />
+        </Suspense>
       </div>
-
-      <AnalyticsModuleNav tabs={SOS_TABS} />
-
-      <Suspense fallback={<AppRouteLoadingState />}>
-        <ByLineContent searchParams={resolvedParams} role={access.role} scope={scope} />
-      </Suspense>
-    </div>
+    </AnalyticsDualShell>
   );
 }

@@ -81,7 +81,7 @@ export function runSalesHeadOfficeLockTests() {
 
   // The by-area analytics page must resolve canViewHeadOffice from the role so CEO/Super Admin
   // still see Head Office while everyone else (the RPC default) fails closed.
-  const byAreaPage = readSource("../app/(admin)/admin/analytics/source-sales/by-area/page.tsx");
+  const byAreaPage = readSource("../app/(analytics)/admin/analytics/source-sales/by-area/page.tsx");
   assert.ok(
     byAreaPage.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
     "by-area page passes canViewHeadOffice resolved from the role",
@@ -91,9 +91,9 @@ export function runSalesHeadOfficeLockTests() {
   // ENTIRELY in TS: the analytics_weekly_fact RPC and analytics.weekly_fact view have no Head
   // Office exclusion, so loadWeeklyFact strips it and each page must thread the role's flag.
   for (const rel of [
-    "../app/(admin)/admin/analytics/weekly-sales/page.tsx",
-    "../app/(admin)/admin/analytics/weekly-sales/detail/page.tsx",
-    "../app/(admin)/admin/analytics/weekly-sales/by-distributor/page.tsx",
+    "../app/(analytics)/admin/analytics/weekly-sales/page.tsx",
+    "../app/(analytics)/admin/analytics/weekly-sales/detail/page.tsx",
+    "../app/(analytics)/admin/analytics/weekly-sales/by-distributor/page.tsx",
   ]) {
     assert.ok(
       readSource(rel).includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
