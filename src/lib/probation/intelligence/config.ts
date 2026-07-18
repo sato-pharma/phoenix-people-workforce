@@ -60,7 +60,12 @@ export const DEFAULT_SCORECARD_DIMENSIONS: string[] = [
 
 // Owner-locked defaults: DM 3 / TM 1 / PM|GPM 1 / NSM 1 = 6 DV-Days; 1..10 scale; SLA 24/48/72h.
 export const DEFAULT_PROBATION_CONFIG: ProbationConfig = {
-  requirements: { dm: 3, tm: 1, pm_gpm: 1, nsm: 1 },
+  // Training Manager feedback is OPTIONAL (owner directive 2026-07-18): tm requirement = 0, so a
+  // missing TM component never blocks decision-readiness and never appears as a required-but-missing
+  // item. The tm weight is kept — if a TM DOES submit feedback it still counts (the score normalizes
+  // over PRESENT components). TM DV-days are also excluded from SLA reminders/escalation (see
+  // feedback-sla-reminders.ts).
+  requirements: { dm: 3, tm: 0, pm_gpm: 1, nsm: 1 },
   roleWeights: { dm: 0.3, tm: 0.15, pm_gpm: 0.15, nsm: 0.15, sfe: 0.15, hr: 0.1 },
   scoringScale: { min: 1, max: 10 },
   sla: { dueHours: 24, escalateHours: 48, overdueHours: 72 },

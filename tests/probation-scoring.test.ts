@@ -30,11 +30,14 @@ export function runProbationScoringTests() {
     assert.equal(r.components.dm.weightedContribution, 2.4, "0.3 × 8");
     // P6-T03 provisional normalizes over present components (only DM present here) → 8.
     assert.equal(r.provisionalScore, 8);
-    assert.equal(r.decisionReady, false, "missing TM/PM|GPM/NSM/SFE/HR");
+    assert.equal(r.decisionReady, false, "missing PM|GPM / NSM / SFE / HR (TM is optional)");
     assert.equal(r.finalScore, null, "no final score until decision-ready");
-    assert.deepEqual(r.completeness.missingComponents.sort(), ["hr", "nsm", "pm_gpm", "sfe", "tm"]);
+    // TM feedback is OPTIONAL (requirement 0, owner rule 2026-07-18): it is complete by definition and
+    // never appears as a missing component or in missingByRole.
+    assert.equal(r.components.tm.complete, true, "TM optional → complete by definition with 0 feedback");
+    assert.deepEqual(r.completeness.missingComponents.sort(), ["hr", "nsm", "pm_gpm", "sfe"]);
     assert.equal(r.completeness.missingByRole.dm, undefined, "DM requirement met");
-    assert.equal(r.completeness.missingByRole.tm, 1, "TM still needs 1");
+    assert.equal(r.completeness.missingByRole.tm, undefined, "TM is optional (requirement 0) — never missing");
   }
 
   // Incomplete DM (only 2 of 3) → present but not complete.
