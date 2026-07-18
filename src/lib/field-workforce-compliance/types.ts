@@ -156,6 +156,15 @@ export type FieldWorkforceDayCell = {
    */
   isExcuseLabeledAv?: boolean;
   visitCount?: number;
+  /**
+   * Whether this day's REGULAR (customer) visits were all logged AM, all PM, or a mix, from
+   * the visits mirror's ampm column. Only set when status is "VISITS" and at least one that
+   * day's regular visits carries an ampm tag; "MIXED" (both AM and PM present) renders the
+   * same as untagged/null — the distinct AM/PM colors exist to flag a HALF-day visit pattern,
+   * not to distinguish a normal full day. Never set on the Excel-upload path (no per-visit
+   * ampm data). Informational only — never affects severity, status, or deduction candidates.
+   */
+  visitPeriod?: "AM" | "PM" | "MIXED" | null;
 };
 
 export type FieldWorkforceAttendanceCrossCheckResult =

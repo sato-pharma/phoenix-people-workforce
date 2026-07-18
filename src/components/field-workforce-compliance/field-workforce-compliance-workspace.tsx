@@ -55,6 +55,7 @@ import {
 } from "@/lib/field-workforce-compliance/scorecards";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
 
 
 type PreviewResponse = {
@@ -122,7 +123,7 @@ type ComparisonResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
+type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "head-office-attendance" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -144,10 +145,14 @@ const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
 // Main (non-archive) tab bar: same as workspaceTabs but with Recommendations inserted
 // before the Excel-specific tabs, so recommendations for a live-mirror month are reachable
 // without archiving first. Built from reviewWorkspaceTabs (not workspaceTabs directly) to
-// avoid double-counting "recommendations" in archiveWorkspaceTabs above.
+// avoid double-counting "recommendations" in archiveWorkspaceTabs above. Head Office
+// Attendance is appended only here (not into workspaceTabs/archiveWorkspaceTabs): it's a
+// live-now fingerprint view, independent of whichever Excel month is being archived/browsed,
+// so it doesn't belong in the archive tab bar.
 const mainWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   ...reviewWorkspaceTabs,
   { id: "recommendations", label: "Recommendations" },
+  { id: "head-office-attendance", label: "Head Office Attendance" },
   { id: "archives", label: "Excel Archives" },
   { id: "comparison", label: "Comparison" },
 ];
@@ -419,7 +424,16 @@ function HierarchyFilters<T extends HierarchyItem>({
   );
 }
 
+/** A "VISITS" day additionally shades by visitPeriod: AM-only and PM-only get their own
+ * distinct colors to flag a half-day visit pattern; a mixed/untagged day keeps the default
+ * emerald. Same palette as the employee-portal Team Calendar. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
+  const visitsClass =
+    cell.visitPeriod === "AM"
+      ? "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+      : cell.visitPeriod === "PM"
+        ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+        : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
   const base = {
     AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
     BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
@@ -427,7 +441,7 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
     F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
     N: "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100",
     UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
-    VISITS: "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    VISITS: visitsClass,
   }[cell.status];
   return cn(
     base,
@@ -531,8 +545,9 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
     </>
   );
-  // Numeric-visit days deep-link to the day drill-down in a NEW tab; other days are static.
-  if (cell.status === "VISITS") {
+  // Numeric-visit days AND campaign days deep-link to the day drill-down in a NEW tab (both
+  // are real recorded activity, just categorized differently); other days are static.
+  if (cell.status === "VISITS" || cell.status === "CP") {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${tooltip} (open visits)`}
@@ -558,8 +573,10 @@ function TimelineLegend() {
     <div className="flex flex-wrap gap-2">
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
       <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
-      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign">CP</LegendChip>
-      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits">5</LegendChip>
+      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign (click to open)">CP</LegendChip>
+      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day">5</LegendChip>
+      <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only">5</LegendChip>
+      <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only">5</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800 ring-2 ring-violet-300" label="Late log (AM-tagged entry logged after 11:30 — CRM log time, not a verified visit time)">•</LegendChip>
@@ -2761,6 +2778,8 @@ export function FieldWorkforceComplianceWorkspace() {
             report={comparisonReport}
             onRefresh={() => void loadComparison()}
           />
+        ) : activeTab === "head-office-attendance" ? (
+          <HeadOfficeAttendancePanel />
         ) : activeTab === "recommendations" ? (
           sourceMode === "live-mirror" && liveMirrorMonthKey ? (
             <RecommendationsPanel

@@ -50,8 +50,16 @@ function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number) {
   return status;
 }
 
-/** Same status palette as the admin Field Workforce Compliance timeline. */
+/** Same status palette as the admin Field Workforce Compliance timeline. A "VISITS" day
+ * additionally shades by visitPeriod: AM-only and PM-only get their own distinct colors to
+ * flag a half-day visit pattern; a mixed/untagged day keeps the default emerald. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
+  const visitsClass =
+    cell.visitPeriod === "AM"
+      ? "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+      : cell.visitPeriod === "PM"
+        ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+        : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
   const base = {
     AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
     BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
@@ -59,7 +67,7 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
     F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
     N: "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100",
     UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
-    VISITS: "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    VISITS: visitsClass,
   }[cell.status];
   return cn(
     base,
@@ -84,8 +92,10 @@ function TimelineLegend() {
     <div className="flex flex-wrap gap-2">
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
       <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
-      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign / meeting">CP</LegendChip>
-      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits (click to open)">5</LegendChip>
+      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign / meeting (click to open)">CP</LegendChip>
+      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day (click to open)">5</LegendChip>
+      <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only (click to open)">5</LegendChip>
+      <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only (click to open)">5</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
     </div>
@@ -105,8 +115,9 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
     </>
   );
-  // Numeric-visit days deep-link to the portal day drill-down; other days are static.
-  if (cell.status === "VISITS") {
+  // Numeric-visit days AND campaign days deep-link to the portal day drill-down (both are
+  // real recorded activity, just categorized differently); other days are static.
+  if (cell.status === "VISITS" || cell.status === "CP") {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation} (open visits)`}

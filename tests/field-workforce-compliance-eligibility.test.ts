@@ -99,6 +99,13 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "2", crmUsername: "Admin.Two", employmentStatus: "active", fullName: "Admin Two", displayName: "Admin Two", hireDate: "2024-01-01", hrId: "A-2", jobTitle: "Admin Assistant", positionTitle: null },
     // Departed employee — excluded even though eligible role.
     { crmId: "9", crmUsername: "Gone.Nine", employmentStatus: "resigned", fullName: "Gone Nine", displayName: "Gone Nine", hireDate: "2024-01-01", hrId: "A-9", jobTitle: "Medical Representative", positionTitle: null },
+    // Regression guard (2026-07-18 production leak): a bespoke status-string check here used
+    // to recognize only "terminated"/"resigned"/"inactive" and missed these two values, so 15
+    // historical_payroll_record employees (and system_placeholder rows) leaked into the live
+    // Workforce Compliance view. Now routed through the same canonical classifyEmployeeNode
+    // used everywhere else in the app.
+    { crmId: "10", crmUsername: "Historical.Ten", employmentStatus: "historical_payroll_record", fullName: "Historical Ten", displayName: "Historical Ten", hireDate: "2024-01-01", hrId: "A-10", jobTitle: "District Sales Manager", positionTitle: null },
+    { crmId: "11", crmUsername: "Sys.Eleven", employmentStatus: "system_placeholder", fullName: "System Eleven", displayName: "System Eleven", hireDate: "2024-01-01", hrId: "A-11", jobTitle: "National Sales Manager", positionTitle: null },
   ];
 
   const { matrix } = buildIReports360FieldWorkforceMatrix({
@@ -114,9 +121,14 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     ],
   });
 
-  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two & Gone Nine excluded.
+  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two, Gone Nine, Historical
+  // Ten (historical_payroll_record) & System Eleven (system_placeholder) all excluded.
   const hrIds = matrix.slice(1).map((row) => row[1]);
-  assert.deepEqual([...hrIds].sort(), ["A-1", "A-5", "A-6"], "only eligible, active employees appear");
+  assert.deepEqual(
+    [...hrIds].sort(),
+    ["A-1", "A-5", "A-6"],
+    "only eligible, active employees appear — historical_payroll_record and system_placeholder are excluded too, not just resigned/terminated/inactive",
+  );
 
   const repRow = matrix.find((row) => row[1] === "A-1")!;
   const mgrFiveRow = matrix.find((row) => row[1] === "A-5")!;
