@@ -196,10 +196,10 @@ export const BATCH_ID_FILTER: FilterDescriptor = {
 // ── Pre-built sets per dashboard ──────────────────────────────────────────────
 
 export const SOS_FILTERS: FilterDescriptor[] = [
+  // SoS RPCs are period-scoped and do not accept p_year; do not expose a no-op year control here.
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
-  YEAR_FILTER,
   DISTRIBUTOR_FILTER,
   LINE_FILTER,
   REGION_FILTER,
@@ -211,10 +211,10 @@ export const SOS_FILTERS: FilterDescriptor[] = [
 ];
 
 export const CLOSING_FILTERS: FilterDescriptor[] = [
+  // Closing RPCs are period/date-scoped and do not accept p_year; do not expose a no-op year control here.
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
-  YEAR_FILTER,
   LINE_FILTER,
   PRODUCT_FILTER,
   FAMILY_FILTER,

@@ -16,7 +16,6 @@ export type CrmIntegrityVisitInput = {
   crmSaveDate: string | null;
   crmVisitId: number;
   visitDate: string;
-  visitDateTime: string | null;
 };
 
 export type CrmIntegrityCheckinInput = {
@@ -113,12 +112,14 @@ function saveLag(checkDate: string, crmSaveDate: string | null): { saveLagFlag: 
 }
 
 /**
- * Same-agent, same-calendar-day candidates for a visit, mirroring the grouping already used by
- * src/lib/visits-report/service.ts's attachNearestCheckins -- but this module's own separate copy,
- * since it needs the full check-in object (lat/lon/contact_crm_id) rather than just address/time,
- * and needs contact-id-aware matching attachNearestCheckins doesn't do. Deliberately not shared
- * with or imported from visits-report/service.ts (see the plan's reasoning: keep this module's
- * blast radius off the already-shipped, already-verified Visits Report code path).
+ * Same-agent, same-calendar-day candidates for a visit. Unlike the shared display matcher
+ * (crm/checkin-match.ts, which keys by agent+contact+day and only ever returns a same-contact
+ * check-in), this integrity view groups by agent+day so it can ALSO surface the "nearest check-in
+ * at a DIFFERENT contact" — a data-quality signal the audit exists to flag. The exact-contact
+ * match it returns uses the same rule as the shared matcher (same contact, tie broken by
+ * crm_save_date proximity — never the visit_date_time midnight placeholder), so its primary answer
+ * agrees with the Visits Report and CRM master surfaces; the different-contact fallback is an
+ * explicit audit state, not a silent disagreement.
  */
 function findBestCheckin(
   visit: CrmIntegrityVisitInput,
@@ -127,7 +128,7 @@ function findBestCheckin(
   const candidates = candidatesByAgentDay.get(`${visit.agentCrmId}:${visit.visitDate}`);
   if (!candidates || candidates.length === 0) return null;
 
-  const anchor = visit.visitDateTime ? new Date(visit.visitDateTime).getTime() : null;
+  const anchor = visit.crmSaveDate ? new Date(visit.crmSaveDate).getTime() : null;
   const nearestOf = (pool: CrmIntegrityCheckinInput[]): CrmIntegrityCheckinInput => {
     if (anchor == null) return pool[0];
     let best = pool[0];
