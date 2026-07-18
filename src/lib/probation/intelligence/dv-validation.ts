@@ -78,8 +78,13 @@ export function resolveEvaluatorRole(
   return { role: null, reason: "evaluator_role_not_eligible" };
 }
 
-function withinWindow(dvDate: string, start: string | null, end: string | null): boolean {
-  // Inclusive [start, end]; a missing bound is treated as open on that side.
+/**
+ * Inclusive [start, end] probation-window test; a missing bound is open on that side.
+ * Exported so the legacy `employee_probation` DV-checkbox auto-tick (feedback-service.ts)
+ * gates on the EXACT same window semantics as this authoritative DV-Day validation —
+ * otherwise the checkbox and probation_dv_days can disagree for an out-of-window DV.
+ */
+export function withinWindow(dvDate: string, start: string | null, end: string | null): boolean {
   if (start && dvDate < start) return false;
   if (end && dvDate > end) return false;
   return true;

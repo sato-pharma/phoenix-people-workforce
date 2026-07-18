@@ -28,6 +28,7 @@ function visit(date: string, type: number): VisitRow {
     contact_crm_id: null,
     contact_name: "Dr X",
     customer_name: null,
+    double_crm_id: null,
     double_hr_id: null,
     double_name: null,
     comment: null,
