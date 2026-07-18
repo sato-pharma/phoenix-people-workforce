@@ -1,7 +1,7 @@
 # Dashboard Filter Requirements
 
 This documents the filter model that actually drives the analytics dashboards under
-`app/(admin)/admin/analytics/**` — what filter types the registry supports, which
+`app/(analytics)/admin/analytics/**` — what filter types the registry supports, which
 concrete filters are wired into each page today, and how to add a new one. It
 describes reality, not an aspirational checklist: every filter listed below is live
 and reachable from a URL query param on the corresponding page.
