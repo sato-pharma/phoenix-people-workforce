@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache.js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canViewRestrictedProducts, stripHeadOfficeRows } from "@/lib/sales/access-scope";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -74,6 +75,8 @@ export type SosByCustomerRow = {
   year: number;
   month: number;
   clientCode: string;
+  /** Customer name resolved from the customer directory; falls back to clientCode. */
+  customerName: string;
   line: string;
   regionCode: string;
   regionName: string;
@@ -86,6 +89,8 @@ export type ClosingByEmployeeRow = {
   employeeHrId: string | null;
   employeeName: string | null;
   managerHrId: string | null;
+  /** Manager name resolved from the employee directory; falls back to managerHrId. */
+  managerName: string | null;
   territory: string | null;
   salesValue: number;
   targetValue: number;
@@ -321,7 +326,8 @@ async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCust
   } as never);
   if (error) throw new Error(`SoS by customer: ${error.message}`);
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapSosCustomerRow);
-  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
+  const scoped = stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
+  return resolveCustomerNames(scoped);
 }
 
 // ── Monthly closing loaders ───────────────────────────────────────────────────
@@ -357,7 +363,8 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
   } as never);
   if (error) throw new Error(`Closing by employee: ${error.message}`);
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapClosingEmployeeRow);
-  return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
+  const scoped = stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
+  return resolveManagerNames(scoped);
 }
 
 // ── Weekly loaders ────────────────────────────────────────────────────────────
@@ -403,6 +410,58 @@ async function loadCrossSourceUncached(filters: CrossSourceFilters): Promise<Cro
   if (error) throw new Error(`Cross-source: ${error.message}`);
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapCrossSourceRow);
   return stripHeadOfficeRows(rows, (r) => r.line, !filters.canViewHeadOffice);
+}
+
+// ── Display-name enrichment ─────────────────────────────────────────────────────
+// The analytics_* RPCs return manager HR IDs and customer client codes. Phoenix shows people and
+// customers BY NAME, so resolve those to names here. Both fail OPEN: on any error the row keeps the
+// HR ID / code it was mapped with, so a lookup outage can never blank the column.
+
+async function resolveManagerNames(rows: ClosingByEmployeeRow[]): Promise<ClosingByEmployeeRow[]> {
+  const ids = [...new Set(rows.map((r) => r.managerHrId).filter((v): v is string => Boolean(v)))];
+  if (ids.length === 0) return rows;
+  let nameByKey: Map<string, string>;
+  try {
+    const directory = await getEmployeeDirectory();
+    // displayName is nickname-aware (the canonical live-UI name); key by a normalized HR ID.
+    nameByKey = new Map(directory.employees.map((e) => [e.hrId.trim().toUpperCase(), e.displayName]));
+  } catch {
+    return rows; // directory unavailable → keep HR IDs (already set as the managerName fallback)
+  }
+  return rows.map((r) => {
+    if (!r.managerHrId) return r;
+    const name = nameByKey.get(r.managerHrId.trim().toUpperCase());
+    return name ? { ...r, managerName: name } : r;
+  });
+}
+
+async function resolveCustomerNames(rows: SosByCustomerRow[]): Promise<SosByCustomerRow[]> {
+  const codes = [...new Set(rows.map((r) => r.clientCode).filter(Boolean))];
+  if (codes.length === 0) return rows;
+  const nameByCode = new Map<string, string>();
+  try {
+    const db = getSupabaseAdmin();
+    const CHUNK = 300; // bound the PostgREST in(...) URL length for large customer sets
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const { data } = await db
+        .from("source_of_sales_customer_directory_rollup")
+        .select("client_code,client_name,latest_row_created_at")
+        .in("client_code", codes.slice(i, i + CHUNK))
+        .not("client_name", "is", null)
+        .order("latest_row_created_at", { ascending: false });
+      for (const row of (data ?? []) as { client_code: string | null; client_name: string | null }[]) {
+        const code = String(row.client_code ?? "");
+        const name = String(row.client_name ?? "").trim();
+        if (code && name && !nameByCode.has(code)) nameByCode.set(code, name); // first seen = latest
+      }
+    }
+  } catch {
+    return rows; // rollup unavailable → keep codes (already set as the customerName fallback)
+  }
+  return rows.map((r) => {
+    const name = nameByCode.get(r.clientCode);
+    return name ? { ...r, customerName: name } : r;
+  });
 }
 
 // ── Row mappers ───────────────────────────────────────────────────────────────
@@ -498,6 +557,7 @@ function mapSosCustomerRow(r: Record<string, unknown>): SosByCustomerRow {
     year:          n(r.year),
     month:         n(r.month),
     clientCode:    s(r.client_code),
+    customerName:  s(r.client_code), // fallback to code; resolved to a name in resolveCustomerNames()
     line:          s(r.line),
     regionCode:    s(r.region_code),
     regionName:    s(r.region_name),
@@ -512,6 +572,7 @@ function mapClosingEmployeeRow(r: Record<string, unknown>): ClosingByEmployeeRow
     employeeHrId:    r.employee_hr_id   != null ? s(r.employee_hr_id)  : null,
     employeeName:    r.employee_name    != null ? s(r.employee_name)   : null,
     managerHrId:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null,
+    managerName:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null, // fallback to HR ID; resolved in resolveManagerNames()
     territory:       r.territory        != null ? s(r.territory)        : null,
     salesValue:      n(r.sales_value),
     targetValue:     n(r.target_value),
