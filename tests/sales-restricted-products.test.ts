@@ -175,8 +175,8 @@ export async function runSalesRestrictedProductsTests() {
   });
   assert.deepEqual(
     [...(mmScope.allowedLineNames ?? [])].sort(),
-    ["Anti infective", "CNS", "Pedia"],
-    "MM sales/ROI scope = the marketing product lines (overseenLineNames replaces the non-product own line)",
+    ["Anti Infective", "CNS", "Pedia"],
+    "MM sales/ROI scope = the marketing product lines (overseenLineNames replaces the non-product own line; legacy 'Anti infective' input is canonicalized to 'Anti Infective')",
   );
   assert.deepEqual(
     [...mmScope.excludedProductCodes].sort(),
@@ -204,7 +204,7 @@ export async function runSalesRestrictedProductsTests() {
   // Product Master import is what closes that gap: this locks the canonical set and the wiring.
   assert.deepEqual(
     [...OFFICIAL_LINE_VALUES].sort(),
-    ["Anti infective", "CNS", "Head Office", "Pedia"],
+    ["Anti Infective", "CNS", "Head Office", "Pedia"],
     "the canonical official-line set is exactly the 4 known lines",
   );
   for (const line of OFFICIAL_LINE_VALUES) {
