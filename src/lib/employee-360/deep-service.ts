@@ -959,9 +959,10 @@ async function getLeadershipActivity(
       .gte("coaching_date", window.from)
       .lte("coaching_date", window.to)
       .limit(3000),
-    // Double visits CONDUCTED by this leader — read through the CRM single door.
+    // Double visits CONDUCTED by this leader — read through the CRM single door (which matches
+    // hr ids case-insensitively, so the raw id suffices; `keys` stays for the coaching query).
     queryVisitsLimited<ConductedDvRow>({
-      doubleHrIds: keys,
+      doubleHrIds: [hrId],
       dateFrom: window.from,
       dateTo: window.to,
       columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
