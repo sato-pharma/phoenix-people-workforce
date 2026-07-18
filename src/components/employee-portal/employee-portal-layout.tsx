@@ -238,7 +238,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
-        ...(showSalesAnalyticsTab ? [{ href: "/admin/analytics", label: "Sales Analytics", icon: Activity }] : []),
+        ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
       ],
     },
     {

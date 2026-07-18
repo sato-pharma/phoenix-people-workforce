@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import type { AnalyticsDimensions } from "../src/lib/analytics/service.ts";
 import {
@@ -8,10 +7,6 @@ import {
   scopeAnalyticsDimensions,
   type AnalyticsViewerScope,
 } from "../src/lib/analytics/scope.ts";
-
-function readSource(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
 
 const company: AnalyticsViewerScope = { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedProductCodes: null };
 const oneLine: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionCodes: null, allowedProductCodes: null };
@@ -57,27 +52,29 @@ export function runAnalyticsFilterContextualizationTests() {
   assert.deepEqual(byRegion.areas.map((a) => a.areaCode), ["A1"], "region-scoped: areas trimmed to in-scope regions");
   assert.equal(byRegion.lines.length, 3, "region-only scope does not trim lines");
 
-  // ── Source-pin: every dashboard page contextualises its filter bar ──────────
-  const dashboards = [
-    "source-sales/page.tsx",
-    "source-sales/by-line/page.tsx",
-    "source-sales/by-area/page.tsx",
-    "source-sales/by-product/page.tsx",
-    "source-sales/by-customer/page.tsx",
-    "monthly-closing/page.tsx",
-    "monthly-closing/by-employee/page.tsx",
-    "monthly-closing/by-line/page.tsx",
-    "weekly-sales/page.tsx",
-    "weekly-sales/detail/page.tsx",
-    "weekly-sales/by-distributor/page.tsx",
-    "executive-comparison/page.tsx",
-    "reconciliation/page.tsx",
+  // ── Source-pin: every shared dashboard contextualises its filter bar ─────────
+  // The filter bar lives in the shared dashboard component (rendered at both the admin and portal
+  // mounts), so the pin reads those components rather than the thin page wrappers.
+  const dashboardComponents = [
+    "source-sales-dashboard.tsx",
+    "source-sales-by-line-dashboard.tsx",
+    "source-sales-by-area-dashboard.tsx",
+    "source-sales-by-product-dashboard.tsx",
+    "source-sales-by-customer-dashboard.tsx",
+    "monthly-closing-dashboard.tsx",
+    "monthly-closing-by-employee-dashboard.tsx",
+    "monthly-closing-by-line-dashboard.tsx",
+    "weekly-sales-dashboard.tsx",
+    "weekly-sales-detail-dashboard.tsx",
+    "weekly-sales-by-distributor-dashboard.tsx",
+    "executive-comparison-dashboard.tsx",
+    "reconciliation-dashboard.tsx",
   ];
-  for (const rel of dashboards) {
-    const src = readSource(`../app/(analytics)/admin/analytics/${rel}`);
-    assert.ok(src.includes("scopeAnalyticsDimensions(dimensions, scope)"), `${rel} must trim its filter dropdowns to scope`);
-    assert.ok(src.includes("computeAnalyticsFilterVisibility(scope)"), `${rel} must pass per-viewer filter visibility`);
+  for (const file of dashboardComponents) {
+    const src = readFileSync(`src/components/analytics/dashboards/${file}`, "utf8");
+    assert.ok(src.includes("scopeAnalyticsDimensions(dimensions, scope)"), `${file} must trim its filter dropdowns to scope`);
+    assert.ok(src.includes("computeAnalyticsFilterVisibility(scope)"), `${file} must pass per-viewer filter visibility`);
     // The raw, untrimmed dimensions must NOT reach the filter bar.
-    assert.ok(!/dimensions=\{dimensions\}/.test(src), `${rel} must not pass raw (untrimmed) dimensions to the filter bar`);
+    assert.ok(!/dimensions=\{dimensions\}/.test(src), `${file} must not pass raw (untrimmed) dimensions to the filter bar`);
   }
 }
