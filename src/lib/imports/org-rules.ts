@@ -10,16 +10,17 @@
 // that same derived code. So a value whose slug diverges from the stored code does NOT update
 // the canonical row — it MINTS A DUPLICATE `lines` row and splits the line across every
 // downstream report. The canonical rows (single source of truth) are:
-//   "Anti infective" → anti_infective (id 1) · "Pedia" → pedia (id 2)
+//   "Anti Infective" → anti_infective (id 1) · "Pedia" → pedia (id 2)
 //   "CNS" → cns (id 3)              · "Head Office" → head_office (id 4)
 // This map was left at the pre-rename "Anti Inf"/"Office" labels after migration
-// 20260621240000 renamed line id 1 to "Anti infective" — which is exactly how the duplicate
+// 20260621240000 renamed line id 1 to "Anti infective"; the display spelling was then
+// standardized to "Anti Infective" (owner decision) — which is exactly how the duplicate
 // "Anti Inf" line (deleted id 53) kept getting recreated on every employee import. Keep these
 // values byte-identical to `lines.name`; verify against the DB before adding a new line.
 export const lineRules: Record<string, string> = {
-  anti_inf: "Anti infective",
-  anti_infectious: "Anti infective",
-  anti_infective: "Anti infective",
+  anti_inf: "Anti Infective",
+  anti_infectious: "Anti Infective",
+  anti_infective: "Anti Infective",
   cns: "CNS",
   head_office: "Head Office",
   office: "Head Office",

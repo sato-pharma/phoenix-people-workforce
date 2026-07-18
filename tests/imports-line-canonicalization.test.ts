@@ -15,10 +15,12 @@ import { lineRules } from "../src/lib/imports/org-rules.ts";
 // migration 20260621240000 renamed line id 1 to "Anti infective" but `lineRules` was left mapping
 // every anti-infective variant to "Anti Inf" (slug anti_inf ≠ anti_infective), every import minted
 // a fresh duplicate row. Same latent trap for office → "Office" vs the stored head_office.
+// The display spelling was later standardized to "Anti Infective" (owner decision); the code stays
+// anti_infective so the slug still targets the same canonical row.
 
 // Single source of truth: the canonical `lines` rows (verified against production id 1–4).
 const CANONICAL_LINES = [
-  { name: "Anti infective", code: "anti_infective" }, // id 1
+  { name: "Anti Infective", code: "anti_infective" }, // id 1
   { name: "Pedia", code: "pedia" }, //                    id 2
   { name: "CNS", code: "cns" }, //                        id 3
   { name: "Head Office", code: "head_office" }, //        id 4
@@ -39,10 +41,10 @@ function classifyLine(input: string) {
 export async function runImportsLineCanonicalizationTests() {
   // ── Every spelling variant an importer might type resolves to ONE canonical line ──
   const cases: Array<{ input: string; name: string; code: string }> = [
-    { input: "Anti Inf", name: "Anti infective", code: "anti_infective" },
-    { input: "anti infective", name: "Anti infective", code: "anti_infective" },
-    { input: "Anti-Infective", name: "Anti infective", code: "anti_infective" },
-    { input: "ANTI INFECTIOUS", name: "Anti infective", code: "anti_infective" },
+    { input: "Anti Inf", name: "Anti Infective", code: "anti_infective" },
+    { input: "anti infective", name: "Anti Infective", code: "anti_infective" },
+    { input: "Anti-Infective", name: "Anti Infective", code: "anti_infective" },
+    { input: "ANTI INFECTIOUS", name: "Anti Infective", code: "anti_infective" },
     { input: "Office", name: "Head Office", code: "head_office" },
     { input: "Head Office", name: "Head Office", code: "head_office" },
     { input: "CNS", name: "CNS", code: "cns" },
@@ -65,7 +67,7 @@ export async function runImportsLineCanonicalizationTests() {
 
   // ── The exact regression: "Anti Inf" must never be a line name again ──
   const antiInf = classifyLine("Anti Inf");
-  assert.equal(antiInf.displayName, "Anti infective", 'the abbreviated "Anti Inf" must canonicalize to "Anti infective"');
+  assert.equal(antiInf.displayName, "Anti Infective", 'the abbreviated "Anti Inf" must canonicalize to "Anti Infective"');
   assert.notEqual(antiInf.code, "anti_inf", 'the "Anti Inf" label must NOT keep the divergent code anti_inf that minted duplicate line id 53');
 
   // ── Invariant: NO rule may map to a label whose slug isn't a real lines row ──
@@ -82,6 +84,6 @@ export async function runImportsLineCanonicalizationTests() {
   }
   assert.ok(
     !Object.values(lineRules).includes("Anti Inf"),
-    'lineRules must not map to "Anti Inf" — it diverges from the stored line "Anti infective" and recreates duplicate line id 53',
+    'lineRules must not map to "Anti Inf" — it diverges from the stored line "Anti Infective" and recreates duplicate line id 53',
   );
 }

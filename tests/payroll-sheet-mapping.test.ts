@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import ExcelJS from "exceljs";
 
-import { validateSalaryWorkbook } from "../src/lib/payroll/salary-import.ts";
+import { canonicalizeSalaryLineLabel, validateSalaryWorkbook } from "../src/lib/payroll/salary-import.ts";
 import {
   salarySourceLookupKeys,
   type PayrollSalarySource,
@@ -129,6 +129,17 @@ export async function runPayrollSheetMappingTests() {
   assert.equal(result.validationTotals.totalDeductions, 5840);
   assert.equal(result.validationTotals.firstPart, 11550);
   assert.equal(result.validationTotals.secondPart, 7241);
+
+  // Payroll import must canonicalize the anti-infective line label so a sheet can never
+  // reintroduce the "Anti Inf" abbreviation (owner decision 2026-07-18); other lines pass through.
+  assert.equal(canonicalizeSalaryLineLabel("Anti Inf"), "Anti Infective");
+  assert.equal(canonicalizeSalaryLineLabel("Anti inf."), "Anti Infective");
+  assert.equal(canonicalizeSalaryLineLabel("anti infective"), "Anti Infective");
+  assert.equal(canonicalizeSalaryLineLabel("Anti-Infective"), "Anti Infective");
+  assert.equal(canonicalizeSalaryLineLabel("Anti Infective"), "Anti Infective");
+  assert.equal(canonicalizeSalaryLineLabel("Pedia"), "Pedia");
+  assert.equal(canonicalizeSalaryLineLabel("Head Office"), "Head Office");
+  assert.equal(canonicalizeSalaryLineLabel(null), null);
 
   const invalidHireDateWorkbook = new ExcelJS.Workbook();
   const invalidHireDateSheet = invalidHireDateWorkbook.addWorksheet("Payroll");
