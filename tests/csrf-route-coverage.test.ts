@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const csrfProtectedMutationRoutes = [
+  "../app/api/excuses/[id]/reassign/route.ts",
+  "../app/api/weekly-plans/[id]/reassign/route.ts",
   "../app/api/admin/outstation/[id]/route.ts",
   "../app/api/admin/outstation/calculate-manager-distance/route.ts",
   "../app/api/admin/outstation/manager-expenses/[id]/route.ts",

@@ -143,6 +143,57 @@ export function runWeeklyPlansPermissionScopeTests() {
     "assertCeoReviewer must be called on CEO actions",
   );
 
+  // ── reassignWeeklyPlanManager: HR/Super-Admin re-routes a stuck plan (never decides it) ──
+  assert.match(
+    svc,
+    /export async function reassignWeeklyPlanManager/,
+    "service must export reassignWeeklyPlanManager",
+  );
+  // Two-part auth gate: the standing weekly_plans:approve grant AND Super-Admin (isHrReviewer).
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,600}assertPermission\(access, "weekly_plans", "approve"\)/,
+    "reassignWeeklyPlanManager must require the weekly_plans:approve permission",
+  );
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,800}isHrReviewer\(access, null\)/,
+    "reassignWeeklyPlanManager must additionally require Super Admin via isHrReviewer",
+  );
+  // Status guard: only the reassignable set (mirrors D4).
+  assert.match(
+    svc,
+    /REASSIGNABLE_PLAN_STATUSES[\s\S]{0,140}"submitted"[\s\S]{0,60}"manager_returned"[\s\S]{0,60}"ceo_returned"/,
+    "reassignable set must be submitted/manager_returned/ceo_returned (mirrors the D4 detector)",
+  );
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,1000}REASSIGNABLE_PLAN_STATUSES\.includes\(plan\.status\)/,
+    "reassignWeeklyPlanManager must guard plan.status against the reassignable set",
+  );
+  // New manager must be resolved against the directory and be active.
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,1500}isActiveEmployee\(newManager\)/,
+    "reassignWeeklyPlanManager must reject an inactive new manager",
+  );
+  // Direct column update — NOT a decision RPC (reassignment is never deciding-in-place).
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,1900}\.from\("employee_plan_headers"\)\s*\.update\(/,
+    "reassignWeeklyPlanManager must update employee_plan_headers directly",
+  );
+  assert.doesNotMatch(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,2000}rpcDecidePlan\(/,
+    "reassignWeeklyPlanManager must NOT call rpcDecidePlan() (reassignment is never deciding-in-place)",
+  );
+  assert.match(
+    svc,
+    /reassignWeeklyPlanManager[\s\S]{0,2100}writeAuditLog/,
+    "reassignWeeklyPlanManager must write an audit-log entry with the old→new manager",
+  );
+
   // ── drift SQL exists ───────────────────────────────────────────────────────
   const drift = source("scripts/weekly-plans-drift.sql");
   assert.match(drift, /D1:/, "drift SQL must include detector D1");

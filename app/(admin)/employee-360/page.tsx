@@ -6,9 +6,9 @@ import {
   EmployeeSearchList,
   type Employee360ListItem,
 } from "@/components/employee-360/employee-search-list";
-import { canSeeEmployee } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveEmployee360VisibleRows } from "@/lib/employee-360/access";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 
@@ -19,9 +19,10 @@ export default async function Employee360IndexPage() {
   const rows = await getEmployeeDirectoryRows({ includeInactive: false });
 
   // Employee 360 is a FIELD-FORCE report: only the six covered role families appear.
-  // Everyone else (HR, Finance, CEO, admin, office…) is excluded entirely.
-  const employees: Employee360ListItem[] = rows
-    .filter((row) => canSeeEmployee(access, { hrId: row.hrId, managerHrId: row.managerHrId }))
+  // Everyone else (HR, Finance, CEO, admin, office…) is excluded entirely. The
+  // 360-specific gate opens the module to every role but scopes WHO each viewer
+  // sees (self / team / hierarchy / line / reps / whole company).
+  const employees: Employee360ListItem[] = resolveEmployee360VisibleRows(rows, access)
     .map((row) => {
       const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
       if (!category) return null;

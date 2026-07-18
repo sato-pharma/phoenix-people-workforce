@@ -18,6 +18,7 @@ import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
+import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
 import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 
@@ -54,6 +55,7 @@ async function runDailyNotifications(request: Request) {
     outstationSla,
     resignationSla,
     weeklyPlansDrift,
+    excuseDrift,
     rateLimitPrune,
     errorEventsPrune,
   ] = await Promise.all([
@@ -123,6 +125,10 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-weekly-plans-drift" } });
       return { ok: false as const, anomalies: 0 as const, driftCodes: [] as const, sentCount: 0 as const, error: String(e) };
     }),
+    runExcuseDriftCheck().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "daily-excuse-drift" } });
+      return { ok: false as const, anomalies: 0 as const, sentCount: 0 as const, error: String(e) };
+    }),
     pruneExpiredRateLimitBuckets().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-rate-limit-prune" } });
       return { deleted: 0, error: String(e) };
@@ -157,6 +163,7 @@ async function runDailyNotifications(request: Request) {
     weeklySystemHealthDigest,
     vacationSla,
     weeklyPlansDrift,
+    excuseDrift,
   });
 }
 
