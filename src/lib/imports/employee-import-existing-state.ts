@@ -259,6 +259,27 @@ async function loadAreaState(supabase: SupabaseClient) {
   return { areaCodeToId, areaCodes, areaIdToCode };
 }
 
+async function loadCanonicalAreaState(
+  supabase: SupabaseClient,
+): Promise<{ canonicalAreas: Array<{ code: string; name: string }> }> {
+  // The fixed 42 canonical areas (au model, exposed via the public.au_v_canonical_areas
+  // wrapper). If the view is absent (older environment), degrade to an empty list so the
+  // import simply skips area-canonicalization rather than failing.
+  const { data, error } = await supabase
+    .from("au_v_canonical_areas")
+    .select("area_code, area_name");
+  if (error) {
+    return { canonicalAreas: [] };
+  }
+  const canonicalAreas: Array<{ code: string; name: string }> = [];
+  for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
+    if (row.area_code && row.area_name) {
+      canonicalAreas.push({ code: row.area_code, name: row.area_name });
+    }
+  }
+  return { canonicalAreas };
+}
+
 async function loadTeamRows(supabase: SupabaseClient) {
   let result = await supabase.from("teams").select("id,code,name,area_id,is_active");
 
@@ -330,12 +351,14 @@ export async function loadEmployeeImportExistingState(
   const [
     departmentCodes,
     areaState,
+    canonicalAreaState,
     lineState,
     positionState,
     activeDepartments,
   ] = await Promise.all([
     loadCodeSet(supabase, "departments"),
     loadAreaState(supabase),
+    loadCanonicalAreaState(supabase),
     loadCodeLookup(supabase, "lines"),
     loadPositionState(supabase),
     loadActiveDepartments(supabase),
@@ -355,6 +378,7 @@ export async function loadEmployeeImportExistingState(
     departmentCodeToName: activeDepartments.codeToName,
     departmentNameToCode: activeDepartments.nameToCode,
     lineCodes: lineState.codes,
+    canonicalAreas: canonicalAreaState.canonicalAreas,
     positionCodes: positionState.positionCodes,
     ...teamState,
   };
