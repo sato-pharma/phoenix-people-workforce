@@ -78,7 +78,13 @@ export default async function CompanyMedRepsPerformancePage({
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  if (!(access.role === "CEO" || canAccessSystemAdministratorWorkspace(access))) {
+  if (
+    !(
+      access.role === "CEO" ||
+      access.role === "SFE Manager" ||
+      canAccessSystemAdministratorWorkspace(access)
+    )
+  ) {
     redirect("/admin");
   }
   await assertPermission(access, "sales", "read");

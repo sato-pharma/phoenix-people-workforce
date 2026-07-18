@@ -183,6 +183,13 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Command Center",
   },
+  {
+    id: "ceo-probation",
+    items: [
+      { href: "/admin/ceo-probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Probation",
+  },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
   // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
@@ -281,14 +288,14 @@ const adminNavigationSectionSeeds = [
           { resource: "support_requests" },
         ],
       },
-      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager", "CEO"] },
+      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager", "CEO"] },
       // Decision-intelligence surfaces. Dashboard + Analytics require company-wide probation read
       // (canReadAllProbation → Super Admin / CEO / Training Manager / Marketing Manager); Settings is
       // administrator-only (isProbationAdministrator → Super Admin). Roles kept in sync with the page gates
       // so managers/reps who'd be redirected never see a dead link.
-      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
-      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
       { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
     ],
@@ -573,6 +580,7 @@ const employeePortalNavigationSectionSeeds = [
     id: "coaching",
     items: [
       { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/dv-planner", icon: CalendarDays, label: "DV Planner", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager"] },
       { href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, label: "Double Visit Report", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager"] },
       { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
@@ -1310,6 +1318,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "AI-assisted payroll assembly, review, and deduction recommendations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payroll-copilot/insurance-wages",
@@ -1318,6 +1327,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Manage insurance wage bases used in statutory calculations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payslips-center",
@@ -1333,6 +1343,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions Governance",
     description: "Review and govern payroll deduction decisions.",
     permissions: [{ resource: "deductions", action: "read" }],
+    excludedRoles: ["CEO"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

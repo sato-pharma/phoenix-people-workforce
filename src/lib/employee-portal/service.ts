@@ -4508,8 +4508,11 @@ export async function getCompanyMedRepPerformance(
   options: { period?: string | string[] | null } = {},
 ): Promise<CompanyMedRepPerformanceData | null> {
   try {
-    if (access.scope !== "company") return null;
-    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+    // SFE Manager gets company-wide sales scope via getSalesScope, but scopeForRole
+    // doesn't special-case it so AccessContext.scope stays "self" — carve out
+    // explicitly here rather than widening scopeForRole (used well beyond sales).
+    if (access.scope !== "company" && access.role !== "SFE Manager") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin" && access.role !== "SFE Manager") return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -5412,8 +5415,11 @@ export async function getCompanyDsmPerformance(
   options: { period?: string | null } = {},
 ): Promise<CompanyDsmPerformanceData | null> {
   try {
-    if (access.scope !== "company") return null;
-    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+    // SFE Manager gets company-wide sales scope via getSalesScope, but scopeForRole
+    // doesn't special-case it so AccessContext.scope stays "self" — carve out
+    // explicitly here rather than widening scopeForRole (used well beyond sales).
+    if (access.scope !== "company" && access.role !== "SFE Manager") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin" && access.role !== "SFE Manager") return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
