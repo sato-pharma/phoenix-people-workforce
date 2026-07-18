@@ -128,7 +128,9 @@ function HealthBreakdown({
 
 function TrendsSection({
   trends,
+  includeFinancial = true,
 }: {
+  includeFinancial?: boolean;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
     financial: Array<{ label: string; revenue: number; cost: number }>;
@@ -136,7 +138,7 @@ function TrendsSection({
   };
 }) {
   return (
-    <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
+    <div className={`grid divide-x divide-slate-200 ${includeFinancial ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
       <div className="px-5 py-5">
         <div className="mb-1 flex items-baseline justify-between">
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Monthly Sales</p>
@@ -153,7 +155,7 @@ function TrendsSection({
         />
         <p className="mt-2 text-[9px] text-slate-400">Latest {trends.sales.length} periods</p>
       </div>
-      <div className="px-5 py-5">
+      {includeFinancial ? <div className="px-5 py-5">
         <div className="mb-1 flex items-baseline justify-between">
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
           {trends.financial.length > 0 ? (
@@ -168,7 +170,7 @@ function TrendsSection({
           gradId="pb-trend-cost-grad"
         />
         <p className="mt-2 text-[9px] text-slate-400">Latest {trends.financial.length} periods</p>
-      </div>
+      </div> : null}
       <div className="px-5 py-5">
         <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Headcount movement</p>
         <TwoSeriesBars
@@ -424,8 +426,10 @@ const NAV_ITEMS = [
   { href: "/admin/data-health",                      icon: ShieldCheck,  label: "Data Health",        sub: "System quality score" },
 ];
 
-function SmartNavGrid({ access }: { access: AccessContext }) {
-  const items = access.role === "CEO"
+function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ceo" | "sfe" }) {
+  const items = variant === "sfe"
+    ? NAV_ITEMS.filter((item) => item.href !== "/admin/m-payroll")
+    : access.role === "CEO"
     ? NAV_ITEMS.filter((item) => item.href !== "/employees" && item.href !== "/admin/data-health")
     : NAV_ITEMS;
 
@@ -478,13 +482,16 @@ export async function CeoPhaseBWidgets({
   access,
   sosPrefetched,
   adminSignalsPrefetched,
+  variant = "ceo",
 }: {
   access: AccessContext;
   sosPrefetched: CeoCommandCenterData["sos"];
   adminSignalsPrefetched: CeoCommandCenterData["adminSignals"];
+  variant?: "ceo" | "sfe";
 }) {
+  const isSfe = variant === "sfe";
   const landing = await getCeoLandingDeferred(access, adminSignalsPrefetched);
-  const unavailableSources = Array.from(new Set(landing.dataUnavailable));
+  const unavailableSources = Array.from(new Set(landing.dataUnavailable.filter((source) => !isSfe || !/(salary|payroll)/i.test(source))));
 
   return (
     <div className="divide-y divide-slate-200 border-t border-slate-200">
@@ -495,7 +502,7 @@ export async function CeoPhaseBWidgets({
       ) : null}
 
       {/* ── Risk signals + payroll (from admin aggregator, deferred) ──────── */}
-      <Section
+      {!isSfe ? <Section
         title="Risk signals & payroll"
         description="Resignations, leave SLA, expiring contracts, coaching red zone, salary flags — and payroll snapshot."
         action={
@@ -516,7 +523,7 @@ export async function CeoPhaseBWidgets({
         ) : (
           <UnavailableChip label="Risk signals" />
         )}
-      </Section>
+      </Section> : null}
 
       {/* ── Company health breakdown ───────────────────────────────────────── */}
       <Section
@@ -533,10 +540,10 @@ export async function CeoPhaseBWidgets({
       {/* ── Trends ────────────────────────────────────────────────────────── */}
       <Section
         title="Trends"
-        description="Sales value, people cost, and headcount movement over recent periods."
+        description={isSfe ? "Sales value and headcount movement over recent periods." : "Sales value, people cost, and headcount movement over recent periods."}
       >
         {landing.adminSignals ? (
-          <TrendsSection trends={landing.adminSignals.trends} />
+          <TrendsSection trends={landing.adminSignals.trends} includeFinancial={!isSfe} />
         ) : (
           <UnavailableChip label="Trends" />
         )}
@@ -640,7 +647,7 @@ export async function CeoPhaseBWidgets({
 
       {/* ── Smart Navigation Grid ─────────────────────────────────────────── */}
       <Section title="Quick Navigation" description="Every module, one click away.">
-        <SmartNavGrid access={access} />
+        <SmartNavGrid access={access} variant={variant} />
       </Section>
     </div>
   );

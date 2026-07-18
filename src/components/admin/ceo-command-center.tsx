@@ -301,22 +301,27 @@ export function CeoCommandCenter({
   data,
   welcome: _welcome,
   access: _access,
+  variant = "ceo",
 }: {
   data: CeoCommandCenterData;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
+  variant?: "ceo" | "sfe";
 }) {
   const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
+  const isSfe = variant === "sfe";
+  const visibleAttention = isSfe ? attention.filter((item) => item.key !== "salaryFlags") : attention;
+  const visibleDataUnavailable = dataUnavailable.filter((source) => !isSfe || !/(salary|payroll)/i.test(source));
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Africa/Cairo",
   }).format(new Date(data.generatedAt));
 
-  const dataAvailable = dataUnavailable.length === 0;
+  const dataAvailable = visibleDataUnavailable.length === 0;
   const totalApprovals = (approvals.leavePending ?? 0) + (approvals.plansPending ?? 0);
   const hasUnavailableApprovals = approvals.leavePending === null || approvals.plansPending === null;
-  const allClear = dataAvailable && attention.length === 0 && totalApprovals === 0;
+  const allClear = dataAvailable && visibleAttention.length === 0 && totalApprovals === 0;
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
@@ -326,7 +331,7 @@ export function CeoCommandCenter({
         <div className="p-5 sm:p-6 lg:p-8">
           <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.22em] text-orange-100">
             <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-            CEO Command Center
+            {isSfe ? "SFE Manager Overview" : "CEO Command Center"}
           </div>
           <CeoHeroIdentity
             fullName={_welcome.fullName}
@@ -336,11 +341,11 @@ export function CeoCommandCenter({
         </div>
       </AdminHeroFrame>
 
-      <DataUnavailableNotice sources={dataUnavailable} />
+      <DataUnavailableNotice sources={visibleDataUnavailable} />
 
       <SectionShell
-        title="Sato Pharma"
-        description="A healthier life is our commitment."
+        title={isSfe ? "SFE Manager Overview" : "Sato Pharma"}
+        description={isSfe ? "Company-wide sales and workforce signals. All product sales are included except confidential products." : "A healthier life is our commitment."}
         action={
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/sato-pharma-logo.png" alt="SATO Pharma" className="mr-[28px] h-8 w-auto shrink-0" />
@@ -367,13 +372,13 @@ export function CeoCommandCenter({
             sub="Open positions"
             tone={headcount.vacancies > 0 ? "amber" : "emerald"}
           />
-          <MetricTile
+          {!isSfe ? <MetricTile
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="Employee health"
             value={pct(health.employeeHealthRate)}
             sub="Active/total quality"
             tone={health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
-          />
+          /> : null}
           <MetricTile
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             label="Lines"
@@ -386,20 +391,20 @@ export function CeoCommandCenter({
             value={n(headcount.uniqueAreas)}
             sub="Lookup-backed count"
           />
-          <MetricTile
+          {!isSfe ? <MetricTile
             icon={<Wallet className="h-3.5 w-3.5" />}
             label="Net payroll"
             value={egp(payroll.net)}
             sub={payroll.batchLabel}
             tone={payroll.available ? "slate" : "amber"}
-          />
-          <MetricTile
+          /> : null}
+          {!isSfe ? <MetricTile
             icon={<ClipboardCheck className="h-3.5 w-3.5" />}
             label="Salary flags"
             value={n(payroll.unresolvedSalaryFlags)}
             sub="Unresolved payroll risks"
             tone={payroll.unresolvedSalaryFlags > 0 ? "rose" : "emerald"}
-          />
+          /> : null}
         </div>
       </SectionShell>
 
@@ -429,7 +434,7 @@ export function CeoCommandCenter({
           ) : (
             <div className="space-y-2">
               {/* Approval tiles */}
-              {dataUnavailable.length > 0 ? (
+              {visibleDataUnavailable.length > 0 ? (
                 <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
                   <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <span className="text-sm font-semibold text-amber-900">
@@ -470,9 +475,9 @@ export function CeoCommandCenter({
               ) : null}
 
               {/* Attention items: numbered priority list */}
-              {attention.length > 0 ? (
+              {visibleAttention.length > 0 ? (
                 <div className="divide-y divide-slate-100 border border-slate-200">
-                  {attention.map((item, idx) => {
+                  {visibleAttention.map((item, idx) => {
                     const tone = toneStyles[item.tone];
                     return (
                       <Link
