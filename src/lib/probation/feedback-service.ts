@@ -610,6 +610,16 @@ export async function setDvCheckboxManual(
  * "publish" event — Double Visit Analytics is now a live read of ireports360_visits with no
  * import/publish step. Scans the just-synced date window for double visits and auto-ticks the
  * matching probation DV checkboxes.
+ *
+ * This writes the LEGACY `employee_probation` DV checkboxes. The authoritative probation DV record
+ * is `probation_dv_days` (populated by intelligence/dv-sync.ts on the same crons); the checkbox
+ * store is a dormant mirror — `employee_probation` has 0 active rows in prod (2026-07-18), so this
+ * is effectively a no-op today. To guarantee the checkbox can never disagree with the authoritative
+ * path if it is ever repopulated, its gating now matches dv-validation exactly: DV date must fall in
+ * the employee's probation window (withinWindow, below) and PM/GPM is skipped on the CNS line. The
+ * remaining difference — the checkbox cohort is `employee_probation` while dv-days keys on
+ * `probation_cases` — is a data-population concern, not resolved here (no cohort-unification on the
+ * dormant table); `probation_cases` is the single authoritative cohort.
  */
 export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string): Promise<void> {
   const db = getSupabaseAdmin();
@@ -680,10 +690,10 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   // UPPERCASE, probationVisited is lowercase; expand variants so the case-sensitive `.in` matches.
   const { data: employees } = await db
     .from("employees")
-    .select("hr_id,manager_hr_id,hire_date")
+    .select("hr_id,manager_hr_id,hire_date,line_name")
     .in("hr_id", Array.from(new Set(probationVisited.flatMap(hrIdLookupKeys))));
 
-  type EmpRow = { hr_id: string; manager_hr_id: string | null; hire_date: string | null };
+  type EmpRow = { hr_id: string; manager_hr_id: string | null; hire_date: string | null; line_name: string | null };
   const empByHrId = new Map<string, EmpRow>(
     (employees ?? [] as EmpRow[]).map((e: EmpRow) => [normalizeHrId(e.hr_id) ?? e.hr_id, e]),
   );
@@ -731,8 +741,12 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
         if (probRecord.tm_dv_done !== true) updates.tm_dv_done_at = now;
         updates.tm_dv_done_manually = false;
       } else if (visitorRole === "Product Manager" || visitorRole === "Group Product Manager") {
-        if (probRecord.pm_gpm_dv_done !== null) {
-          // Not CNS (NULL = not applicable for CNS)
+        // CNS has no PM/GPM DV requirement. Determine CNS the SAME way probation_dv_days does
+        // (dv-validation.resolveEvaluatorRole keys on line_name === 'cns'), and also honor the
+        // legacy NULL-column sentinel — so the checkbox and probation_dv_days can't disagree on
+        // whether a PM/GPM DV counts.
+        const isCns = String(visitedEmp?.line_name ?? "").trim().toLowerCase() === "cns";
+        if (!isCns && probRecord.pm_gpm_dv_done !== null) {
           updates.pm_gpm_dv_done = true;
           if (probRecord.pm_gpm_dv_done !== true) updates.pm_gpm_dv_done_at = now;
           updates.pm_gpm_dv_done_manually = false;

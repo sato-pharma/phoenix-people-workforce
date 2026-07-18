@@ -873,16 +873,14 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
  * the same date — an AM + a PM half — stay in the same run). Resigned agents excluded. Duration counts
  * half-days as 0.5. Walks paginated rows (PostgREST caps a single request). Newest period first.
  *
- * SCOPE — this is the RAW CRM vacation view and is DELIBERATELY broader than, and counts differently
- * from, the Company Vacation Report (src/lib/vacation/company-vacation-report.ts). This tab matches
- * ANY vacation-worded description (ILIKE '%vacation%') and honors the CRM's own AM/PM half-day marking
- * (ampm → 0.5 day). The Company Vacation Report instead applies the owner-confirmed leave rule: only
- * Annual Vacation (visit_type = -4, NOT Health Day -15); an AV day is a full day at FACE VALUE (a 0.5
- * half-day there comes only from a real device fingerprint, never from ampm); and it drops
- * public-holiday / excuse-labeled / proven-worked days and merges in HR-approved leave. So the two
- * intentionally report DIFFERENT vacation counts for the same employee — this tab shows what the CRM
- * literally recorded; that report is the de-noised, advisory leave estimate. Neither is wrong; they
- * answer different questions. Keep them in sync only by intent, never by forcing the numbers to match.
+ * SCOPE — this is the RAW CRM vacation view and is DELIBERATELY broader than the Company Vacation
+ * Report (src/lib/vacation/company-vacation-report.ts). This tab matches ANY vacation-worded
+ * description (ILIKE '%vacation%'). The Company Vacation Report is narrower: only Annual Vacation
+ * (visit_type = -4, NOT Health Day -15), and it drops public-holiday / excuse-labeled /
+ * proven-worked days and merges in HR-approved leave. BOTH honor the CRM's own AM/PM half-day
+ * marking (ampm → 0.5 day). So this raw tab still shows more/other rows than that de-noised,
+ * advisory report — they answer different questions and are kept in sync by intent, never by
+ * forcing the numbers to match.
  */
 async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();

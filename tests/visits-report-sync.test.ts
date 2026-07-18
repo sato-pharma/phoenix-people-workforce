@@ -264,4 +264,12 @@ export function runVisitsReportSyncTests() {
     /withinWindow\(dvRow\.visit_date, empByHrId\.get\(visitedHrId\)\?\.hire_date \?\? null, probRecord\.probation_end_date\)/,
     "each DV must be window-gated against the employee's probation window before ticking a checkbox",
   );
+  // Fix B (deeper, 2026-07-18): PM/GPM checkbox tick must skip the CNS line the SAME way
+  // probation_dv_days does (dv-validation keys on line_name === 'cns'), not only via the legacy
+  // NULL-column sentinel — so the two can't disagree on whether a PM/GPM DV counts.
+  assert.match(
+    feedbackServiceSource,
+    /const isCns = String\(visitedEmp\?\.line_name \?\? ""\)\.trim\(\)\.toLowerCase\(\) === "cns";/,
+    "PM/GPM checkbox tick must determine CNS via line_name, matching probation_dv_days",
+  );
 }
