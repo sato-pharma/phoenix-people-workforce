@@ -6,6 +6,7 @@ import {
   Clock,
   Footprints,
   GraduationCap,
+  Info,
   Megaphone,
   Sparkles,
   TrendingUp,
@@ -100,23 +101,100 @@ function tenureLabel(hireDate: string | null): string | null {
   return `${(months / 12).toFixed(1)} yr tenure`;
 }
 
+// Plain-English, simple-vocabulary explanation for each key card, keyed by its label.
+// Surfaced as a hover tooltip (native title) with a small info cue so a non-analyst can
+// tell exactly what the number means. Keep the wording jargon-free.
+const KPI_EXPLAIN: Record<string, string> = {
+  // Visits & coverage
+  "Productive visits": "How many real customer visits this person made — only doctor and pharmacy calls count, not office or admin days.",
+  "Visits / active day": "On the days they actually worked in the field, the average number of customers seen per day.",
+  "Active days": "The number of different days they made at least one real customer visit.",
+  "Distinct customers": "How many different customers (doctors/pharmacies) they saw — each one counted once, no matter how often visited.",
+  "Regular visits": "Normal day-to-day customer visits, not tied to a special campaign.",
+  "Campaign visits": "Visits made as part of a marketing campaign or special push.",
+  "Doubles received": "Visits where a manager came along with them in the field (a joint or double visit).",
+  "Admin / non-visit": "Days spent on things other than seeing customers — meetings, training, or leave.",
+  "Last 30 days": "Productive visits in the most recent 30 days, with the previous 30 days shown for comparison.",
+  "Avg visits / customer": "On average, how many times each customer was visited during this period.",
+  Utilization: "How much of their available working days were actually used for field visits (active days out of working days).",
+  // Check-ins (GPS)
+  "GPS check-ins": "How many times their phone recorded a GPS location while in the field.",
+  "Check-in : visit": "How many GPS check-ins there are for each visit — higher means visits are better backed up by location data.",
+  "Check-in coverage": "The share of working days that have at least one GPS check-in.",
+  "Late-night tail": "The share of GPS check-ins that happened very late (10pm–1am); unusually high can be a red flag.",
+  "Field window": "The typical time of day their fieldwork starts and ends, based on GPS check-ins.",
+  "Check-ins / active day": "On active days, the average number of GPS check-ins per day.",
+  "Uncorroborated days": "Days they logged a visit but their phone recorded no GPS location to back it up.",
+  "Distinct locations": "How many different physical spots (about 110m apart) their GPS check-ins came from.",
+  // Leadership
+  "Coaching delivered": "How many coaching reports this manager wrote for their team members.",
+  "Double-visits conducted": "How many times this manager went into the field alongside a team member.",
+  "Reps reached": "How many different team members this manager coached or joined in the field.",
+  "Avg score given": "The average coaching score this manager awarded to their team.",
+  // Sales
+  "Total sales": "The total sales value achieved in this period.",
+  "Team sales": "The combined sales value of this manager's whole team.",
+  "Total target": "The sales target they were expected to reach in this period.",
+  "Team target": "The combined sales target for this manager's whole team.",
+  Achievement: "How much of the target was met — 100% means they hit target exactly.",
+  "Months covered": "How many months of sales data are included here.",
+  "Months hit target": "In how many of those months they reached or beat their target.",
+  "Growth (1st→latest)": "How much sales changed from the first month to the latest month in this period.",
+  "Sales / visit": "Average sales value generated for each productive customer visit.",
+  "Sales / customer": "Average sales value generated per customer.",
+  // Coaching received
+  "Latest score": "The score from their most recent coaching report.",
+  Improvement: "How much their coaching score changed from their first report to their latest one.",
+  Reports: "How many coaching reports they have received.",
+  "Average score": "The average of all their coaching scores.",
+  // Double-visits received
+  "Double-visits received": "How many times a manager joined this person in the field.",
+  "With Training Manager": "Of those joint visits, how many were with a Training Manager (field coaching).",
+  "Distinct visitors": "How many different managers accompanied them in the field.",
+  // Expenses
+  "Total cost": "The total money claimed for their field trips in this period.",
+  Trips: "The number of trips claimed.",
+  "Cost / trip": "The average money claimed per trip.",
+  "Total km": "The total distance claimed across all trips.",
+  "Cost / visit": "Trip cost divided by productive visits — the travel cost behind each customer seen.",
+  "Cost / trip-visit": "Trip cost divided by the visits actually logged on trip days.",
+  "Expenses vs sales": "Their trip costs as a share of the sales they brought in — lower is more efficient.",
+  "Approved cost": "The portion of the claimed cost that has been approved.",
+  // Activity split
+  "AM visits": "How many visits were made in the morning.",
+  "PM visits": "How many visits were made in the afternoon.",
+  // Outstation
+  Claimed: "The total amount claimed for outstation trips.",
+  Variance: "The gap between what was claimed and what was expected — positive means more was claimed than expected.",
+  Flagged: "How many trips were flagged for review (possible fraud, eligibility, or territory issues).",
+};
+
 function KpiTile({
   label,
   value,
   benchmark,
   goodWhenAbove,
   hint,
+  explain,
 }: {
   label: string;
   value: string;
   benchmark?: string;
   goodWhenAbove?: boolean | null;
   hint?: string;
+  explain?: string;
 }) {
   const tone = goodWhenAbove == null ? "text-slate-900" : goodWhenAbove ? "text-emerald-600" : "text-amber-600";
+  const tip = explain ?? KPI_EXPLAIN[label];
   return (
-    <div className="group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]">
-      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+    <div
+      title={tip}
+      className="group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]"
+    >
+      <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-slate-400">
+        <span>{label}</span>
+        {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
+      </div>
       <div className={cn("mt-1.5 text-2xl font-black tabular-nums", tone)}>{value}</div>
       {benchmark ? <div className="mt-1 text-[11px] font-bold text-slate-400">vs {benchmark}</div> : null}
       {hint ? <div className="mt-0.5 text-[11px] text-slate-400">{hint}</div> : null}
@@ -161,15 +239,30 @@ function SummaryLine({ text }: { text: string }) {
   );
 }
 
+// Plain-English explanation for each period-over-period comparison chip. Each one shows the
+// current value plus its change (▲ up / ▼ down) versus the previous period.
+const DELTA_EXPLAIN: Record<string, string> = {
+  "Productive visits": "Real customer visits this period, and how that compares to the previous period (▲ up / ▼ down).",
+  "Visits / day": "Average customers seen per active field day, versus the previous period.",
+  Customers: "How many different customers were visited this period, versus the previous period.",
+  "Campaign share": "Share of visits that were campaign visits, versus the previous period (pp = percentage points).",
+  "Check-in coverage": "Share of active days that had a GPS check-in, versus the previous period.",
+  "Check-ins": "Total GPS check-ins this period, versus the previous period.",
+};
+
 function DeltaChip({ label, delta, kind, goodUp = true }: { label: string; delta: MetricDelta; kind: "int" | "ratio" | "pct"; goodUp?: boolean }) {
   const fmt = (v: number | null) => (v == null ? "—" : kind === "int" ? intFmt.format(Math.round(v)) : kind === "ratio" ? v.toFixed(1) : `${Math.round(v * 100)}%`);
   const rawDelta = delta.cur != null && delta.prev != null ? (kind === "pct" ? (delta.cur - delta.prev) * 100 : delta.cur - delta.prev) : null;
   const tone = rawDelta == null || rawDelta === 0 ? "text-slate-400" : (rawDelta > 0) === goodUp ? "text-emerald-600" : "text-amber-600";
   const deltaText =
     rawDelta == null ? "—" : `${rawDelta >= 0 ? "▲ +" : "▼ "}${Math.abs(rawDelta) < 10 && kind !== "int" ? rawDelta.toFixed(1) : Math.round(rawDelta)}${kind === "pct" ? "pp" : ""}`;
+  const tip = DELTA_EXPLAIN[label];
   return (
-    <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5">
-      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+    <div title={tip} className="group rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5">
+      <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-slate-400">
+        <span>{label}</span>
+        {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
+      </div>
       <div className="mt-0.5 text-lg font-black tabular-nums text-slate-900">{fmt(delta.cur)}</div>
       <div className={cn("text-[11px] font-bold tabular-nums", tone)}>
         {deltaText} <span className="font-medium text-slate-400">vs {fmt(delta.prev)}</span>

@@ -63,12 +63,12 @@ export function runSalesHeadOfficeLockTests() {
 
   // ── Surface source-pins ──────────────────────────────────────────────────────
   const analytics = readSource("../src/lib/analytics/service.ts");
-  for (const fn of ["loadSosByLine", "loadSosByProduct", "loadSosByCustomer", "loadClosingByEmployee", "loadCrossSource"]) {
+  for (const fn of ["loadSosByLine", "loadSosByProduct", "loadSosByCustomer", "loadClosingByEmployee", "loadCrossSource", "loadWeeklyFact"]) {
     assert.ok(analytics.includes(fn), `analytics still defines ${fn}`);
   }
   assert.ok(
-    (analytics.match(/stripHeadOfficeRows\(/g) ?? []).length >= 5,
-    "every line-bearing analytics loader applies stripHeadOfficeRows",
+    (analytics.match(/stripHeadOfficeRows\(/g) ?? []).length >= 6,
+    "every line-bearing analytics loader (incl. weekly) applies stripHeadOfficeRows",
   );
 
   // analytics_sos_by_period / analytics_sos_by_area aggregate the line dimension AWAY, so their
@@ -86,6 +86,20 @@ export function runSalesHeadOfficeLockTests() {
     byAreaPage.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
     "by-area page passes canViewHeadOffice resolved from the role",
   );
+
+  // The weekly analytics pages (overview, detail, by-distributor) carry the Head Office strip
+  // ENTIRELY in TS: the analytics_weekly_fact RPC and analytics.weekly_fact view have no Head
+  // Office exclusion, so loadWeeklyFact strips it and each page must thread the role's flag.
+  for (const rel of [
+    "../app/(admin)/admin/analytics/weekly-sales/page.tsx",
+    "../app/(admin)/admin/analytics/weekly-sales/detail/page.tsx",
+    "../app/(admin)/admin/analytics/weekly-sales/by-distributor/page.tsx",
+  ]) {
+    assert.ok(
+      readSource(rel).includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
+      `weekly analytics page ${rel} passes canViewHeadOffice resolved from the role`,
+    );
+  }
 
   const weekly = readSource("../src/lib/sales/weekly/access.ts");
   assert.ok(

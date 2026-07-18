@@ -18,7 +18,7 @@ import {
   type SosByCustomerRow,
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
-import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { SOS_CUSTOMER_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByCustomer } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
@@ -35,20 +35,17 @@ async function ByCustomerContent({
   role: PhoenixRole;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
-  const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
+  const filters = parseAnalyticsFilters(searchParams, SOS_CUSTOMER_FILTERS);
 
+  // analytics_sos_by_customer only filters on period / line / region / customer — build exactly
+  // those (see SOS_CUSTOMER_FILTERS). Other SoS dimensions are not accepted by that RPC.
   const sosFilters = {
-    period:       typeof filters.period      === "string" ? filters.period      : null,
-    periodFrom:   typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
-    periodTo:     typeof filters.periodTo    === "string" ? filters.periodTo    : null,
-    channel:      typeof filters.channel     === "string" ? filters.channel     : null,
-    distributors: Array.isArray(filters.distributors) ? filters.distributors : [],
-    lines:        Array.isArray(filters.lines)         ? filters.lines         : [],
-    regions:      Array.isArray(filters.regions)       ? filters.regions       : [],
-    areas:        Array.isArray(filters.areas)         ? filters.areas         : [],
-    products:     Array.isArray(filters.products)      ? filters.products      : [],
-    families:     Array.isArray(filters.families)      ? filters.families      : [],
-    clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
+    period:      typeof filters.period      === "string" ? filters.period      : null,
+    periodFrom:  typeof filters.periodFrom  === "string" ? filters.periodFrom  : null,
+    periodTo:    typeof filters.periodTo    === "string" ? filters.periodTo    : null,
+    lines:       Array.isArray(filters.lines)       ? filters.lines       : [],
+    regions:     Array.isArray(filters.regions)     ? filters.regions     : [],
+    clientCodes: Array.isArray(filters.clientCodes) ? filters.clientCodes : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
 
@@ -65,15 +62,17 @@ async function ByCustomerContent({
     ]);
   }
 
-  const customerOptions = [...new Map(byCustomer.map((c) => [c.clientCode, c.clientCode])).keys()]
-    .map((code) => ({ code, label: code }));
+  // One option per customer, labelled by NAME (falls back to the code). First occurrence wins.
+  const customerOptions = [
+    ...new Map(byCustomer.map((c) => [c.clientCode, c.customerName || c.clientCode])).entries(),
+  ].map(([code, label]) => ({ code, label }));
 
   return (
     <div className="space-y-5">
       {demo ? <AnalyticsDemoBanner /> : null}
 
       <AnalyticsFilterBar
-        descriptors={SOS_FILTERS}
+        descriptors={SOS_CUSTOMER_FILTERS}
         values={filters}
         dimensions={dimensions}
         basePath="/admin/analytics/source-sales/by-customer"
@@ -85,11 +84,12 @@ async function ByCustomerContent({
           <AnalyticsEmptyState message="No customer presence data for the current filters." />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["clientCode", "regionName", "line"]}
+            searchKeys={["customerName", "clientCode", "regionName", "line"]}
             columns={[
-              { key: "period",       label: "Period",        sortable: true },
-              { key: "clientCode",   label: "Customer Code", sortable: true },
-              { key: "line",         label: "Line",          sortable: true },
+              { key: "period",       label: "Period",   sortable: true },
+              { key: "customerName", label: "Customer", sortable: true },
+              { key: "clientCode",   label: "Code",     sortable: true },
+              { key: "line",         label: "Line",     sortable: true },
               { key: "regionName",   label: "Region",        sortable: true },
               { key: "activeBatches", label: "Active Batches", align: "right", sortable: true, formatKind: "number" },
             ]}

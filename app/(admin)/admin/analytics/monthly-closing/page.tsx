@@ -56,7 +56,6 @@ async function ClosingDashboardContent({
     families:     Array.isArray(filters.families)          ? filters.families      : [],
     employeeHrId: typeof filters.employeeHrId === "string" ? filters.employeeHrId : null,
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
-    batchStatus:  Array.isArray(filters.batchStatus)        ? filters.batchStatus  : [],
     batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
@@ -164,7 +163,7 @@ async function ClosingDashboardContent({
               { key: "line",           label: "Line",        sortable: true },
               { key: "employeeHrId",   label: "HR ID",       sortable: true },
               { key: "employeeName",   label: "Name",        sortable: true },
-              { key: "managerHrId",    label: "Manager" },
+              { key: "managerName",    label: "Manager",     sortable: true },
               { key: "territory",      label: "Territory",   sortable: true },
               { key: "salesValue",     label: "Sales",       align: "right", sortable: true, formatKind: "number" },
               { key: "targetValue",    label: "Target",      align: "right", sortable: true, formatKind: "number" },
@@ -195,7 +194,7 @@ export default async function MonthlyClosingAnalyticsPage({ searchParams }: { se
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Closing</p>
           <h1 className="text-2xl font-bold text-foreground leading-tight">Monthly Closing Analytics</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Employee-attributed sales vs target. Filter by period, line, employee, territory, or batch.
+            Employee-attributed sales vs target — approved closing batches only. Filter by period, line, employee, territory, or batch.
           </p>
         </div>
       </div>

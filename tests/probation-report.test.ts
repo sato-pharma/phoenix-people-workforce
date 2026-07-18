@@ -40,13 +40,15 @@ export function runProbationReportTests() {
   ];
   const prog = computeDvProgress(dvDays, DEFAULT_PROBATION_CONFIG);
   assert.equal(prog.byRole.dm.feedbackCompleted, 3);
-  assert.equal(prog.byRole.dm.complete, true, "3/3 DM complete");
+  assert.equal(prog.byRole.dm.complete, true, "3 DM feedbacks ≥ 2 required");
   assert.equal(prog.byRole.tm.validated, 1);
   assert.equal(prog.byRole.tm.feedbackCompleted, 0);
-  assert.equal(prog.byRole.tm.complete, false, "TM validated but no feedback yet");
+  // TM feedback is OPTIONAL (requirement 0, owner rule 2026-07-18) → complete by definition even with
+  // a validated DV-Day and no feedback submitted.
+  assert.equal(prog.byRole.tm.complete, true, "TM optional → complete regardless of feedback");
   assert.equal(prog.byRole.nsm.complete, true);
   assert.equal(prog.byRole.pm_gpm.validated, 0);
-  assert.equal(prog.totalRequired, 6);
+  assert.equal(prog.totalRequired, 4, "dm 2 + pm_gpm 1 + nsm 1 (TM optional = 0)");
   assert.equal(prog.totalValidated, 5);
   assert.equal(prog.totalFeedbackCompleted, 4);
 

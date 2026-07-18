@@ -3,6 +3,7 @@
 // every change immediately; there is no Day-75 batch generation. Read-only composition.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canSeeConfidentialNote } from "./assessments";
 import type { AccessContext } from "@/lib/auth/permissions";
 
@@ -104,16 +105,18 @@ export async function buildConsolidatedReport(
   const feedbacks = (fbRows ?? []) as FeedbackRow[];
   const feedbackByDvDay = new Map(feedbacks.map((f) => [f.dv_day_id, f]));
 
-  // Resolve display names for evaluators AND development-action owners (show names, not HR codes).
+  // Resolve display names for the case's own employee, evaluators, AND development-action owners
+  // (show names, not HR codes).
   const nameHrIds = Array.from(new Set([
+    probationCase.employeeHrId,
     ...dvDays.map((d) => d.evaluator_hr_id),
     ...developmentActions.map((a) => a.ownerHrId),
   ].filter((x): x is string => Boolean(x))));
   const evaluatorNameByHrId = new Map<string, string>();
   if (nameHrIds.length > 0) {
-    const { data: emps } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", nameHrIds);
-    for (const e of (emps ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      if (e.full_name) evaluatorNameByHrId.set(e.hr_id.toLowerCase(), e.full_name);
+    const { data: emps } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", nameHrIds);
+    for (const e of (emps ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
+      if (e.full_name) evaluatorNameByHrId.set(e.hr_id.toLowerCase(), resolveEmployeeDisplayName(e.full_name, e.nickname));
     }
   }
 
@@ -188,6 +191,7 @@ export async function buildConsolidatedReport(
   return {
     case: {
       ...probationCase,
+      employeeName: evaluatorNameByHrId.get(probationCase.employeeHrId.toLowerCase()) ?? probationCase.employeeName,
       currentProbationDay: currentProbationDay(probationCase.hireDate, today),
       daysRemaining: probationDaysRemaining(probationCase.hireDate),
     },

@@ -26,7 +26,12 @@ export function runProbationFeedbackInboxTests() {
   // list of that rep's still-missing DV-Day feedbacks underneath — NOT one flat row per DV-Day repeating
   // the same 2 names 20+ times.
   assert.match(panel, /function groupByProbationer/, "tasks are grouped by probationer");
-  assert.match(panel, /Feedback \{index \+ 1\} — missing/, "each rep's pending feedbacks are numbered + labelled missing");
+  // TRAINING-MANAGER OPTIONAL (owner rule 2026-07-18): a TM-evaluated feedback task shows as "Optional"
+  // and is excluded from the overdue count / worst-SLA — no SLA pressure on optional TM feedback.
+  assert.match(panel, /OPTIONAL_EVALUATOR_ROLES = new Set\(\["tm"\]\)/, "TM is the optional evaluator role");
+  assert.match(panel, /Feedback \{index \+ 1\} — \{optional \? "optional" : "missing"\}/, "optional TM tasks are labelled optional, not missing");
+  assert.match(panel, /required\.filter\(\(t\) => t\.slaState === "overdue"\)/, "overdue count excludes optional TM tasks");
+  assert.match(panel, /Feedback \{index \+ 1\} — \{optional \? "optional" : "missing"\}/, "each rep's pending feedbacks are numbered; required labelled missing, optional labelled optional");
   assert.doesNotMatch(panel, /sorted\.map/, "no flat per-DV-Day row list");
 
   // Probation Analytics audience (owner rule 2026-07-17): NSM + PM/GPM (portal) + SFE/admin/CEO (admin).

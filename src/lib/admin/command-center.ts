@@ -9,6 +9,7 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getVacationReportData } from "@/lib/vacation/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
 import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
 import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
@@ -530,21 +531,25 @@ async function fetchRiskSummary(accessContext: AccessContext): Promise<{
   const empty = { expiringContracts: 0, probationEndings: 0, error: null };
 
   try {
-    const [contractResult, probations] = await Promise.all([
+    const [contractResult, probations, directory] = await Promise.all([
       getContractRenewalDashboardData(accessContext),
       getProbationRows(accessContext),
+      getEmployeeDirectory(),
     ]);
+    const displayNameByHrId = new Map(
+      directory.employees.map((employee) => [canonicalHrIdKey(employee.hrId), employee.displayName]),
+    );
     const lifecycleRisk = buildLifecycleRiskMetrics({
       contracts: contractResult.rows.map((row) => ({
         contractRenewalDate: row.contract_renewal_date,
         employeeHrId: row.hr_id,
-        employeeName: row.full_name,
+        employeeName: displayNameByHrId.get(canonicalHrIdKey(row.hr_id)) ?? row.full_name,
         workflowStatus: row.workflow?.status ?? null,
       })),
       probations: probations.map((row) => ({
         daysRemaining: row.days_remaining,
         employeeHrId: row.hr_id,
-        employeeName: row.full_name,
+        employeeName: displayNameByHrId.get(canonicalHrIdKey(row.hr_id)) ?? row.full_name,
         hireDate: row.hire_date,
         probationEndDate: row.probation_end_date,
         workflowDecision: row.workflow?.decision ?? null,
