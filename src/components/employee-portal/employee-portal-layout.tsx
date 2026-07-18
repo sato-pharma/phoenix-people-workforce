@@ -41,6 +41,7 @@ import {
   Inbox,
   Target,
   CalendarRange,
+  CalendarCheck2,
   MapPinned,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
@@ -243,6 +244,7 @@ function buildEmployeePortalSections({
       title: "Fieldforce",
       items: [
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
+        ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
         ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
         ...(showTeamCalendarTab ? [{ href: "/employee-portals/team-calendar", label: "Team Calendar", icon: CalendarRange }] : []),

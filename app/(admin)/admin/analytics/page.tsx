@@ -104,7 +104,7 @@ const MODULES = [
     description: "Company-scope DSM performance dashboard.",
     badge: "Field",
     accent: "#0EA5E9",
-    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+    roles: ["Super Admin", "CEO", "SFE Manager"] as const satisfies readonly PhoenixRole[],
   },
   {
     href: "/admin/field-sales/med-reps-performance",
@@ -113,7 +113,7 @@ const MODULES = [
     description: "Company-scope Med-Rep performance dashboard.",
     badge: "Field",
     accent: "#0EA5E9",
-    roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
+    roles: ["Super Admin", "CEO", "SFE Manager"] as const satisfies readonly PhoenixRole[],
   },
 ] as const;
 
