@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ProductOption, UserScopeOverride } from "@/lib/auth/scope-visibility";
 
-const PRODUCT_LINES = ["Pedia", "CNS", "Anti infective"] as const;
+const PRODUCT_LINES = ["Pedia", "CNS", "Anti Infective"] as const;
 
 const SALES_SCOPE_OPTIONS = [
   { label: "— (role default)", value: "" },
@@ -65,7 +65,9 @@ function ProductMultiSelect({
 
   const byLine = PRODUCT_LINES.map((line) => ({
     line,
-    items: visibleProducts.filter((p) => p.line === line),
+    // Case-insensitive so the display label ("Anti Infective") groups product rows regardless of
+    // the stored line casing (legacy "Anti infective"/"Anti Inf") — decouples label from data.
+    items: visibleProducts.filter((p) => (p.line ?? "").toLowerCase() === line.toLowerCase()),
   })).filter((g) => g.items.length > 0);
 
   function toggle(code: string) {
@@ -174,7 +176,11 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
     ) {
       return false;
     }
-    if (filterLine && !(row.lineNames ?? []).includes(filterLine)) return false;
+    if (
+      filterLine &&
+      !(row.lineNames ?? []).some((l) => l.toLowerCase() === filterLine.toLowerCase())
+    )
+      return false;
     if (filterRole && row.role !== filterRole) return false;
     return true;
   });

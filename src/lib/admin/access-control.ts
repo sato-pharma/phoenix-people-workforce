@@ -30,7 +30,7 @@ import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const phoenixLines = ["CNS", "Pedia", "Anti-Infective", "Office", "Other"] as const;
+export const phoenixLines = ["CNS", "Pedia", "Anti Infective", "Office", "Other"] as const;
 export type PhoenixLine = (typeof phoenixLines)[number];
 
 export type AccessUserRow = {
@@ -126,12 +126,14 @@ function normalizeLine(value: string | null | undefined): PhoenixLine {
   // Exact match first
   const matched = phoenixLines.find((line) => line.toLowerCase() === normalized);
   if (matched) return matched;
-  // Alias map for legacy / abbreviated line names from DB (e.g. "Anti Inf" → "Anti-Infective")
+  // Alias map for legacy / abbreviated line names from DB (e.g. "Anti Inf" / hyphenated
+  // "Anti-Infective" → canonical "Anti Infective"). Keys are lowercased inputs.
   const aliases: Record<string, PhoenixLine> = {
-    "anti inf": "Anti-Infective",
-    "anti-inf": "Anti-Infective",
-    "antiinfective": "Anti-Infective",
-    "anti infective": "Anti-Infective",
+    "anti inf": "Anti Infective",
+    "anti-inf": "Anti Infective",
+    "antiinfective": "Anti Infective",
+    "anti infective": "Anti Infective",
+    "anti-infective": "Anti Infective",
     // lines.name id=4 was renamed "Office" → "Head Office"; keep classifying it as the Office bucket.
     "head office": "Office",
     "headoffice": "Office",
