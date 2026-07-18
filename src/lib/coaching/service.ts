@@ -701,7 +701,10 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 
   if (!report) throw new Error("Coaching report was not found.");
 
-  const directory = await getEmployeeDirectoryRows();
+  // includeInactive: a resigned/terminated Medical Rep's own historical report must still
+  // resolve here — assertCanAccessEmployee below is the real access-scope gate and operates
+  // correctly on the employee row regardless of status.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   const medicalRep = findEmployee(directory, report.medical_rep_hr_id);
   if (!medicalRep) throw new Error("Medical Rep was not found in employees.");
   assertCanAccessEmployee(access, medicalRep, directory, findEmployee(directory, report.coach_hr_id));
@@ -730,7 +733,7 @@ export async function getCoachingReportsByIds(ids: string[], access: AccessConte
     supabase.from("coaching_reports").select("*").in("id", ids),
     supabase.from("coaching_score_items").select("*").in("report_id", ids).order("display_order", { ascending: true }),
     supabase.from("coaching_reports_summary").select("*").in("report_id", ids),
-    getEmployeeDirectoryRows(),
+    getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
   if (reportsResult.error) throw reportsResult.error;
   if (scoresResult.error) throw scoresResult.error;
@@ -768,7 +771,10 @@ export async function getCoachingReportsByIds(ids: string[], access: AccessConte
 
 async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access: AccessContext) {
   if (access.scope === "system" || coachingOversightRoles.has(access.role)) return rows;
-  const directory = await getEmployeeDirectoryRows();
+  // includeInactive: scoped (non-oversight) roles must see the same historical rows for a
+  // resigned rep that oversight roles already see — canAccessCoachingEmployee below is the
+  // real access-scope gate and operates correctly on the employee row regardless of status.
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   const coach = access.hrId ? findEmployee(directory, access.hrId) : null;
   return rows.filter((row) => {
     const employee = findEmployee(directory, row.medicalRepHrId);
