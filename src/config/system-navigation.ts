@@ -189,6 +189,13 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Probation",
   },
+  {
+    id: "ceo-company-calendar",
+    items: [
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Company Calendar",
+  },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
   // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
