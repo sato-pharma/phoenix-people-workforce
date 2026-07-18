@@ -62,8 +62,10 @@ async function ByCustomerContent({
     ]);
   }
 
-  const customerOptions = [...new Map(byCustomer.map((c) => [c.clientCode, c.clientCode])).keys()]
-    .map((code) => ({ code, label: code }));
+  // One option per customer, labelled by NAME (falls back to the code). First occurrence wins.
+  const customerOptions = [
+    ...new Map(byCustomer.map((c) => [c.clientCode, c.customerName || c.clientCode])).entries(),
+  ].map(([code, label]) => ({ code, label }));
 
   return (
     <div className="space-y-5">
@@ -82,11 +84,12 @@ async function ByCustomerContent({
           <AnalyticsEmptyState message="No customer presence data for the current filters." />
         ) : (
           <AnalyticsDataTable
-            searchKeys={["clientCode", "regionName", "line"]}
+            searchKeys={["customerName", "clientCode", "regionName", "line"]}
             columns={[
-              { key: "period",       label: "Period",        sortable: true },
-              { key: "clientCode",   label: "Customer Code", sortable: true },
-              { key: "line",         label: "Line",          sortable: true },
+              { key: "period",       label: "Period",   sortable: true },
+              { key: "customerName", label: "Customer", sortable: true },
+              { key: "clientCode",   label: "Code",     sortable: true },
+              { key: "line",         label: "Line",     sortable: true },
               { key: "regionName",   label: "Region",        sortable: true },
               { key: "activeBatches", label: "Active Batches", align: "right", sortable: true, formatKind: "number" },
             ]}
