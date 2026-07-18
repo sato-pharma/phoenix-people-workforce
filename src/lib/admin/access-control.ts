@@ -383,7 +383,7 @@ export async function getAccessControlDashboard() {
       hrId: employee.hrId,
       line: normalizeLine(employee.lineName),
       managerHrId: employee.managerHrId,
-      name: employee.fullName,
+      name: employee.displayName,
     })),
     lines: phoenixLines,
     permissions: await getPermissionMatrix(),

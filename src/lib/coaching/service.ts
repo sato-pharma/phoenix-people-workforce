@@ -277,6 +277,19 @@ function mapSummary(row: CoachingSummaryDbRow): CoachingReportSummaryRow {
   };
 }
 
+function applyCoachingDisplayName(
+  row: CoachingReportSummaryRow,
+  directory: EmployeeDirectoryRow[],
+): CoachingReportSummaryRow {
+  const coach = findEmployee(directory, row.coachHrId);
+  const medicalRep = findEmployee(directory, row.medicalRepHrId);
+  return {
+    ...row,
+    coachName: coach?.displayName || row.coachName,
+    medicalRepName: medicalRep?.displayName || row.medicalRepName,
+  };
+}
+
 function mapQuarterly(row: CoachingQuarterlySummaryDbRow): CoachingQuarterlySummaryRow {
   return {
     averageScore: toNumber(row.average_score),
@@ -700,7 +713,9 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
     report,
     scoreResult,
     scores,
-    summary: summaries.data ? mapSummary(summaries.data as CoachingSummaryDbRow) : null,
+    summary: summaries.data
+      ? applyCoachingDisplayName(mapSummary(summaries.data as CoachingSummaryDbRow), directory)
+      : null,
   };
 }
 
@@ -746,7 +761,7 @@ export async function getCoachingReportsByIds(ids: string[], access: AccessConte
       report,
       scoreResult,
       scores,
-      summary: summary ? mapSummary(summary) : null,
+      summary: summary ? applyCoachingDisplayName(mapSummary(summary), directory) : null,
     };
   });
 }
@@ -788,7 +803,11 @@ export async function getCoachingReports(filters: CoachingReportFilters, access:
   const { data, error } = await query;
   if (error) throw error;
 
-  return filterSummariesForAccess(((data ?? []) as CoachingSummaryDbRow[]).map(mapSummary), access);
+  const directory = await getEmployeeDirectoryRows();
+  const summaries = ((data ?? []) as CoachingSummaryDbRow[]).map((row) =>
+    applyCoachingDisplayName(mapSummary(row), directory),
+  );
+  return filterSummariesForAccess(summaries, access);
 }
 
 export async function getMyCoachingReports(access: AccessContext) {

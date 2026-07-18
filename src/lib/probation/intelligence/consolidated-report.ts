@@ -3,6 +3,7 @@
 // every change immediately; there is no Day-75 batch generation. Read-only composition.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canSeeConfidentialNote } from "./assessments";
 import type { AccessContext } from "@/lib/auth/permissions";
 
@@ -111,9 +112,9 @@ export async function buildConsolidatedReport(
   ].filter((x): x is string => Boolean(x))));
   const evaluatorNameByHrId = new Map<string, string>();
   if (nameHrIds.length > 0) {
-    const { data: emps } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", nameHrIds);
-    for (const e of (emps ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      if (e.full_name) evaluatorNameByHrId.set(e.hr_id.toLowerCase(), e.full_name);
+    const { data: emps } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", nameHrIds);
+    for (const e of (emps ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
+      if (e.full_name) evaluatorNameByHrId.set(e.hr_id.toLowerCase(), resolveEmployeeDisplayName(e.full_name, e.nickname));
     }
   }
 

@@ -4,6 +4,7 @@ import { cache } from "react";
 import { getRequiredEnv } from "@/lib/env";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { formatHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
@@ -147,6 +148,7 @@ type LookupRow = {
   hr_id?: string;
   id?: number;
   name?: string | null;
+  nickname?: string | null;
 };
 
 export type VacancyLookupRow = {
@@ -929,7 +931,7 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
   const [departments, employees, lines, areas, positions, openVacancies] = await Promise.all([
     loadAllOptions("departments"),
     supabaseRest<LookupRow[]>(
-      `employees?${new URLSearchParams({ order: "full_name.asc", select: "hr_id,full_name" })}`,
+      `employees?${new URLSearchParams({ order: "full_name.asc", select: "hr_id,full_name,nickname" })}`,
     ),
     loadAllOptions("lines"),
     loadAllOptions("areas"),
@@ -958,10 +960,13 @@ export async function getOfferLookups(): Promise<OfferLookupData> {
     })),
     departments,
     lines,
-    managers: employees.map((row) => ({
-      label: `${row.full_name ?? row.hr_id ?? ""}${row.hr_id ? ` (${row.hr_id})` : ""}`,
-      value: String(row.hr_id ?? ""),
-    })),
+    managers: employees.map((row) => {
+      const displayName = row.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname) : row.hr_id ?? "";
+      return {
+        label: `${displayName}${row.hr_id ? ` (${row.hr_id})` : ""}`,
+        value: String(row.hr_id ?? ""),
+      };
+    }),
     medicalRepVacancies,
     openVacancies,
     positions: positions.map((row) => ({
@@ -1009,14 +1014,14 @@ async function loadLookupMaps(rows: OfferDbRow[]) {
       ? supabaseRest<LookupRow[]>(`lines?${new URLSearchParams({ id: idInFilter(lineIds), select: "id,name" })}`)
       : Promise.resolve([]),
     managerHrIds.length
-      ? supabaseRest<LookupRow[]>(`employees?${new URLSearchParams({ hr_id: textInFilter(managerHrIds), select: "hr_id,full_name" })}`)
+      ? supabaseRest<LookupRow[]>(`employees?${new URLSearchParams({ hr_id: textInFilter(managerHrIds), select: "hr_id,full_name,nickname" })}`)
       : Promise.resolve([]),
   ]);
 
   return {
     departments: new Map(departments.map((row) => [Number(row.id), row.name ?? ""])),
     lines: new Map(lines.map((row) => [Number(row.id), row.name ?? ""])),
-    managers: new Map(managers.map((row) => [String(row.hr_id), row.full_name ?? ""])),
+    managers: new Map(managers.map((row) => [String(row.hr_id), resolveEmployeeDisplayName(row.full_name ?? "", row.nickname)])),
   };
 }
 

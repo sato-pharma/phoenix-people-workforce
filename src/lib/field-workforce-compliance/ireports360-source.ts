@@ -69,6 +69,7 @@ export type FieldWorkforceEmployeeInput = Pick<
   DirectoryRow,
   | "crmId"
   | "crmUsername"
+  | "displayName"
   | "employmentStatus"
   | "fullName"
   | "hireDate"
@@ -442,7 +443,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     });
 
     matrix.push([
-      employee.fullName ?? "",
+      employee.displayName ?? "",
       employee.hrId,
       employee.hireDate ? String(employee.hireDate).slice(0, 10) : "",
       month,
@@ -516,7 +517,7 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
     areaName: employee.areaName,
     departmentName: employee.departmentName,
     employmentStatus: employee.employmentStatus,
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hireDate: employee.hireDate,
     hrId: employee.hrId,
     jobTitle: employee.jobTitle,
