@@ -13,9 +13,11 @@ function readSource(rel: string): string {
 // this pins the exact (parameter -> column) pairing for every filter param so a future
 // edit that breaks the pairing fails this test instead of shipping silently.
 export function runAnalyticsFilterIndependenceTests() {
-  const helpers = readSource("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260625156000_analytics_rpc_helpers.sql");
-  const filtersV2 = readSource("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260625160000_analytics_rpc_filters_v2.sql");
-  const combined = `${helpers}\n${filtersV2}`;
+  // Validate the LIVE shipping SQL — the production schema baseline that actually defines the
+  // analytics_* RPCs today — not the pre-baseline migration drafts (which no longer ship). The
+  // negative cross-dimension checks below were verified to have zero matches across the whole
+  // baseline, so widening the corpus does not introduce false positives.
+  const combined = readSource("../supabase/migrations/20260711135352_phoenix_production_schema_baseline.sql");
 
   // (sql file content, [parameter, column it must — and only it must — constrain])
   const expectedPairings: [string, string][] = [
