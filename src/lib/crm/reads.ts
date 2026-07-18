@@ -16,6 +16,7 @@ import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schem
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import type {
   VisitsReportData,
@@ -65,20 +66,34 @@ export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 
 const DEFAULT_PAGE_SIZE = 1000;
 
+/**
+ * Expand hr-id filter values so a case-SENSITIVE PostgREST `.in("agent_hr_id"/"double_hr_id", …)`
+ * matches regardless of the caller's casing. The mirror stores whatever casing the employee roster
+ * uses (asserted UPPERCASE but NOT enforced anywhere in the write path), so we spray every
+ * casing/alias variant via the shared `hrIdLookupKeys` helper. This is the SINGLE place the door's
+ * hr-id list filters become case-insensitive — callers pass ids in any casing and must not
+ * pre-expand. Cheap: the hr-id lists here are per-employee / per-cohort (never company-wide). */
+export function expandHrIdFilterValues(ids: readonly string[]): string[] {
+  return Array.from(new Set(ids.flatMap((id) => hrIdLookupKeys(id))));
+}
+
 /** Shared visit filters, applied identically across every read. */
 export type CrmVisitFilter = {
   /** Inclusive `visit_date` lower bound (YYYY-MM-DD). */
   dateFrom?: string;
   /** Inclusive `visit_date` upper bound (YYYY-MM-DD). */
   dateTo?: string;
-  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
+  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. Matched
+   * CASE-INSENSITIVELY — the door sprays every casing/alias variant (`expandHrIdFilterValues`), so
+   * pass ids in any casing and do NOT pre-expand. */
   agentHrIds?: readonly string[];
   /** Case-insensitive exact match on a single resolved agent hr id (`agent_hr_id ILIKE`). For
    * per-employee reads (e.g. probation SFE evidence) where the caller's hr-id casing may differ
    * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
   agentHrIdILike?: string;
   /** Restrict to these resolved DOUBLE-visitor hr ids (`double_hr_id IN`). Empty array → no rows.
-   * For "double visits conducted by this manager" reads (e.g. Employee 360 leadership activity). */
+   * Matched case-insensitively (see `agentHrIds`). For "double visits conducted by this manager"
+   * reads (e.g. Employee 360 leadership activity). */
   doubleHrIds?: readonly string[];
   /** Restrict to these visit types (`visit_type IN`). */
   visitTypes?: readonly number[];
@@ -110,9 +125,9 @@ function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): 
   if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
-  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
-  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", [...filter.doubleHrIds]);
+  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", expandHrIdFilterValues(filter.doubleHrIds));
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
@@ -212,7 +227,8 @@ export async function getDoubleVisitRows<T = CrmVisitRow>(
 export type CrmCheckinFilter = {
   /** Restrict to these CRM agent ids (`agent_crm_id IN`). Empty array → no rows. */
   agentCrmIds?: readonly number[];
-  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
+  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. Matched
+   * case-insensitively (see the visit-filter `agentHrIds` note). */
   agentHrIds?: readonly string[];
   /** Case-insensitive exact match on the resolved agent hr id (`agent_hr_id ILIKE`) — see the
    * visit-filter note. */
@@ -238,7 +254,7 @@ function applyCheckinFilter(query: CheckinFilterableQuery, filter: CrmCheckinFil
   // Resigned agents are invisible across every CRM read (single source).
   if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
-  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
   if (filter.dateTo) result = result.lte("check_date", `${filter.dateTo}T23:59:59`);
@@ -400,16 +416,16 @@ type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number |
 async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, dateTo: string): Promise<VisitsReportRow[]> {
   if (rows.length === 0) return rows;
   const agentIds = Array.from(new Set(rows.map((row) => row.agentCrmId)));
-  const supabase = getSupabaseAdmin();
-  const { data: checkinRows } = await supabase
-    .from(CRM_CHECKINS_TABLE)
-    .select("agent_crm_id, contact_crm_id, check_date, address")
-    .in("agent_crm_id", agentIds)
-    .gte("check_date", `${dateFrom}T00:00:00`)
-    .lte("check_date", `${dateTo}T23:59:59`)
-    .limit(20000);
+  // Full keyset scan via queryCheckins — every check-in for these agents in the window, so the
+  // nearest-check-in correlation is complete (no silent 20k cap).
+  const checkinRows = await queryCheckins<NearestCheckinRow>({
+    agentCrmIds: agentIds,
+    dateFrom,
+    dateTo,
+    columns: "agent_crm_id, contact_crm_id, check_date, address",
+  });
 
-  const index = indexCheckinsByAgentContactDay((checkinRows ?? []) as NearestCheckinRow[]);
+  const index = indexCheckinsByAgentContactDay(checkinRows);
   return rows.map((row) => {
     const match = pickCheckinForVisit(
       { agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId, visitDay: row.visitDate, crmSaveDate: row.crmSaveDate },
@@ -457,16 +473,33 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
 }
 
 async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("visit_type_description")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(5000);
-  return Array.from(
-    new Set(((data ?? []) as Array<{ visit_type_description: string | null }>).map((row) => row.visit_type_description).filter((value): value is string => Boolean(value))),
-  ).sort();
+  // Full keyset scan (order by `id`) — every distinct visit-type label in the window, GUARANTEED
+  // complete (no silent cap). Distinct cardinality is tiny (~10), so this is a bounded one-pass scan.
+  const supabase = getSupabaseAdmin();
+  const types = new Set<string>();
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, visit_type_description")
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; visit_type_description: string | null }>;
+    for (const row of page) if (row.visit_type_description) types.add(row.visit_type_description);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+  return Array.from(types).sort();
 }
 
 export async function getVisitsReportData(
@@ -558,31 +591,36 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
 // Purpose-built reads that keep a consumer's exact query semantics (and its performance
 // tuning) inside the CRM module, so no module runs its own `.from("ireports360_*")`.
 
-const DISTINCT_AGENT_NAMES_CAP = 25000;
-
 /**
  * Distinct agent names in [dateFrom, dateTo], resigned/excluded agents removed — feeds the CRM
- * Integrity agent-filter dropdown. A single flat, capped, UNORDERED fetch (not a keyset scan):
- * ordering by the random-uuid `id` abandons the `(visit_date)` index and is measurably slower
- * (6.9s vs 3.9s on a real 30-day window), and only the small distinct-name set is needed, not
- * every row. An unusually wide range could in theory truncate before every name is seen, which
- * only narrows the dropdown — never the report's own rows. Returns `[]` if the schema is missing.
+ * Integrity agent-filter dropdown. Full keyset scan (order by `id`), so it returns EVERY distinct
+ * name in the window with no silent cap. Distinct-name cardinality is small (low hundreds), so this
+ * is a bounded one-pass scan of the row set. Returns `[]` if the schema is missing.
  */
 export async function getVisitAgentNames(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("agent_name")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(DISTINCT_AGENT_NAMES_CAP);
-  if (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw new Error(error.message);
-  }
+  const supabase = getSupabaseAdmin();
   const names = new Set<string>();
-  for (const row of (data ?? []) as Array<{ agent_name: string | null }>) {
-    if (row.agent_name) names.add(row.agent_name);
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, agent_name")
+      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_name: string | null }>;
+    for (const row of page) if (row.agent_name) names.add(row.agent_name);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
   }
   return Array.from(names).sort();
 }
@@ -677,7 +715,7 @@ export async function getMappedAgentHrIds(hrIds: readonly string[]): Promise<str
     let query = supabase
       .from(CRM_VISITS_TABLE)
       .select("id, agent_hr_id")
-      .in("agent_hr_id", [...hrIds])
+      .in("agent_hr_id", expandHrIdFilterValues(hrIds))
       .order("id", { ascending: true })
       .limit(DEFAULT_PAGE_SIZE);
     if (cursor) query = query.gt("id", cursor);

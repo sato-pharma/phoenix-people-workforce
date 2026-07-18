@@ -618,7 +618,9 @@ export function assertNoFieldWorkforceApprovedDecisionConflict(input: {
   const candidateDateKey = normalizedDateKey(input.recommendation.dates);
   const conflict = input.existingRows.some((row) =>
     row.month_key === input.recommendation.monthKey &&
-    row.employee_code === input.recommendation.employeeCode &&
+    // Canonical (case/alias-insensitive) compare so a casing drift in employee_code can't slip a
+    // second approved decision past this deductions-safety guard.
+    canonicalHrIdKey(row.employee_code) === canonicalHrIdKey(input.recommendation.employeeCode) &&
     row.recommendation_key !== input.recommendation.recommendationKey &&
     isApprovedFinalActionStatus(row.decision_status) &&
     normalizedDateKey(row.dates) === candidateDateKey,

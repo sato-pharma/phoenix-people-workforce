@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 import { getProbationConfig } from "./config";
+import { filterResolvedProbationCases } from "./cases";
 import { computeProbationScore, type FeedbackScoreInput } from "./scoring";
 import { detectContradictions } from "./contradictions";
 import { computeDvProgress, currentProbationDay, milestoneStatuses, type DvDayLite } from "./report-metrics";
@@ -96,7 +97,12 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     .select("id, employee_hr_id, employee_name, job_title, line_name, manager_hr_id, hire_date, updated_at")
     .eq("status", "active");
   if (cErr) throw cErr;
-  const cases = (caseData ?? []) as CaseRow[];
+  // Defense-in-depth (legacy-decision desync): a case can be stranded status='active' with the
+  // employee already resolved via the LEGACY workflow (employee_probation passed/terminated OR a
+  // terminal employment_status) if the outcome wasn't mirrored into probation_cases. Drop those in
+  // memory so the dashboard never shows a permanently "active" phantom case. Fails OPEN — a lookup
+  // error leaves the list exactly as loaded today.
+  const cases = await filterResolvedProbationCases((caseData ?? []) as CaseRow[]);
   if (cases.length === 0) {
     return { rows: [], summary: { total: 0, onTrack: 0, actionRequired: 0, deadlineRisk: 0, insufficientData: 0, readyForDecision: 0, overdueFeedback: 0, contradictions: 0, crmUnmapped: 0, provisioningFailures: await countUnresolvedProvisioningFailures() }, generatedAt: nowIso };
   }
