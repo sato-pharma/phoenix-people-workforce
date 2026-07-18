@@ -80,6 +80,7 @@ import { runProbationOutcomesAnalyticsTests } from "./probation-outcomes-analyti
 import { runProbationCaptureUisTests } from "./probation-capture-uis.test.ts";
 import { runProbationAuditFixesTests } from "./probation-audit-fixes.test.ts";
 import { runProbationAuditFixesRound2Tests } from "./probation-audit-fixes-round2.test.ts";
+import { runProbationLegacyWritesToCasesTests } from "./probation-legacy-writes-to-cases.test.ts";
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
 import { runRecruitmentOnboardingTests } from "./recruitment-onboarding.test.ts";
 import { runRecruitmentOfferLetterTests } from "./recruitment-offer-letter.test.ts";
@@ -495,6 +496,7 @@ await runTest("probation outcomes analytics (E4 rollups + predictiveness)", runP
 await runTest("probation capture UIs (C1–C6 feedback/assessment/dev-action write forms)", runProbationCaptureUisTests);
 await runTest("probation audit fixes (F1–F13 pre-merge hardening)", runProbationAuditFixesTests);
 await runTest("probation audit fixes round 2 (R1–R10 deep hardening)", runProbationAuditFixesRound2Tests);
+await runTest("probation legacy decision write-through to cases (dashboard/email desync fix)", runProbationLegacyWritesToCasesTests);
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
 await runTest("recruitment onboarding", runRecruitmentOnboardingTests);
 await runTest("recruitment offer letter", runRecruitmentOfferLetterTests);
