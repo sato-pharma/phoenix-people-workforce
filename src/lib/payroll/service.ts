@@ -35,6 +35,8 @@ const emptyPayrollDashboard: PayrollDashboardData = {
   flags: [],
   previousRecords: [],
   records: [],
+  resignationCandidateCount: 0,
+  resignationCandidates: [],
   scope: "all_time",
   summary: {
     anomalyCount: 0,
@@ -862,6 +864,38 @@ export async function getPayrollDashboard(
     payrollAccessFilter,
   );
 
+  // Cross-reference this batch's HR IDs against the resignation-candidate registry so a
+  // payroll approver reviewing the batch can see which rows were flagged as likely
+  // resignations. The `employee_not_found` upload signal is intentionally kept out of
+  // salary_flags governance (see payroll-engine-hardening tests) and lives only in the
+  // Resignations report; this is a read-only cross-reference that surfaces it beside the
+  // batch. The registry table is service-role-only (RLS) so it MUST be read via the admin
+  // client, and the whole lookup is best-effort — it must never block the dashboard.
+  const batchHrIds = Array.from(
+    new Set(records.map((record) => record.hrId).filter(Boolean)),
+  );
+  let resignationCandidates: PayrollDashboardData["resignationCandidates"] = [];
+  if (batchHrIds.length > 0) {
+    try {
+      const { data: candidateRows, error: candidateError } = await getSupabaseAdmin()
+        .from("payroll_resignation_candidates")
+        .select("hr_id, employee_name, last_payout_month, last_payout_year")
+        .in("hr_id", batchHrIds);
+      if (!candidateError) {
+        resignationCandidates = ((candidateRows ?? []) as Array<Record<string, unknown>>).map(
+          (row) => ({
+            fullName: String(row.employee_name ?? row.hr_id ?? ""),
+            hrId: String(row.hr_id ?? ""),
+            lastPayoutMonth: Number(row.last_payout_month ?? 0),
+            lastPayoutYear: Number(row.last_payout_year ?? 0),
+          }),
+        );
+      }
+    } catch {
+      /* best-effort — never block the payroll dashboard on this cross-reference */
+    }
+  }
+
   // Load previous period for delta comparison when the dashboard is scoped to one batch.
   const prevBatch = visibleBatches.find((b) => b.id !== batch.id);
   let previousRecords: SalaryRecord[] = [];
@@ -906,6 +940,8 @@ export async function getPayrollDashboard(
     records,
     flags,
     previousRecords,
+    resignationCandidates,
+    resignationCandidateCount: resignationCandidates.length,
     scope,
     summary: {
       totalEmployees: records.length,
