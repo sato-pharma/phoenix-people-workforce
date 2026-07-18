@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { generateFingerprintReportWorkbook } from "@/lib/attendance/fingerprint-report-export";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
 import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertFingerprintReportPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -31,7 +31,7 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employees", "read");
+    await assertFingerprintReportPermission(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:attendance:fingerprint" });
     const scopeHrIds = await resolveAttendanceScopeHrIds(access);
 

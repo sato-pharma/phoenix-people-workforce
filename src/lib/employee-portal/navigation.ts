@@ -56,7 +56,6 @@ export type EmployeePortalNavVisibility = {
   showExcuseApprovalsTab?: boolean;
   showPlanApprovalsTab?: boolean;
   showAttendanceTab?: boolean;
-  showPrivateCalendarTab?: boolean;
 };
 
 function resolvePortalRole(
@@ -340,6 +339,5 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Marketing Manager" ||
       resolvedRole === "Manager",
     showAttendanceTab: true,
-    showPrivateCalendarTab: !isMedicalRep,
   };
 }

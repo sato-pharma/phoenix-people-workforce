@@ -23,6 +23,10 @@ export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
       myRequests={data.myRequests}
       companyWide={data.companyWide}
       companyWideExportTitle="Company-Wide Plan Decisions"
+      companyRequests={data.companyRequests}
+      companyRequestsTabLabel="Company Plans"
+      companyRequestsExportTitle="Company Plans"
+      companyRequestsEmptyLabel="No weekly/monthly plans have been submitted yet."
     />
   );
 }

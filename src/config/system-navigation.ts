@@ -183,6 +183,20 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Command Center",
   },
+  {
+    id: "ceo-probation",
+    items: [
+      { href: "/admin/ceo-probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Probation",
+  },
+  {
+    id: "ceo-company-calendar",
+    items: [
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Company Calendar",
+  },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
   // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
@@ -281,14 +295,14 @@ const adminNavigationSectionSeeds = [
           { resource: "support_requests" },
         ],
       },
-      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager"] },
+      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager", "CEO"] },
+      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager", "CEO"] },
       // Decision-intelligence surfaces. Dashboard + Analytics require company-wide probation read
       // (canReadAllProbation → Super Admin / CEO / Training Manager / Marketing Manager); Settings is
       // administrator-only (isProbationAdministrator → Super Admin). Roles kept in sync with the page gates
       // so managers/reps who'd be redirected never see a dead link.
-      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
-      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "CEO", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
       { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
     ],
@@ -453,6 +467,13 @@ const adminNavigationSectionSeeds = [
     label: "Sales Queue",
   },
   {
+    id: "sales-targets-module",
+    items: [
+      { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "import", resource: "sales" }] },
+    ],
+    label: "Targets",
+  },
+  {
     id: "sales-analytics",
     items: [
       // Collapsed to a single standalone sidebar button. Unlike every other
@@ -521,7 +542,6 @@ const employeePortalNavigationSectionSeeds = [
     id: "employee-portal",
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
-      { href: "/employee-portals/private-calendar", icon: CalendarCheck, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
@@ -1163,6 +1183,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Fingerprint Report",
     description: "Raw fingerprint clock-in/clock-out punches per employee.",
     permissions: [{ resource: "employees" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/attendance/monthly-summary",
@@ -1170,6 +1191,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Monthly Summary",
     description: "Monthly attendance summary and totals per employee.",
     permissions: [{ resource: "employees" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/attendance/analytics",
@@ -1177,6 +1199,15 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Attendance Analytics",
     description: "Attendance trends and patterns across the organization.",
     permissions: [{ resource: "attendance", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/weekly-plans/calendar",
+    icon: CalendarRange,
+    label: "Company Planning Calendar",
+    description: "Company-wide submitted weekly and monthly plans, holidays, and conflicts.",
+    permissions: [{ resource: "weekly_plans", action: "read" }],
+    roles: ["CEO", "Super Admin"],
   },
   {
     href: "/hr-calendar",
@@ -1191,7 +1222,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Events Calendar",
     description: "Admin host of the portal events calendar — events, holidays, leave, and birthdays.",
     permissions: [{ resource: "attendance", action: "read" }],
-    roles: ["CEO", "Super Admin"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/private-calendars",
@@ -1310,6 +1341,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "AI-assisted payroll assembly, review, and deduction recommendations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payroll-copilot/insurance-wages",
@@ -1318,6 +1350,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Manage insurance wage bases used in statutory calculations.",
     permissions: [{ resource: "payroll" }],
     roles: ["CEO", "Super Admin"],
+    excludedRoles: ["CEO"],
   },
   {
     href: "/admin/payslips-center",
@@ -1333,6 +1366,7 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions Governance",
     description: "Review and govern payroll deduction decisions.",
     permissions: [{ resource: "deductions", action: "read" }],
+    excludedRoles: ["CEO"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -1354,7 +1388,7 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartColumnBig,
     label: "ROI Tracking",
     description: "Read-only executive report to filter and audit individual marketing requests.",
-    roles: ["Super Admin", "CEO"],
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/marketing-roi-report",
