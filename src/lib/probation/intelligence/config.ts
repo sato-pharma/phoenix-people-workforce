@@ -65,7 +65,9 @@ export const DEFAULT_PROBATION_CONFIG: ProbationConfig = {
   // item. The tm weight is kept — if a TM DOES submit feedback it still counts (the score normalizes
   // over PRESENT components). TM DV-days are also excluded from SLA reminders/escalation (see
   // feedback-sla-reminders.ts).
-  requirements: { dm: 3, tm: 0, pm_gpm: 1, nsm: 1 },
+  // District Manager requires 2 DV-Day feedbacks (owner directive 2026-07-18, down from 3) — matches
+  // the live prod probation_config row.
+  requirements: { dm: 2, tm: 0, pm_gpm: 1, nsm: 1 },
   roleWeights: { dm: 0.3, tm: 0.15, pm_gpm: 0.15, nsm: 0.15, sfe: 0.15, hr: 0.1 },
   scoringScale: { min: 1, max: 10 },
   sla: { dueHours: 24, escalateHours: 48, overdueHours: 72 },
