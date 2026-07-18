@@ -76,6 +76,22 @@ export function runProbationDashboardTests() {
   // Only active cases.
   assert.match(svc, /\.eq\("status", "active"\)/, "dashboard is active cases only");
 
+  // ── Legacy-decision desync guard (defense-in-depth) ──
+  // Still active-cases-only above, but now the dashboard ALSO drops any case whose employee was
+  // resolved via the LEGACY workflow yet never mirrored into probation_cases, and fails open.
+  assert.match(svc, /filterResolvedProbationCases\(/, "dashboard cross-checks + drops legacy-resolved cases");
+  assert.match(svc, /legacy-decision desync/i, "dashboard documents the legacy-decision desync root cause");
+  assert.match(svc, /Fails OPEN/i, "dashboard cross-check fails open (never hides data on a monitoring error)");
+
+  // The shared cross-check (cases.ts) verifies BOTH the legacy probation status AND the employee
+  // employment status, and fails open on a lookup error.
+  const casesSrc = src("src/lib/probation/intelligence/cases.ts");
+  assert.match(casesSrc, /export async function filterResolvedProbationCases/, "shared resolved-case filter is exported");
+  assert.match(casesSrc, /\.from\("employee_probation"\)/, "cross-check reads employee_probation.status");
+  assert.match(casesSrc, /status === "passed" \|\| status === "terminated"/, "legacy pass/terminate detected via employee_probation");
+  assert.match(casesSrc, /isTerminalEmploymentStatus\(/, "terminal employment_status also excludes a case");
+  assert.match(casesSrc, /if \(empRes\.error \|\| probRes\.error\) return rows;/, "cross-check fails open on a lookup error");
+
   // Route restricted to company-wide readers.
   const route = src("app/api/probation/dashboard/route.ts");
   assert.match(route, /canReadAllProbation\(access\)/, "dashboard route restricted to company-wide probation readers");
