@@ -22,6 +22,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { SOS_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { computePeriodDelta, shiftPeriod } from "@/lib/analytics/compare";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import {
@@ -46,9 +47,11 @@ function fmt(n: number): string {
 async function SosDashboardContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
@@ -69,6 +72,9 @@ async function SosDashboardContent({
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  // Per-viewer scope: fold the caller's allowed lines/regions/products into the query. Company-wide
+  // viewers are a no-op; a viewer whose scope leaves nothing (scoped.empty) gets an empty result.
+  const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
   let byPeriod: SosKpiRow[];
   let byLine: SosByLineRow[];
@@ -79,16 +85,20 @@ async function SosDashboardContent({
     byPeriod = demoSosByPeriod();
     byLine = demoSosByLine();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    byPeriod = [];
+    byLine = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [byPeriod, byLine, dimensions] = await Promise.all([
-      loadSosByPeriod(sosFilters).catch(() => []),
-      loadSosByLine(sosFilters).catch(() => []),
+      loadSosByPeriod(scoped.filters).catch(() => []),
+      loadSosByLine(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
-    if (sosFilters.period) {
-      const priorPeriod = shiftPeriod(sosFilters.period, 1);
-      const priorRows = await loadSosByPeriod({ ...sosFilters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
+    if (scoped.filters.period) {
+      const priorPeriod = shiftPeriod(scoped.filters.period, 1);
+      const priorRows = await loadSosByPeriod({ ...scoped.filters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
       priorTotal = priorRows.reduce((s, r) => s + r.value, 0);
     }
   }
@@ -201,6 +211,7 @@ export default async function SourceSalesAnalyticsPage({ searchParams }: { searc
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -221,7 +232,7 @@ export default async function SourceSalesAnalyticsPage({ searchParams }: { searc
       <AnalyticsModuleNav tabs={SOS_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <SosDashboardContent searchParams={resolvedParams} role={access.role} />
+        <SosDashboardContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );

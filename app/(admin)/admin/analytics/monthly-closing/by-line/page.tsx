@@ -19,6 +19,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { CLOSING_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoClosingByEmployee } from "@/lib/analytics/demo-fixtures";
@@ -31,9 +32,11 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 async function ByLineContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, CLOSING_FILTERS);
@@ -51,6 +54,7 @@ async function ByLineContent({
     batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  const scoped = scopeAnalyticsFilters(closingFilters, scope);
 
   let rows: ClosingByEmployeeRow[];
   let dimensions: AnalyticsDimensions;
@@ -58,9 +62,12 @@ async function ByLineContent({
   if (demo) {
     rows = demoClosingByEmployee();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    rows = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [rows, dimensions] = await Promise.all([
-      loadClosingByEmployee(closingFilters).catch(() => []),
+      loadClosingByEmployee(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
@@ -119,6 +126,7 @@ export default async function ClosingByLinePage({ searchParams }: { searchParams
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -138,7 +146,7 @@ export default async function ClosingByLinePage({ searchParams }: { searchParams
       <AnalyticsModuleNav tabs={CLOSING_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ByLineContent searchParams={resolvedParams} role={access.role} />
+        <ByLineContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );

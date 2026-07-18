@@ -19,6 +19,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { WEEKLY_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoWeeklyFact } from "@/lib/analytics/demo-fixtures";
 import { WEEKLY_TABS } from "@/lib/analytics/module-nav-config";
@@ -30,9 +31,11 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 async function WeeklyDetailContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, WEEKLY_FILTERS);
@@ -47,6 +50,7 @@ async function WeeklyDetailContent({
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  const scoped = scopeAnalyticsFilters(weeklyFilters, scope);
 
   let rows: WeeklyFactRow[];
   let dimensions: AnalyticsDimensions;
@@ -54,9 +58,12 @@ async function WeeklyDetailContent({
   if (demo) {
     rows = demoWeeklyFact();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    rows = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [rows, dimensions] = await Promise.all([
-      loadWeeklyFact(weeklyFilters).catch(() => []),
+      loadWeeklyFact(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
@@ -108,6 +115,7 @@ export default async function WeeklyDetailPage({ searchParams }: { searchParams:
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "weekly_sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -127,7 +135,7 @@ export default async function WeeklyDetailPage({ searchParams }: { searchParams:
       <AnalyticsModuleNav tabs={WEEKLY_TABS} />
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <WeeklyDetailContent searchParams={resolvedParams} role={access.role} />
+        <WeeklyDetailContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );

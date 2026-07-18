@@ -23,6 +23,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByArea, demoSosByLine, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
@@ -41,9 +42,11 @@ function fmt(n: number): string {
 async function ExecComparisonContent({
   searchParams,
   role,
+  scope,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
   role: PhoenixRole;
+  scope: AnalyticsViewerScope;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
   const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
@@ -56,6 +59,7 @@ async function ExecComparisonContent({
     distributors: Array.isArray(filters.distributors)  ? filters.distributors  : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
+  const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
   let byLine: SosByLineRow[];
   let byProduct: SosByProductRow[];
@@ -67,11 +71,16 @@ async function ExecComparisonContent({
     byProduct = demoSosByProduct();
     byArea = demoSosByArea();
     dimensions = demoAnalyticsDimensions();
+  } else if (scoped.empty) {
+    byLine = [];
+    byProduct = [];
+    byArea = [];
+    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
   } else {
     [byLine, byProduct, byArea, dimensions] = await Promise.all([
-      loadSosByLine(sosFilters).catch(() => []),
-      loadSosByProduct(sosFilters).catch(() => []),
-      loadSosByArea(sosFilters).catch(() => []),
+      loadSosByLine(scoped.filters).catch(() => []),
+      loadSosByProduct(scoped.filters).catch(() => []),
+      loadSosByArea(scoped.filters).catch(() => []),
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
   }
@@ -208,6 +217,7 @@ export default async function ExecutiveComparisonPage({ searchParams }: { search
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
 
   const resolvedParams = await searchParams;
 
@@ -225,7 +235,7 @@ export default async function ExecutiveComparisonPage({ searchParams }: { search
       </div>
 
       <Suspense fallback={<AppRouteLoadingState />}>
-        <ExecComparisonContent searchParams={resolvedParams} role={access.role} />
+        <ExecComparisonContent searchParams={resolvedParams} role={access.role} scope={scope} />
       </Suspense>
     </div>
   );
