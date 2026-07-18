@@ -32,11 +32,14 @@ export function runEmailProductionReadinessTests() {
     "scheduled processing must call the stuck-row reaper",
   );
 
-  // P0-3: active employee filter
+  // P0-3: active employee filter. Now expressed as a null-safe positive allow-list against the
+  // canonical ACTIVE_EMPLOYMENT_STATUSES_IN_LIST (was a hand-rolled `.not(... in
+  // (resigned,terminated,inactive))` denylist that both missed `not_renewed` and silently
+  // dropped NULL-status rows — see tests/employee-status-filter-consolidation.test.ts).
   assert.match(
     emailSource,
-    /employment_status.*resigned.*terminated.*inactive/,
-    "email recipient queries must filter out terminated employees",
+    /employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}/,
+    "email recipient queries must filter to active employees via the canonical allow-list",
   );
 
   // P0-4: bounce/complaint suppression

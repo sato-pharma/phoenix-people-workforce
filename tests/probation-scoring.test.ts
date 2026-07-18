@@ -25,24 +25,27 @@ export function runProbationScoringTests() {
     const r = computeProbationScore({ feedbacks: [fb("dm", 6, null, "d1"), fb("dm", 8, null, "d2"), fb("dm", 10, null, "d3")], sfeScore: null, hrScore: null }, cfg);
     assert.equal(r.components.dm.score, 8, "DM = avg(6,8,10)");
     assert.equal(r.components.dm.count, 3);
-    assert.equal(r.components.dm.complete, true, "3 DM DV-Days meets the requirement of 3");
+    assert.equal(r.components.dm.complete, true, "3 DM DV-Days meets the requirement of 2");
     // P6-T02 weighted contribution = weight × score.
     assert.equal(r.components.dm.weightedContribution, 2.4, "0.3 × 8");
     // P6-T03 provisional normalizes over present components (only DM present here) → 8.
     assert.equal(r.provisionalScore, 8);
-    assert.equal(r.decisionReady, false, "missing TM/PM|GPM/NSM/SFE/HR");
+    assert.equal(r.decisionReady, false, "missing PM|GPM / NSM / SFE / HR (TM is optional)");
     assert.equal(r.finalScore, null, "no final score until decision-ready");
-    assert.deepEqual(r.completeness.missingComponents.sort(), ["hr", "nsm", "pm_gpm", "sfe", "tm"]);
+    // TM feedback is OPTIONAL (requirement 0, owner rule 2026-07-18): it is complete by definition and
+    // never appears as a missing component or in missingByRole.
+    assert.equal(r.components.tm.complete, true, "TM optional → complete by definition with 0 feedback");
+    assert.deepEqual(r.completeness.missingComponents.sort(), ["hr", "nsm", "pm_gpm", "sfe"]);
     assert.equal(r.completeness.missingByRole.dm, undefined, "DM requirement met");
-    assert.equal(r.completeness.missingByRole.tm, 1, "TM still needs 1");
+    assert.equal(r.completeness.missingByRole.tm, undefined, "TM is optional (requirement 0) — never missing");
   }
 
-  // Incomplete DM (only 2 of 3) → present but not complete.
+  // Incomplete DM (only 1 of the 2 required) → present but not complete.
   {
-    const r = computeProbationScore({ feedbacks: [fb("dm", 6), fb("dm", 8)], sfeScore: null, hrScore: null }, cfg);
+    const r = computeProbationScore({ feedbacks: [fb("dm", 6)], sfeScore: null, hrScore: null }, cfg);
     assert.equal(r.components.dm.present, true);
-    assert.equal(r.components.dm.complete, false, "2 < 3 required");
-    assert.equal(r.completeness.missingByRole.dm, 1);
+    assert.equal(r.components.dm.complete, false, "1 < 2 required");
+    assert.equal(r.completeness.missingByRole.dm, 1, "needs 1 more DM feedback (2 required, 1 done)");
   }
 
   // ── P6-T03 full set → final score, decision-ready ──

@@ -1,10 +1,12 @@
 import { AlertTriangle, ArrowRight, CheckCircle, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatDateTimeValue } from "@/lib/i18n/format";
 import type {
+  PayrollDashboardData,
   PayrollWorkflowAction,
   SalaryBatch,
   SalaryFlag,
@@ -186,6 +188,66 @@ export function PayrollGovernanceAlerts({ flags }: { flags: SalaryFlag[] }) {
             </Badge>
           </div>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+export function PayrollResignationCandidatesBanner({
+  candidates,
+  count,
+}: {
+  candidates: PayrollDashboardData["resignationCandidates"];
+  count: number;
+}) {
+  if (candidates.length === 0) return null;
+
+  const total = count > 0 ? count : candidates.length;
+  const preview = candidates.slice(0, 8);
+  const noun = total === 1 ? "employee" : "employees";
+  const verb = total === 1 ? "is" : "are";
+  const candidateNoun = total === 1 ? "a resignation candidate" : "resignation candidates";
+
+  return (
+    <Card className={`${panelClassName} border-[#FDBA74] bg-[#FFF7ED] p-5`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#C2410C]">
+          <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-black text-[#9A3412]">
+            Resignation alarm: {total} {noun} in this batch {verb} {candidateNoun} not in the
+            employee directory.
+          </p>
+          <p className="mt-1 text-sm text-[#9A3412]">
+            These HR IDs were flagged during a payroll upload and sent to the resignation report.
+            Review them before approving this batch.
+          </p>
+          {preview.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {preview.map((candidate) => (
+                <span
+                  className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]"
+                  key={candidate.hrId}
+                >
+                  {candidate.hrId} - {candidate.fullName}
+                </span>
+              ))}
+              {total > preview.length && (
+                <span className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]">
+                  +{total - preview.length} more
+                </span>
+              )}
+            </div>
+          )}
+          <Link
+            className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#C2410C] underline underline-offset-2 hover:text-[#9A3412]"
+            href="/resignations"
+          >
+            View in resignation report
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        </div>
       </div>
     </Card>
   );

@@ -4,6 +4,9 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/crm/sync";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
+import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 
 const JOB_NAME = "ireports360-visits-reconcile";
 
@@ -46,9 +49,18 @@ async function runReconcile() {
     throw error;
   }
 
-  // No probation DV-tick call here on purpose — the daily ireports360-visits-sync cron already
-  // covers that over its own (narrower) window; re-running it over this wide window would be
-  // redundant extra load with no benefit.
+  // The wide reconcile can newly land a double visit whose visit_date is OLDER than the daily
+  // sync's 10-day window, so the daily cron's probation steps never see it (DV shows in Double
+  // Visit Analytics but never reaches probation checkboxes / probation_dv_days). Run them here too,
+  // over this slice's window, so probation stays complete. Both are idempotent + cohort-scoped, and
+  // each is isolated (a probation failure must never fail the reconcile).
+  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
+    logError("iReports360 reconcile DV-checkbox tick failed", { error, labels: { job: JOB_NAME } });
+  });
+  await syncProbationDvDays(getSupabaseAdmin(), { dateFrom, dateTo }).catch((error: unknown) => {
+    logError("iReports360 reconcile probation DV-day sync failed", { error, labels: { job: JOB_NAME } });
+  });
+
   await notifyIReports360SyncResult({
     dateFrom,
     dateTo,

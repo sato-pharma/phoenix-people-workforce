@@ -12,6 +12,11 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 /** True when an error is really "the iReports360 mirror tables don't exist yet". */
 export function isCrmSchemaMissingError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : JSON.stringify(error);
+  // A missing COLUMN (Postgres 42703 "column … does not exist" / PostgREST PGRST204 "Could not find
+  // the … column … in the schema cache") is a code or projection bug — it must surface as a REAL
+  // error, not be misread as "the mirror isn't provisioned" and silently degrade to an empty result.
+  // Only genuine relation/schema-missing signals below count as schema-missing.
+  if (/42703|column .* does not exist|Could not find the .* column/i.test(message)) return false;
   return /ireports360_(visits|checkins|crm_identity_resolutions)|schema cache|does not exist|PGRST205|42P01/i.test(
     message,
   );

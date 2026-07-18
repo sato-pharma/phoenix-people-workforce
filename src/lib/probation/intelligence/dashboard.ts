@@ -5,8 +5,10 @@
 // in memory per case — no per-case DB round-trips and no per-case report build. Read-only.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 import { getProbationConfig } from "./config";
+import { filterResolvedProbationCases } from "./cases";
 import { computeProbationScore, type FeedbackScoreInput } from "./scoring";
 import { detectContradictions } from "./contradictions";
 import { computeDvProgress, currentProbationDay, milestoneStatuses, type DvDayLite } from "./report-metrics";
@@ -95,7 +97,12 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     .select("id, employee_hr_id, employee_name, job_title, line_name, manager_hr_id, hire_date, updated_at")
     .eq("status", "active");
   if (cErr) throw cErr;
-  const cases = (caseData ?? []) as CaseRow[];
+  // Defense-in-depth (legacy-decision desync): a case can be stranded status='active' with the
+  // employee already resolved via the LEGACY workflow (employee_probation passed/terminated OR a
+  // terminal employment_status) if the outcome wasn't mirrored into probation_cases. Drop those in
+  // memory so the dashboard never shows a permanently "active" phantom case. Fails OPEN — a lookup
+  // error leaves the list exactly as loaded today.
+  const cases = await filterResolvedProbationCases((caseData ?? []) as CaseRow[]);
   if (cases.length === 0) {
     return { rows: [], summary: { total: 0, onTrack: 0, actionRequired: 0, deadlineRisk: 0, insufficientData: 0, readyForDecision: 0, overdueFeedback: 0, contradictions: 0, crmUnmapped: 0, provisioningFailures: await countUnresolvedProvisioningFailures() }, generatedAt: nowIso };
   }
@@ -103,6 +110,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
 
   // Bulk-load the children + manager names.
   const managerHrIds = Array.from(new Set(cases.map((c) => c.manager_hr_id).filter((x): x is string => Boolean(x))));
+  const nameLookupHrIds = Array.from(new Set([...cases.map((c) => c.employee_hr_id), ...managerHrIds]));
   // Widen the CRM lookup with casing variants so a real casing difference between probation_cases and
   // ireports360_visits doesn't produce a false "unmapped" badge (canonical compare happens after).
   const caseHrIds = Array.from(
@@ -118,9 +126,9 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     supabase.from("probation_dv_days").select("case_id, evaluator_role, dv_date, dv_status").in("case_id", caseIds),
     supabase.from("probation_feedback").select("case_id, dv_day_id, evaluator_role, scores, recommendation").in("case_id", caseIds),
     supabase.from("probation_assessments").select("case_id, kind, score, status").in("case_id", caseIds),
-    managerHrIds.length > 0
-      ? supabase.from("employees").select("hr_id, full_name").in("hr_id", managerHrIds)
-      : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null }> }),
+    nameLookupHrIds.length > 0
+      ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", nameLookupHrIds)
+      : Promise.resolve({ data: [] as Array<{ hr_id: string; full_name: string | null; nickname: string | null }> }),
     supabase.from("probation_development_actions").select("case_id, status").in("case_id", caseIds),
     // CRM identity-mapping check (E6): which probation reps actually appear as a CRM agent, via the
     // CRM single-door presence reader. No resigned-exclusion here on purpose — a present-but-excluded
@@ -134,8 +142,8 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
   const daByCase = groupBy((daRes.data ?? []) as Array<{ case_id: string | null; status: string }>, (r) => r.case_id);
   const mappedAgentKeys = buildMappedAgentKeySet(mappedAgentHrIds);
   const mgrName = new Map<string, string>();
-  for (const m of ((mgrRes.data ?? []) as Array<{ hr_id: string; full_name: string | null }>)) {
-    if (m.full_name) mgrName.set(m.hr_id.toLowerCase(), m.full_name);
+  for (const m of ((mgrRes.data ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>)) {
+    if (m.full_name) mgrName.set(m.hr_id.toLowerCase(), resolveEmployeeDisplayName(m.full_name, m.nickname));
   }
 
   const rows: DashboardRow[] = cases.map((c) => {
@@ -195,7 +203,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
     return {
       caseId: c.id,
       employeeHrId: c.employee_hr_id,
-      employeeName: c.employee_name,
+      employeeName: mgrName.get(c.employee_hr_id.toLowerCase()) ?? c.employee_name,
       jobTitle: c.job_title,
       lineName: c.line_name,
       managerName: c.manager_hr_id ? mgrName.get(c.manager_hr_id.toLowerCase()) ?? null : null,

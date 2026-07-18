@@ -276,7 +276,7 @@ function writePlanCardXlsx(
   const nameCell = sheet.getCell(row, 1);
   nameCell.value = {
     richText: [
-      { text: `${plan.employeeName}  `, font: { name: "Calibri", size: 12, bold: true, color: { argb: X.white } } },
+      { text: `${plan.employeeDisplayName ?? plan.employeeName}  `, font: { name: "Calibri", size: 12, bold: true, color: { argb: X.white } } },
       { text: `HR ${plan.employeeHrId}`, font: { name: "Calibri", size: 10, color: { argb: X.slate300 } } },
     ],
   };
@@ -294,7 +294,7 @@ function writePlanCardXlsx(
   sheet.mergeCells(row, 1, row, 4);
   sheet.mergeCells(row, 5, row, XLSX_COL_COUNT);
   const mgrCell = sheet.getCell(row, 1);
-  mgrCell.value = `Manager: ${plan.managerName ?? "—"}    ·    Revision ${plan.revision}`;
+  mgrCell.value = `Manager: ${plan.managerDisplayName ?? plan.managerName ?? "—"}    ·    Revision ${plan.revision}`;
   mgrCell.font = { name: "Calibri", size: 10, color: { argb: X.slate300 } };
   mgrCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   mgrCell.fill = fill(X.slate800);
@@ -625,8 +625,8 @@ class PdfRenderer {
     const h1 = 24;
     this.page.drawRectangle({ x: MARGIN, y: this.y - h1, width: CONTENT_W, height: h1, color: P.slate900 });
     const nameY = this.y - 16;
-    this.text(plan.employeeName, MARGIN + 10, nameY, { size: 11, font: this.bold, color: P.white });
-    const nameW = this.bold.widthOfTextAtSize(asciiSafe(plan.employeeName), 11);
+    this.text(plan.employeeDisplayName ?? plan.employeeName, MARGIN + 10, nameY, { size: 11, font: this.bold, color: P.white });
+    const nameW = this.bold.widthOfTextAtSize(asciiSafe(plan.employeeDisplayName ?? plan.employeeName), 11);
     this.text(`HR ${plan.employeeHrId}`, MARGIN + 10 + nameW + 8, nameY, {
       size: 9,
       font: this.font,
@@ -646,7 +646,7 @@ class PdfRenderer {
     this.page.drawRectangle({ x: MARGIN, y: this.y - h2, width: CONTENT_W, height: h2, color: P.slate800 });
     const metaY = this.y - 12.5;
     this.text(
-      `Manager: ${plan.managerName ?? "—"}    ·    Revision ${plan.revision}`,
+      `Manager: ${plan.managerDisplayName ?? plan.managerName ?? "—"}    ·    Revision ${plan.revision}`,
       MARGIN + 10,
       metaY,
       { size: 9, font: this.font, color: P.slate300 },

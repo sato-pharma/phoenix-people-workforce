@@ -1,5 +1,7 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -265,11 +267,13 @@ function notifySuperAdminsOfFeedbackAsync(submission: FeedbackSubmission): void 
   (async () => {
     const db = getSupabaseAdmin();
     const [empResult, adminsResult] = await Promise.all([
-      db.from("employees").select("full_name").ilike("hr_id", submission.employeeHrId).maybeSingle(),
+      db.from("employees").select("full_name,nickname").ilike("hr_id", submission.employeeHrId).maybeSingle(),
       db.from("app_auth_users").select("hr_id").in("role", ["Super Admin", "CEO"]).eq("is_active", true),
     ]);
-    const employeeName =
-      (empResult.data as { full_name?: string } | null)?.full_name ?? submission.employeeHrId;
+    const empRow = empResult.data as { full_name?: string; nickname?: string | null } | null;
+    const employeeName = empRow?.full_name
+      ? resolveEmployeeDisplayName(empRow.full_name, empRow.nickname)
+      : submission.employeeHrId;
     const recipientHrIds = (
       (adminsResult.data ?? []) as Array<{ hr_id?: string | null }>
     )
@@ -431,14 +435,14 @@ export async function getFeedbackForEmployee(
   const submissionIds = (submissions as RawSubmissionRow[]).map(s => s.id);
   const { data: comments } = await db
     .from("probation_feedback_comments")
-    .select("*,employees(full_name)")
+    .select("*,employees(full_name,nickname)")
     .in("submission_id", submissionIds)
     .order("created_at", { ascending: true });
 
   const commentsBySubmissionId = new Map<string, FeedbackComment[]>();
-  for (const c of (comments ?? []) as Array<RawCommentRow & { employees?: { full_name?: string } | null }>) {
+  for (const c of (comments ?? []) as Array<RawCommentRow & { employees?: { full_name?: string; nickname?: string | null } | null }>) {
     const arr = commentsBySubmissionId.get(c.submission_id) ?? [];
-    arr.push(mapComment(c, c.employees?.full_name ?? null));
+    arr.push(mapComment(c, c.employees?.full_name ? resolveEmployeeDisplayName(c.employees.full_name, c.employees.nickname) : null));
     commentsBySubmissionId.set(c.submission_id, arr);
   }
 
@@ -468,7 +472,7 @@ export async function getAggregateFeedbackReport(
       nsm_dv_done,nsm_dv_done_at,nsm_dv_done_manually,
       pm_gpm_dv_done,pm_gpm_dv_done_at,pm_gpm_dv_done_manually,
       tm_dv_done,tm_dv_done_at,tm_dv_done_manually,
-      employees!inner(full_name,line_name,hire_date,manager_hr_id)
+      employees!inner(full_name,nickname,line_name,hire_date,manager_hr_id)
     `)
     .eq("status", "active");
 
@@ -492,7 +496,7 @@ export async function getAggregateFeedbackReport(
     tm_dv_done: boolean;
     tm_dv_done_at: string | null;
     tm_dv_done_manually: boolean;
-    employees: { full_name?: string | null; line_name?: string | null; hire_date?: string | null; manager_hr_id?: string | null };
+    employees: { full_name?: string | null; nickname?: string | null; line_name?: string | null; hire_date?: string | null; manager_hr_id?: string | null };
   };
 
   const callerHrId = normalizeHrId(access.hrId) ?? "";
@@ -553,7 +557,7 @@ export async function getAggregateFeedbackReport(
 
     return {
       employeeHrId: row.hr_id,
-      employeeName: row.employees.full_name ?? row.hr_id,
+      employeeName: row.employees.full_name ? resolveEmployeeDisplayName(row.employees.full_name, row.employees.nickname) : row.hr_id,
       lineName: row.employees.line_name ?? null,
       hireDate: row.employees.hire_date ?? null,
       probationEndDate: row.probation_end_date,
@@ -651,12 +655,15 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
   const probationVisited = visitedHrIds.filter(hrId => probByHrId.has(hrId));
   if (probationVisited.length === 0) return;
 
-  // Load visitor roles from app_auth_users
+  // Load visitor roles from app_auth_users. normalizeHrId lowercases, but app_auth_users.hr_id is
+  // stored UPPERCASE and PostgREST `.in` is case-SENSITIVE — so expand every casing/alias variant
+  // (same fix dv-sync uses for its cohort scope). Without this the role map is always empty and NO
+  // checkbox ever auto-ticks (a silent no-op, previously masked by 0 active probation rows).
   const visitorHrIds = Array.from(new Set(rows.map(r => normalizeHrId(r.double_visitor_hr_id)).filter(Boolean) as string[]));
   const { data: authUsers } = await db
     .from("app_auth_users")
     .select("hr_id,role")
-    .in("hr_id", visitorHrIds)
+    .in("hr_id", Array.from(new Set(visitorHrIds.flatMap(hrIdLookupKeys))))
     .eq("is_active", true);
 
   type AuthRow = { hr_id: string; role: string };
@@ -664,11 +671,12 @@ export async function tickDvCheckboxesFromSync(dateFrom: string, dateTo: string)
     (authUsers ?? [] as AuthRow[]).map((u: AuthRow) => [normalizeHrId(u.hr_id) ?? u.hr_id, u.role]),
   );
 
-  // Load employees table for DM resolution (manager_hr_id)
+  // Load employees table for DM resolution (manager_hr_id). Same casing fix — employees.hr_id is
+  // UPPERCASE, probationVisited is lowercase; expand variants so the case-sensitive `.in` matches.
   const { data: employees } = await db
     .from("employees")
     .select("hr_id,manager_hr_id")
-    .in("hr_id", probationVisited);
+    .in("hr_id", Array.from(new Set(probationVisited.flatMap(hrIdLookupKeys))));
 
   type EmpRow = { hr_id: string; manager_hr_id: string | null };
   const empByHrId = new Map<string, EmpRow>(

@@ -23,7 +23,9 @@ export type TargetGridRow = {
   areaState: string | null;
   productCode: string;
   productName: string;
+  unitPrice: number | null;
   actualValue: number;
+  targetUnits: number | null;
   targetValue: number | null;
   achievementValue: number | null;
   hasActual: boolean;
@@ -67,7 +69,9 @@ type TrendPoint = { period: string; units: number; value: number };
 type BreakdownState = { loading: boolean; rows: BreakdownLine[]; trend: TrendPoint[]; totalUnits: number; totalValue: number; error: string | null };
 
 const money = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const price = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtMoney = (value: number): string => money.format(Math.round(value));
+const fmtPrice = (value: number | null): string => (value == null ? "—" : price.format(value));
 const fmtPct = (value: number | null): string => (value == null ? "—" : `${Math.round(value * 100)}%`);
 
 function achievementTone(value: number | null): string {
@@ -115,12 +119,17 @@ function groupSource(rows: BreakdownLine[]): BrickGroup[] {
 export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const router = useRouter();
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<UploadPreview | null>(null);
   const [busy, setBusy] = useState<null | "preview" | "commit" | "save">(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const editedKeys = useMemo(() => Object.keys(edits), [edits]);
+  const rowByKey = useMemo(() => new Map(props.rows.map((row) => [keyOf(row), row])), [props.rows]);
+  const editedKeys = useMemo(
+    () => Array.from(new Set([...Object.keys(edits), ...Object.keys(unitEdits)])),
+    [edits, unitEdits],
+  );
   const [expanded, setExpanded] = useState<Record<string, BreakdownState>>({});
   const [showFiles, setShowFiles] = useState(false);
 
@@ -159,6 +168,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
 
   function navigate(line: string, period: string) {
     setEdits({});
+    setUnitEdits({});
     setPreview(null);
     setMessage(null);
     router.push(`/sales/targets?line=${encodeURIComponent(line)}&period=${encodeURIComponent(period)}`);
@@ -197,14 +207,26 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   }
 
   async function saveEdits() {
+    const parse = (raw: string | undefined, fallback: number | null): number | null => {
+      if (raw === undefined) return fallback;
+      if (raw === "") return null;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
     const rows = editedKeys
       .map((key) => {
         const [areaCode, productCode] = key.split("|");
-        const raw = edits[key];
-        const value = raw === "" ? null : Number(raw);
-        return { areaCode, productCode, targetValue: value };
+        const existing = rowByKey.get(key);
+        const targetUnits = parse(unitEdits[key], existing?.targetUnits ?? null);
+        const targetValue = parse(edits[key], existing?.targetValue ?? null);
+        return { areaCode, productCode, targetUnits, targetValue };
       })
-      .filter((row) => row.targetValue != null && Number.isFinite(row.targetValue) && row.targetValue >= 0);
+      // Keep a row only if at least one of units/value is a valid non-negative number.
+      .filter(
+        (row) =>
+          (row.targetUnits != null && Number.isFinite(row.targetUnits) && row.targetUnits >= 0) ||
+          (row.targetValue != null && Number.isFinite(row.targetValue) && row.targetValue >= 0),
+      );
     if (rows.length === 0) {
       setMessage("No valid edited values to save.");
       return;
@@ -223,6 +245,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
         return;
       }
       setEdits({});
+      setUnitEdits({});
       setMessage(`Saved ${json.upserted} target row(s).${json.errors?.length ? ` ${json.errors.length} rejected.` : ""}`);
       router.refresh();
     } catch {
@@ -383,7 +406,9 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   <th className="p-2">Product</th>
                   <th className="p-2">Rep</th>
                   <th className="p-2 text-right">Actual</th>
-                  <th className="p-2 text-right">Target</th>
+                  <th className="p-2 text-right">Target units</th>
+                  <th className="p-2 text-right">Unit price</th>
+                  <th className="p-2 text-right">Target value</th>
                   <th className="p-2 text-right">Ach%</th>
                 </tr>
               </thead>
@@ -391,6 +416,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                 {props.rows.map((row) => {
                   const key = keyOf(row);
                   const editValue = edits[key] ?? (row.targetValue == null ? "" : String(row.targetValue));
+                  const unitValue = unitEdits[key] ?? (row.targetUnits == null ? "" : String(row.targetUnits));
                   const liveTarget = editValue === "" ? null : Number(editValue);
                   const liveAch = liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null;
                   const canDrill = row.actualValue !== 0;
@@ -422,7 +448,27 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                           <Input
                             type="number"
                             inputMode="decimal"
+                            className="h-8 w-24 text-right tabular-nums"
+                            placeholder="units"
+                            value={unitValue}
+                            onChange={(event) => {
+                              const raw = event.target.value;
+                              setUnitEdits((current) => ({ ...current, [key]: raw }));
+                              // Auto-fill Target value = units × unit price (still editable below).
+                              const units = Number(raw);
+                              if (row.unitPrice != null && raw !== "" && Number.isFinite(units)) {
+                                setEdits((current) => ({ ...current, [key]: String(Math.round(units * row.unitPrice!)) }));
+                              }
+                            }}
+                          />
+                        </td>
+                        <td className="p-2 text-right tabular-nums text-muted-foreground">{fmtPrice(row.unitPrice)}</td>
+                        <td className="p-2 text-right">
+                          <Input
+                            type="number"
+                            inputMode="decimal"
                             className="h-8 w-28 text-right tabular-nums"
+                            placeholder="value"
                             value={editValue}
                             onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
                           />
@@ -432,7 +478,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                       {detail ? (
                         <tr className="border-b bg-muted/30">
                           <td className="p-2" />
-                          <td className="p-2" colSpan={7}>
+                          <td className="p-2" colSpan={9}>
                             {detail.loading ? (
                               <div className="text-xs text-muted-foreground">Loading source…</div>
                             ) : detail.error ? (

@@ -25,12 +25,12 @@ import {
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
-import { queryCheckins } from "@/lib/crm/reads";
+import { CRM_RESIGNED_AGENT_CRM_IDS, queryCheckins } from "@/lib/crm/reads";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
 export type IReports360RepDayVisit = IReports360Visit & {
-  kind: "campaign" | "regular";
+  kind: "campaign" | "regular" | "other";
   mode: "single" | "double";
   partnerName: string | null;
   role: "primary" | "double";
@@ -61,6 +61,13 @@ const REP_DAY_FRESH_LOOKBACK_DAYS = 2;
 function isRecentRepDay(day: string): boolean {
   return day >= addDaysIso(todayIso(), -REP_DAY_FRESH_LOOKBACK_DAYS);
 }
+
+/** Resigned/owner-excluded CRM agents (crm_ids) as a Set for O(1) in-memory filtering — the same
+ * list every aggregate read applies (agent-side). Applied in buildRepDayResult so BOTH the live
+ * and mirror sources are filtered identically: otherwise a double visit whose PRIMARY agent is
+ * excluded (with the drilled rep as the partner) would appear in this drill-down while being
+ * invisible in the metric that links to it, and the live vs mirror paths would disagree. */
+const EXCLUDED_AGENT_IDS = new Set<number>(CRM_RESIGNED_AGENT_CRM_IDS);
 
 // In-memory cache of computed driving routes, keyed by rep + day + the exact ordered
 // check-in coordinates (so corrected GPS recomputes under a new key). A historical
@@ -180,6 +187,10 @@ async function buildRepDayResult(
   allCheckins: IReports360Checkin[],
 ): Promise<IReports360RepDayResult> {
   const visits: IReports360RepDayVisit[] = allVisits
+    // Resigned/owner-excluded agents are invisible in every aggregate (agent-side exclusion), so
+    // drop their rows here too — keeps this drill-down consistent with the metric it links to and
+    // makes the live and mirror sources agree.
+    .filter((visit) => !EXCLUDED_AGENT_IDS.has(visit.agentID))
     .filter(
       (visit) =>
         (visit.agentID === agentId || visit.doubleID === agentId) &&
@@ -193,13 +204,17 @@ async function buildRepDayResult(
         : null;
       return {
         ...visit,
-        kind: visit.visitType === 0 ? "regular" : "campaign",
+        // Only Regular (0) and Campaign (-8) are fieldwork; everything else (Vacation, Meeting,
+        // Training, …) is "other" — labeling it "campaign" was wrong. The real vendor label still
+        // shows via visitTypeDescription.
+        kind: visit.visitType === 0 ? "regular" : visit.visitType === -8 ? "campaign" : "other",
         mode: hasPartner ? "double" : "single",
         partnerName,
         role,
       };
     });
   const checkins = allCheckins
+    .filter((checkin) => !EXCLUDED_AGENT_IDS.has(checkin.agentID))
     .filter((checkin) => checkin.agentID === agentId && (checkin.checkDate ?? "").slice(0, 10) === day)
     .sort((left, right) => String(left.checkDate).localeCompare(String(right.checkDate)));
 

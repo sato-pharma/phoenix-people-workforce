@@ -10,6 +10,7 @@ import {
   loadEmployeeNameMap,
   loadMonthlyAchievement,
   loadProductNameMap,
+  loadProductPriceMap,
   loadSourceFiles,
   regionName,
   rollupAchievementByDm,
@@ -62,10 +63,11 @@ export default async function TargetsPage({
   let error: string | null = null;
 
   try {
-    const [achievement, areaName, productNames, employeeNames, files] = await Promise.all([
+    const [achievement, areaName, productNames, productPrices, employeeNames, files] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
       loadAllCanonicalAreaNames(),
       loadProductNameMap(),
+      loadProductPriceMap(),
       loadEmployeeNameMap(),
       loadSourceFiles(selectedPeriod),
     ]);
@@ -82,7 +84,9 @@ export default async function TargetsPage({
         areaState: row.areaState,
         productCode: row.productCode,
         productName: productNames.get(row.productCode.toUpperCase()) ?? row.productCode,
+        unitPrice: productPrices.get(row.productCode.toUpperCase()) ?? null,
         actualValue: row.actualValue,
+        targetUnits: row.targetUnits,
         targetValue: row.targetValue,
         achievementValue: row.achievementValue,
         hasActual: row.hasActual,
@@ -97,7 +101,7 @@ export default async function TargetsPage({
     lineTotal = line ? { actualValue: line.actualValue, targetValue: line.targetValue, achievementValue: line.achievementValue } : null;
     byRegion = rollupAchievementByRegion(lineRows)
       .map((entry) => ({
-        region: regionName(entry.key.startsWith(selectedLine) ? entry.key.slice(selectedLine.length) : entry.key),
+        region: regionName(entry.regionCode),
         actualValue: entry.actualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,

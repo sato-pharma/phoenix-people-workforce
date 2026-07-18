@@ -206,13 +206,13 @@ export function resolveChainSeats(
     const fn = resolveJobFunctionRole(current.jobTitle);
     if (fn === "District Manager" && !seats.dmHrId) {
       seats.dmHrId = key;
-      seats.dmName = current.fullName ?? null;
+      seats.dmName = current.displayName ?? null;
     } else if (fn === "Regional Manager" && !seats.rsmHrId) {
       seats.rsmHrId = key;
-      seats.rsmName = current.fullName ?? null;
+      seats.rsmName = current.displayName ?? null;
     } else if (fn === "National Sales Manager" && !seats.nsmHrId) {
       seats.nsmHrId = key;
-      seats.nsmName = current.fullName ?? null;
+      seats.nsmName = current.displayName ?? null;
     }
     const managerKey = normalizeHrId(current.managerHrId);
     current = managerKey ? byHrId.get(managerKey) ?? null : null;
@@ -593,7 +593,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
       requestId: request.id,
       requestCode: request.requestCode,
       requesterHrId: requesterKey,
-      requesterName: requesterRow?.fullName ?? null,
+      requesterName: requesterRow?.displayName ?? null,
       managerHrId: request.managerHrId,
       status: request.status,
       requestTypeId: request.requestTypeId,
@@ -1542,7 +1542,7 @@ export async function getMarketingRequestViewSales(
       requestCode: request.requestCode,
       customerName,
       requesterHrId: request.requesterHrId,
-      requesterName: requester?.fullName ?? null,
+      requesterName: requester?.displayName ?? null,
       line: requester?.lineName ?? derivedContextLine,
       status: request.status,
       requestTypeName,
@@ -1660,7 +1660,7 @@ async function buildReverseLookup(params: {
       results.push({
         requestId: row.id,
         requestCode: row.request_code,
-        requesterName: params.byHrId.get(requesterKey)?.fullName ?? null,
+        requesterName: params.byHrId.get(requesterKey)?.displayName ?? null,
         status: row.status,
         sharedPharmacyCodes: Array.from(sharedByRequest.get(row.id) ?? []),
       });

@@ -17,6 +17,7 @@
 import ExcelJS from "exceljs";
 
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
+import { recordAiCall } from "@/lib/observability/ai-metrics";
 import { type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
 import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
@@ -100,6 +101,7 @@ async function judgeWithAi(
     .join("\n");
   const user = `Distributor: ${distributorName}\n\nPinned columns (id | sheet | field | col | expected | found):\n${lines}\n\nReturn ONLY JSON of this exact shape: {"items":[{"id":<id>,"status":"match|drift|uncertain","note":"<short reason>"}],"summary":"<one plain-English sentence about whether the file lines up>"}`;
 
+  const startedAt = Date.now();
   const res = await fetch(`${provider.baseUrl}/chat/completions`, {
     body: JSON.stringify({
       max_completion_tokens: 2000,
@@ -118,9 +120,29 @@ async function judgeWithAi(
     // Log upstream body server-side only — it can echo request details / key fragments on 401.
     const body = await res.text().catch(() => "");
     console.error(`[weekly-verify] AI request failed (${res.status}): ${body.slice(0, 300)}`);
+    recordAiCall({
+      component: "sales_weekly_ai_verify",
+      errorCode: String(res.status),
+      latencyMs: Date.now() - startedAt,
+      model: provider.model,
+      purpose: "weekly_verify_columns",
+      status: "error",
+    });
     throw new Error(`AI request failed (HTTP ${res.status}).`);
   }
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  recordAiCall({
+    component: "sales_weekly_ai_verify",
+    inputTokens: json.usage?.prompt_tokens,
+    latencyMs: Date.now() - startedAt,
+    model: provider.model,
+    outputTokens: json.usage?.completion_tokens,
+    purpose: "weekly_verify_columns",
+    status: "success",
+  });
   const text = json.choices?.[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(text) as { items?: AiJudgement[]; summary?: string };
   return { judgements: Array.isArray(parsed.items) ? parsed.items : [], summary: String(parsed.summary ?? "") };

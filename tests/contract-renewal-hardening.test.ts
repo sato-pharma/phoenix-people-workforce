@@ -98,6 +98,26 @@ export function runContractRenewalHardeningTests() {
     /catch \(error\) \{\s*console\.error\(error, \{ tags: \{ cron: "birthday-notifications", employeeHrId: employee\.hrId \} \}\);/,
     "a failed birthday send must be captured in Sentry, tagged with the affected employee",
   );
+
+  // Item A: birthday eligibility must delegate to the shared predicate (which treats
+  // on_leave as active and resigned/terminated/not_renewed as terminal) instead of a
+  // hand-rolled inline check that wrongly excluded on_leave employees.
+  assert.match(
+    birthdaysRoute,
+    /import \{ isBirthdayEligibleEmployee \} from "@\/lib\/notifications\/birthday-eligibility";/,
+    "birthdays route must import the shared eligibility predicate",
+  );
+  assert.match(
+    birthdaysRoute,
+    /\.filter\(isBirthdayEligibleEmployee\)/,
+    "birthdays route must filter using the shared eligibility predicate",
+  );
+  assert.doesNotMatch(
+    birthdaysRoute,
+    /const active = !employee\.employment_status \|\| employee\.employment_status === "active";/,
+    "the old inline active-status check must be removed from the birthdays route",
+  );
+
   assert.match(
     reminderRoute,
     /for \(const row of candidates\) \{[\s\S]*?try \{[\s\S]*?const result = await createSystemNotification/,

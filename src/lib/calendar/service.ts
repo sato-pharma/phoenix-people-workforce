@@ -265,7 +265,7 @@ async function loadBirthdayItems(access: AccessContext, viewerLineName: string |
         return {
           id: `birthday-${row.hrId}`,
           source: "birthday" as const,
-          title: isSelf ? "My birthday 🎂" : `${row.fullName}'s birthday 🎂`,
+          title: isSelf ? "My birthday 🎂" : `${row.displayName}'s birthday 🎂`,
           startDate: date,
           endDate: date,
           category: "event" as const,

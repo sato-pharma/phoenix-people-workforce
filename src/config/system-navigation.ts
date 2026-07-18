@@ -487,7 +487,7 @@ const adminNavigationSectionSeeds = [
       // module-card grid (app/(admin)/admin/analytics/page.tsx). That page's
       // MODULES list has been extended with the 4 field-dashboard cards and now
       // filters cards per-role, so it doubles as this section's hub directly.
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Sales Analytics",
   },
@@ -861,6 +861,12 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
 // comment there). "Analytics Hub" itself is omitted here since its destination
 // IS that page; this array exists purely so the command palette can still find
 // every module by name (see hubPageItemGroups below).
+//
+// Roles reflect who can actually reach AND pass the analytics company-scope gate today: Super
+// Admin, CEO, SFE Manager (Exec/Recon stay CEO/Super-Admin-only). National Sales Manager /
+// Product Manager / Group Product Manager are the intended FUTURE audience but are portal-nav +
+// line-scoped, so they are gated out — do NOT re-add them here until per-viewer scoping + admin
+// routing land (see docs/analytics/role-security.md § Roadmap).
 export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/analytics/source-sales",
@@ -868,7 +874,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "SoS Analytics",
     description: "Source of Sales analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/monthly-closing",
@@ -876,7 +882,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Closing Analytics",
     description: "Monthly closing analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -884,7 +890,7 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Weekly Analytics",
     description: "Weekly sales analytics dashboard.",
     permissions: [{ resource: "weekly_sales" }],
-    roles: ["Super Admin", "CEO", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     href: "/admin/analytics/executive-comparison",

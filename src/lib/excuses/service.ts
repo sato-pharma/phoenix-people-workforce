@@ -399,7 +399,7 @@ async function notifyManagerOfExcuse(input: {
   const managerActionUrl = actionCenterHref(input.request.id);
   const title = input.type === "resubmitted" ? "Excuse resubmitted for approval" : "Excuse approval required";
   const verb = input.type === "resubmitted" ? "resubmitted" : "submitted";
-  const message = `${input.request.employeeName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
+  const message = `${input.employee.displayName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
   const occurrenceKey = input.occurrenceKey ?? input.request.createdAt;
   await createSystemNotification({
     actionUrl: managerActionUrl,
@@ -411,14 +411,14 @@ async function notifyManagerOfExcuse(input: {
       employeeHrId: input.request.employeeHrId,
       includeHrInbox: true,
       metrics: [
-        { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+        { label: "Employee", value: `${input.employee.displayName} (${input.request.employeeHrId})` },
         { label: "Excuse type", value: typeLabel },
         { label: "Date", value: input.request.excuseDate },
         { label: "Duration", value: `${input.request.durationHours} hours` },
       ],
       notificationType: "general",
       recipients: [input.manager.workEmail as string],
-      subject: `Excuse approval: ${input.request.employeeName}`,
+      subject: `Excuse approval: ${input.employee.displayName}`,
       summary: message,
       // The manager-facing editable template shows Job Title/Line/Area/Duration; the metric
       // mapping does not fill those fields, so supply them explicitly to avoid blank cells.
@@ -504,7 +504,7 @@ async function notifyDecisionRecipients(input: {
         templateContext: {
           duration: `${input.request.durationHours} hours`,
           employeeHrId: input.request.employeeHrId,
-          employeeName: input.request.employeeName,
+          employeeName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName ?? input.request.employeeName,
           excuseDate: input.request.excuseDate,
           excuseType: excuseTypeLabel,
           line: input.request.lineName ?? "—",
@@ -536,7 +536,7 @@ async function notifyDecisionRecipients(input: {
     actionUrl,
     directory: input.directory,
     eventType: "request_decided",
-    message: `${input.request.employeeName}'s ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by the direct manager.${noteSuffix}`,
+    message: `${findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName ?? input.request.employeeName}'s ${input.request.excuseType} excuse for ${input.request.excuseDate} was ${managerAction} by the direct manager.${noteSuffix}`,
     metadata: {
       employeeHrId: input.request.employeeHrId,
       idempotencyKey: `excuse:hr-decision:${input.request.id}:${input.request.status}:${input.request.managerDecisionAt ?? ""}`,
