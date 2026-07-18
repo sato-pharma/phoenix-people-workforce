@@ -703,8 +703,12 @@ export async function decideDirectOrder(
     subjectHrId: request.requesterHrId,
   });
 
-  // Phase C hook: on final approval, inject into SoS + weekly (idempotent). Implemented in Phase C.
-  // if (result.status === "approved") await injectApprovedDirectOrder(result);
+  // Phase C: SoS injection runs ATOMICALLY inside phx_apply_direct_order_decision on
+  // final approval (rebuild-from-truth via phx_rebuild_direct_order_sos_batch), so a
+  // failed injection rolls the decision back rather than leaving it un-injected. A
+  // reversal's final approval likewise retires its original in the same transaction.
+  // This is the money-critical path: it feeds au.f_monthly_attribution Branch B1 and
+  // credits the pharmacy-area rep in au.f_monthly_achievement.
 
   return result;
 }
