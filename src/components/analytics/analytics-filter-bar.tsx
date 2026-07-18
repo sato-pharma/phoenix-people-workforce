@@ -19,6 +19,7 @@ import { GitCompare } from "lucide-react";
 import { MultiSelectFilter, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import type { FilterDescriptor, FilterValues } from "@/lib/analytics/filter-registry";
 import type { AnalyticsDimensions } from "@/lib/analytics/service";
+import type { AnalyticsFilterVisibility } from "@/lib/analytics/scope";
 
 type AnalyticsFilterBarProps = {
   descriptors: FilterDescriptor[];
@@ -29,6 +30,8 @@ type AnalyticsFilterBarProps = {
   customers?: MultiSelectFilterOption[];
   /** Show a "Compare" toggle that writes/clears `?compare=1` (gates a comparison table on the page). */
   comparable?: boolean;
+  /** Per-viewer filter visibility — hide the Line/Region picker when the viewer is bound to a single one. */
+  visibility?: AnalyticsFilterVisibility;
 };
 
 function optionsFor(
@@ -111,7 +114,7 @@ function TextSearchFilterField({
   );
 }
 
-export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false }: AnalyticsFilterBarProps) {
+export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false, visibility }: AnalyticsFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const debounceRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -163,6 +166,9 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
   return (
     <div className="flex flex-wrap items-end gap-3">
       {descriptors.map((descriptor) => {
+        // Hide a dimension's picker when the viewer is scoped to a single value for it (nothing to choose).
+        if (visibility && descriptor.key === "lines" && !visibility.line) return null;
+        if (visibility && descriptor.key === "regions" && !visibility.region) return null;
         if (descriptor.type === "multi-select") {
           const options = optionsFor(descriptor, dimensions, customers);
           const selectedRaw = values[descriptor.key];

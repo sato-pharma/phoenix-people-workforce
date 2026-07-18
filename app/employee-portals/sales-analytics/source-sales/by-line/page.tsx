@@ -1,0 +1,23 @@
+import { SourceSalesByLineDashboard } from "@/components/analytics/dashboards/source-sales-by-line-dashboard";
+import { assertPermission } from "@/lib/auth/permissions";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { resolveAnalyticsViewerScope } from "@/lib/analytics/scope";
+
+export const dynamic = "force-dynamic";
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+// Portal mount. Lives under /employee-portals, so the employee-portal layout renders the portal
+// shell. Field roles reach their OWN scoped analytics here — never through an /admin URL. Access is
+// enforced by assertPermission(sales, read) + the per-viewer AnalyticsViewerScope (confidential
+// products / Head-Office line stay CEO/SA-excluded inside the scope engine).
+export default async function PortalSourceSalesByLineAnalyticsPage({ searchParams }: { searchParams: SearchParams }) {
+  const access = await resolveAuthenticatedPageAccess();
+  await assertPermission(access, "sales", "read");
+  const scope = await resolveAnalyticsViewerScope(access);
+  const resolvedParams = await searchParams;
+
+  return (
+    <SourceSalesByLineDashboard searchParams={resolvedParams} role={access.role} scope={scope} mountRoot="/employee-portals/sales-analytics" />
+  );
+}
