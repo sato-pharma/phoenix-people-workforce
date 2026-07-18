@@ -14,7 +14,7 @@ import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import { loadAnalyticsDimensions, loadCrossSource, type AnalyticsDimensions, type CrossSourceRow } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
-import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoCrossSource } from "@/lib/analytics/demo-fixtures";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
@@ -90,7 +90,8 @@ async function ReconciliationContent({
       <AnalyticsFilterBar
         descriptors={EXECUTIVE_FILTERS}
         values={filters}
-        dimensions={dimensions}
+        dimensions={scopeAnalyticsDimensions(dimensions, scope)}
+        visibility={computeAnalyticsFilterVisibility(scope)}
         basePath="/admin/analytics/reconciliation"
       />
 

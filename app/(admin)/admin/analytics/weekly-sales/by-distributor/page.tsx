@@ -19,7 +19,7 @@ import {
 } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { WEEKLY_FILTERS } from "@/lib/analytics/sales-filter-config";
-import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { resolveAnalyticsViewerScope, scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoWeeklyFact } from "@/lib/analytics/demo-fixtures";
 import { WEEKLY_TABS } from "@/lib/analytics/module-nav-config";
@@ -89,7 +89,8 @@ async function ByDistributorContent({
       <AnalyticsFilterBar
         descriptors={WEEKLY_FILTERS}
         values={filters}
-        dimensions={dimensions}
+        dimensions={scopeAnalyticsDimensions(dimensions, scope)}
+        visibility={computeAnalyticsFilterVisibility(scope)}
         basePath="/admin/analytics/weekly-sales/by-distributor"
       />
 
