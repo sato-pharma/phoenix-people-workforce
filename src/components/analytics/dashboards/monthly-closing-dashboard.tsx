@@ -47,7 +47,7 @@ async function ClosingDashboardContent({
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
 
   const closingFilters = {
-    period:       typeof filters.period       === "string" ? filters.period       : null,
+    period:       Array.isArray(filters.period)       ? filters.period       : [],
     periodFrom:   typeof filters.periodFrom   === "string" ? filters.periodFrom   : null,
     periodTo:     typeof filters.periodTo     === "string" ? filters.periodTo     : null,
     lines:        Array.isArray(filters.lines)             ? filters.lines         : [],
@@ -76,9 +76,9 @@ async function ClosingDashboardContent({
       loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
     ]);
 
-    if (scoped.filters.period) {
-      const priorPeriod = shiftPeriod(scoped.filters.period, 1);
-      const priorRows = await loadClosingByEmployee({ ...scoped.filters, period: priorPeriod, periodFrom: null, periodTo: null }).catch(() => []);
+    if (scoped.filters.period?.length === 1) {
+      const priorPeriod = shiftPeriod(scoped.filters.period[0], 1);
+      const priorRows = await loadClosingByEmployee({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(() => []);
       priorTotal = priorRows.reduce((s, r) => s + r.salesValue, 0);
     }
   }
