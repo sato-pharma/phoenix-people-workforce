@@ -2,10 +2,15 @@
 //
 // For a field LEADER (District / Regional / National Sales Manager) this answers
 // the question their own field presence can't: how well is their TEAM being
-// developed? It reuses the coaching module's coached-vs-neglected builder
-// (buildTrainingManagerCoachingComparison), scoped to the manager's own reps, so
-// a DM sees exactly which of their reps have been coached and which are neglected.
-// Training Managers get their own, richer analysis (tm-analytics) — not this.
+// developed? Two lenses over the SAME rep roster (their org-tree Medical Reps):
+//   1. Coaching coverage — reuses the coaching module's coached-vs-neglected
+//      builder (buildTrainingManagerCoachingComparison), scoped to their reps.
+//   2. Double-visit coverage — which reps this manager joined in the field, from
+//      the leadership activity already computed for the profile (leadership.byRep),
+//      so no extra heavy CRM scan.
+// The headline is the COMBINED gap: reps who got NEITHER coaching NOR a double-visit
+// this period — genuinely neglected. Training Managers get their own richer analysis
+// (tm-analytics), not this.
 
 import { buildTrainingManagerCoachingComparison } from "@/lib/coaching/analytics";
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
@@ -22,17 +27,25 @@ export type TeamHealthRep = {
   averageScore: number | null;
   latestCoachingDate: string | null;
   latestCoachName: string | null;
+  doubleVisited: boolean;
 };
 
 export type TeamHealthSummary = {
   hasData: boolean;
   repCount: number;
+  // Coaching
   coachedCount: number;
   neverCoachedCount: number;
   coverageRate: number; // 0..1 — share of the manager's reps coached in the window
   avgScore: number | null; // average coaching score among coached reps
   neglected: TeamHealthRep[]; // never-coached reps
   coached: TeamHealthRep[]; // coached reps, most recent first
+  // Double-visits (this manager, from leadership.byRep)
+  dvCoveredCount: number;
+  dvCoverageRate: number; // 0..1 — share of reps this manager double-visited
+  // Combined gap: neither coached nor double-visited this period.
+  fullyNeglectedCount: number;
+  fullyNeglected: TeamHealthRep[];
 };
 
 const EMPTY: TeamHealthSummary = {
@@ -44,17 +57,23 @@ const EMPTY: TeamHealthSummary = {
   avgScore: null,
   neglected: [],
   coached: [],
+  dvCoveredCount: 0,
+  dvCoverageRate: 0,
+  fullyNeglectedCount: 0,
+  fullyNeglected: [],
 };
 
 /**
- * Coaching coverage of a manager's own reps within the window. `teamHrIds` is the
- * manager's org-tree descendants (already computed by the detail page); we keep
- * only the active Medical Reps in it as the coachable denominator.
+ * Coaching + double-visit coverage of a manager's own reps within the window.
+ * `teamHrIds` is the manager's org-tree descendants (from the detail page); we keep
+ * only the active Medical Reps as the denominator. `dvRepHrIds` are the reps this
+ * manager double-visited this period (leadership.byRep with doubleVisits > 0).
  */
 export async function getEmployee360TeamHealth(input: {
   teamHrIds: string[];
   employees: EmployeeDirectoryRow[];
   window: { from: string; to: string };
+  dvRepHrIds?: string[];
 }): Promise<TeamHealthSummary> {
   const teamKeys = new Set(
     input.teamHrIds.map((h) => canonicalHrIdKey(h)).filter((k): k is string => Boolean(k)),
@@ -94,30 +113,46 @@ export async function getEmployee360TeamHealth(input: {
     reports = [];
   }
 
+  const dvKeys = new Set(
+    (input.dvRepHrIds ?? []).map((h) => canonicalHrIdKey(h)).filter((k): k is string => Boolean(k)),
+  );
+
   const comparison = buildTrainingManagerCoachingComparison({ employees: teamReps, reports });
-  const mapped: TeamHealthRep[] = comparison.rows.map((row) => ({
-    hrId: row.hrId,
-    name: row.medicalRepName,
-    coached: row.status === "coached",
-    coachingCount: row.coachingCount,
-    averageScore: row.averageScore,
-    latestCoachingDate: row.latestCoachingDate,
-    latestCoachName: row.latestCoachName,
-  }));
+  const mapped: TeamHealthRep[] = comparison.rows.map((row) => {
+    const key = canonicalHrIdKey(row.hrId);
+    return {
+      hrId: row.hrId,
+      name: row.medicalRepName,
+      coached: row.status === "coached",
+      coachingCount: row.coachingCount,
+      averageScore: row.averageScore,
+      latestCoachingDate: row.latestCoachingDate,
+      latestCoachName: row.latestCoachName,
+      doubleVisited: key != null && dvKeys.has(key),
+    };
+  });
+
   const coached = mapped
     .filter((r) => r.coached)
     .sort((a, b) => String(b.latestCoachingDate ?? "").localeCompare(String(a.latestCoachingDate ?? "")));
   const neglected = mapped.filter((r) => !r.coached);
+  const dvCoveredCount = mapped.filter((r) => r.doubleVisited).length;
+  const fullyNeglected = mapped.filter((r) => !r.coached && !r.doubleVisited);
   const scores = coached.map((r) => r.averageScore).filter((s): s is number => s != null);
+  const total = comparison.totalMedicalReps;
 
   return {
     hasData: true,
-    repCount: comparison.totalMedicalReps,
+    repCount: total,
     coachedCount: comparison.coachedCount,
     neverCoachedCount: comparison.uncoachedCount,
-    coverageRate: comparison.totalMedicalReps > 0 ? comparison.coachedCount / comparison.totalMedicalReps : 0,
+    coverageRate: total > 0 ? comparison.coachedCount / total : 0,
     avgScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
     neglected,
     coached,
+    dvCoveredCount,
+    dvCoverageRate: total > 0 ? dvCoveredCount / total : 0,
+    fullyNeglectedCount: fullyNeglected.length,
+    fullyNeglected,
   };
 }

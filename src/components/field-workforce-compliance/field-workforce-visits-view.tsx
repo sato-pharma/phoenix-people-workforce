@@ -22,10 +22,19 @@ type Visit = {
   visitTypeDescription: string | null;
 };
 
+type PunchSummary = {
+  firstPunchTime: string | null;
+  lastPunchTime: string | null;
+  visiblePunchCount: number;
+};
+
 type VisitsResponse = {
   data?: {
     checkins: RouteCheckin[];
     date: string;
+    /** Fingerprint punch summary for this employee/day, independent of CRM visits — null when
+     * there's no punch that day (or the employee isn't device-mapped). */
+    punches: PunchSummary | null;
     rep: { crmId: string | null; fullName: string | null; hrId: string } | null;
     route: DayRoute | null;
     visits: Visit[];
@@ -79,6 +88,7 @@ export function FieldWorkforceVisitsView({
   const visits = data?.visits ?? [];
   const checkins = data?.checkins ?? [];
   const route = data?.route ?? null;
+  const punches = data?.punches ?? null;
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -93,6 +103,14 @@ export function FieldWorkforceVisitsView({
         <p className="mt-1 text-sm font-semibold text-slate-500">{hrId} &middot; {date}</p>
       </div>
 
+      {!loading && !error && punches ? (
+        <Card className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-900">
+          Fingerprint punch: {punches.firstPunchTime ?? "—"}
+          {punches.lastPunchTime && punches.lastPunchTime !== punches.firstPunchTime ? `–${punches.lastPunchTime}` : ""}
+          {" "}({punches.visiblePunchCount} punch{punches.visiblePunchCount === 1 ? "" : "es"})
+        </Card>
+      ) : null}
+
       <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center gap-2 p-6 text-sm font-semibold text-slate-500">
@@ -101,7 +119,11 @@ export function FieldWorkforceVisitsView({
         ) : error ? (
           <div className="p-6 text-sm font-semibold text-rose-700">{error}</div>
         ) : visits.length === 0 ? (
-          <div className="p-6 text-sm font-semibold text-slate-500">No visit records for this rep on {date}.</div>
+          <div className="p-6 text-sm font-semibold text-slate-500">
+            {punches
+              ? `No CRM visit records for this rep on ${date} — a fingerprint punch was recorded (see above).`
+              : `No visit records for this rep on ${date}.`}
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>

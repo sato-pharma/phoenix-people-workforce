@@ -25,6 +25,7 @@ import { shiftPeriod } from "@/lib/sales/periods";
 import {
   computeContribution,
   computeDelta,
+  computeDeltaPctByCode,
   computeMovers,
   computeNewAndLost,
   computePareto,
@@ -162,6 +163,12 @@ export type SosMomComparison = {
   priorPeriod: string;
   summaryDeltas: SosSummaryDeltas;
   movers: { products: SosMovers; regions: SosMovers; distributors: SosMovers };
+  /**
+   * EVERY member's deltaPct keyed by normalized code (not just the top-5 movers), so the full
+   * product/distributor tables can show each row's real % change instead of "—" for everything
+   * outside the movers cap. A code absent here has no comparable prior value → the table shows "—".
+   */
+  deltaPctByCode: { products: Record<string, number>; regions: Record<string, number>; distributors: Record<string, number> };
   /** Growth-contribution decomposition — each member's share of the total absolute movement. */
   contribution: { products: SosContributionRow[]; regions: SosContributionRow[] };
   newProducts: SosNewLostRow[];
@@ -917,6 +924,12 @@ export async function getSosDashboard(
           regions: computeMovers(byRegion, priorByRegion),
           distributors: computeMovers(byDistributor, priorByDistributor),
         },
+        // Full per-code deltas (all rows, not just the top-5 movers) so the tables show every row's %.
+        deltaPctByCode: {
+          products: computeDeltaPctByCode(byProduct, priorByProduct),
+          regions: computeDeltaPctByCode(byRegion, priorByRegion),
+          distributors: computeDeltaPctByCode(byDistributor, priorByDistributor),
+        },
         contribution: {
           products: computeContribution(byProduct, priorByProduct),
           regions: computeContribution(byRegion, priorByRegion),
@@ -978,6 +991,12 @@ export async function getSosDashboard(
           products: computeMovers(byProduct, yoyByProduct),
           regions: computeMovers(byRegion, yoyByRegion),
           distributors: computeMovers(byDistributor, yoyByDistributor),
+        },
+        // Full per-code deltas (all rows, not just the top-5 movers) so the tables show every row's %.
+        deltaPctByCode: {
+          products: computeDeltaPctByCode(byProduct, yoyByProduct),
+          regions: computeDeltaPctByCode(byRegion, yoyByRegion),
+          distributors: computeDeltaPctByCode(byDistributor, yoyByDistributor),
         },
         contribution: {
           products: computeContribution(byProduct, yoyByProduct),

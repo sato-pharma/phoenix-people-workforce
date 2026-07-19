@@ -22,7 +22,8 @@ export default async function Employee360IndexPage() {
   // Everyone else (HR, Finance, CEO, admin, office…) is excluded entirely. The
   // 360-specific gate opens the module to every role but scopes WHO each viewer
   // sees (self / team / hierarchy / line / reps / whole company).
-  const employees: Employee360ListItem[] = resolveEmployee360VisibleRows(rows, access)
+  const visibleRows = await resolveEmployee360VisibleRows(rows, access);
+  const employees: Employee360ListItem[] = visibleRows
     .map((row) => {
       const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
       if (!category) return null;

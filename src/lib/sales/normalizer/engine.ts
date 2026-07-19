@@ -39,7 +39,11 @@ function discountFrac(value: unknown): number {
   if (!text) return 0;
   const n = Number(text);
   if (!Number.isFinite(n) || n === 0) return 0;
-  return Math.abs(n) > 1 ? n / 100 : n;
+  const fraction = Math.abs(n) > 1 ? n / 100 : n;
+  // Clamp to [0, 1]: value = qty x price x (1 - fraction); an out-of-range cell (e.g. a "150" typo)
+  // would otherwise drive the row value negative (or inflate it for a negative cell). Mirror of the
+  // guard in monthly-distributor-import.ts's parseDiscount.
+  return Math.min(1, Math.max(0, fraction));
 }
 
 // Timezone-safe YYYY-MM. dayFirst disambiguates DD-MM-YYYY vs MM-DD-YYYY when both parts are <= 12

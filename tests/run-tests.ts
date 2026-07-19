@@ -131,7 +131,9 @@ import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-feature
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runDoubleVisitReportExportTests } from "./double-visit-report-export.test.ts";
 import { runDvPlannerWeeklyDigestTests } from "./dv-planner-weekly-digest.test.ts";
+import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
+import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
@@ -395,6 +397,11 @@ import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
+import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
+import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
+import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
+import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
+import { runAnalyticsMultiSelectTimeFiltersTests } from "./analytics-multi-select-time-filters.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
@@ -407,7 +414,10 @@ import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
+import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
+import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
+import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -562,7 +572,9 @@ await runTest("weekly plans round-3 features (bulk approve, export, autosave, ti
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitReportExportTests);
 await runTest("dv planner weekly digest", runDvPlannerWeeklyDigestTests);
+await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
+await runTest("crm checkin-match (agent+contact+day rule, crm_save_date tie-break)", runCrmCheckinMatchTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
@@ -819,6 +831,11 @@ await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests)
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
+await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
+await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
+await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
+await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
+await runTest("analytics multi-select time filters (period/channel/week/year)", runAnalyticsMultiSelectTimeFiltersTests);
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
@@ -833,6 +850,9 @@ await runTest("payroll copilot expense review (month-lag: pays prior month's out
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("premium offer email (no salary in body + zebra details table)", runOfferEmailPremiumTests);
+await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
+await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
+await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

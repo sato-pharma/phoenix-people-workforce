@@ -37,6 +37,11 @@
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, created
   2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
   ref `izhmxvgiktiafqusolot`, is paused/decommissioned)
+- GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY` (added 2026-07-18): the staging
+  project's service-role key, used only by `.github/workflows/ci.yml`'s `preview-smoke` job so the
+  Playwright login-smoke test (CI_SMOKE_LOGIN_ID account) writes its expected session-rejection
+  noise to staging instead of production `audit_logs`. The matching URL/anon key for that same
+  step are hardcoded in `ci.yml` (public/non-secret, RLS-protected).
 - Production Supabase project ref: `ozucdzovmcqvepbozvqf`
 
 Environment meanings:

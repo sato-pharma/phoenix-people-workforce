@@ -19,11 +19,14 @@ export async function runContractNonRenewalTerminalTests() {
   const flags = readFileSync("src/lib/contracts/feature-flags.ts", "utf8");
   const email = readFileSync("src/lib/notifications/email.ts", "utf8");
 
-  // (a) feature flag is literal false
+  // (a) feature flag is literal true. Flipped 2026-07-18 after confirming (via direct
+  // schema inspection + a disposable-fixture staging smoke test) the underlying WP-6
+  // schema is live on staging + production and the enabled reason/notes shape writes
+  // correctly through the existing resignation fallback path.
   assert.match(
     flags,
-    /export\s+const\s+WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED\s*=\s*false\s*;/,
-    "feature flag must be defined as literal false",
+    /export\s+const\s+WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED\s*=\s*true\s*;/,
+    "feature flag must be defined as literal true",
   );
 
   // (b) service imports resignEmployeeAndOpenVacancy from the resignations service
@@ -87,6 +90,28 @@ export async function runContractNonRenewalTerminalTests() {
   assert.ok(
     /contract not renewed/i.test(service),
     'service.ts must mention "Contract not renewed" in the non-renewal terminal lifecycle path',
+  );
+
+  // (f2) effectiveDate fallback chain, reason format, and workflowNotes format —
+  // exercised end-to-end (with this exact string shape) against a disposable
+  // fixture on staging (cifwmndunmlxjhyjugxa) on 2026-07-18: employee terminated,
+  // vacancy opened, resignation traceable, correctly excluded from
+  // v_active_organogram / v_payroll_eligible_employees. Locking these strings so
+  // a future edit can't silently drift from the verified shape.
+  assert.match(
+    service,
+    /const effectiveDate =\s*\n\s*cleanText\(record\.proposedEndDate\) \?\?\s*\n\s*cleanText\(record\.currentRenewalDate\) \?\?\s*\n\s*cleanText\(record\.requestedRenewalDate\) \?\?\s*\n\s*todayDate\(\);/,
+    "effectiveDate must fall back proposedEndDate -> currentRenewalDate -> requestedRenewalDate -> todayDate()",
+  );
+  assert.match(
+    service,
+    /const reason = `Contract not renewed \(request \$\{record\.id\}\)\.`;/,
+    'reason must be the literal "Contract not renewed (request ${record.id})." format',
+  );
+  assert.match(
+    service,
+    /`Triggered by contract non-renewal\.`,\s*\n\s*`contract_renewal_request_id: \$\{record\.id\}`,/,
+    "workflowNotes must include the literal contract_renewal_request_id traceability line",
   );
 
   // (g) non-renew branch must not directly mutate the employees table

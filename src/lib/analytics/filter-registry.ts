@@ -55,14 +55,9 @@ export function getFilterArray(filters: FilterValues, key: string): string[] {
   return [];
 }
 
-// Include/exclude mode for a multi-select filter, read from a parallel `${key}Mode`
-// URL param. All analytics RPCs only support include-style `= any(array)` filtering
-// today, so every filter ships in "include" mode this pass — this helper exists so
-// the filter bar and registry agree on the convention if exclude mode is added later.
-export function getFilterMode(filters: FilterValues, key: string): "include" | "exclude" {
-  const v = filters[`${key}Mode`];
-  return v === "exclude" ? "exclude" : "include";
-}
+// (Removed getFilterMode: the analytics filter bar hardcodes include-mode and had zero callers of
+// this helper. Exclude mode isn't supported by the analytics RPCs; if it's added later, reintroduce
+// the reader alongside the code that actually consumes it rather than leaving a speculative export.)
 
 // ── Parse URL search params into FilterValues ─────────────────────────────────
 
