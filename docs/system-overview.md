@@ -1,6 +1,6 @@
 # Phoenix Workforce - System Overview
 
-Current operating state: see [Current Operating State](F:/Phoenix%20Workforce/phoenix-workforce/docs/current-operating-state.md).
+Current operating state: see [Current Operating State](current-operating-state.md).
 
 ## Architecture
 
@@ -15,11 +15,11 @@ Current operating state: see [Current Operating State](F:/Phoenix%20Workforce/ph
 ## Current Git And Deployment Workflow
 
 - `main` is production-only and should stay aligned with the live production deployment.
-- A long-lived working branch holds new edits, feature work, and function changes.
-- Production is served at `https://phoenix-hr.satopharma.com`.
-- Vercel keeps only two active deployments: production (`main`) and the working-branch preview.
-- The working-branch name, preview URL, and deployment mapping are documented in [current-operating-state.md](current-operating-state.md).
-- `.vercel/` is local Vercel CLI metadata and is intentionally ignored.
+- Feature work happens on a `codex/<task>` branch/worktree, PR'd against `main`.
+- Production is served at `https://phoenix-hr.satopharma.com` (GCP Cloud Run).
+- Cloud Run auto-deploys both production and staging from `main` after CI passes — there is no per-branch preview deployment (that was a retired Vercel-era model).
+- Deployment mapping and the Cloud Scheduler cron model are documented in [current-operating-state.md](current-operating-state.md).
+- `.vercel/` may still exist locally as inert, gitignored Vercel CLI leftovers from before the Cloud Run migration.
 
 ## Roles And Permissions
 

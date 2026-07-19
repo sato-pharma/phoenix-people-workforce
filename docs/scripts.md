@@ -59,20 +59,36 @@ These scripts validate database state and RLS policies. They connect to Supabase
 
 ## Migration Pipeline Scripts (Phase 25-36)
 
-These scripts form a staged pipeline for validating and applying production database migrations. They must be run in sequence. Gaps in numbering (31, 35) are intentional -- those phases were consolidated.
+Phase 25-27 (staging mutation smoke tests) are still active and safe to run. Phase
+28-36 (production migration approval/reconciliation) were **retired 2026-07-11** —
+each script's own header comment says so: they hardcode checks against one specific
+pre-baseline migration
+(`20260518232733_phase21_security_access_governance_hardening.sql`, now archived
+under `supabase/_migrations_archive/pre-baseline-2026-07-11/`) and cannot validate
+any migration written since the baseline-snapshot model took over (see
+docs/migrations.md, "Baseline Model"). They still run without erroring, which makes
+a green result look like a real gate when it is actually re-checking a frozen,
+unrelated file — do not treat a passing phase28-36 script as evidence about a
+current migration.
 
-| Script | Purpose | Safety | Phase |
-|---|---|---|---|
-| `phase25:staging-rls-mutation-smoke` | Staging RLS mutation smoke test | Caution | 25 |
-| `phase26:staging-browser-auth-mutation-smoke` | Staging browser auth mutation test | Caution | 26 |
-| `phase27:staging-app-service-mutation-smoke` | Staging app service mutation test | Caution | 27 |
-| `phase28:production-migration-readiness-smoke` | Production migration readiness check | **Danger** | 28 |
-| `phase29:production-migration-preapply-review` | Pre-apply review for production migration | **Danger** | 29 |
-| `phase30:production-migration-approval-gate` | Production migration approval gate | **Danger** | 30 |
-| `phase32:production-migration-queue-review` | Production migration queue review | **Danger** | 32 |
-| `phase33:migration-history-reconciliation-gate` | Migration history reconciliation | **Danger** | 33 |
-| `phase34:post-repair-pending-migrations` | Post-repair pending migration check | **Danger** | 34 |
-| `phase36:post-apply-no-pending-migrations` | Verify no pending migrations remain | **Danger** | 36 |
+| Script | Purpose | Safety | Phase | Status |
+|---|---|---|---|---|
+| `phase25:staging-rls-mutation-smoke` | Staging RLS mutation smoke test | Caution | 25 | Active |
+| `phase26:staging-browser-auth-mutation-smoke` | Staging browser auth mutation test | Caution | 26 | Active |
+| `phase27:staging-app-service-mutation-smoke` | Staging app service mutation test | Caution | 27 | Active |
+| `phase28:production-migration-readiness-smoke` | Production migration readiness check | **Danger** | 28 | **Retired** |
+| `phase29:production-migration-preapply-review` | Pre-apply review for production migration | **Danger** | 29 | **Retired** |
+| `phase30:production-migration-approval-gate` | Production migration approval gate | **Danger** | 30 | **Retired** |
+| `phase32:production-migration-queue-review` | Production migration queue review | **Danger** | 32 | **Retired** |
+| `phase33:migration-history-reconciliation-gate` | Migration history reconciliation | **Danger** | 33 | **Retired** |
+| `phase34:post-repair-pending-migrations` | Post-repair pending migration check | **Danger** | 34 | **Retired** |
+| `phase36:post-apply-no-pending-migrations` | Verify no pending migrations remain | **Danger** | 36 | **Retired** |
+
+`security:preflight:local` also transitively hits retired ground: it runs
+`security-identity-health.ts`, which reads the same archived pre-baseline migration
+file and regex-checks it — that check will trivially pass forever regardless of live
+database state. Its other two sub-checks (`security:access-registry`,
+`security:rls-static`) are still meaningful static checks.
 
 ## Standalone Scripts (in scripts/ directory)
 
@@ -88,6 +104,6 @@ These scripts form a staged pipeline for validating and applying production data
 ## Important Notes
 
 1. Scripts marked **Danger** can connect to the production database. Do not run them without understanding what they do and obtaining approval.
-2. The phase pipeline (25-36) must be run in sequence. Each phase validates the output of the previous phase.
+2. Phase 25-27 must be run in sequence for staging validation. Phase 28-36 are retired (see above) — there is currently no scripted production-migration approval pipeline; production applies go through the Supabase MCP/CLI directly, gated by manual `get_advisors` plus targeted SQL verification and explicit owner approval.
 3. Scripts use Node `--experimental-strip-types` for TypeScript execution (requires Node 22+).
 4. Some scripts require environment variables from `.env.local` or `.env.staging.rls.local`.

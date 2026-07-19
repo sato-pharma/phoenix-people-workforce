@@ -70,25 +70,33 @@ registry-key alias, and route/app-shell ownership rules — are documented in
 ## Current Git And Deployment Model
 
 - `main` is production-only. Do not edit it directly.
-- A long-lived working branch holds active development and feature work.
-- Production public domain: `https://phoenix-hr.satopharma.com`
-- Vercel keeps only two active deployments: production (`main`) and the working-branch preview.
-- The exact public production domain must be checked after every production deploy because Vercel workspace aliases and public aliases can point to different deployments.
-- The working-branch name, preview URL, and deployment mapping are documented in [current-operating-state.md](current-operating-state.md).
+- Feature work happens on a `codex/<task>` branch/worktree, PR'd against `main`.
+- Production public domain: `https://phoenix-hr.satopharma.com` (GCP Cloud Run, service `phoenix-hr`, `europe-west3`).
+- Cloud Run auto-deploys both production and a separate staging service (`phoenix-hr-staging`, `us-central1`) from `main` after CI passes — there is no per-branch preview deployment.
+- The exact public production domain must be checked after every production deploy — confirm the public domain mapping is serving the same revision as the workspace-internal Cloud Run URL.
+- Deployment mapping and the Cloud Scheduler cron model are documented in [current-operating-state.md](current-operating-state.md).
 
-## Current Vercel Cron Model
+## Current Cloud Scheduler Cron Model
 
-The project runs on Vercel Pro (confirmed 2026-07-02). `vercel.json` keeps four crons:
+Google Cloud Scheduler drives five jobs (see `scripts/setup-gcp-cron.sh`),
+authenticated via a `Bearer $CRON_SECRET` header against the public domain,
+scheduled in Africa/Cairo time:
 
-- `/api/notifications/daily` -- once daily; internally runs birthdays, contract
-  renewals, and the other daily SLA/digest jobs.
-- `/api/notifications/process?limit=50` -- every 30 minutes; drains the
+- `/api/notifications/daily` -- once daily (6:36 AM Cairo); internally runs
+  birthdays, contract renewals, and the other daily SLA/digest jobs.
+- `/api/notifications/process?limit=50` -- every 5 minutes; drains the
   notification outbox, probation reminders, and deferred/Telegram delivery retries.
+- `/api/cron/background-jobs?limit=10` -- weekly (Fridays); drains queued
+  admin-requested exports.
 - `/api/cron/ireports360-visits-sync` -- 3x daily; syncs iReports360 CRM visits.
 - `/api/cron/ireports360-visits-reconcile` -- weekly; wide reconciliation over a
   rotating slice of a 120-day window.
 
-Notification outbox and probation reminder processing are shared through `src/lib/notifications/scheduled-processing.ts` and run from the 30-minute outbox-drain cron. Sub-daily notification processing requires Vercel Pro -- Hobby hard-fails deployment for any cron more frequent than daily. All 4 crons carry an explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat.
+Notification outbox and probation reminder processing are shared through
+`src/lib/notifications/scheduled-processing.ts` and run from the 5-minute
+outbox-drain job. Unlike the retired Vercel-cron model, Cloud Scheduler has no
+plan-tier frequency limit. All five crons carry an explicit `maxDuration = 300` and
+a named `Sentry.withMonitor` heartbeat.
 
 ## Current Gaps
 
