@@ -48,6 +48,12 @@ async function runDailyNotifications(request: Request) {
     recruitment,
     telegramDigest,
     weeklySystemHealthDigest,
+    // Pre-existing off-by-one (found 2026-07-18): this name was missing, so every result from
+    // here on was captured one position off (e.g. outstationGeocodeWarmup actually held the
+    // probation digest's result). The jobs themselves were unaffected — each has its own
+    // .catch() and runs regardless of destructuring position — only this diagnostic JSON
+    // response was mislabeled.
+    probationWeeklyDigest,
     outstationGeocodeWarmup,
     fieldWorkforceComplianceDigest,
     fieldWorkforceComplianceDeductionsAutoSync,
@@ -154,6 +160,7 @@ async function runDailyNotifications(request: Request) {
     marketingSla,
     outstationGeocodeWarmup,
     outstationSla,
+    probationWeeklyDigest,
     rateLimitPrune,
     errorEventsPrune,
     recruitment,
