@@ -6,6 +6,7 @@ import { isHrIdInNsmTeamScope } from "@/lib/employee-portal/team-calendar";
 import { IReports360ApiError } from "@/lib/crm/client";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
+import { loadSingleEmployeeDayPunchSummary } from "@/lib/attendance/punch-minutes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,10 @@ export async function GET(request: Request) {
     }
 
     const result = await getIReports360RepDayVisits({ date, hrId });
-    return NextResponse.json({ data: { date, ...result }, success: true });
+    // Best-effort: a fingerprint-domain hiccup must never break the CRM visits view that
+    // already worked fine without it — degrade to null punches rather than fail the request.
+    const punches = await loadSingleEmployeeDayPunchSummary({ dateIso: date, hrId }).catch(() => null);
+    return NextResponse.json({ data: { date, punches, ...result }, success: true });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({
