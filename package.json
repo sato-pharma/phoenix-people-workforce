@@ -77,6 +77,7 @@
     "sos:warning-cleanup": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/source-of-sales-warning-cleanup.ts",
     "sos:direct-cleanup": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/source-of-sales-direct-import-cleanup.ts",
     "check:migrations": "node scripts/check-migrations.mjs",
+    "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
     "check:routes": "node scripts/check-routes.mjs",
     "check:no-stale-domains": "node scripts/check-no-stale-domains.mjs",
     "validate:env": "node scripts/validate-env.mjs",

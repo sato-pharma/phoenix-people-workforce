@@ -46,7 +46,9 @@ Tables (all `public.`): `email_suppressions`, `marketing_customer_contacts`,
 `monthly_closing_publications`, `report_it_audit_logs`, `report_it_reports`,
 `source_of_sales_customer_map`, `v2_vacation_approval_steps`, `weekly_distributor_mapping`,
 `weekly_missing_mappings`, `weekly_sales_batches`, `weekly_sales_pos_region_mappings`,
-`weekly_sales_product_scope`, `weekly_sales_rows`.
+`weekly_sales_product_scope`, `weekly_sales_rows`, `background_jobs` (added 2026-07-20,
+same pattern: service-role-only async job queue, accessed via `getSupabaseAdmin()` and
+the `claim_next_background_job()` RPC, never a browser client).
 
 > If any table here ever needs RLS-respecting *browser* reads, that is a real change —
 > add a scoped policy rather than treating the INFO as noise.
@@ -106,13 +108,23 @@ of the actually-reachable surface for this class of issue; `analytics`/`au`/`int
 `private` are confirmed unreachable directly (PostgREST returns `PGRST106 Invalid
 schema` for all three).
 
-**Known follow-up, not yet done (flagged, needs owner-approved reconciliation):** all
-five migrations above were applied via direct SQL execution, not the Supabase
-`apply_migration` tool, so `supabase_migrations.schema_migrations` on staging and
-production almost certainly has no rows for them — the exact "migration-history
-version drift" failure mode already described below. Reconcile via `supabase
-migration repair <version> --status applied` per that process once DB/CLI access is
-available in-session.
+**Follow-up RESOLVED (2026-07-20):** the concern below (that these five migrations,
+applied via direct SQL execution rather than the Supabase `apply_migration` tool,
+would have no `supabase_migrations.schema_migrations` rows) was re-checked live
+against both staging and production — all five are correctly recorded (matched by
+name, where the apply-time version drifted from the filename timestamp, per the
+version-drift note further below). The reconciliation path originally cited here
+(`supabase migration repair` gated by `scripts/phase33-migration-history-reconciliation-gate.ts`)
+does not actually apply to this class of drift: phase33, and the rest of the
+phase28-36 pipeline, were retired 2026-07-11 and are hardcoded to a single,
+unrelated pre-baseline migration — see docs/migrations.md and docs/scripts.md. The
+mechanism actually used was a direct `schema_migrations` query via the Supabase MCP,
+comparing by version with a name-based fallback. A permanent, general-purpose
+version of this check now runs daily
+(`.github/workflows/migration-drift-check.yml`, via the new
+`public.phx_ci_migration_versions()` RPC and `scripts/check-migrations-applied.ts`),
+so a migration merged to `main` but never actually applied is now caught
+automatically instead of depending on a manual audit like this one.
 
 Should not reappear; if a new `anon_security_definer_function_executable` finding
 appears for a function NOT covered by the CI guard test (i.e. an existing function

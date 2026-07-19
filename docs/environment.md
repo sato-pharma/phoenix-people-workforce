@@ -72,13 +72,13 @@ All environment variables are listed in `.env.example` at the repository root. C
 
 See docs/observability.md for activation steps.
 
-## Vercel / Deployment
+## Cloud Scheduler / Deployment
 
 | Variable | Description |
 |---|---|
-| CRON_SECRET | Vercel cron job authentication |
-| PHOENIX_PREVIEW_READ_ONLY | Blocks mutations in preview environment |
-| VERCEL_ENV | Set automatically by Vercel (production/preview/development) |
+| CRON_SECRET | Bearer-token auth checked against Google Cloud Scheduler job requests (see docs/deployment.md) |
+| PHOENIX_PREVIEW_READ_ONLY | Legacy Vercel-preview read-only guard; inert on Cloud Run today (neither environment sets `APP_ENV=preview`) |
+| VERCEL_ENV | Legacy — Vercel is decommissioned for hosting, so nothing sets this anymore; any code still branching on it is inert |
 
 ## Dev-Only Variables
 

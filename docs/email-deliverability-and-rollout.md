@@ -16,7 +16,7 @@ name (`select conname, pg_get_constraintdef(oid) from pg_constraint where conrel
 'public.notification_outbox'::regclass and contype='c';`) → `apply_migration` to **staging**
 → verify → **production** on explicit approval → `get_advisors` clean.
 
-## 2. Production environment variables (Vercel)
+## 2. Production environment variables (Cloud Run)
 
 | Var | Set to | Why |
 |---|---|---|
@@ -27,17 +27,15 @@ name (`select conname, pg_get_constraintdef(oid) from pg_constraint where conrel
 Before broad enablement, send one `POST /api/notifications/test {"to":["a-controlled-inbox"]}`
 and confirm receipt + headers.
 
-## 3. GitHub Actions scheduler secrets (sub-daily drain)
+## 3. Sub-daily drain — now handled natively (no action needed)
 
-In the repo settings → Secrets and variables → Actions, add:
-
-| Secret | Value |
-|---|---|
-| `CRON_SECRET` | the SAME value as Vercel's `CRON_SECRET` |
-| `NOTIFICATION_DRAIN_URL` | `https://phoenix-hr.satopharma.com/api/notifications/process?limit=50` |
-
-The workflow (`.github/workflows/notification-drain.yml`) then drains every ~5 min. The
-daily Vercel cron remains the guaranteed backstop, so this is purely latency reduction.
+This step is **obsolete**. It originally described a supplementary GitHub Actions
+workflow (`.github/workflows/notification-drain.yml`) to drain the outbox every
+~5 min on top of a slower daily Vercel cron backstop. That workflow file no longer
+exists, and it's no longer needed: the Google Cloud Scheduler job
+`phoenix-process-notifications` now calls `/api/notifications/process?limit=50`
+directly every 5 minutes as its native schedule (see docs/deployment.md) — there is
+no separate secret or workflow to configure here.
 
 ## 4. DNS — SPF / DKIM / DMARC (the biggest inbox-vs-spam lever)
 
