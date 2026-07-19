@@ -28,8 +28,23 @@ name: Deploy to Google Cloud Run (Staging)
 # deploy *attempt* that failed does not block staging: if prod failed AFTER pushing
 # its image, the image exists and staging deploys it (staging still re-validates
 # independently via its own no-traffic-deploy + smoke-test gate); if prod failed
-# BEFORE the image was pushed, the "Resolve image" guard below fails with a clear
-# message.
+# BEFORE the image was pushed, the fallback step below still finds prod's last
+# good image and deploys that instead of failing outright.
+#
+# Image resolution is two-tiered ("Resolve image" then "Fall back to the most
+# recently pushed prod image"): workflow_run-triggered runs report head_sha as
+# the target branch's tip at trigger time, not the commit the upstream run
+# actually processed (documented GitHub Actions behavior) -- and that can drift
+# across chained workflow_run hops (CI -> prod deploy -> this workflow) whenever
+# commits land in quick succession or CI gets manually re-run against an older
+# commit. When that happens, the exact sha-<commit> tag this workflow computes
+# may not be the tag prod actually pushed, even though prod deployed
+# successfully seconds earlier (confirmed 2026-07-19, staging run 29699355042:
+# prod's run genuinely built and promoted sha-e6332965 while this workflow
+# computed the newer sha-ba17ae71 and failed when that exact tag didn't exist).
+# Falling back to the newest sha-* image in Artifact Registry is what "build
+# once, deploy twice" actually means in practice: deploy whatever prod's last
+# run really shipped, not necessarily today's exact commit SHA.
 on:
   workflow_run:
     workflows: ["Deploy to Google Cloud Run"]
@@ -111,13 +126,43 @@ jobs:
           RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
           IMAGE="${{ env.PROD_IMAGE_PATH }}:$SHA_TAG"
-          if ! gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
-            echo "::error::Image $IMAGE not found in Artifact Registry. The prod deploy workflow for this commit most likely failed before pushing its image. Fix/re-run the prod deploy first, or run this workflow manually with build_from_source=true to build a staging image from source."
+          if gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+            echo "Reusing prod-built image: $IMAGE"
+            echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          else
+            echo "Image $IMAGE not found under the exact commit tag — will fall back to the latest prod image (see next step; this is expected when workflow_run head_sha has drifted, not necessarily a failed prod push)."
+          fi
+
+      - name: Fall back to the most recently pushed prod image
+        id: image_fallback
+        # Only when the exact-tag lookup above ran and came up empty -- not when
+        # it was skipped entirely (that's the build_from_source escape hatch,
+        # handled by the fallback_build step below instead).
+        if: ${{ steps.image.outcome == 'success' && steps.image.outputs.image == '' }}
+        run: |
+          set -euo pipefail
+          # Sort by CREATE_TIME (immutable per image version) rather than
+          # UPDATE_TIME: pushing/moving the :latest-cache BuildKit tag touches
+          # UPDATE_TIME on whichever image loses the tag too, which can tie with
+          # the image that just gained it. Filter to sha-* tagged versions only
+          # -- this path/repo also holds the untagged-for-deploy :deps-cache and
+          # :latest-cache BuildKit cache images (see cloudbuild.yaml), which are
+          # never something Cloud Run can run.
+          LATEST=$(gcloud artifacts docker images list "${{ env.PROD_IMAGE_PATH }}" \
+            --project ${{ env.PROJECT_ID }} \
+            --include-tags \
+            --sort-by=~CREATE_TIME \
+            --limit=20 \
+            --format=json | python3 -c "import sys,json;imgs=json.load(sys.stdin);print(next((i['package']+':'+t for i in imgs for t in i.get('tags',[]) if t.startswith('sha-')),''))")
+          if [ -z "$LATEST" ]; then
+            echo "::error::No sha-* tagged image found at all under ${{ env.PROD_IMAGE_PATH }}. The prod deploy workflow most likely never pushed an image. Fix/re-run the prod deploy first, or run this workflow manually with build_from_source=true to build a staging image from source."
             exit 1
           fi
-          echo "Reusing prod-built image: $IMAGE"
+          SHA_TAG="${LATEST##*:}"
+          echo "Reusing latest prod-built image: $LATEST"
           echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "image=$LATEST" >> "$GITHUB_OUTPUT"
 
       - name: Build image from source (manual escape hatch only)
         id: fallback_build
@@ -146,8 +191,8 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
-          IMAGE="${{ steps.image.outputs.image || steps.fallback_build.outputs.image }}"
-          SHA_TAG="${{ steps.image.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}"
+          IMAGE="${{ steps.image.outputs.image || steps.image_fallback.outputs.image || steps.fallback_build.outputs.image }}"
+          SHA_TAG="${{ steps.image.outputs.sha_tag || steps.image_fallback.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}"
           echo "Deploying $IMAGE as tag $SHA_TAG (no traffic) to ${{ env.SERVICE_NAME }}"
           # --startup-probe pins the probe already live on the staging service
           # (applied by hand 2026-07-17, identical to prod's) so a future service
