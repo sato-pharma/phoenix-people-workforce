@@ -39,7 +39,21 @@ The supabase/ root also contains historical hardening scripts and operational pa
 
 ## Migration Pipeline
 
-The repository includes a phased migration validation pipeline (phase25 through phase36) that gates production database changes through staging validation, approval, and post-apply verification. These scripts are documented in docs/scripts.md.
+Staging validation still runs through the phase25-27 mutation smoke scripts (RLS,
+browser-auth, app-service — see docs/scripts.md). The phase28-36 production
+approval/reconciliation gate was **retired 2026-07-11**: those scripts hardcode
+checks against one specific pre-baseline migration (now archived under
+`supabase/_migrations_archive/pre-baseline-2026-07-11/`) and cannot validate any
+migration written since. There is currently no scripted gate for taking a new
+migration to production — apply via the Supabase MCP `apply_migration` tool (or
+`supabase db push`) to staging first, verify with `get_advisors` plus a targeted
+`pg_policies`/`pg_constraint`/`has_function_privilege` check, then repeat against
+production after explicit approval. If the apply tool records a drifted
+`schema_migrations` version (it stamps the apply-time server clock, not the repo
+filename), reconcile by hand — see the "Operational note" in
+docs/security/supabase-advisor-baseline.md. A daily CI job
+(`.github/workflows/migration-drift-check.yml`) now catches migrations that were
+merged but never actually applied to staging.
 
 ## Rollback Strategy
 

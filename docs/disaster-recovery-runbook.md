@@ -1,6 +1,6 @@
 # Phoenix Workforce — Disaster Recovery & Operations Runbook
 
-_Production runs on **GCP Cloud Run** (project `phoenix-workforce-498619`, region `us-central1`, service `phoenix-hr`) at **https://phoenix-hr.satopharma.com**, backed by Supabase (`ozucdzovmcqvepbozvqf`), Resend (email), and Cloud Scheduler (crons). No secret values appear in this document._
+_Production runs on **GCP Cloud Run** (project `phoenix-workforce-498619`, region `europe-west3` since the 2026-07-17 region cutover, service `phoenix-hr`) at **https://phoenix-hr.satopharma.com**, backed by Supabase (`ozucdzovmcqvepbozvqf`), Resend (email), and Cloud Scheduler (crons — job location `us-central1`, independent of the app's region). No secret values appear in this document._
 
 ## 1. Incident response — first 5 minutes
 
@@ -15,11 +15,11 @@ Cloud Run keeps prior revisions; traffic can be moved instantly with no rebuild.
 
 ```bash
 # List recent revisions (most recent first)
-gcloud run revisions list --service=phoenix-hr --region=us-central1 --project=phoenix-workforce-498619
+gcloud run revisions list --service=phoenix-hr --region=europe-west3 --project=phoenix-workforce-498619
 
 # Roll 100% traffic back to a known-good revision
 gcloud run services update-traffic phoenix-hr \
-  --region=us-central1 --project=phoenix-workforce-498619 \
+  --region=europe-west3 --project=phoenix-workforce-498619 \
   --to-revisions <GOOD_REVISION>=100
 ```
 
@@ -28,7 +28,7 @@ The deploy pipeline (`.github/workflows/deploy-cloud-run.yml`) already deploys *
 ## 3. Redeploy / forward-fix
 
 - Merge a fix to `main` → CI must pass → the deploy workflow auto-deploys (gated on CI success, SHA-pinned actions, env-validated, no-traffic → smoke → promote).
-- Manual: Actions → "Deploy to Google Cloud Run" → **Run workflow** (`workflow_dispatch`), or `gcloud run deploy phoenix-hr --source . --region us-central1 --project phoenix-workforce-498619`.
+- Manual: Actions → "Deploy to Google Cloud Run" → **Run workflow** (`workflow_dispatch`), or `gcloud run deploy phoenix-hr --source . --region europe-west3 --project phoenix-workforce-498619`.
 
 ## 4. Database recovery (Supabase)
 
@@ -43,7 +43,7 @@ Secrets live in the Cloud Run service env (owner-managed). To rotate one (owner-
 
 ```bash
 # Example shape (values entered by the owner; not shown here):
-gcloud run services update phoenix-hr --region=us-central1 --project=phoenix-workforce-498619 \
+gcloud run services update phoenix-hr --region=europe-west3 --project=phoenix-workforce-498619 \
   --update-env-vars "<NAME>=<NEW_VALUE>"
 ```
 

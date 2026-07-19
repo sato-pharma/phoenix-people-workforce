@@ -150,21 +150,26 @@ notifications). Transitions validate against the registry and write audit logs.
 
 ### Notifications & cron
 
-Notifications use an outbox model. The project runs on **Vercel Pro** (confirmed
-2026-07-02). `vercel.json` keeps four crons: `/api/notifications/daily`
-(`30 6 * * *`), which internally calls `runBirthdayNotifications` /
-`runContractRenewalNotifications` plus the other daily SLA/digest jobs (vacation,
-marketing, outstation, recruitment, resignations, weekly-plan drift, Telegram HR
-digest); `/api/notifications/process?limit=50` (`*/5 * * * *`), which drains the
-notification outbox, probation reminders, and deferred/Telegram delivery retries
-faster than once a day via `src/lib/notifications/scheduled-processing.ts`; and
-`/api/cron/ireports360-visits-sync` (`0 9,12,19 * * *`) / `/api/cron/ireports360-visits-reconcile`
-(`0 4 * * 0`), which sync and periodically wide-reconcile iReports360 CRM visit
-data. Every cron carries an explicit `maxDuration = 300` and a named
-`Sentry.withMonitor` heartbeat (see `docs/observability.md`). Sub-daily cron
-schedules hard-fail deployment on Vercel Hobby — keep the account on Pro (or fold
-outbox draining back into the daily cron / an external scheduler) before ever
-downgrading.
+Notifications use an outbox model. The project runs on **GCP Cloud Run** (see
+`docs/deployment.md`); Google Cloud Scheduler drives five jobs against the public
+domain, each authenticated via a `Bearer $CRON_SECRET` header and scheduled in
+Africa/Cairo time (see `scripts/setup-gcp-cron.sh`, last aligned 2026-07-17):
+`/api/notifications/daily` (6:36 AM), which internally calls
+`runBirthdayNotifications` / `runContractRenewalNotifications` plus the other daily
+SLA/digest jobs (vacation, marketing, outstation, recruitment, resignations,
+weekly-plan drift, Telegram HR digest); `/api/notifications/process?limit=50`
+(every 5 min), which drains the notification outbox, probation reminders, and
+deferred/Telegram delivery retries faster than once a day via
+`src/lib/notifications/scheduled-processing.ts`; `/api/cron/background-jobs?limit=10`
+(Fridays 3:00 AM), which drains queued admin-requested exports; and
+`/api/cron/ireports360-visits-sync` (9:07/12:07/19:07) /
+`/api/cron/ireports360-visits-reconcile` (Sundays 4:24 AM), which sync and
+periodically wide-reconcile iReports360 CRM visit data. Every cron carries an
+explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat (see
+`docs/observability.md`). The in-app `/admin/cron-control` dashboard can
+view/pause/resume/run/reschedule these live, but does not update
+`setup-gcp-cron.sh` — if you reschedule a job there, update that script's
+`--schedule`/`--time-zone` flags by hand or a future re-run will silently revert it.
 
 ## Conventions
 
@@ -198,8 +203,14 @@ keys used by their respective domains.
 - `codex/work-from-production` is the active working branch for edits/features.
 - Production: `https://phoenix-hr.satopharma.com` (verify this exact public domain
   after every production deploy — workspace aliases can diverge from the public alias).
-- Keep only two active Vercel deployments: production `main` and the working preview.
-- `.vercel/` is local CLI metadata and stays uncommitted.
+- Production deploys as a new GCP Cloud Run revision (`phoenix-hr`, `europe-west3`)
+  with no traffic, smoke-tested, then promoted to 100% traffic — see
+  `.github/workflows/deploy-cloud-run.yml`. Staging is a separate, always-live
+  Cloud Run service (`phoenix-hr-staging`, `us-central1`) that auto-deploys from
+  `main` after CI passes, not a per-branch preview.
+- `.vercel/` may still exist locally as inert Vercel CLI leftovers; it stays
+  gitignored and uncommitted. Vercel itself is legacy/decommissioned for hosting —
+  see AGENTS.md's Stable Environment Facts.
 - Parallel sessions must use isolated git worktrees and never re-clone over the primary
   `.git` — see AGENTS.md § Parallel Session and Git Worktree Safety.
 

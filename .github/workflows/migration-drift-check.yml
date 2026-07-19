@@ -1,0 +1,53 @@
+name: Migration Drift Check
+
+# Closes the "migration merged to main but never actually applied" gap found
+# 2026-07-19 — 3 migrations sat unapplied for up to a week (two causing real
+# production bugs) before a manual audit caught it. Deliberately NOT triggered by
+# pull_request/push: a PR introducing a new migration is SUPPOSED to show it
+# unapplied at review time, and this checks for silent drift that accumulates AFTER
+# merge — only a recurring, time-based check catches that, a per-PR one can't.
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily, offset from the notification-outbox/probation crons
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  migration-drift-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0 # full history needed for per-file commit-age lookups
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check migrations are actually applied (staging)
+        run: pnpm run check:migrations-applied
+        env:
+          # Staging is the only project with a CI-wired credential today. Per the
+          # established "everything lands on staging before production" workflow,
+          # staging drift is a reliable proxy — if a migration never reached
+          # staging, it almost certainly never reached production either.
+          NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
