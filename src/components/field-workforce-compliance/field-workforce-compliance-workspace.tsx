@@ -447,6 +447,9 @@ function MetricCard({
 function withLoggingTimingTooltip(explanation: string, cell: FieldWorkforceDayCell): string {
   const timing = cell.loggingTiming;
   let result = explanation;
+  if (cell.campaignOverlay) {
+    result = `${result} Mixed day: regular visits are counted (green) AND a campaign/special activity also occurred this day (violet).`;
+  }
   if (timing?.firstLoggedTime) {
     const windowText = timing.activeWindowMinutes != null
       ? ` (logged over ${Math.floor(timing.activeWindowMinutes / 60)}h ${timing.activeWindowMinutes % 60}m)`
@@ -474,7 +477,13 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   const tooltip = withLoggingTimingTooltip(cell.explanation, cell);
   const content = (
     <>
-      {statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}
+      {cell.campaignOverlay ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-lg bg-violet-300/60 [clip-path:polygon(0_0,0_100%,100%_100%)]"
+        />
+      ) : null}
+      <span className="relative z-10">{statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}</span>
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
@@ -521,7 +530,14 @@ function TimelineLegend() {
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
       <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign (click to open)">CP</LegendChip>
-      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day">5</LegendChip>
+      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full day">5</LegendChip>
+      <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+        <span className="relative inline-flex h-7 min-w-7 items-center justify-center overflow-hidden rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[11px] font-black text-emerald-800">
+          <span aria-hidden className="pointer-events-none absolute inset-0 bg-violet-300/60 [clip-path:polygon(0_0,0_100%,100%_100%)]" />
+          <span className="relative z-10">5</span>
+        </span>
+        Visits + campaign (same day)
+      </div>
       <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only">5</LegendChip>
       <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only">5</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
