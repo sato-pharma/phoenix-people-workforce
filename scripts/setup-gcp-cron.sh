@@ -12,6 +12,11 @@
 #  - Schedules are deliberately de-collided (no two jobs share a firing minute;
 #    the notifications drain at */5 owns :00,:05,...) — see the 2026-07-17 perf
 #    audit: stacked crons at :00 saturated the single serving instance.
+#
+# The in-app Cron Control dashboard (/admin/cron-control) can view/pause/resume/run/reschedule
+# these same jobs live, but does NOT update this script — if you edit a schedule there, update
+# the --schedule=/--time-zone= flags below by hand, or a future re-run of this script will
+# silently revert the change.
 PROJECT_ID="phoenix-workforce-498619"
 SCHEDULER_LOCATION="us-central1"
 SERVICE_URL="https://phoenix-hr.satopharma.com"

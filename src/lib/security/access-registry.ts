@@ -154,6 +154,18 @@ export const accessRegistry = [
   // AI triage — POSTs that call OpenAI (cost); CEO + Super Admin only, rate-limited in-route.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/explain", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/summary", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Cron Control dashboard: view = CEO + Super Admin (inline role check in-route, like
+  // system-issues above); all 4 mutations = Super Admin only — pausing or rescheduling a cron
+  // that drives payroll/notification SLAs is at least as consequential as an IP block.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/cron-control", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/pause", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/resume", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/run", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Pure local computation (no GCP call, no state mutation) but still POST, so proxy.ts's
+  // blanket same-origin check for DELETE/PATCH/POST/PUT applies regardless — csrfRequired here
+  // just makes the registry's own description match that real, unconditional enforcement.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/preview-schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-control/**", permission: { resource: "workflow_registry", action: "update" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-registry/**", permission: { resource: "workflow_registry", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/email-templates/**", permission: { resource: "communication", action: "read" } }),
