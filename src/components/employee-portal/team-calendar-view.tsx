@@ -44,7 +44,8 @@ function weekday(dateIso: string) {
   }).format(new Date(`${dateIso}T00:00:00Z`));
 }
 
-function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number) {
+function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number, attendanceCrossCheck?: FieldWorkforceDayCell["attendanceCrossCheck"]) {
+  if (status === "N" && attendanceCrossCheck === "punch_no_visits") return "P";
   if (status === "VISITS") return String(visitCount ?? 0);
   if (status === "BLANK") return "-";
   return status;
@@ -52,7 +53,9 @@ function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number) {
 
 /** Same status palette as the admin Field Workforce Compliance timeline. A "VISITS" day
  * additionally shades by visitPeriod: AM-only and PM-only get their own distinct colors to
- * flag a half-day visit pattern; a mixed/untagged day keeps the default emerald. */
+ * flag a half-day visit pattern; a mixed/untagged day keeps the default emerald. An "N" day
+ * with a same-day fingerprint punch (mainly Head Office staff who don't generate CRM visits)
+ * shades teal instead of the alarming rose — punched in, not no activity. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
   const visitsClass =
     cell.visitPeriod === "AM"
@@ -60,12 +63,15 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
       : cell.visitPeriod === "PM"
         ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
         : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+  const nClass = cell.attendanceCrossCheck === "punch_no_visits"
+    ? "border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100"
+    : "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100";
   const base = {
     AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
     BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
     CP: "border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100",
     F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
-    N: "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100",
+    N: nClass,
     UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
     VISITS: visitsClass,
   }[cell.status];
@@ -96,6 +102,7 @@ function TimelineLegend() {
       <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day (click to open)">5</LegendChip>
       <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only (click to open)">5</LegendChip>
       <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only (click to open)">5</LegendChip>
+      <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
     </div>
@@ -109,15 +116,16 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   );
   const content = (
     <>
-      {statusLabel(cell.status, cell.visitCount)}
+      {statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
     </>
   );
-  // Numeric-visit days AND campaign days deep-link to the portal day drill-down (both are
-  // real recorded activity, just categorized differently); other days are static.
-  if (cell.status === "VISITS" || cell.status === "CP") {
+  // Numeric-visit days, campaign days, AND fingerprint-punched "N" days deep-link to the portal
+  // day drill-down (all are real recorded activity, just categorized/sourced differently);
+  // other days are static.
+  if (cell.status === "VISITS" || cell.status === "CP" || cell.attendanceCrossCheck === "punch_no_visits") {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation} (open visits)`}

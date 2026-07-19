@@ -304,6 +304,51 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     "SFE Manager NEVER generates a payroll-deduction recommendation, per eligibility.ts's promise",
   );
 
+  // --- Head Office fingerprint integration: device-mapped-only employees get a Team Calendar
+  // row, but can never generate a payroll-deduction recommendation (informational only). ---
+  const deviceMappedEmployees: FieldWorkforceEmployeeInput[] = [
+    // "Admin Assistant" is not a field-workforce-eligible title (see the ineligible-role case
+    // above) — must be absent without device-mapping, present once device-mapped.
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Office Amira", displayName: "Office Amira", hireDate: "2024-01-01", hrId: "HO-1", jobTitle: "Admin Assistant", positionTitle: null },
+  ];
+  const { matrix: withoutDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    !withoutDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title is excluded when NOT device-mapped, same as before this feature",
+  );
+  const { matrix: withDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    deviceMappedHrKeys: new Set([canonicalHrIdKey("HO-1")!]),
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    withDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title gets a Team Calendar row once actively device-mapped",
+  );
+
+  // Payroll-safety: a device-mapped-only employee with a RESOLVED CRM identity (deliberately
+  // not "unresolved" — proves the new title-eligibility gate, not the incidental identity
+  // guard, is what's protecting this) and a no-activity day must still never reach
+  // payrollRecommendations.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hoArchive: any = {
+    archive: { id: "live:2026-07", monthKey: "2026-07", month: 7, year: 2026, employeeCount: 1, highSeverityCount: 0, reviewCandidateCount: 1, sheetName: "s", sourceFilename: "f", status: "archived", uploadedAt: "2026-07-01T00:00:00.000Z", uploadedBy: "test" },
+    preview: {
+      employees: [{ ...guardEmployee("HO-1", "crm_id"), roleName: "Admin Assistant" }],
+      errors: [], metadata: { dateRange: { start: "2026-07-01", end: "2026-07-31" } }, reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, warnings: [],
+    },
+  };
+  const hoReport = buildFieldWorkforceRecommendationsReportFromArchive(hoArchive, [], undefined);
+  assert.ok(
+    hoReport.leaveRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee still appears in leave/compliance review",
+  );
+  assert.ok(
+    !hoReport.payrollRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee (non-field-eligible title) NEVER generates a payroll-deduction recommendation, even with a resolved CRM identity",
+  );
+
   // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
   // Sourced from saveDate (crm_save_date) — NOT visitDate/visit_date_time, which is a fixed
   // midnight placeholder on every production row (verified 2026-07: 100% of 93,742 rows) and

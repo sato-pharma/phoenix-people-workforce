@@ -276,7 +276,8 @@ function severityBadge(severity: FieldWorkforceSeverity | undefined) {
   return <Badge variant="neutral">{severity}</Badge>;
 }
 
-function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number) {
+function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number, attendanceCrossCheck?: FieldWorkforceDayCell["attendanceCrossCheck"]) {
+  if (status === "N" && attendanceCrossCheck === "punch_no_visits") return "P";
   if (status === "VISITS") return String(visitCount ?? 0);
   if (status === "BLANK") return "-";
   return status;
@@ -434,12 +435,17 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
       : cell.visitPeriod === "PM"
         ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
         : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+  // A fingerprint punch on an otherwise "N" (no CRM activity) day — mainly Head Office staff
+  // who don't generate CRM visits at all — reads as "punched in", not "no activity".
+  const nClass = cell.attendanceCrossCheck === "punch_no_visits"
+    ? "border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100"
+    : "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100";
   const base = {
     AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
     BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
     CP: "border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100",
     F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
-    N: "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100",
+    N: nClass,
     UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
     VISITS: visitsClass,
   }[cell.status];
@@ -527,7 +533,7 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   const tooltip = withLoggingTimingTooltip(cell.explanation, cell);
   const content = (
     <>
-      {statusLabel(cell.status, cell.visitCount)}
+      {statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
@@ -536,8 +542,6 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
       {cell.attendanceCrossCheck === "visits_no_punch" ? (
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-rose-500" />
-      ) : cell.attendanceCrossCheck === "punch_no_visits" ? (
-        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-sky-500" />
       ) : cell.attendanceCrossCheck === "av_with_punch" ? (
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-orange-600" />
       ) : cell.attendanceCrossCheck === "av_with_partial_punch" ? (
@@ -545,9 +549,11 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
     </>
   );
-  // Numeric-visit days AND campaign days deep-link to the day drill-down in a NEW tab (both
-  // are real recorded activity, just categorized differently); other days are static.
-  if (cell.status === "VISITS" || cell.status === "CP") {
+  // Numeric-visit days, campaign days, AND fingerprint-punched "N" days deep-link to the day
+  // drill-down in a NEW tab (all are real recorded activity, just categorized/sourced
+  // differently); other days are static. punch_no_visits no longer needs its own corner dot
+  // (line above) now that it drives the cell's main color instead.
+  if (cell.status === "VISITS" || cell.status === "CP" || cell.attendanceCrossCheck === "punch_no_visits") {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${tooltip} (open visits)`}
@@ -581,7 +587,7 @@ function TimelineLegend() {
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800 ring-2 ring-violet-300" label="Late log (AM-tagged entry logged after 11:30 — CRM log time, not a verified visit time)">•</LegendChip>
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800 ring-2 ring-rose-300" label="CRM activity but no fingerprint punch that day">•</LegendChip>
-      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800 ring-2 ring-sky-300" label="Fingerprint punch but no CRM activity that day">•</LegendChip>
+      <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
     </div>
   );
 }
