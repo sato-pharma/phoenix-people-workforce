@@ -1,8 +1,3 @@
-import type ExcelJS from "exceljs";
-
-import {
-  excelWorksheetToMatrix,
-} from "@/lib/uploads/exceljs-rows";
 import type {
   FieldWorkforceDateColumn,
   FieldWorkforceIgnoredColumn,
@@ -572,23 +567,6 @@ export function parseFieldWorkforceComplianceMatrix(input: {
   };
 }
 
-export function parseFieldWorkforceComplianceWorksheet(input: {
-  fileName: string;
-  worksheet: ExcelJS.Worksheet;
-}) {
-  const matrix = excelWorksheetToMatrix(input.worksheet, { includeEmptyRows: true });
-  return parseFieldWorkforceComplianceMatrix({
-    fileName: input.fileName,
-    matrix,
-    sheetName: input.worksheet.name,
-  });
-}
-
-export function findUsableFieldWorkforceWorksheet(workbook: ExcelJS.Workbook) {
-  for (const worksheet of workbook.worksheets) {
-    const matrix = excelWorksheetToMatrix(worksheet, { includeEmptyRows: true });
-    const hasHeader = matrix.slice(0, 10).some((row) => detectHeaderColumns(row));
-    if (hasHeader) return worksheet;
-  }
-  return workbook.worksheets[0] ?? null;
-}
+// parseFieldWorkforceComplianceWorksheet / findUsableFieldWorkforceWorksheet (the ExcelJS-workbook
+// entry points) were removed with the FWC Excel import. parseFieldWorkforceComplianceMatrix above
+// stays — the live path feeds it an in-memory matrix built from the CRM visits mirror.

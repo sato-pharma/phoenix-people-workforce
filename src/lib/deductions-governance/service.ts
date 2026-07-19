@@ -2007,36 +2007,29 @@ export async function listAvailableDeductionMonthKeys(_input: {
 }): Promise<{ defaultMonthKey: string | undefined; months: string[] }> {
   const supabase = getSupabaseAdmin();
 
-  const [candidateResult, fwcResult] = await Promise.all([
-    supabase.from("deduction_candidates").select("month_key"),
-    supabase
-      .from("field_workforce_compliance_imports")
-      .select("month_key")
-      .eq("status", "archived"),
-  ]);
+  // The FWC Excel-archive month enrichment was removed with the Excel import (its
+  // field_workforce_compliance_imports table is orphaned) — candidate months + the recent
+  // calendar window are the source now. Live FWC months surface via deduction_candidates once
+  // their no-activity sync has run.
+  const candidateResult = await supabase.from("deduction_candidates").select("month_key");
   if (candidateResult.error) throw candidateResult.error;
-  // FWC archive lookup is a best-effort enrichment; never let it break the picker.
-  const fwcRows = fwcResult.error ? [] : fwcResult.data ?? [];
 
   const candidateMonths = new Set<string>();
-  const fwcMonths = new Set<string>();
   const collect = (set: Set<string>, value: unknown) => {
     const key = String(value ?? "").trim();
     if (key) set.add(key);
   };
   for (const row of candidateResult.data ?? []) collect(candidateMonths, row.month_key);
-  for (const row of fwcRows) collect(fwcMonths, row.month_key);
 
-  const all = new Set<string>([...candidateMonths, ...fwcMonths, ...recentCalendarMonthKeys(4)]);
+  const all = new Set<string>([...candidateMonths, ...recentCalendarMonthKeys(4)]);
   const months = Array.from(all).sort((left, right) => right.localeCompare(left));
 
   const descending = (set: Set<string>) =>
     Array.from(set).sort((left, right) => right.localeCompare(left))[0];
 
-  // Prefer a month that actually has data to act on: most recent month with
-  // candidates, else most recent archived FWC month, else the most recent month
-  // offered (current calendar month) as a last resort.
-  const defaultMonthKey = descending(candidateMonths) ?? descending(fwcMonths) ?? months[0];
+  // Prefer a month that actually has data to act on: most recent month with candidates, else the
+  // most recent month offered (current calendar month) as a last resort.
+  const defaultMonthKey = descending(candidateMonths) ?? months[0];
 
   return { defaultMonthKey, months };
 }

@@ -181,8 +181,6 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/notifications/telegram", permission: { resource: "communication", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "PATCH"], pattern: "/api/admin/notifications/telegram", permission: { resource: "communication", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-reply/send", permission: { resource: "communication", action: "update" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/recommendations/export", permission: { resource: "hr_calendar", action: "export" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/field-workforce-compliance/archive/:id/export", permission: { resource: "hr_calendar", action: "export" } }),
   // Super-Admin-only via assertSystemAdministratorWorkspaceAccess (direct role check), not
   // the permission matrix — same pattern as the visits-report/backfill entry below.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/vacation/company-report/export", permission: null, guard: "domain-helper" }),

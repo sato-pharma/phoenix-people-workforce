@@ -4,10 +4,7 @@ import {
   buildFieldWorkforceCompliancePreview,
 } from "../src/lib/field-workforce-compliance/classifier.ts";
 import {
-  fieldWorkforceArchiveRowsFromPreview,
   fieldWorkforceMonthKey,
-  fieldWorkforcePreviewFromArchiveRows,
-  findFieldWorkforceArchiveDuplicate,
 } from "../src/lib/field-workforce-compliance/archive.ts";
 import {
   assertFieldWorkforceDecisionReasonAllowed,
@@ -19,7 +16,6 @@ import {
   FieldWorkforceDecisionReasonError,
   FieldWorkforceInvalidDecisionStatusError,
 } from "../src/lib/field-workforce-compliance/recommendations.ts";
-import { generateFieldWorkforceFinalActionsWorkbook } from "../src/lib/field-workforce-compliance/export.ts";
 import {
   parseFieldWorkforceComplianceMatrix,
 } from "../src/lib/field-workforce-compliance/parser.ts";
@@ -163,42 +159,27 @@ export async function runFieldWorkforceComplianceTests() {
     !candidate.explanation.toLowerCase().includes("leave balance updated")
   ));
 
-  const archiveRows = fieldWorkforceArchiveRowsFromPreview(preview, "test-admin");
+  // The Excel archive round-trip (rows + duplicate detection + rehydration) was removed with the
+  // FWC Excel import; the recommendations generator now runs directly on a live preview via a
+  // synthetic archive detail — the same shape the live-mirror path builds.
   assert.equal(fieldWorkforceMonthKey(2026, 1), "2026-01");
-  assert.equal(archiveRows.importRow.month_key, "2026-01");
-  assert.equal(archiveRows.importRow.employee_count, 2);
-  assert.equal(archiveRows.importRow.review_candidate_count, preview.reviewCandidates.length);
-  assert.equal(archiveRows.importRow.high_severity_count, preview.severityCounts.High);
-  assert.equal(archiveRows.dayRows.length, preview.employees.length * 31);
-  assert.equal(archiveRows.summaryRows.length, preview.employees.length);
-
-  const duplicate = findFieldWorkforceArchiveDuplicate([
-    {
-      employeeCount: 2,
+  const restored = {
+    archive: {
+      employeeCount: preview.metadata.employeeCount,
       highSeverityCount: preview.severityCounts.High,
-      id: "archive-1",
-      month: 1,
+      id: "live:2026-01",
+      month: preview.metadata.month,
       monthKey: "2026-01",
       reviewCandidateCount: preview.reviewCandidates.length,
-      sheetName: "iReport",
-      sourceFilename: "Jan 2026 team calendar.xlsx",
-      status: "archived",
+      sheetName: preview.metadata.sheetName,
+      sourceFilename: preview.metadata.fileName,
+      status: "archived" as const,
       uploadedAt: "2026-01-31T00:00:00Z",
-      uploadedBy: "test-admin",
-      year: 2026,
+      uploadedBy: "ireports360_visits_mirror",
+      year: preview.metadata.year,
     },
-  ], "2026-01");
-  assert.equal(duplicate?.id, "archive-1");
-
-  const restored = fieldWorkforcePreviewFromArchiveRows({
-    dayRows: archiveRows.dayRows,
-    importRow: {
-      ...archiveRows.importRow,
-      id: "archive-1",
-      uploaded_at: "2026-01-31T00:00:00Z",
-    },
-    summaryRows: archiveRows.summaryRows,
-  });
+    preview,
+  };
   assert.equal(restored.archive.monthKey, "2026-01");
   assert.equal(restored.preview.metadata.employeeCount, preview.metadata.employeeCount);
   assert.equal(restored.preview.reviewCandidates.length, preview.reviewCandidates.length);
@@ -405,11 +386,6 @@ export async function runFieldWorkforceComplianceTests() {
   assert.equal(decidedReport.finalActions[0].pushStatus, "Export only");
   assert.equal(decidedReport.finalActions[0].decisionReason, "Manager approved field exception");
 
-  const workbook = generateFieldWorkforceFinalActionsWorkbook(decidedReport);
-  const workbookBuffer = await workbook.xlsx.writeBuffer();
-  assert.ok(workbookBuffer.byteLength > 0);
-  assert.equal(workbook.getWorksheet("Final Actions")?.getCell(2, 1).value, "This export does not execute payroll or leave changes.");
-
   const validLeaveReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
     dates: avRecommendation.dates,
     days_count: avRecommendation.daysCount,
@@ -494,16 +470,23 @@ export async function runFieldWorkforceComplianceTests() {
     holidays: [{ name: "Coptic Christmas Day", startDate: "2026-01-07" }],
     parsed: holidayAndPreHireParsed,
   });
-  const holidayArchiveRows = fieldWorkforceArchiveRowsFromPreview(holidayAndPreHirePreview, "test-admin");
-  const holidayArchive = fieldWorkforcePreviewFromArchiveRows({
-    dayRows: holidayArchiveRows.dayRows,
-    importRow: {
-      ...holidayArchiveRows.importRow,
-      id: "holiday-archive",
-      uploaded_at: "2026-01-31T00:00:00Z",
+  const holidayArchive = {
+    archive: {
+      employeeCount: holidayAndPreHirePreview.metadata.employeeCount,
+      highSeverityCount: holidayAndPreHirePreview.severityCounts.High,
+      id: "live:holiday",
+      month: holidayAndPreHirePreview.metadata.month,
+      monthKey: fieldWorkforceMonthKey(holidayAndPreHirePreview.metadata.year, holidayAndPreHirePreview.metadata.month),
+      reviewCandidateCount: holidayAndPreHirePreview.reviewCandidates.length,
+      sheetName: holidayAndPreHirePreview.metadata.sheetName,
+      sourceFilename: holidayAndPreHirePreview.metadata.fileName,
+      status: "archived" as const,
+      uploadedAt: "2026-01-31T00:00:00Z",
+      uploadedBy: "ireports360_visits_mirror",
+      year: holidayAndPreHirePreview.metadata.year,
     },
-    summaryRows: holidayArchiveRows.summaryRows,
-  });
+    preview: holidayAndPreHirePreview,
+  };
   const holidayRecommendations = buildFieldWorkforceRecommendationsReportFromArchive(holidayArchive);
   assert.ok(!holidayRecommendations.payrollRecommendations.some((recommendation) =>
     recommendation.employeeCode === "H-1" &&
@@ -512,12 +495,5 @@ export async function runFieldWorkforceComplianceTests() {
   assert.ok(!holidayRecommendations.payrollRecommendations.some((recommendation) =>
     recommendation.employeeCode === "P-1" &&
     recommendation.dates.includes("2026-01-01")
-  ));
-
-  const archiveKeys = collectObjectKeys(archiveRows).map((key) => key.toLowerCase());
-  assert.ok(archiveKeys.every((key) =>
-    !key.includes("payroll") &&
-    !key.includes("leave_balance") &&
-    !key.includes("approval")
   ));
 }

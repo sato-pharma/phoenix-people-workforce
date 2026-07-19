@@ -1,5 +1,4 @@
 import { writeAuditLog } from "@/lib/admin/audit";
-import { loadFieldWorkforceComplianceArchive } from "@/lib/field-workforce-compliance/archive";
 import type {
   FieldWorkforceArchiveDetail,
   FieldWorkforceArchiveListItem,
@@ -636,15 +635,6 @@ export function assertNoFieldWorkforceApprovedDecisionConflict(input: {
   if (conflict) throw new FieldWorkforceConflictingDecisionError();
 }
 
-async function loadDecisionRows(importId: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from(decisionsTable)
-    .select("*")
-    .eq("import_id", importId);
-  if (error) throw error;
-  return (data ?? []) as FieldWorkforceDecisionRow[];
-}
-
 /**
  * Decision rows for a live (mirror-sourced) month, keyed by month_key since a live month
  * has no import_id to key off. Deliberately NOT filtered to import_id IS NULL: once the
@@ -771,147 +761,6 @@ export async function buildFieldWorkforceRecommendationsReportForLiveMonth(input
     loadApprovedLeaveCoverageForArchive(archiveDetail),
   ]);
   return buildFieldWorkforceRecommendationsReportFromArchive(archiveDetail, decisionRows, leaveCoverage);
-}
-
-export async function getFieldWorkforceRecommendationsReport(input: {
-  actorLoginId: string;
-  archiveId: string;
-  auditFinalReportView?: boolean;
-}): Promise<FieldWorkforceRecommendationsReport | null> {
-  const archiveDetail = await loadFieldWorkforceComplianceArchive({
-    actorLoginId: input.actorLoginId,
-    auditView: false,
-    id: input.archiveId,
-  });
-  if (!archiveDetail) return null;
-
-  const report = buildFieldWorkforceRecommendationsReportFromArchive(
-    archiveDetail,
-    await loadDecisionRows(input.archiveId),
-    await loadApprovedLeaveCoverageForArchive(archiveDetail),
-  );
-
-  if (input.auditFinalReportView) {
-    await writeAuditLog({
-      actorLoginId: input.actorLoginId,
-      entityId: input.archiveId,
-      entityType: "field_workforce_compliance_import",
-      newValues: {
-        finalActionCount: report.finalActions.length,
-        monthKey: archiveDetail.archive.monthKey,
-      },
-      summary: "Field Workforce Compliance final approved actions report viewed.",
-    });
-  }
-
-  return report;
-}
-
-export async function saveFieldWorkforceRecommendationDecision(input: {
-  actorLoginId: string;
-  archiveId: string;
-  decisionReason: string;
-  decisionStatus: FieldWorkforceDecisionStatus;
-  hrNote: string;
-  recommendationKey: string;
-}): Promise<FieldWorkforceRecommendationsReport | null> {
-  if (!fieldWorkforceDecisionStatuses.includes(input.decisionStatus)) {
-    throw new Error("Unsupported Field Workforce Compliance decision status.");
-  }
-
-  const report = await getFieldWorkforceRecommendationsReport({
-    actorLoginId: input.actorLoginId,
-    archiveId: input.archiveId,
-  });
-  if (!report) return null;
-
-  const recommendations = [
-    ...report.leaveRecommendations,
-    ...report.payrollRecommendations,
-  ];
-  const recommendation = recommendations.find((item) => item.recommendationKey === input.recommendationKey);
-  if (!recommendation) throw new FieldWorkforceRecommendationNotFoundError(input.recommendationKey);
-  assertFieldWorkforceDecisionStatusAllowed({
-    decisionStatus: input.decisionStatus,
-    recommendationType: recommendation.recommendationType,
-  });
-  assertFieldWorkforceDecisionReasonAllowed({
-    decisionReason: input.decisionReason,
-    decisionStatus: input.decisionStatus,
-    hrNote: input.hrNote,
-  });
-
-  const existingRows = await loadDecisionRows(input.archiveId);
-  assertNoFieldWorkforceApprovedDecisionConflict({
-    decisionStatus: input.decisionStatus,
-    existingRows,
-    recommendation,
-  });
-  const existing = existingRows.find((row) => row.recommendation_key === input.recommendationKey) ?? null;
-  const hasDecision = input.decisionStatus !== "Pending";
-  const now = new Date().toISOString();
-  const decisionReason = hasDecision ? input.decisionReason.trim() as FieldWorkforceDecisionReason : "";
-  const isResolved = input.decisionStatus === "Resolved";
-  const payload = {
-    dates: recommendation.dates,
-    days_count: recommendation.daysCount,
-    decided_at: hasDecision ? now : null,
-    decided_by: hasDecision ? input.actorLoginId : null,
-    decision_reason: decisionReason,
-    decision_status: input.decisionStatus,
-    employee_code: recommendation.employeeCode,
-    employee_name: recommendation.employeeName,
-    estimated_amount: recommendation.estimatedAmount,
-    existing_coverage_status: recommendation.existingCoverageStatus,
-    hr_note: input.hrNote.trim(),
-    import_id: input.archiveId,
-    month_key: recommendation.monthKey,
-    recommendation_key: input.recommendationKey,
-    recommendation_reason: recommendation.recommendationReason,
-    recommendation_type: recommendation.recommendationType,
-    resolved_at: isResolved ? now : null,
-    resolved_by: isResolved ? input.actorLoginId : null,
-    severity: recommendation.severity,
-    source_type: recommendation.sourceType,
-    updated_at: now,
-  };
-
-  const { error } = await getSupabaseAdmin()
-    .from(decisionsTable)
-    .upsert(payload, {
-      onConflict: "month_key,recommendation_key",
-    });
-  if (error) throw error;
-
-  await writeAuditLog({
-    actorLoginId: input.actorLoginId,
-    entityId: input.archiveId,
-    entityType: "field_workforce_compliance_import",
-    newValues: {
-      decisionReason: payload.decision_reason,
-      decisionStatus: input.decisionStatus,
-      hrNote: payload.hr_note,
-      recommendationKey: input.recommendationKey,
-      recommendationType: recommendation.recommendationType,
-    },
-    oldValues: existing ? {
-      decisionReason: existing.decision_reason ?? "",
-      decisionStatus: existing.decision_status,
-      hrNote: existing.hr_note,
-    } : null,
-    summary: existing
-      ? input.decisionStatus === "Disputed" || input.decisionStatus === "Resolved" || existing.decision_status === "Disputed"
-        ? "Field Workforce Compliance dispute/review status changed."
-        : (existing.decision_reason ?? "") !== payload.decision_reason
-          ? "Field Workforce Compliance decision reason updated."
-          : "Field Workforce Compliance HR decision changed."
-      : "Field Workforce Compliance recommendation decision created.",
-  });
-
-  return getFieldWorkforceRecommendationsReport({
-    actorLoginId: input.actorLoginId,
-    archiveId: input.archiveId,
-  });
 }
 
 /**
