@@ -58,3 +58,15 @@ export function findCronJobRegistryEntry(jobName: string): CronJobRegistryEntry 
 export function isCronJobKey(value: string): value is CronJobKey {
   return cronJobRegistry.some((entry) => entry.gcpJobName === value);
 }
+
+// GCP Cloud Scheduler job-ID constraint (docs.cloud.google.com/scheduler/docs/reference/rest/v1/
+// projects.locations.jobs): 1-500 chars, letters/numbers/hyphens/underscores only. This is the
+// REAL safety gate for mutations — not registry membership. A job created outside this repo
+// (via console/gcloud, or added to GCP later) must still be listable and mutable here; the
+// static registry above only supplies nicer labels/descriptions when it recognizes the name,
+// it never gates whether a real GCP job can be seen or controlled.
+const GCP_JOB_ID_PATTERN = /^[a-zA-Z0-9_-]{1,500}$/;
+
+export function isValidGcpJobIdFormat(value: string): boolean {
+  return GCP_JOB_ID_PATTERN.test(value);
+}
