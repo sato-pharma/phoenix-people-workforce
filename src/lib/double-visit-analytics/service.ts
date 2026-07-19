@@ -1831,19 +1831,6 @@ export async function getDoubleVisitReportData(input: {
     today,
   });
 
-  // DV Planner roster: every active Medical Rep in scope, one row each. Built by the shared,
-  // exported buildDvPlannerRosterEntries so the weekly digest (Wave 2) computes an identical roster
-  // for any manager scope. Cadence lastVisit comes from the wide lookback (cadenceLastVisitByKey);
-  // in-window count/visited come from `rows`.
-  const roster = buildDvPlannerRosterEntries({
-    activeMedicalReps: scopedEmployees.filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee)),
-    inWindowRows: rows,
-    cadenceLastVisitByKey,
-    probation,
-    dateTo,
-    today,
-  });
-
   const areas = Array.from(new Set(rows.map((row) => row.areaName).filter((value): value is string => Boolean(value)))).sort();
   const regions = Array.from(new Set(rows.map((row) => row.regionName).filter((value): value is string => Boolean(value)))).sort();
   const doubleVisitors = Array.from(
