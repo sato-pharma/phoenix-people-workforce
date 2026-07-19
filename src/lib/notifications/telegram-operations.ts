@@ -75,7 +75,7 @@ async function resolveDigestRecipients() {
     const { data, error } = await supabase
       .from("app_auth_users")
       .select("login_id,hr_id,is_active")
-      .in("role", ["HR Manager", "Super Admin"])
+      .in("role", ["Super Admin"])
       .eq("is_active", true);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {

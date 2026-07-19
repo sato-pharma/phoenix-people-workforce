@@ -526,7 +526,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const [viewAsLoading, setViewAsLoading] = useState(false);
   const [managers, setManagers] = useState<Array<{ hrId: string; name: string }> | null>(null);
 
-  const canViewAs = callerRole === "Super Admin" || callerRole === "HR Manager";
+  const canViewAs = callerRole === "Super Admin";
 
   const filteredByModule = useMemo(
     () => (activeModule === "all" ? allItems : allItems.filter((item) => item.module === activeModule)),

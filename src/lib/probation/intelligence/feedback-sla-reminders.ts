@@ -41,7 +41,7 @@ async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
     .filter(Boolean) as string[];
 }
 
-const resolveHrApproverHrIds = () => activeHrIdsByRole(["HR Manager", "Super Admin"]);
+const resolveHrApproverHrIds = () => activeHrIdsByRole(["Super Admin"]);
 const resolveCeoHrIds = () => activeHrIdsByRole(["CEO"]);
 
 // The System Admin CC on the reminder-2 escalation (MOD-2, owner decision 2026-07-17). The synthetic

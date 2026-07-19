@@ -34,7 +34,8 @@ export function runTelegramOperationsTests() {
 
   assert.match(operations, /export async function runTelegramDailyHrDigest/);
   assert.doesNotMatch(operations, /telegramDigestPilotHrIds/, "hardcoded pilot IDs must be replaced by role-based lookup");
-  assert.match(operations, /\.in\("role", \["HR Manager", "Super Admin"\]\)/, "digest recipients must be resolved by elevated role, not hardcoded IDs");
+  assert.match(operations, /\.in\("role", \["Super Admin"\]\)/, "digest recipients must be resolved by elevated role, not hardcoded IDs");
+  assert.doesNotMatch(operations, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.doesNotMatch(operations, /salary|amount|compensation|resignation/i, "digest content must not include sensitive payroll/resignation/compensation details");
   assert.match(operations, /safeSummaryOnly: true/, "digest metadata must declare safe count-only summary");
   assert.match(operations, /createSystemNotification\(\{/);

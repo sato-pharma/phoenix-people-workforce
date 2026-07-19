@@ -1,6 +1,6 @@
 // Daily drift detector for weekly/monthly plans — wired into /api/notifications/daily.
-// Runs phx_weekly_plans_drift_check() (read-only RPC) and alerts Super Admins + HR
-// Managers when any of the 6 impossible-state queries returns a non-zero count.
+// Runs phx_weekly_plans_drift_check() (read-only RPC) and alerts Super Admins
+// when any of the 6 impossible-state queries returns a non-zero count.
 // Empty result → no notification (no zero-row spam). Idempotent via dedupe key.
 
 import { normalizeHrId } from "@/lib/auth/permissions";
@@ -90,7 +90,7 @@ const DRIFT_DESCRIPTIONS: Record<keyof DriftCounts, string> = {
   D6: "hr_acknowledged plans with no acknowledgement row",
 };
 
-const ALERT_RECIPIENT_ROLES = ["Super Admin", "HR Manager"] as const;
+const ALERT_RECIPIENT_ROLES = ["Super Admin"] as const;
 
 async function resolveDriftAlertRecipients(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin()

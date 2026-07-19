@@ -1,7 +1,7 @@
 // Daily drift detector for excuse requests stuck on a resigned/missing manager. Structurally
 // mirrors src/lib/weekly-planning/drift-check.ts: it reads v2_excuse_requests in `pending_manager`
 // whose assigned manager is null / missing from the directory / resigned or inactive
-// (cross-referenced against getEmployeeDirectoryRows), then alerts Super Admins + HR Managers with
+// (cross-referenced against getEmployeeDirectoryRows), then alerts Super Admins with
 // the real request list so HR can reassign the approver (Approvals Hub → Stuck approvals).
 // Empty result → no notification (no zero-row spam). Idempotent via a per-recipient per-day key.
 
@@ -10,7 +10,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const ALERT_RECIPIENT_ROLES = ["Super Admin", "HR Manager"] as const;
+const ALERT_RECIPIENT_ROLES = ["Super Admin"] as const;
 
 export type ExcuseManagerGapRecord = {
   requestId: string;

@@ -20,7 +20,7 @@ import type { ContractRow } from "@/lib/contracts/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_VIEW_AS_ROLES = new Set(["Super Admin", "HR Manager"]);
+const ALLOWED_VIEW_AS_ROLES = new Set(["Super Admin"]);
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
 function mapLeave(row: VacationActionCenterRow): ActionHubItem {

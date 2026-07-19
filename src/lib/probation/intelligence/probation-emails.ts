@@ -59,7 +59,7 @@ async function resolveStakeholders(
   // sequential chain here multiplied straight into the sweep's total wall-clock).
   const [ceo, hr, sfe, tm, nsmList] = await Promise.all([
     activeHrIdsByRole(["CEO"]),
-    activeHrIdsByRole(["HR Manager", "Super Admin"]),
+    activeHrIdsByRole(["Super Admin"]),
     opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
     opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
     activeHrIdsByRole(["National Sales Manager"]),

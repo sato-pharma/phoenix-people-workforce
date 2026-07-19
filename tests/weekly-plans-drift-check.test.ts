@@ -71,6 +71,11 @@ export function runWeeklyPlansDriftCheckTests() {
     driftSrc.includes("anomalous.length === 0"),
     "drift-check.ts must short-circuit when no anomalies (no zero-row spam)",
   );
+  assert.match(
+    driftSrc,
+    /ALERT_RECIPIENT_ROLES = \["Super Admin"\]/,
+    "alert recipients must be Super Admin only — \"HR Manager\" is a job title, not an app_auth_users.role value",
+  );
 
   // ── Daily cron wiring ─────────────────────────────────────────────────────────
   assert.match(
