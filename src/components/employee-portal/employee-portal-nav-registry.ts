@@ -4,7 +4,6 @@ import {
   Building2,
   CalendarCheck2,
   CalendarClock,
-  CalendarCheck2,
   CalendarDays,
   CalendarRange,
   ChartColumnBig,
