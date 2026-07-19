@@ -563,7 +563,7 @@ await runTest("plan workweek + linkage (role-aware week, slots, new activity typ
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);
-await runTest("weekly plan calendar owner scope (DM hierarchy + MM/TrM line scope)", runWeeklyPlanCalendarOwnerScopeTests);
+await runTest("weekly plan calendar owner scope (title eligibility, cross-line/hierarchy visible)", runWeeklyPlanCalendarOwnerScopeTests);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("weekly plan manager gap listing (stuck-approval detection)", runWeeklyPlanManagerGapTests);
