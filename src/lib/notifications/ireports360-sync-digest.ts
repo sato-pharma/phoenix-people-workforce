@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Notifies Super Admins over Telegram/in-app every time a CRM (iReports360) pull finishes —
@@ -8,8 +9,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // + delivery pattern: module: "telegram" deliberately bypasses the editable-template path
 // (see telegram-templates.ts) because this is a code-composed ops digest, not a per-employee
 // workflow notification.
-
-const SYNC_NOTIFY_AUDIENCE_ROLES = ["Super Admin"] as const;
 
 export type IReports360SyncJobName = "ireports360-visits-sync" | "ireports360-visits-reconcile";
 
@@ -52,10 +51,11 @@ async function resolveSyncNotifyRecipients(): Promise<{ recipients: SyncNotifyRe
   const warnings: string[] = [];
   const recipients: SyncNotifyRecipient[] = [];
   try {
+    const roles = await resolveNotificationRoleRecipients("ireports360_sync_notify");
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,is_active")
-      .in("role", SYNC_NOTIFY_AUDIENCE_ROLES as unknown as string[])
+      .in("role", roles)
       .eq("is_active", true);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {

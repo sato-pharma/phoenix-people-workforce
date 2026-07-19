@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification, type SystemNotificationResult } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 
@@ -72,10 +73,11 @@ async function resolveDigestRecipients() {
   const supabase = getSupabaseAdmin();
 
   try {
+    const roles = await resolveNotificationRoleRecipients("telegram_daily_hr_digest");
     const { data, error } = await supabase
       .from("app_auth_users")
       .select("login_id,hr_id,is_active")
-      .in("role", ["Super Admin"])
+      .in("role", roles)
       .eq("is_active", true);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {
