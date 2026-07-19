@@ -453,13 +453,21 @@ const adminNavigationSectionSeeds = [
       // which only Super Admin/SFE Manager hold) — so CEO must NOT be excluded
       // at the button level, or they'd never reach the one card they can open.
       { href: "/sales/source-of-sales-tools", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], excludedRoles: ["Marketing Manager"] },
-      { href: "/admin/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }] },
-      { href: "/admin/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }] },
-      { href: "/admin/direct-orders/caps", icon: Settings2, label: "Bonus & Discount Caps", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
-      { href: "/admin/direct-orders/pharmacy-variances", icon: MapPinned, label: "Pharmacy Variances", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
-      { href: "/admin/direct-orders/reconciliation", icon: Scale, label: "Direct Sales Reconciliation", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Source of Sales",
+  },
+  // Collapsed to a single standalone sidebar button that opens the Direct
+  // Orders hub (app/(admin)/sales/direct-orders-tools/page.tsx, cards in
+  // directOrdersPageItems below) — same pattern as Source of Sales / Weekly
+  // Sales / CRM. permissions:[{resource:"direct_orders",action:"read"}] is the
+  // least-restrictive of the 5 cards' own gates (every role with direct_orders
+  // access holds at least read).
+  {
+    id: "sales-direct-orders",
+    items: [
+      { href: "/sales/direct-orders-tools", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }] },
+    ],
+    label: "Direct Orders",
   },
   // Collapsed to a single standalone sidebar button that opens the Weekly Sales
   // hub (app/(admin)/sales/weekly-tools/page.tsx, items in
@@ -1722,6 +1730,51 @@ export const pharmacovigilancePageItems: readonly AdminToolsPageItem[] = [
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
+// ── Direct Orders hub (app/(admin)/sales/direct-orders-tools/page.tsx) ──────────
+// The Direct Order Request module's admin surfaces, collapsed to one sidebar
+// button (see adminNavigationSectionSeeds above) exactly like Source of
+// Sales / Weekly Sales / CRM / Admin Tools.
+export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/direct-orders",
+    icon: ReceiptText,
+    label: "Direct Orders",
+    description: "Submit a governed direct-sales order for CEO-chain approval.",
+    permissions: [{ resource: "direct_orders", action: "create" }],
+  },
+  {
+    href: "/admin/direct-orders/report",
+    icon: FileSpreadsheet,
+    label: "Direct Orders Report",
+    description: "Every direct order — requests, approvals, pharmacies, and money.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+  },
+  {
+    href: "/admin/direct-orders/caps",
+    icon: Settings2,
+    label: "Bonus & Discount Caps",
+    description: "Configure per-product bonus and discount caps.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+  {
+    href: "/admin/direct-orders/pharmacy-variances",
+    icon: MapPinned,
+    label: "Pharmacy Variances",
+    description: "Review pharmacy geography variances against the customer map.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+  {
+    href: "/admin/direct-orders/reconciliation",
+    icon: Scale,
+    label: "Direct Sales Reconciliation",
+    description: "Reconcile the manual Direct upload against module direct orders.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
 // Every consolidated hub's card list, tagged with the hub's own sidebar label.
 // Consumed by the command palette (src/components/layout/command-palette.tsx)
 // so Cmd/Ctrl+K search still surfaces every module that used to have its own
@@ -1744,4 +1797,5 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: fieldCoachingPageItems, label: "Field Coaching" },
   { items: crmPageItems, label: "CRM" },
   { items: pharmacovigilancePageItems, label: "Pharmacovigilance" },
+  { items: directOrdersPageItems, label: "Direct Orders" },
 ] as const;
