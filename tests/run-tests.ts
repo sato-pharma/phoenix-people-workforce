@@ -400,6 +400,7 @@ import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
 import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
 import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
+import { runAnalyticsMultiSelectTimeFiltersTests } from "./analytics-multi-select-time-filters.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
@@ -831,6 +832,7 @@ await runTest("analytics per-viewer scope (line/region/product, per role)", runA
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
 await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
 await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
+await runTest("analytics multi-select time filters (period/channel/week/year)", runAnalyticsMultiSelectTimeFiltersTests);
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
