@@ -3,12 +3,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { fieldWorkforceMonthKey, listFieldWorkforceComplianceArchives } from "@/lib/field-workforce-compliance/archive";
+import { fieldWorkforceMonthKey } from "@/lib/field-workforce-compliance/archive";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
-import {
-  buildFieldWorkforceRecommendationsReportForLiveMonth,
-  getFieldWorkforceRecommendationsReport,
-} from "@/lib/field-workforce-compliance/recommendations";
+import { buildFieldWorkforceRecommendationsReportForLiveMonth } from "@/lib/field-workforce-compliance/recommendations";
 import type { FieldWorkforceRecommendationsReport } from "@/lib/field-workforce-compliance/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeMonthKey } from "../candidate-key.ts";
@@ -485,66 +482,12 @@ function draftsFromNoActivityRecommendations(report: FieldWorkforceRecommendatio
   return drafts;
 }
 
-export async function syncFieldWorkforceNoActivityCandidates(input: {
-  archiveId?: string;
-  monthKey?: string;
-  createdBy: string;
-}): Promise<FwcSyncResult> {
-  if (typeof input.createdBy !== "string" || !input.createdBy.trim()) {
-    throw new Error("syncFieldWorkforceNoActivityCandidates requires createdBy");
-  }
-  const monthKey = input.monthKey ? normalizeMonthKey(input.monthKey) : undefined;
-  const archives = input.archiveId
-    ? [{ id: input.archiveId.trim(), monthKey: monthKey ?? "" }]
-    : (await listFieldWorkforceComplianceArchives()).filter((archive) =>
-        monthKey ? archive.monthKey === monthKey : true,
-      );
-  if (archives.length === 0) {
-    return {
-      sourceTotal: 0,
-      created: 0,
-      skippedExisting: 0,
-      warnings: ["No archived Field Workforce Compliance month matched this sync scope."],
-    };
-  }
-
-  const drafts: DeductionCandidateDraft[] = [];
-  const warnings: string[] = [];
-  for (const archive of archives) {
-    const report = await getFieldWorkforceRecommendationsReport({
-      actorLoginId: input.createdBy,
-      archiveId: archive.id,
-      auditFinalReportView: false,
-    });
-    if (!report) {
-      warnings.push(`FWC archive ${archive.id}: report not found.`);
-      continue;
-    }
-    drafts.push(...draftsFromNoActivityRecommendations(report));
-  }
-
-  const inserted = await insertDeductionCandidateDrafts({
-    createdBy: input.createdBy,
-    drafts,
-    sourceLabel: "Field Workforce Compliance no-activity",
-  });
-
-  return {
-    sourceTotal: drafts.length,
-    created: inserted.created,
-    skippedExisting: inserted.skippedExisting,
-    warnings: [...warnings, ...inserted.warnings],
-  };
-}
-
 /**
- * Live-month sibling of syncFieldWorkforceNoActivityCandidates. The archive-scoped version
- * only ever sees Excel-archived months (it iterates listFieldWorkforceComplianceArchives());
- * live (mirror-sourced) months never get an imports row, so without this sibling the
- * payroll-deduction-candidate generator would silently never run for CRM-sourced months
- * post-migration. Builds the month's preview from the visits mirror, computes its
- * recommendations report the same way the live-month API route does, and reuses the same
- * insert-only drafts pipeline.
+ * Generates payroll no-activity deduction candidates for a CRM-mirror-sourced month: builds the
+ * month's preview from the visits mirror, computes its recommendations report the same way the
+ * live-month API route does, and reuses the insert-only drafts pipeline. (The former Excel-archive
+ * variant, syncFieldWorkforceNoActivityCandidates, was removed with the FWC Excel import — the CRM
+ * mirror is now the only source.)
  */
 export async function syncFieldWorkforceNoActivityCandidatesForLiveMonth(input: {
   createdBy: string;

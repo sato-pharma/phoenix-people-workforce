@@ -2,23 +2,18 @@
 
 import {
   AlertTriangle,
-  Archive,
   BadgeCheck,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Download,
-  FileSpreadsheet,
-  FolderOpen,
   ListFilter,
   Loader2,
   RefreshCw,
   Search,
   ShieldAlert,
-  UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   AdminCallout,
@@ -29,12 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type {
-  FieldWorkforceArchiveDetail,
-  FieldWorkforceArchiveDuplicate,
-  FieldWorkforceArchiveListItem,
   FieldWorkforceCellStatus,
-  FieldWorkforceComparisonReport,
-  FieldWorkforceComparisonRow,
   FieldWorkforceDecisionReason,
   FieldWorkforceDayCell,
   FieldWorkforceDecisionStatus,
@@ -59,15 +49,6 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
 
 
-type PreviewResponse = {
-  data?: FieldWorkforcePreviewResult;
-  errors?: FieldWorkforceValidationIssue[];
-  error?: string;
-  message?: string;
-  success: boolean;
-  warnings?: FieldWorkforceValidationIssue[];
-};
-
 type LiveMonthsListResponse = {
   data?: FieldWorkforceLiveMonthOption[];
   error?: string;
@@ -83,33 +64,6 @@ type LiveViewResponse = {
   success: boolean;
 };
 
-/** Which path produced the currently-shown `result`: an ad-hoc Excel upload preview (not
- * yet archived), an opened/saved Excel archive (handled entirely by ArchivedMonthsPanel's
- * own state), or a live view computed from the visits-report mirror for a chosen month. */
-type SourceMode = "excel-preview" | "live-mirror";
-
-type ArchiveListResponse = {
-  data?: FieldWorkforceArchiveListItem[];
-  error?: string;
-  message?: string;
-  success: boolean;
-};
-
-type ArchiveDetailResponse = {
-  data?: FieldWorkforceArchiveDetail;
-  error?: string;
-  message?: string;
-  success: boolean;
-};
-
-type ArchiveSaveResponse = {
-  data?: FieldWorkforceArchiveDetail;
-  duplicate?: FieldWorkforceArchiveDuplicate;
-  error?: string;
-  message?: string;
-  success: boolean;
-};
-
 type RecommendationsResponse = {
   data?: FieldWorkforceRecommendationsReport;
   error?: string;
@@ -117,14 +71,7 @@ type RecommendationsResponse = {
   success: boolean;
 };
 
-type ComparisonResponse = {
-  data?: FieldWorkforceComparisonReport;
-  error?: string;
-  message?: string;
-  success: boolean;
-};
-
-type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "head-office-attendance" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
+type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "head-office-attendance" | "queue" | "summary" | "scorecards" | "diagnostics" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -134,28 +81,14 @@ const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "summary", label: "Monthly Summary" },
   { id: "scorecards", label: "Scorecards" },
   { id: "diagnostics", label: "Diagnostics" },
-  { id: "archives", label: "Excel Archives" },
-  { id: "comparison", label: "Comparison" },
 ];
 
-const reviewWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = workspaceTabs.filter((tab) => tab.id !== "archives" && tab.id !== "comparison");
-const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
-  ...reviewWorkspaceTabs,
-  { id: "recommendations", label: "Recommendations" },
-];
-// Main (non-archive) tab bar: same as workspaceTabs but with Recommendations inserted
-// before the Excel-specific tabs, so recommendations for a live-mirror month are reachable
-// without archiving first. Built from reviewWorkspaceTabs (not workspaceTabs directly) to
-// avoid double-counting "recommendations" in archiveWorkspaceTabs above. Head Office
-// Attendance is appended only here (not into workspaceTabs/archiveWorkspaceTabs): it's a
-// live-now fingerprint view, independent of whichever Excel month is being archived/browsed,
-// so it doesn't belong in the archive tab bar.
+// Main tab bar: the review tabs, plus Recommendations (reachable for the live-mirror month
+// without archiving) and the live-now Head Office Attendance fingerprint view.
 const mainWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
-  ...reviewWorkspaceTabs,
+  ...workspaceTabs,
   { id: "recommendations", label: "Recommendations" },
   { id: "head-office-attendance", label: "Head Office Attendance" },
-  { id: "archives", label: "Excel Archives" },
-  { id: "comparison", label: "Comparison" },
 ];
 
 const severityOptions: Array<"All" | FieldWorkforceSeverity> = ["All", "High", "Review", "Medium", "Low"];
@@ -1756,10 +1689,8 @@ function RecommendationRows({
 
 function FinalActionsTable({
   actions,
-  archiveId,
 }: {
   actions: FieldWorkforceFinalAction[];
-  archiveId: string;
 }) {
   const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
   const filteredActions = useMemo(() =>
@@ -1770,18 +1701,6 @@ function FinalActionsTable({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
         <HierarchyFilters filters={hierarchyFilters} items={actions} onChange={setHierarchyFilters} />
-        <Button
-          className="gap-2"
-          disabled={actions.length === 0}
-          type="button"
-          variant="secondary"
-          onClick={() => {
-            window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveId}/recommendations/export`;
-          }}
-        >
-          <Download className="h-4 w-4" />
-          Export Report Only
-        </Button>
       </div>
       <AdminCallout tone="neutral">
         <ShieldAlert className="mt-0.5 h-4 w-4" />
@@ -1922,327 +1841,22 @@ function RecommendationsPanel({
           onSaveDecision={onSaveDecision}
         />
       ) : null}
-      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} archiveId={report.archive.id} /> : null}
+      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} /> : null}
     </AdminTableShell>
-  );
-}
-
-function ComparisonPanel({
-  isLoading,
-  onRefresh,
-  report,
-}: {
-  isLoading: boolean;
-  onRefresh: () => void;
-  report: FieldWorkforceComparisonReport | null;
-}) {
-  const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
-  const [query, setQuery] = useState("");
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (report?.rows ?? []).filter((row) =>
-      matchesHierarchyFilters(row, hierarchyFilters) &&
-      (!needle || `${row.employeeName} ${row.employeeCode} ${row.monthKey}`.toLowerCase().includes(needle)),
-    );
-  }, [hierarchyFilters, query, report?.rows]);
-
-  if (!report) {
-    return (
-      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p>Load archived month comparison trends.</p>
-          <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={onRefresh}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Load Comparison
-          </Button>
-        </div>
-      </Card>
-    );
-  }
-
-  if (report.archiveCount < 2) {
-    return (
-      <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-        Archive at least two months to compare trends.
-      </Card>
-    );
-  }
-
-  return (
-    <AdminTableShell
-      description="Simple archived month comparison. Table-first trend view only; no BI dashboard and no execution."
-      title="Archived Month Comparison"
-    >
-      <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-            placeholder="Filter employee, code, or month"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={onRefresh}>
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Refresh
-        </Button>
-      </div>
-      <div className="border-b border-slate-100 p-4">
-        <HierarchyFilters filters={hierarchyFilters} items={report.rows} onChange={setHierarchyFilters} />
-      </div>
-      <div className="grid gap-3 border-b border-slate-100 p-4 sm:grid-cols-3">
-        <MetricCard label="Archived Months" value={formatNumber(report.archiveCount)} />
-        <MetricCard label="Comparison Rows" value={formatNumber(rows.length)} />
-        <MetricCard label="Hierarchy Filters" tone={report.hierarchyAvailable ? "success" : "neutral"} value={report.hierarchyAvailable ? "Available" : "Unavailable"} />
-      </div>
-      <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
-        <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Month</th>
-              <th className="px-4 py-3">Compliance %</th>
-              <th className="px-4 py-3">Worked</th>
-              <th className="px-4 py-3">N Days</th>
-              <th className="px-4 py-3">AV</th>
-              <th className="px-4 py-3">CP</th>
-              <th className="px-4 py-3">Visits</th>
-              <th className="px-4 py-3">Line / Area</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((row: FieldWorkforceComparisonRow) => (
-              <tr className="text-slate-700 hover:bg-slate-50/70" key={`${row.importId}:${row.employeeCode}`}>
-                <td className="px-4 py-3">
-                  <p className="font-black text-slate-950">{row.employeeName}</p>
-                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{row.employeeCode}</p>
-                </td>
-                <td className="px-4 py-3">{row.monthKey}</td>
-                <td className="px-4 py-3 font-black text-slate-950">{formatNumber(row.compliancePercent)}%</td>
-                <td className="px-4 py-3 text-emerald-700">{formatNumber(row.workedDays)}</td>
-                <td className="px-4 py-3 text-rose-700">{formatNumber(row.noActivityDays)}</td>
-                <td className="px-4 py-3 text-sky-700">{formatNumber(row.vacationDays)}</td>
-                <td className="px-4 py-3 text-violet-700">{formatNumber(row.campaignDays)}</td>
-                <td className="px-4 py-3 text-emerald-700">{formatNumber(row.totalVisits)}</td>
-                <td className="px-4 py-3">{[row.lineName, row.areaName].filter(Boolean).join(" / ") || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </AdminTableShell>
-  );
-}
-
-function ArchivedMonthsPanel({
-  archiveActiveTab,
-  archiveDetail,
-  archives,
-  isLoadingArchives,
-  isLoadingRecommendations,
-  isOpeningArchiveId,
-  isSavingDecisionKey,
-  onArchiveTabChange,
-  onOpenArchive,
-  onRefresh,
-  onRefreshRecommendations,
-  onSaveDecision,
-  recommendationsReport,
-}: {
-  archiveActiveTab: WorkspaceTab;
-  archiveDetail: FieldWorkforceArchiveDetail | null;
-  archives: FieldWorkforceArchiveListItem[];
-  isLoadingArchives: boolean;
-  isLoadingRecommendations: boolean;
-  isOpeningArchiveId: string | null;
-  isSavingDecisionKey: string | null;
-  onArchiveTabChange: (tab: WorkspaceTab) => void;
-  onOpenArchive: (archive: FieldWorkforceArchiveListItem) => void;
-  onRefresh: () => void;
-  onRefreshRecommendations: (auditFinalReportView?: boolean) => void;
-  onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string, reason: FieldWorkforceDecisionReason | "") => void;
-  recommendationsReport: FieldWorkforceRecommendationsReport | null;
-}) {
-  return (
-    <div className="space-y-4">
-      <AdminCallout tone="neutral">
-        <Archive className="mt-0.5 h-4 w-4" />
-        <p>Archived months are historical review snapshots only. They do not approve recommendations, update leave balances, or create payroll deductions.</p>
-      </AdminCallout>
-
-      <AdminTableShell
-        description="Saved monthly archives. Phase 2 blocks duplicate active archives for the same month."
-        title="Archived Months"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-          <div>
-            <p className="text-sm font-black text-slate-950">{formatNumber(archives.length)} archived month(s)</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Open a saved month to review its timeline, queue, summary, and diagnostics.</p>
-          </div>
-          <Button
-            className="gap-2"
-            disabled={isLoadingArchives}
-            type="button"
-            variant="secondary"
-            onClick={onRefresh}
-          >
-            {isLoadingArchives ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
-        </div>
-        <div className="phoenix-horizontal-scroll max-h-80 overflow-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Month</th>
-                <th className="px-4 py-3">Source</th>
-                <th className="px-4 py-3">Employees</th>
-                <th className="px-4 py-3">Review Candidates</th>
-                <th className="px-4 py-3">High</th>
-                <th className="px-4 py-3">Uploaded</th>
-                <th className="px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {archives.map((archive) => (
-                <tr className="text-slate-700 hover:bg-slate-50/70" key={archive.id}>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <p className="font-black text-slate-950">{archive.monthKey}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{archive.status}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900">{archive.sourceFilename}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{archive.sheetName}</p>
-                  </td>
-                  <td className="px-4 py-3">{formatNumber(archive.employeeCount)}</td>
-                  <td className="px-4 py-3 text-orange-700">{formatNumber(archive.reviewCandidateCount)}</td>
-                  <td className="px-4 py-3 text-rose-700">{formatNumber(archive.highSeverityCount)}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900">{displayDateTime(archive.uploadedAt)}</p>
-                    <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{archive.uploadedBy}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      className="gap-2"
-                      disabled={isOpeningArchiveId === archive.id}
-                      type="button"
-                      variant="secondary"
-                      onClick={() => onOpenArchive(archive)}
-                    >
-                      {isOpeningArchiveId === archive.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-                      Open
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-              {archives.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
-                    No archived Workforce Compliance months yet.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </AdminTableShell>
-
-      {archiveDetail ? (
-        <div className="space-y-4">
-          <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Archived Month</p>
-                <h2 className="mt-1 text-xl font-black text-slate-950">{archiveDetail.archive.monthKey}</h2>
-                <p className="mt-1 text-sm font-semibold text-slate-500">{archiveDetail.archive.sourceFilename}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="success">Archived snapshot</Badge>
-                <Badge variant="neutral">No payroll action</Badge>
-                <Badge variant="neutral">No leave mutation</Badge>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-              <p className="mr-auto text-xs font-semibold text-slate-500">
-                Export the whole month — report-only, no payroll or leave action.
-              </p>
-              <Button
-                className="gap-2"
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveDetail.archive.id}/export?variant=summary`;
-                }}
-              >
-                <Download className="h-4 w-4" />
-                Export Month Sheet
-              </Button>
-              <Button
-                className="gap-2"
-                type="button"
-                onClick={() => {
-                  window.location.href = `/api/admin/field-workforce-compliance/archive/${archiveDetail.archive.id}/export?variant=godmode`;
-                }}
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                God-Mode Book
-              </Button>
-            </div>
-          </Card>
-          <WorkspaceTabs activeTab={archiveActiveTab} tabs={archiveWorkspaceTabs} onChange={onArchiveTabChange} />
-          {archiveActiveTab === "recommendations" ? (
-            <RecommendationsPanel
-              isLoading={isLoadingRecommendations}
-              isSavingDecisionKey={isSavingDecisionKey}
-              report={recommendationsReport}
-              onRefresh={onRefreshRecommendations}
-              onSaveDecision={onSaveDecision}
-            />
-          ) : (
-            <ReviewWorkspacePanels
-              activeTab={archiveActiveTab}
-              errors={archiveDetail.preview.errors}
-              key={archiveDetail.archive.id}
-              result={archiveDetail.preview}
-              warnings={archiveDetail.preview.warnings}
-            />
-          )}
-        </div>
-      ) : (
-        <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Select an archived month to open the saved review workspace.
-        </Card>
-      )}
-    </div>
   );
 }
 
 export function FieldWorkforceComplianceWorkspace() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
-  const [isSavingArchive, setIsSavingArchive] = useState(false);
-  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
-  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
-  const [isOpeningArchiveId, setIsOpeningArchiveId] = useState<string | null>(null);
   const [isSavingDecisionKey, setIsSavingDecisionKey] = useState<string | null>(null);
   const [result, setResult] = useState<FieldWorkforcePreviewResult | null>(null);
-  const [archives, setArchives] = useState<FieldWorkforceArchiveListItem[]>([]);
-  const [archiveDetail, setArchiveDetail] = useState<FieldWorkforceArchiveDetail | null>(null);
   const [recommendationsReport, setRecommendationsReport] = useState<FieldWorkforceRecommendationsReport | null>(null);
-  const [comparisonReport, setComparisonReport] = useState<FieldWorkforceComparisonReport | null>(null);
   const [errors, setErrors] = useState<FieldWorkforceValidationIssue[]>([]);
   const [warnings, setWarnings] = useState<FieldWorkforceValidationIssue[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
-  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [recommendationsMessage, setRecommendationsMessage] = useState<string | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
-  const [archiveActiveTab, setArchiveActiveTab] = useState<WorkspaceTab>("timeline");
-  const [sourceMode, setSourceMode] = useState<SourceMode | null>(null);
   const [liveMirrorMonthKey, setLiveMirrorMonthKey] = useState<string | null>(null);
   const [mirrorFreshness, setMirrorFreshness] = useState<FieldWorkforceMirrorFreshness | null>(null);
   const [recentMonths, setRecentMonths] = useState<FieldWorkforceLiveMonthOption[]>([]);
@@ -2251,82 +1865,15 @@ export function FieldWorkforceComplianceWorkspace() {
   const [selectedMonthKey, setSelectedMonthKey] = useState("");
   const [isLoadingLiveView, setIsLoadingLiveView] = useState(false);
 
-  const loadArchives = useCallback(async () => {
-    setIsLoadingArchives(true);
-    setArchiveError(null);
-    try {
-      const response = await fetch("/api/admin/field-workforce-compliance/archive", {
-        method: "GET",
-      });
-      const payload = await readJsonResponse<ArchiveListResponse>(response);
-      if (payload.success && payload.data) {
-        setArchives(payload.data);
-      } else {
-        setArchiveError(payload.message ?? payload.error ?? "Archived months could not be loaded.");
-      }
-    } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Archived months could not be loaded.");
-    } finally {
-      setIsLoadingArchives(false);
-    }
-  }, []);
-
-  const loadComparison = useCallback(async () => {
-    setIsLoadingComparison(true);
-    setArchiveError(null);
-    try {
-      const response = await fetch("/api/admin/field-workforce-compliance/archive/comparison", {
-        method: "GET",
-      });
-      const payload = await readJsonResponse<ComparisonResponse>(response);
-      if (payload.success && payload.data) {
-        setComparisonReport(payload.data);
-      } else {
-        setArchiveError(payload.message ?? payload.error ?? "Comparison could not be loaded.");
-      }
-    } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Comparison could not be loaded.");
-    } finally {
-      setIsLoadingComparison(false);
-    }
-  }, []);
-
   function handleWorkspaceTabChange(tab: WorkspaceTab) {
     setActiveTab(tab);
-    if (tab === "archives" && archives.length === 0 && !isLoadingArchives) {
-      void loadArchives();
-    }
-    if (tab === "comparison" && !comparisonReport && !isLoadingComparison) {
-      void loadComparison();
-    }
     if (
       tab === "recommendations" &&
-      sourceMode === "live-mirror" &&
       liveMirrorMonthKey &&
       !recommendationsReport &&
       !isLoadingRecommendations
     ) {
       void loadLiveMirrorRecommendations(liveMirrorMonthKey);
-    }
-  }
-
-  async function loadRecommendations(archiveId: string, auditFinalReportView = false) {
-    setIsLoadingRecommendations(true);
-    setRecommendationsError(null);
-    try {
-      const response = await fetch(`/api/admin/field-workforce-compliance/archive/${archiveId}/recommendations${auditFinalReportView ? "?report=final" : ""}`, {
-        method: "GET",
-      });
-      const payload = await readJsonResponse<RecommendationsResponse>(response);
-      if (payload.success && payload.data) {
-        setRecommendationsReport(payload.data);
-      } else {
-        setRecommendationsError(payload.message ?? payload.error ?? "Recommendations could not be loaded.");
-      }
-    } catch (error) {
-      setRecommendationsError(error instanceof Error ? error.message : "Recommendations could not be loaded.");
-    } finally {
-      setIsLoadingRecommendations(false);
     }
   }
 
@@ -2388,46 +1935,6 @@ export function FieldWorkforceComplianceWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handlePreview() {
-    if (!selectedFile || isPreviewing) return;
-    setIsPreviewing(true);
-    setResult(null);
-    setErrors([]);
-    setWarnings([]);
-    setMessage(null);
-    setArchiveMessage(null);
-    setArchiveError(null);
-    setSourceMode("excel-preview");
-    setLiveMirrorMonthKey(null);
-    setRecommendationsReport(null);
-    setRecommendationsMessage(null);
-    setRecommendationsError(null);
-
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-
-    try {
-      const response = await fetch("/api/admin/field-workforce-compliance/preview", {
-        body: formData,
-        method: "POST",
-      });
-      const payload = await readJsonResponse<PreviewResponse>(response);
-      setErrors(payload.errors ?? []);
-      setWarnings(payload.warnings ?? payload.data?.warnings ?? []);
-      if (payload.success && payload.data) {
-        setResult(payload.data);
-        setActiveTab("timeline");
-      } else {
-        setActiveTab("overview");
-        setMessage(payload.message ?? payload.error ?? "Preview failed.");
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Preview failed.");
-    } finally {
-      setIsPreviewing(false);
-    }
-  }
-
   /** Shows a saved Field Workforce Compliance snapshot for the chosen month — a fast DB
    * read, not a live recompute. Snapshots are kept current automatically: the visits-report
    * sync (cron + manual backfill) recomputes whichever month(s) it touches, and a one-time
@@ -2440,9 +1947,6 @@ export function FieldWorkforceComplianceWorkspace() {
     setErrors([]);
     setWarnings([]);
     setMessage(null);
-    setArchiveMessage(null);
-    setArchiveError(null);
-    setSelectedFile(null);
     setRecommendationsReport(null);
     setRecommendationsMessage(null);
     setRecommendationsError(null);
@@ -2452,7 +1956,6 @@ export function FieldWorkforceComplianceWorkspace() {
       const payload = await readJsonResponse<LiveViewResponse>(response);
       if (payload.success && payload.data) {
         setResult(payload.data.preview);
-        setSourceMode("live-mirror");
         setLiveMirrorMonthKey(payload.data.monthKey);
         setMirrorFreshness(payload.mirrorFreshness ?? null);
         setSelectedMonthKey(payload.data.monthKey);
@@ -2465,67 +1968,6 @@ export function FieldWorkforceComplianceWorkspace() {
       setMessage(error instanceof Error ? error.message : "This month's compliance data could not be computed.");
     } finally {
       setIsLoadingLiveView(false);
-    }
-  }
-
-  async function handleSaveArchive() {
-    if (!selectedFile || !result || isSavingArchive) return;
-    setIsSavingArchive(true);
-    setArchiveMessage(null);
-    setArchiveError(null);
-
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-
-    try {
-      const response = await fetch("/api/admin/field-workforce-compliance/archive", {
-        body: formData,
-        method: "POST",
-      });
-      const payload = await readJsonResponse<ArchiveSaveResponse>(response);
-      if (payload.success && payload.data) {
-        setArchiveDetail(payload.data);
-        setRecommendationsReport(null);
-        setArchiveActiveTab("timeline");
-        setActiveTab("archives");
-        setArchiveMessage(`${payload.data.archive.monthKey} was saved as an archived review snapshot. No payroll or leave action was taken.`);
-        await loadArchives();
-        await loadRecommendations(payload.data.archive.id);
-      } else if (payload.duplicate) {
-        setArchiveError(payload.message ?? `${payload.duplicate.monthKey} is already archived. Duplicate month archives are blocked in Phase 2.`);
-        setActiveTab("archives");
-        await loadArchives();
-      } else {
-        setArchiveError(payload.message ?? payload.error ?? "Archive save failed.");
-      }
-    } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Archive save failed.");
-    } finally {
-      setIsSavingArchive(false);
-    }
-  }
-
-  async function handleOpenArchive(archive: FieldWorkforceArchiveListItem) {
-    setIsOpeningArchiveId(archive.id);
-    setArchiveMessage(null);
-    setArchiveError(null);
-    try {
-      const response = await fetch(`/api/admin/field-workforce-compliance/archive/${archive.id}`, {
-        method: "GET",
-      });
-      const payload = await readJsonResponse<ArchiveDetailResponse>(response);
-      if (payload.success && payload.data) {
-        setArchiveDetail(payload.data);
-        setRecommendationsReport(null);
-        setArchiveActiveTab("timeline");
-        await loadRecommendations(payload.data.archive.id);
-      } else {
-        setArchiveError(payload.message ?? payload.error ?? "Archived month could not be opened.");
-      }
-    } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Archived month could not be opened.");
-    } finally {
-      setIsOpeningArchiveId(null);
     }
   }
 
@@ -2547,10 +1989,7 @@ export function FieldWorkforceComplianceWorkspace() {
     setRecommendationsMessage(null);
     setRecommendationsError(null);
     try {
-      const isLiveMirror = sourceMode === "live-mirror" && liveMirrorMonthKey !== null;
-      const url = isLiveMirror
-        ? `/api/admin/field-workforce-compliance/live-snapshots/${liveMirrorMonthKey}/recommendations`
-        : `/api/admin/field-workforce-compliance/archive/${recommendation.importId}/recommendations`;
+      const url = `/api/admin/field-workforce-compliance/live-snapshots/${liveMirrorMonthKey}/recommendations`;
       const response = await fetch(url, {
         body: JSON.stringify({
           decisionReason,
@@ -2579,70 +2018,11 @@ export function FieldWorkforceComplianceWorkspace() {
     <div className="min-h-[calc(100vh-7rem)] rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-5 xl:p-7">
       <div className="space-y-5">
         <AdminPageHero
-          actions={(
-            <div className="flex flex-wrap gap-2">
-              <Button
-                className="gap-2 rounded-xl font-black"
-                disabled={!selectedFile || isPreviewing}
-                onClick={() => void handlePreview()}
-              >
-                {isPreviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                Preview File
-              </Button>
-              <Button
-                className="gap-2 rounded-xl font-black"
-                disabled={!result || !selectedFile || isPreviewing || isSavingArchive}
-                type="button"
-                variant="secondary"
-                onClick={() => void handleSaveArchive()}
-              >
-                {isSavingArchive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
-                Save Archived Month
-              </Button>
-            </div>
-          )}
           description="Understand and review monthly field workforce activity safely before any future HR, leave, or payroll decision."
           eyebrow="Operational HR Governance"
           icon={<ShieldAlert className="h-3.5 w-3.5" />}
           title="Workforce Compliance"
         />
-
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm">
-          <Button
-            className="gap-2 rounded-xl font-black"
-            type="button"
-            variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Choose Workbook
-          </Button>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-600">
-            {selectedFile?.name ?? "No file selected — .xlsx only"}
-          </span>
-          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <CalendarDays className="h-4 w-4 text-slate-400" />
-            <span className="text-sm font-black text-slate-700">
-              {selectedFile && result ? `${result.metadata.monthLabel} ${result.metadata.year}` : "Date detected after preview"}
-            </span>
-          </div>
-          <input
-            accept=".xlsx"
-            className="hidden"
-            ref={fileInputRef}
-            type="file"
-            onChange={(event) => {
-              setSelectedFile(event.target.files?.[0] ?? null);
-              setResult(null);
-              setErrors([]);
-              setWarnings([]);
-              setMessage(null);
-              setArchiveMessage(null);
-              setArchiveError(null);
-              setActiveTab("overview");
-            }}
-          />
-        </div>
 
         <AdminTableShell
           description="Always computed live from the iReports360 visits mirror — every month, including past ones, reflects the mirror as it stands right now. Nothing is cached or pre-saved. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
@@ -2673,7 +2053,7 @@ export function FieldWorkforceComplianceWorkspace() {
               <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" /> Computing live from the visits mirror…
               </span>
-            ) : sourceMode === "live-mirror" && mirrorFreshness?.ageHours != null ? (
+            ) : mirrorFreshness?.ageHours != null ? (
               <span className="text-xs font-semibold text-slate-500">
                 Visits mirror synced {formatSyncAge(mirrorFreshness.ageHours)}
               </span>
@@ -2687,7 +2067,7 @@ export function FieldWorkforceComplianceWorkspace() {
               </AdminCallout>
             </div>
           ) : null}
-          {sourceMode === "live-mirror" && mirrorFreshness && (mirrorFreshness.isStale || mirrorFreshness.isOpenMonth) ? (
+          {mirrorFreshness && (mirrorFreshness.isStale || mirrorFreshness.isOpenMonth) ? (
             <div className="border-t border-slate-100 p-4">
               <AdminCallout tone={mirrorFreshness.isStale ? "danger" : "warning"}>
                 <AlertTriangle className="mt-0.5 h-4 w-4" />
@@ -2707,18 +2087,6 @@ export function FieldWorkforceComplianceWorkspace() {
             <p>{message}</p>
           </AdminCallout>
         ) : null}
-        {archiveMessage ? (
-          <AdminCallout tone="success">
-            <Archive className="mt-0.5 h-4 w-4" />
-            <p>{archiveMessage}</p>
-          </AdminCallout>
-        ) : null}
-        {archiveError ? (
-          <AdminCallout tone="warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
-            <p>{archiveError}</p>
-          </AdminCallout>
-        ) : null}
         {recommendationsMessage ? (
           <AdminCallout tone="success">
             <BadgeCheck className="mt-0.5 h-4 w-4" />
@@ -2735,34 +2103,10 @@ export function FieldWorkforceComplianceWorkspace() {
         <ValidationIssues issues={warnings} title="Preview warnings" tone="warning" />
 
         <WorkspaceTabs activeTab={activeTab} tabs={mainWorkspaceTabs} onChange={handleWorkspaceTabChange} />
-        {activeTab === "archives" ? (
-          <ArchivedMonthsPanel
-            archiveActiveTab={archiveActiveTab}
-            archiveDetail={archiveDetail}
-            archives={archives}
-            isLoadingArchives={isLoadingArchives}
-            isLoadingRecommendations={isLoadingRecommendations}
-            isOpeningArchiveId={isOpeningArchiveId}
-            isSavingDecisionKey={isSavingDecisionKey}
-            onArchiveTabChange={setArchiveActiveTab}
-            onOpenArchive={(archive) => void handleOpenArchive(archive)}
-            onRefresh={() => void loadArchives()}
-            onRefreshRecommendations={(auditFinalReportView) => {
-              if (archiveDetail) void loadRecommendations(archiveDetail.archive.id, auditFinalReportView);
-            }}
-            onSaveDecision={(recommendation, decisionStatus, hrNote, decisionReason) => void handleSaveDecision(recommendation, decisionStatus, hrNote, decisionReason)}
-            recommendationsReport={recommendationsReport}
-          />
-        ) : activeTab === "comparison" ? (
-          <ComparisonPanel
-            isLoading={isLoadingComparison}
-            report={comparisonReport}
-            onRefresh={() => void loadComparison()}
-          />
-        ) : activeTab === "head-office-attendance" ? (
+        {activeTab === "head-office-attendance" ? (
           <HeadOfficeAttendancePanel />
         ) : activeTab === "recommendations" ? (
-          sourceMode === "live-mirror" && liveMirrorMonthKey ? (
+          liveMirrorMonthKey ? (
             <RecommendationsPanel
               isLoading={isLoadingRecommendations}
               isSavingDecisionKey={isSavingDecisionKey}
@@ -2773,7 +2117,7 @@ export function FieldWorkforceComplianceWorkspace() {
           ) : (
             <Card className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
               <p className="mx-auto max-w-xl text-sm leading-6 text-slate-500">
-                Load a month with &quot;Load from Visits Mirror&quot; above to review and decide recommendations here, or open a saved month from the Excel Archives tab.
+                Select a month above to review and decide recommendations here.
               </p>
             </Card>
           )
@@ -2798,9 +2142,9 @@ export function FieldWorkforceComplianceWorkspace() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-orange-600">
               <BadgeCheck className="h-5 w-5" />
             </div>
-            <h2 className="mt-4 text-lg font-black text-slate-950">Preview workspace ready</h2>
+            <h2 className="mt-4 text-lg font-black text-slate-950">Compliance workspace ready</h2>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-              Upload a monthly workbook to review normalized activity, severity labels, public holiday overlays, and employee timelines.
+              Select a month from the Live View above to review normalized activity, severity labels, public holiday overlays, and employee timelines.
             </p>
             <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
               <ListFilter className="h-3.5 w-3.5" />
