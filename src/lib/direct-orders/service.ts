@@ -40,6 +40,7 @@ import {
   type DirectOrderReportRow,
   type DirectOrderReportScope,
   type DirectOrderRequest,
+  type DirectSalesReconciliationResult,
   type DirectOrderStepState,
   type DirectOrderWorkspaceData,
 } from "@/lib/direct-orders/types";
@@ -1164,6 +1165,68 @@ export async function getDirectOrderReport(access: AccessContext): Promise<Direc
       distributorCodesText,
     };
   });
+}
+
+// ── Direct-sales reconciliation (manual DIRECT vs module DirectReq double-count) ──
+const RECONCILIATION_VIEW_ROLES = new Set<PhoenixRole>(["Super Admin", "SFE Manager", "CEO"]);
+
+function normalizeReconciliationPeriod(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Company-oversight report: where do the legacy manual `DIRECT` upload and the
+ * module's `DirectReq` injection BOTH carry direct sales for the same
+ * (period, line, region, product)? Those buckets are the double-count exposure during
+ * the parallel run. Read-only; Super Admin / SFE Manager / CEO only (caps/variances
+ * audience). Delegates the money math to phx_direct_sales_reconciliation.
+ */
+export async function getDirectSalesReconciliation(
+  access: AccessContext,
+  input?: { periodFrom?: string | null; periodTo?: string | null },
+): Promise<DirectSalesReconciliationResult> {
+  await assertPermission(access, "direct_orders", "read");
+  if (access.scope !== "system" && !RECONCILIATION_VIEW_ROLES.has(access.role)) {
+    throw new Error("Forbidden: you are not allowed to view direct-sales reconciliation.");
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_direct_sales_reconciliation", {
+    p_period_from: normalizeReconciliationPeriod(input?.periodFrom),
+    p_period_to: normalizeReconciliationPeriod(input?.periodTo),
+  });
+  if (error) throw error;
+  const v = (data ?? {}) as Record<string, unknown>;
+  const num = (x: unknown): number => Number(x ?? 0);
+  const overlaps = Array.isArray(v.overlaps) ? (v.overlaps as Array<Record<string, unknown>>) : [];
+  const byPeriod = Array.isArray(v.byPeriod) ? (v.byPeriod as Array<Record<string, unknown>>) : [];
+  return {
+    periodFrom: typeof v.periodFrom === "string" ? v.periodFrom : null,
+    periodTo: typeof v.periodTo === "string" ? v.periodTo : null,
+    groupedRows: num(v.groupedRows),
+    overlapRows: num(v.overlapRows),
+    totalManualDirect: num(v.totalManualDirect),
+    totalModuleDirect: num(v.totalModuleDirect),
+    overlapExposure: num(v.overlapExposure),
+    pass: v.pass !== false,
+    overlaps: overlaps.map((o) => ({
+      period: String(o.period ?? ""),
+      line: String(o.line ?? ""),
+      regionCode: String(o.regionCode ?? ""),
+      productCode: String(o.productCode ?? ""),
+      manualValue: num(o.manualValue),
+      manualQty: num(o.manualQty),
+      moduleValue: num(o.moduleValue),
+      moduleQty: num(o.moduleQty),
+      overlapExposure: num(o.overlapExposure),
+    })),
+    byPeriod: byPeriod.map((p) => ({
+      period: String(p.period ?? ""),
+      manualValue: num(p.manualValue),
+      moduleValue: num(p.moduleValue),
+      overlapExposure: num(p.overlapExposure),
+    })),
+  };
 }
 
 // ── Pharmacy geo variances + public price (admin) ─────────────────────────────
