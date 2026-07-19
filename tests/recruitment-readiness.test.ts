@@ -89,6 +89,9 @@ export function runRecruitmentReadinessTests() {
   assert.ok(permissionMatrix["Talent Acquisition"].candidates?.includes("read"));
   assert.ok(permissionMatrix["Talent Acquisition"].employee_documents?.includes("update"));
   assert.ok(permissionMatrix["Talent Acquisition"].leave?.includes("update"));
+  // Self-service payslip access (own payslip only, matching Financial Advisor) — without
+  // this, Talent Acquisition hits an uncaught Forbidden error on /payslips.
+  assert.ok(permissionMatrix["Talent Acquisition"].payslips?.includes("read"));
   assert.deepEqual(permissionMatrix.CEO.recruitment, undefined);
   assert.deepEqual(permissionMatrix.CEO.candidates, undefined);
   assert.deepEqual(permissionMatrix.CEO.offers, undefined);
