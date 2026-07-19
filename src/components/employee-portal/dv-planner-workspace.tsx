@@ -1,21 +1,57 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CalendarCheck2,
+  CalendarSearch,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock,
   Hourglass,
   Search,
+  XCircle,
 } from "lucide-react";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-visit-analytics/roster-summary";
 import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
+
+// Per-rep "planned date" tracker: pick the date you chose to visit a rep, see whether CRM
+// confirmed a DV on that exact day using the roster already loaded — no separate fetch. Client-only
+// (localStorage), same key format as the original single-rep/date checker this page replaced, so
+// any dates already saved there keep working.
+type PlannedDates = Record<string, string>;
+
+const DV_PLANNER_STORAGE_EVENT = "phoenix-dv-planner-change";
+
+function usePlannedDates(storageKey: string): PlannedDates {
+  const subscribe = useCallback((callback: () => void) => {
+    window.addEventListener("storage", callback);
+    window.addEventListener(DV_PLANNER_STORAGE_EVENT, callback);
+    return () => {
+      window.removeEventListener("storage", callback);
+      window.removeEventListener(DV_PLANNER_STORAGE_EVENT, callback);
+    };
+  }, []);
+  const getSnapshot = useCallback(() => {
+    try {
+      return window.localStorage.getItem(storageKey) ?? "{}";
+    } catch {
+      return "{}";
+    }
+  }, [storageKey]);
+  const serialized = useSyncExternalStore(subscribe, getSnapshot, () => "{}");
+  return useMemo(() => {
+    try {
+      return JSON.parse(serialized) as PlannedDates;
+    } catch {
+      return {};
+    }
+  }, [serialized]);
+}
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -211,10 +247,81 @@ function VisitHistory({ visits }: { visits: DoubleVisitReportRow[] }) {
   );
 }
 
-function RosterRow({ entry, visits }: { entry: DoubleVisitRosterEntry; visits: DoubleVisitReportRow[] }) {
+type DateCheckResult = "confirmed" | "future" | "not-recorded" | "outside-range";
+
+function checkPlannedDate(params: {
+  dateFrom: string;
+  dateTo: string;
+  plannedDate: string;
+  today: string;
+  visits: DoubleVisitReportRow[];
+}): DateCheckResult | null {
+  const { dateFrom, dateTo, plannedDate, today, visits } = params;
+  if (!plannedDate) return null;
+  if (plannedDate > today) return "future";
+  if (plannedDate < dateFrom || plannedDate > dateTo) return "outside-range";
+  return visits.some((visit) => visit.activityDate === plannedDate) ? "confirmed" : "not-recorded";
+}
+
+function DateCheckBadge({ result }: { result: DateCheckResult }) {
+  if (result === "future") {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase text-blue-700">
+        <Clock className="h-3 w-3" />
+        Planned — not due yet
+      </span>
+    );
+  }
+  if (result === "confirmed") {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+        <CheckCircle2 className="h-3 w-3" />
+        Confirmed that day
+      </span>
+    );
+  }
+  if (result === "outside-range") {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-500">
+        <CalendarSearch className="h-3 w-3" />
+        Widen date range above
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase text-rose-700">
+      <XCircle className="h-3 w-3" />
+      Not recorded that day
+    </span>
+  );
+}
+
+function RosterRow({
+  dateCheckMode,
+  dateFrom,
+  dateTo,
+  entry,
+  onSetPlannedDate,
+  plannedDate,
+  today,
+  visits,
+}: {
+  dateCheckMode: boolean;
+  dateFrom: string;
+  dateTo: string;
+  entry: DoubleVisitRosterEntry;
+  onSetPlannedDate: (hrId: string, date: string) => void;
+  plannedDate: string;
+  today: string;
+  visits: DoubleVisitReportRow[];
+}) {
   const [expanded, setExpanded] = useState(false);
   const canExpand = entry.visited;
   const dayCount = useMemo(() => new Set(visits.map((visit) => visit.activityDate)).size, [visits]);
+  const dateCheckResult = useMemo(
+    () => checkPlannedDate({ dateFrom, dateTo, plannedDate, today, visits }),
+    [dateFrom, dateTo, plannedDate, today, visits],
+  );
 
   return (
     <div className="bg-white">
@@ -289,6 +396,25 @@ function RosterRow({ entry, visits }: { entry: DoubleVisitRosterEntry; visits: D
           ) : null}
         </div>
       </div>
+      {dateCheckMode ? (
+        <div
+          className="flex flex-wrap items-center gap-3 border-t border-dashed border-slate-200 bg-slate-50/70 px-5 py-2.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            Planned date
+            <input
+              className="h-8 border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+              onChange={(event) => onSetPlannedDate(entry.hrId, event.target.value)}
+              type="date"
+              value={plannedDate}
+            />
+          </label>
+          {dateCheckResult ? <DateCheckBadge result={dateCheckResult} /> : (
+            <span className="text-[11px] text-slate-400">Pick the date you chose for this rep.</span>
+          )}
+        </div>
+      ) : null}
       {canExpand && expanded ? <VisitHistory visits={visits} /> : null}
     </div>
   );
@@ -378,6 +504,7 @@ export function DvPlannerWorkspace({
   dateTo,
   roster,
   rows,
+  viewerHrId,
 }: {
   dateFrom: string;
   dateTo: string;
@@ -389,6 +516,23 @@ export function DvPlannerWorkspace({
   const [activeFilters, setActiveFilters] = useState<Set<FilterKey>>(new Set());
   const [sortMode, setSortMode] = useState<SortMode>("alarms");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [dateCheckMode, setDateCheckMode] = useState(false);
+  const today = useMemo(() => isoToday(), []);
+  const plannedDatesStorageKey = `phoenix-dv-planner:${viewerHrId.toLowerCase()}`;
+  const plannedDates = usePlannedDates(plannedDatesStorageKey);
+
+  function setPlannedDate(hrId: string, date: string) {
+    const key = canonicalHrIdKey(hrId) ?? hrId.toLowerCase();
+    const next = { ...plannedDates };
+    if (date) next[key] = date;
+    else delete next[key];
+    try {
+      window.localStorage.setItem(plannedDatesStorageKey, JSON.stringify(next));
+      window.dispatchEvent(new Event(DV_PLANNER_STORAGE_EVENT));
+    } catch {
+      // The date check still works for this session when browser storage is unavailable.
+    }
+  }
 
   function toggleFilter(key: FilterKey) {
     setActiveFilters((prev) => {
@@ -512,6 +656,20 @@ export function DvPlannerWorkspace({
                 Clear
               </button>
             ) : null}
+            <button
+              className={`inline-flex h-8 items-center gap-1.5 border px-3 text-[11px] font-bold uppercase tracking-wide transition ${
+                dateCheckMode
+                  ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"
+              }`}
+              onClick={() => setDateCheckMode((value) => !value)}
+              type="button"
+              aria-pressed={dateCheckMode}
+              title="Pick a date per rep and check whether CRM confirmed a DV that day"
+            >
+              <CalendarSearch className="h-3.5 w-3.5" />
+              Date Check
+            </button>
             <span className="ml-auto inline-flex items-center overflow-hidden border border-slate-200">
               {SORT_OPTIONS.map((option) => (
                 <button
@@ -581,7 +739,19 @@ export function DvPlannerWorkspace({
                             <div className="divide-y divide-slate-200">
                               {managerGroup.reps.map((entry) => {
                                 const key = canonicalHrIdKey(entry.hrId);
-                                return <RosterRow entry={entry} key={entry.hrId} visits={(key && visitsByRepKey.get(key)) || []} />;
+                                return (
+                                  <RosterRow
+                                    dateCheckMode={dateCheckMode}
+                                    dateFrom={dateFrom}
+                                    dateTo={dateTo}
+                                    entry={entry}
+                                    key={entry.hrId}
+                                    onSetPlannedDate={setPlannedDate}
+                                    plannedDate={(key && plannedDates[key]) ?? ""}
+                                    today={today}
+                                    visits={(key && visitsByRepKey.get(key)) || []}
+                                  />
+                                );
                               })}
                             </div>
                           )}
