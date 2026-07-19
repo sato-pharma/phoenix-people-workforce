@@ -218,6 +218,29 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(mirrorRepRow[22], "CP", "visitType -8 maps to CP via the mirror row path");
   assert.equal(mirrorMgrRow[22], "CP", "the double partner is credited the same CP day via the mirror row path");
 
+  // --- Mixed day (owner decision 2026-07-20): a day with BOTH a regular visit AND a campaign now
+  // COUNTS the regular visit (numeric count, not "CP"), and flags the campaign via
+  // campaignOverlayKeys so the grid renders a two-color split square and campaignDays stays
+  // accurate. A rep's real visits are never dropped from the total just because a campaign shared
+  // the day. Only a pure-campaign day (no regular visit) still classifies as "CP" (asserted above). ---
+  {
+    const mixedRows: VisitsMirrorRow[] = [
+      { agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null, visit_date: "2026-05-20", visit_type: 0 },
+      { agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null, visit_date: "2026-05-20", visit_type: -8 },
+    ];
+    const { matrix: mixedMatrix, campaignOverlayKeys } = buildIReports360FieldWorkforceMatrix({
+      employees: mirrorEmployees,
+      month: 5,
+      year: 2026,
+      todayIso: "2026-06-01",
+      visits: mixedRows.map(visitFromMirrorRow),
+    });
+    const mixedRepRow = mixedMatrix.find((row) => row[1] === "A-1")!;
+    // Column layout: day N is at index N + 4, so 2026-05-20 is index 24.
+    assert.equal(mixedRepRow[24], 1, "a mixed day (1 regular + 1 campaign) counts the regular visit, not 'CP'");
+    assert.equal(campaignOverlayKeys.size, 1, "the mixed day is flagged as a campaign overlay (drives the split square + campaignDays)");
+  }
+
   // --- Tier 0.1/0.2: deterministic crm_id -> hr_id resolution + confidence, NO fuzzy names ---
   const baseVisit = (agentID: number, agentName: string | null): FieldWorkforceMatrixVisit => ({
     agentID, agentName, ampm: null, attendance: null, callType: null, comment: null, contactID: null,

@@ -155,6 +155,13 @@ export type FieldWorkforceDayCell = {
    * never affects the base AV classification, severity, or deduction candidates.
    */
   isExcuseLabeledAv?: boolean;
+  /**
+   * A "mixed" day: this day counts its regular visits (status VISITS) but a campaign-class
+   * activity ALSO occurred. Drives the grid's two-color split square and keeps the campaignDays
+   * metric accurate now that a mixed day no longer classifies as CP (owner decision 2026-07-20 —
+   * a rep's real regular visits are never hidden/dropped just because a campaign shared the day).
+   */
+  campaignOverlay?: boolean;
   visitCount?: number;
   /**
    * Whether this day's REGULAR (customer) visits were all logged AM, all PM, or a mix, from

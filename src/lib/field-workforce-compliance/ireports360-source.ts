@@ -90,9 +90,14 @@ function isFridayIso(dateIso: string): boolean {
 
 /** Maps a single agent-day's visit records to a compliance cell value.
  *
- * Priority: CP (campaign/special activity) > regular visit count > AV (leave).
- * If ANY visit on a day maps to CP, the whole day is classified as CP —
- * a mixed day (regular visits + one campaign activity) is a campaign day.
+ * Priority: regular visit count > CP (campaign/special activity) > AV (leave).
+ * A "mixed" day (regular visits AND a campaign activity) now COUNTS its regular visits
+ * (returns the numeric count, i.e. VISITS) rather than collapsing to CP — the campaign is
+ * preserved separately as a display/metric overlay (see mixedDayHasCampaign +
+ * campaignOverlayKeys) so the grid shows a split square and campaignDays stays
+ * accurate. Owner decision 2026-07-20: a rep's real regular visits must never be hidden or
+ * dropped from the total just because a campaign also happened that day. Only a pure-campaign
+ * day (no regular visit) still classifies as CP.
  */
 function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
   let regularCount = 0;
@@ -109,10 +114,24 @@ function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
     }
   }
 
-  if (hasCp) return "CP";
   if (regularCount > 0) return regularCount;
+  if (hasCp) return "CP";
   if (hasAv) return "AV";
   return "CP";
+}
+
+/** True for a "mixed" day: at least one regular (type 0) visit AND at least one campaign-class
+ * activity. Such a day now counts as VISITS (see dayCellValue) but must still surface its
+ * campaign — this drives the grid's two-color split square and keeps the campaignDays metric
+ * from silently dropping mixed days once they no longer classify as CP. */
+function mixedDayHasCampaign(visits: IReports360Visit[]): boolean {
+  let regularCount = 0;
+  let hasCp = false;
+  for (const visit of visits) {
+    if (visit.visitType === 0) regularCount++;
+    else if ((VISIT_TYPE_TO_STATUS.get(visit.visitType) ?? "CP") === "CP") hasCp = true;
+  }
+  return regularCount > 0 && hasCp;
 }
 
 /** CRM comment pattern for an AV-type visit that is actually an excuse (e.g. "Afternoon
@@ -327,6 +346,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   year: number;
 }): {
   avExcuseLabeledKeys: Set<string>;
+  campaignOverlayKeys: Set<string>;
   customerAuthenticityByHrKey: Map<string, FieldWorkforceCustomerAuthenticity>;
   identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
@@ -394,6 +414,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const loggingTimingByHrKeyAndDate = new Map<string, FieldWorkforceLoggingTiming>();
   const customerAuthenticityByHrKey = new Map<string, FieldWorkforceCustomerAuthenticity>();
   const avExcuseLabeledKeys = new Set<string>();
+  const campaignOverlayKeys = new Set<string>();
   const visitPeriodByHrKeyAndDate = new Map<string, "AM" | "PM" | "MIXED">();
 
   const eligible = employees
@@ -450,6 +471,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
         const timing = computeLoggingTiming(dayVisits);
         if (timing) loggingTimingByHrKeyAndDate.set(`${hrKey}|${dayIso}`, timing);
         if (dayHasExcuseLabeledAv(dayVisits)) avExcuseLabeledKeys.add(`${hrKey}|${dayIso}`);
+        if (mixedDayHasCampaign(dayVisits)) campaignOverlayKeys.add(`${hrKey}|${dayIso}`);
         const period = computeVisitPeriod(dayVisits);
         if (period) visitPeriodByHrKeyAndDate.set(`${hrKey}|${dayIso}`, period);
       }
@@ -474,7 +496,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate };
+  return { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -759,7 +781,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     };
   }
 
-  const { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+  const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     deviceMappedHrKeys,
     employees: directory,
     month,
@@ -799,18 +821,24 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
       const timing = hrKey ? loggingTimingByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
       const isExcuseLabeledAv = hrKey ? avExcuseLabeledKeys.has(`${hrKey}|${cell.dateIso}`) : false;
       const visitPeriod = hrKey ? visitPeriodByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
-      if (!timing && !isExcuseLabeledAv && !visitPeriod) return cell;
+      const campaignOverlay = hrKey ? campaignOverlayKeys.has(`${hrKey}|${cell.dateIso}`) : false;
+      if (!timing && !isExcuseLabeledAv && !visitPeriod && !campaignOverlay) return cell;
       return {
         ...cell,
         ...(timing ? { loggingTiming: timing } : {}),
         ...(isExcuseLabeledAv ? { isExcuseLabeledAv: true } : {}),
         ...(visitPeriod ? { visitPeriod } : {}),
+        ...(campaignOverlay ? { campaignOverlay: true } : {}),
       };
     });
     const loggingTimingSummary = summarizeLoggingTiming(timeline);
     const customerAuthenticity = hrKey ? customerAuthenticityByHrKey.get(hrKey) ?? null : null;
+    // campaignDays is computed by the classifier BEFORE campaignOverlay is attached above, so a
+    // mixed day (now VISITS + overlay) would otherwise be dropped from it. Recompute here on the
+    // enriched timeline with the same rule as the classifier (pure CP OR mixed-with-overlay).
+    const campaignDays = timeline.filter((cell) => !cell.ignored && (cell.status === "CP" || cell.campaignOverlay === true)).length;
 
-    return { ...employee, crmIdentity: identity, customerAuthenticity, loggingTimingSummary, timeline };
+    return { ...employee, campaignDays, crmIdentity: identity, customerAuthenticity, loggingTimingSummary, timeline };
   });
 
   const warnings = [...preview.warnings];

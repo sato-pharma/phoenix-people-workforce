@@ -496,6 +496,9 @@ function buildEmployeeSummary(input: {
 
   return {
     areaName: input.employeeReference?.areaName ?? null,
+    // Pure-campaign days only here; a mixed day (regular + campaign) classifies as VISITS and its
+    // campaignOverlay isn't attached yet at this stage — the live path recomputes campaignDays on
+    // the enriched timeline (see ireports360-source.ts) so mixed days still count as campaign days.
     campaignDays: timeline.filter((cell) => !cell.ignored && cell.status === "CP").length,
     compliancePercent: timeline.filter((cell) => !cell.ignored).length > 0
       ? roundPercent((timeline.filter((cell) => cell.countedAsWorkedDay).length / timeline.filter((cell) => !cell.ignored).length) * 100)
