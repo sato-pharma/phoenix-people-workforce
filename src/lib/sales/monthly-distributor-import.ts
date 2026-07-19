@@ -874,16 +874,24 @@ function parseOptionalInteger(value: unknown) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
-// Reads a per-row discount and returns it as a fraction (0.25 for 25%).
-// Blank/0/non-numeric => 0 (no discount). Excel stores "25%" as 0.25, so any
-// value with magnitude <= 1 is already a fraction; a whole number (e.g. 25) is
+// Reads a per-row discount and returns it as a fraction (0.25 for 25%), CLAMPED to [0, 1], plus a
+// flag when the raw cell was out of that range. Blank/0/non-numeric => 0 (no discount). Excel stores
+// "25%" as 0.25, so any value with magnitude <= 1 is already a fraction; a whole number (e.g. 25) is
 // treated as a percent. The sheet Value/Net column is never read.
-function discountFraction(value: unknown) {
+//
+// The clamp is a correctness guard: value = Qty x factory_price x (1 - rate). Without it a discount
+// cell like "150" (a data-entry typo) parses to 1.5, and (1 - 1.5) = -0.5 silently produces a
+// NEGATIVE row value; a negative cell like "-25" would instead INFLATE it (1 - (-0.25) = 1.25). A
+// real discount can be neither negative (a surcharge) nor over 100% (free/negative price), so we
+// clamp to [0, 1] and surface a warning at the call site so the bad cell is visible, not silent.
+export function parseDiscount(value: unknown): { rate: number; outOfRange: boolean } {
   const text = normalizeDisplay(value).replace(/%/g, "").replace(/,/g, "");
-  if (!text) return 0;
+  if (!text) return { rate: 0, outOfRange: false };
   const parsed = Number(text);
-  if (!Number.isFinite(parsed) || parsed === 0) return 0;
-  return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
+  if (!Number.isFinite(parsed) || parsed === 0) return { rate: 0, outOfRange: false };
+  const fraction = Math.abs(parsed) > 1 ? parsed / 100 : parsed;
+  const rate = Math.min(1, Math.max(0, fraction));
+  return { rate, outOfRange: rate !== fraction };
 }
 
 function requireSourceOfSalesProductField(
@@ -1375,7 +1383,19 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     if (isBonusRow) continue;
     const bonusQty = 0;
     const qty = parsedQty;
-    const discountRate = discountFraction(rawDiscount);
+    const { rate: discountRate, outOfRange: discountOutOfRange } = parseDiscount(rawDiscount);
+    if (discountOutOfRange) {
+      // Clamped to [0,1] above so row value can't go negative; warn (not fail) so a bad discount
+      // cell is visible in validation rather than silently corrected.
+      addIssue(
+        rowIssues,
+        rowNumber,
+        headerMap.template.discountField ?? "Discount",
+        rawDiscount,
+        `Discount is outside 0–100%; clamped to ${(discountRate * 100).toFixed(0)}%.`,
+        "warning",
+      );
+    }
     let period = invoicePeriod(rawInvoiceDate, invoiceDateDayFirst);
     let invoiceDate = resolveInvoiceDate(rawInvoiceDate, invoiceDateDayFirst, period);
     // Sheet has no usable date for this row → fall back to the user-selected period (if any).
@@ -2407,7 +2427,12 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
   if (batchesResult.error) throw batchesResult.error;
 
   const batches = (batchesResult.data ?? []).map((row) => mapSourceOfSalesBatch(row as Record<string, unknown>));
-  const batchIds = batches.map((batch) => batch.batchId);
+  // `batches` intentionally keeps every status (validated + blocked) — the dashboard shows recent
+  // upload history including rejected files. But the SUMMED totals below must only ever reflect
+  // validated batches (a rejected/blocked upload's row still gets inserted with populated
+  // total_qty/total_value at write time — see the commit above this function — so a blocked batch
+  // ID reaching the summaries query would permanently inflate this period's totals).
+  const batchIds = batches.filter((batch) => batch.status === "validated").map((batch) => batch.batchId);
   if (batchIds.length === 0) {
     return buildSourceOfSalesDashboard({
       availablePeriods,
@@ -2435,6 +2460,14 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
     });
     if (!geoResult.error && geoResult.data) {
       geoSummaries = (geoResult.data as Record<string, unknown>[]).map((row) => mapSourceOfSalesSummary(row));
+    } else if (geoResult.error) {
+      // Fail CLOSED: a restricted viewer must never see byRegion/byArea/byBrick fall back to the
+      // unfiltered (confidential-inclusive) summaries just because this RPC call errored. An empty
+      // geo breakdown (rather than `undefined`, which buildSourceOfSalesDashboard's geoSource ??
+      // input.summaries fallback would treat as "RPC skipped, use the inflated summaries") degrades
+      // to a blank region/area/brick section instead of leaking confidential product value.
+      console.warn("[sales dashboard] phx_sos_geo_aggregates_without_restricted failed; region/area/brick breakdown will be empty rather than falling back to unfiltered totals", geoResult.error);
+      geoSummaries = [];
     }
   }
 

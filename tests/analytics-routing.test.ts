@@ -96,4 +96,39 @@ export function runAnalyticsRoutingTests() {
     dualShellExists = false;
   }
   assert.ok(!dualShellExists, "AnalyticsDualShell must be deleted (separate-URL design supersedes dual-mode)");
+
+  // (7) Regression guard for a confirmed finding: assertPermission(sales|weekly_sales, "read") is a
+  // BROAD permission also held by generic roles (Employee, Manager, Finance Manager) that have no
+  // business reason to be in this module — Finance Manager in particular resolves to COMPANY sales
+  // scope, so without a role allowlist it would get the unrestricted, company-wide view by URL alone.
+  // Every core route (both mounts) and every admin hub/detailed route must also gate on the
+  // role-allowlist helpers in src/lib/analytics/portal-access.ts — tile visibility on the hub pages
+  // is UX, not the security boundary.
+  const CORE_ROUTES = DASHBOARD_ROUTES.filter((r) => r !== "executive-comparison" && r !== "reconciliation");
+
+  for (const route of [...CORE_ROUTES, ""]) {
+    const rel = `app/(admin)/admin/analytics/${route ? route + "/" : ""}page.tsx`;
+    const src = readFileSync(rel, "utf8");
+    assert.ok(
+      src.includes("canViewAdminCoreAnalytics(access.role)"),
+      `${rel} must gate on canViewAdminCoreAnalytics (broad sales:read/weekly_sales:read is not enough)`,
+    );
+  }
+  for (const route of ["executive-comparison", "reconciliation"]) {
+    const rel = `app/(admin)/admin/analytics/${route}/page.tsx`;
+    const src = readFileSync(rel, "utf8");
+    assert.ok(
+      src.includes("canViewAdminDetailedAnalytics(access.role)") && src.includes('redirect("/admin/analytics")'),
+      `admin ${route} must gate on canViewAdminDetailedAnalytics and redirect non-detailed roles to the hub`,
+    );
+  }
+
+  for (const route of [...CORE_ROUTES, ""]) {
+    const rel = `app/employee-portals/sales-analytics/${route ? route + "/" : ""}page.tsx`;
+    const src = readFileSync(rel, "utf8");
+    assert.ok(
+      src.includes("canViewPortalCoreAnalytics(access.role)"),
+      `${rel} must gate on canViewPortalCoreAnalytics (broad sales:read/weekly_sales:read is not enough)`,
+    );
+  }
 }

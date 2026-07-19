@@ -15,9 +15,10 @@
 // A company-wide viewer (CEO / Super Admin / SFE Manager / Finance, or system scope) has all-null
 // allowed sets → every helper here is a NO-OP → their behaviour is unchanged.
 //
-// NOTE: this is the reusable core (Phase 1). It is not yet wired into the pages/loaders or the
-// routing; wiring + filter-UI contextualisation + dual-mode routing are later phases. Until then
-// nothing here runs in production.
+// NOTE: this scope core is now wired into the analytics dashboards (e.g. reconciliation-dashboard.tsx
+// and the shared page loaders call scopeAnalyticsFilters / scopeAnalyticsDimensions /
+// computeAnalyticsFilterVisibility), so it DOES run in production — a company-wide viewer (all allowed
+// sets null) is a no-op, while a scoped viewer is narrowed to their own line/region/product slice.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import {

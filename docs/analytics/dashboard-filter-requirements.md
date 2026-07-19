@@ -31,8 +31,8 @@ each loaded from the corresponding `analytics.dim_*` view or fact table via
 `parseAnalyticsFilters(searchParams, descriptors)` turns the page's URL query params
 into a typed `FilterValues` object using each descriptor's `type` to decide
 single-vs-array parsing; `serializeFilters()` does the reverse for building filter-bar
-links. `getFilterValue` / `getFilterArray` / `getFilterMode` are the read helpers RPC
-callers use to pull a value back out.
+links. `getFilterValue` / `getFilterArray` are the read helpers RPC callers use to pull a
+value back out.
 
 ## Filters wired into each dashboard today (`src/lib/analytics/sales-filter-config.ts`)
 
@@ -55,9 +55,11 @@ callers use to pull a value back out.
 | Batch status (staged/approved/rejected) | `batchStatus` | multi-select | — | ✓ | — | — |
 | Batch (UUID) | `batchId` | text-search | — | ✓ | — | — |
 
-A filter only appears on the pages whose pipeline it's tagged for (`pipeline: "sos" |
-"closing" | "weekly" | "all"` on the descriptor) — this is enforced by which
-`*_FILTERS` array a page imports, not by per-page conditionals.
+A filter only appears on the pages whose `*_FILTERS` array imports it — enforcement is the
+hand-curated arrays in `sales-filter-config.ts`, not per-page conditionals. The optional
+`pipeline: "sos" | "closing" | "weekly" | "all"` field on a descriptor is documentation of
+intent only; nothing reads it at runtime, so it must be kept consistent with the arrays by
+hand (it does not itself gate visibility).
 
 **Why employee/territory/batch filters are closing-only:** SoS and Weekly have no
 employee attribution (geography/product-centric pipelines — see

@@ -247,3 +247,13 @@ export const EXECUTIVE_FILTERS: FilterDescriptor[] = [
   REGION_FILTER,
   DISTRIBUTOR_FILTER,
 ];
+
+// analytics_cross_source only accepts p_period_from / p_period_to / p_lines (see
+// loadCrossSourceUncached in service.ts) — Region and Distributor are NOT forwarded by
+// reconciliation-dashboard.tsx's query object, so reusing EXECUTIVE_FILTERS here would render two
+// controls that silently do nothing when changed. Use this narrower set instead.
+export const RECONCILIATION_FILTERS: FilterDescriptor[] = [
+  PERIOD_FROM_FILTER,
+  PERIOD_TO_FILTER,
+  LINE_FILTER,
+];

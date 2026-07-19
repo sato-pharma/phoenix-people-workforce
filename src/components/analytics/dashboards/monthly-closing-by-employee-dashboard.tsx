@@ -18,6 +18,7 @@ import {
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
 import { CLOSING_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
+import { safeDividePct } from "@/lib/analytics/validation";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoClosingByEmployee } from "@/lib/analytics/demo-fixtures";
 import { CLOSING_TABS } from "@/lib/analytics/module-nav-config";
@@ -70,6 +71,29 @@ async function ByEmployeeContent({
   const totalSales  = rows.reduce((s, r) => s + r.salesValue,  0);
   const totalTarget = rows.reduce((s, r) => s + r.targetValue, 0);
 
+  // Cross-period rollup per employee — mirrors the Summary + period-level Detail pattern used by
+  // the SoS by-line/by-area/by-product tabs, so this tab leads with "one row per employee" instead
+  // of only the raw period × batch rows.
+  const employeeMap = new Map<
+    string,
+    { employeeName: string | null; managerName: string | null; territory: string | null; line: string; salesValue: number; targetValue: number }
+  >();
+  for (const r of rows) {
+    const key = r.employeeHrId ?? r.employeeName ?? "unknown";
+    const cur = employeeMap.get(key) ?? {
+      employeeName: r.employeeName,
+      managerName: r.managerName,
+      territory: r.territory,
+      line: r.line,
+      salesValue: 0,
+      targetValue: 0,
+    };
+    employeeMap.set(key, { ...cur, salesValue: cur.salesValue + r.salesValue, targetValue: cur.targetValue + r.targetValue });
+  }
+  const employeeTotals = [...employeeMap.values()]
+    .map((t) => ({ ...t, achievementPct: safeDividePct(t.salesValue, t.targetValue) }))
+    .sort((a, b) => b.salesValue - a.salesValue);
+
   return (
     <div className="space-y-5">
       {demo ? <AnalyticsDemoBanner /> : null}
@@ -82,7 +106,30 @@ async function ByEmployeeContent({
         basePath={`${mountRoot}/monthly-closing/by-employee`}
       />
 
-      <AnalyticsSection title="Employee Performance" count={rows.length}>
+      <AnalyticsSection title="Employee Summary" count={employeeTotals.length}>
+        {employeeTotals.length === 0 ? (
+          <AnalyticsEmptyState />
+        ) : (
+          <AnalyticsDataTable
+            searchKeys={["employeeName", "managerName", "territory", "line"]}
+            columns={[
+              { key: "employeeName",   label: "Name",      sortable: true },
+              { key: "managerName",    label: "Manager",   sortable: true },
+              { key: "territory",      label: "Territory", sortable: true },
+              { key: "line",           label: "Line",      sortable: true },
+              { key: "salesValue",     label: "Sales (EGP)",  align: "right", sortable: true, formatKind: "number" },
+              { key: "targetValue",    label: "Target (EGP)", align: "right", sortable: true, formatKind: "number" },
+              { key: "achievementPct", label: "Achiev %",  align: "right", sortable: true, formatKind: "percent" },
+            ]}
+            rows={employeeTotals}
+            totals={{ salesValue: totalSales, targetValue: totalTarget }}
+            exportTitle="Closing By Employee — Summary"
+            exportSubtitle="Cross-period totals per employee"
+          />
+        )}
+      </AnalyticsSection>
+
+      <AnalyticsSection title="Period × Employee Detail" count={rows.length}>
         {rows.length === 0 ? (
           <AnalyticsEmptyState />
         ) : (
@@ -91,7 +138,6 @@ async function ByEmployeeContent({
             columns={[
               { key: "period",         label: "Period",    sortable: true },
               { key: "line",           label: "Line",      sortable: true },
-              { key: "employeeHrId",   label: "HR ID",     sortable: true },
               { key: "employeeName",   label: "Name",      sortable: true },
               { key: "managerName",    label: "Manager",   sortable: true },
               { key: "territory",      label: "Territory", sortable: true },
@@ -101,8 +147,8 @@ async function ByEmployeeContent({
             ]}
             rows={rows}
             totals={{ salesValue: totalSales, targetValue: totalTarget }}
-            exportTitle="Closing By Employee"
-            exportSubtitle="Monthly closing performance per employee"
+            exportTitle="Closing By Employee — Detail"
+            exportSubtitle="Period-level monthly closing performance per employee"
           />
         )}
       </AnalyticsSection>

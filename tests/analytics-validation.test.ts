@@ -10,12 +10,18 @@ export function runAnalyticsValidationTests() {
   assert.equal(safeDividePct(10, null), null);
   assert.equal(safeDividePct(10, undefined), null);
   assert.equal(safeDividePct(1, 3), 33.33);
+  // A malformed upstream RPC field (Number(v ?? 0) on a non-numeric value) must never surface as
+  // the literal string "NaN%" — it degrades to the same "—" as a missing denominator.
+  assert.equal(safeDividePct(NaN, 100), null, "NaN numerator must not silently propagate to NaN%");
+  assert.equal(safeDividePct(Infinity, 100), null, "non-finite numerator must not silently propagate");
 
   // formatPctOrDash renders null as an em dash, not a misleading "0.0%".
   assert.equal(formatPctOrDash(null), "—");
   assert.equal(formatPctOrDash(undefined), "—");
   assert.equal(formatPctOrDash(50), "50.0%");
   assert.equal(formatPctOrDash(33.333, { decimals: 2 }), "33.33%");
+  assert.equal(formatPctOrDash(NaN), "—", "NaN must render as an em dash, not the literal string \"NaN%\"");
+  assert.equal(formatPctOrDash(Infinity), "—", "non-finite values must render as an em dash");
 
   // computePeriodDelta: null-safe on missing/zero prior value.
   assert.deepEqual(computePeriodDelta(150, 100), { current: 150, prior: 100, pct: 50 });

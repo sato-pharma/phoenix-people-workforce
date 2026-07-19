@@ -165,7 +165,6 @@ async function ClosingDashboardContent({
             columns={[
               { key: "period",         label: "Period",      sortable: true },
               { key: "line",           label: "Line",        sortable: true },
-              { key: "employeeHrId",   label: "HR ID",       sortable: true },
               { key: "employeeName",   label: "Name",        sortable: true },
               { key: "managerName",    label: "Manager",     sortable: true },
               { key: "territory",      label: "Territory",   sortable: true },

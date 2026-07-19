@@ -5,6 +5,9 @@ import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
+import { canViewAdminCoreAnalytics } from "@/lib/analytics/portal-access";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +15,10 @@ export const dynamic = "force-dynamic";
 // and redirects portal-mode users away — CEO / Super Admin / SFE Manager reach the full module here
 // (including the company-scope field re-hosts). Field/portal roles get their OWN scoped module at
 // /employee-portals/sales-analytics, never through this /admin URL.
+//
+// Tile visibility here is UX only — every dashboard page enforces the identical
+// canViewAdminCoreAnalytics / canViewAdminDetailedAnalytics check server-side (src/lib/analytics
+// /portal-access.ts is the single source of truth both this hub and every page import from).
 const SALES_ANALYTICS_BROAD_ROLES = [
   "Super Admin",
   "CEO",
@@ -116,6 +123,7 @@ const MODULES = [
 export default async function AnalyticsHubPage() {
   const access = await resolveAuthenticatedPageAccess();
   await assertPermission(access, "sales", "read");
+  if (!canViewAdminCoreAnalytics(access.role)) redirect(resolveLandingPathForRole(access.role));
   const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
   const visibleModules = isSystemAdministratorWorkspace
