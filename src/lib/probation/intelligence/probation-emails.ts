@@ -51,7 +51,7 @@ async function resolveBroadcastRoleIds(opts: { includeSfe?: boolean; includeTm?:
   if (opts.broadcastRoleOverride) return activeHrIdsByRole(opts.broadcastRoleOverride);
   const [ceo, hr, sfe, tm] = await Promise.all([
     activeHrIdsByRole(["CEO"]),
-    activeHrIdsByRole(["HR Manager", "Super Admin"]),
+    activeHrIdsByRole(["Super Admin"]),
     opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
     opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
   ]);
