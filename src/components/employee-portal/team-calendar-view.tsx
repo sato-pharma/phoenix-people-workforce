@@ -128,7 +128,10 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
 /** One employee's month grid — used INSIDE a ManagerBlock, so it carries no border of its
  * own (the block's single outer border is the only border for the whole DSM + team unit). */
 function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSummary; isFirst: boolean }) {
-  const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(0, 1fr))` };
+  // A day column never shrinks below 2.5rem — on a phone-width screen 30+ columns would
+  // otherwise be forced into a few unreadable pixels each; instead the row scrolls
+  // horizontally (day numbers scroll in lockstep since they share this same container).
+  const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(2.5rem, 1fr))` };
   const hierarchy = [employee.teamName, employee.areaName, employee.managerName]
     .filter(Boolean)
     .join(" / ");
@@ -147,8 +150,7 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
           <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
         </div>
       </div>
-      {/* Full month fits the width — no horizontal scroll. */}
-      <div className="mt-3">
+      <div className="phoenix-horizontal-scroll mt-3 overflow-x-auto">
         <div className="grid gap-1" style={monthColumns}>
           {employee.timeline.map((cell) => (
             <div

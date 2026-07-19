@@ -379,18 +379,21 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
   return (
     <div className="grid grid-cols-2 gap-px bg-slate-200 xl:grid-cols-4">
       {cards.map((card) => (
-        <div key={card.label} className="relative bg-white px-4 py-4 sm:px-5 sm:py-5">
+        <div key={card.label} className="relative min-w-0 overflow-hidden bg-white px-4 py-4 sm:px-5 sm:py-5">
           <span className={`absolute inset-x-0 top-0 h-[3px] ${card.accent}`} />
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
               <card.icon className="h-3.5 w-3.5" />
             </span>
-            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
+            <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
           </div>
-          <p className={`mt-3 whitespace-nowrap text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
+          {/* Values are computed (egpCompact, percentages) and can run long — wrap instead of the
+              fixed-width nowrap this used to have, which let the grid's minmax(0,1fr) columns
+              clip or bleed digits into the next card instead of showing the full number. */}
+          <p className={`mt-3 break-words text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
             {card.value}
           </p>
-          <p className="mt-1 whitespace-nowrap text-[11px] font-medium text-slate-500">{card.sub}</p>
+          <p className="truncate text-[11px] font-medium text-slate-500">{card.sub}</p>
         </div>
       ))}
     </div>
