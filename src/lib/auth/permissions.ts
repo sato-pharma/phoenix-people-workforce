@@ -473,6 +473,10 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "create", "update", "export"],
     employee_profile: ["read", "update"],
     leave: ["read", "update", "export"],
+    // Self-service only (own payslip) — matches Financial Advisor's grant. No broader
+    // payroll authority: Talent Acquisition must not inherit the retired HR Specialist
+    // role's company-wide payroll access.
+    payslips: ["read", "export"],
     offers: ["read", "create", "update", "export"],
     vacancies: ["read", "create", "update", "export"],
     recruitment: ["read", "create", "update", "export", "import"],
