@@ -25,6 +25,7 @@ import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
@@ -2685,10 +2686,11 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
   if (error) return { processed: 0, errors: 1 };
 
   // Find HR-level approver HR IDs from app_auth_users
+  const notifyRoles = await resolveNotificationRoleRecipients("outstation_sla_reminder");
   const { data: approvers } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["Super Admin", "Finance Manager", "CEO"])
+    .in("role", notifyRoles)
     .eq("is_active", true);
   const approverHrIds = (approvers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
   if (approverHrIds.length === 0) return { processed: 0, errors: 0 };

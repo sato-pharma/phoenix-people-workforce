@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import {
   buildAttendanceCalendarContext,
   cairoTodayIso,
@@ -56,10 +57,11 @@ function agoLabel(hours: number | null): string {
 // notifications/policy.ts), so the active Super Admins are named explicitly here via
 // metadata.moduleOwnerHrIds, which permission_based honours without requiring a subject.
 async function activeSuperAdminHrIds(): Promise<string[]> {
+  const roles = await resolveNotificationRoleRecipients("attendance_ingestion_alert");
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .eq("role", "Super Admin")
+    .in("role", roles)
     .eq("is_active", true);
   if (error) return [];
   return ((data ?? []) as Array<{ hr_id?: string | null }>)

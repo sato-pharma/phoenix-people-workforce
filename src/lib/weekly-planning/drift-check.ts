@@ -1,11 +1,13 @@
 // Daily drift detector for weekly/monthly plans — wired into /api/notifications/daily.
-// Runs phx_weekly_plans_drift_check() (read-only RPC) and alerts Super Admins + HR
-// Managers when any of the 6 impossible-state queries returns a non-zero count.
+// Runs phx_weekly_plans_drift_check() (read-only RPC) and alerts the admin-configured recipient
+// roles (see notification_role_policies, key "weekly_plans_drift_alert") when any of the 6
+// impossible-state queries returns a non-zero count.
 // Empty result → no notification (no zero-row spam). Idempotent via dedupe key.
 
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type DriftCounts = Record<"D1" | "D2" | "D3" | "D4" | "D5" | "D6", number>;
@@ -90,13 +92,12 @@ const DRIFT_DESCRIPTIONS: Record<keyof DriftCounts, string> = {
   D6: "hr_acknowledged plans with no acknowledgement row",
 };
 
-const ALERT_RECIPIENT_ROLES = ["Super Admin", "HR Manager"] as const;
-
 async function resolveDriftAlertRecipients(): Promise<string[]> {
+  const roles = await resolveNotificationRoleRecipients("weekly_plans_drift_alert");
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ALERT_RECIPIENT_ROLES as unknown as string[])
+    .in("role", roles)
     .eq("is_active", true);
   if (error) return [];
   const hrIds = new Set<string>();
