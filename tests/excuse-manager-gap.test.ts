@@ -49,6 +49,7 @@ export function runExcuseManagerGapTests() {
     /resolveNotificationRoleRecipients\("excuse_drift_alert"\)/,
     "alert recipients must be resolved by the admin-editable role policy, matching the weekly-plan drift check's pattern",
   );
+  assert.doesNotMatch(driftSrc, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.match(
     driftSrc,
     /catch \(error\)[\s\S]{0,180}ok: false/,

@@ -73,9 +73,10 @@ export function runWeeklyPlansDriftCheckTests() {
   );
   assert.match(
     driftSrc,
-    /ALERT_RECIPIENT_ROLES = \["Super Admin"\]/,
-    "alert recipients must be Super Admin only — \"HR Manager\" is a job title, not an app_auth_users.role value",
+    /resolveNotificationRoleRecipients\("weekly_plans_drift_alert"\)/,
+    "alert recipients must be resolved by the admin-editable role policy, matching the excuse drift check's pattern",
   );
+  assert.doesNotMatch(driftSrc, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
 
   // ── Daily cron wiring ─────────────────────────────────────────────────────────
   assert.match(
