@@ -1,43 +1,38 @@
 /**
- * Auto-maintained per-month Field Workforce Compliance snapshots, computed from the
- * ireports360_visits mirror. This is the primary read path for the admin UI (a fast DB
- * read instead of a live recompute on every view); buildFieldWorkforceCompliancePreviewFromVisitsReport
- * (in ireports360-source.ts) remains the underlying compute primitive this module calls to
- * produce/refresh a snapshot.
+ * Field Workforce Compliance's "live" (non-Excel) data path. Every read here computes fresh
+ * from the ireports360_visits mirror on every call — buildFieldWorkforceCompliancePreviewFromVisitsReport
+ * (in ireports360-source.ts) is the underlying compute primitive, called directly, every time.
  *
- * Snapshots are written two ways:
- *  - refreshFieldWorkforceComplianceLiveSnapshotsForRange() is called after every visits-report
- *    sync (cron + manual backfill) for whichever month(s) that sync's date range touches, so
- *    "current" months stay continuously fresh.
- *  - A one-time historical backfill (scripts/_tmp-fwc-live-snapshots-backfill.ts) computes every
- *    month back to when the mirror's data starts.
+ * There is deliberately NO cache/snapshot table backing this anymore (owner decision
+ * 2026-07-18: WFC only ever reads CRM/visits data from the Phoenix CRM module, never a
+ * point-in-time copy of it) — a month's numbers always reflect the mirror as it stands right
+ * now, including past months (a later correction to historical visit data is reflected
+ * immediately, everywhere, rather than requiring a manual re-save). The trade-off is cost: a
+ * month view rescans that month's full visits_mirror range every time, and the 6-month
+ * employee trend below does that six times over. Both are already narrow, permission-gated
+ * admin surfaces (not high-traffic), so this was accepted deliberately over caching.
  */
 
 import { fieldWorkforceMonthKey } from "@/lib/field-workforce-compliance/archive";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 import type { FieldWorkforcePreviewResult } from "@/lib/field-workforce-compliance/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const snapshotsTable = "field_workforce_compliance_live_snapshots";
-
-export type FieldWorkforceLiveSnapshotListItem = {
+export type FieldWorkforceLiveViewResult = {
+  /** Always "now" — there is no separate compute time to track anymore. */
   computedAt: string;
   employeeCount: number;
   highSeverityCount: number;
   month: number;
   monthKey: string;
+  preview: FieldWorkforcePreviewResult;
   reviewCandidateCount: number;
   year: number;
 };
 
-export type FieldWorkforceLiveSnapshotDetail = FieldWorkforceLiveSnapshotListItem & {
-  preview: FieldWorkforcePreviewResult;
-};
-
 /**
  * Freshness of the underlying visits mirror for a given month, so the decision surface can
- * warn when the data a snapshot was computed from may be incomplete. `isStale` trips when the
+ * warn when the data a view was computed from may be incomplete. `isStale` trips when the
  * last successful visits sync is older than the threshold (the sync runs ~3×/day, so >26h
  * means several missed cycles). `isOpenMonth` marks the current calendar month, whose latest
  * days are still filling in — a legitimate reason "N" days may not yet be real absences.
@@ -70,22 +65,9 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
   return { ageHours, isOpenMonth, isStale, lastSyncedAt, latestStatus };
 }
 
-type SnapshotRow = {
-  computed_at: string;
-  employee_count: number;
-  employee_rollup?: FieldWorkforceEmployeeMonthRollup[] | null;
-  high_severity_count: number;
-  month: number;
-  month_key: string;
-  preview?: FieldWorkforcePreviewResult;
-  review_candidate_count: number;
-  year: number;
-};
-
 /**
- * Compact per-employee-per-month rollup, persisted alongside (not instead of) the full
- * `preview` JSONB — a trend read across N months projects only this column, never the full
- * preview, so it stays cheap regardless of how many months are considered.
+ * Compact per-employee-per-month projection of a full preview — used only to build the
+ * 6-month employee trend without threading the whole (much larger) preview through it.
  */
 export type FieldWorkforceEmployeeMonthRollup = {
   compliancePercent: number;
@@ -108,148 +90,61 @@ export function buildEmployeeRollup(preview: FieldWorkforcePreviewResult): Field
   }));
 }
 
-function toListItem(row: SnapshotRow): FieldWorkforceLiveSnapshotListItem {
-  return {
-    computedAt: row.computed_at,
-    employeeCount: row.employee_count,
-    highSeverityCount: row.high_severity_count,
-    month: row.month,
-    monthKey: row.month_key,
-    reviewCandidateCount: row.review_candidate_count,
-    year: row.year,
-  };
-}
-
-/** Every distinct {month, year} touched by [dateFrom, dateTo], inclusive. Handles ranges
- * spanning a month boundary (or several, for a large manual backfill). */
-export function monthsInDateRange(dateFrom: string, dateTo: string): Array<{ month: number; year: number }> {
-  const months = new Map<string, { month: number; year: number }>();
-  const cursor = new Date(`${dateFrom}T00:00:00Z`);
-  const end = new Date(`${dateTo}T00:00:00Z`);
-  while (cursor.getTime() <= end.getTime()) {
-    const year = cursor.getUTCFullYear();
-    const month = cursor.getUTCMonth() + 1;
-    months.set(`${year}-${month}`, { month, year });
-    cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
-  }
-  return [...months.values()];
-}
-
-/** Computes the month live from the mirror and upserts it as the saved snapshot. */
-export async function saveFieldWorkforceComplianceLiveSnapshot(input: {
-  month: number;
-  year: number;
-}): Promise<FieldWorkforceLiveSnapshotListItem> {
+/** Computes one month live from the CRM visits mirror. This is the only read path — there is
+ * nothing to cache, refresh, or force-refresh; every call recomputes. */
+export async function getFieldWorkforceComplianceLiveView(input: {
+  monthKey: string;
+}): Promise<FieldWorkforceLiveViewResult> {
+  const [yearStr, monthStr] = input.monthKey.split("-");
+  const year = Number.parseInt(yearStr, 10);
+  const month = Number.parseInt(monthStr, 10);
   const todayIso = new Date().toISOString().slice(0, 10);
-  const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({
-    month: input.month,
-    todayIso,
-    year: input.year,
-  });
-  const monthKey = fieldWorkforceMonthKey(preview.metadata.year, preview.metadata.month);
-  const now = new Date().toISOString();
-
-  const payload = {
-    computed_at: now,
-    employee_count: preview.metadata.employeeCount,
-    employee_rollup: buildEmployeeRollup(preview),
-    high_severity_count: preview.severityCounts.High,
-    month: preview.metadata.month,
-    month_key: monthKey,
-    preview,
-    review_candidate_count: preview.reviewCandidates.length,
-    updated_at: now,
-    year: preview.metadata.year,
-  };
-
-  const { error } = await getSupabaseAdmin()
-    .from(snapshotsTable)
-    .upsert(payload, { onConflict: "month_key" });
-  if (error) throw error;
+  const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
+  const computedAt = new Date().toISOString();
 
   return {
-    computedAt: now,
+    computedAt,
     employeeCount: preview.metadata.employeeCount,
     highSeverityCount: preview.severityCounts.High,
     month: preview.metadata.month,
-    monthKey,
+    monthKey: fieldWorkforceMonthKey(preview.metadata.year, preview.metadata.month),
+    preview,
     reviewCandidateCount: preview.reviewCandidates.length,
     year: preview.metadata.year,
   };
 }
 
-/**
- * Best-effort hook for after a visits mirror sync completes: recomputes and saves the FWC
- * snapshot for every month the synced date range touches. Never throws — a snapshot
- * recompute failure must not fail the visits sync that triggered it. Callers should log the
- * returned warnings if they care, but are not required to.
- */
-export async function refreshFieldWorkforceComplianceLiveSnapshotsForRange(input: {
-  dateFrom: string;
-  dateTo: string;
-}): Promise<{ refreshed: string[]; warnings: string[] }> {
-  const refreshed: string[] = [];
-  const warnings: string[] = [];
-  let months: Array<{ month: number; year: number }> = [];
-  try {
-    months = monthsInDateRange(input.dateFrom, input.dateTo);
-  } catch (error) {
-    warnings.push(`Failed to determine months for range ${input.dateFrom}..${input.dateTo}: ${error instanceof Error ? error.message : String(error)}`);
-    return { refreshed, warnings };
-  }
-
-  for (const { month, year } of months) {
-    try {
-      const snapshot = await saveFieldWorkforceComplianceLiveSnapshot({ month, year });
-      refreshed.push(snapshot.monthKey);
-    } catch (error) {
-      warnings.push(`Failed to refresh Field Workforce Compliance snapshot for ${year}-${String(month).padStart(2, "0")}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return { refreshed, warnings };
-}
-
-export async function listFieldWorkforceComplianceLiveSnapshots(): Promise<FieldWorkforceLiveSnapshotListItem[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(snapshotsTable)
-    .select("month_key, month, year, employee_count, high_severity_count, review_candidate_count, computed_at")
-    .order("month_key", { ascending: false });
-  if (error) throw error;
-  return ((data ?? []) as SnapshotRow[]).map(toListItem);
-}
-
-/** Reads the saved snapshot for a month. Self-heals: if none exists yet (e.g. a month
- * outside the automatic backfill/cron coverage), computes and saves it on the spot rather
- * than erroring, so the feature never appears broken for a valid but not-yet-cached month. */
-export async function getFieldWorkforceComplianceLiveSnapshot(input: {
-  forceRefresh?: boolean;
+export type FieldWorkforceLiveMonthOption = {
+  month: number;
   monthKey: string;
-}): Promise<FieldWorkforceLiveSnapshotDetail> {
-  if (!input.forceRefresh) {
-    const { data, error } = await getSupabaseAdmin()
-      .from(snapshotsTable)
-      .select("*")
-      .eq("month_key", input.monthKey)
-      .maybeSingle();
-    if (error) throw error;
-    if (data) {
-      const row = data as SnapshotRow;
-      return { ...toListItem(row), preview: row.preview as FieldWorkforcePreviewResult };
+  year: number;
+};
+
+/**
+ * Plain list of recent calendar months (current + monthsBack previous), newest first — pure
+ * calendar math, no DB read and no per-month computation. Populates the month picker without
+ * paying to recompute every listed month just to render a dropdown; a specific month's real
+ * numbers are only computed when the caller actually selects it via getFieldWorkforceComplianceLiveView.
+ */
+export function listRecentFieldWorkforceComplianceMonths(input: {
+  monthsBack?: number;
+  todayIso?: string;
+} = {}): FieldWorkforceLiveMonthOption[] {
+  const monthsBack = input.monthsBack ?? 12;
+  const today = input.todayIso ? new Date(`${input.todayIso}T00:00:00Z`) : new Date();
+  let year = today.getUTCFullYear();
+  let month = today.getUTCMonth() + 1;
+
+  const options: FieldWorkforceLiveMonthOption[] = [];
+  for (let i = 0; i <= monthsBack; i += 1) {
+    options.push({ month, monthKey: fieldWorkforceMonthKey(year, month), year });
+    month -= 1;
+    if (month < 1) {
+      month = 12;
+      year -= 1;
     }
   }
-
-  const [yearStr, monthStr] = input.monthKey.split("-");
-  const year = Number.parseInt(yearStr, 10);
-  const month = Number.parseInt(monthStr, 10);
-  const listItem = await saveFieldWorkforceComplianceLiveSnapshot({ month, year });
-  const { data, error } = await getSupabaseAdmin()
-    .from(snapshotsTable)
-    .select("*")
-    .eq("month_key", input.monthKey)
-    .single();
-  if (error) throw error;
-  const row = data as SnapshotRow;
-  return { ...listItem, preview: row.preview as FieldWorkforcePreviewResult };
+  return options;
 }
 
 export type FieldWorkforceEmployeeTrendPoint = {
@@ -270,10 +165,10 @@ export type FieldWorkforceEmployeeTrend = {
 
 /**
  * Pure — exported for direct unit testing. Extracts one employee's points from a set of
- * already-fetched snapshot rows (newest-first, as returned by the DB query) and reverses to
- * oldest -> newest (natural chart/reading order). A month whose employee_rollup has no entry
- * for this employee (not yet backfilled, or the employee didn't exist that month) is silently
- * skipped, not treated as a zero/absent month.
+ * already-computed month rollups (newest-first) and reverses to oldest -> newest (natural
+ * chart/reading order). A month whose rollup has no entry for this employee (they didn't exist
+ * that month, or that month failed to compute) is silently skipped, not treated as a
+ * zero/absent month.
  */
 export function computeEmployeeTrendFromRows(
   rows: Array<{ employee_rollup: FieldWorkforceEmployeeMonthRollup[] | null; month_key: string }>,
@@ -302,23 +197,29 @@ export function computeEmployeeTrendFromRows(
 }
 
 /**
- * One employee's compliance history across the trailing N saved months — a cheap projection
- * of `employee_rollup` only, never the full `preview` JSONB.
+ * One employee's compliance history across the trailing N months, EVERY month recomputed live
+ * from the CRM visits mirror (owner decision — no cached history table). A month that fails to
+ * compute (e.g. the mirror has no data that far back) is skipped rather than failing the whole
+ * trend, matching the old "not yet backfilled" behavior.
  */
 export async function getFieldWorkforceComplianceEmployeeTrend(input: {
   hrId: string;
   monthsBack?: number;
 }): Promise<FieldWorkforceEmployeeTrend> {
   const monthsBack = input.monthsBack ?? 6;
-  const { data, error } = await getSupabaseAdmin()
-    .from(snapshotsTable)
-    .select("month_key, employee_rollup")
-    .order("month_key", { ascending: false })
-    .limit(monthsBack);
-  if (error) throw error;
+  const months = listRecentFieldWorkforceComplianceMonths({ monthsBack: monthsBack - 1 });
+  const todayIso = new Date().toISOString().slice(0, 10);
 
-  return computeEmployeeTrendFromRows(
-    (data ?? []) as Array<{ employee_rollup: FieldWorkforceEmployeeMonthRollup[] | null; month_key: string }>,
-    input.hrId,
+  const rows = await Promise.all(
+    months.map(async ({ month, monthKey, year }) => {
+      try {
+        const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({ month, todayIso, year });
+        return { employee_rollup: buildEmployeeRollup(preview), month_key: monthKey };
+      } catch {
+        return { employee_rollup: null, month_key: monthKey };
+      }
+    }),
   );
+
+  return computeEmployeeTrendFromRows(rows, input.hrId);
 }

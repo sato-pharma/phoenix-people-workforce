@@ -6,7 +6,6 @@
  */
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { refreshFieldWorkforceComplianceLiveSnapshotsForRange } from "@/lib/field-workforce-compliance/live-snapshots";
 import {
   iReports360GetCheckins,
   iReports360GetVisits,
@@ -148,7 +147,6 @@ export async function syncIReports360Visits(input: {
 }): Promise<{
   checkinsFetched: number;
   checkinsUpserted: number;
-  fieldWorkforceComplianceRefresh: { refreshed: string[]; warnings: string[] };
   rowsDeleted: number;
   rowsFetched: number;
   rowsSkippedInvalidDate: number;
@@ -299,18 +297,13 @@ export async function syncIReports360Visits(input: {
       })
       .eq("id", runId);
 
-    // Best-effort: keep Field Workforce Compliance's per-month snapshots current for whatever
-    // this sync just touched. Never throws (see the function's own doc comment) — a snapshot
-    // recompute failure must not turn an otherwise-successful visits sync into an error.
-    const fieldWorkforceComplianceRefresh = await refreshFieldWorkforceComplianceLiveSnapshotsForRange({
-      dateFrom: input.dateFrom,
-      dateTo: input.dateTo,
-    });
+    // Field Workforce Compliance no longer caches a snapshot to refresh here — it always
+    // reads this same mirror live on every view (see live-snapshots.ts), so a sync landing
+    // new visit rows is immediately reflected with no separate refresh step needed.
 
     return {
       checkinsFetched: checkins.length,
       checkinsUpserted,
-      fieldWorkforceComplianceRefresh,
       rowsDeleted,
       rowsFetched: visits.length,
       rowsSkippedInvalidDate,

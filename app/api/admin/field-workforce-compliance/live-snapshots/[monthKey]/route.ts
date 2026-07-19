@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
-  getFieldWorkforceComplianceLiveSnapshot,
+  getFieldWorkforceComplianceLiveView,
   summarizeFieldWorkforceMirrorFreshness,
 } from "@/lib/field-workforce-compliance/live-snapshots";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
@@ -35,10 +35,7 @@ export async function GET(request: Request, context: RouteContext) {
       }, { status: 400 });
     }
 
-    const url = new URL(request.url);
-    const forceRefresh = url.searchParams.get("force") === "true";
-
-    const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ forceRefresh, monthKey });
+    const snapshot = await getFieldWorkforceComplianceLiveView({ monthKey });
 
     // Mirror freshness so the UI can warn when this month's data may be incomplete (a stale
     // sync or the still-open current month) before HR acts on any "N" day.
@@ -59,15 +56,12 @@ export async function GET(request: Request, context: RouteContext) {
       entityType: "field_workforce_compliance_import",
       newValues: {
         employeeCount: snapshot.employeeCount,
-        forceRefresh,
         highSeverityCount: snapshot.highSeverityCount,
         monthKey,
         reviewCandidateCount: snapshot.reviewCandidateCount,
         source: "ireports360_visits_mirror",
       },
-      summary: forceRefresh
-        ? "Field Workforce Compliance live snapshot recomputed on demand."
-        : "Field Workforce Compliance live snapshot viewed.",
+      summary: "Field Workforce Compliance live view computed.",
     });
 
     return NextResponse.json({
@@ -95,8 +89,8 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({
-      error: "field_workforce_live_snapshot_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance snapshot could not be loaded.",
+      error: "field_workforce_live_view_failed",
+      message: error instanceof Error ? error.message : "Field Workforce Compliance data could not be computed.",
       success: false,
     }, { status: 500 });
   }

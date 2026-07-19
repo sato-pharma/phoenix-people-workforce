@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { getFieldWorkforceComplianceLiveSnapshot } from "@/lib/field-workforce-compliance/live-snapshots";
+import { getFieldWorkforceComplianceLiveView } from "@/lib/field-workforce-compliance/live-snapshots";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import {
   FieldWorkforceConflictingDecisionError,
@@ -50,7 +50,7 @@ export async function GET(request: Request, context: RouteContext) {
     const { monthKey } = await context.params;
     if (!monthKeyPattern.test(monthKey)) return invalidMonthKeyResponse();
 
-    const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ monthKey });
+    const snapshot = await getFieldWorkforceComplianceLiveView({ monthKey });
     const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview: snapshot.preview });
 
     return NextResponse.json({
@@ -113,7 +113,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       }, { status: 400 });
     }
 
-    const snapshot = await getFieldWorkforceComplianceLiveSnapshot({ monthKey });
+    const snapshot = await getFieldWorkforceComplianceLiveView({ monthKey });
     const report = await saveFieldWorkforceRecommendationDecisionForLiveMonth({
       actorLoginId: actorFromAccess(access),
       decisionReason: typeof body.decisionReason === "string" ? body.decisionReason : "",
