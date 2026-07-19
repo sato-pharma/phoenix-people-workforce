@@ -45,6 +45,7 @@ import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-c
 import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
 
@@ -315,6 +316,11 @@ function computeCustomerAuthenticitySignals(monthVisits: FieldWorkforceMatrixVis
  */
 export function buildIReports360FieldWorkforceMatrix(input: {
   employees: FieldWorkforceEmployeeInput[];
+  /** Canonicalized (canonicalHrIdKey) HR-ID keys of employees actively enrolled on a
+   * fingerprint device — Head Office / office-based staff who don't have a field-eligible
+   * title still get a row so their office attendance can be cross-checked against CRM
+   * activity. Optional/defaults empty so existing callers are unaffected. */
+  deviceMappedHrKeys?: Set<string>;
   month: number;
   todayIso?: string | null;
   visits: FieldWorkforceMatrixVisit[];
@@ -328,6 +334,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   visitPeriodByHrKeyAndDate: Map<string, "AM" | "PM" | "MIXED">;
 } {
   const { employees, month, visits, year } = input;
+  const deviceMappedHrKeys = input.deviceMappedHrKeys ?? new Set<string>();
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
@@ -390,7 +397,18 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const visitPeriodByHrKeyAndDate = new Map<string, "AM" | "PM" | "MIXED">();
 
   const eligible = employees
-    .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
+    // Eligible by field-visit title (Medical Rep, DSM, RSM, NSM, PM, GPM, Marketing/Training/SFE
+    // Manager) OR by being actively enrolled on a fingerprint device — Head Office staff who
+    // don't have a field-eligible title (HR Manager, Admin Assistant, ...) still get a row so
+    // their physical office attendance can be cross-checked against CRM "N" days (see
+    // attendance-cross-check.ts's punch_no_visits). Device-mapping-only eligibility is purely
+    // informational: recommendations.ts's payroll-deduction gate requires title-eligibility on
+    // top of this, so a device-mapped-only employee can never generate a deduction candidate.
+    .filter((employee) => {
+      const hrKey = canonicalHrIdKey(employee.hrId);
+      return isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle) ||
+        (hrKey != null && deviceMappedHrKeys.has(hrKey));
+    })
     // Employees who have left the company (resigned/terminated/historical payroll records/
     // system placeholders) are not rendered in the monthly report. Uses the same canonical
     // classifier the rest of the app uses to decide who's active (see isActiveDirectoryEmployee
@@ -720,7 +738,29 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
+  // Head Office / office-based staff earn a Team Calendar row via fingerprint device
+  // enrollment rather than a field-eligible title (see the `eligible` filter comment in
+  // buildIReports360FieldWorkforceMatrix). Best-effort: loadActiveDeviceMappedHrIds normalizes
+  // via a different helper than canonicalHrIdKey, so its output is re-canonicalized before use
+  // (same pattern as attendance-cross-check.ts / head-office-attendance.ts). A failure here
+  // degrades to a warning rather than breaking the whole preview.
+  let deviceMappedHrKeys = new Set<string>();
+  let deviceMappedWarning: { code: string; message: string; severity: "warning" } | null = null;
+  try {
+    const rawDeviceMapped = await loadActiveDeviceMappedHrIds();
+    deviceMappedHrKeys = new Set(
+      [...rawDeviceMapped].map((id) => canonicalHrIdKey(id)).filter((key): key is string => Boolean(key)),
+    );
+  } catch (error) {
+    deviceMappedWarning = {
+      code: "device_mapped_eligibility_unavailable",
+      message: `Head Office fingerprint-based eligibility could not be loaded this month: ${error instanceof Error ? error.message : "device mapping lookup failed"}. Office staff without a field-eligible title may be temporarily missing from the Team Calendar.`,
+      severity: "warning",
+    };
+  }
+
   const { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+    deviceMappedHrKeys,
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -774,6 +814,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   });
 
   const warnings = [...preview.warnings];
+  if (deviceMappedWarning) warnings.push(deviceMappedWarning);
   if (unresolvedHrIds.length > 0) {
     const sample = unresolvedHrIds.slice(0, 8).join(", ");
     warnings.push({
