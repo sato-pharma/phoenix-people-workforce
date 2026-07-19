@@ -1,7 +1,7 @@
 # Supabase Advisor Baseline — Accepted / By-Design Items
 
 **Project:** Phoenix HR production (`ozucdzovmcqvepbozvqf`)
-**Last reviewed:** 2026-06-15
+**Last reviewed:** 2026-07-19
 
 This is the single triage reference for `get_advisors` output. Items listed here are
 **reviewed and accepted as by-design** (or explicitly deferred). A health check should
@@ -55,6 +55,70 @@ Tables (all `public.`): `email_suppressions`, `marketing_customer_contacts`,
 `public.phx_insert_attendance_raw_punch` was flagged for a mutable `search_path`.
 Fixed by pinning `SET search_path = public, pg_temp` (migration
 `pin_attendance_punch_search_path`). Should not reappear; if it does, it's a regression.
+
+### REMEDIATED (not accepted) — `anon_security_definer_function_executable` (2026-07-19)
+Found via `get_advisors` while auditing the Sales Analytics module: 7 orphaned
+`analytics_*` RPC overloads (plural `p_periods text[]` params, no committed migration
+defines them) were `SECURITY DEFINER` with **no auth guard**, live on both staging
+(`cifwmndunmlxjhyjugxa`) and production (`ozucdzovmcqvepbozvqf`) — a real,
+unauthenticated, company-wide sales-data leak: anyone holding the public anon key
+could POST `/rest/v1/rpc/analytics_sos_by_period` (etc.) and pull the whole company's
+SoS/Weekly/Closing data, with `p_exclude_head_office=false` also revealing the
+confidential Head Office line. Root vector: the built-in Postgres default grants
+`EXECUTE` to `PUBLIC` on new functions, and `anon`/`authenticated` inherit it via
+PUBLIC membership — so `REVOKE ... FROM anon, authenticated` alone is a **no-op**;
+the fix must `REVOKE ... FROM PUBLIC`. A follow-up scan then found two more
+anon-executable `SECURITY DEFINER` functions carrying the same PUBLIC grant —
+`probation_provision_case_on_hire()` and
+`phx_employee_insert_reconcile_stale_vacancies_trigger()` — both INSERT-trigger
+functions (low practical exploitability: PostgREST doesn't expose `trigger`-returning
+functions as RPCs, and triggers don't need an EXECUTE grant to fire), revoked in the
+same pass.
+
+Fixed by (all applied + verified live on staging AND production —
+`has_function_privilege('anon', ..., 'EXECUTE')` false for every `public` `SECURITY
+DEFINER` function on both DBs as of 2026-07-19; also confirmed black-box via an
+actual unauthenticated `POST /rest/v1/rpc/analytics_sos_by_period` against staging,
+which now returns `401` / Postgres `42501 permission denied for function`):
+- `20260719160500_phx_revoke_analytics_rpc_overloads_anon_authenticated.sql` — explicit
+  `REVOKE ... FROM PUBLIC, anon, authenticated` on the 7 overloads + an idempotent
+  sweep over any other anon/authenticated-executable `analytics_*` `SECURITY DEFINER`
+  function.
+- `20260719170000_phx_harden_public_function_default_execute.sql` — `ALTER DEFAULT
+  PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated`,
+  intended as root-cause, forward-looking hardening. **Verified only partially
+  effective**: a live probe (creating a throwaway function post-hardening) showed a
+  newly created function on this project can still inherit the PUBLIC grant depending
+  on which role creates it — the DB-level default is role-dependent / best-effort, not
+  a hard guarantee. The **reliable** backstop is the CI test
+  `tests/migrations-secdef-revoke-guard.test.ts`, which fails the build if a future
+  migration creates a `public` `SECURITY DEFINER` function without also revoking
+  `PUBLIC` EXECUTE on it.
+- `20260719190000_phx_revoke_anon_executable_secdef_triggers.sql` — explicit revokes
+  for the two trigger functions + a scoped sweep over any anon/authenticated-executable
+  `SECURITY DEFINER` **trigger** function (provably safe to revoke — a trigger never
+  needs an EXECUTE grant to fire).
+
+Confirmed via a live schema-exposure probe (unauthenticated `Accept-Profile: <schema>`
+requests against the REST endpoint) that PostgREST on this project only exposes
+`public` and `graphql_public` — so the `public`-schema sweep above is a complete scan
+of the actually-reachable surface for this class of issue; `analytics`/`au`/`internal`/
+`private` are confirmed unreachable directly (PostgREST returns `PGRST106 Invalid
+schema` for all three).
+
+**Known follow-up, not yet done (flagged, needs owner-approved reconciliation):** all
+five migrations above were applied via direct SQL execution, not the Supabase
+`apply_migration` tool, so `supabase_migrations.schema_migrations` on staging and
+production almost certainly has no rows for them — the exact "migration-history
+version drift" failure mode already described below. Reconcile via `supabase
+migration repair <version> --status applied` per that process once DB/CLI access is
+available in-session.
+
+Should not reappear; if a new `anon_security_definer_function_executable` finding
+appears for a function NOT covered by the CI guard test (i.e. an existing function
+whose grant was manually changed, not a newly created one), it's a regression — the
+guard only covers migrations that CREATE a new function, not ALTERs to an existing
+one's grants outside a migration.
 
 ---
 
