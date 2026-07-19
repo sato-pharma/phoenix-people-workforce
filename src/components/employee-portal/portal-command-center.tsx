@@ -34,6 +34,7 @@ import { MarketingManagerCommandCenter } from "@/components/employee-portal/dash
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
+import { currentCairoDateParts, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
@@ -41,7 +42,11 @@ export function egp(n: number) {
 
 function monthLabel(ym: string) {
   const [y, m] = ym.split("-");
-  return new Date(Number(y), Number(m) - 1).toLocaleString("en-US", { month: "short", year: "numeric" });
+  return new Date(Date.UTC(Number(y), Number(m) - 1, 1)).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
@@ -237,7 +242,12 @@ function IntelField({
 export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
   const { employee, hrContract } = shell;
   const hireDateLabel = hrContract.hireDate
-    ? new Date(hrContract.hireDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    ? new Date(hrContract.hireDate).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+      })
     : null;
   if (!employee.line && !hireDateLabel && !employee.manager) return null;
   return (
@@ -671,11 +681,15 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
   const gapToTarget = ach && pct !== null && pct < 100 ? ach.targetValue - ach.salesValue : null;
   const surplus = ach && pct !== null && pct >= 100 ? ach.salesValue - ach.targetValue : null;
 
-  const now = new Date();
-  const thisMonth = now.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const cairoNow = currentCairoDateParts();
+  const thisMonth = new Date(Date.UTC(cairoNow.year, cairoNow.month - 1, 1)).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 
-  const dayOfMonth = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = cairoNow.day;
+  const daysInMonth = new Date(Date.UTC(cairoNow.year, cairoNow.month, 0)).getUTCDate();
   const pacingPct =
     ach && pct !== null && dayOfMonth > 0
       ? Math.round(((ach.salesValue / dayOfMonth) * daysInMonth) / (ach.targetValue || 1) * 100)

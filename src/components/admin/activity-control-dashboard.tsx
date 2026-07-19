@@ -27,6 +27,8 @@ import {
   AdminPageHero,
   AdminStatCard,
 } from "@/components/admin/admin-design-system";
+import { useHydrated } from "@/hooks/use-hydrated";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type {
   ActivityOverview,
   AdoptionStatus,
@@ -69,7 +71,7 @@ function formatRelative(iso: string | null): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString("en-GB");
+  return new Date(iso).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE });
 }
 
 function formatDateTime(iso: string | null): string {
@@ -79,7 +81,16 @@ function formatDateTime(iso: string | null): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
   });
+}
+
+// formatRelative's output depends on Date.now() at render time, which differs between
+// server and client — a real value mismatch, not just a formatting one. Render the
+// stable absolute time until hydrated, then switch to the relative label.
+function RelativeTime({ iso }: { iso: string | null }) {
+  const hydrated = useHydrated();
+  return <>{hydrated ? formatRelative(iso) : formatDateTime(iso)}</>;
 }
 
 function initialsFor(name: string): string {
@@ -588,7 +599,7 @@ export function ActivityControlDashboard({
         badges={
           <>
             <span>Window: {rangeLabel}</span>
-            {overview ? <span>· Updated {formatRelative(overview.generatedAtIso)}</span> : null}
+            {overview ? <span>· Updated <RelativeTime iso={overview.generatedAtIso} /></span> : null}
             <span>· Module-level · no keystrokes or contents</span>
           </>
         }
@@ -722,7 +733,7 @@ export function ActivityControlDashboard({
                             </div>
                           </td>
                           <td className="px-4 py-2 text-[#334155]">{user.currentModule ?? "—"}</td>
-                          <td className="px-4 py-2 text-right text-[#64748B]">{formatRelative(user.lastSeenAt)}</td>
+                          <td className="px-4 py-2 text-right text-[#64748B]"><RelativeTime iso={user.lastSeenAt} /></td>
                           <td className="px-4 py-2 text-right">
                             {user.hrId ? (
                               <button
@@ -760,7 +771,7 @@ export function ActivityControlDashboard({
                           <span className="text-xs text-[#64748B]">→</span>
                           <span className="truncate text-xs text-[#334155]">{event.moduleLabel}</span>
                         </div>
-                        <span className="ml-3 shrink-0 text-[11px] text-[#94A3B8]">{formatRelative(event.occurredAtIso)}</span>
+                        <span className="ml-3 shrink-0 text-[11px] text-[#94A3B8]"><RelativeTime iso={event.occurredAtIso} /></span>
                       </div>
                     ))}
                   </div>
@@ -852,7 +863,7 @@ export function ActivityControlDashboard({
                             <NoDataChip />
                           )}
                         </td>
-                        <td className="px-4 py-2 text-right text-[#64748B]">{formatRelative(user.lastSeenAt)}</td>
+                        <td className="px-4 py-2 text-right text-[#64748B]"><RelativeTime iso={user.lastSeenAt} /></td>
                         <td className="px-4 py-2 text-right">
                           {user.hrId ? (
                             <button
@@ -924,7 +935,7 @@ export function ActivityControlDashboard({
                               {row.status === "never" ? "Never (90d)" : row.status}
                             </td>
                             <td className="px-4 py-2 text-right text-[#64748B]">
-                              {row.lastSeenAt ? formatRelative(row.lastSeenAt) : "—"}
+                              <RelativeTime iso={row.lastSeenAt} />
                             </td>
                           </tr>
                         ))}

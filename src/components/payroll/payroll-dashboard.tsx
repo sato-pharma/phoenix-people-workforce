@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import {
   AdminCallout,
   AdminPageHero,
@@ -3256,14 +3257,18 @@ export function PayrollDashboard({
   initialData,
   initialError,
 }: Props) {
-  const currentYear = new Date().getFullYear();
+  // The server (UTC) and a Cairo browser can disagree on today's date/month near
+  // midnight Cairo time — deriving the default payroll period from the raw runtime
+  // clock would pick a different default period per side. Anchor to Cairo explicitly.
+  const currentCairoDate = currentCairoDateParts();
+  const currentYear = currentCairoDate.year;
   const [salaryReportSearch, setSalaryReportSearch] = useState("");
   const [salaryColumnFilters, setSalaryColumnFilters] = useState<Record<string, string>>({});
   const [salaryReportSort, setSalaryReportSort] = useState("employee-asc");
   const [salaryReportYear, setSalaryReportYear] = useState<number | null>(null);
   const [salaryReportMonth, setSalaryReportMonth] = useState<number | null>(null);
   const [salaryHolds, setSalaryHolds] = useState<Set<string>>(new Set());
-  const [payrollMonth, setPayrollMonth] = useState(String(new Date().getMonth() + 1));
+  const [payrollMonth, setPayrollMonth] = useState(String(currentCairoDate.month));
   const [payrollYear, setPayrollYear] = useState(String(currentYear));
   const [salaryValidation, setSalaryValidation] =
     useState<SalaryValidationResult | null>(null);

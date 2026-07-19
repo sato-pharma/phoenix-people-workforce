@@ -12,8 +12,16 @@ type Props = {
   initialError: string | null;
 };
 
+// iso is a plain YYYY-MM-DD calendar date (no real instant semantics) — anchor
+// construction and display to explicit UTC so this never depends on the runtime's
+// implicit default (matches the pattern used elsewhere for date-only values).
 function formatDate(iso: string) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export function DisputeReviewInbox({ initialDisputes, initialError }: Props) {

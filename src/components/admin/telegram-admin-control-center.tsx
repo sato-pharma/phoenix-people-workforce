@@ -12,6 +12,7 @@ import type {
 } from "@/lib/notifications/telegram-admin";
 import type { TelegramModulePolicy } from "@/lib/notifications/telegram-governance";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 
 type TelegramAdminData = {
@@ -46,7 +47,9 @@ function statusTextClass(status: string) {
 function formatDate(value: string | null) {
   if (!value) return "Never";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE });
 }
 
 function moduleLabel(value: string) {
