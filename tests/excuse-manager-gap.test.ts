@@ -46,8 +46,8 @@ export function runExcuseManagerGapTests() {
   );
   assert.match(
     driftSrc,
-    /ALERT_RECIPIENT_ROLES = \["Super Admin", "HR Manager"\]/,
-    "alert recipients must match the weekly-plan drift roles (Super Admin + HR Manager)",
+    /resolveNotificationRoleRecipients\("excuse_drift_alert"\)/,
+    "alert recipients must be resolved by the admin-editable role policy, matching the weekly-plan drift check's pattern",
   );
   assert.match(
     driftSrc,

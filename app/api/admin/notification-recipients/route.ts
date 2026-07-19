@@ -1,0 +1,31 @@
+import { NextResponse, type NextRequest } from "next/server";
+
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getNotificationRolePolicies } from "@/lib/notifications/role-recipients";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Super Admin only, both view and edit — see the comment in access-registry.ts. Which roles
+// get pinged about a resignation-SLA breach is internal plumbing, unlike cron-control's
+// CEO-relevant "when did this job last run."
+export async function GET(request: NextRequest) {
+  try {
+    const access = await resolveAccessContext(request);
+    if (!canAccessSystemAdministratorWorkspace(access)) {
+      return NextResponse.json({ message: "Forbidden: Super Admin only." }, { status: 403 });
+    }
+
+    const policies = await getNotificationRolePolicies();
+    return NextResponse.json({ policies });
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ message: (error as Error).message }, { status: 403 });
+    }
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Failed to load notification recipients." },
+      { status: 500 },
+    );
+  }
+}

@@ -166,6 +166,12 @@ export const accessRegistry = [
   // blanket same-origin check for DELETE/PATCH/POST/PUT applies regardless — csrfRequired here
   // just makes the registry's own description match that real, unconditional enforcement.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/preview-schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Notification Recipients editor (which roles get told about a cron-triggered system
+  // notification): Super Admin only end-to-end, both view and edit — unlike cron-control's
+  // CEO+SA view, there's no equivalent "CEO needs to see this" oversight story for internal
+  // notification-routing plumbing.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/notification-recipients", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-recipients/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-control/**", permission: { resource: "workflow_registry", action: "update" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-registry/**", permission: { resource: "workflow_registry", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/email-templates/**", permission: { resource: "communication", action: "read" } }),
