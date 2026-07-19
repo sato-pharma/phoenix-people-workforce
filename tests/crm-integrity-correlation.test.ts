@@ -12,7 +12,6 @@ function visit(overrides: Partial<CrmIntegrityVisitInput> & { agentCrmId: number
   return {
     contactCrmId: null,
     crmSaveDate: null,
-    visitDateTime: null,
     ...overrides,
   };
 }
@@ -33,7 +32,7 @@ function checkin(
 export function runCrmIntegrityCorrelationTests() {
   // ── Exact contact-id match wins over pure time-proximity ─────────────────────────
   {
-    const v = visit({ agentCrmId: 100, contactCrmId: 555, crmVisitId: 1, visitDate: "2026-07-01", visitDateTime: "2026-07-01T14:00:00Z" });
+    const v = visit({ agentCrmId: 100, contactCrmId: 555, crmVisitId: 1, visitDate: "2026-07-01", crmSaveDate: "2026-07-01T14:00:00Z" });
     const closeButWrongContact = checkin({ agentCrmId: 100, checkDate: "2026-07-01T14:05:00Z", contactCrmId: 999, crmCheckinId: 10 });
     const farButRightContact = checkin({ agentCrmId: 100, checkDate: "2026-07-01T09:00:00Z", contactCrmId: 555, crmCheckinId: 11 });
     const [result] = correlateVisitsWithCheckins([v], [closeButWrongContact, farButRightContact], []);
@@ -43,7 +42,7 @@ export function runCrmIntegrityCorrelationTests() {
 
   // ── Fallback to nearest-in-time when no check-in shares the visit's contact ──────
   {
-    const v = visit({ agentCrmId: 200, contactCrmId: 777, crmVisitId: 2, visitDate: "2026-07-02", visitDateTime: "2026-07-02T10:00:00Z" });
+    const v = visit({ agentCrmId: 200, contactCrmId: 777, crmVisitId: 2, visitDate: "2026-07-02", crmSaveDate: "2026-07-02T10:00:00Z" });
     const nearer = checkin({ agentCrmId: 200, checkDate: "2026-07-02T10:10:00Z", contactCrmId: 888, crmCheckinId: 20 });
     const farther = checkin({ agentCrmId: 200, checkDate: "2026-07-02T15:00:00Z", contactCrmId: 999, crmCheckinId: 21 });
     const [result] = correlateVisitsWithCheckins([v], [nearer, farther], []);
@@ -116,7 +115,7 @@ export function runCrmIntegrityCorrelationTests() {
       lat: 30.1444,
       lon: 31.2357,
     });
-    const flaggingVisit = visit({ agentCrmId: 500, crmVisitId: 7, visitDate: flaggingSecond.checkDate.slice(0, 10), visitDateTime: flaggingSecond.checkDate });
+    const flaggingVisit = visit({ agentCrmId: 500, crmVisitId: 7, visitDate: flaggingSecond.checkDate.slice(0, 10), crmSaveDate: flaggingSecond.checkDate });
 
     const okFirst = checkin({ agentCrmId: 501, checkDate: new Date(start).toISOString(), crmCheckinId: 52, lat: 30.0444, lon: 31.2357 });
     const okSecond = checkin({
@@ -126,7 +125,7 @@ export function runCrmIntegrityCorrelationTests() {
       lat: 30.1444,
       lon: 31.2357,
     });
-    const okVisit = visit({ agentCrmId: 501, crmVisitId: 8, visitDate: okSecond.checkDate.slice(0, 10), visitDateTime: okSecond.checkDate });
+    const okVisit = visit({ agentCrmId: 501, crmVisitId: 8, visitDate: okSecond.checkDate.slice(0, 10), crmSaveDate: okSecond.checkDate });
 
     const [flaggingResult, okResult] = correlateVisitsWithCheckins(
       [flaggingVisit, okVisit],

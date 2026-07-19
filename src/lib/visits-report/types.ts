@@ -10,6 +10,7 @@ export type VisitsReportRow = {
   attendance: number | null;
   callType: number | null;
   comment: string | null;
+  contactCrmId: number | null;
   contactName: string | null;
   crmSaveDate: string | null;
   crmVisitId: number;
