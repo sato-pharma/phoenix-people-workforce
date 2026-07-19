@@ -3,44 +3,33 @@ import { strict as assert } from "node:assert";
 import {
   buildEmployeeRollup,
   computeEmployeeTrendFromRows,
-  monthsInDateRange,
+  listRecentFieldWorkforceComplianceMonths,
   summarizeFieldWorkforceMirrorFreshness,
   type FieldWorkforceEmployeeMonthRollup,
 } from "../src/lib/field-workforce-compliance/live-snapshots.ts";
 
 export function runFieldWorkforceComplianceLiveSnapshotsTests() {
-  // Range fully inside one month -> a single month.
-  assert.deepEqual(monthsInDateRange("2026-06-05", "2026-06-20"), [{ month: 6, year: 2026 }]);
+  // --- listRecentFieldWorkforceComplianceMonths: pure calendar math, newest first ---
+  const months = listRecentFieldWorkforceComplianceMonths({ monthsBack: 3, todayIso: "2026-07-18" });
+  assert.deepEqual(months, [
+    { month: 7, monthKey: "2026-07", year: 2026 },
+    { month: 6, monthKey: "2026-06", year: 2026 },
+    { month: 5, monthKey: "2026-05", year: 2026 },
+    { month: 4, monthKey: "2026-04", year: 2026 },
+  ], "current month first, then monthsBack previous months, in order");
 
-  // The cron's typical 10-day lookback, entirely within one month.
-  assert.deepEqual(monthsInDateRange("2026-06-21", "2026-06-30"), [{ month: 6, year: 2026 }]);
+  // Year-boundary wraparound: January rolls back into the prior December.
+  const wrap = listRecentFieldWorkforceComplianceMonths({ monthsBack: 2, todayIso: "2026-01-15" });
+  assert.deepEqual(wrap, [
+    { month: 1, monthKey: "2026-01", year: 2026 },
+    { month: 12, monthKey: "2025-12", year: 2025 },
+    { month: 11, monthKey: "2025-11", year: 2025 },
+  ], "crossing a year boundary decrements the year, not just wraps the month number");
 
-  // A lookback window crossing a month boundary -> both months, in order.
-  assert.deepEqual(monthsInDateRange("2026-06-25", "2026-07-03"), [
-    { month: 6, year: 2026 },
-    { month: 7, year: 2026 },
-  ]);
-
-  // A lookback window crossing a year boundary.
-  assert.deepEqual(monthsInDateRange("2025-12-28", "2026-01-05"), [
-    { month: 12, year: 2025 },
-    { month: 1, year: 2026 },
-  ]);
-
-  // A single day.
-  assert.deepEqual(monthsInDateRange("2026-03-15", "2026-03-15"), [{ month: 3, year: 2026 }]);
-
-  // A large manual backfill range spanning several months.
-  assert.deepEqual(monthsInDateRange("2026-01-01", "2026-03-31"), [
-    { month: 1, year: 2026 },
-    { month: 2, year: 2026 },
-    { month: 3, year: 2026 },
-  ]);
-
-  // No duplicate entries for the same month even across a wide multi-year range boundary.
-  const wideRange = monthsInDateRange("2026-01-15", "2026-02-15");
-  const monthKeys = wideRange.map((entry) => `${entry.year}-${entry.month}`);
-  assert.equal(new Set(monthKeys).size, monthKeys.length);
+  // Default monthsBack (12) plus the current month = 13 entries, no duplicates.
+  const defaultMonths = listRecentFieldWorkforceComplianceMonths({ todayIso: "2026-07-18" });
+  assert.equal(defaultMonths.length, 13, "default monthsBack is 12 previous months plus the current one");
+  assert.equal(new Set(defaultMonths.map((m) => m.monthKey)).size, 13, "no duplicate month keys");
 
   // --- Mirror freshness (Tier 0.3) ---
   const now = "2026-07-04T12:00:00.000Z";
