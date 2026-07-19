@@ -96,7 +96,7 @@ function TextSearchFilterField({
   }, [current]);
 
   return (
-    <label className="flex h-[58px] min-w-[180px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]">
+    <label className="flex h-[58px] w-full flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74] sm:w-auto sm:min-w-[180px]">
       <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</span>
       <input
         type="text"
@@ -186,7 +186,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
                 // include-style `= any(array)` filtering. Intentional no-op.
               }}
               searchPlaceholder={descriptor.placeholder}
-              className="w-[220px]"
+              className="w-full sm:w-[220px]"
             />
           );
         }
@@ -198,7 +198,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           return (
             <label
               key={descriptor.key}
-              className="flex h-[58px] min-w-[160px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
+              className="flex h-[58px] w-full flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74] sm:w-auto sm:min-w-[160px]"
             >
               <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
               <select
@@ -236,7 +236,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           type="button"
           onClick={toggleCompare}
           aria-pressed={comparing}
-          className={`ml-auto flex h-[58px] items-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition ${
+          className={`flex h-[58px] w-full items-center justify-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition sm:ml-auto sm:w-auto sm:justify-start ${
             comparing
               ? "border-[#F97316] bg-[#F97316] text-white"
               : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]"
