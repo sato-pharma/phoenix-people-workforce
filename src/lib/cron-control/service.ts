@@ -1,7 +1,10 @@
-// Orchestration for the cron-control dashboard: validates job names against the static
-// registry, calls the GCP Cloud Scheduler REST client, writes a REQUIRED audit log for every
-// mutation (matching src/lib/admin/modules-control.ts's bar for toggling production-affecting
-// state), and merges live GCP state with registry metadata into the shape the UI/API use.
+// Orchestration for the cron-control dashboard: validates job names against the GCP job-ID
+// format (not registry membership — see job-registry.ts), calls the GCP Cloud Scheduler REST
+// client for real, writes a REQUIRED audit log for every mutation (matching
+// src/lib/admin/modules-control.ts's bar for toggling production-affecting state), and merges
+// live GCP state with registry metadata into the shape the UI/API use. Every real job in the
+// project's scheduler is listed and controllable, whether or not the static registry recognizes
+// its name — the registry only supplies nicer labels, it never gates visibility or control.
 //
 // Never throws on read: listCronJobs() returns {available:false, error} when GCP_PROJECT_ID is
 // unset or the runtime service account's Cloud Scheduler IAM grant hasn't landed yet, mirroring
@@ -18,12 +21,15 @@ import {
   updateSchedulerJobSchedule,
   type RawSchedulerJob,
 } from "@/lib/cron-control/gcp-scheduler-client";
-import { cronJobRegistry, findCronJobRegistryEntry, isCronJobKey, type CronJobKey } from "@/lib/cron-control/job-registry";
+import { findCronJobRegistryEntry, isValidGcpJobIdFormat } from "@/lib/cron-control/job-registry";
 
 const DEFAULT_SCHEDULER_LOCATION = "us-central1";
 
 export type CronJobSummary = {
-  jobName: CronJobKey;
+  jobName: string;
+  /** False when this job exists in GCP but isn't in the static registry — still fully
+   *  listed/controllable, just without a curated label/description/route. */
+  isKnown: boolean;
   label: string;
   description: string;
   route: string;
@@ -49,14 +55,17 @@ function resolveGcpConfig(): { projectId: string; location: string } | null {
   return { projectId, location };
 }
 
-function toSummary(raw: RawSchedulerJob): CronJobSummary | null {
+// Always returns a summary — a real GCP job is never hidden just because it's absent from the
+// static registry (see job-registry.ts's isValidGcpJobIdFormat comment). Registry metadata only
+// upgrades the label/description/route when it recognizes the name.
+function toSummary(raw: RawSchedulerJob): CronJobSummary {
   const entry = findCronJobRegistryEntry(raw.name);
-  if (!entry) return null; // A GCP job outside our known 5 — don't surface it, don't guess metadata.
   return {
-    jobName: entry.gcpJobName,
-    label: entry.label,
-    description: entry.description,
-    route: entry.route,
+    jobName: raw.name,
+    isKnown: entry !== null,
+    label: entry?.label ?? raw.name,
+    description: entry?.description ?? "Not in the local job registry — showing live GCP state only.",
+    route: entry?.route ?? "",
     schedule: raw.schedule,
     timeZone: raw.timeZone,
     state: raw.state,
@@ -82,7 +91,7 @@ export async function listCronJobs(): Promise<ListCronJobsResult> {
   }
   try {
     const raw = await listSchedulerJobs(config.projectId, config.location);
-    const jobs = raw.map(toSummary).filter((job): job is CronJobSummary => job !== null);
+    const jobs = raw.map(toSummary);
     return { available: true, fetchedAt: new Date().toISOString(), jobs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Cloud Scheduler error.";
@@ -96,18 +105,20 @@ function requireGcpConfig(): { projectId: string; location: string } {
   return config;
 }
 
-function requireRegistryEntry(jobName: string) {
-  if (!isCronJobKey(jobName)) {
-    throw new Error(`"${jobName}" is not a recognized cron job.`);
+// The real safety gate: a syntactically valid GCP job-ID format, not registry membership — any
+// real job in this project's scheduler is controllable here, whether or not job-registry.ts
+// happens to recognize its name (see that file's isValidGcpJobIdFormat comment). The GCP API
+// itself 404s on a name that doesn't exist, which is the actual existence check.
+function requireValidJobId(jobName: string): string {
+  if (!isValidGcpJobIdFormat(jobName)) {
+    throw new Error(`"${jobName}" is not a valid Cloud Scheduler job id.`);
   }
-  const entry = findCronJobRegistryEntry(jobName);
-  if (!entry) throw new Error(`"${jobName}" is not a recognized cron job.`);
-  return entry;
+  return jobName;
 }
 
 async function auditMutation(params: {
   actor: AccessContext;
-  jobName: CronJobKey;
+  jobName: string;
   action: string;
   oldValues?: Record<string, unknown> | null;
   newValues?: Record<string, unknown> | null;
@@ -123,23 +134,19 @@ async function auditMutation(params: {
 }
 
 export async function pauseCronJob(jobName: string, actor: AccessContext): Promise<CronJobSummary> {
-  const entry = requireRegistryEntry(jobName);
+  const validJobName = requireValidJobId(jobName);
   const config = requireGcpConfig();
-  const raw = await pauseSchedulerJob(config.projectId, config.location, entry.gcpJobName);
-  await auditMutation({ actor, jobName: entry.gcpJobName, action: "paused", newValues: { state: raw.state } });
-  const summary = toSummary(raw);
-  if (!summary) throw new Error("Cloud Scheduler returned an unexpected job shape.");
-  return summary;
+  const raw = await pauseSchedulerJob(config.projectId, config.location, validJobName);
+  await auditMutation({ actor, jobName: validJobName, action: "paused", newValues: { state: raw.state } });
+  return toSummary(raw);
 }
 
 export async function resumeCronJob(jobName: string, actor: AccessContext): Promise<CronJobSummary> {
-  const entry = requireRegistryEntry(jobName);
+  const validJobName = requireValidJobId(jobName);
   const config = requireGcpConfig();
-  const raw = await resumeSchedulerJob(config.projectId, config.location, entry.gcpJobName);
-  await auditMutation({ actor, jobName: entry.gcpJobName, action: "resumed", newValues: { state: raw.state } });
-  const summary = toSummary(raw);
-  if (!summary) throw new Error("Cloud Scheduler returned an unexpected job shape.");
-  return summary;
+  const raw = await resumeSchedulerJob(config.projectId, config.location, validJobName);
+  await auditMutation({ actor, jobName: validJobName, action: "resumed", newValues: { state: raw.state } });
+  return toSummary(raw);
 }
 
 /**
@@ -149,11 +156,11 @@ export async function resumeCronJob(jobName: string, actor: AccessContext): Prom
  * outcome only becomes visible on the next listCronJobs() poll via lastAttemptTime/Outcome.
  */
 export async function runCronJobNow(jobName: string, actor: AccessContext): Promise<{ triggeredAt: string }> {
-  const entry = requireRegistryEntry(jobName);
+  const validJobName = requireValidJobId(jobName);
   const config = requireGcpConfig();
-  await runSchedulerJob(config.projectId, config.location, entry.gcpJobName);
+  await runSchedulerJob(config.projectId, config.location, validJobName);
   const triggeredAt = new Date().toISOString();
-  await auditMutation({ actor, jobName: entry.gcpJobName, action: "manually triggered" });
+  await auditMutation({ actor, jobName: validJobName, action: "manually triggered" });
   return { triggeredAt };
 }
 
@@ -163,21 +170,15 @@ export async function updateCronJobSchedule(
   actor: AccessContext,
   previousSchedule?: { cronExpression: string; timeZone: string },
 ): Promise<CronJobSummary> {
-  const entry = requireRegistryEntry(jobName);
+  const validJobName = requireValidJobId(jobName);
   const config = requireGcpConfig();
-  const raw = await updateSchedulerJobSchedule(config.projectId, config.location, entry.gcpJobName, input);
+  const raw = await updateSchedulerJobSchedule(config.projectId, config.location, validJobName, input);
   await auditMutation({
     actor,
-    jobName: entry.gcpJobName,
+    jobName: validJobName,
     action: "edited the schedule of",
     oldValues: previousSchedule ?? null,
     newValues: { cronExpression: input.cronExpression, timeZone: input.timeZone },
   });
-  const summary = toSummary(raw);
-  if (!summary) throw new Error("Cloud Scheduler returned an unexpected job shape.");
-  return summary;
-}
-
-export function listKnownCronJobKeys(): CronJobKey[] {
-  return cronJobRegistry.map((entry) => entry.gcpJobName);
+  return toSummary(raw);
 }

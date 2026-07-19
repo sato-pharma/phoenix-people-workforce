@@ -7,10 +7,24 @@ import { toast } from "sonner";
 import type { CronJobSummary, ListCronJobsResult } from "@/lib/cron-control/service";
 
 const POLL_INTERVAL_MS = 30_000;
+const AUTO_PREVIEW_DEBOUNCE_MS = 600;
 
 type PreviewResult =
   | { valid: true; nextRuns: string[]; humanReadable: string; collisions: { jobName: string; atMinute: string }[] }
   | { valid: false; error: string };
+
+// Quick-pick starting points — a user editing a schedule doesn't need to already know cron
+// syntax. Presets land on :00 by default; the collision warning below the preview flags it if
+// that overlaps another job (matches the real 2026-07-17 stagger incident), the preset doesn't
+// need to avoid it itself.
+const SCHEDULE_PRESETS: { label: string; cronExpression: string }[] = [
+  { label: "Every 5 min", cronExpression: "*/5 * * * *" },
+  { label: "Every 10 min", cronExpression: "*/10 * * * *" },
+  { label: "Every 30 min", cronExpression: "*/30 * * * *" },
+  { label: "Hourly", cronExpression: "0 * * * *" },
+  { label: "Daily 6am", cronExpression: "0 6 * * *" },
+  { label: "Weekly Sun 4am", cronExpression: "0 4 * * 0" },
+];
 
 export function CronControlDashboard({
   initialListing,
@@ -82,6 +96,11 @@ export function CronControlDashboard({
   return (
     <div className="space-y-5">
       <DriftBanner />
+      <p className="text-xs font-semibold text-[#64748B]">
+        Showing all {listing.jobs.length} live job{listing.jobs.length === 1 ? "" : "s"} from GCP Cloud Scheduler as of{" "}
+        {formatDate(listing.fetchedAt)} — this list is never filtered to a static subset; any job that exists in the project&apos;s
+        scheduler appears here.
+      </p>
       <div className="grid gap-4">
         {listing.jobs.map((job) => (
           <JobCard
@@ -167,15 +186,21 @@ function JobCard({
     <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="text-base font-black text-[#0F172A]">{job.label}</h3>
             <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${STATE_STYLES[job.state] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
               {job.state}
             </span>
+            {!job.isKnown ? (
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                Not in local registry
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 max-w-2xl text-sm text-[#64748B]">{job.description}</p>
           <p className="mt-1 font-mono text-xs text-[#94A3B8]">
-            {job.route} · <span className="text-[#64748B]">{job.schedule}</span> ({job.timeZone})
+            {job.route ? <>{job.route} · </> : null}
+            <span className="text-[#64748B]">{job.schedule}</span> ({job.timeZone})
           </p>
         </div>
 
@@ -245,13 +270,17 @@ function SchedulePanel({
   const [previewedFor, setPreviewedFor] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Guards against a slow, stale request (auto-preview fires on every keystroke) resolving
+  // after a newer one and clobbering the displayed result with out-of-date data.
+  const requestSeqRef = useRef(0);
 
   const currentFingerprint = `${cronExpression}|${timeZone}`;
   const canConfirm = preview?.valid === true && previewedFor === currentFingerprint;
 
-  async function handlePreview() {
+  async function handlePreview(opts?: { silent?: boolean }) {
+    const seq = ++requestSeqRef.current;
+    const fingerprint = `${cronExpression}|${timeZone}`;
     setPreviewing(true);
-    setPreview(null);
     try {
       const res = await fetch("/api/admin/cron-control/preview-schedule", {
         body: JSON.stringify({ cronExpression, excludeJobName: job.jobName, timeZone }),
@@ -259,18 +288,31 @@ function SchedulePanel({
         method: "POST",
       });
       const result = (await res.json()) as PreviewResult;
+      if (seq !== requestSeqRef.current) return; // a newer request already resolved
       setPreview(result);
-      setPreviewedFor(currentFingerprint);
-      if (!result.valid) toast.error(result.error);
+      setPreviewedFor(fingerprint);
+      if (!result.valid && !opts?.silent) toast.error(result.error);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       const message = err instanceof Error ? err.message : "Preview failed.";
       setPreview({ error: message, valid: false });
-      setPreviewedFor(currentFingerprint);
-      toast.error(message);
+      setPreviewedFor(fingerprint);
+      if (!opts?.silent) toast.error(message);
     } finally {
-      setPreviewing(false);
+      if (seq === requestSeqRef.current) setPreviewing(false);
     }
   }
+
+  // Auto-preview (debounced) so validation + next-run times update as the user types or picks a
+  // preset — no separate "remember to click Preview" step. Errors from THIS silent pass show
+  // inline only (not a toast); an explicit Preview click or a failed Confirm still toasts.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void handlePreview({ silent: true });
+    }, AUTO_PREVIEW_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cronExpression, timeZone]);
 
   async function handleConfirm() {
     if (!canConfirm) return;
@@ -299,6 +341,19 @@ function SchedulePanel({
 
   return (
     <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">Quick pick:</span>
+        {SCHEDULE_PRESETS.map((preset) => (
+          <button
+            className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#475569] transition hover:border-orange-300 hover:text-orange-700"
+            key={preset.label}
+            onClick={() => setCronExpression(preset.cronExpression)}
+            type="button"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-black text-[#64748B]">
@@ -324,14 +379,15 @@ function SchedulePanel({
           <button
             className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-[11px] font-black text-[#0F172A] transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
             disabled={previewing || !cronExpression || !timeZone}
-            onClick={handlePreview}
+            onClick={() => handlePreview()}
             type="button"
           >
             {previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Preview
+            Preview now
           </button>
         </div>
       </div>
+      <p className="mt-1.5 text-[11px] text-[#94A3B8]">Auto-previews as you type — this button just forces an immediate check.</p>
 
       {preview ? (
         <div className="mt-3 rounded-lg border border-[#E2E8F0] bg-white p-3 text-xs">
