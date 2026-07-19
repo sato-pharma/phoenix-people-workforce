@@ -8,8 +8,9 @@ import type { FilterDescriptor } from "./filter-registry";
 export const PERIOD_FILTER: FilterDescriptor = {
   key: "period",
   label: "Period (Month)",
-  type: "single-select",
+  type: "multi-select",
   source: "periods",
+  multiple: true,
   placeholder: "All periods",
   pipeline: "all",
 };
@@ -38,8 +39,9 @@ export const PERIOD_TO_FILTER: FilterDescriptor = {
 export const YEAR_FILTER: FilterDescriptor = {
   key: "year",
   label: "Year",
-  type: "single-select",
+  type: "multi-select",
   source: "static",
+  multiple: true,
   staticOptions: [
     { value: "2025", label: "2025" },
     { value: "2026", label: "2026" },
@@ -51,8 +53,9 @@ export const YEAR_FILTER: FilterDescriptor = {
 export const WEEK_FILTER: FilterDescriptor = {
   key: "week",
   label: "Week",
-  type: "single-select",
+  type: "multi-select",
   source: "weeks",
+  multiple: true,
   placeholder: "All weeks",
   pipeline: "weekly",
 };
@@ -128,8 +131,9 @@ export const FAMILY_FILTER: FilterDescriptor = {
 export const CHANNEL_FILTER: FilterDescriptor = {
   key: "channel",
   label: "Channel",
-  type: "single-select",
+  type: "multi-select",
   source: "static",
+  multiple: true,
   staticOptions: [
     { value: "Distributor", label: "Distributor" },
     { value: "Direct", label: "Direct" },
@@ -187,6 +191,7 @@ export const BATCH_ID_FILTER: FilterDescriptor = {
 // ── Pre-built sets per dashboard ──────────────────────────────────────────────
 
 export const SOS_FILTERS: FilterDescriptor[] = [
+  // SoS RPCs are period-scoped and do not accept p_year; do not expose a no-op year control here.
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
@@ -213,6 +218,7 @@ export const SOS_CUSTOMER_FILTERS: FilterDescriptor[] = [
 ];
 
 export const CLOSING_FILTERS: FilterDescriptor[] = [
+  // Closing RPCs are period/date-scoped and do not accept p_year; do not expose a no-op year control here.
   PERIOD_FILTER,
   PERIOD_FROM_FILTER,
   PERIOD_TO_FILTER,
@@ -240,4 +246,14 @@ export const EXECUTIVE_FILTERS: FilterDescriptor[] = [
   LINE_FILTER,
   REGION_FILTER,
   DISTRIBUTOR_FILTER,
+];
+
+// analytics_cross_source only accepts p_period_from / p_period_to / p_lines (see
+// loadCrossSourceUncached in service.ts) — Region and Distributor are NOT forwarded by
+// reconciliation-dashboard.tsx's query object, so reusing EXECUTIVE_FILTERS here would render two
+// controls that silently do nothing when changed. Use this narrower set instead.
+export const RECONCILIATION_FILTERS: FilterDescriptor[] = [
+  PERIOD_FROM_FILTER,
+  PERIOD_TO_FILTER,
+  LINE_FILTER,
 ];

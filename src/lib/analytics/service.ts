@@ -192,7 +192,7 @@ export async function loadAnalyticsDimensions(role: PhoenixRole): Promise<Analyt
 // ── SoS loaders ───────────────────────────────────────────────────────────────
 
 export type SosFilters = {
-  period?: string | null;
+  period?: string[];
   periodFrom?: string | null;
   periodTo?: string | null;
   distributors?: string[];
@@ -201,7 +201,7 @@ export type SosFilters = {
   areas?: string[];
   products?: string[];
   families?: string[];
-  channel?: string | null;
+  channel?: string[];
   clientCodes?: string[];
   /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
   canViewHeadOffice?: boolean;
@@ -220,10 +220,10 @@ export type SosByLineRow = {
 async function loadSosByLineUncached(filters: SosFilters): Promise<SosByLineRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_line" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -253,10 +253,10 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
   // postgrest schema override. Supabase JS client defaults to public schema;
   // we call a helper SQL function instead.
   const { data, error } = await db.rpc("analytics_sos_by_period" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -275,10 +275,10 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
 async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_area" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -297,10 +297,10 @@ async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[
 async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProductRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_product" as never, {
-    p_period:      filters.period      ?? null,
+    p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
-    p_channel:     filters.channel     ?? null,
+    p_channels:    filters.channel?.length     ? filters.channel     : null,
     p_lines:       filters.lines?.length       ? filters.lines       : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_regions:     filters.regions?.length     ? filters.regions     : null,
@@ -317,7 +317,7 @@ async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProdu
 async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCustomerRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_sos_by_customer" as never, {
-    p_period:       filters.period      ?? null,
+    p_periods:      filters.period?.length      ? filters.period      : null,
     p_period_from:  filters.periodFrom  ?? null,
     p_period_to:    filters.periodTo    ?? null,
     p_lines:        filters.lines?.length       ? filters.lines       : null,
@@ -333,7 +333,7 @@ async function loadSosByCustomerUncached(filters: SosFilters): Promise<SosByCust
 // ── Monthly closing loaders ───────────────────────────────────────────────────
 
 export type ClosingFilters = {
-  period?: string | null;
+  period?: string[];
   periodFrom?: string | null;
   periodTo?: string | null;
   lines?: string[];
@@ -350,7 +350,7 @@ export type ClosingFilters = {
 async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<ClosingByEmployeeRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_closing_by_employee" as never, {
-    p_period:       filters.period      ?? null,
+    p_periods:      filters.period?.length      ? filters.period      : null,
     p_period_from:  filters.periodFrom  ?? null,
     p_period_to:    filters.periodTo    ?? null,
     p_lines:        filters.lines?.length    ? filters.lines    : null,
@@ -370,8 +370,8 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
 // ── Weekly loaders ────────────────────────────────────────────────────────────
 
 export type WeeklyFilters = {
-  weekStart?: string | null;
-  year?: number | null;
+  weekStart?: string[];
+  year?: number[];
   distributors?: string[];
   lines?: string[];
   regions?: string[];
@@ -384,8 +384,8 @@ export type WeeklyFilters = {
 async function loadWeeklyFactUncached(filters: WeeklyFilters): Promise<WeeklyFactRow[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("analytics_weekly_fact" as never, {
-    p_week_start:   filters.weekStart   ?? null,
-    p_year:         filters.year        ?? null,
+    p_week_starts:  filters.weekStart?.length ? filters.weekStart : null,
+    p_years:        filters.year?.length      ? filters.year      : null,
     p_distributors: filters.distributors?.length ? filters.distributors : null,
     p_lines:        filters.lines?.length        ? filters.lines        : null,
     p_regions:      filters.regions?.length      ? filters.regions      : null,
@@ -414,8 +414,11 @@ async function loadCrossSourceUncached(filters: CrossSourceFilters): Promise<Cro
 
 // ── Display-name enrichment ─────────────────────────────────────────────────────
 // The analytics_* RPCs return manager HR IDs and customer client codes. Phoenix shows people and
-// customers BY NAME, so resolve those to names here. Both fail OPEN: on any error the row keeps the
-// HR ID / code it was mapped with, so a lookup outage can never blank the column.
+// customers BY NAME — never by code — so resolve those to names here. On any lookup failure or
+// unresolved match, fall back to the UNKNOWN_NAME placeholder rather than the raw HR ID / client
+// code, so a directory outage or missing rollup entry can never leak a bare code into a name column.
+
+const UNKNOWN_NAME = "Unknown";
 
 async function resolveManagerNames(rows: ClosingByEmployeeRow[]): Promise<ClosingByEmployeeRow[]> {
   const ids = [...new Set(rows.map((r) => r.managerHrId).filter((v): v is string => Boolean(v)))];
@@ -426,12 +429,13 @@ async function resolveManagerNames(rows: ClosingByEmployeeRow[]): Promise<Closin
     // displayName is nickname-aware (the canonical live-UI name); key by a normalized HR ID.
     nameByKey = new Map(directory.employees.map((e) => [e.hrId.trim().toUpperCase(), e.displayName]));
   } catch {
-    return rows; // directory unavailable → keep HR IDs (already set as the managerName fallback)
+    // directory unavailable → never fall back to the raw HR ID (that's still a code)
+    return rows.map((r) => (r.managerHrId ? { ...r, managerName: UNKNOWN_NAME } : r));
   }
   return rows.map((r) => {
     if (!r.managerHrId) return r;
     const name = nameByKey.get(r.managerHrId.trim().toUpperCase());
-    return name ? { ...r, managerName: name } : r;
+    return { ...r, managerName: name ?? UNKNOWN_NAME };
   });
 }
 
@@ -456,12 +460,10 @@ async function resolveCustomerNames(rows: SosByCustomerRow[]): Promise<SosByCust
       }
     }
   } catch {
-    return rows; // rollup unavailable → keep codes (already set as the customerName fallback)
+    // rollup unavailable → never fall back to the raw client code (that's still a code)
+    return rows.map((r) => ({ ...r, customerName: UNKNOWN_NAME }));
   }
-  return rows.map((r) => {
-    const name = nameByCode.get(r.clientCode);
-    return name ? { ...r, customerName: name } : r;
-  });
+  return rows.map((r) => ({ ...r, customerName: nameByCode.get(r.clientCode) ?? UNKNOWN_NAME }));
 }
 
 // ── Row mappers ───────────────────────────────────────────────────────────────
@@ -557,7 +559,7 @@ function mapSosCustomerRow(r: Record<string, unknown>): SosByCustomerRow {
     year:          n(r.year),
     month:         n(r.month),
     clientCode:    s(r.client_code),
-    customerName:  s(r.client_code), // fallback to code; resolved to a name in resolveCustomerNames()
+    customerName:  s(r.client_code), // placeholder only; always overwritten (name or UNKNOWN_NAME) by resolveCustomerNames()
     line:          s(r.line),
     regionCode:    s(r.region_code),
     regionName:    s(r.region_name),
@@ -572,7 +574,7 @@ function mapClosingEmployeeRow(r: Record<string, unknown>): ClosingByEmployeeRow
     employeeHrId:    r.employee_hr_id   != null ? s(r.employee_hr_id)  : null,
     employeeName:    r.employee_name    != null ? s(r.employee_name)   : null,
     managerHrId:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null,
-    managerName:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null, // fallback to HR ID; resolved in resolveManagerNames()
+    managerName:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null, // placeholder only; always overwritten (name or UNKNOWN_NAME) by resolveManagerNames()
     territory:       r.territory        != null ? s(r.territory)        : null,
     salesValue:      n(r.sales_value),
     targetValue:     n(r.target_value),

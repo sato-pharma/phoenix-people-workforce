@@ -120,6 +120,7 @@ function fixture(): SosDashboardData {
         regions: { gainers: [], decliners: [] },
         distributors: { gainers: [], decliners: [] },
       },
+      deltaPctByCode: { products: { SAG: 1 / 6, ROY: -1 / 7 }, regions: {}, distributors: {} },
       contribution: {
         products: [
           { code: "SAG", label: "Saginkgo", value: 7_000, prevValue: 6_000, delta: 1_000, contribution: 2 / 3 },
@@ -153,6 +154,7 @@ function fixture(): SosDashboardData {
         regions: { gainers: [], decliners: [] },
         distributors: { gainers: [], decliners: [] },
       },
+      deltaPctByCode: { products: { SAG: 0.4 }, regions: {}, distributors: {} },
       contribution: {
         products: [{ code: "SAG", label: "Saginkgo", value: 7_000, prevValue: 5_000, delta: 2_000, contribution: 1 }],
         regions: [],

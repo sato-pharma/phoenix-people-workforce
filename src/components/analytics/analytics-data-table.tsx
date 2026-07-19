@@ -46,6 +46,43 @@ type Props<T extends Record<string, unknown>> = {
 
 type SortDir = "asc" | "desc" | null;
 
+/** Below md: one stacked card per row — the first column as a heading, the rest as label/value
+ * pairs — instead of the desktop table's columns, which have no room to breathe on a phone. */
+function MobileRow<T extends Record<string, unknown>>({
+  columns,
+  row,
+  isTotal = false,
+}: {
+  columns: Column<T>[];
+  row: Partial<Record<keyof T, unknown>>;
+  isTotal?: boolean;
+}) {
+  const [heading, ...rest] = columns;
+  const fields = isTotal ? rest.filter((col) => row[col.key] != null) : rest;
+
+  return (
+    <div className={isTotal ? "border-t-2 border-border bg-black/5 px-3 py-3 font-semibold" : "px-3 py-3"}>
+      {isTotal ? (
+        <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">Total</p>
+      ) : heading ? (
+        <p className="text-sm font-semibold text-foreground">{formatValue(heading.formatKind, row[heading.key])}</p>
+      ) : null}
+      {fields.length > 0 && (
+        <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
+          {fields.map((col) => (
+            <div key={String(col.key)}>
+              <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{col.label}</dt>
+              <dd className={`font-medium text-foreground ${col.align === "right" ? "tabular-nums" : ""}`}>
+                {formatValue(col.formatKind, row[col.key])}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 export function AnalyticsDataTable<T extends Record<string, unknown>>({
   columns,
   rows,
@@ -131,9 +168,9 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
   return (
     <div className="flex flex-col gap-2">
       {(searchKeys.length > 0 || caption || columns.length > 1) && (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           {caption && <p className="text-sm font-medium text-foreground">{caption}</p>}
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
             {searchKeys.length > 0 && (
               <input
                 type="search"
@@ -188,7 +225,18 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
         </div>
       )}
 
-      <div className="overflow-x-auto border border-border">
+      {/* Below md, a wide multi-column table forces every cell into an unreadable sliver —
+          show a stacked card per row instead. The table below remains the md+ view. */}
+      <div className="divide-y divide-border border border-border md:hidden">
+        {pageRows.length === 0 ? (
+          <p className="px-3 py-8 text-center text-xs text-muted-foreground">No rows match the current filters.</p>
+        ) : (
+          pageRows.map((row, i) => <MobileRow columns={visibleColumns} key={i} row={row} />)
+        )}
+        {totals && pageRows.length > 0 && <MobileRow columns={visibleColumns} isTotal row={totals} />}
+      </div>
+
+      <div className="hidden overflow-x-auto border border-border md:block">
         <table className="w-full text-sm">
           <thead className="bg-black text-white">
             <tr>
@@ -248,7 +296,7 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>{filtered.length} rows — page {page + 1} of {totalPages}</span>
           <div className="flex gap-1">
             <button

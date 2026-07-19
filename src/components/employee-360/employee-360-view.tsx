@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Award,
   BadgeCheck,
+  CalendarClock,
+  ClipboardCheck,
   Clock,
   Footprints,
   GraduationCap,
@@ -27,7 +29,9 @@ import type {
   SalesMonthPoint,
 } from "@/lib/employee-360/deep-service";
 import type { TeamHealthSummary } from "@/lib/employee-360/team-health";
+import type { TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
+import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
 
@@ -144,6 +148,20 @@ const KPI_EXPLAIN: Record<string, string> = {
   "Top-5 focus share": "The share of all their coaching that went to just their five most-coached reps — high means effort is concentrated on a few.",
   "Over-focused reps": "Reps coached three or more times — a sign of over-focus when many others were never coached.",
   Coverage: "The share of the whole field-force pool this Training Manager reached with coaching.",
+  "Double-visited": "How many of this manager's reps they personally joined in the field (a double-visit) this period.",
+  "DV coverage": "The share of this manager's reps they double-visited at least once this period.",
+  "Fully neglected": "Reps who got NEITHER a coaching session NOR a double-visit this period — the ones being completely missed.",
+  "Team reach": "The share of the team touched at least once this period — coached or double-visited.",
+  // Team compliance (manager) — plans, field discipline, probation
+  "Plans submitted": "How many of this manager's reps submitted a weekly plan for this period — weekly-planning compliance.",
+  "Plans approved": "How many of their reps had a weekly plan fully approved this period.",
+  "No-activity flags": "How many of their reps were flagged for confirmed no-activity days — the field-force equivalent of absence — this period.",
+  "In probation": "How many of their reps are still inside their first 90 days (probation window), soonest to finish first.",
+  // Marketing ROI (PM/GPM)
+  Requests: "How many marketing requests this Product Manager has submitted.",
+  "Est. spend": "The total estimated cost of the marketing requests they submitted.",
+  "Expected ROI": "The forecast sales return expected from those marketing investments.",
+  "Realized value": "The actual sales value realized so far, versus the required return.",
   // Sales
   "Total sales": "The total sales value achieved in this period.",
   "Team sales": "The combined sales value of this manager's whole team.",
@@ -449,7 +467,9 @@ export function Employee360View({
   showExpenses = true,
   category,
   teamHealth = null,
+  teamLifecycle = null,
   tmAnalytics = null,
+  pmMarketing = null,
 }: {
   subject: Employee360Subject;
   summary: Employee360Profile;
@@ -457,7 +477,9 @@ export function Employee360View({
   showExpenses?: boolean;
   category: Employee360RoleCategory;
   teamHealth?: TeamHealthSummary | null;
+  teamLifecycle?: TeamLifecycleSummary | null;
   tmAnalytics?: TrainingManagerAnalytics | null;
+  pmMarketing?: PmMarketingSummary | null;
 }) {
   const b = summary.benchmarks;
   const tenure = tenureLabel(subject.hireDate);
@@ -517,6 +539,12 @@ export function Employee360View({
 
       {/* Team development — coaching coverage of a field manager's own reps. */}
       {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
+
+      {/* Team compliance — weekly plans, field discipline & probation of their reps. */}
+      {teamLifecycle ? <TeamLifecycleSection lifecycle={teamLifecycle} /> : null}
+
+      {/* PM / Group PM — ROI on the marketing requests they submitted. */}
+      {pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null}
 
       {/* Visits & Coverage — reps: full field performance; leaders: their OWN field presence. */}
       <Card className={PREMIUM_CARD}>
@@ -1215,6 +1243,62 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
   );
 }
 
+function MarketingRoiSection({ m }: { m: PmMarketingSummary }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={Megaphone}
+        tone="orange"
+        sub="Return on the marketing investments this Product Manager requested — spend, expected vs realized value, and how the requests are tracking."
+      >
+        Marketing ROI — Requests Submitted
+      </SectionHeader>
+      {!m.hasData ? (
+        <EmptyState>This Product Manager has not submitted any marketing requests.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Requests" value={intFmt.format(m.requestCount)} />
+            <KpiTile label="Est. spend" value={compactFmt.format(m.totalEstimatedCost)} />
+            <KpiTile label="Expected ROI" value={compactFmt.format(m.totalExpectedRoi)} hint="forecast return" />
+            <KpiTile
+              label="Realized value"
+              value={compactFmt.format(m.totalActualValue)}
+              hint={`${Math.round(m.coverageRatio * 100)}% of required`}
+              goodWhenAbove={m.coverageRatio >= 1}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="font-bold text-slate-400">Tracking:</span>
+            <span className="font-semibold text-emerald-600">● {intFmt.format(m.onTrack)} on track</span>
+            <span className="font-semibold text-amber-600">● {intFmt.format(m.behind)} behind</span>
+            <span className="text-slate-400">● {intFmt.format(m.awaiting)} awaiting data</span>
+            <span className="text-slate-400">● {intFmt.format(m.noData)} no data</span>
+          </div>
+          {m.topRequests.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-1.5 text-xs font-bold text-slate-500">Largest requests by spend</div>
+              <div className="space-y-1">
+                {m.topRequests.map((r) => (
+                  <div key={r.code} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-slate-600">
+                      {r.code}
+                      {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      {compactFmt.format(r.estimatedCost)} spend · {compactFmt.format(r.actual)} realized
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
 function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
   const cov = teamHealth.coverageRate;
   return (
@@ -1222,12 +1306,12 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
       <SectionHeader
         icon={GraduationCap}
         tone="violet"
-        sub="How well this manager's OWN reps are being developed — coaching coverage of their team this period. Who's coached, who's neglected."
+        sub="How well this manager's OWN reps are being developed — coaching AND field double-visit coverage this period. The headline gap: reps who got neither."
       >
-        Team Development — Coaching Coverage
+        Team Development — Coaching &amp; Double-Visits
       </SectionHeader>
       {!teamHealth.hasData ? (
-        <EmptyState>No Medical Reps roll up to this manager, so there is no team coaching coverage to show.</EmptyState>
+        <EmptyState>No Medical Reps roll up to this manager, so there is no team development coverage to show.</EmptyState>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1236,6 +1320,22 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
             <KpiTile label="Never coached" value={intFmt.format(teamHealth.neverCoachedCount)} goodWhenAbove={teamHealth.neverCoachedCount === 0} />
             <KpiTile label="Avg coaching score" value={teamHealth.avgScore == null ? "—" : `${Math.round(teamHealth.avgScore)}%`} />
           </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile label="Double-visited" value={intFmt.format(teamHealth.dvCoveredCount)} hint={`${Math.round(teamHealth.dvCoverageRate * 100)}% of reps`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
+            <KpiTile label="DV coverage" value={`${Math.round(teamHealth.dvCoverageRate * 100)}%`} goodWhenAbove={teamHealth.dvCoverageRate >= 0.5} />
+            <KpiTile label="Fully neglected" value={intFmt.format(teamHealth.fullyNeglectedCount)} goodWhenAbove={teamHealth.fullyNeglectedCount === 0} hint="no coaching AND no double-visit" />
+            <KpiTile label="Team reach" value={`${Math.round(((teamHealth.repCount - teamHealth.fullyNeglectedCount) / Math.max(1, teamHealth.repCount)) * 100)}%`} hint="touched at least once" goodWhenAbove={teamHealth.fullyNeglectedCount === 0} />
+          </div>
+          {teamHealth.fullyNeglected.length > 0 ? (
+            <div className="mt-4 rounded-[14px] border border-rose-200 bg-rose-50/60 p-3">
+              <div className="mb-1.5 text-xs font-black text-rose-700">Fully neglected — neither coached nor double-visited ({teamHealth.fullyNeglected.length})</div>
+              <div className="flex flex-wrap gap-1.5">
+                {teamHealth.fullyNeglected.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-xs text-rose-700">{r.name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {teamHealth.neglected.length > 0 ? (
             <div className="mt-4">
               <div className="mb-1.5 text-xs font-bold text-amber-600">Never coached this period ({teamHealth.neglected.length})</div>
@@ -1258,6 +1358,60 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
                       {r.latestCoachingDate ? ` · ${r.latestCoachingDate}` : ""}
                     </span>
                   </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Team Compliance — the operational (non-development) side of a manager's team:
+// are their reps planning, showing up in the field, and who is still on probation.
+function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }) {
+  const cov = lifecycle.planCoverageRate;
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={ClipboardCheck}
+        tone="amber"
+        sub="The operational health of this manager's reps — weekly-plan compliance, confirmed field no-activity flags, and who is still inside their 90-day probation."
+      >
+        Team Compliance — Plans, Field Discipline &amp; Probation
+      </SectionHeader>
+      {!lifecycle.hasData ? (
+        <EmptyState>No Medical Reps roll up to this manager, so there is no team compliance to show.</EmptyState>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiTile
+              label="Plans submitted"
+              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(lifecycle.repCount)}`}
+              hint={`${Math.round(cov * 100)}% of reps`}
+              goodWhenAbove={cov >= 0.6}
+            />
+            <KpiTile label="Plans approved" value={intFmt.format(lifecycle.planApprovedCount)} />
+            <KpiTile
+              label="No-activity flags"
+              value={lifecycle.disciplineHasData ? intFmt.format(lifecycle.disciplineFlaggedReps) : "—"}
+              hint={lifecycle.disciplineHasData ? `${intFmt.format(lifecycle.disciplineNoActivityDays)} days flagged` : undefined}
+              goodWhenAbove={lifecycle.disciplineHasData ? lifecycle.disciplineFlaggedReps === 0 : null}
+            />
+            <KpiTile label="In probation" value={intFmt.format(lifecycle.probationCount)} hint="within first 90 days" />
+          </div>
+          {lifecycle.probationReps.length > 0 ? (
+            <div className="mt-4 rounded-[14px] border border-blue-200 bg-blue-50/50 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-black text-blue-700">
+                <CalendarClock className="h-3.5 w-3.5" />
+                On probation — soonest to finish first ({lifecycle.probationReps.length})
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lifecycle.probationReps.map((r) => (
+                  <span key={r.hrId} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-700">
+                    {r.name} · <span className="tabular-nums text-blue-500">{r.daysRemaining}d left</span>
+                  </span>
                 ))}
               </div>
             </div>

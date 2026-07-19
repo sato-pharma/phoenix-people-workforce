@@ -125,3 +125,46 @@ export async function loadEmployeeDayPunchMinutes(input: {
 
   return result;
 }
+
+export type SingleDayPunchSummary = {
+  firstPunchTime: string | null;
+  lastPunchTime: string | null;
+  visiblePunchCount: number;
+};
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function minutesToClock(minutes: number | null | undefined): string | null {
+  if (minutes == null) return null;
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+/**
+ * One employee's punch summary for a single Cairo-local calendar day, formatted to "HH:MM" —
+ * the day-detail-view equivalent of loadEmployeeDayPunchMinutes, for the Team Calendar's
+ * fingerprint-punch click-through (see field-workforce-visits-view.tsx). Returns null when
+ * there's no punch that day (not an empty object) so callers can render an accurate empty
+ * state.
+ */
+export async function loadSingleEmployeeDayPunchSummary(input: {
+  dateIso: string;
+  hrId: string;
+}): Promise<SingleDayPunchSummary | null> {
+  const byEmployee = await loadEmployeeDayPunchMinutes({
+    dateFromIso: input.dateIso,
+    dateToIso: input.dateIso,
+    employeeHrIds: [input.hrId],
+  });
+  const hrKey = normalizeAttendanceHrId(input.hrId);
+  const day = hrKey ? byEmployee.get(hrKey)?.get(input.dateIso) : undefined;
+  if (!day) return null;
+  return {
+    firstPunchTime: minutesToClock(day.firstPunchMinutes),
+    lastPunchTime: minutesToClock(day.lastPunchMinutes),
+    visiblePunchCount: day.visiblePunchCount,
+  };
+}

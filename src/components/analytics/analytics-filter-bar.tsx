@@ -19,6 +19,7 @@ import { GitCompare } from "lucide-react";
 import { MultiSelectFilter, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import type { FilterDescriptor, FilterValues } from "@/lib/analytics/filter-registry";
 import type { AnalyticsDimensions } from "@/lib/analytics/service";
+import type { AnalyticsFilterVisibility } from "@/lib/analytics/scope";
 
 type AnalyticsFilterBarProps = {
   descriptors: FilterDescriptor[];
@@ -29,6 +30,8 @@ type AnalyticsFilterBarProps = {
   customers?: MultiSelectFilterOption[];
   /** Show a "Compare" toggle that writes/clears `?compare=1` (gates a comparison table on the page). */
   comparable?: boolean;
+  /** Per-viewer filter visibility — hide the Line/Region picker when the viewer is bound to a single one. */
+  visibility?: AnalyticsFilterVisibility;
 };
 
 function optionsFor(
@@ -63,7 +66,55 @@ function optionsFor(
   }
 }
 
-export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false }: AnalyticsFilterBarProps) {
+// Owns the in-progress keystroke locally instead of mirroring `values[key]` directly —
+// that prop only updates ~300ms later via the debounce → router.push → server round-trip,
+// so a plain controlled input snaps back to the stale value mid-keystroke. `lastPushedRef`
+// tracks what THIS field last typed so its own round-trip confirmation doesn't clobber
+// newer local typing; an external change (e.g. a "clear filters" action elsewhere) still
+// gets adopted because it won't match the ref.
+function TextSearchFilterField({
+  current,
+  descriptorKey,
+  label,
+  onDebouncedChange,
+  placeholder,
+}: {
+  current: string;
+  descriptorKey: string;
+  label: string;
+  onDebouncedChange: (key: string, value: string) => void;
+  placeholder?: string;
+}) {
+  const [localValue, setLocalValue] = React.useState(current);
+  const lastPushedRef = React.useRef(current);
+
+  React.useEffect(() => {
+    if (current !== lastPushedRef.current) {
+      setLocalValue(current);
+      lastPushedRef.current = current;
+    }
+  }, [current]);
+
+  return (
+    <label className="flex h-[58px] w-full flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74] sm:w-auto sm:min-w-[180px]">
+      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</span>
+      <input
+        type="text"
+        value={localValue}
+        placeholder={placeholder}
+        onChange={(event) => {
+          const value = event.target.value;
+          setLocalValue(value);
+          lastPushedRef.current = value;
+          onDebouncedChange(descriptorKey, value);
+        }}
+        className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"
+      />
+    </label>
+  );
+}
+
+export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, customers = [], comparable = false, visibility }: AnalyticsFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const debounceRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -115,6 +166,9 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
   return (
     <div className="flex flex-wrap items-end gap-3">
       {descriptors.map((descriptor) => {
+        // Hide a dimension's picker when the viewer is scoped to a single value for it (nothing to choose).
+        if (visibility && descriptor.key === "lines" && !visibility.line) return null;
+        if (visibility && descriptor.key === "regions" && !visibility.region) return null;
         if (descriptor.type === "multi-select") {
           const options = optionsFor(descriptor, dimensions, customers);
           const selectedRaw = values[descriptor.key];
@@ -132,7 +186,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
                 // include-style `= any(array)` filtering. Intentional no-op.
               }}
               searchPlaceholder={descriptor.placeholder}
-              className="w-[220px]"
+              className="w-full sm:w-[220px]"
             />
           );
         }
@@ -144,7 +198,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           return (
             <label
               key={descriptor.key}
-              className="flex h-[58px] min-w-[160px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
+              className="flex h-[58px] w-full flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74] sm:w-auto sm:min-w-[160px]"
             >
               <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
               <select
@@ -167,19 +221,14 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
         const currentRaw = values[descriptor.key];
         const current = typeof currentRaw === "string" ? currentRaw : "";
         return (
-          <label
+          <TextSearchFilterField
             key={descriptor.key}
-            className="flex h-[58px] min-w-[180px] flex-col justify-center gap-1 border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition hover:border-[#FDBA74] focus-within:border-[#FDBA74]"
-          >
-            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
-            <input
-              type="text"
-              defaultValue={current}
-              placeholder={descriptor.placeholder}
-              onChange={(event) => setDebouncedValue(descriptor.key, event.target.value)}
-              className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"
-            />
-          </label>
+            current={current}
+            descriptorKey={descriptor.key}
+            label={descriptor.label}
+            onDebouncedChange={setDebouncedValue}
+            placeholder={descriptor.placeholder}
+          />
         );
       })}
       {comparable ? (
@@ -187,7 +236,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           type="button"
           onClick={toggleCompare}
           aria-pressed={comparing}
-          className={`ml-auto flex h-[58px] items-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition ${
+          className={`flex h-[58px] w-full items-center justify-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition sm:ml-auto sm:w-auto sm:justify-start ${
             comparing
               ? "border-[#F97316] bg-[#F97316] text-white"
               : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]"

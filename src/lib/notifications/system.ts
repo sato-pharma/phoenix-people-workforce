@@ -115,6 +115,7 @@ const sensitivePayrollModules = new Set(["payroll", "payslip", "payslips"]);
 const criticalWorkflowModules = new Set([
   "contracts",
   "contract_renewal",
+  "direct_orders",
   "excuse",
   "excuses",
   "offers",
@@ -130,6 +131,7 @@ const systemAnnouncementEvents = new Set(["announcement", "system_announcement"]
 const employeeSubjectWorkflowModules = new Set([
   "contract_renewal",
   "deductions",
+  "direct_orders",
   "excuse",
   "excuses",
   "leave",

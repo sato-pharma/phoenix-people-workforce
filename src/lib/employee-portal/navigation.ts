@@ -46,6 +46,11 @@ export type EmployeePortalNavVisibility = {
   showSourceOfSalesTab?: boolean;
   // Weekly Sales — de-cumulated weekly distributor sell-in, same role set as Source of Sales.
   showWeeklyTab?: boolean;
+  // Sales Analytics — the portal-native analytics module at /employee-portals/sales-analytics
+  // (Source of Sales + Monthly Closing + Weekly for everyone; + Executive Comparison + Reconciliation
+  // for RM and line managers). Every page enforces sales/weekly_sales read AND the per-viewer
+  // AnalyticsViewerScope server-side; this flag only surfaces the sidebar link.
+  showSalesAnalyticsTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -296,6 +301,18 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager",
+    // Portal Sales Analytics module (/employee-portals/sales-analytics) — NOT an /admin URL. Every
+    // sales field/portal role gets it, scoped to their own line/region: Medical Rep + District Manager
+    // see the 3 core dashboards; Regional Manager + the line managers additionally get Executive
+    // Comparison + Reconciliation (see canViewPortalDetailedAnalytics). CEO/SA/SFE use /admin analytics.
+    showSalesAnalyticsTab:
+      isMedicalRep ||
+      isDistrictManager ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate
