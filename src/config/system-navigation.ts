@@ -1007,6 +1007,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO"],
   },
   {
+    href: "/admin/cron-control",
+    icon: CalendarClock,
+    label: "Cron Control",
+    description: "View, pause/resume, run now, and reschedule the GCP Cloud Scheduler jobs behind this system's automation.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
     href: "/admin/data-health",
     icon: Database,
     label: "Data Health",
