@@ -47,14 +47,17 @@ async function runDataBackupExport(job: BackgroundJob): Promise<void> {
   await completeBackgroundJob(job.id, { bucket: JOB_EXPORTS_BUCKET, path, filename, contentType: XLSX_CONTENT_TYPE });
 }
 
+export type BackgroundJobRunOutcome = { id: string; jobType: string; status: "completed" | "failed"; error?: string };
+export type BackgroundJobsRunResult = { processed: number; results: BackgroundJobRunOutcome[] };
+
 /**
  * Drain up to `maxJobs` queued background jobs. Each job is claimed atomically and either
  * completed (result written to Storage) or failed. Designed to be invoked by an authed
  * cron; keeps well under the Cloud Run request timeout by bounding how many jobs it takes
  * per invocation. Genuinely unbounded work should be escalated to a Cloud Run Job.
  */
-export async function processBackgroundJobs(maxJobs = 3): Promise<{ processed: number; results: Array<{ id: string; jobType: string; status: "completed" | "failed"; error?: string }> }> {
-  const results: Array<{ id: string; jobType: string; status: "completed" | "failed"; error?: string }> = [];
+export async function processBackgroundJobs(maxJobs = 3): Promise<BackgroundJobsRunResult> {
+  const results: BackgroundJobRunOutcome[] = [];
 
   for (let i = 0; i < maxJobs; i += 1) {
     const job = await claimNextBackgroundJob(BACKGROUND_JOB_TYPES);
