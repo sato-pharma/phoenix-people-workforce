@@ -1,6 +1,6 @@
 # Current Operating State
 
-Last updated: 2026-05-25
+Last updated: 2026-07-20
 
 This document is the current source of truth for how Phoenix Workforce should be edited, deployed, and verified.
 
@@ -11,37 +11,46 @@ This document is the current source of truth for how Phoenix Workforce should be
 - Do not edit `main` directly.
 - `main` should stay aligned with the live production deployment.
 - Production deploys should happen only after validation and explicit approval.
+- New feature work, function edits, fixes, and experiments happen on a focused
+  `codex/<task>` branch/worktree per AGENTS.md's Branch And Change Isolation rules,
+  opened as a PR against `main`.
 
-`codex/work-from-production` is the active working branch.
+There is no more single long-lived "working branch" with its own live preview
+deployment — that was a Vercel-era model. `ci.yml` does still push-trigger (not just
+PR-trigger) on `codex/work-from-production` specifically, alongside `main`/`master`;
+verify this branch's actual current state before treating it as "the" active branch
+for new work.
 
-- New feature work, function edits, fixes, and experiments should start here.
-- This branch was created from the current production code line.
-- Pushes to this branch create/update the Vercel preview deployment.
-- Promote changes to `main` only after preview validation.
+## Hosting
 
-## Vercel Deployments
+Production and staging both run on **GCP Cloud Run** (migrated off Vercel):
 
-The project should keep only two active Vercel deployments:
+| Purpose | Cloud Run service | Region | URL |
+| --- | --- | --- | --- |
+| Production | `phoenix-hr` | `europe-west3` | https://phoenix-hr.satopharma.com |
+| Staging | `phoenix-hr-staging` | `us-central1` | see AGENTS.md Stable Environment Facts |
 
-| Purpose | Branch | URL |
-| --- | --- | --- |
-| Production | `main` | https://phoenix-hr.satopharma.com |
-| Working preview | `codex/work-from-production` | https://phoenix-workforce-git-co-c8df8e-phoenix-hr-workspace-s-projects.vercel.app |
-
-Old Vercel deployments were intentionally removed to reduce confusion. The working preview URL above is the stable branch alias; the underlying deployment-specific URL changes after each branch push. Do not delete the active production deployment or the latest active preview deployment unless explicitly replacing them with newer deployments for the same purpose.
-
-The working preview is configured as a production-data read-only environment. It can read production Supabase data so dashboards are realistic, but Vercel Preview must keep `PHOENIX_PREVIEW_READ_ONLY=true`. With that flag enabled, `proxy.ts` blocks Preview mutations except authentication login/logout/heartbeat. Do not point Preview at production Supabase unless this guard is deployed and enabled.
+Both deploy **from `main`**, automatically, after CI succeeds (`workflow_run` trigger
+on `deploy-cloud-run.yml` / `deploy-cloud-run-staging.yml`) — there is no per-branch
+preview URL. Each deploy builds a new image, deploys it as a new revision with no
+traffic, smoke-tests that revision directly, then promotes to 100% traffic. Staging
+has its own isolated Supabase project (`cifwmndunmlxjhyjugxa`), not a read-only
+mirror of production data.
 
 ## Deployment Rules
 
 Production deploy rule:
 
-1. Work on `codex/work-from-production`.
-2. Validate locally.
-3. Push the branch and test the Vercel preview.
-4. Merge or apply the approved change to `main`.
-5. Deploy or verify production at `https://phoenix-hr.satopharma.com`.
-6. Confirm the public production domain points to the newest production deployment, not only the workspace alias.
+1. Work on a branch/worktree, not directly on `main`.
+2. Validate locally (`pnpm run check:harden`).
+3. Push, open a PR, confirm CI is green (including the `preview-smoke` job — a
+   Playwright smoke test run inside the CI runner against staging Supabase, not a
+   deployed preview despite the name).
+4. Merge to `main` after approval.
+5. Both Cloud Run deploy workflows fire automatically; verify production at
+   `https://phoenix-hr.satopharma.com` once promoted.
+6. Confirm the public production domain is serving the newest revision, not just
+   the workspace-internal Cloud Run URL.
 
 Always verify the exact public domain:
 
@@ -49,40 +58,47 @@ Always verify the exact public domain:
 https://phoenix-hr.satopharma.com
 ```
 
-Do not rely only on the workspace Vercel alias:
+## Cloud Scheduler Cron Model
 
-```text
-https://phoenix-workforce-phoenix-workspace-s-projects.vercel.app
-```
+Google Cloud Scheduler drives five jobs (provisioned by `scripts/setup-gcp-cron.sh`,
+last aligned 2026-07-17), authenticated via `Bearer $CRON_SECRET` against the public
+domain, scheduled in **Africa/Cairo** time:
 
-## Vercel Cron Model
+- `phoenix-notify-daily` — 6:36 AM — `/api/notifications/daily` (consolidated daily
+  run: birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment,
+  resignation SLA, weekly-plan drift check, Telegram HR digest)
+- `phoenix-process-notifications` — every 5 min — `/api/notifications/process?limit=50`
+  (drains the notification outbox, probation reminders, deferred/Telegram retries;
+  also a keep-warm heartbeat)
+- `phoenix-background-jobs` — Fridays 3:00 AM — `/api/cron/background-jobs?limit=10`
+  (drains queued admin-requested exports)
+- `phoenix-ireports360-sync` — 9:07/12:07/19:07 AM — syncs iReports360 CRM visits
+  (rolling 10-day lookback) + probation double-visit auto-tick
+- `phoenix-reconcile-visits` — Sundays 4:24 AM — weekly wide reconciliation over a
+  rotating 30-day slice of a 120-day window
 
-The current Vercel account is on **Pro** (confirmed live against the project 2026-07-02, correcting an earlier "Hobby" note).
-
-The production cron setup (`vercel.json`) is:
-
-- `/api/notifications/daily` at `30 6 * * *` -- consolidated daily run (birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift check, Telegram HR digest, outstation geocode warm-up + high-risk digest)
-- `/api/notifications/process?limit=50` at `*/30 * * * *` -- drains the notification outbox faster than once a day, plus probation reminders, deferred/Telegram delivery retries, and misc housekeeping (stale-run reaping, retention)
-- `/api/cron/ireports360-visits-sync` at `0 9,12,19 * * *` -- syncs iReports360 CRM visits (rolling 10-day lookback) + probation double-visit auto-tick
-- `/api/cron/ireports360-visits-reconcile` at `0 4 * * 0` -- weekly wide reconciliation over a rotating 30-day slice of a 120-day window
-
-The `*/30 * * * *` schedule is only possible because the account is Pro -- Vercel Hobby hard-fails deployment for any cron more frequent than daily. Notification outbox and probation reminder processing run through:
+Notification outbox and probation reminder processing run through:
 
 ```text
 src/lib/notifications/scheduled-processing.ts
 ```
 
-All 4 crons carry an explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat — see [Observability](observability.md).
-
-If the Vercel plan is ever downgraded to Hobby, fold outbox draining back into the single daily cron or move it to an external scheduler first.
+Unlike the old Vercel-cron model, Cloud Scheduler has no plan-tier frequency limit —
+the 5-minute drain schedule is not gated on any paid tier. All five crons carry an
+explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat — see
+[Observability](observability.md). The in-app `/admin/cron-control` dashboard can
+view/pause/resume/run/reschedule these live, but does not update
+`setup-gcp-cron.sh` — keep that script's flags in sync by hand after any live
+reschedule.
 
 ## Local Vercel Metadata
 
-`.vercel/` is local Vercel CLI project metadata.
+`.vercel/` may still exist locally as inert Vercel CLI metadata from before the
+Cloud Run migration.
 
 - It is intentionally ignored in `.gitignore`.
 - It should not be committed.
-- It does not represent application code.
+- It does not represent application code, and nothing in the running app reads it.
 - It can exist locally without making the Git working tree dirty.
 
 ## Security And Dependency State
@@ -114,8 +130,9 @@ For documentation-only changes, a full build is optional, but `git diff --check`
 Use this rule:
 
 ```text
-Edit on codex/work-from-production.
-Validate on preview.
+Work on a codex/<task> branch or worktree, PR'd against main.
+Validate via CI (lint, typecheck, test, build, staging-pointed smoke test).
 Keep main as production.
-Deploy production only after approval.
+Merge only after CI is green and approval is given.
+Cloud Run auto-deploys both production and staging from main after merge.
 ```

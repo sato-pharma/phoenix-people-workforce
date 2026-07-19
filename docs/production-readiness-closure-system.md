@@ -112,13 +112,16 @@ Current branch and deployment state is documented in [Current Operating State](c
 
 New production work must follow this flow:
 
-1. Work on the working branch, not `main`.
+1. Work on a branch/worktree, not `main`.
 2. Validate with typecheck, tests, build, and audit when code or dependencies change.
-3. Test the Vercel preview deployment.
-4. Promote or merge only after approval.
+3. Confirm CI's `preview-smoke` job passes (a Playwright smoke test run inside the
+   CI runner against staging Supabase — there is no deployed preview URL to test
+   directly; that was a retired Vercel-era model).
+4. Merge only after approval.
 5. Verify `https://phoenix-hr.satopharma.com` after production deployment.
 
-Do not use old Vercel deployments for validation. The project should keep only the production (`main`) and working-branch preview deployments active.
+Production and staging both auto-deploy from `main` on GCP Cloud Run after CI
+passes — there are no separate per-branch preview deployments to manage or clean up.
 
 ## Current Immediate Closure Target
 

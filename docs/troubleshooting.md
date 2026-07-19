@@ -55,13 +55,23 @@ Server-side permission checks use `assertPermission()`. If you get 403 errors, c
 
 Excel imports (payroll, employees, sales) require specific column formats. Check the relevant domain service in `src/lib/<domain>/` for expected column names and data types.
 
-### Vercel preview not updating
+### Change not showing up after push
 
-Ensure you pushed to the working branch. Check the Vercel dashboard for build errors. The preview URL may change after each push -- use the branch alias, not the deployment-specific URL.
+There is no per-branch preview deployment (that was a retired Vercel-era model).
+Verify locally, check that CI's `preview-smoke` job passed (it runs a Playwright
+smoke test inside the CI runner against staging Supabase, not a deployed URL), and
+after merge, check the staging Cloud Run service for a live look against staging
+data. If production itself looks stale after a merge, check
+`.github/workflows/deploy-cloud-run.yml`'s run for that commit.
 
 ### Cron jobs not firing
 
-The project is on Vercel Pro, which is what allows the `/api/notifications/process` cron to run every 30 minutes (Hobby hard-fails deployment for anything more frequent than daily). All 4 crons are configured in `vercel.json`. See [docs/deployment.md](deployment.md).
+Crons run on Google Cloud Scheduler (five jobs, Africa/Cairo time — see
+`scripts/setup-gcp-cron.sh`), not `vercel.json`. Check
+`gcloud scheduler jobs list --location=us-central1 --project=phoenix-workforce-498619`
+or the in-app `/admin/cron-control` dashboard for job status and last-run result,
+and confirm `CRON_SECRET` on the Cloud Run service matches what the scheduler job
+sends. See [docs/deployment.md](deployment.md).
 
 ## Getting Help
 

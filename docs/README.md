@@ -14,7 +14,7 @@
 |---|---|
 | [Architecture](architecture.md) | System overview, domains, data access model |
 | [Workflow & Route Architecture](workflow-and-route-architecture.md) | Registry- vs code-governed workflows, the `leave_requests` alias, route/app-shell ownership |
-| [Current Operating State](current-operating-state.md) | Branch strategy, deployment URLs, Vercel constraints |
+| [Current Operating State](current-operating-state.md) | Branch strategy, deployment URLs, Cloud Scheduler cron model |
 
 ## Database & Migrations
 
@@ -38,7 +38,7 @@
 |---|---|
 | [Testing](testing.md) | Test strategy, running tests, adding new tests |
 | [Scripts Reference](scripts.md) | All npm scripts with safety classifications |
-| [Deployment](deployment.md) | Vercel workflow, branch model, production verification |
+| [Deployment](deployment.md) | GCP Cloud Run deployment workflow, branch model, production verification |
 | [Troubleshooting](troubleshooting.md) | Common issues and solutions |
 
 ## Operations
