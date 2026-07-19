@@ -6,6 +6,7 @@ import {
   isDateBeforeProbationEmailFreshStart,
   PROBATION_EMAIL_FRESH_START_ISO,
 } from "../src/lib/probation/intelligence/email-fresh-start.ts";
+import { phoenixRoles } from "../src/lib/auth/permissions.ts";
 
 function src(p: string) { return readFileSync(p, "utf8"); }
 
@@ -75,7 +76,27 @@ export function runProbationEmailsTests() {
   assert.match(emails, /templateKey: "probation_weekly_digest"/, "digest emits via the registered weekly template");
   assert.match(emails, /idempotencyKeyBase: `probation:weekly-digest:\$\{c\.id\}:\$\{weekStart\}`/, "one digest per (probationer, week) — deduped");
   assert.match(emails, /\.filter\(\(c\) => c\.status === "active"\)/, "digest is per active probationer");
-  assert.match(emails, /includeTm: true, includePmGpm: true, includeSfe: true/, "digest goes to TM + PM/GPM + SFE (line chain), plus DM/NSM/CEO/HR defaults");
+  // MOD-1 originally read `includeTm: true, includePmGpm: true, includeSfe: true` here (PR #1184
+  // replaced that with an admin-configurable broadcastRoleOverride). A bare substring match against
+  // the whole file is a false-positive trap: that exact text still exists, unchanged, in the
+  // UNRELATED sendDvSnapshotEmail call above — so the old assertion kept passing while silently
+  // testing the wrong call site. Anchor on the actual weekly-digest call instead.
+  assert.match(
+    emails,
+    /resolveStakeholders\(c\.employee_hr_id,\s*\{\s*includePmGpm: true,\s*broadcastRoleOverride: weeklyDigestBroadcastRoles,\s*\}\)/,
+    "digest's resolveStakeholders call passes includePmGpm (line-matched) + broadcastRoleOverride: weeklyDigestBroadcastRoles — the admin-configurable role list, not hardcoded includeTm/includeSfe",
+  );
+
+  // ── resolveBroadcastRoleIds (extracted in PR #1184 from the old inline broadcast lookup) ──
+  assert.match(
+    emails,
+    /async function resolveBroadcastRoleIds\([\s\S]{0,200}if \(opts\.broadcastRoleOverride\) return activeHrIdsByRole\(opts\.broadcastRoleOverride\);/,
+    "resolveBroadcastRoleIds is a named, testable helper whose broadcastRoleOverride REPLACES the legacy CEO+HR(+SFE)(+TM) lookup rather than merging into it — the weekly digest's admin-configured role list depends on not being diluted by the legacy defaults",
+  );
+  assert.ok(
+    !(phoenixRoles as readonly string[]).includes("HR Manager"),
+    'resolveBroadcastRoleIds\'s legacy (non-override) activeHrIdsByRole(["HR Manager", "Super Admin"]) call effectively resolves Super Admin accounts only — "HR Manager" is a job title, not a real PhoenixRole, so it can never match a row (regression guard: goes red the moment "HR Manager" is ever promoted to a real role, which would silently expand DV-snapshot/milestone broadcast recipients)',
+  );
 
   // ── MOD-3 (2026-07-17): per-recipient daily cap gates the milestone + digest fan-out too ──
   assert.match(emails, /const allowed = input\.cap \? recipients\.filter\(\(h\) => input\.cap!\.allow\(h\)\) : recipients/,
