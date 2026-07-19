@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { BarChart3, CalendarRange, TrendingUp, GitCompare, ArrowLeftRight } from "lucide-react";
 
+import { redirect } from "next/navigation";
+
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { canViewPortalDetailedAnalytics } from "@/lib/analytics/portal-access";
+import { canViewPortalCoreAnalytics, canViewPortalDetailedAnalytics } from "@/lib/analytics/portal-access";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +71,7 @@ const DETAILED_MODULES = [
 export default async function PortalSalesAnalyticsHubPage() {
   const access = await resolveAuthenticatedPageAccess();
   await assertPermission(access, "sales", "read");
+  if (!canViewPortalCoreAnalytics(access.role)) redirect(resolveLandingPathForRole(access.role));
 
   const modules = canViewPortalDetailedAnalytics(access.role)
     ? [...CORE_MODULES, ...DETAILED_MODULES]

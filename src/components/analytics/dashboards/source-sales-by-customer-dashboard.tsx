@@ -95,7 +95,6 @@ async function ByCustomerContent({
             columns={[
               { key: "period",       label: "Period",   sortable: true },
               { key: "customerName", label: "Customer", sortable: true },
-              { key: "clientCode",   label: "Code",     sortable: true },
               { key: "line",         label: "Line",     sortable: true },
               { key: "regionName",   label: "Region",        sortable: true },
               { key: "activeBatches", label: "Active Batches", align: "right", sortable: true, formatKind: "number" },

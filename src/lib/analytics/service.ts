@@ -414,8 +414,11 @@ async function loadCrossSourceUncached(filters: CrossSourceFilters): Promise<Cro
 
 // ── Display-name enrichment ─────────────────────────────────────────────────────
 // The analytics_* RPCs return manager HR IDs and customer client codes. Phoenix shows people and
-// customers BY NAME, so resolve those to names here. Both fail OPEN: on any error the row keeps the
-// HR ID / code it was mapped with, so a lookup outage can never blank the column.
+// customers BY NAME — never by code — so resolve those to names here. On any lookup failure or
+// unresolved match, fall back to the UNKNOWN_NAME placeholder rather than the raw HR ID / client
+// code, so a directory outage or missing rollup entry can never leak a bare code into a name column.
+
+const UNKNOWN_NAME = "Unknown";
 
 async function resolveManagerNames(rows: ClosingByEmployeeRow[]): Promise<ClosingByEmployeeRow[]> {
   const ids = [...new Set(rows.map((r) => r.managerHrId).filter((v): v is string => Boolean(v)))];
@@ -426,12 +429,13 @@ async function resolveManagerNames(rows: ClosingByEmployeeRow[]): Promise<Closin
     // displayName is nickname-aware (the canonical live-UI name); key by a normalized HR ID.
     nameByKey = new Map(directory.employees.map((e) => [e.hrId.trim().toUpperCase(), e.displayName]));
   } catch {
-    return rows; // directory unavailable → keep HR IDs (already set as the managerName fallback)
+    // directory unavailable → never fall back to the raw HR ID (that's still a code)
+    return rows.map((r) => (r.managerHrId ? { ...r, managerName: UNKNOWN_NAME } : r));
   }
   return rows.map((r) => {
     if (!r.managerHrId) return r;
     const name = nameByKey.get(r.managerHrId.trim().toUpperCase());
-    return name ? { ...r, managerName: name } : r;
+    return { ...r, managerName: name ?? UNKNOWN_NAME };
   });
 }
 
@@ -456,12 +460,10 @@ async function resolveCustomerNames(rows: SosByCustomerRow[]): Promise<SosByCust
       }
     }
   } catch {
-    return rows; // rollup unavailable → keep codes (already set as the customerName fallback)
+    // rollup unavailable → never fall back to the raw client code (that's still a code)
+    return rows.map((r) => ({ ...r, customerName: UNKNOWN_NAME }));
   }
-  return rows.map((r) => {
-    const name = nameByCode.get(r.clientCode);
-    return name ? { ...r, customerName: name } : r;
-  });
+  return rows.map((r) => ({ ...r, customerName: nameByCode.get(r.clientCode) ?? UNKNOWN_NAME }));
 }
 
 // ── Row mappers ───────────────────────────────────────────────────────────────
@@ -557,7 +559,7 @@ function mapSosCustomerRow(r: Record<string, unknown>): SosByCustomerRow {
     year:          n(r.year),
     month:         n(r.month),
     clientCode:    s(r.client_code),
-    customerName:  s(r.client_code), // fallback to code; resolved to a name in resolveCustomerNames()
+    customerName:  s(r.client_code), // placeholder only; always overwritten (name or UNKNOWN_NAME) by resolveCustomerNames()
     line:          s(r.line),
     regionCode:    s(r.region_code),
     regionName:    s(r.region_name),
@@ -572,7 +574,7 @@ function mapClosingEmployeeRow(r: Record<string, unknown>): ClosingByEmployeeRow
     employeeHrId:    r.employee_hr_id   != null ? s(r.employee_hr_id)  : null,
     employeeName:    r.employee_name    != null ? s(r.employee_name)   : null,
     managerHrId:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null,
-    managerName:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null, // fallback to HR ID; resolved in resolveManagerNames()
+    managerName:     r.manager_hr_id    != null ? s(r.manager_hr_id)   : null, // placeholder only; always overwritten (name or UNKNOWN_NAME) by resolveManagerNames()
     territory:       r.territory        != null ? s(r.territory)        : null,
     salesValue:      n(r.sales_value),
     targetValue:     n(r.target_value),

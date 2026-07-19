@@ -11,7 +11,7 @@ import { type PhoenixRole } from "@/lib/auth/permissions";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 import { loadAnalyticsDimensions, loadCrossSource, type AnalyticsDimensions, type CrossSourceRow } from "@/lib/analytics/service";
 import { parseAnalyticsFilters } from "@/lib/analytics/filter-registry";
-import { EXECUTIVE_FILTERS } from "@/lib/analytics/sales-filter-config";
+import { RECONCILIATION_FILTERS } from "@/lib/analytics/sales-filter-config";
 import { scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilterVisibility, type AnalyticsViewerScope } from "@/lib/analytics/scope";
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoCrossSource } from "@/lib/analytics/demo-fixtures";
@@ -34,7 +34,7 @@ async function ReconciliationContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
-  const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
+  const filters = parseAnalyticsFilters(searchParams, RECONCILIATION_FILTERS);
 
   const crossSourceFilters = {
     periodFrom: typeof filters.periodFrom === "string" ? filters.periodFrom : null,
@@ -84,7 +84,7 @@ async function ReconciliationContent({
       {demo ? <AnalyticsDemoBanner /> : null}
 
       <AnalyticsFilterBar
-        descriptors={EXECUTIVE_FILTERS}
+        descriptors={RECONCILIATION_FILTERS}
         values={filters}
         dimensions={scopeAnalyticsDimensions(dimensions, scope)}
         visibility={computeAnalyticsFilterVisibility(scope)}

@@ -353,6 +353,17 @@ export function SosDashboard({
   // matching filter — reuses the exact same state the dropdowns write to, so the filter chip
   // count, the queryKey refetch and the export link all stay in sync automatically.
   const handleRowClick = (dimension: "regions" | "areas" | "distributors" | "products", code: string) => {
+    // Drilling into a row means "include this code". Reset the dimension's mode to "include" FIRST —
+    // otherwise, if the user had toggled that filter to "exclude" mode, adding the clicked code would
+    // EXCLUDE it (hiding the row's own data) instead of drilling in. Mirrors the portal dashboards'
+    // toggleFilter, which setMode(key, "include") before the toggle (portal-sos-dashboard-impl.tsx,
+    // portal-weekly-dashboard-impl.tsx).
+    const setModeForDimension =
+      dimension === "regions" ? setRegionMode
+      : dimension === "areas" ? setAreaMode
+      : dimension === "distributors" ? setDistMode
+      : setProductMode;
+    setModeForDimension("include");
     setFilters((current) => {
       const list = current[dimension];
       const next = list.includes(code) ? list.filter((existing) => existing !== code) : [...list, code];
@@ -402,34 +413,13 @@ export function SosDashboard({
     for (const row of pareto) map.set(row.code.toUpperCase(), row.abcClass);
     return map;
   }, [pareto]);
-  const productMomByCode = useMemo(() => {
-    const map = new Map<string, number>();
-    if (mom) {
-      for (const row of [...mom.movers.products.gainers, ...mom.movers.products.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
-    }
-    return map;
-  }, [mom]);
-  const distributorMomByCode = useMemo(() => {
-    const map = new Map<string, number>();
-    if (mom) {
-      for (const row of [...mom.movers.distributors.gainers, ...mom.movers.distributors.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
-    }
-    return map;
-  }, [mom]);
-  const productYoyByCode = useMemo(() => {
-    const map = new Map<string, number>();
-    if (yoy) {
-      for (const row of [...yoy.movers.products.gainers, ...yoy.movers.products.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
-    }
-    return map;
-  }, [yoy]);
-  const distributorYoyByCode = useMemo(() => {
-    const map = new Map<string, number>();
-    if (yoy) {
-      for (const row of [...yoy.movers.distributors.gainers, ...yoy.movers.distributors.decliners]) map.set(row.code.toUpperCase(), row.deltaPct);
-    }
-    return map;
-  }, [yoy]);
+  // MoM/YoY Δ columns read from deltaPctByCode (EVERY row's delta), not the capped top-5 movers —
+  // otherwise any row outside the top gainers/decliners showed "—" despite having valid prior data.
+  // Keys are already normalized (upper/trim) server-side; the movers widget still uses .movers.
+  const productMomByCode = useMemo(() => new Map(Object.entries(mom?.deltaPctByCode.products ?? {})), [mom]);
+  const distributorMomByCode = useMemo(() => new Map(Object.entries(mom?.deltaPctByCode.distributors ?? {})), [mom]);
+  const productYoyByCode = useMemo(() => new Map(Object.entries(yoy?.deltaPctByCode.products ?? {})), [yoy]);
+  const distributorYoyByCode = useMemo(() => new Map(Object.entries(yoy?.deltaPctByCode.distributors ?? {})), [yoy]);
 
   const activeFilterCount =
     filters.periods.length +

@@ -90,10 +90,16 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
   // import never read different tabs.
   const sheet = pickBestSheet(workbook, profile);
   if (!sheet) {
-    const maps = await loadCrosswalks(refs);
-    const result = normalizeRows(sheet as unknown as ExcelJS.Worksheet, profile, maps);
-    const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-    return { status: "ok", result, period: null, distributorName: profile.distributorName, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
+    // The workbook parsed but has no usable data sheet (zero worksheets / all empty). Return the
+    // normal "header_error" the callers already handle, instead of force-casting `undefined` into
+    // normalizeRows — that crashed with "Cannot read properties of undefined (reading 'rowCount')"
+    // and surfaced as a raw 500 rather than a clean validation message.
+    return {
+      status: "header_error",
+      distributorName: profile.distributorName,
+      missingGroups: [{ label: "Worksheet", expected: ["a non-empty data sheet"] }],
+      observedHeaders: [],
+    };
   }
 
   // Coded-sheet detection: Phoenix-branded coded sheets carry "Product ID" / "Distrub ID" — raw

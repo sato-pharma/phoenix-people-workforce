@@ -81,6 +81,18 @@ async function ByLineContent({
     }))
     .sort((a, b) => b.salesValue - a.salesValue);
 
+  // Period-level detail — mirrors the Summary + period-level Detail pattern used by the SoS
+  // by-line/by-area/by-product tabs, so this tab isn't just a single all-time rollup.
+  const periodLineMap = new Map<string, { period: string; line: string; salesValue: number; targetValue: number }>();
+  for (const r of rows) {
+    const key = `${r.period}||${r.line}`;
+    const cur = periodLineMap.get(key) ?? { period: r.period, line: r.line, salesValue: 0, targetValue: 0 };
+    periodLineMap.set(key, { ...cur, salesValue: cur.salesValue + r.salesValue, targetValue: cur.targetValue + r.targetValue });
+  }
+  const periodLineRows = [...periodLineMap.values()]
+    .map((t) => ({ ...t, achievementPct: safeDividePct(t.salesValue, t.targetValue) }))
+    .sort((a, b) => a.period.localeCompare(b.period) || b.salesValue - a.salesValue);
+
   return (
     <div className="space-y-5">
       {demo ? <AnalyticsDemoBanner /> : null}
@@ -112,6 +124,26 @@ async function ByLineContent({
             }}
             exportTitle="Closing By Line"
             exportSubtitle="Monthly closing sales vs target by product line"
+          />
+        )}
+      </AnalyticsSection>
+
+      <AnalyticsSection title="Period × Line Detail" count={periodLineRows.length}>
+        {periodLineRows.length === 0 ? (
+          <AnalyticsEmptyState />
+        ) : (
+          <AnalyticsDataTable
+            searchKeys={["line", "period"]}
+            columns={[
+              { key: "period",         label: "Period",   sortable: true },
+              { key: "line",           label: "Line",      sortable: true },
+              { key: "salesValue",     label: "Sales (EGP)",  align: "right", sortable: true, formatKind: "number" },
+              { key: "targetValue",    label: "Target (EGP)", align: "right", sortable: true, formatKind: "number" },
+              { key: "achievementPct", label: "Achiev %", align: "right", sortable: true, formatKind: "percent" },
+            ]}
+            rows={periodLineRows}
+            exportTitle="Closing By Line — Detail"
+            exportSubtitle="Period-level monthly closing sales vs target by product line"
           />
         )}
       </AnalyticsSection>

@@ -432,8 +432,12 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
                   </span>
                 </td>
                 <td className="px-3 py-2 text-[#64748B] tabular-nums">{row.weekStart ?? "—"}</td>
-                <td className="px-3 py-2 text-right font-bold tabular-nums text-[#0F172A]">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.salesUnits)}</td>
+                <td className="px-3 py-2 text-right font-bold tabular-nums text-[#0F172A]">
+                  {row.salesValue == null ? <span className="text-[#94A3B8]">—</span> : money(row.salesValue)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">
+                  {row.salesUnits == null ? <span className="text-[#94A3B8]">—</span> : num(row.salesUnits)}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.stockUnits)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {row.deltaValuePct == null ? <span className="text-[#94A3B8]">—</span> : <DeltaPct value={row.deltaValuePct} />}

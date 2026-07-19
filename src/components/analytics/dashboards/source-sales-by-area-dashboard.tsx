@@ -68,6 +68,18 @@ async function ByAreaContent({
     ]);
   }
 
+  // Area is the grain this tab is named for — key by areaCode (not name, which can collide
+  // across regions) and carry regionName along for context. Leads the page so "By Area" actually
+  // shows areas first; the region rollup below stays as a secondary, coarser view of the same data.
+  const areaMap = new Map<string, { areaName: string; regionName: string; units: number; value: number }>();
+  for (const r of byArea) {
+    const cur = areaMap.get(r.areaCode) ?? { areaName: r.areaName, regionName: r.regionName, units: 0, value: 0 };
+    areaMap.set(r.areaCode, { ...cur, units: cur.units + r.units, value: cur.value + r.value });
+  }
+  const areaTotals = [...areaMap.entries()]
+    .map(([areaCode, t]) => ({ areaCode, ...t }))
+    .sort((a, b) => b.value - a.value);
+
   const regionMap = new Map<string, { units: number; value: number }>();
   for (const r of byArea) {
     const cur = regionMap.get(r.regionName) ?? { units: 0, value: 0 };
@@ -88,6 +100,26 @@ async function ByAreaContent({
         visibility={computeAnalyticsFilterVisibility(scope)}
         basePath={`${mountRoot}/source-sales/by-area`}
       />
+
+      <AnalyticsSection title="Area Summary" count={areaTotals.length}>
+        {areaTotals.length === 0 ? (
+          <AnalyticsEmptyState />
+        ) : (
+          <AnalyticsDataTable
+            searchKeys={["areaName", "regionName"]}
+            columns={[
+              { key: "areaName",   label: "Area",   sortable: true },
+              { key: "regionName", label: "Region", sortable: true },
+              { key: "units",      label: "Units",  align: "right", sortable: true, formatKind: "number" },
+              { key: "value",      label: "Value (EGP)", align: "right", sortable: true, formatKind: "number" },
+            ]}
+            rows={areaTotals}
+            totals={{ value: areaTotals.reduce((s, r) => s + r.value, 0) }}
+            exportTitle="SoS By Area"
+            exportSubtitle="Source of Sales aggregated by area"
+          />
+        )}
+      </AnalyticsSection>
 
       <AnalyticsSection title="Region Summary" count={regionTotals.length}>
         {regionTotals.length === 0 ? (

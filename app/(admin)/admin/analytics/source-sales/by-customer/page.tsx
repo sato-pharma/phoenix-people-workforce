@@ -1,7 +1,10 @@
+import { redirect } from "next/navigation";
+
 import { SourceSalesByCustomerDashboard } from "@/components/analytics/dashboards/source-sales-by-customer-dashboard";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveAnalyticsViewerScope } from "@/lib/analytics/scope";
+import { canViewAdminCoreAnalytics } from "@/lib/analytics/portal-access";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +14,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 export default async function SourceSalesByCustomerAnalyticsPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await resolveAuthenticatedPageAccess();
   await assertPermission(access, "sales", "read");
+  if (!canViewAdminCoreAnalytics(access.role)) redirect("/admin/analytics");
   const scope = await resolveAnalyticsViewerScope(access);
   const resolvedParams = await searchParams;
 
