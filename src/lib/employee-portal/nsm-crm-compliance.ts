@@ -1,4 +1,4 @@
-import { queryVisits } from "@/lib/crm/reads";
+import { hasRealVendorTime, queryVisits } from "@/lib/crm/reads";
 
 // NSM "first CRM visit" compliance for the noon (12 PM Cairo) iReports360 sync:
 // who on the NSM's line has / hasn't submitted a real field visit today, plus the
@@ -26,7 +26,6 @@ type VisitRow = {
   agent_hr_id: string | null;
   double_hr_id: string | null;
   crm_save_date: string | null;
-  visit_date_time: string | null;
   synced_at: string | null;
   visit_type: number | null;
 };
@@ -51,7 +50,7 @@ async function fetchVisitsForDate(date: string): Promise<VisitRow[]> {
   return queryVisits<VisitRow>({
     dateFrom: date,
     dateTo: date,
-    columns: "agent_hr_id, double_hr_id, crm_save_date, visit_date_time, synced_at, visit_type",
+    columns: "agent_hr_id, double_hr_id, crm_save_date, synced_at, visit_type",
   });
 }
 
@@ -84,7 +83,11 @@ export async function getNsmCrmCompliance(input: {
     }
     if (!isRealVisit(row.visit_type)) continue;
 
-    const stamp = row.crm_save_date ?? row.visit_date_time ?? row.synced_at;
+    // Early-bird ranking is by SUBMISSION time (crm_save_date) only — never the visit_date_time
+    // midnight placeholder (which would rank a rep as spuriously "earliest"), nor synced_at (the
+    // sync clock, not the rep's own submission). A row without a real save time still counts as
+    // submitted below, but can never be an early bird (when = MAX_SAFE_INTEGER).
+    const stamp = hasRealVendorTime(row.crm_save_date) ? row.crm_save_date : null;
     const parsed = stamp ? Date.parse(stamp) : NaN;
     const when = Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
 

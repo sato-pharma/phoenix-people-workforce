@@ -24,6 +24,7 @@ import type {
   VisitsReportExportResult,
   VisitsReportFilterInput,
   VisitsReportRow,
+  VisitTimeSource,
 } from "@/lib/visits-report/types";
 
 export type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
@@ -448,6 +449,10 @@ const visitReportColumns =
   "double_hr_id, double_name, visit_date, visit_date_time, visit_type, visit_type_description";
 
 export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
+  const crmSaveDate = (row.crm_save_date as string | null) ?? null;
+  // Save-time tier only — no GPS check-in has been correlated yet; attachNearestCheckins upgrades
+  // visitTime to the GPS check-in when one is matched.
+  const resolved = resolveVisitTime({ nearestCheckinTime: null, crmSaveDate });
   return {
     agentCrmId: Number(row.agent_crm_id),
     agentHrId: (row.agent_hr_id as string | null) ?? null,
@@ -458,7 +463,7 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     comment: (row.comment as string | null) ?? null,
     contactCrmId: row.contact_crm_id == null ? null : Number(row.contact_crm_id),
     contactName: (row.contact_name as string | null) ?? null,
-    crmSaveDate: (row.crm_save_date as string | null) ?? null,
+    crmSaveDate,
     crmVisitId: Number(row.crm_visit_id),
     customerName: (row.customer_name as string | null) ?? null,
     doubleCrmId: row.double_crm_id == null ? null : Number(row.double_crm_id),
@@ -469,9 +474,47 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     nearestCheckinTime: null,
     visitDate: row.visit_date as string,
     visitDateTime: (row.visit_date_time as string | null) ?? null,
+    visitTime: resolved.time,
+    visitTimeSource: resolved.source,
     visitType: row.visit_type == null ? null : Number(row.visit_type),
     visitTypeDescription: (row.visit_type_description as string | null) ?? null,
   };
+}
+
+export type { VisitTimeSource } from "@/lib/visits-report/types";
+export type ResolvedVisitTime = { time: string | null; source: VisitTimeSource };
+
+/**
+ * True only for a vendor timestamp that carries a REAL time-of-day. iReports360's
+ * `visit_date_time` is `00:00:00` on ~100% of rows, and `crm_save_date` is midnight on ~3% — a
+ * midnight value is a date-only placeholder with no usable clock, so it is treated as "no time".
+ * Vendor timestamps are stored as Cairo wall-clock (see crm/sync.ts); this inspects only the
+ * time-of-day portion of the stored string, never a timezone.
+ */
+export function hasRealVendorTime(value: string | null | undefined): value is string {
+  if (!value) return false;
+  const time = String(value).slice(11, 19); // "HH:MM:SS" of "YYYY-MM-DD[ T]HH:MM:SS…"
+  return time.length === 8 && time !== "00:00:00";
+}
+
+/**
+ * THE single authoritative "visit time" for a mirror visit row — used by every surface that shows
+ * a visit's time, so no two screens disagree. iReports360 records no on-site visit time
+ * (`visit_date_time` is a midnight placeholder on ~100% of rows), so the canonical waterfall is:
+ *   1. the matched GPS check-in time (`nearestCheckinTime`) — closest to real on-site presence;
+ *   2. else the rep's save/submission time (`crmSaveDate`), when it carries a real clock;
+ *   3. else none.
+ * It NEVER falls back to `visit_date_time`. The GPS tier only applies once `nearestCheckinTime`
+ * has been populated by {@link attachNearestCheckins} (or an equivalent pickCheckinForVisit call);
+ * callers that do not correlate check-ins simply resolve to the save-time tier.
+ */
+export function resolveVisitTime(row: {
+  nearestCheckinTime?: string | null;
+  crmSaveDate?: string | null;
+}): ResolvedVisitTime {
+  if (hasRealVendorTime(row.nearestCheckinTime)) return { time: row.nearestCheckinTime, source: "gps_checkin" };
+  if (hasRealVendorTime(row.crmSaveDate)) return { time: row.crmSaveDate, source: "save_time" };
+  return { time: null, source: "none" };
 }
 
 /** Applies the shared filter set (date range, agent, search, visit type, AM/PM, mapping
@@ -549,7 +592,16 @@ async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, 
       index,
     );
     if (!match) return row;
-    return { ...row, nearestCheckinAddress: match.address, nearestCheckinTime: match.check_date };
+    // A matched GPS check-in is the real on-site time — upgrade visitTime from the save-time tier
+    // to the GPS tier (a rep often logs/saves hours later, even the next morning).
+    const resolved = resolveVisitTime({ nearestCheckinTime: match.check_date, crmSaveDate: row.crmSaveDate });
+    return {
+      ...row,
+      nearestCheckinAddress: match.address,
+      nearestCheckinTime: match.check_date,
+      visitTime: resolved.time,
+      visitTimeSource: resolved.source,
+    };
   });
 }
 

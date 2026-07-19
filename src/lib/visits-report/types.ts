@@ -2,6 +2,10 @@ export type VisitsSyncTrigger = "cron" | "manual" | "manual_backfill";
 export type VisitsSyncStatus = "running" | "success" | "failed";
 export type VisitsMappingStatus = "agent_unmapped" | "double_unmapped" | "either_unmapped" | "fully_mapped";
 
+/** Where a visit's canonical time came from: the GPS check-in (real on-site presence), the rep's
+ * save/submission time (a proxy — often logged hours later or the next morning), or none. */
+export type VisitTimeSource = "gps_checkin" | "save_time" | "none";
+
 export type VisitsReportRow = {
   agentCrmId: number;
   agentHrId: string | null;
@@ -24,6 +28,11 @@ export type VisitsReportRow = {
   nearestCheckinTime: string | null;
   visitDate: string;
   visitDateTime: string | null;
+  /** The ONE authoritative visit time (Africa/Cairo wall-clock — render with NO timezone shift):
+   * the matched GPS check-in time when present, else the rep's save/submission time. NEVER the
+   * `visit_date_time` midnight placeholder. Computed via resolveVisitTime in the CRM read layer. */
+  visitTime: string | null;
+  visitTimeSource: VisitTimeSource;
   visitType: number | null;
   visitTypeDescription: string | null;
 };

@@ -14,7 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
@@ -89,7 +89,9 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
-  { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "The real time the agent saved/submitted this visit in the CRM (Cairo time) — the one authoritative visit timestamp. Logged time, not GPS-verified proof of being on site." },
+  { key: "visit_time", kind: "datetime_local", label: "Visit Time", note: "The ONE authoritative visit time (Cairo): the GPS check-in time when the visit has one (real on-site presence), otherwise the rep's logged/save time. The 'Source' column says which. Never the empty midnight placeholder." },
+  { key: "visit_time_source", kind: "text", label: "Visit Time Source", note: "'GPS check-in' = the visit time above is a real GPS check-in (on site). 'Logged/save' = it is the submission time only, which a rep often logs hours later or the next morning — treat as approximate." },
+  { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "When the agent saved/submitted this visit in the CRM (Cairo time). This is paperwork time, NOT proof of being on site — reps frequently batch-log visits later, even after midnight. Prefer the Visit Time column above." },
   { key: "ampm", kind: "text", label: "AM/PM" },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },
   { key: "agent_hr_id", kind: "text", label: "Agent HR ID" },
@@ -382,9 +384,22 @@ const CHECKIN_MERGE_KEYS = [
  * Cairo-local so the gap is consistent. Mutates rows in place; best-effort (leaves nulls on failure
  * or no same-contact match). Only the current page of visits is correlated.
  */
+/** Human label for the visit_time_source text column (the master renders raw values, no enum kind). */
+function visitTimeSourceLabel(source: "gps_checkin" | "save_time" | "none"): string | null {
+  return source === "gps_checkin" ? "GPS check-in" : source === "save_time" ? "Logged/save" : null;
+}
+
 async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   for (const row of rows) {
     for (const key of CHECKIN_MERGE_KEYS) row[key] = null;
+    // Save-tier visit time up front (no check-in correlated yet); upgraded to the GPS tier below
+    // for any row that matches a check-in. Always set, even on the early-return path.
+    const saveTier = resolveVisitTime({
+      nearestCheckinTime: null,
+      crmSaveDate: typeof row.crm_save_date === "string" ? row.crm_save_date : null,
+    });
+    row.visit_time = saveTier.time;
+    row.visit_time_source = visitTimeSourceLabel(saveTier.source);
   }
   const agentIds = Array.from(
     new Set(rows.map((r) => r.agent_crm_id).filter((v): v is number => typeof v === "number")),
@@ -426,6 +441,14 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     if (!best) continue;
     row.checkin_id = best.crm_checkin_id;
     row.checkin_time = best.check_date;
+    // A matched GPS check-in is the real on-site time — upgrade the canonical visit time from the
+    // save tier to the GPS tier (the rep's save time is often hours later, even the next morning).
+    const gpsTier = resolveVisitTime({
+      nearestCheckinTime: best.check_date,
+      crmSaveDate: typeof row.crm_save_date === "string" ? row.crm_save_date : null,
+    });
+    row.visit_time = gpsTier.time;
+    row.visit_time_source = visitTimeSourceLabel(gpsTier.source);
     row.checkin_agent_crm_id = best.agent_crm_id;
     row.checkin_agent_hr_id = best.agent_hr_id;
     row.checkin_contact_id = best.contact_crm_id;

@@ -50,6 +50,8 @@ function formatTime(value: string | null) {
 
 const exportColumns: ExportColumn[] = [
   { key: "date", label: "Date" },
+  { key: "visitTime", label: "Visit Time" },
+  { key: "visitTimeSource", label: "Visit Time Source" },
   { key: "crmSaveDate", label: "CRM Save Date" },
   { key: "agent", label: "Agent" },
   { key: "agentHrId", label: "Agent HR ID" },
@@ -67,6 +69,8 @@ const exportColumns: ExportColumn[] = [
 function toExportRow(row: VisitsReportRow): ExportRow {
   return {
     date: row.visitDate,
+    visitTime: row.visitTime ? formatTime(row.visitTime) : "—",
+    visitTimeSource: row.visitTimeSource === "gps_checkin" ? "GPS check-in" : row.visitTimeSource === "save_time" ? "Logged/save" : "—",
     crmSaveDate: row.crmSaveDate ? formatDateTime(row.crmSaveDate) : "—",
     agent: row.agentName ?? "—",
     agentHrId: row.agentHrId ?? "unmapped",
@@ -726,6 +730,7 @@ export function VisitsReportWorkspace({
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300" title="The authoritative visit time: GPS check-in when available (real on-site presence), otherwise the rep's logged/save time.">Visit Time</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Save Date</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent HR ID</th>
@@ -741,11 +746,29 @@ export function VisitsReportWorkspace({
               </thead>
               <tbody className="divide-y divide-orange-100">
                 {data.rows.length === 0 ? (
-                  <tr><td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
+                  <tr><td colSpan={13} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
                 ) : (
                   data.rows.map((row, index) => (
                     <tr key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                       <td className="whitespace-nowrap px-3 py-2.5">{formatDate(row.visitDate)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        {row.visitTime ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-900">{formatTime(row.visitTime)}</span>
+                            <span
+                              className={cn(
+                                "rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                                row.visitTimeSource === "gps_checkin" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500",
+                              )}
+                              title={row.visitTimeSource === "gps_checkin" ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
+                            >
+                              {row.visitTimeSource === "gps_checkin" ? "GPS" : "Logged"}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.crmSaveDate ? formatDateTime(row.crmSaveDate) : "—"}</td>
                       <td className="px-3 py-2.5 font-medium text-slate-900">{row.agentName ?? "—"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
