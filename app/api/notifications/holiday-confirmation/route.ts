@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 
-import { systemAdministratorRoles } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -24,10 +24,11 @@ function isAuthorized(request: Request) {
 }
 
 async function resolveSystemAdminRecipients() {
+  const roles = await resolveNotificationRoleRecipients("holiday_confirmation_reminder");
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("login_id,hr_id")
-    .in("role", [...systemAdministratorRoles])
+    .in("role", roles)
     .eq("is_active", true);
   if (error) return [];
   return ((data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>).map((row) => ({

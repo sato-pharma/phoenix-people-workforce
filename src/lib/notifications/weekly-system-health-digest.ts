@@ -7,6 +7,7 @@ import {
 } from "@/lib/error-monitor/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { createSystemNotification, type SystemNotificationResult } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Weekly System Health digest — a once-a-week Telegram/in-app push of the /admin/system-issues
@@ -17,9 +18,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // Sunday (start of the Egyptian work week) in Africa/Cairo. 0=Sun … 6=Sat.
 const DIGEST_WEEKDAY = 0;
 const WINDOW_DAYS = 7;
-// Super Admin only — this is a technical/security summary, deliberately narrower than the
-// System Issues dashboard's CEO+SA read access and the HR-Manager daily HR digest.
-const DIGEST_AUDIENCE_ROLES = ["Super Admin"] as const;
 const TOP_BRUTE_FORCE_IPS = 3;
 
 const DAY_MAP: Record<string, number> = { Fri: 5, Mon: 1, Sat: 6, Sun: 0, Thu: 4, Tue: 2, Wed: 3 };
@@ -63,10 +61,11 @@ async function resolveHealthRecipients(): Promise<{ recipients: HealthRecipient[
   const warnings: string[] = [];
   const recipients: HealthRecipient[] = [];
   try {
+    const roles = await resolveNotificationRoleRecipients("weekly_system_health_digest");
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,is_active")
-      .in("role", DIGEST_AUDIENCE_ROLES as unknown as string[])
+      .in("role", roles)
       .eq("is_active", true);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {

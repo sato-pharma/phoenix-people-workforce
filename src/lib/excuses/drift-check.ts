@@ -1,16 +1,16 @@
 // Daily drift detector for excuse requests stuck on a resigned/missing manager. Structurally
 // mirrors src/lib/weekly-planning/drift-check.ts: it reads v2_excuse_requests in `pending_manager`
 // whose assigned manager is null / missing from the directory / resigned or inactive
-// (cross-referenced against getEmployeeDirectoryRows), then alerts Super Admins with
-// the real request list so HR can reassign the approver (Approvals Hub → Stuck approvals).
+// (cross-referenced against getEmployeeDirectoryRows), then alerts the admin-configured recipient
+// roles (see notification_role_policies, key "excuse_drift_alert") with the real request list so
+// HR can reassign the approver (Approvals Hub → Stuck approvals).
 // Empty result → no notification (no zero-row spam). Idempotent via a per-recipient per-day key.
 
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const ALERT_RECIPIENT_ROLES = ["Super Admin"] as const;
 
 export type ExcuseManagerGapRecord = {
   requestId: string;
@@ -81,10 +81,11 @@ export async function listExcuseManagerGapRecords(): Promise<ExcuseManagerGapRec
 }
 
 async function resolveDriftAlertRecipients(): Promise<string[]> {
+  const roles = await resolveNotificationRoleRecipients("excuse_drift_alert");
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ALERT_RECIPIENT_ROLES as unknown as string[])
+    .in("role", roles)
     .eq("is_active", true);
   if (error) return [];
   const hrIds = new Set<string>();
