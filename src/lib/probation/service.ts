@@ -114,7 +114,7 @@ async function resolveActiveHrApproverHrIds(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["HR Manager", "Super Admin"])
+    .in("role", ["Super Admin"])
     .eq("is_active", true);
   if (error) return [];
   return ((data ?? []) as Array<{ hr_id?: string | null }>)

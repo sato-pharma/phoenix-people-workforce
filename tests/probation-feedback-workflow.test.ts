@@ -98,6 +98,8 @@ export function runProbationFeedbackWorkflowTests() {
     "reminder 3 (overdue) CCs CEO + HR + Super Admin");
   assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
     "HR must not be CC'd on the escalated warning (volume fix preserved)");
+  assert.match(rem, /activeHrIdsByRole\(\["Super Admin"\]\)/,
+    "HR approver lookup must be Super Admin only — \"HR Manager\" is a job title, not an app_auth_users.role value");
   assert.match(rem, /const SYSTEM_ADMIN_CC_HR_ID = "B-10"/,
     "the System Admin CC routes to the real system-administrator account B-10 (PHX-1 has no deliverable mailbox)");
   assert.match(rem, /\.eq\("hr_id", SYSTEM_ADMIN_CC_HR_ID\)/,

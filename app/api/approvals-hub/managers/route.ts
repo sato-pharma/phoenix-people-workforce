@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_CALLER_ROLES = new Set(["Super Admin", "HR Manager"]);
+const ALLOWED_CALLER_ROLES = new Set(["Super Admin"]);
 
 export async function GET(request: Request) {
   try {
