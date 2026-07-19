@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, Target } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type {
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusTrendPoint,
@@ -11,7 +12,12 @@ import type {
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+  });
 }
 
 function DvTrendBlock({ trend, reportHref }: { trend: DoubleVisitFocusTrendPoint[]; reportHref: string }) {

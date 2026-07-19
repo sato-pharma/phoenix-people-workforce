@@ -36,6 +36,7 @@ import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import type { AdminCommandCenterData, DataHealthMetrics } from "@/lib/admin/command-center";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 export type CommandCenterWelcomeProfile = {
   fullName: string;
@@ -607,7 +608,11 @@ export function AdminCommandCenter({
   }
 
   const now = Date.parse(generatedAt);
-  const generatedAtLabel = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(now);
+  const generatedAtLabel = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+  }).format(now);
   const heroDescription = isHrSpecialistWorkspace
     ? "Focused people operations, hiring workflow, leave governance, coaching, and HR communication in one workspace."
     : showFinancialModules

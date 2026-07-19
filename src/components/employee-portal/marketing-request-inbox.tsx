@@ -21,6 +21,7 @@ import type {
   MarketingApproverInboxRow,
   MarketingApproverInboxWorkspace,
 } from "@/lib/marketing-requests/service";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Helpers ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -42,6 +43,7 @@ function formatDate(value: string | null) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
   });
 }
 

@@ -57,6 +57,7 @@ import {
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { formatDateOnly } from "@/lib/date-only";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
@@ -104,7 +105,7 @@ function periodLabel(value: string) {
   const year = Number(yearText);
   const month = Number(monthText);
   if (!year || !month) return value;
-  return new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
+  return new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
 }
@@ -114,7 +115,7 @@ function periodMonthLabel(value: string) {
   const year = Number(yearText);
   const month = Number(monthText);
   if (!year || !month) return value;
-  return new Intl.DateTimeFormat("en", { month: "short" }).format(
+  return new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
 }
@@ -2359,6 +2360,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
         minute: "2-digit",
         month: "short",
         year: "numeric",
+        timeZone: PHOENIX_BUSINESS_TIME_ZONE,
       }).format(new Date(iso));
     } catch {
       return iso;
