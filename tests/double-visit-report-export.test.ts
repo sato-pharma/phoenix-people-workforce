@@ -98,6 +98,7 @@ function reportData(overrides: Partial<DoubleVisitReportData> = {}): DoubleVisit
     filters: { areas: ["North Cairo", "South Giza"], doubleVisitorRoles: ["District Manager", "Regional Manager"], doubleVisitors: ["Sara.Fahmy", "Mona.Adel"], regions: ["Cairo", "Giza"], visitKinds: ["Regular", "Campaign"] },
     neverVisited: NEVER_VISITED_ROWS,
     probation: PROBATION_ROWS,
+    roster: [],
     rows: LOG_ROWS,
     schemaReady: true,
     ...overrides,
