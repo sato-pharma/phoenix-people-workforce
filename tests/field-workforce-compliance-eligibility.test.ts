@@ -99,6 +99,13 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "2", crmUsername: "Admin.Two", employmentStatus: "active", fullName: "Admin Two", displayName: "Admin Two", hireDate: "2024-01-01", hrId: "A-2", jobTitle: "Admin Assistant", positionTitle: null },
     // Departed employee — excluded even though eligible role.
     { crmId: "9", crmUsername: "Gone.Nine", employmentStatus: "resigned", fullName: "Gone Nine", displayName: "Gone Nine", hireDate: "2024-01-01", hrId: "A-9", jobTitle: "Medical Representative", positionTitle: null },
+    // Regression guard (2026-07-18 production leak): a bespoke status-string check here used
+    // to recognize only "terminated"/"resigned"/"inactive" and missed these two values, so 15
+    // historical_payroll_record employees (and system_placeholder rows) leaked into the live
+    // Workforce Compliance view. Now routed through the same canonical classifyEmployeeNode
+    // used everywhere else in the app.
+    { crmId: "10", crmUsername: "Historical.Ten", employmentStatus: "historical_payroll_record", fullName: "Historical Ten", displayName: "Historical Ten", hireDate: "2024-01-01", hrId: "A-10", jobTitle: "District Sales Manager", positionTitle: null },
+    { crmId: "11", crmUsername: "Sys.Eleven", employmentStatus: "system_placeholder", fullName: "System Eleven", displayName: "System Eleven", hireDate: "2024-01-01", hrId: "A-11", jobTitle: "National Sales Manager", positionTitle: null },
   ];
 
   const { matrix } = buildIReports360FieldWorkforceMatrix({
@@ -114,9 +121,14 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     ],
   });
 
-  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two & Gone Nine excluded.
+  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two, Gone Nine, Historical
+  // Ten (historical_payroll_record) & System Eleven (system_placeholder) all excluded.
   const hrIds = matrix.slice(1).map((row) => row[1]);
-  assert.deepEqual([...hrIds].sort(), ["A-1", "A-5", "A-6"], "only eligible, active employees appear");
+  assert.deepEqual(
+    [...hrIds].sort(),
+    ["A-1", "A-5", "A-6"],
+    "only eligible, active employees appear — historical_payroll_record and system_placeholder are excluded too, not just resigned/terminated/inactive",
+  );
 
   const repRow = matrix.find((row) => row[1] === "A-1")!;
   const mgrFiveRow = matrix.find((row) => row[1] === "A-5")!;
@@ -290,6 +302,51 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.ok(
     !sfeReport.payrollRecommendations.some((rec) => rec.employeeCode === "S-1"),
     "SFE Manager NEVER generates a payroll-deduction recommendation, per eligibility.ts's promise",
+  );
+
+  // --- Head Office fingerprint integration: device-mapped-only employees get a Team Calendar
+  // row, but can never generate a payroll-deduction recommendation (informational only). ---
+  const deviceMappedEmployees: FieldWorkforceEmployeeInput[] = [
+    // "Admin Assistant" is not a field-workforce-eligible title (see the ineligible-role case
+    // above) — must be absent without device-mapping, present once device-mapped.
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Office Amira", displayName: "Office Amira", hireDate: "2024-01-01", hrId: "HO-1", jobTitle: "Admin Assistant", positionTitle: null },
+  ];
+  const { matrix: withoutDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    !withoutDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title is excluded when NOT device-mapped, same as before this feature",
+  );
+  const { matrix: withDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    deviceMappedHrKeys: new Set([canonicalHrIdKey("HO-1")!]),
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    withDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title gets a Team Calendar row once actively device-mapped",
+  );
+
+  // Payroll-safety: a device-mapped-only employee with a RESOLVED CRM identity (deliberately
+  // not "unresolved" — proves the new title-eligibility gate, not the incidental identity
+  // guard, is what's protecting this) and a no-activity day must still never reach
+  // payrollRecommendations.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hoArchive: any = {
+    archive: { id: "live:2026-07", monthKey: "2026-07", month: 7, year: 2026, employeeCount: 1, highSeverityCount: 0, reviewCandidateCount: 1, sheetName: "s", sourceFilename: "f", status: "archived", uploadedAt: "2026-07-01T00:00:00.000Z", uploadedBy: "test" },
+    preview: {
+      employees: [{ ...guardEmployee("HO-1", "crm_id"), roleName: "Admin Assistant" }],
+      errors: [], metadata: { dateRange: { start: "2026-07-01", end: "2026-07-31" } }, reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, warnings: [],
+    },
+  };
+  const hoReport = buildFieldWorkforceRecommendationsReportFromArchive(hoArchive, [], undefined);
+  assert.ok(
+    hoReport.leaveRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee still appears in leave/compliance review",
+  );
+  assert.ok(
+    !hoReport.payrollRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee (non-field-eligible title) NEVER generates a payroll-deduction recommendation, even with a resolved CRM identity",
   );
 
   // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
