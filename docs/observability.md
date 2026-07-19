@@ -32,13 +32,42 @@ Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notificati
 | Alert | Source |
 |---|---|
 | Cloud Run 5xx rate | `run.googleapis.com/request_count` (response_code_class=5xx) |
-| Cloud Run p95 latency | `run.googleapis.com/request_latencies` |
+| Cloud Run p95 latency | log-based metric `phoenix_hr_production_request_latencies` (see below) |
 | Uptime failure | uptime check on `/api/healthz` |
 | Cloud Scheduler job failure | log-based metric `phoenix_scheduler_failures` |
 | App auth/cron/webhook failure spike | log-based metric `phoenix_app_auth_failures` |
 | Notification-config drift | log-based metric `phoenix_config_drift` — fires on any occurrence in a 5-minute window (`labels.event="config_drift"`, see Structured logging above) |
 
 **Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
+
+### p95 latency: scoped to production traffic
+
+`deploy-cloud-run.yml` deploys every revision with **no traffic** and a
+`sha-<8hex>` tag, then smoke-tests it directly via its tag URL
+(`https://sha-xxxxxxxx---phoenix-hr-<hash>-<region>.a.run.app`) before ever
+routing production traffic to it. That tag URL is a real, separately
+routable Cloud Run endpoint — a cold-starting smoke-test hit against it is
+indistinguishable, in the raw `run.googleapis.com/request_latencies` metric,
+from a slow request against live production traffic; both only carry a
+`revision_name` label, with nothing indicating whether the request reached
+the promoted default/custom-domain URL or an unpromoted 0%-traffic tag URL.
+
+`phoenix_hr_production_request_latencies` (log-based, DISTRIBUTION, seconds)
+filters Cloud Run's automatic per-request log entries down to
+`httpRequest.requestUrl NOT LIKE '%://sha-%'` — i.e. it excludes every
+request that came in through a tag URL, leaving only traffic against the
+custom domain / default promoted URL. The "Cloud Run p95 latency (phoenix-hr)"
+alert policy's condition is scoped to this metric instead of the raw
+built-in one, so deploy-time smoke tests and any other tag-URL traffic can
+no longer contribute to the p95 that pages the owner.
+
+Defined and applied via
+`scripts/scope-p95-latency-alert-to-production-revision.py` (idempotent,
+`--dry-run` by default — pass `--apply` to actually create the metric /
+update the policy). It reads whatever threshold/duration/notification
+channels are live on the policy at apply time rather than hardcoding them,
+so re-tuning the policy afterward (Console or API) doesn't get clobbered by
+re-running the script.
 
 ## Synthetic journeys
 
