@@ -311,9 +311,9 @@ export function PlanningCalendar({
       area: item.area || "-",
       conflictWarning: item.conflictWarning || "-",
       date: item.startDate,
-      employee: item.employeeName,
+      employee: item.employeeDisplayName || item.employeeName,
       id: item.id,
-      medicalRep: item.medicalRepName || item.medicalRepHrId || "-",
+      medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
       notes: item.notes || "-",
       regionLocation: item.region || item.lineName || "-",
       status: planStatusLabels[item.status] ?? item.status,
@@ -733,7 +733,7 @@ function AgendaDayBlock({
                 </div>
               );
             }
-            const meta = [item.employeeName, item.region || item.lineName, item.area, item.medicalRepName, item.time].filter(
+            const meta = [item.employeeDisplayName || item.employeeName, item.region || item.lineName, item.area, item.medicalRepDisplayName || item.medicalRepName, item.time].filter(
               (value) => value && value !== "-",
             ) as string[];
             return (

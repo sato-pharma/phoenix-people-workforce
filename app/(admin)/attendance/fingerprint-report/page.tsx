@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { FingerprintReport } from "@/components/attendance/fingerprint-report";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccessFingerprintReport } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ type PageProps = {
 
 export default async function AttendanceFingerprintReportPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
-  if (!await canAccess(access, "employees", "read")) {
+  if (!await canAccessFingerprintReport(access)) {
     redirect("/employee-portals");
   }
 

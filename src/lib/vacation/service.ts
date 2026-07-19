@@ -445,6 +445,14 @@ function findEmployeeByHrId(directory: EmployeeDirectoryData, hrId: string | nul
   return directory.employees.find((employee) => canonicalHrId(employee.hrId) === canonical) ?? null;
 }
 
+// Active-status check mirroring the D4 drift semantics (employment_status IN active/on_leave;
+// empty treated as active). Used to confirm a stuck approver has genuinely resigned before
+// allowing HR to reassign a pending_manager request.
+function isVacationEmployeeActive(employee: EmployeeDirectoryRow) {
+  const status = (employee.employmentStatus ?? "").trim().toLowerCase();
+  return status === "" || status === "active" || status === "on_leave";
+}
+
 function accessIdentityCandidates(access: AccessContext) {
   const candidates = [
     access.hrId,
@@ -610,6 +618,7 @@ function summarizeEmployee(employee: EmployeeDirectoryRow): VacationEmployeeSumm
   return {
     departmentName: employee.departmentName,
     fullName: employee.fullName,
+    displayName: employee.displayName,
     hireDate: employee.hireDate,
     hrId: employee.hrId,
     lineName: employee.lineName,
@@ -737,6 +746,7 @@ function buildEmployeeEligibilityRows(input: {
         eligibleForAnnualPaidLeave: eligibilityStatus === "eligible",
         employmentStatus: employee.employmentStatus,
         fullName: employee.fullName,
+        displayName: employee.displayName,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
         lineName: employee.lineName,
@@ -750,7 +760,7 @@ function buildEmployeeEligibilityRows(input: {
       const priority: Record<VacationEligibilityStatus, number> = { missing_hire_date: 0, first_six_months: 1, eligible: 2 };
       const priorityDiff = priority[left.eligibilityStatus] - priority[right.eligibilityStatus];
       if (priorityDiff !== 0) return priorityDiff;
-      return left.fullName.localeCompare(right.fullName);
+      return left.displayName.localeCompare(right.displayName);
     });
 }
 
@@ -1436,7 +1446,7 @@ export async function getHrRecipients(directory: EmployeeDirectoryData): Promise
         return {
           email: employee?.workEmail ?? null,
           hrId,
-          name: employee?.fullName ?? hrId,
+          name: employee?.displayName ?? hrId,
         };
       })
       .filter((entry): entry is HrRecipient => Boolean(entry));
@@ -1494,7 +1504,7 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
         // (phx-<hex>@auth.phoenix.local), which is non-deliverable and gets dropped before send.
         email: pickDeliverableEmail(employee?.workEmail, text(row.auth_email)),
         hrId,
-        name: text(row.name) || employee?.fullName || hrId,
+        name: text(row.name) || employee?.displayName || hrId,
         stepKey: "hr" as const,
         userId: loginId || null,
       }];
@@ -1528,7 +1538,7 @@ async function resolveVacationParallelApprovalRecipients(
     {
       email: manager.workEmail,
       hrId: manager.hrId,
-      name: manager.fullName,
+      name: manager.displayName,
       stepKey: "direct_manager",
       userId: null,
     },
@@ -1537,7 +1547,7 @@ async function resolveVacationParallelApprovalRecipients(
           {
             email: managerOfManager.workEmail,
             hrId: managerOfManager.hrId,
-            name: managerOfManager.fullName,
+            name: managerOfManager.displayName,
             stepKey: "manager_of_manager" as const,
             userId: null,
           },
@@ -1951,6 +1961,7 @@ async function dispatchVacationSubmitted(input: {
   // (managers/HR are notified above; the employee previously got zero channels).
   if (input.request.employeeWorkEmail) {
     void sendVacationSubmissionConfirmationEmail({
+      employeeDisplayName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName,
       employeeEmail: input.request.employeeWorkEmail,
       request: input.request,
     }).catch(async (error) => {
@@ -2018,6 +2029,7 @@ async function dispatchVacationManagerReview(input: {
     await sendVacationManagerStepResultEmail({
       cc: ccEmails,
       decision: input.decision,
+      employeeDisplayName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName,
       employeeEmail: input.request.employeeWorkEmail,
       managerDecisionComment: input.request.managerDecisionComment ?? null,
       managerName: input.request.managerName ?? "Your manager",
@@ -2041,7 +2053,7 @@ async function dispatchVacationNextManagerStep(input: {
   request: VacationRequestRecord;
 }) {
   const actingManager = findEmployeeByHrId(input.directory, input.actingManagerHrId);
-  const actingName = actingManager?.fullName ?? input.request.managerName ?? "Your manager";
+  const actingName = actingManager?.displayName ?? input.request.managerName ?? "Your manager";
   const actionHref = `/admin/approvals/vacation/${encodeURIComponent(input.request.id)}`;
   const detailBase = [
     { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
@@ -2095,7 +2107,7 @@ async function dispatchVacationNextManagerStep(input: {
   if (nextManagerEmail) {
     await sendVacationManagerDecisionEmail({
       managerEmail: nextManagerEmail,
-      managerName: nextApprover.fullName,
+      managerName: nextApprover.displayName,
       request: input.request,
       reviewUrl: toAbsoluteAppUrl(actionHref),
     }).catch(async (error) => {
@@ -2149,6 +2161,7 @@ async function dispatchVacationDecision(input: {
     cc: (await Promise.all(approvalRecipientHrIds.map((hrId) => resolveManagerEmail(input.directory, hrId))))
       .filter((email): email is string => Boolean(email)),
     decision: input.decision,
+    employeeDisplayName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName,
     employeeEmail: input.request.employeeWorkEmail,
     request: input.request,
   });
@@ -3149,7 +3162,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       oldValues: { status: input.request.status },
       summary: "Vacation request returned to employee for revision.",
     });
-    const actorName = findEmployeeByHrId(directory, input.actorHrId)?.fullName
+    const actorName = findEmployeeByHrId(directory, input.actorHrId)?.displayName
       ?? returned.managerName
       ?? "Your manager";
     const returnReason = input.decisionComment ?? "No reason provided.";
@@ -3200,6 +3213,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       void sendVacationReturnedEmail({
         cc: hrEmailsForReturn,
         decisionComment: input.decisionComment ?? null,
+        employeeDisplayName: findEmployeeByHrId(directory, returned.employeeHrId)?.displayName,
         employeeEmail: returned.employeeWorkEmail,
         managerName: actorName,
         request: returned,
@@ -3720,6 +3734,7 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   if (!hrIdsMatch(actorHrId, request.employeeHrId)) {
     throw new Error("Forbidden: only the employee who submitted this request can resubmit it.");
   }
+  const directory = await getEmployeeDirectory();
 
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
@@ -3787,6 +3802,7 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   });
   if (resubmitted.employeeWorkEmail) {
     void sendVacationResubmitConfirmationEmail({
+      employeeDisplayName: findEmployeeByHrId(directory, resubmitted.employeeHrId)?.displayName,
       employeeEmail: resubmitted.employeeWorkEmail,
       request: resubmitted,
     }).catch(async (error) => {
@@ -3817,7 +3833,14 @@ export async function assignVacationManagementApprover(
   if (!isSequentialWorkflowType(request.vacationType)) {
     throw new Error("Approver assignment only applies to Annual, Other, and Compensatory requests.");
   }
-  if (request.status !== "needs_assignment") {
+  // Widened guard. `needs_assignment` is the original no-approver-yet case. A request already at
+  // `pending_manager` is ALSO reassignable, but ONLY when its assigned first-management approver
+  // (manager_hr_id) has since resigned / gone inactive AND that first step is still pending —
+  // otherwise the record is pinned to a dead approver with no route forward and no one can act.
+  // We never touch a request whose approver is still active (that would yank a live pending
+  // decision, out of scope), and never reopen an approver who already decided.
+  const isResignedManagerReassignment = request.status === "pending_manager";
+  if (request.status !== "needs_assignment" && !isResignedManagerReassignment) {
     throw new Error("This vacation request does not need an approver assignment.");
   }
 
@@ -3827,13 +3850,39 @@ export async function assignVacationManagementApprover(
     throw new Error("The selected approver is not available in the employee directory.");
   }
 
+  if (isResignedManagerReassignment) {
+    const currentManager = findEmployeeByHrId(directory, request.managerHrId);
+    if (currentManager && isVacationEmployeeActive(currentManager)) {
+      throw new Error(
+        "The current approver is still active. Reassignment is only for a resigned or inactive approver.",
+      );
+    }
+    const existingSteps = await fetchVacationApprovalStepsForRequest(request.id);
+    const pendingFirstStep = existingSteps.find(
+      (step) => step.stepKey === "direct_manager" && step.status === "pending",
+    );
+    if (!pendingFirstStep) {
+      throw new Error("This request has no pending first-management step to reassign.");
+    }
+    // Drop the stale pending first-management step so the fresh assignment below leaves exactly
+    // one (same end state as the needs_assignment path); later manager-of-manager / HR steps and
+    // any already-decided steps are preserved.
+    const { error: deleteStepError } = await getSupabaseAdmin()
+      .from(vacationApprovalStepsTable)
+      .delete()
+      .eq("request_id", request.id)
+      .eq("step_key", "direct_manager")
+      .eq("status", "pending");
+    if (deleteStepError) throwVacationDatabaseError(deleteStepError);
+  }
+
   // Create the first management approval step, then resume the flow at pending_manager.
   await createVacationApprovalSteps({
     approvers: [
       {
         email: approver.workEmail,
         hrId: approver.hrId,
-        name: approver.fullName,
+        name: approver.displayName,
         stepKey: "direct_manager",
         userId: null,
       },
@@ -3846,12 +3895,12 @@ export async function assignVacationManagementApprover(
     .from(vacationRequestsTable)
     .update({
       manager_hr_id: approver.hrId,
-      manager_name: approver.fullName,
+      manager_name: approver.displayName,
       status: "pending_manager",
       updated_at: now,
     })
     .eq("id", request.id)
-    .eq("status", "needs_assignment")
+    .eq("status", request.status)
     .select("*")
     .single();
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
@@ -3861,8 +3910,14 @@ export async function assignVacationManagementApprover(
     actorHrId: resolveEmployeeIdentityId(access),
     actorLoginId: access.loginId,
     eventType: "manager_assigned",
-    message: `HR assigned ${approver.fullName} as the first management approver.`,
-    metadata: { approverHrId: approver.hrId, genericStep: "management_approval_1" },
+    message: isResignedManagerReassignment
+      ? `HR reassigned the stuck approver to ${approver.displayName} (previous approver resigned).`
+      : `HR assigned ${approver.displayName} as the first management approver.`,
+    metadata: {
+      approverHrId: approver.hrId,
+      genericStep: "management_approval_1",
+      reassignment: isResignedManagerReassignment,
+    },
     requestId: updated.id,
   });
   await writeRequiredAuditLog({
@@ -3871,7 +3926,9 @@ export async function assignVacationManagementApprover(
     entityType: "vacation_request",
     newValues: { managerHrId: approver.hrId, status: updated.status },
     oldValues: { managerHrId: request.managerHrId, status: request.status },
-    summary: `HR assigned management approver ${approver.fullName}.`,
+    summary: isResignedManagerReassignment
+      ? `HR reassigned stuck management approver to ${approver.displayName}.`
+      : `HR assigned management approver ${approver.displayName}.`,
   });
 
   invalidateExecutiveDashboardCache("leave request approver assigned", ["leave"]);
@@ -3996,14 +4053,14 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
         status: step.status,
         stepKey: step.stepKey,
         approverHrId: step.approverHrId,
-        approverName: findEmployeeByHrId(directory, step.approverHrId)?.fullName ?? null,
+        approverName: findEmployeeByHrId(directory, step.approverHrId)?.displayName ?? null,
         approverTitle: titleOf(step.approverHrId),
         decidedAt: step.decidedAt,
         decisionComment: step.decisionComment,
         genericStep: genericStepName(step.stepKey),
       })),
       assignedActorName: activeRawStep
-        ? findEmployeeByHrId(directory, activeRawStep.approverHrId)?.fullName ?? activeRawStep.approverHrId
+        ? findEmployeeByHrId(directory, activeRawStep.approverHrId)?.displayName ?? activeRawStep.approverHrId
         : null,
       assignedActorTitle: activeRawStep ? titleOf(activeRawStep.approverHrId) : null,
       actionAvailability,
@@ -4135,7 +4192,7 @@ function buildReportOptions(rows: VacationRequestRecord[], employees?: EmployeeD
   const employeeOptions = employees
     ? employees
         .filter((employee) => employee.hrId)
-        .map((employee) => ({ label: `${employee.fullName} (${employee.hrId})`, value: employee.hrId }))
+        .map((employee) => ({ label: `${employee.displayName} (${employee.hrId})`, value: employee.hrId }))
         .sort((left, right) => left.label.localeCompare(right.label))
     : Array.from(
         new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),

@@ -5,9 +5,13 @@ import { redirect } from "next/navigation";
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import { Card } from "@/components/ui/card";
-import { canSeeEmployee } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
+import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
+import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
+import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
+import { getPmMarketingRoi, type PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import { resolvePeriod, type Employee360Comparison } from "@/lib/employee-360/period";
 import { getEmployee360Summary } from "@/lib/employee-360/service";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
@@ -51,7 +55,9 @@ export default async function Employee360DetailPage({
     );
   }
 
-  if (!canSeeEmployee(access, { hrId: target.hrId, managerHrId: target.managerHrId })) {
+  // 360-specific scope gate (self / team / hierarchy / line / reps / company),
+  // separate from the global canSeeEmployee used by payroll/directory.
+  if (!canViewEmployee360Subject(access, target, await buildEmployee360Scope(rows, access))) {
     redirect("/employee-360");
   }
 
@@ -175,6 +181,73 @@ export default async function Employee360DetailPage({
     );
   }
 
+  // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
+  // PMs have no reps; Training Managers get their own richer analysis.
+  let teamHealth: TeamHealthSummary | null = null;
+  if (
+    summary &&
+    (roleCategory === "district-manager" ||
+      roleCategory === "regional-manager" ||
+      roleCategory === "national-sales-manager")
+  ) {
+    try {
+      teamHealth = await getEmployee360TeamHealth({
+        teamHrIds,
+        employees: rows,
+        window: { from: period.current.from, to: period.current.to },
+        // Reps this manager double-visited (from the leadership activity already loaded).
+        dvRepHrIds: (summary.leadership?.byRep ?? []).filter((r) => r.doubleVisits > 0).map((r) => r.hrId),
+      });
+    } catch {
+      teamHealth = null;
+    }
+  }
+
+  // Team Compliance — weekly plans, field discipline & probation of the manager's
+  // reps (same leader scope as Team Development above).
+  let teamLifecycle: TeamLifecycleSummary | null = null;
+  if (
+    summary &&
+    (roleCategory === "district-manager" ||
+      roleCategory === "regional-manager" ||
+      roleCategory === "national-sales-manager")
+  ) {
+    try {
+      teamLifecycle = await getEmployee360TeamLifecycle({
+        teamHrIds,
+        employees: rows,
+        window: { from: period.current.from, to: period.current.to },
+      });
+    } catch {
+      teamLifecycle = null;
+    }
+  }
+
+  // Training Manager god-mode analytics — coverage/neglect/concentration + verdict
+  // across the whole active-Medical-Rep pool.
+  let tmAnalytics: TrainingManagerAnalytics | null = null;
+  if (summary && roleCategory === "training-manager") {
+    try {
+      tmAnalytics = await getTrainingManagerAnalytics({
+        tmHrId: target.hrId,
+        employees: rows,
+        window: { from: period.current.from, to: period.current.to },
+      });
+    } catch {
+      tmAnalytics = null;
+    }
+  }
+
+  // PM / Group PM: ROI on the marketing requests they submitted.
+  let pmMarketing: PmMarketingSummary | null = null;
+  if (summary && roleCategory === "product-manager") {
+    try {
+      pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
+    } catch {
+      pmMarketing = null;
+    }
+  }
+
   const comparison: Employee360Comparison | null = previous
     ? {
         previousLabel: period.previous.label,
@@ -196,6 +269,10 @@ export default async function Employee360DetailPage({
         comparison={comparison}
         showExpenses={showExpenses}
         category={roleCategory}
+        teamHealth={teamHealth}
+        teamLifecycle={teamLifecycle}
+        tmAnalytics={tmAnalytics}
+        pmMarketing={pmMarketing}
       />
     </div>
   );

@@ -4,12 +4,26 @@
   sales: "Sales",
 };
 
+// Each VALUE must equal the exact `lines.name` stored in the DB. The employee-org import
+// derives a line's code as createOrgCode(value) and upserts `lines` with onConflict:"code"
+// (see app/api/imports/employees/confirm/route.ts → upsertLines), then links each employee to
+// that same derived code. So a value whose slug diverges from the stored code does NOT update
+// the canonical row — it MINTS A DUPLICATE `lines` row and splits the line across every
+// downstream report. The canonical rows (single source of truth) are:
+//   "Anti Infective" → anti_infective (id 1) · "Pedia" → pedia (id 2)
+//   "CNS" → cns (id 3)              · "Head Office" → head_office (id 4)
+// This map was left at the pre-rename "Anti Inf"/"Office" labels after migration
+// 20260621240000 renamed line id 1 to "Anti infective"; the display spelling was then
+// standardized to "Anti Infective" (owner decision) — which is exactly how the duplicate
+// "Anti Inf" line (deleted id 53) kept getting recreated on every employee import. Keep these
+// values byte-identical to `lines.name`; verify against the DB before adding a new line.
 export const lineRules: Record<string, string> = {
-  anti_inf: "Anti Inf",
-  anti_infectious: "Anti Inf",
-  anti_infective: "Anti Inf",
+  anti_inf: "Anti Infective",
+  anti_infectious: "Anti Infective",
+  anti_infective: "Anti Infective",
   cns: "CNS",
-  office: "Office",
+  head_office: "Head Office",
+  office: "Head Office",
   pedia: "Pedia",
   pediatrics: "Pedia",
 };

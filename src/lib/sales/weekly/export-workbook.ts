@@ -794,10 +794,12 @@ function buildWeekComparison(wb: Workbook, data: WeeklyDashboard, generatedAt: s
     sheet.setValue(row, 1, (w.cycleMonth ?? "").slice(0, 7)); sheet.setStyle(row, 1, textCell(false, zebra));
     sheet.setValue(row, 2, `W${w.weekNumber}`); sheet.setStyle(row, 2, textCell(false, zebra));
     sheet.setValue(row, 3, w.weekStart ?? "—"); sheet.setStyle(row, 3, textCell(false, zebra));
-    sheet.setValue(row, 4, w.salesValue); sheet.setStyle(row, 4, numCell(F_VALUE, zebra));
-    sheet.setValue(row, 5, w.salesUnits); sheet.setStyle(row, 5, numCell(F_UNITS, zebra));
+    // M6: a gap-spanning week's de-cumulated value/units/WoW are suppressed to null upstream (not a
+    // true single-week figure) — export them as "—" rather than a misleading number.
+    sheet.setValue(row, 4, w.salesValue ?? "—"); sheet.setStyle(row, 4, w.salesValue == null ? textCell(false, zebra) : numCell(F_VALUE, zebra));
+    sheet.setValue(row, 5, w.salesUnits ?? "—"); sheet.setStyle(row, 5, w.salesUnits == null ? textCell(false, zebra) : numCell(F_UNITS, zebra));
     sheet.setValue(row, 6, w.stockUnits); sheet.setStyle(row, 6, numCell(F_UNITS, zebra));
-    sheet.setValue(row, 7, w.deltaValuePct ?? 0); sheet.setStyle(row, 7, numCell(F_PCT, zebra));
+    sheet.setValue(row, 7, w.deltaValuePct == null ? "—" : w.deltaValuePct); sheet.setStyle(row, 7, w.deltaValuePct == null ? textCell(false, zebra) : numCell(F_PCT, zebra));
     sheet.setFormula(row, 8, `IFERROR(REPT("|",ROUND(D${row}/MAX($D$${firstRow}:$D$${lastRow})*16,0)),"")`); sheet.setStyle(row, 8, barCell(zebra));
   });
   try {

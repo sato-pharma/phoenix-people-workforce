@@ -178,6 +178,7 @@ function buildEmployeePortalSections({
   showRoiIntelligenceTab = false,
   showSourceOfSalesTab = false,
   showWeeklyTab = false,
+  showSalesAnalyticsTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
   showCoachingAnalyticsTab = false,
@@ -186,7 +187,6 @@ function buildEmployeePortalSections({
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
   showAttendanceTab: _showAttendanceTab = false,
-  showPrivateCalendarTab = true,
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   return [
     // Training Manager's own section leads the sidebar for TMs. It sits above
@@ -210,7 +210,6 @@ function buildEmployeePortalSections({
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
-        ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: Fingerprint }] : []),
       ],
     },
     // Dedicated Approvals Hub section — mirrors the admin shell's own "Approvals Hub" nav
@@ -240,6 +239,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
+        ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
       ],
     },
     {

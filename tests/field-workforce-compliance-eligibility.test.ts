@@ -90,15 +90,22 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   // --- Matrix builder: every eligible, active employee becomes a row (even with no visits) ---
   const employees: FieldWorkforceEmployeeInput[] = [
     // Eligible rep WITH a visit.
-    { crmId: "1", crmUsername: "Rep.One", employmentStatus: "active", fullName: "Rep One", hireDate: "2024-01-01", hrId: "A-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "1", crmUsername: "Rep.One", employmentStatus: "active", fullName: "Rep One", displayName: "Rep One", hireDate: "2024-01-01", hrId: "A-1", jobTitle: "Medical Representative", positionTitle: null },
     // Eligible manager with NO visits at all — must still appear (the "missing managers" fix).
-    { crmId: "5", crmUsername: "Mgr.Five", employmentStatus: "active", fullName: "Mgr Five", hireDate: "2024-01-01", hrId: "A-5", jobTitle: "National Sales Manager", positionTitle: null },
+    { crmId: "5", crmUsername: "Mgr.Five", employmentStatus: "active", fullName: "Mgr Five", displayName: "Mgr Five", hireDate: "2024-01-01", hrId: "A-5", jobTitle: "National Sales Manager", positionTitle: null },
     // Manager who ONLY rides along as a double partner — his joint visits must be credited.
-    { crmId: "7", crmUsername: "Mgr.Seven", employmentStatus: "active", fullName: "Mgr Seven", hireDate: "2024-01-01", hrId: "A-6", jobTitle: "District Sales Manager", positionTitle: null },
+    { crmId: "7", crmUsername: "Mgr.Seven", employmentStatus: "active", fullName: "Mgr Seven", displayName: "Mgr Seven", hireDate: "2024-01-01", hrId: "A-6", jobTitle: "District Sales Manager", positionTitle: null },
     // Ineligible role — excluded.
-    { crmId: "2", crmUsername: "Admin.Two", employmentStatus: "active", fullName: "Admin Two", hireDate: "2024-01-01", hrId: "A-2", jobTitle: "Admin Assistant", positionTitle: null },
+    { crmId: "2", crmUsername: "Admin.Two", employmentStatus: "active", fullName: "Admin Two", displayName: "Admin Two", hireDate: "2024-01-01", hrId: "A-2", jobTitle: "Admin Assistant", positionTitle: null },
     // Departed employee — excluded even though eligible role.
-    { crmId: "9", crmUsername: "Gone.Nine", employmentStatus: "resigned", fullName: "Gone Nine", hireDate: "2024-01-01", hrId: "A-9", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "9", crmUsername: "Gone.Nine", employmentStatus: "resigned", fullName: "Gone Nine", displayName: "Gone Nine", hireDate: "2024-01-01", hrId: "A-9", jobTitle: "Medical Representative", positionTitle: null },
+    // Regression guard (2026-07-18 production leak): a bespoke status-string check here used
+    // to recognize only "terminated"/"resigned"/"inactive" and missed these two values, so 15
+    // historical_payroll_record employees (and system_placeholder rows) leaked into the live
+    // Workforce Compliance view. Now routed through the same canonical classifyEmployeeNode
+    // used everywhere else in the app.
+    { crmId: "10", crmUsername: "Historical.Ten", employmentStatus: "historical_payroll_record", fullName: "Historical Ten", displayName: "Historical Ten", hireDate: "2024-01-01", hrId: "A-10", jobTitle: "District Sales Manager", positionTitle: null },
+    { crmId: "11", crmUsername: "Sys.Eleven", employmentStatus: "system_placeholder", fullName: "System Eleven", displayName: "System Eleven", hireDate: "2024-01-01", hrId: "A-11", jobTitle: "National Sales Manager", positionTitle: null },
   ];
 
   const { matrix } = buildIReports360FieldWorkforceMatrix({
@@ -114,9 +121,14 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     ],
   });
 
-  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two & Gone Nine excluded.
+  // Header + Rep One (A-1) + Mgr Five (A-5) + Mgr Seven (A-6). Admin Two, Gone Nine, Historical
+  // Ten (historical_payroll_record) & System Eleven (system_placeholder) all excluded.
   const hrIds = matrix.slice(1).map((row) => row[1]);
-  assert.deepEqual([...hrIds].sort(), ["A-1", "A-5", "A-6"], "only eligible, active employees appear");
+  assert.deepEqual(
+    [...hrIds].sort(),
+    ["A-1", "A-5", "A-6"],
+    "only eligible, active employees appear — historical_payroll_record and system_placeholder are excluded too, not just resigned/terminated/inactive",
+  );
 
   const repRow = matrix.find((row) => row[1] === "A-1")!;
   const mgrFiveRow = matrix.find((row) => row[1] === "A-5")!;
@@ -147,8 +159,8 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: 7, double_name: "Mgr.Seven ( HQ / B )", visit_date: "2026-05-18", visit_type: -8 },
   ];
   const mirrorEmployees: FieldWorkforceEmployeeInput[] = [
-    { crmId: "1", crmUsername: "Rep.One", employmentStatus: "active", fullName: "Rep One", hireDate: "2024-01-01", hrId: "A-1", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "7", crmUsername: "Mgr.Seven", employmentStatus: "active", fullName: "Mgr Seven", hireDate: "2024-01-01", hrId: "A-6", jobTitle: "District Sales Manager", positionTitle: null },
+    { crmId: "1", crmUsername: "Rep.One", employmentStatus: "active", fullName: "Rep One", displayName: "Rep One", hireDate: "2024-01-01", hrId: "A-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "7", crmUsername: "Mgr.Seven", employmentStatus: "active", fullName: "Mgr Seven", displayName: "Mgr Seven", hireDate: "2024-01-01", hrId: "A-6", jobTitle: "District Sales Manager", positionTitle: null },
   ];
 
   const { matrix: mirrorMatrix } = buildIReports360FieldWorkforceMatrix({
@@ -185,6 +197,19 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   });
   assert.deepEqual(mirrorMatrix, directMatrix, "mirror-row mapping must produce an identical matrix to the direct IReports360Visit shape");
 
+  // Fix #6: the mirror mapping must carry `comment` through so the excuse-labeled-AV detector
+  // (dayHasExcuseLabeledAv) can fire on the live path — it was hardcoded null before, silently
+  // disabling excuse detection for the whole production preview path.
+  const excuseRow: VisitsMirrorRow = {
+    agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null,
+    visit_date: "2026-05-12", visit_type: -4, comment: "Afternoon Excuse",
+  };
+  assert.equal(
+    visitFromMirrorRow(excuseRow).comment,
+    "Afternoon Excuse",
+    "mirror mapping must carry the CRM comment so excuse-labeled AV is detectable, not hardcoded null",
+  );
+
   const mirrorRepRow = mirrorMatrix.find((row) => row[1] === "A-1")!;
   const mirrorMgrRow = mirrorMatrix.find((row) => row[1] === "A-6")!;
   // Column layout: [TM, HR ID, Hiring Date, Month, Year, day1..dayN]; 05-04=idx8, 05-11=idx15, 05-18=idx22.
@@ -201,13 +226,13 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   });
   const identityEmployees: FieldWorkforceEmployeeInput[] = [
     // Resolved by directory crm_id.
-    { crmId: "100", crmUsername: "res.byid", employmentStatus: "active", fullName: "Res ById", hireDate: "2024-01-01", hrId: "B-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "100", crmUsername: "res.byid", employmentStatus: "active", fullName: "Res ById", displayName: "Res ById", hireDate: "2024-01-01", hrId: "B-1", jobTitle: "Medical Representative", positionTitle: null },
     // No crm_id/username of ours, but the mirror already resolved their hr_id (sync override/username).
-    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Res ByOverride", hireDate: "2024-01-01", hrId: "B-2", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Res ByOverride", displayName: "Res ByOverride", hireDate: "2024-01-01", hrId: "B-2", jobTitle: "Medical Representative", positionTitle: null },
     // Has a username but no crm_id; a visit's NAME matches it — must NOT be fuzzy-attributed.
-    { crmId: null, crmUsername: "No.Crm", employmentStatus: "active", fullName: "Name Only", hireDate: "2024-01-01", hrId: "B-3", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: null, crmUsername: "No.Crm", employmentStatus: "active", fullName: "Name Only", displayName: "Name Only", hireDate: "2024-01-01", hrId: "B-3", jobTitle: "Medical Representative", positionTitle: null },
     // No crm identity anywhere -> unresolved.
-    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Ghost None", hireDate: "2024-01-01", hrId: "B-4", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Ghost None", displayName: "Ghost None", hireDate: "2024-01-01", hrId: "B-4", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const identityVisits: FieldWorkforceMatrixVisit[] = [
     baseVisit(100, "Anything At All"),                                   // crm_id 100 -> B-1 via directory
@@ -279,6 +304,51 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     "SFE Manager NEVER generates a payroll-deduction recommendation, per eligibility.ts's promise",
   );
 
+  // --- Head Office fingerprint integration: device-mapped-only employees get a Team Calendar
+  // row, but can never generate a payroll-deduction recommendation (informational only). ---
+  const deviceMappedEmployees: FieldWorkforceEmployeeInput[] = [
+    // "Admin Assistant" is not a field-workforce-eligible title (see the ineligible-role case
+    // above) — must be absent without device-mapping, present once device-mapped.
+    { crmId: null, crmUsername: null, employmentStatus: "active", fullName: "Office Amira", displayName: "Office Amira", hireDate: "2024-01-01", hrId: "HO-1", jobTitle: "Admin Assistant", positionTitle: null },
+  ];
+  const { matrix: withoutDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    !withoutDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title is excluded when NOT device-mapped, same as before this feature",
+  );
+  const { matrix: withDeviceMapping } = buildIReports360FieldWorkforceMatrix({
+    deviceMappedHrKeys: new Set([canonicalHrIdKey("HO-1")!]),
+    employees: deviceMappedEmployees, month: 5, year: 2026, todayIso: "2026-06-01", visits: [],
+  });
+  assert.ok(
+    withDeviceMapping.slice(1).some((row) => row[1] === "HO-1"),
+    "non-field-eligible title gets a Team Calendar row once actively device-mapped",
+  );
+
+  // Payroll-safety: a device-mapped-only employee with a RESOLVED CRM identity (deliberately
+  // not "unresolved" — proves the new title-eligibility gate, not the incidental identity
+  // guard, is what's protecting this) and a no-activity day must still never reach
+  // payrollRecommendations.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hoArchive: any = {
+    archive: { id: "live:2026-07", monthKey: "2026-07", month: 7, year: 2026, employeeCount: 1, highSeverityCount: 0, reviewCandidateCount: 1, sheetName: "s", sourceFilename: "f", status: "archived", uploadedAt: "2026-07-01T00:00:00.000Z", uploadedBy: "test" },
+    preview: {
+      employees: [{ ...guardEmployee("HO-1", "crm_id"), roleName: "Admin Assistant" }],
+      errors: [], metadata: { dateRange: { start: "2026-07-01", end: "2026-07-31" } }, reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, warnings: [],
+    },
+  };
+  const hoReport = buildFieldWorkforceRecommendationsReportFromArchive(hoArchive, [], undefined);
+  assert.ok(
+    hoReport.leaveRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee still appears in leave/compliance review",
+  );
+  assert.ok(
+    !hoReport.payrollRecommendations.some((rec) => rec.employeeCode === "HO-1"),
+    "device-mapped-only employee (non-field-eligible title) NEVER generates a payroll-deduction recommendation, even with a resolved CRM identity",
+  );
+
   // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
   // Sourced from saveDate (crm_save_date) — NOT visitDate/visit_date_time, which is a fixed
   // midnight placeholder on every production row (verified 2026-07: 100% of 93,742 rows) and
@@ -290,10 +360,10 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   // offset), which is exactly what makes this correct across the whole year including DST
   // transitions. "T07:15:00Z" on 2026-05-06 (May -> summer time) is therefore 10:15 Cairo.
   const timingEmployees: FieldWorkforceEmployeeInput[] = [
-    { crmId: "200", crmUsername: null, employmentStatus: "active", fullName: "Timing One", hireDate: "2024-01-01", hrId: "T-1", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "201", crmUsername: null, employmentStatus: "active", fullName: "Timing Two", hireDate: "2024-01-01", hrId: "T-2", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "202", crmUsername: null, employmentStatus: "active", fullName: "Timing Three", hireDate: "2024-01-01", hrId: "T-3", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "203", crmUsername: null, employmentStatus: "active", fullName: "Timing Four", hireDate: "2024-01-01", hrId: "T-4", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "200", crmUsername: null, employmentStatus: "active", fullName: "Timing One", displayName: "Timing One", hireDate: "2024-01-01", hrId: "T-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "201", crmUsername: null, employmentStatus: "active", fullName: "Timing Two", displayName: "Timing Two", hireDate: "2024-01-01", hrId: "T-2", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "202", crmUsername: null, employmentStatus: "active", fullName: "Timing Three", displayName: "Timing Three", hireDate: "2024-01-01", hrId: "T-3", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "203", crmUsername: null, employmentStatus: "active", fullName: "Timing Four", displayName: "Timing Four", hireDate: "2024-01-01", hrId: "T-4", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const timingVisits: FieldWorkforceMatrixVisit[] = [
     // iReports360 stores saveDate as a ZONE-LESS Cairo wall-clock tagged +00 (verified in
@@ -335,7 +405,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   // apart only by free-text comment. This drives which av_with_punch days get excluded from
   // the fingerprint-contradiction recommendation.
   const excuseEmployees: FieldWorkforceEmployeeInput[] = [
-    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "Excuse One", hireDate: "2024-01-01", hrId: "E-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "Excuse One", displayName: "Excuse One", hireDate: "2024-01-01", hrId: "E-1", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const excuseVisits: FieldWorkforceMatrixVisit[] = [
     // Real vacation comment on an AV-mapped visit -> not excuse-labeled.
@@ -375,12 +445,12 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     saveDate: null, visitDate, visitType: 0, visitTypeDescription: null,
   });
   const caEmployees: FieldWorkforceEmployeeInput[] = [
-    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "CA High Concentration + Low Variety", hireDate: "2024-01-01", hrId: "CA-1", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "301", crmUsername: null, employmentStatus: "active", fullName: "CA Consecutive Days", hireDate: "2024-01-01", hrId: "CA-2", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "302", crmUsername: null, employmentStatus: "active", fullName: "CA PM Twice One Week", hireDate: "2024-01-01", hrId: "CA-3", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "303", crmUsername: null, employmentStatus: "active", fullName: "CA PM Every Week", hireDate: "2024-01-01", hrId: "CA-4", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "304", crmUsername: null, employmentStatus: "active", fullName: "CA Healthy Pattern", hireDate: "2024-01-01", hrId: "CA-5", jobTitle: "Medical Representative", positionTitle: null },
-    { crmId: "305", crmUsername: null, employmentStatus: "active", fullName: "CA No Visits", hireDate: "2024-01-01", hrId: "CA-6", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "CA High Concentration + Low Variety", displayName: "CA High Concentration + Low Variety", hireDate: "2024-01-01", hrId: "CA-1", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "301", crmUsername: null, employmentStatus: "active", fullName: "CA Consecutive Days", displayName: "CA Consecutive Days", hireDate: "2024-01-01", hrId: "CA-2", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "302", crmUsername: null, employmentStatus: "active", fullName: "CA PM Twice One Week", displayName: "CA PM Twice One Week", hireDate: "2024-01-01", hrId: "CA-3", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "303", crmUsername: null, employmentStatus: "active", fullName: "CA PM Every Week", displayName: "CA PM Every Week", hireDate: "2024-01-01", hrId: "CA-4", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "304", crmUsername: null, employmentStatus: "active", fullName: "CA Healthy Pattern", displayName: "CA Healthy Pattern", hireDate: "2024-01-01", hrId: "CA-5", jobTitle: "Medical Representative", positionTitle: null },
+    { crmId: "305", crmUsername: null, employmentStatus: "active", fullName: "CA No Visits", displayName: "CA No Visits", hireDate: "2024-01-01", hrId: "CA-6", jobTitle: "Medical Representative", positionTitle: null },
   ];
   const caVisits: FieldWorkforceMatrixVisit[] = [
     // CA-1: contact 900 gets 5 of 6 visits (83% share, and only 2 distinct contacts) -> both rules.

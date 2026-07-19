@@ -192,6 +192,17 @@ export function runNavigationActivePathTests() {
     "CEO must not see the Admin Tools sidebar tab even if a permission lookup grants admin",
   );
 
+  const ceoPayrollTools = payrollManagementPageItems.filter(
+    (item) => roleNotExcluded("CEO", item.excludedRoles),
+  );
+  assert.deepEqual(
+    ceoPayrollTools.filter(
+      (item) => item.href.includes("payroll-copilot") || item.href === "/admin/deductions-governance",
+    ).map((item) => item.href),
+    [],
+    "CEO payroll navigation must hide Copilot, Insurance Wages, and Deductions Governance",
+  );
+
   const ceoExecutiveNav = getSections(adminNavigationSections, "admin", { "probation:read": true, "organogram:read": true }, "CEO");
   assert.equal(
     ceoExecutiveNav.find((section) => section.id === "command-center")?.items.map((item) => item.href).join(","),
@@ -207,15 +218,6 @@ export function runNavigationActivePathTests() {
     ceoExecutiveNav.some((section) => section.items.some((item) => item.href === "/probation/dashboard")),
     false,
     "CEO must not see the individual probation modules as separate sidebar links",
-  );
-
-  const ceoPayrollTools = payrollManagementPageItems.filter(
-    (item) => roleNotExcluded("CEO", item.excludedRoles),
-  );
-  assert.deepEqual(
-    ceoPayrollTools.filter((item) => item.href.includes("payroll-copilot") || item.href === "/admin/deductions-governance").map((item) => item.href),
-    [],
-    "CEO payroll navigation must hide Copilot, Insurance Wages, and Deductions Governance",
   );
 
   // Note: /admin/people-management deliberately isn't in this list — unlike the

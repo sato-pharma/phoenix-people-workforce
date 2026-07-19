@@ -79,6 +79,59 @@ function uniqueSorted(values: (string | null)[]): string[] {
   );
 }
 
+// Stable line order so groups read the same way every time; unknown lines fall
+// after the known ones (alpha), and an unassigned line sinks to the very bottom.
+const LINE_ORDER = ["anti infective", "pedia", "cns", "head office"];
+function lineRank(line: string): [number, string] {
+  const name = line.trim().toLowerCase();
+  if (!name) return [LINE_ORDER.length + 1, ""];
+  const idx = LINE_ORDER.indexOf(name);
+  return [idx >= 0 ? idx : LINE_ORDER.length, name];
+}
+function byDisplayName(a: Employee360ListItem, b: Employee360ListItem): number {
+  return a.displayName.localeCompare(b.displayName);
+}
+
+type ManagerGroup = { manager: string; items: Employee360ListItem[] };
+type LineGroup = { line: string; count: number; items: Employee360ListItem[]; managers: ManagerGroup[] | null };
+
+/** Group a tab's rows by canonical line; for Medical Reps, sub-group by District Manager. */
+function groupByLine(rows: Employee360ListItem[], subGroupByManager: boolean): LineGroup[] {
+  const byLine = new Map<string, Employee360ListItem[]>();
+  for (const e of rows) {
+    const key = e.lineName?.trim() || "";
+    const list = byLine.get(key) ?? [];
+    list.push(e);
+    byLine.set(key, list);
+  }
+  const lines = Array.from(byLine.keys()).sort((a, b) => {
+    const [ra, sa] = lineRank(a);
+    const [rb, sb] = lineRank(b);
+    return ra - rb || sa.localeCompare(sb);
+  });
+  return lines.map((line) => {
+    const items = byLine.get(line) ?? [];
+    if (!subGroupByManager) {
+      return { line, count: items.length, items: items.slice().sort(byDisplayName), managers: null };
+    }
+    const byManager = new Map<string, Employee360ListItem[]>();
+    for (const e of items) {
+      const mk = e.managerName?.trim() || "";
+      const list = byManager.get(mk) ?? [];
+      list.push(e);
+      byManager.set(mk, list);
+    }
+    const managers = Array.from(byManager.keys())
+      .sort((a, b) => {
+        if (!a && b) return 1; // "no manager" last
+        if (a && !b) return -1;
+        return a.localeCompare(b);
+      })
+      .map((manager) => ({ manager, items: (byManager.get(manager) ?? []).slice().sort(byDisplayName) }));
+    return { line, count: items.length, items, managers };
+  });
+}
+
 export function EmployeeSearchList({ employees }: { employees: Employee360ListItem[] }) {
   const countByCategory = useMemo(() => {
     const map = new Map<Employee360RoleCategory, number>();
@@ -122,6 +175,12 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
         .some((field) => String(field).toLowerCase().includes(q));
     });
   }, [inTab, query, filters]);
+
+  // Group cards by line (divider between lines); Medical Reps also sub-group by DM.
+  const grouped = useMemo(
+    () => groupByLine(filtered, activeTab === "medical-rep"),
+    [filtered, activeTab],
+  );
 
   const clearAll = () => {
     setQuery("");
@@ -269,51 +328,94 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
           ) : null}
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((e) => (
-            <li key={e.hrId}>
-              <Link
-                href={`/employee-360/${encodeURIComponent(e.hrId)}`}
-                className="group flex h-full items-start gap-3 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]"
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-black text-white",
-                    avatarTone(e.hrId),
-                  )}
-                >
-                  {initials(e.displayName)}
+        <div className="space-y-7">
+          {grouped.map((g) => (
+            <section key={g.line || "__unassigned"}>
+              {/* Line header + horizontal divider between lines. */}
+              <div className="mb-3 flex items-center gap-3">
+                <h3 className="shrink-0 text-sm font-black uppercase tracking-wide text-slate-700">
+                  {g.line || "Unassigned line"}
+                </h3>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                  {g.count}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
-                    {e.employmentStatus && e.employmentStatus !== "active" ? (
-                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-700">
-                        {e.employmentStatus.replace(/_/g, " ")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-slate-500">{e.jobTitle || "—"}</div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-400">
-                    <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
-                      {e.hrId.toUpperCase()}
-                    </span>
-                    {[e.lineName, e.areaName || e.regionName].filter(Boolean).map((v) => (
-                      <span key={v}>{v}</span>
-                    ))}
-                  </div>
-                  {e.managerName ? (
-                    <div className="mt-1 truncate text-[11px] text-slate-400">Reports to {e.managerName}</div>
-                  ) : null}
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+              {g.managers ? (
+                <div className="space-y-4">
+                  {g.managers.map((mg) => (
+                    <div key={mg.manager || "__none"}>
+                      <div className="mb-2 flex items-center gap-1.5 pl-0.5">
+                        <Users className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-xs font-bold text-slate-500">{mg.manager || "No manager"}</span>
+                        <span className="text-[10px] font-semibold text-slate-400">· {mg.items.length}</span>
+                      </div>
+                      <CardGrid items={mg.items} />
+                    </div>
+                  ))}
                 </div>
-                <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />
-              </Link>
-            </li>
+              ) : (
+                <CardGrid items={g.items} />
+              )}
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </div>
+  );
+}
+
+function CardGrid({ items }: { items: Employee360ListItem[] }) {
+  return (
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {items.map((e) => (
+        <li key={e.hrId}>
+          <EmployeeCard e={e} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function EmployeeCard({ e }: { e: Employee360ListItem }) {
+  return (
+    <Link
+      href={`/employee-360/${encodeURIComponent(e.hrId)}`}
+      className="group flex h-full items-start gap-3 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-black text-white",
+          avatarTone(e.hrId),
+        )}
+      >
+        {initials(e.displayName)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
+          {e.employmentStatus && e.employmentStatus !== "active" ? (
+            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-700">
+              {e.employmentStatus.replace(/_/g, " ")}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-0.5 truncate text-xs text-slate-500">{e.jobTitle || "—"}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-400">
+          <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
+            {e.hrId.toUpperCase()}
+          </span>
+          {[e.lineName, e.areaName || e.regionName].filter(Boolean).map((v) => (
+            <span key={v}>{v}</span>
+          ))}
+        </div>
+        {e.managerName ? (
+          <div className="mt-1 truncate text-[11px] text-slate-400">Reports to {e.managerName}</div>
+        ) : null}
+      </div>
+      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />
+    </Link>
   );
 }
 

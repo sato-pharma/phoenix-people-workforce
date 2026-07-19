@@ -330,17 +330,23 @@ export type WeeklyDashboard = {
     cycleMonth: string;
     weekNumber: number;
     weekStart: string | null;
-    salesValue: number;
-    salesUnits: number;
+    /** Real per-week sales value; NULL when spansGap (the figure would silently include the missing
+     *  week(s), so it is suppressed rather than shown as a true single-week value). */
+    salesValue: number | null;
+    /** Real per-week sales units; NULL when spansGap (same reason as salesValue). */
+    salesUnits: number | null;
     stockUnits: number;
-    /** % change vs the previous week number in the same month-cycle; null when no prior week */
+    /** % change vs the previous week number in the same month-cycle; null when no prior week OR when
+     *  spansGap (the delta would be computed against a non-adjacent week). */
     deltaValuePct: number | null;
     /**
      * True when the immediately-preceding week number in this cycle was NOT uploaded (a gap in the
      * upload history). De-cumulation subtracts against the previous PRESENT week, so this week's
-     * figure silently spans every missing week between them (audit finding M6 — the month total stays
-     * correct via telescoping, but this single week is inflated). The UI badges it so the number is
-     * not read as a true single-week value.
+     * figure would silently span every missing week between them (audit finding M6 — the month total
+     * stays correct via telescoping, but this single week's figure is inflated). Chosen remediation
+     * ("suppress + flag"): salesValue/salesUnits/deltaValuePct are NULLED at the source for these
+     * weeks and every consumer renders "—" next to the "spans gap" badge, so the inflated number is
+     * never shown as a true single-week value.
      */
     spansGap: boolean;
   }[];

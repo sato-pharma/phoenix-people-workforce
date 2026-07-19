@@ -1,6 +1,7 @@
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { daysInMonth } from "@/lib/field-workforce-compliance/parser";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
+import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import type {
   FieldWorkforceCellStatus,
   FieldWorkforceDayCell,
@@ -603,19 +604,34 @@ export function buildFieldWorkforceCompliancePreview(input: {
   const warnings = [...parsed.warnings];
   const reviewCandidates: FieldWorkforceReviewCandidate[] = [];
 
-  const employees = parsed.rows.map((employee, employeeIndex) => {
+  // Resolve each workbook/matrix row's employee reference once, then drop rows for
+  // employees who have left the company (same canonical classifier used everywhere else in
+  // the app) before building summaries — this is the shared pipeline for BOTH the live
+  // iReports360 source and manual Excel uploads, so a departed employee's row is excluded
+  // permanently regardless of which one produced it. Unmatched rows (no directory reference)
+  // pass through unchanged: there is no status to classify, and the existing "not found in
+  // directory" review candidate already flags them for HR.
+  const rowsWithReferences = parsed.rows.map((employee) => {
     const reference = canonicalHrIdKey(employee.hrId);
-    return buildEmployeeSummary({
-      employee,
-      employeeIndex,
-      employeeReference: reference ? references.get(reference) : undefined,
-      holidayByDate,
-      month,
-      reviewCandidates,
-      warnings,
-      year,
-    });
+    return { employee, employeeReference: reference ? references.get(reference) : undefined };
   });
+  const employees = rowsWithReferences
+    .filter(
+      ({ employeeReference }) =>
+        !employeeReference || classifyEmployeeNode(employeeReference).eligible_for_headcount,
+    )
+    .map(({ employee, employeeReference }, employeeIndex) =>
+      buildEmployeeSummary({
+        employee,
+        employeeIndex,
+        employeeReference,
+        holidayByDate,
+        month,
+        reviewCandidates,
+        warnings,
+        year,
+      }),
+    );
 
   const severityCounts = emptySeverityCounts();
   for (const candidate of reviewCandidates) {

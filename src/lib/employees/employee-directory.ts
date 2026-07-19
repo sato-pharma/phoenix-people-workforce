@@ -1,4 +1,5 @@
 import { getRequiredEnv } from "@/lib/env";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import {
   normalizePayrollPaymentMode,
   resolveFixedSalaryAmounts,
@@ -352,7 +353,7 @@ function normalizeLifecycleStatus(value: string | null | undefined) {
   return compact(value)?.toLowerCase() ?? "active";
 }
 
-function isActiveLifecycleStatus(value: string | null | undefined) {
+export function isActiveLifecycleStatus(value: string | null | undefined) {
   return activeLifecycleStatuses.has(normalizeLifecycleStatus(value));
 }
 
@@ -669,7 +670,7 @@ async function loadAllOptions(table: string, label = "name") {
 
   const select =
     table === "areas"
-      ? `id,${label},line_id`
+      ? `id,${label},line_id,is_active`
       : table === "teams"
         ? `id,${label},area_id,is_active`
         : `id,${label}`;
@@ -1701,7 +1702,11 @@ function resolveEmployeeCompensationInput(input: EmployeeMutationInput) {
   };
 }
 
-async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) {
+async function employeePayload(
+  input: EmployeeMutationInput,
+  isUpdate: boolean,
+  previousManagerHrId: string | null = null,
+) {
   const fullName = compact(input.fullName);
   if (!fullName) {
     throw new Error("Full name is required.");
@@ -1755,7 +1760,14 @@ async function employeePayload(input: EmployeeMutationInput, isUpdate: boolean) 
   }
 
   const managerHrId = normalizeHrId(input.managerHrId);
-  await ensureManagerIsValid(managerHrId, hrId);
+  // Only validate the manager when it is actually being assigned or changed (or on create).
+  // Re-validating an UNCHANGED manager on every save would block unrelated edits (phone,
+  // salary, etc.) for any employee whose manager has since resigned or been hidden from the
+  // organogram — a stale reference the seat-continuity flow reconciles separately, not a
+  // reason to reject an edit that never touched the manager field.
+  if (!isUpdate || managerHrId !== previousManagerHrId) {
+    await ensureManagerIsValid(managerHrId, hrId);
+  }
   const crmId = compact(input.crmId);
   const crmUsername = compact(input.crmUsername);
   await ensureCrmIdIsUnique(crmId, hrId);
@@ -2045,7 +2057,7 @@ async function reassignLiveManagerOwnership(input: {
   };
 
   await patchOptionalTable(
-    `employees?manager_hr_id=eq.${previous}&employment_status=not.in.(resigned,terminated,inactive)`,
+    `employees?manager_hr_id=eq.${previous}&or=(employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST})`,
     nextPayload,
   );
 
@@ -2097,10 +2109,26 @@ async function reassignLiveManagerOwnership(input: {
   );
 }
 
+// Server-side backstop: an area_id must reference an existing, ACTIVE area (the 42 canonical areas).
+// The picker only offers active areas, but a raw API call could still send a retired/unknown id — reject it.
+// null is allowed (managers/office staff carry no sales area).
+async function assertActiveCanonicalArea(areaId: number | null | undefined): Promise<void> {
+  if (areaId == null) return;
+  const rows = await supabaseRest<Array<{ id: number; is_active: boolean | null }>>(
+    `areas?id=eq.${areaId}&select=id,is_active`,
+  );
+  const found = rows[0];
+  if (!found) throw new Error(`Area ${areaId} does not exist.`);
+  if (found.is_active === false) {
+    throw new Error(`Area ${areaId} is inactive (retired) and cannot be assigned.`);
+  }
+}
+
 export async function upsertEmployee(input: EmployeeMutationInput) {
   const hrId = normalizeHrId(input.hrId);
   const originalHrId = normalizeHrId(input.originalHrId);
   const isUpdate = Boolean(originalHrId);
+  let previousManagerHrId: string | null = null;
 
   if (isUpdate) {
     if (!hrId) {
@@ -2111,12 +2139,13 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
       throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
     }
 
-    const existing = await supabaseRest<Array<{ hr_id: string }>>(
-      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id`,
+    const existing = await supabaseRest<Array<{ hr_id: string; manager_hr_id: string | null }>>(
+      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id`,
     );
     if (existing.length === 0) {
       throw new Error(`Employee ${originalHrId} was not found.`);
     }
+    previousManagerHrId = normalizeHrId(existing[0].manager_hr_id);
   } else if (hrId) {
     const existing = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
@@ -2126,7 +2155,8 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     }
   }
 
-  const payload = await employeePayload(input, isUpdate);
+  const payload = await employeePayload(input, isUpdate, previousManagerHrId);
+  await assertActiveCanonicalArea(payload.area_id);
   const params = new URLSearchParams({
     on_conflict: "hr_id",
   });
@@ -2204,6 +2234,10 @@ export async function bulkUpdateEmployees(
 
   if (employmentStatus !== undefined && !statusOptions.includes(employmentStatus)) {
     throw new Error(`Employment status ${employmentStatus} is not allowed.`);
+  }
+
+  if (values.areaId !== undefined) {
+    await assertActiveCanonicalArea(numberOrNull(values.areaId));
   }
 
   const payload = {

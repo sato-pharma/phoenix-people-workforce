@@ -67,6 +67,7 @@ export type PermissionResource =
   | "imports"
   | "sales"
   | "weekly_sales"
+  | "direct_orders"
   | "payroll"
   | "payslips"
   | "deductions"
@@ -105,6 +106,7 @@ export const permissionResources: PermissionResource[] = [
   "imports",
   "sales",
   "weekly_sales",
+  "direct_orders",
   "payroll",
   "deductions",
   "double_visit_analytics",
@@ -403,6 +405,7 @@ const defaultPermissionMatrix: PermissionMap = {
     module_control: allActions,
     workflow_registry: allActions,
     sales: allActions,
+    direct_orders: allActions,
     weekly_sales: allActions,
     support_requests: allActions,
     team: allActions,
@@ -440,6 +443,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // for their own direct reports. The decide path binds the actor to the active approval
     // step, so this stays scoped to the CEO's chain and does not over-grant.
     leave: ["read", "approve", "export"],
+    // SoD: read/approve/export only — the CEO is the final approver of direct orders but
+    // never creates/edits them (the decide path binds the actor to the active CEO step).
+    direct_orders: ["read", "approve", "export"],
     organogram: ["read", "export"],
     payroll: ["read", "export"],
     probation: ["read"],
@@ -467,6 +473,10 @@ const defaultPermissionMatrix: PermissionMap = {
     employee_documents: ["read", "create", "update", "export"],
     employee_profile: ["read", "update"],
     leave: ["read", "update", "export"],
+    // Self-service only (own payslip) — matches Financial Advisor's grant. No broader
+    // payroll authority: Talent Acquisition must not inherit the retired HR Specialist
+    // role's company-wide payroll access.
+    payslips: ["read", "export"],
     offers: ["read", "create", "update", "export"],
     vacancies: ["read", "create", "update", "export"],
     recruitment: ["read", "create", "update", "export", "import"],
@@ -477,6 +487,7 @@ const defaultPermissionMatrix: PermissionMap = {
   // Financial Advisor: executes approved requests (payroll runs, disbursements).
   // No approval authority on any resource — does not approve, only processes.
   "Finance Manager": {
+    direct_orders: ["read", "update", "export"],
     attendance: ["read", "export"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -538,6 +549,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "District Manager": {
+    direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -561,6 +573,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Regional Manager": {
+    direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -583,6 +596,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
+    direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -606,6 +620,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Product Manager": {
+    direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -628,6 +643,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "Group Product Manager": {
+    direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -650,6 +666,7 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "SFE Manager": {
+    direct_orders: ["read", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     overview: ["read"],
     employee_documents: ["read", "export"],
@@ -1326,6 +1343,24 @@ export async function assertAttendanceSetupPermission(
 ) {
   if (!(await canAccessAttendanceSetup(context, action))) {
     throw new Error(`Forbidden: ${context.role} cannot ${action} attendance setup.`);
+  }
+}
+
+/**
+ * Fingerprint Attendance Report: a page-scoped exception to the "employees"
+ * hard boundary (Super Admin only — see hardBoundaryAllowedActions). CEO is
+ * explicitly allowed onto this one report/export even though CEO does not
+ * otherwise hold employees:read; every other "employees"-gated surface
+ * (employee directory, Attendance Setup, etc.) stays Super Admin-only.
+ */
+export async function canAccessFingerprintReport(context: AccessContext) {
+  if (context.role === "CEO") return true;
+  return canAccess(context, "employees", "read");
+}
+
+export async function assertFingerprintReportPermission(context: AccessContext) {
+  if (!(await canAccessFingerprintReport(context))) {
+    throw new Error(`Forbidden: ${context.role} cannot read the fingerprint attendance report.`);
   }
 }
 

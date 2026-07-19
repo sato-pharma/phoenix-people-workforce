@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
   canAccess,
   parseRoleStrict,
@@ -100,6 +101,7 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "birthday.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
+  "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
@@ -190,6 +192,7 @@ type EmployeeRecipientRow = {
   hr_id?: string | null;
   line_id?: number | null;
   manager_hr_id?: string | null;
+  nickname?: string | null;
   team_id?: number | null;
   work_email?: string | null;
 };
@@ -234,7 +237,11 @@ function recipientFromCandidate(candidate: Pick<RecipientCandidate, "auth" | "em
     // hard-bounces. No real email → null (recipient still gets the in-app notification).
     email: pickDeliverableEmail(candidate.employee?.work_email, candidate.auth?.auth_email),
     hrId: cleanHrId(candidate.auth?.hr_id ?? candidate.employee?.hr_id) || null,
-    name: candidate.auth?.name ?? candidate.employee?.full_name ?? null,
+    name:
+      candidate.auth?.name ??
+      (candidate.employee?.full_name
+        ? resolveEmployeeDisplayName(candidate.employee.full_name, candidate.employee.nickname)
+        : null),
     userId: candidate.auth?.login_id ?? null,
   };
 }
@@ -267,7 +274,7 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
     const [{ data: employeeData, error: employeeError }, auth] = await Promise.all([
       getSupabaseAdmin()
       .from("employees")
-        .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
+        .select("hr_id,full_name,nickname,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
       .eq("hr_id", normalized)
       .limit(1)
         .maybeSingle(),
@@ -298,7 +305,7 @@ async function candidatesByHrIds(hrIds: string[]): Promise<Map<string, Recipient
     const [{ data: employeeData, error: employeeError }, { data: authData, error: authError }] = await Promise.all([
       getSupabaseAdmin()
         .from("employees")
-        .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
+        .select("hr_id,full_name,nickname,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status")
         .in("hr_id", normalized),
       getSupabaseAdmin()
         .from("app_auth_users")
@@ -336,7 +343,7 @@ async function activeAuthCandidates() {
         .eq("is_active", true),
       getSupabaseAdmin()
         .from("employees")
-        .select("hr_id,full_name,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status"),
+        .select("hr_id,full_name,nickname,work_email,manager_hr_id,department_id,line_id,area_id,team_id,employment_status"),
     ]);
     if (authError) throw authError;
     if (employeeError) throw employeeError;

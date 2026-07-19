@@ -27,6 +27,7 @@ type VacationManagerEmailInput = {
 type VacationDecisionEmailInput = {
   cc: string[];
   decision: VacationDecision;
+  employeeDisplayName?: string;
   employeeEmail: string;
   request: VacationRequestRecord;
 };
@@ -193,7 +194,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
       managerName: input.request.managerName || "your manager",
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: approved ? statusLine : (input.request.id ?? "—"),
       subject: `Vacation request ${approved ? "approved" : "rejected"}`,
@@ -232,6 +233,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
 type VacationManagerStepResultEmailInput = {
   cc: string[];
   decision: VacationDecision;
+  employeeDisplayName?: string;
   employeeEmail: string;
   managerDecisionComment: string | null;
   managerName: string;
@@ -262,7 +264,7 @@ export async function sendVacationManagerStepResultEmail(
       endDate: formatDate(input.request.endDate),
       managerName: input.managerName,
       nextStep: approved ? input.nextStep : "",
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: approved ? "Approved" : `Rejected${input.managerDecisionComment ? ` — ${input.managerDecisionComment}` : ""}`,
       subject: `Vacation request ${action} by ${input.managerName}`,
@@ -300,6 +302,7 @@ export async function sendVacationManagerStepResultEmail(
 }
 
 type VacationSubmissionConfirmationEmailInput = {
+  employeeDisplayName?: string;
   employeeEmail: string;
   request: VacationRequestRecord;
 };
@@ -321,7 +324,7 @@ export async function sendVacationSubmissionConfirmationEmail(
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: "Pending manager review",
       subject: "Your vacation request has been submitted",
@@ -356,6 +359,7 @@ export async function sendVacationSubmissionConfirmationEmail(
 }
 
 type VacationResubmitConfirmationEmailInput = {
+  employeeDisplayName?: string;
   employeeEmail: string;
   request: VacationRequestRecord;
 };
@@ -377,7 +381,7 @@ export async function sendVacationResubmitConfirmationEmail(
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: "Pending manager review",
       subject: "Your vacation request has been resubmitted",
@@ -412,6 +416,7 @@ export async function sendVacationResubmitConfirmationEmail(
 }
 
 type VacationBalanceSettlementEmailInput = {
+  employeeDisplayName?: string;
   employeeEmail: string;
   managerEmail: string;
   cc: string[];
@@ -451,7 +456,7 @@ export async function sendVacationBalanceSettlementEmail(
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       subject: `Vacation balance settlement — ${input.request.employeeName}`,
       vacationType: vacationTypeLabel(input.request.vacationType),
@@ -489,6 +494,7 @@ export async function sendVacationBalanceSettlementEmail(
 type VacationReturnedEmailInput = {
   cc: string[];
   decisionComment: string | null;
+  employeeDisplayName?: string;
   employeeEmail: string;
   managerName: string;
   request: VacationRequestRecord;
@@ -511,7 +517,7 @@ export async function sendVacationReturnedEmail(
       employeeName: input.request.employeeName,
       endDate: formatDate(input.request.endDate),
       managerName: input.managerName,
-      recipientName: input.request.employeeName,
+      recipientName: input.employeeDisplayName ?? input.request.employeeName,
       startDate: formatDate(input.request.startDate),
       status: "Returned for revision",
       subject: "Vacation request returned for revision",

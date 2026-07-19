@@ -2,7 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
+import { normalizeRegionLabel, regionsWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
@@ -130,14 +130,19 @@ function sameLine(left: string | null | undefined, right: string | null | undefi
  *   because a District Manager's `lineName` does not reliably align with which
  *   NSM they report to. Deliberately does not climb further up the chain
  *   (Regional Manager and above); that is out of scope for now.
+ * - Regional Manager items are bounded by line AND region (owner rule 2026-07-18): an RM owns one
+ *   product line across a specific set of regions, derived from their own management subtree
+ *   (`regionalManagerRegionKeys`, precomputed once by the caller — see `getSharedPlanningCalendarWorkspace`).
+ *   Same rule shared with double-visit-analytics + the employee portal workforce view.
  * - Every other recognized owner title (NSM/PM/GPM/Territory Manager/Training
  *   Manager/Marketing Manager) uses the standard same-line rule.
  */
 export function isPlanItemVisibleToViewer(
   item: PlanningCalendarPlanItem,
-  access: Pick<AccessContext, "scope" | "hrId">,
+  access: Pick<AccessContext, "hrId" | "role" | "scope">,
   viewer: EmployeeDirectoryRow | null,
   owner: EmployeeDirectoryRow | null,
+  regionalManagerRegionKeys?: ReadonlySet<string>,
 ): boolean {
   if (!isAllowedCalendarOwner(item)) return false;
   const isCompanyWideViewer = access.scope === "company" || access.scope === "system";
@@ -150,6 +155,13 @@ export function isPlanItemVisibleToViewer(
   if (calendarOwnerScopeKind(item.employeeJobTitle) === "hierarchy") {
     if (!owner || !viewerHrId) return false;
     return reportsToManagerSeat({ employee: owner, viewerCanonicalHrId: viewerHrId, canonicalize: normalizeHrId });
+  }
+
+  if (access.role === "Regional Manager") {
+    if (!regionalManagerRegionKeys || regionalManagerRegionKeys.size === 0) return false;
+    if (!sameLine(item.lineName, viewer?.lineName)) return false;
+    const region = normalizeRegionLabel(item.region);
+    return Boolean(region && regionalManagerRegionKeys.has(region));
   }
 
   return sameLine(item.lineName, viewer?.lineName);
@@ -251,6 +263,8 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     const activityTitle = activityDisplayLabel(row.activity_type, row.activity_title);
     const medicalRepHrId = cleanText(row.double_visit_medical_rep_hr_id) || null;
     const medicalRepName = cleanText(row.double_visit_medical_rep_name) || null;
+    const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
+    const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
     const item: PlanningCalendarPlanItem = {
       activityTitle,
@@ -267,6 +281,7 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       lineName,
       medicalRepHrId,
       medicalRepName,
+      medicalRepDisplayName,
       notes: cleanText(row.notes) || null,
       planId: header.id,
       planKind: header.plan_kind,
@@ -312,8 +327,19 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
+    // Precomputed ONCE (not per item) so isPlanItemVisibleToViewer stays a pure per-item check.
+    const regionalManagerRegionKeys =
+      access.role === "Regional Manager" && viewerHrId
+        ? regionsWithinManagerHierarchy(Array.from(directoryByHrId.values()), viewerHrId, normalizeHrId)
+        : undefined;
     const planItems = rawPlanItems.filter((item) =>
-      isPlanItemVisibleToViewer(item, access, viewer, directoryByHrId.get(normalizeHrId(item.employeeHrId)) ?? null),
+      isPlanItemVisibleToViewer(
+        item,
+        access,
+        viewer,
+        directoryByHrId.get(normalizeHrId(item.employeeHrId)) ?? null,
+        regionalManagerRegionKeys,
+      ),
     );
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
@@ -384,6 +410,7 @@ export async function getSameLinePlanBookings(
       date: item.startDate,
       employeeHrId: item.employeeHrId,
       employeeName: item.employeeName,
+      employeeDisplayName: item.employeeDisplayName,
       lineName: item.lineName,
       medicalRepHrId: medicalRepIdentity,
       medicalRepName: item.medicalRepName ?? medicalRepIdentity,

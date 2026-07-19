@@ -84,8 +84,10 @@ export function buildPortalWeeklyWorkbook(
     month: formatCycleMonth(row.cycleMonth),
     week: row.weekNumber != null ? `W${row.weekNumber}` : "—",
     weekStart: row.weekStart ?? "—",
-    salesValue: row.salesValue,
-    salesUnits: row.salesUnits,
+    // M6: a gap-spanning week's value/units/WoW are suppressed to null upstream (not a true
+    // single-week figure); export "—" (the "spans gap" state) rather than a misleading number.
+    salesValue: row.salesValue ?? "—",
+    salesUnits: row.salesUnits ?? "—",
     stockUnits: row.stockUnits,
     deltaPct: row.deltaValuePct != null ? formatPct(row.deltaValuePct) : "—",
   }));

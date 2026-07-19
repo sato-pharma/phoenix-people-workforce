@@ -4,6 +4,8 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import { getEmployeeDirectory, getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
 import { isDisposablePayrollBatchRow } from "@/lib/fixture-hygiene";
 import {
@@ -35,6 +37,8 @@ const emptyPayrollDashboard: PayrollDashboardData = {
   flags: [],
   previousRecords: [],
   records: [],
+  resignationCandidateCount: 0,
+  resignationCandidates: [],
   scope: "all_time",
   summary: {
     anomalyCount: 0,
@@ -331,36 +335,58 @@ async function buildPayrollIneligibleHrIdSet(): Promise<Set<string>> {
   return ineligible;
 }
 
-function buildManagerMap(directory: Awaited<ReturnType<typeof getEmployeeDirectory>>) {
-  const managerMap = new Map<string, string[]>();
+// Seat-continuity-aware TEAM / HIERARCHY resolution, delegating to the canonical
+// workforce resolver (src/lib/workforce/hierarchy-resolver.ts) instead of a private
+// naive `manager_hr_id` adjacency walk. The naive walk was correct only because a DB
+// trigger writes `manager_hr_id` + `pending_manager_replacement_for_hr_id` atomically;
+// when a manager seat is vacant/reassigned it would attach reports to the wrong seat.
+// The resolver additionally recognizes the departed manager's vacant seat, so a report
+// orphaned upward after a resignation still resolves to the correct owner. Behaviour is
+// unchanged for today's data (no pending marker) — it only becomes correct on vacancy.
+
+/** Canonical hrId -> employee row, for isWithinManagerHierarchy's byCanonicalHrId input. */
+function buildCanonicalHrIdIndex(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+): Map<string, EmployeeDirectoryRow> {
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
   directory.employees.forEach((employee) => {
-    const managerId = normalizeHrId(employee.managerHrId);
-    const employeeId = normalizeHrId(employee.hrId);
-    if (!managerId || !employeeId) return;
-    const list = managerMap.get(managerId) ?? [];
-    list.push(employeeId);
-    managerMap.set(managerId, list);
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
   });
-  return managerMap;
+  return byCanonicalHrId;
 }
 
-function collectPayrollHierarchy(
-  managerMap: Map<string, string[]>,
-  rootHrId: string,
-) {
-  const allowedHrIds = new Set<string>();
-  const queue: string[] = [rootHrId];
-  while (queue.length > 0) {
-    const managerId = queue.shift();
-    if (!managerId) continue;
-    for (const subordinateId of managerMap.get(managerId) ?? []) {
-      if (!allowedHrIds.has(subordinateId)) {
-        allowedHrIds.add(subordinateId);
-        queue.push(subordinateId);
-      }
+/** Direct reports of the viewer's seat — TEAM scope. Seat-continuity aware. */
+export function collectDirectReports(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  directory.employees.forEach((employee) => {
+    if (reportsToManagerSeat({ employee, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
     }
-  }
-  return allowedHrIds;
+  });
+  return allowed;
+}
+
+/** Every employee in the viewer's full downward chain — HIERARCHY scope. Cycle-safe. */
+export function collectHierarchy(
+  directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
+  viewerCanonicalHrId: string,
+): Set<string> {
+  const allowed = new Set<string>();
+  if (!viewerCanonicalHrId) return allowed;
+  const byCanonicalHrId = buildCanonicalHrIdIndex(directory);
+  directory.employees.forEach((employee) => {
+    if (isWithinManagerHierarchy({ employee, byCanonicalHrId, viewerCanonicalHrId, canonicalize: normalizeHrIdForAccess })) {
+      const id = normalizeHrId(employee.hrId);
+      if (id) allowed.add(id);
+    }
+  });
+  return allowed;
 }
 
 function normalizePayrollAllowedIds(values: readonly string[]) {
@@ -462,15 +488,15 @@ async function resolvePayrollScopeFilter(
     return { all: false, allowedHrIds: new Set([currentHrId]) };
   }
 
-  const managerMap = buildManagerMap(directory);
+  const canonicalViewerId = normalizeHrIdForAccess(currentHrId) ?? "";
   if (payrollScope === "TEAM") {
-    const directReports = managerMap.get(currentHrId) ?? [];
+    const directReports = collectDirectReports(directory, canonicalViewerId);
     const allowed = normalizePayrollAllowedIds([...directReports, currentHrId]);
     return { all: false, allowedHrIds: allowed };
   }
 
   if (payrollScope === "HIERARCHY") {
-    const hierarchy = collectPayrollHierarchy(managerMap, currentHrId);
+    const hierarchy = collectHierarchy(directory, canonicalViewerId);
     hierarchy.add(currentHrId);
     return { all: false, allowedHrIds: hierarchy };
   }
@@ -862,6 +888,38 @@ export async function getPayrollDashboard(
     payrollAccessFilter,
   );
 
+  // Cross-reference this batch's HR IDs against the resignation-candidate registry so a
+  // payroll approver reviewing the batch can see which rows were flagged as likely
+  // resignations. The `employee_not_found` upload signal is intentionally kept out of
+  // salary_flags governance (see payroll-engine-hardening tests) and lives only in the
+  // Resignations report; this is a read-only cross-reference that surfaces it beside the
+  // batch. The registry table is service-role-only (RLS) so it MUST be read via the admin
+  // client, and the whole lookup is best-effort — it must never block the dashboard.
+  const batchHrIds = Array.from(
+    new Set(records.map((record) => record.hrId).filter(Boolean)),
+  );
+  let resignationCandidates: PayrollDashboardData["resignationCandidates"] = [];
+  if (batchHrIds.length > 0) {
+    try {
+      const { data: candidateRows, error: candidateError } = await getSupabaseAdmin()
+        .from("payroll_resignation_candidates")
+        .select("hr_id, employee_name, last_payout_month, last_payout_year")
+        .in("hr_id", batchHrIds);
+      if (!candidateError) {
+        resignationCandidates = ((candidateRows ?? []) as Array<Record<string, unknown>>).map(
+          (row) => ({
+            fullName: String(row.employee_name ?? row.hr_id ?? ""),
+            hrId: String(row.hr_id ?? ""),
+            lastPayoutMonth: Number(row.last_payout_month ?? 0),
+            lastPayoutYear: Number(row.last_payout_year ?? 0),
+          }),
+        );
+      }
+    } catch {
+      /* best-effort — never block the payroll dashboard on this cross-reference */
+    }
+  }
+
   // Load previous period for delta comparison when the dashboard is scoped to one batch.
   const prevBatch = visibleBatches.find((b) => b.id !== batch.id);
   let previousRecords: SalaryRecord[] = [];
@@ -906,6 +964,8 @@ export async function getPayrollDashboard(
     records,
     flags,
     previousRecords,
+    resignationCandidates,
+    resignationCandidateCount: resignationCandidates.length,
     scope,
     summary: {
       totalEmployees: records.length,

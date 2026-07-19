@@ -57,7 +57,7 @@ export default async function TrainingManagerCreateCoachingReportPage() {
     .filter((employee) => (employee.employmentStatus ?? "active") === "active")
     .map((employee) => ({
       areaName: employee.areaName,
-      fullName: employee.fullName,
+      fullName: employee.displayName,
       hrId: employee.hrId,
       jobTitle: employee.jobTitle,
       lineName: employee.lineName,

@@ -7,6 +7,7 @@
 // they unit-test without a DB; only `getProbationOutcomesAnalytics` touches Supabase.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import type { ProbationCaseDecision, ProbationRecommendation } from "./types";
 
@@ -177,10 +178,10 @@ export async function getProbationOutcomesAnalytics(
   if (managerHrIds.length > 0) {
     const { data: managers } = await supabase
       .from("employees")
-      .select("hr_id, full_name")
+      .select("hr_id, full_name, nickname")
       .in("hr_id", managerHrIds);
-    for (const m of (managers ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      if (m.full_name) managerNameByHrId.set(m.hr_id.toLowerCase(), m.full_name);
+    for (const m of (managers ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
+      if (m.full_name) managerNameByHrId.set(m.hr_id.toLowerCase(), resolveEmployeeDisplayName(m.full_name, m.nickname));
     }
   }
 

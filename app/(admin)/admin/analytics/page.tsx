@@ -1,20 +1,27 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { BarChart3, TrendingUp, CalendarRange, GitCompare, ArrowLeftRight, MapPinned, ChartColumnBig } from "lucide-react";
 
-import { assertPermission, resolveNavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { assertPermission, type PhoenixRole } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { OpenInMetabaseLink } from "@/components/analytics/open-in-metabase-link";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
+import { canViewAdminCoreAnalytics } from "@/lib/analytics/portal-access";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+// Admin analytics hub. Lives in the (admin) route group, so the group layout renders the admin shell
+// and redirects portal-mode users away — CEO / Super Admin / SFE Manager reach the full module here
+// (including the company-scope field re-hosts). Field/portal roles get their OWN scoped module at
+// /employee-portals/sales-analytics, never through this /admin URL.
+//
+// Tile visibility here is UX only — every dashboard page enforces the identical
+// canViewAdminCoreAnalytics / canViewAdminDetailedAnalytics check server-side (src/lib/analytics
+// /portal-access.ts is the single source of truth both this hub and every page import from).
 const SALES_ANALYTICS_BROAD_ROLES = [
   "Super Admin",
   "CEO",
-  "National Sales Manager",
-  "Product Manager",
-  "Group Product Manager",
   "SFE Manager",
 ] as const satisfies readonly PhoenixRole[];
 
@@ -39,7 +46,7 @@ const MODULES = [
       "manager hierarchy, and territory drill-down.",
     badge: "Closing",
     accent: "#059669",
-    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] as const satisfies readonly PhoenixRole[],
+    roles: SALES_ANALYTICS_BROAD_ROLES,
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -74,9 +81,7 @@ const MODULES = [
     accent: "#DC2626",
     roles: ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[],
   },
-  // Company-scope re-hosts of the portal field dashboards (NSM-parity views for
-  // executives) — moved here from their own sidebar rows when the "Sales
-  // Analytics" section collapsed to a single button (see system-navigation.ts).
+  // Company-scope re-hosts of the portal field dashboards (NSM-parity views for executives).
   {
     href: "/admin/field-sales/weekly-sales",
     icon: TrendingUp,
@@ -117,10 +122,8 @@ const MODULES = [
 
 export default async function AnalyticsHubPage() {
   const access = await resolveAuthenticatedPageAccess();
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals");
-  }
   await assertPermission(access, "sales", "read");
+  if (!canViewAdminCoreAnalytics(access.role)) redirect(resolveLandingPathForRole(access.role));
   const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
   const visibleModules = isSystemAdministratorWorkspace

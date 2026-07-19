@@ -9,40 +9,16 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 export const dynamic = "force-dynamic";
 
 const probationModules = [
-  {
-    href: "/probation",
-    icon: ListChecks,
-    label: "Probation Tracker",
-    description: "Review every employee currently inside the probation window and open the full record.",
-  },
-  {
-    href: "/probation/dashboard",
-    icon: LayoutDashboard,
-    label: "Decision Dashboard",
-    description: "See active cases, risk zones, and the probation decisions that need attention first.",
-  },
-  {
-    href: "/probation/analytics",
-    icon: Activity,
-    label: "Probation Analytics",
-    description: "Review historical outcomes and the signals behind probation decisions.",
-  },
+  { href: "/probation", icon: ListChecks, label: "Probation Tracker", description: "Review every employee currently inside the probation window and open the full record." },
+  { href: "/probation/dashboard", icon: LayoutDashboard, label: "Decision Dashboard", description: "See active cases, risk zones, and the probation decisions that need attention first." },
+  { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", description: "Review historical outcomes and the signals behind probation decisions." },
 ] as const;
 
 export default async function CeoProbationPage() {
   const access = await resolveAccessContextFromPage();
-
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals");
-  }
-
-  if (access.role !== "CEO" && access.role !== "Super Admin") {
-    redirect("/admin");
-  }
-
-  if (!(await canAccess(access, "probation", "read"))) {
-    redirect("/employee-portals");
-  }
+  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
+  if (access.role !== "CEO" && access.role !== "Super Admin") redirect("/admin");
+  if (!(await canAccess(access, "probation", "read"))) redirect("/employee-portals");
 
   return (
     <div className="space-y-6">
@@ -52,7 +28,6 @@ export default async function CeoProbationPage() {
         icon={<Hourglass className="h-3.5 w-3.5" />}
         title="Probation"
       />
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {probationModules.map((module) => {
           const Icon = module.icon;

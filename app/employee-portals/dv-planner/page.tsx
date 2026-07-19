@@ -8,21 +8,22 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { getDoubleVisitReportData } from "@/lib/double-visit-analytics/service";
 import { DV_FOCUS_ROLES } from "@/lib/employee-portal/home-snapshot";
-import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type PlannerRep = {
-  areaName: string | null;
-  hrId: string;
-  lineName: string | null;
-  name: string;
-};
+function dateParam(value: string | string[] | undefined) {
+  const text = typeof value === "string" ? value.slice(0, 10) : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
 
-export default async function DvPlannerPage() {
+export default async function DvPlannerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (!DV_FOCUS_ROLES.has(access.role) || !(await canAccess(access, "double_visit_analytics", "read"))) {
@@ -30,12 +31,13 @@ export default async function DvPlannerPage() {
   }
 
   const today = todayIso();
-  const dateFrom = addDaysIso(today, -45);
-  const dateTo = addDaysIso(today, 7);
+  const params = await searchParams;
+  const dateFrom = dateParam(params.dateFrom) ?? addDaysIso(today, -30);
+  const dateTo = dateParam(params.dateTo) ?? today;
 
   let data: Awaited<ReturnType<typeof getDoubleVisitReportData>> | null = null;
   try {
-    data = await getDoubleVisitReportData({ access, dateFrom, dateTo });
+    data = await getDoubleVisitReportData({ access, dateFrom, dateTo, includeCadence: true });
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals/dv-planner", module: "dv-planner", role: access.role, hrId: access.hrId },
@@ -43,44 +45,10 @@ export default async function DvPlannerPage() {
     );
   }
 
-  const repsByHrId = new Map<string, PlannerRep>();
-  for (const rep of data?.neverVisited ?? []) {
-    const key = canonicalHrIdKey(rep.hrId);
-    if (!key) continue;
-    repsByHrId.set(key, {
-      areaName: rep.areaName,
-      hrId: rep.hrId,
-      lineName: null,
-      name: rep.name || rep.hrId,
-    });
-  }
-  for (const row of data?.rows ?? []) {
-    if (row.visitedStatus !== "active_mapped" || !row.visitedHrId) continue;
-    const key = canonicalHrIdKey(row.visitedHrId);
-    if (!key) continue;
-    const current = repsByHrId.get(key);
-    repsByHrId.set(key, {
-      areaName: row.areaName ?? current?.areaName ?? null,
-      hrId: row.visitedHrId,
-      lineName: row.lineName ?? current?.lineName ?? null,
-      name: row.visitedName ?? current?.name ?? row.visitedHrId,
-    });
-  }
-
-  const reps = Array.from(repsByHrId.values()).sort((a, b) => a.name.localeCompare(b.name));
-  const visits = (data?.rows ?? [])
-    .filter((row) => row.visitedStatus === "active_mapped" && row.visitedHrId)
-    .map((row) => ({
-      activityDate: row.activityDate,
-      doubleVisitorName: row.doubleVisitorName,
-      visitCount: row.visitCount,
-      visitedHrId: row.visitedHrId as string,
-    }));
-
   return (
     <EmployeePortalPageShell
       badge="Fieldforce"
-      description="Choose a Medical Rep and a date. Phoenix checks the CRM mirror and answers whether a double visit was recorded on that exact day."
+      description="Every Medical Rep in your scope for the chosen period — who's covered, who's never been visited, and who's on probation."
       errorBoundaryTitle="DV Planner unavailable"
       title="DV Planner"
     >
@@ -92,10 +60,9 @@ export default async function DvPlannerPage() {
         <DvPlannerWorkspace
           dateFrom={dateFrom}
           dateTo={dateTo}
-          reps={reps}
-          today={today}
+          roster={data.roster}
+          rows={data.rows}
           viewerHrId={normalizeHrId(access.hrId) ?? access.loginId ?? "local"}
-          visits={visits}
         />
       )}
     </EmployeePortalPageShell>

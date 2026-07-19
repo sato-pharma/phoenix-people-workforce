@@ -111,6 +111,32 @@ export function computeMovers(
 }
 
 /**
+ * EVERY dimension member's period-over-period deltaPct, keyed by normalized (upper/trim) code.
+ * `computeMovers` caps its result to the top gainers/decliners for the "movers" widget — but the
+ * full dashboard tables also drove their MoM Δ / YoY Δ columns off that capped set, so any row
+ * outside the top-5 showed "—" even with perfectly valid prior data. This returns the delta for
+ * ALL qualifying rows (present in both periods with a positive prior base), so the tables can show
+ * each row's real % change; the movers widget keeps using the capped `computeMovers`. A member
+ * present in both periods with an unchanged value is included with deltaPct 0 (a real "0.0%", not
+ * the "—" reserved for members with no comparable prior value). Serializable Record so it crosses
+ * the server → client boundary cleanly (no Map).
+ */
+export function computeDeltaPctByCode(
+  current: SosComparableRow[],
+  prior: SosComparableRow[],
+): Record<string, number> {
+  const priorMap = byCode(prior);
+  const out: Record<string, number> = {};
+  for (const row of byCode(current).values()) {
+    const key = row.code.trim().toUpperCase();
+    const before = priorMap.get(key);
+    if (!before || before.value <= 0) continue; // no meaningful base → the table shows "—"
+    out[key] = (row.value - before.value) / before.value;
+  }
+  return out;
+}
+
+/**
  * Dimension rows that appeared (current only) or disappeared (prior only) between the two
  * periods, each sorted by value descending and capped.
  */

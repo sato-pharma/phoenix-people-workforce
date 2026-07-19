@@ -4,11 +4,19 @@ import { ArrowRight, Fingerprint } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { attendanceManagementPageItems } from "@/config/system-navigation";
-import { getPermissionMatrix, permissionActions, permissionResources, resolveNavigationMode } from "@/lib/auth/permissions";
+import {
+  canAccessFingerprintReport,
+  getPermissionMatrix,
+  permissionActions,
+  permissionResources,
+  resolveNavigationMode,
+} from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
+
+const FINGERPRINT_REPORT_HREF = "/attendance/fingerprint-report";
 
 export default async function AttendanceManagementPage() {
   const access = await resolveAccessContextFromPage();
@@ -23,15 +31,21 @@ export default async function AttendanceManagementPage() {
     }
   }
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
+  // Fingerprint Report gets a page-scoped exception for CEO (see
+  // canAccessFingerprintReport) even though the card's own gate — the
+  // "employees" permission — stays Super Admin-only for every other role.
+  const canViewFingerprintReport = await canAccessFingerprintReport(access);
 
   const visibleTools = isSystemAdministratorWorkspace
     ? attendanceManagementPageItems
-    : attendanceManagementPageItems.filter(
-        (item) =>
+    : attendanceManagementPageItems.filter((item) => {
+        if (item.href === FINGERPRINT_REPORT_HREF) return canViewFingerprintReport;
+        return (
           permissionAllowed(permissionLookup, item.permissions) &&
           roleAllowed(access.role, item.roles) &&
-          roleNotExcluded(access.role, item.excludedRoles),
-      );
+          roleNotExcluded(access.role, item.excludedRoles)
+        );
+      });
 
   return (
     <div className="space-y-6">

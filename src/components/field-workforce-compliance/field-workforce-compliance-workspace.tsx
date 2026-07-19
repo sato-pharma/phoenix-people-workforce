@@ -54,7 +54,9 @@ import {
   type FieldWorkforceGroupScorecard,
 } from "@/lib/field-workforce-compliance/scorecards";
 import { cn } from "@/lib/utils";
+import { handlePossibleSessionDeath } from "@/lib/auth/client-session";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
 
 
 type PreviewResponse = {
@@ -122,7 +124,7 @@ type ComparisonResponse = {
   success: boolean;
 };
 
-type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
+type WorkspaceTab = "overview" | "timeline" | "team-calendar" | "head-office-attendance" | "queue" | "summary" | "scorecards" | "diagnostics" | "archives" | "comparison" | "recommendations";
 
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -144,10 +146,14 @@ const archiveWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
 // Main (non-archive) tab bar: same as workspaceTabs but with Recommendations inserted
 // before the Excel-specific tabs, so recommendations for a live-mirror month are reachable
 // without archiving first. Built from reviewWorkspaceTabs (not workspaceTabs directly) to
-// avoid double-counting "recommendations" in archiveWorkspaceTabs above.
+// avoid double-counting "recommendations" in archiveWorkspaceTabs above. Head Office
+// Attendance is appended only here (not into workspaceTabs/archiveWorkspaceTabs): it's a
+// live-now fingerprint view, independent of whichever Excel month is being archived/browsed,
+// so it doesn't belong in the archive tab bar.
 const mainWorkspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
   ...reviewWorkspaceTabs,
   { id: "recommendations", label: "Recommendations" },
+  { id: "head-office-attendance", label: "Head Office Attendance" },
   { id: "archives", label: "Excel Archives" },
   { id: "comparison", label: "Comparison" },
 ];
@@ -208,6 +214,13 @@ function decisionStatusOptionsForRecommendation(
 }
 
 async function readJsonResponse<T extends { message?: string; success: boolean }>(response: Response): Promise<T> {
+  // A 401, or a 403 right after SessionSecurityGuard's heartbeat/idle-timeout logout has
+  // fired, means the session died out from under this request rather than the user
+  // genuinely lacking access — redirect to sign in instead of showing a confusing
+  // "you do not have access" error on a page that's about to navigate away anyway.
+  if (handlePossibleSessionDeath(response)) {
+    return { message: "Your session expired — redirecting you to sign in…", success: false } as T;
+  }
   const text = await response.text();
   if (!text) return { message: response.statusText, success: response.ok } as T;
   try {
@@ -271,7 +284,8 @@ function severityBadge(severity: FieldWorkforceSeverity | undefined) {
   return <Badge variant="neutral">{severity}</Badge>;
 }
 
-function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number) {
+function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number, attendanceCrossCheck?: FieldWorkforceDayCell["attendanceCrossCheck"]) {
+  if (status === "N" && attendanceCrossCheck === "punch_no_visits") return "P";
   if (status === "VISITS") return String(visitCount ?? 0);
   if (status === "BLANK") return "-";
   return status;
@@ -419,15 +433,29 @@ function HierarchyFilters<T extends HierarchyItem>({
   );
 }
 
+/** A "VISITS" day additionally shades by visitPeriod: AM-only and PM-only get their own
+ * distinct colors to flag a half-day visit pattern; a mixed/untagged day keeps the default
+ * emerald. Same palette as the employee-portal Team Calendar. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
+  const visitsClass =
+    cell.visitPeriod === "AM"
+      ? "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+      : cell.visitPeriod === "PM"
+        ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+        : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+  // A fingerprint punch on an otherwise "N" (no CRM activity) day — mainly Head Office staff
+  // who don't generate CRM visits at all — reads as "punched in", not "no activity".
+  const nClass = cell.attendanceCrossCheck === "punch_no_visits"
+    ? "border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100"
+    : "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100";
   const base = {
     AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
     BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
     CP: "border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100",
     F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
-    N: "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100",
+    N: nClass,
     UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
-    VISITS: "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    VISITS: visitsClass,
   }[cell.status];
   return cn(
     base,
@@ -513,7 +541,7 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
   const tooltip = withLoggingTimingTooltip(cell.explanation, cell);
   const content = (
     <>
-      {statusLabel(cell.status, cell.visitCount)}
+      {statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
@@ -522,8 +550,6 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
       {cell.attendanceCrossCheck === "visits_no_punch" ? (
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-rose-500" />
-      ) : cell.attendanceCrossCheck === "punch_no_visits" ? (
-        <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-sky-500" />
       ) : cell.attendanceCrossCheck === "av_with_punch" ? (
         <span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-orange-600" />
       ) : cell.attendanceCrossCheck === "av_with_partial_punch" ? (
@@ -531,8 +557,11 @@ function TimelineDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ) : null}
     </>
   );
-  // Numeric-visit days deep-link to the day drill-down in a NEW tab; other days are static.
-  if (cell.status === "VISITS") {
+  // Numeric-visit days, campaign days, AND fingerprint-punched "N" days deep-link to the day
+  // drill-down in a NEW tab (all are real recorded activity, just categorized/sourced
+  // differently); other days are static. punch_no_visits no longer needs its own corner dot
+  // (line above) now that it drives the cell's main color instead.
+  if (cell.status === "VISITS" || cell.status === "CP" || cell.attendanceCrossCheck === "punch_no_visits") {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${tooltip} (open visits)`}
@@ -558,13 +587,15 @@ function TimelineLegend() {
     <div className="flex flex-wrap gap-2">
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
       <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
-      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign">CP</LegendChip>
-      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits">5</LegendChip>
+      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign (click to open)">CP</LegendChip>
+      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day">5</LegendChip>
+      <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only">5</LegendChip>
+      <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only">5</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800 ring-2 ring-violet-300" label="Late log (AM-tagged entry logged after 11:30 — CRM log time, not a verified visit time)">•</LegendChip>
       <LegendChip className="border-rose-300 bg-rose-50 text-rose-800 ring-2 ring-rose-300" label="CRM activity but no fingerprint punch that day">•</LegendChip>
-      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800 ring-2 ring-sky-300" label="Fingerprint punch but no CRM activity that day">•</LegendChip>
+      <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
     </div>
   );
 }
@@ -2761,6 +2792,8 @@ export function FieldWorkforceComplianceWorkspace() {
             report={comparisonReport}
             onRefresh={() => void loadComparison()}
           />
+        ) : activeTab === "head-office-attendance" ? (
+          <HeadOfficeAttendancePanel />
         ) : activeTab === "recommendations" ? (
           sourceMode === "live-mirror" && liveMirrorMonthKey ? (
             <RecommendationsPanel

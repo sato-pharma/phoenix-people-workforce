@@ -7,6 +7,7 @@ import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mappin
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 export type EmployeeAttendanceSummary = {
   absentDays: number;
@@ -211,7 +212,7 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id, full_name, job_title, employment_status, manager_hr_id")
+    .select("hr_id, full_name, nickname, job_title, employment_status, manager_hr_id")
     .eq("manager_hr_id", normalized.toUpperCase());
   if (error || !data) return [];
 
@@ -219,6 +220,7 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
   return (data as Array<{
     hr_id: string;
     full_name: string | null;
+    nickname: string | null;
     job_title: string | null;
     employment_status: string | null;
     manager_hr_id: string | null;
@@ -235,7 +237,9 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
     )
     .map((row) => ({
       hrId: normalizeHrId(row.hr_id) ?? row.hr_id,
-      fullName: row.full_name?.trim() || row.hr_id,
+      fullName: row.full_name?.trim()
+        ? resolveEmployeeDisplayName(row.full_name.trim(), row.nickname)
+        : row.hr_id,
       jobTitle: row.job_title?.trim() || "",
     }))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));

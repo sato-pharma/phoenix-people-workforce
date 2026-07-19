@@ -44,6 +44,8 @@ import type { IReports360Visit } from "@/lib/crm/client";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { classifyEmployeeNode } from "@/lib/workforce-classification";
+import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 
 type DirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
 
@@ -69,6 +71,7 @@ export type FieldWorkforceEmployeeInput = Pick<
   DirectoryRow,
   | "crmId"
   | "crmUsername"
+  | "displayName"
   | "employmentStatus"
   | "fullName"
   | "hireDate"
@@ -83,12 +86,6 @@ function pad2(value: number): string {
 
 function isFridayIso(dateIso: string): boolean {
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 5;
-}
-
-/** Employees who have left the company are not rendered in the monthly report. */
-function isDepartedStatus(status: string | null | undefined): boolean {
-  const normalized = String(status ?? "").trim().toLowerCase();
-  return normalized === "terminated" || normalized === "resigned" || normalized === "inactive";
 }
 
 /** Maps a single agent-day's visit records to a compliance cell value.
@@ -319,6 +316,11 @@ function computeCustomerAuthenticitySignals(monthVisits: FieldWorkforceMatrixVis
  */
 export function buildIReports360FieldWorkforceMatrix(input: {
   employees: FieldWorkforceEmployeeInput[];
+  /** Canonicalized (canonicalHrIdKey) HR-ID keys of employees actively enrolled on a
+   * fingerprint device — Head Office / office-based staff who don't have a field-eligible
+   * title still get a row so their office attendance can be cross-checked against CRM
+   * activity. Optional/defaults empty so existing callers are unaffected. */
+  deviceMappedHrKeys?: Set<string>;
   month: number;
   todayIso?: string | null;
   visits: FieldWorkforceMatrixVisit[];
@@ -329,8 +331,10 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
   matrix: unknown[][];
+  visitPeriodByHrKeyAndDate: Map<string, "AM" | "PM" | "MIXED">;
 } {
   const { employees, month, visits, year } = input;
+  const deviceMappedHrKeys = input.deviceMappedHrKeys ?? new Set<string>();
   const todayIso = input.todayIso ?? null;
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
@@ -390,10 +394,27 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const loggingTimingByHrKeyAndDate = new Map<string, FieldWorkforceLoggingTiming>();
   const customerAuthenticityByHrKey = new Map<string, FieldWorkforceCustomerAuthenticity>();
   const avExcuseLabeledKeys = new Set<string>();
+  const visitPeriodByHrKeyAndDate = new Map<string, "AM" | "PM" | "MIXED">();
 
   const eligible = employees
-    .filter((employee) => isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle))
-    .filter((employee) => !isDepartedStatus(employee.employmentStatus))
+    // Eligible by field-visit title (Medical Rep, DSM, RSM, NSM, PM, GPM, Marketing/Training/SFE
+    // Manager) OR by being actively enrolled on a fingerprint device — Head Office staff who
+    // don't have a field-eligible title (HR Manager, Admin Assistant, ...) still get a row so
+    // their physical office attendance can be cross-checked against CRM "N" days (see
+    // attendance-cross-check.ts's punch_no_visits). Device-mapping-only eligibility is purely
+    // informational: recommendations.ts's payroll-deduction gate requires title-eligibility on
+    // top of this, so a device-mapped-only employee can never generate a deduction candidate.
+    .filter((employee) => {
+      const hrKey = canonicalHrIdKey(employee.hrId);
+      return isFieldWorkforceComplianceEligibleTitle(employee.jobTitle, employee.positionTitle) ||
+        (hrKey != null && deviceMappedHrKeys.has(hrKey));
+    })
+    // Employees who have left the company (resigned/terminated/historical payroll records/
+    // system placeholders) are not rendered in the monthly report. Uses the same canonical
+    // classifier the rest of the app uses to decide who's active (see isActiveDirectoryEmployee
+    // in employee-directory.ts) instead of a bespoke status-string check, so this stays correct
+    // as new employment_status values are introduced.
+    .filter((employee) => classifyEmployeeNode(employee).eligible_for_headcount)
     .sort((left, right) =>
       String(left.hrId).localeCompare(String(right.hrId), undefined, { numeric: true }));
 
@@ -429,6 +450,8 @@ export function buildIReports360FieldWorkforceMatrix(input: {
         const timing = computeLoggingTiming(dayVisits);
         if (timing) loggingTimingByHrKeyAndDate.set(`${hrKey}|${dayIso}`, timing);
         if (dayHasExcuseLabeledAv(dayVisits)) avExcuseLabeledKeys.add(`${hrKey}|${dayIso}`);
+        const period = computeVisitPeriod(dayVisits);
+        if (period) visitPeriodByHrKeyAndDate.set(`${hrKey}|${dayIso}`, period);
       }
       customerAuthenticityByHrKey.set(hrKey, computeCustomerAuthenticitySignals(agentVisits));
     }
@@ -442,7 +465,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     });
 
     matrix.push([
-      employee.fullName ?? "",
+      employee.displayName ?? "",
       employee.hrId,
       employee.hireDate ? String(employee.hireDate).slice(0, 10) : "",
       month,
@@ -451,7 +474,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix };
+  return { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -486,6 +509,23 @@ function computeLoggingTiming(dayVisits: FieldWorkforceMatrixVisit[]): FieldWork
   };
 }
 
+/** One day's regular (customer, visitType 0) visit period from ampm tags: "AM" if every
+ * tagged regular visit that day is AM, "PM" if every one is PM, "MIXED" if both appear, or
+ * null when there are no regular visits that day or none carry a recognized ampm tag — never
+ * guessed from an untagged visit. Non-regular (AV/CP) visits are excluded since they don't
+ * drive the "VISITS" status this coloring signal is attached to. */
+function computeVisitPeriod(dayVisits: FieldWorkforceMatrixVisit[]): "AM" | "PM" | "MIXED" | null {
+  const tags = dayVisits
+    .filter((visit) => visit.visitType === 0)
+    .map((visit) => normalizeAmpm(visit.ampm))
+    .filter((value): value is "AM" | "PM" => value !== null);
+  if (tags.length === 0) return null;
+  const hasAm = tags.includes("AM");
+  const hasPm = tags.includes("PM");
+  if (hasAm && hasPm) return "MIXED";
+  return hasAm ? "AM" : "PM";
+}
+
 /** Parses an "HH:MM" clock string (as produced by minutesToClockString) back to minutes. */
 function clockStringToMinutes(value: string): number | null {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
@@ -516,10 +556,11 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
     areaName: employee.areaName,
     departmentName: employee.departmentName,
     employmentStatus: employee.employmentStatus,
-    fullName: employee.fullName,
+    fullName: employee.displayName,
     hireDate: employee.hireDate,
     hrId: employee.hrId,
     jobTitle: employee.jobTitle,
+    lastWorkingDate: employee.lastWorkingDate,
     lineName: employee.lineName,
     managerHrId: employee.managerHrId,
     managerName: employee.managerName,
@@ -567,6 +608,7 @@ export type VisitsMirrorRow = {
   agent_hr_id?: string | null;
   agent_name: string | null;
   ampm?: string | null;
+  comment?: string | null;
   contact_crm_id?: number | null;
   contact_name?: string | null;
   crm_save_date?: string | null;
@@ -580,7 +622,9 @@ export type VisitsMirrorRow = {
 /** Maps a mirror row (ireports360_visits) onto the matrix-builder visit shape. Carries the
  * mirror's already-resolved agent_hr_id / double_hr_id (visits-report's sync-time
  * override->crm_id->username resolution) so the matrix builder can trust them for identity.
- * Other CRM fields are unused by the matrix builder and left null. visit_type is never null
+ * The `comment` is carried through because the excuse-labeled-AV detector (dayHasExcuseLabeledAv)
+ * reads it to tell a real vacation apart from an "Afternoon Excuse"; other unused CRM fields are
+ * left null. visit_type is never null
  * in production today (verified), so a null here fails loudly rather than silently defaulting
  * to a "regular visit" and miscounting compliance. Exported for the mirror-row-mapping parity
  * test in tests/field-workforce-compliance-eligibility.test.ts. */
@@ -595,7 +639,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     ampm: row.ampm ?? null,
     attendance: null,
     callType: null,
-    comment: null,
+    comment: row.comment ?? null,
     contactID: row.contact_crm_id ?? null,
     contactName: row.contact_name ?? null,
     customerName: null,
@@ -639,7 +683,7 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
     dateFrom: startDate,
     dateTo: endDate,
     columns:
-      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, " +
+      "agent_crm_id, agent_hr_id, agent_name, ampm, comment, contact_crm_id, contact_name, crm_save_date, " +
       "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
   });
 }
@@ -694,7 +738,29 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   ]);
   const visits = mirrorRows.map(visitFromMirrorRow);
 
-  const { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix } = buildIReports360FieldWorkforceMatrix({
+  // Head Office / office-based staff earn a Team Calendar row via fingerprint device
+  // enrollment rather than a field-eligible title (see the `eligible` filter comment in
+  // buildIReports360FieldWorkforceMatrix). Best-effort: loadActiveDeviceMappedHrIds normalizes
+  // via a different helper than canonicalHrIdKey, so its output is re-canonicalized before use
+  // (same pattern as attendance-cross-check.ts / head-office-attendance.ts). A failure here
+  // degrades to a warning rather than breaking the whole preview.
+  let deviceMappedHrKeys = new Set<string>();
+  let deviceMappedWarning: { code: string; message: string; severity: "warning" } | null = null;
+  try {
+    const rawDeviceMapped = await loadActiveDeviceMappedHrIds();
+    deviceMappedHrKeys = new Set(
+      [...rawDeviceMapped].map((id) => canonicalHrIdKey(id)).filter((key): key is string => Boolean(key)),
+    );
+  } catch (error) {
+    deviceMappedWarning = {
+      code: "device_mapped_eligibility_unavailable",
+      message: `Head Office fingerprint-based eligibility could not be loaded this month: ${error instanceof Error ? error.message : "device mapping lookup failed"}. Office staff without a field-eligible title may be temporarily missing from the Team Calendar.`,
+      severity: "warning",
+    };
+  }
+
+  const { avExcuseLabeledKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+    deviceMappedHrKeys,
     employees: directory,
     month,
     todayIso: input.todayIso ?? null,
@@ -732,11 +798,13 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     const timeline = employee.timeline.map((cell) => {
       const timing = hrKey ? loggingTimingByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
       const isExcuseLabeledAv = hrKey ? avExcuseLabeledKeys.has(`${hrKey}|${cell.dateIso}`) : false;
-      if (!timing && !isExcuseLabeledAv) return cell;
+      const visitPeriod = hrKey ? visitPeriodByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
+      if (!timing && !isExcuseLabeledAv && !visitPeriod) return cell;
       return {
         ...cell,
         ...(timing ? { loggingTiming: timing } : {}),
         ...(isExcuseLabeledAv ? { isExcuseLabeledAv: true } : {}),
+        ...(visitPeriod ? { visitPeriod } : {}),
       };
     });
     const loggingTimingSummary = summarizeLoggingTiming(timeline);
@@ -746,6 +814,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   });
 
   const warnings = [...preview.warnings];
+  if (deviceMappedWarning) warnings.push(deviceMappedWarning);
   if (unresolvedHrIds.length > 0) {
     const sample = unresolvedHrIds.slice(0, 8).join(", ");
     warnings.push({

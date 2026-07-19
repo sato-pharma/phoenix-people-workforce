@@ -131,7 +131,7 @@ function normalizeViewMode(value: string | null | undefined): PrivateCalendarVie
 }
 
 function sortEmployees(employees: EmployeeDirectoryRow[]) {
-  return [...employees].sort((left, right) => left.fullName.localeCompare(right.fullName));
+  return [...employees].sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
 function employeeMetadataByHrId(employees: EmployeeDirectoryRow[]) {

@@ -9,6 +9,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -16,6 +17,7 @@ import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schem
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import type {
   VisitsReportData,
@@ -44,26 +46,138 @@ export function isCrmDoubleVisitRow(row: {
   );
 }
 
-/** Resigned OR owner-excluded CRM agents (their iReports360 agent_crm_ids). Excluded from EVERY CRM
- * read — visits and check-ins — so they're invisible across all consumers that go through this read
- * layer. Single source; the CRM master table imports this same list. Resolved from the owner's
- * display-name lists (see memory crm-resigned-agents-exclusion-list). */
+/** STATIC resigned/owner-excluded CRM agents (their iReports360 agent_crm_ids) — the hand-maintained
+ * safety-net. Most entries are CRM territory/bucket placeholders or owner-excluded agents that
+ * resolve to NO employee, so a live employment-status join can never see them; this list stays as
+ * the permanent floor. The EFFECTIVE exclusion applied by every read is this list UNIONed with the
+ * live departed-agent set — see {@link getEffectiveExcludedAgentCrmIds}. Single source; the other CRM
+ * modules import from here. Resolved from the owner's display-name lists (see memory
+ * crm-resigned-agents-exclusion-list). */
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1102, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
   1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
-  1395, 1396, 1402, 1407, 1409, 1437, 1476, 1477, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
+  1395, 1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
   1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
   // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
   // CEO 1474, George.Rafaat (Sharkia 1/C) 1500. (Mahmoud.Gamal 1272 already listed above.)
   667, 1436, 1474, 1500,
+  // 2026-07-18: crm_id 1477 REMOVED — it is a reused CRM agent slot now resolving to ACTIVE
+  // employee B-164 (Nasr City / P); keeping it here was hiding an active rep's data. The live
+  // status union will not re-hide an active employee.
 ];
 
-/** PostgREST `in` list literal for the resigned ids, e.g. "(832,851,...)" — consumers that query
- * ireports360 directly use it to `.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)`. */
+/** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
+ * fail-safe default in the filter helpers below; for the effective (static ∪ live) list prefer
+ * {@link getEffectiveExcludedInList}. */
 export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 
+// ── Live departed-agent exclusion (unioned with the static safety-net above) ─────────────────
+// On top of the static list we UNION a live signal: any CRM agent whose sync-resolved agent_hr_id
+// belongs to an employee who is no longer active (employment_status ∉ {active, on_leave}). That
+// auto-hides a rep the moment HR flips their status — no code edit or deploy — while the static
+// list stays the permanent safety-net for the unresolvable placeholder/owner-excluded agents the
+// live join can never catch. Fail-safe: any error computing the live set falls back to the static
+// list alone (over-hide, never under-hide). Cached ~5 min; employment-status changes are rare.
+const EXCLUDED_AGENTS_TTL_MS = 5 * 60_000;
+type EffectiveExclusion = { ids: number[]; inList: string };
+let excludedAgentsCache: (EffectiveExclusion & { at: number }) | null = null;
+let excludedAgentsInFlight: Promise<EffectiveExclusion> | null = null;
+
+/**
+ * Distinct agent_crm_ids in the visits mirror whose sync-resolved `agent_hr_id` belongs to one of
+ * `departedHrIds`. Visits alone are complete — every departed agent that has check-ins also has
+ * visits (verified against production), so the check-ins table need not be scanned. Raw keyset scan
+ * that deliberately does NOT apply the resigned exclusion (it is computing part of it).
+ */
+async function scanDepartedAgentCrmIds(departedHrIds: readonly string[]): Promise<number[]> {
+  const keys = expandHrIdFilterValues(departedHrIds);
+  if (keys.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const ids = new Set<number>();
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, agent_crm_id")
+      .in("agent_hr_id", keys)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) break;
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_crm_id: number | null }>;
+    for (const row of page) if (row.agent_crm_id != null) ids.add(Number(row.agent_crm_id));
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+  return Array.from(ids);
+}
+
+/** Compute the effective exclusion (static ∪ live departed). Never throws: a failure in the live
+ * tier is logged and degrades to the static list alone. */
+async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
+  let liveIds: number[] = [];
+  try {
+    const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+    const departedHrIds = employees
+      .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus))
+      .map((employee) => employee.hrId)
+      .filter((hrId): hrId is string => Boolean(hrId));
+    if (departedHrIds.length > 0) liveIds = await scanDepartedAgentCrmIds(departedHrIds);
+  } catch (error) {
+    // Best-effort live tier; the static safety-net still applies (fail-safe over-hide).
+    console.error("[crm/reads] live departed-agent exclusion failed; using static list only", error);
+  }
+  const ids = Array.from(new Set<number>([...CRM_RESIGNED_AGENT_CRM_IDS, ...liveIds])).sort((a, b) => a - b);
+  return { ids, inList: ids.length > 0 ? `(${ids.join(",")})` : "" };
+}
+
+/** Cached accessor for the effective exclusion; refreshes at most once per
+ * {@link EXCLUDED_AGENTS_TTL_MS} and dedupes concurrent refreshes. Always resolves (never below the
+ * static list). */
+async function getEffectiveExclusion(): Promise<EffectiveExclusion> {
+  const cached = excludedAgentsCache;
+  if (cached && Date.now() - cached.at < EXCLUDED_AGENTS_TTL_MS) return cached;
+  if (excludedAgentsInFlight) return excludedAgentsInFlight;
+  excludedAgentsInFlight = computeEffectiveExclusion()
+    .then((result) => {
+      excludedAgentsCache = { ...result, at: Date.now() };
+      return result;
+    })
+    .finally(() => {
+      excludedAgentsInFlight = null;
+    });
+  return excludedAgentsInFlight;
+}
+
+/** The PostgREST `in` list literal for the EFFECTIVE exclusion (static ∪ live departed). Consumers
+ * that build their own ireports360 queries use it in `.not("agent_crm_id", "in", …)`. */
+export async function getEffectiveExcludedInList(): Promise<string> {
+  return (await getEffectiveExclusion()).inList;
+}
+
+/** The EFFECTIVE excluded agent_crm_ids (static safety-net ∪ live departed agents). */
+export async function getEffectiveExcludedAgentCrmIds(): Promise<number[]> {
+  return (await getEffectiveExclusion()).ids;
+}
+
 const DEFAULT_PAGE_SIZE = 1000;
+
+/**
+ * Expand hr-id filter values so a case-SENSITIVE PostgREST `.in("agent_hr_id"/"double_hr_id", …)`
+ * matches regardless of the caller's casing. The mirror stores whatever casing the employee roster
+ * uses (asserted UPPERCASE but NOT enforced anywhere in the write path), so we spray every
+ * casing/alias variant via the shared `hrIdLookupKeys` helper. This is the SINGLE place the door's
+ * hr-id list filters become case-insensitive — callers pass ids in any casing and must not
+ * pre-expand. Cheap: the hr-id lists here are per-employee / per-cohort (never company-wide). */
+export function expandHrIdFilterValues(ids: readonly string[]): string[] {
+  return Array.from(new Set(ids.flatMap((id) => hrIdLookupKeys(id))));
+}
 
 /** Shared visit filters, applied identically across every read. */
 export type CrmVisitFilter = {
@@ -71,14 +185,17 @@ export type CrmVisitFilter = {
   dateFrom?: string;
   /** Inclusive `visit_date` upper bound (YYYY-MM-DD). */
   dateTo?: string;
-  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
+  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. Matched
+   * CASE-INSENSITIVELY — the door sprays every casing/alias variant (`expandHrIdFilterValues`), so
+   * pass ids in any casing and do NOT pre-expand. */
   agentHrIds?: readonly string[];
   /** Case-insensitive exact match on a single resolved agent hr id (`agent_hr_id ILIKE`). For
    * per-employee reads (e.g. probation SFE evidence) where the caller's hr-id casing may differ
    * from the mirror's stored casing. Combine with a date range, not with `agentHrIds`. */
   agentHrIdILike?: string;
   /** Restrict to these resolved DOUBLE-visitor hr ids (`double_hr_id IN`). Empty array → no rows.
-   * For "double visits conducted by this manager" reads (e.g. Employee 360 leadership activity). */
+   * Matched case-insensitively (see `agentHrIds`). For "double visits conducted by this manager"
+   * reads (e.g. Employee 360 leadership activity). */
   doubleHrIds?: readonly string[];
   /** Restrict to these visit types (`visit_type IN`). */
   visitTypes?: readonly number[];
@@ -104,15 +221,21 @@ type VisitFilterableQuery = {
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function applyVisitFilter(query: VisitFilterableQuery, filter: CrmVisitFilter): VisitFilterableQuery {
+function applyVisitFilter(
+  query: VisitFilterableQuery,
+  filter: CrmVisitFilter,
+  excludedInList: string = CRM_RESIGNED_IN_LIST,
+): VisitFilterableQuery {
   let result = query;
-  // Resigned agents are invisible across every CRM read (single source).
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
+  // Resigned/departed agents are invisible across every CRM read (single source). `excludedInList`
+  // is the effective (static ∪ live) list; it defaults to the static safety-net for any caller that
+  // has not resolved the live set.
+  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
-  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
-  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", [...filter.doubleHrIds]);
+  if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", expandHrIdFilterValues(filter.doubleHrIds));
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
   if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
@@ -147,13 +270,14 @@ export async function queryVisits<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const projection = withIdColumn(options.columns ?? "*");
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const rows: T[] = [];
   let cursor: string | null = null;
   for (;;) {
     let query = supabase.from(CRM_VISITS_TABLE).select(projection);
-    query = applyVisitFilter(query as unknown as VisitFilterableQuery, options) as unknown as typeof query;
+    query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order("id", { ascending: true }).limit(pageSize);
     if (cursor) query = query.gt("id", cursor);
     const { data, error } = await query;
@@ -179,8 +303,9 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   let query = supabase.from(CRM_VISITS_TABLE).select(options.columns ?? "*");
-  query = applyVisitFilter(query as unknown as VisitFilterableQuery, options) as unknown as typeof query;
+  query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
   query = query
     .order(options.orderBy ?? "visit_date", { ascending: options.ascending ?? false })
     .limit(options.limit);
@@ -212,7 +337,8 @@ export async function getDoubleVisitRows<T = CrmVisitRow>(
 export type CrmCheckinFilter = {
   /** Restrict to these CRM agent ids (`agent_crm_id IN`). Empty array → no rows. */
   agentCrmIds?: readonly number[];
-  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. */
+  /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. Matched
+   * case-insensitively (see the visit-filter `agentHrIds` note). */
   agentHrIds?: readonly string[];
   /** Case-insensitive exact match on the resolved agent hr id (`agent_hr_id ILIKE`) — see the
    * visit-filter note. */
@@ -233,12 +359,16 @@ type CheckinFilterableQuery = {
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function applyCheckinFilter(query: CheckinFilterableQuery, filter: CrmCheckinFilter): CheckinFilterableQuery {
+function applyCheckinFilter(
+  query: CheckinFilterableQuery,
+  filter: CrmCheckinFilter,
+  excludedInList: string = CRM_RESIGNED_IN_LIST,
+): CheckinFilterableQuery {
   let result = query;
-  // Resigned agents are invisible across every CRM read (single source).
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
+  // Resigned/departed agents are invisible across every CRM read (single source). See applyVisitFilter.
+  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
-  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", [...filter.agentHrIds]);
+  if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
   if (filter.dateTo) result = result.lte("check_date", `${filter.dateTo}T23:59:59`);
@@ -264,10 +394,11 @@ export async function queryCheckins<T = CrmCheckinRow>(
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
 
   if (options.limit != null) {
     let query = supabase.from(CRM_CHECKINS_TABLE).select(options.columns ?? "*");
-    query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options) as unknown as typeof query;
+    query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order(options.orderBy ?? "check_date", { ascending: options.ascending ?? true }).limit(options.limit);
     const { data, error } = await query;
     if (error) {
@@ -283,7 +414,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
   let cursor: string | null = null;
   for (;;) {
     let query = supabase.from(CRM_CHECKINS_TABLE).select(projection);
-    query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options) as unknown as typeof query;
+    query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order("check_date", { ascending: true }).limit(pageSize);
     if (cursor) query = query.gt("check_date", cursor);
     const { data, error } = await query;
@@ -362,11 +493,13 @@ type ReportFilterableQuery = {
 function applyVisitsReportFilters(
   query: ReportFilterableQuery,
   filters: VisitsReportFilterInput & { dateFrom: string; dateTo: string },
+  excludedInList: string = CRM_RESIGNED_IN_LIST,
 ): ReportFilterableQuery {
   let result: ReportFilterableQuery = query.gte("visit_date", filters.dateFrom).lte("visit_date", filters.dateTo);
-  // Resigned/owner-excluded agents are invisible across every CRM read — the Visits Report is no
-  // exception, so its totals reconcile with DV Analytics, FWC, probation, and the CRM master tab.
-  if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) result = result.not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST);
+  // Resigned/departed agents are invisible across every CRM read — the Visits Report is no exception,
+  // so its totals reconcile with DV Analytics, FWC, probation, and the CRM master tab. `excludedInList`
+  // is the effective (static ∪ live) list.
+  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
   if (filters.agentName) result = result.eq("agent_name", filters.agentName);
   if (filters.ampm) result = result.eq("ampm", filters.ampm);
   if (filters.visitType) result = result.eq("visit_type_description", filters.visitType);
@@ -400,16 +533,16 @@ type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number |
 async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, dateTo: string): Promise<VisitsReportRow[]> {
   if (rows.length === 0) return rows;
   const agentIds = Array.from(new Set(rows.map((row) => row.agentCrmId)));
-  const supabase = getSupabaseAdmin();
-  const { data: checkinRows } = await supabase
-    .from(CRM_CHECKINS_TABLE)
-    .select("agent_crm_id, contact_crm_id, check_date, address")
-    .in("agent_crm_id", agentIds)
-    .gte("check_date", `${dateFrom}T00:00:00`)
-    .lte("check_date", `${dateTo}T23:59:59`)
-    .limit(20000);
+  // Full keyset scan via queryCheckins — every check-in for these agents in the window, so the
+  // nearest-check-in correlation is complete (no silent 20k cap).
+  const checkinRows = await queryCheckins<NearestCheckinRow>({
+    agentCrmIds: agentIds,
+    dateFrom,
+    dateTo,
+    columns: "agent_crm_id, contact_crm_id, check_date, address",
+  });
 
-  const index = indexCheckinsByAgentContactDay((checkinRows ?? []) as NearestCheckinRow[]);
+  const index = indexCheckinsByAgentContactDay(checkinRows);
   return rows.map((row) => {
     const match = pickCheckinForVisit(
       { agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId, visitDay: row.visitDate, crmSaveDate: row.crmSaveDate },
@@ -431,6 +564,7 @@ async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, 
  */
 async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<string[]> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const names = new Set<string>();
   const pageSize = 2000;
   let cursor: string | null = null;
@@ -438,7 +572,7 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
     let query = supabase
       .from(CRM_VISITS_TABLE)
       .select("id, agent_name")
-      .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+      .not("agent_crm_id", "in", excludedInList)
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
       .order("id", { ascending: true })
@@ -457,16 +591,34 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
 }
 
 async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("visit_type_description")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(5000);
-  return Array.from(
-    new Set(((data ?? []) as Array<{ visit_type_description: string | null }>).map((row) => row.visit_type_description).filter((value): value is string => Boolean(value))),
-  ).sort();
+  // Full keyset scan (order by `id`) — every distinct visit-type label in the window, GUARANTEED
+  // complete (no silent cap). Distinct cardinality is tiny (~10), so this is a bounded one-pass scan.
+  const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
+  const types = new Set<string>();
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, visit_type_description")
+      .not("agent_crm_id", "in", excludedInList)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; visit_type_description: string | null }>;
+    for (const row of page) if (row.visit_type_description) types.add(row.visit_type_description);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+  return Array.from(types).sort();
 }
 
 export async function getVisitsReportData(
@@ -495,8 +647,9 @@ export async function getVisitsReportData(
   }
 
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const baseQuery = supabase.from(CRM_VISITS_TABLE).select(visitReportColumns, { count: "exact" });
-  const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }) as unknown as typeof baseQuery)
+  const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
@@ -538,8 +691,9 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
   }
 
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const baseQuery = supabase.from(CRM_VISITS_TABLE).select(visitReportColumns, { count: "exact" });
-  const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }) as unknown as typeof baseQuery)
+  const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
     .range(0, MAX_EXPORT_ROWS - 1);
@@ -558,31 +712,37 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
 // Purpose-built reads that keep a consumer's exact query semantics (and its performance
 // tuning) inside the CRM module, so no module runs its own `.from("ireports360_*")`.
 
-const DISTINCT_AGENT_NAMES_CAP = 25000;
-
 /**
  * Distinct agent names in [dateFrom, dateTo], resigned/excluded agents removed — feeds the CRM
- * Integrity agent-filter dropdown. A single flat, capped, UNORDERED fetch (not a keyset scan):
- * ordering by the random-uuid `id` abandons the `(visit_date)` index and is measurably slower
- * (6.9s vs 3.9s on a real 30-day window), and only the small distinct-name set is needed, not
- * every row. An unusually wide range could in theory truncate before every name is seen, which
- * only narrows the dropdown — never the report's own rows. Returns `[]` if the schema is missing.
+ * Integrity agent-filter dropdown. Full keyset scan (order by `id`), so it returns EVERY distinct
+ * name in the window with no silent cap. Distinct-name cardinality is small (low hundreds), so this
+ * is a bounded one-pass scan of the row set. Returns `[]` if the schema is missing.
  */
 export async function getVisitAgentNames(dateFrom: string, dateTo: string): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("agent_name")
-    .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .limit(DISTINCT_AGENT_NAMES_CAP);
-  if (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw new Error(error.message);
-  }
+  const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const names = new Set<string>();
-  for (const row of (data ?? []) as Array<{ agent_name: string | null }>) {
-    if (row.agent_name) names.add(row.agent_name);
+  const pageSize = 2000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("id, agent_name")
+      .not("agent_crm_id", "in", excludedInList)
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as Array<{ id: string; agent_name: string | null }>;
+    for (const row of page) if (row.agent_name) names.add(row.agent_name);
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
   }
   return Array.from(names).sort();
 }
@@ -612,11 +772,12 @@ export async function queryVisitsPage<T = CrmVisitRow>(options: {
   pageSize: number;
 }): Promise<{ rows: T[]; count: number }> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   const baseQuery = supabase.from(CRM_VISITS_TABLE).select(options.columns, { count: "exact" });
   let query = applyVisitFilter(baseQuery as unknown as VisitFilterableQuery, {
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
-  }) as unknown as PagedVisitQuery;
+  }, excludedInList) as unknown as PagedVisitQuery;
   if (options.agentName) query = query.eq("agent_name", options.agentName);
   for (const order of options.orderBy) query = query.order(order.column, { ascending: order.ascending });
   const from = (options.page - 1) * options.pageSize;
@@ -642,12 +803,13 @@ export async function scanVisitsForRange<T = CrmVisitRow>(options: {
   columns: string;
 }): Promise<T[]> {
   const supabase = getSupabaseAdmin();
+  const excludedInList = await getEffectiveExcludedInList();
   try {
     return await fetchAllRows<T>(() =>
       supabase
         .from(CRM_VISITS_TABLE)
         .select(options.columns)
-        .not("agent_crm_id", "in", CRM_RESIGNED_IN_LIST)
+        .not("agent_crm_id", "in", excludedInList)
         .gte("visit_date", options.dateFrom)
         .lte("visit_date", options.dateTo),
     );
@@ -677,7 +839,7 @@ export async function getMappedAgentHrIds(hrIds: readonly string[]): Promise<str
     let query = supabase
       .from(CRM_VISITS_TABLE)
       .select("id, agent_hr_id")
-      .in("agent_hr_id", [...hrIds])
+      .in("agent_hr_id", expandHrIdFilterValues(hrIds))
       .order("id", { ascending: true })
       .limit(DEFAULT_PAGE_SIZE);
     if (cursor) query = query.gt("id", cursor);

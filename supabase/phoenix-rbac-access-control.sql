@@ -95,7 +95,7 @@ create table if not exists public.users (
   username text not null unique,
   email text null unique,
   password_hash text not null,
-  line text not null default 'Other' check (line in ('CNS', 'Pedia', 'Anti-Infective', 'Office', 'Other')),
+  line text not null default 'Other' check (line in ('CNS', 'Pedia', 'Anti Infective', 'Office', 'Other')),
   manager_hr_id text null references public.employees(hr_id) on update cascade on delete set null,
   is_active boolean not null default true,
   sales_scope_override text null check (sales_scope_override in ('SELF', 'TEAM', 'HIERARCHY', 'LINE', 'COMPANY', 'NONE')),

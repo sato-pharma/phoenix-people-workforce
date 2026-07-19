@@ -1,5 +1,6 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
@@ -204,12 +205,25 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
 
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
-function mapLeaveItem(row: VacationActionCenterRow): ActionHubItem {
+function liveEmployeeName(
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  hrId: string | null | undefined,
+  rawName: string,
+): string {
+  if (!hrId) return rawName;
+  const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
+  return employee?.displayName ?? rawName;
+}
+
+function mapLeaveItem(
+  row: VacationActionCenterRow,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): ActionHubItem {
   const typeLabel = vacationTypeLabel(row.vacationType);
   return {
     id: row.id,
     module: "leave",
-    employeeName: row.employeeName,
+    employeeName: liveEmployeeName(employees, row.employeeHrId, row.employeeName),
     employeeHrId: row.employeeHrId,
     title: `${typeLabel} · ${row.durationDays} day${row.durationDays === 1 ? "" : "s"}`,
     statusLabel: row.status.replace(/_/g, " "),
@@ -243,11 +257,14 @@ function mapLeaveItem(row: VacationActionCenterRow): ActionHubItem {
   };
 }
 
-function mapResignationItem(record: ResignationRecord): ActionHubItem {
+function mapResignationItem(
+  record: ResignationRecord,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): ActionHubItem {
   return {
     id: record.id,
     module: "resignation",
-    employeeName: record.employeeName,
+    employeeName: liveEmployeeName(employees, record.employeeHrId, record.employeeName),
     employeeHrId: record.employeeHrId,
     title: `Resignation · ${record.effectiveDate}`,
     statusLabel: record.status.replace(/_/g, " "),
@@ -266,11 +283,15 @@ function mapResignationItem(record: ResignationRecord): ActionHubItem {
   };
 }
 
-function mapExcuseItem(request: EmployeeExcuseRequest, readOnlyReason?: string | null): ActionHubItem {
+function mapExcuseItem(
+  request: EmployeeExcuseRequest,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  readOnlyReason?: string | null,
+): ActionHubItem {
   return {
     id: request.id,
     module: "excuse",
-    employeeName: request.employeeName,
+    employeeName: liveEmployeeName(employees, request.employeeHrId, request.employeeName),
     employeeHrId: request.employeeHrId,
     title: `${request.excuseType === "morning" ? "Morning" : "Afternoon"} Excuse · ${request.excuseDate}`,
     statusLabel: humanize(request.status),
@@ -289,11 +310,14 @@ function mapExcuseItem(request: EmployeeExcuseRequest, readOnlyReason?: string |
   };
 }
 
-function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
+function mapOutstationItem(
+  request: OutstationExpenseRequest,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): ActionHubItem {
   return {
     id: String(request.id),
     module: "outstation",
-    employeeName: request.employeeName,
+    employeeName: liveEmployeeName(employees, request.employeeHrId, request.employeeName),
     employeeHrId: request.employeeHrId,
     title: `Outstation · ${request.tripStartDate}`,
     statusLabel: "Pending approval",
@@ -315,13 +339,16 @@ function mapOutstationItem(request: OutstationExpenseRequest): ActionHubItem {
   };
 }
 
-function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
+function mapContractRenewalItem(
+  row: ContractRow,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): ActionHubItem | null {
   if (!row.workflow || !ACTIVE_CONTRACT_STATUSES.has(row.workflow.status)) return null;
   const w = row.workflow;
   return {
     id: w.id,
     module: "contract_renewal",
-    employeeName: w.employeeName,
+    employeeName: liveEmployeeName(employees, w.employeeHrId, w.employeeName),
     employeeHrId: w.employeeHrId,
     title: `Contract Renewal · ${w.requestedRenewalDate}`,
     statusLabel: w.status.replace(/_/g, " "),
@@ -342,12 +369,15 @@ function mapContractRenewalItem(row: ContractRow): ActionHubItem | null {
   };
 }
 
-function mapWeeklyPlanItem(plan: ApproverPendingPlan): ActionHubItem {
+function mapWeeklyPlanItem(
+  plan: ApproverPendingPlan,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): ActionHubItem {
   const kindLabel = plan.planKind === "weekly" ? "Weekly" : "Monthly";
   return {
     id: plan.id,
     module: "weekly_plan",
-    employeeName: plan.employeeName,
+    employeeName: liveEmployeeName(employees, plan.employeeHrId, plan.employeeName),
     employeeHrId: plan.employeeHrId,
     title: `${kindLabel} plan · ${plan.periodKey}`,
     statusLabel: plan.stage === "manager" ? "Needs manager review" : "Needs CEO approval",
@@ -391,37 +421,39 @@ export async function getAwaitingMyActionItems(
     includeOutstationAdminSource ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     getContractRenewalDashboardData(access).catch(() => null),
     getPlansAwaitingAction(access).catch(() => null),
+    getEmployeeDirectory().catch(() => null),
   ]);
 
-  const [leave, excuse, resignations, outstation, contract, plans] = settled;
+  const [leave, excuse, resignations, outstation, contract, plans, directoryResult] = settled;
+  const employees = directoryResult.status === "fulfilled" && directoryResult.value ? directoryResult.value.employees : [];
   const items: ActionHubItem[] = [];
 
   if (leave.status === "fulfilled" && leave.value) {
-    for (const row of leave.value.rows) items.push(mapLeaveItem(row));
+    for (const row of leave.value.rows) items.push(mapLeaveItem(row, employees));
   }
   if (excuse.status === "fulfilled" && excuse.value) {
-    for (const request of excuse.value) items.push(mapExcuseItem(request));
+    for (const request of excuse.value) items.push(mapExcuseItem(request, employees));
   }
   if (resignations.status === "fulfilled" && resignations.value) {
     for (const record of resignations.value.records) {
       if (record.status === "submitted" || record.status === "under_review") {
-        items.push(mapResignationItem(record));
+        items.push(mapResignationItem(record, employees));
       }
     }
   }
   if (outstation.status === "fulfilled" && outstation.value) {
     for (const request of outstation.value) {
-      if (request.status === "submitted") items.push(mapOutstationItem(request));
+      if (request.status === "submitted") items.push(mapOutstationItem(request, employees));
     }
   }
   if (contract.status === "fulfilled" && contract.value) {
     for (const row of contract.value.rows) {
-      const item = mapContractRenewalItem(row);
+      const item = mapContractRenewalItem(row, employees);
       if (item) items.push(item);
     }
   }
   if (plans.status === "fulfilled" && plans.value) {
-    for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan));
+    for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan, employees));
   }
 
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
@@ -479,7 +511,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     payroll_expense: "/admin/outstation/expenses",
   } as const;
 
-  const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses, momSteps] =
+  const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses, momSteps, directoryResult] =
     await Promise.allSettled([
       db
         .from("v2_vacation_requests")
@@ -547,7 +579,10 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .not("decided_at", "is", null)
         .order("decided_at", { ascending: false })
         .limit(200),
+      getEmployeeDirectory(),
     ]);
+
+  const employees = directoryResult.status === "fulfilled" ? directoryResult.value.employees : [];
 
   if (leaves.status === "fulfilled" && !leaves.value.error) {
     for (const row of leaves.value.data ?? []) {
@@ -561,7 +596,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:leave:${row.id}`,
         module: "leave",
-        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
         title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
         decision,
@@ -586,7 +621,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:leave:${reqId}`,
         module: "leave",
-        employeeName: String(req.employee_name ?? "Unknown"),
+        employeeName: liveEmployeeName(employees, String(req.employee_hr_id ?? ""), String(req.employee_name ?? "Unknown")),
         employeeHrId: String(req.employee_hr_id ?? ""),
         title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
         decision,
@@ -603,7 +638,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:excuse:${row.id}`,
         module: "excuse",
-        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
         title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
         decision,
@@ -633,7 +668,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:weekly_plan:${row.id}`,
         module: "weekly_plan",
-        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
         title: `${String(row.plan_kind ?? "weekly").charAt(0).toUpperCase()}${String(row.plan_kind ?? "weekly").slice(1)} plan · ${row.period_key ?? ""}`,
         decision,
@@ -662,7 +697,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:resignation:${row.id}`,
         module: "resignation",
-        employeeName: String(row.employee_name ?? "Unknown"),
+        employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
         employeeHrId: String(row.employee_hr_id ?? ""),
         title: `Resignation · effective ${row.effective_date ?? ""}`,
         decision,
@@ -729,7 +764,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       items.push({
         id: `history:payroll_expense:${row.id}`,
         module: "payroll_expense",
-        employeeName: String(row.specialist ?? "Expense"),
+        employeeName: liveEmployeeName(employees, String(row.hr_id ?? ""), String(row.specialist ?? "Expense")),
         employeeHrId: String(row.hr_id ?? ""),
         title: `Expense · ${Number(row.total ?? 0).toLocaleString()} EGP · ${String(row.expense_date ?? "")}`,
         decision: "approved",
@@ -748,7 +783,12 @@ const DEEP_LINK_READ_ONLY = "Decision already recorded — this is a read-only v
 // Build a read-only inbox card for a leave request the caller already decided. Self-contained
 // (queries the table directly) so it never perturbs the live, pending-only inbox pipeline. Only
 // returns the item when the caller is the actual decider (or HR/system) — so it can never leak.
-async function buildLeaveDeepLinkItem(access: AccessContext, id: string, hrId: string): Promise<ActionHubItem | null> {
+async function buildLeaveDeepLinkItem(
+  access: AccessContext,
+  id: string,
+  hrId: string,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): Promise<ActionHubItem | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("v2_vacation_requests")
@@ -780,7 +820,7 @@ async function buildLeaveDeepLinkItem(access: AccessContext, id: string, hrId: s
   return {
     id: String(row.id),
     module: "leave",
-    employeeName: String(row.employee_name ?? "Unknown"),
+    employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
     employeeHrId: String(row.employee_hr_id ?? ""),
     title: `${vacationTypeLabel(String(row.vacation_type ?? "annual"))} · ${Number(row.duration_days ?? 0)} day${Number(row.duration_days ?? 0) === 1 ? "" : "s"}`,
     statusLabel: String(row.status ?? "").replace(/_/g, " "),
@@ -805,7 +845,12 @@ async function buildLeaveDeepLinkItem(access: AccessContext, id: string, hrId: s
 
 // Read-only inbox card for a weekly/monthly plan the caller already decided. Self-contained; the
 // status label reflects the *real* decided status (never a misleading "Needs … approval").
-async function buildPlanDeepLinkItem(access: AccessContext, id: string, hrId: string): Promise<ActionHubItem | null> {
+async function buildPlanDeepLinkItem(
+  access: AccessContext,
+  id: string,
+  hrId: string,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): Promise<ActionHubItem | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("employee_plan_headers")
@@ -845,7 +890,7 @@ async function buildPlanDeepLinkItem(access: AccessContext, id: string, hrId: st
   return {
     id: String(row.id),
     module: "weekly_plan",
-    employeeName: String(row.employee_name ?? "Unknown"),
+    employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
     employeeHrId: String(row.employee_hr_id ?? ""),
     title: `${kindLabel} plan · ${String(row.period_key ?? "")}`,
     statusLabel: String(row.status ?? "").replace(/_/g, " "),
@@ -875,12 +920,14 @@ export async function getActionCenterDeepLinkItem(
 ): Promise<ActionHubItem | null> {
   if (!id) return null;
   const hrId = (access.hrId ?? "").trim().toUpperCase();
+  const employees = await getEmployeeDirectory().then((d) => d.employees).catch(() => []);
 
   if (module === "excuse") {
     const result = await getExcuseRequestForActionCenterDeepLink(access, id);
     if (!result) return null;
     return mapExcuseItem(
       result.request,
+      employees,
       result.canAct ? null : "Direct manager owns this approval. HR has visibility only.",
     );
   }
@@ -890,11 +937,11 @@ export async function getActionCenterDeepLinkItem(
     const record = dashboard?.records.find((r) => r.id === id) ?? null;
     if (!record) return null;
     const decided = /(approv|reject|complet|cancel)/.test(String(record.status ?? "").toLowerCase());
-    return { ...mapResignationItem(record), readOnlyReason: decided ? DEEP_LINK_READ_ONLY : null };
+    return { ...mapResignationItem(record, employees), readOnlyReason: decided ? DEEP_LINK_READ_ONLY : null };
   }
 
-  if (module === "leave") return buildLeaveDeepLinkItem(access, id, hrId);
-  if (module === "weekly_plan") return buildPlanDeepLinkItem(access, id, hrId);
+  if (module === "leave") return buildLeaveDeepLinkItem(access, id, hrId, employees);
+  if (module === "weekly_plan") return buildPlanDeepLinkItem(access, id, hrId, employees);
 
   return null;
 }
