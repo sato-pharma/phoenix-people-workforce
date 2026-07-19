@@ -57,6 +57,7 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /lifecycleRiskWindows\.probationCriticalDays/);
   assert.match(serviceSource, /lifecycleRiskWindows\.probationRiskDays/);
   assert.match(serviceSource, /resolveActiveHrApproverHrIds/, "HR approvers must be resolved by role, not hardcoded IDs");
+  assert.doesNotMatch(serviceSource, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.doesNotMatch(serviceSource, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from probation service");
   assert.match(serviceSource, /probationWorkflowApproverHrIds/);
   assert.match(serviceSource, /Direct Manager/);

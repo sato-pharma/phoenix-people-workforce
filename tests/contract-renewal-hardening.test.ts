@@ -53,6 +53,7 @@ export function runContractRenewalHardeningTests() {
   assert.match(reminderRoute, /createSystemNotification/);
   assert.match(reminderRoute, /workflowApproverHrIdsForEmployee/);
   assert.match(reminderRoute, /resolveActiveHrApproverHrIds/, "HR approvers must be resolved by role, not hardcoded IDs");
+  assert.doesNotMatch(reminderRoute, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.doesNotMatch(reminderRoute, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from contract renewals");
   assert.match(reminderRoute, /managerOfManager/);
   assert.match(reminderRoute, /actionUrl = "\/contracts\/renewals"/);

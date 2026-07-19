@@ -327,6 +327,16 @@ export function runApprovalsHubTests() {
   const combinedHub = readFileSync("src/components/action-center/action-center-hub.tsx", "utf8");
   assert.match(combinedHub, /import \{ WeeklyPlanCalendar \} from "@\/components\/action-center\/weekly-plan-calendar"/, "the combined hub renders the same extracted calendar — single source of truth");
 
+  // ── "View as" impersonation gate: Super Admin only. "HR Manager" is a job title
+  // (phoenixCompanyJobTitles), not an app_auth_users.role value — no user account has ever
+  // held it, so including it in a role gate/query is silent dead weight, not defense in depth. ──
+  assert.match(combinedHub, /const canViewAs = callerRole === "Super Admin";/, "view-as switcher must gate on Super Admin only");
+  assert.doesNotMatch(combinedHub, /"HR Manager"/, "\"HR Manager\" must not appear in the view-as gate");
+  const approvalsHubManagersRoute = readFileSync("app/api/approvals-hub/managers/route.ts", "utf8");
+  assert.match(approvalsHubManagersRoute, /const ALLOWED_CALLER_ROLES = new Set\(\["Super Admin"\]\);/, "managers endpoint caller allowlist must be Super Admin only");
+  const approvalsHubDataRoute = readFileSync("app/api/approvals-hub/hub-data/route.ts", "utf8");
+  assert.match(approvalsHubDataRoute, /const ALLOWED_VIEW_AS_ROLES = new Set\(\["Super Admin"\]\);/, "hub-data view-as allowlist must be Super Admin only");
+
   // Plan notifications repoint approver-facing CTAs to the new plan pages; employee-facing stays.
   const planSvc = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   assert.match(planSvc, /\/admin\/approvals\/plan\//, "plan approver notifications point to the new admin plan page");

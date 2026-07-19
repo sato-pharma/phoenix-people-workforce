@@ -44,7 +44,7 @@ export function runProbationEmailsTests() {
   // ── P9-T04 recipients match the owner-confirmed matrix ──
   // CEO + HR always resolved.
   assert.match(emails, /activeHrIdsByRole\(\["CEO"\]\)/, "CEO resolved");
-  assert.match(emails, /activeHrIdsByRole\(\["HR Manager", "Super Admin"\]\)/, "HR resolved");
+  assert.match(emails, /activeHrIdsByRole\(\["Super Admin"\]\)/, "HR resolved");
   // DV snapshot includes evaluator + TM + PM/GPM + SFE.
   assert.match(emails, /includeEvaluator: d\.evaluator_hr_id, includeTm: true, includePmGpm: true, includeSfe: true/, "DV snapshot = full stakeholder set incl. evaluator/TM/PM·GPM/SFE");
   // Milestones include SFE (per confirmed matrix); DM+NSM+CEO+HR always.
