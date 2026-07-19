@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import {
   AdminCallout,
   AdminTableShell,
@@ -170,6 +171,7 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
   }).format(new Date(value));
 }
 

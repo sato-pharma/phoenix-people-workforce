@@ -35,10 +35,15 @@ import {
 import { MmInboxClient } from "@/components/employee-portal/dashboards/mm-inbox-client";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 function monthLabel(ym: string) {
   const [y, m] = ym.split("-");
-  return new Date(Number(y), Number(m) - 1).toLocaleString("en-US", { month: "short", year: "numeric" });
+  return new Date(Date.UTC(Number(y), Number(m) - 1, 1)).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 /** Whole days since an ISO timestamp (clamped at 0). null when the timestamp is missing. */
@@ -161,7 +166,12 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">{row.requestCode}</p>
                   <p className="text-[11px] text-slate-500 whitespace-nowrap">
-                    {new Date(row.payDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    {new Date(row.payDate).toLocaleDateString("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+                    })}
                   </p>
                 </div>
                 <span className="shrink-0 text-sm font-bold text-slate-700 whitespace-nowrap">{egp(row.estimatedCost)}</span>

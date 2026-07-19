@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { CronJobSummary, ListCronJobsResult } from "@/lib/cron-control/service";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 const POLL_INTERVAL_MS = 30_000;
 const AUTO_PREVIEW_DEBOUNCE_MS = 600;
@@ -441,6 +442,7 @@ function formatDate(iso: string) {
       minute: "2-digit",
       month: "short",
       year: "numeric",
+      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
     });
   } catch {
     return iso;

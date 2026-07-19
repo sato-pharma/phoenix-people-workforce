@@ -36,6 +36,7 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
@@ -367,7 +368,12 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
               <p className="text-[10px] text-slate-500">
                 {statusLabels[d.fromStatus]} → {statusLabels[d.toStatus]}
                 {" · "}
-                {new Date(d.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                {new Date(d.createdAt).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+                })}
               </p>
               {d.comment ? <p className="mt-0.5 text-[10px] italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
             </div>

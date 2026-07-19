@@ -53,9 +53,12 @@ function formatMoney(value: number, currency: string) {
   return `${value.toFixed(2)} ${currency}`;
 }
 
+// iso is a plain YYYY-MM-DD calendar date (no real instant semantics) — anchor
+// construction and display to the same explicit zone so this never depends on the
+// runtime's implicit default (matches the pattern used elsewhere for date-only values).
 function formatDate(iso: string) {
-  const date = new Date(`${iso}T00:00:00`);
-  return date.toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" });
+  const date = new Date(`${iso}T00:00:00Z`);
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", weekday: "short", timeZone: "UTC" });
 }
 
 function countdownLabel(autoConfirmAt: string | null) {
