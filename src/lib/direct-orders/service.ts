@@ -1,7 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { ceoHrIds } from "@/lib/attendance/digest-recipients";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
-import { assertPermission, normalizeHrId } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrId, systemAccessContext } from "@/lib/auth/permissions";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
@@ -45,6 +45,7 @@ import {
   type DirectOrderWorkspaceData,
 } from "@/lib/direct-orders/types";
 import { assertDirectOrderWorkflowTransition, directOrderDecisionAction } from "@/lib/direct-orders/workflow";
+import { sendDirectOrderApprovedEmail } from "@/lib/direct-orders/approved-email";
 
 const NOTIFY_CHANNELS: SystemNotificationChannel[] = ["in_app", "email", "telegram"];
 const CHAIN_DEPTH_CAP = 6;
@@ -704,6 +705,11 @@ export async function decideDirectOrder(
     subjectHrId: request.requesterHrId,
   });
 
+  // On FINAL approval of a normal order, the polished "approved" email (To Ahmed, CC
+  // CEO + system admin) is dispatched by the decision route via Next.js after() — AFTER
+  // the response is sent — so a synchronous email send never adds latency to, or blocks,
+  // the approver's action. See dispatchDirectOrderApprovedEmail below.
+
   // Phase C: SoS injection runs ATOMICALLY inside phx_apply_direct_order_decision on
   // final approval (rebuild-from-truth via phx_rebuild_direct_order_sos_batch), so a
   // failed injection rolls the decision back rather than leaving it un-injected. A
@@ -1080,13 +1086,15 @@ async function resolveVisibleRequesterHrIds(access: AccessContext): Promise<Set<
 }
 
 /** All direct orders visible to the caller (tiered), fully denormalized, newest first. */
-export async function getDirectOrderReport(access: AccessContext): Promise<DirectOrderReportRow[]> {
+export async function getDirectOrderReport(
+  access: AccessContext,
+  options?: { requestId?: string },
+): Promise<DirectOrderReportRow[]> {
   await assertPermission(access, "direct_orders", "read");
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("direct_order_requests")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let query = supabase.from("direct_order_requests").select("*").order("created_at", { ascending: false });
+  if (options?.requestId) query = query.eq("id", options.requestId);
+  const { data, error } = await query;
   if (error) throw error;
   let requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
 
@@ -1165,6 +1173,21 @@ export async function getDirectOrderReport(access: AccessContext): Promise<Direc
       distributorCodesText,
     };
   });
+}
+
+/**
+ * Resolve the fully-denormalized approved order (names, pharmacy, geography) and email
+ * its polished details table — To the fixed recipient, CC the CEO + system admin. Fired
+ * by the decision route via Next.js after(), so it runs AFTER the response is sent and
+ * never adds latency to the approval. Best-effort: failures are logged and swallowed.
+ */
+export async function dispatchDirectOrderApprovedEmail(requestId: string): Promise<void> {
+  try {
+    const [row] = await getDirectOrderReport(systemAccessContext, { requestId });
+    if (row) await sendDirectOrderApprovedEmail(row);
+  } catch (error) {
+    console.error(`[direct-orders] approved-email dispatch failed for ${requestId}:`, error);
+  }
 }
 
 // ── Direct-sales reconciliation (manual DIRECT vs module DirectReq double-count) ──

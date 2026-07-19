@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { decideDirectOrder } from "@/lib/direct-orders/service";
+import { decideDirectOrder, dispatchDirectOrderApprovedEmail } from "@/lib/direct-orders/service";
 import type { DirectOrderDecision } from "@/lib/direct-orders/types";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -25,6 +25,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
     const result = await decideDirectOrder(access, { requestId: id, decision, comment: body.comment ?? null });
+    // On final approval of a normal order, email the polished details table AFTER the
+    // response is sent (To Ahmed, CC CEO + system admin) — never blocks the approver.
+    if (result.status === "approved" && !result.reversalOfRequestId) {
+      after(() => dispatchDirectOrderApprovedEmail(result.id));
+    }
     return NextResponse.json({ result, success: true });
   } catch (error) {
     const apiError = toApiError(error, "Could not record the decision.");

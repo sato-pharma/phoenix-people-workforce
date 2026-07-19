@@ -65,6 +65,10 @@ export function runEmailNotificationTests() {
   assert.deepEqual(directSendPhoenixEmailFiles(), [
     "app/api/admin/email-reply/send/route.ts",
     "app/api/notifications/test/route.ts",
+    // Direct orders send a bespoke premium "approved" details table to a fixed recipient
+    // (CEO + system admin CC'd) on final CEO approval — a fixed renderer, not the DB
+    // template engine. See src/lib/direct-orders/approved-email.ts.
+    "src/lib/direct-orders/approved-email.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
     "src/lib/notifications/email.ts",
