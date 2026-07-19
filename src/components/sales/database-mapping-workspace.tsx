@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import {
   MASTER_DEFINITIONS,
@@ -424,7 +425,11 @@ function MasterTab({
                       </Badge>
                     </td>
                     <td className="px-4 py-2.5">
-                      {row.updated_at ? new Date(String(row.updated_at)).toLocaleString() : "-"}
+                      {row.updated_at
+                        ? new Date(String(row.updated_at)).toLocaleString("en-GB", {
+                            timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+                          })
+                        : "-"}
                     </td>
                   </tr>
                 ))}

@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Clock, ListChecks, ShieldCheck, SkipForwar
 
 import { AdminCallout, AdminInsightChip, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Card } from "@/components/ui/card";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type {
@@ -37,7 +38,11 @@ function StatusPill({ status }: { status: string }) {
 
 function formatDateTime(value: string): string {
   try {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+    return new Intl.DateTimeFormat("en-GB", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+    }).format(new Date(value));
   } catch {
     return value;
   }

@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { AuditLogFilter, AuditLogPage } from "@/lib/admin/audit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 
 const ENTITY_TYPES = [
@@ -28,6 +29,7 @@ function formatDate(iso: string) {
       month: "short",
       second: "2-digit",
       year: "numeric",
+      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
     });
   } catch {
     return iso;

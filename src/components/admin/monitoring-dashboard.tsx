@@ -12,10 +12,12 @@ import {
 import { Card } from "@/components/ui/card";
 import type { AdminMonitoringStats } from "@/lib/operations/events";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 function formatActivityTimestamp(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "Unknown time";
+  return value
+    ? new Date(value).toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })
+    : "Unknown time";
 }
 
 function deliveryStatusClass(status: string) {

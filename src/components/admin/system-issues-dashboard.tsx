@@ -5,6 +5,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { computeNewlyArrivedIds } from "@/lib/error-monitor/new-issue-diff";
+import { useHydrated } from "@/hooks/use-hydrated";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResult, UnknownAttemptsSummary, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
 import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
@@ -77,6 +79,7 @@ function formatDate(iso: string) {
       month: "short",
       second: "2-digit",
       year: "numeric",
+      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
     });
   } catch {
     return iso;
@@ -880,12 +883,16 @@ export function SystemIssuesDashboard({
   );
 
   // Days actually covered by the applied window (default 30, or the caller's custom dateFrom),
-  // derived from the effective windowFrom the server echoes back — always accurate.
+  // derived from the effective windowFrom the server echoes back — always accurate. Date.now()
+  // differs between the server render and client hydration, so hold this at null (the existing
+  // "Since <date>" fallback below already handles null) until hydrated, then compute for real.
+  const hydrated = useHydrated();
   const attemptWindowDays = useMemo(() => {
+    if (!hydrated) return null;
     const from = attempts.windowFrom ? new Date(attempts.windowFrom).getTime() : Number.NaN;
     if (!Number.isFinite(from)) return null;
     return Math.max(1, Math.round((Date.now() - from) / 86_400_000));
-  }, [attempts.windowFrom]);
+  }, [attempts.windowFrom, hydrated]);
 
   async function toggleDetails(row: MergedIssueRow) {
     if (expandedRowId === row.id) {

@@ -11,6 +11,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type {
   AttendanceDeviceUserMappingDashboard,
   AttendanceDeviceUserMappingRow,
@@ -72,9 +73,10 @@ async function fetchAgentHealth(): Promise<AgentHealth> {
 
 function formatDate(value: string | null) {
   if (!value) return "No punches seen";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
   }).format(new Date(value));
 }
 
