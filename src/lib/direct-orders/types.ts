@@ -236,3 +236,39 @@ export type DirectOrderWorkspaceData = {
   awaiting: DirectOrderApprovalListItem[];
   history: DirectOrderApprovalListItem[];
 };
+
+// ── Direct-sales reconciliation (manual DIRECT vs module DirectReq) ────────────
+/** One (period, line, region, product) bucket where BOTH direct sources have value. */
+export type DirectSalesReconciliationOverlap = {
+  period: string;
+  line: string;
+  regionCode: string;
+  productCode: string;
+  manualValue: number;
+  manualQty: number;
+  moduleValue: number;
+  moduleQty: number;
+  /** least(manual, module) — the amount at risk of being counted twice. */
+  overlapExposure: number;
+};
+
+export type DirectSalesReconciliationPeriod = {
+  period: string;
+  manualValue: number;
+  moduleValue: number;
+  overlapExposure: number;
+};
+
+export type DirectSalesReconciliationResult = {
+  periodFrom: string | null;
+  periodTo: string | null;
+  groupedRows: number;
+  overlapRows: number;
+  totalManualDirect: number;
+  totalModuleDirect: number;
+  overlapExposure: number;
+  /** True when there is no overlap between the two direct sources. */
+  pass: boolean;
+  overlaps: DirectSalesReconciliationOverlap[];
+  byPeriod: DirectSalesReconciliationPeriod[];
+};
