@@ -8,8 +8,9 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { normalizeHrId } from "@/lib/auth/permissions";
+import { normalizeHrId, type PhoenixRole } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemDeployment } from "@/config/system-settings";
 
@@ -40,13 +41,38 @@ function managerOf(emp: EmployeeRow | null, byHrId: Map<string, EmployeeRow>): E
 }
 
 /**
+ * The CEO/HR/SFE/TM broadcast portion of resolveStakeholders. `broadcastRoleOverride`, when
+ * present, replaces the whole lookup with an admin-configurable role list (only
+ * processProbationWeeklyDigest passes it today — see "probation_weekly_dv_digest" in
+ * role-recipients.ts) and includeSfe/includeTm are ignored for that call. Every other caller
+ * leaves broadcastRoleOverride undefined and gets the exact legacy CEO+HR(+SFE)(+TM) behavior.
+ */
+async function resolveBroadcastRoleIds(opts: { includeSfe?: boolean; includeTm?: boolean; broadcastRoleOverride?: PhoenixRole[] }): Promise<string[]> {
+  if (opts.broadcastRoleOverride) return activeHrIdsByRole(opts.broadcastRoleOverride);
+  const [ceo, hr, sfe, tm] = await Promise.all([
+    activeHrIdsByRole(["CEO"]),
+    activeHrIdsByRole(["HR Manager", "Super Admin"]),
+    opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
+    opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
+  ]);
+  return [...ceo, ...hr, ...sfe, ...tm];
+}
+
+/**
  * Resolve the owner-confirmed stakeholder set.
  *   DV snapshot: CEO + HR + SFE + DM + NSM + TM + PM/GPM(line-matched) + evaluator.
  *   Milestone:   CEO + HR + DM + NSM + SFE.
  */
 async function resolveStakeholders(
   employeeHrId: string,
-  opts: { includeEvaluator?: string | null; includeTm?: boolean; includePmGpm?: boolean; includeSfe?: boolean },
+  opts: {
+    includeEvaluator?: string | null;
+    includeTm?: boolean;
+    includePmGpm?: boolean;
+    includeSfe?: boolean;
+    /** Admin-configurable broadcast set — see resolveBroadcastRoleIds above. */
+    broadcastRoleOverride?: PhoenixRole[];
+  },
 ): Promise<string[]> {
   const rows = await getEmployeeDirectoryRows();
   const byHrId = new Map(rows.map((r) => [normalizeHrId(r.hrId) ?? "", r] as const));
@@ -54,20 +80,14 @@ async function resolveStakeholders(
 
   const recipients = new Set<string>();
 
-  // None of these role lookups depend on each other — resolve them concurrently
-  // instead of one-at-a-time (this function is called once per case/milestone, so a
-  // sequential chain here multiplied straight into the sweep's total wall-clock).
-  const [ceo, hr, sfe, tm, nsmList] = await Promise.all([
-    activeHrIdsByRole(["CEO"]),
-    activeHrIdsByRole(["HR Manager", "Super Admin"]),
-    opts.includeSfe ? activeHrIdsByRole(["SFE Manager"]) : Promise.resolve([]),
-    opts.includeTm ? activeHrIdsByRole(["Training Manager"]) : Promise.resolve([]),
+  // The broadcast lookup doesn't depend on the NSM chain — resolve them concurrently instead
+  // of one-at-a-time (this function is called once per case/milestone, so a sequential chain
+  // here multiplied straight into the sweep's total wall-clock).
+  const [broadcastIds, nsmList] = await Promise.all([
+    resolveBroadcastRoleIds(opts),
     activeHrIdsByRole(["National Sales Manager"]),
   ]);
-  ceo.forEach((h) => recipients.add(h));
-  hr.forEach((h) => recipients.add(h));
-  sfe.forEach((h) => recipients.add(h));
-  tm.forEach((h) => recipients.add(h));
+  broadcastIds.forEach((h) => recipients.add(h));
 
   // DM = the employee's direct manager.
   const dm = normalizeHrId(employee?.managerHrId);
@@ -345,6 +365,9 @@ export async function processProbationWeeklyDigest(nowIso: string = new Date().t
   const cases = await filterResolvedProbationCases(loadedCases);
 
   const cap = await createProbationDailyCap(now);
+  // Resolved once per digest run (not once per probationer) — see "probation_weekly_dv_digest"
+  // in role-recipients.ts. includeTm/includeSfe are ignored once broadcastRoleOverride is set.
+  const weeklyDigestBroadcastRoles = await resolveNotificationRoleRecipients("probation_weekly_dv_digest");
 
   const sentPerCase = await Promise.all(
     cases
@@ -354,7 +377,10 @@ export async function processProbationWeeklyDigest(nowIso: string = new Date().t
           const rows = (byCase.get(c.id) ?? []).slice().sort((a, b) => a.dv_date.localeCompare(b.dv_date));
           const table = buildWeeklyDigestTable(rows);
           const ctx = await buildCaseContext(c.id, c.employee_hr_id, c.hire_date, today);
-          const recipients = await resolveStakeholders(c.employee_hr_id, { includeTm: true, includePmGpm: true, includeSfe: true });
+          const recipients = await resolveStakeholders(c.employee_hr_id, {
+            includePmGpm: true,
+            broadcastRoleOverride: weeklyDigestBroadcastRoles,
+          });
           const employeeName = c.employee_name ?? c.employee_hr_id;
           return await emitToRecipients(recipients, {
             templateKey: "probation_weekly_digest",
