@@ -82,6 +82,14 @@ async function upsertRowsConcurrently<T>(
   return upserted;
 }
 
+// VENDOR TIMESTAMP INVARIANT (load-bearing — do not "helpfully" convert): iReports360 sends
+// `saveDate`/`checkDate`/`visitDate` as zone-less strings that are ALREADY Africa/Cairo wall-clock
+// (e.g. "2026-07-16T18:13:18", no offset). They are stored verbatim into `timestamptz` columns, so
+// they must be WRITTEN under a UTC DB session — then the stored instant reads back as the same
+// Cairo wall-clock and every display renders it with timeZone:"UTC" (no shift). Never append a
+// Cairo offset or run AT TIME ZONE on these — that double-shifts the clock 2–3h. `visit_date_time`
+// is a 00:00 placeholder (no real time-of-day); the authoritative visit time is derived downstream
+// by resolveVisitTime (crm/reads.ts): GPS check-in → save time → none, never visit_date_time.
 export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
   const doubleCrmId = visit.doubleID && visit.doubleID !== 0 ? visit.doubleID : null;
   return {
