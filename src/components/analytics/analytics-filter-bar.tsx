@@ -174,7 +174,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
             <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{descriptor.label}</span>
             <input
               type="text"
-              defaultValue={current}
+              value={current}
               placeholder={descriptor.placeholder}
               onChange={(event) => setDebouncedValue(descriptor.key, event.target.value)}
               className="border-none bg-transparent p-0 text-sm font-black text-[#0F172A] outline-none placeholder:font-medium placeholder:text-[#94A3B8]"

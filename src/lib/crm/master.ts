@@ -14,7 +14,8 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
+import { CRM_DOUBLE_VISIT_TYPE_CODES, CRM_RESIGNED_AGENT_CRM_IDS } from "@/lib/crm/reads";
+import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
@@ -401,39 +402,20 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     .limit(20000);
   if (error || !data) return;
 
-  // Key by agent + CONTACT + day: a check-in belongs to the regular visit at that same contact.
-  const byAgentContactDay = new Map<string, CheckinLite[]>();
-  for (const c of data as CheckinLite[]) {
-    if (c.agent_crm_id == null || c.contact_crm_id == null || !c.check_date) continue;
-    const key = `${c.agent_crm_id}|${c.contact_crm_id}|${String(c.check_date).slice(0, 10)}`;
-    const list = byAgentContactDay.get(key);
-    if (list) list.push(c);
-    else byAgentContactDay.set(key, [c]);
-  }
-
+  // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
+  // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
+  const index = indexCheckinsByAgentContactDay(data as CheckinLite[]);
   for (const row of rows) {
-    const agent = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
-    // Only regular visits carry a real contact; a check-in belongs to the visit at the SAME contact.
-    // Non-regular visits (Campaign, Meeting, Vacation, …) have no contact and genuinely no check-in.
-    const contact = typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0 ? row.contact_crm_id : null;
-    const day = typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null;
-    if (agent == null || contact == null || !day) continue;
-    const candidates = byAgentContactDay.get(`${agent}|${contact}|${day}`);
-    if (!candidates || candidates.length === 0) continue;
-
-    // One contact can have >1 check-in that day → pick the one nearest in time to crm_save_date.
-    const anchorMs = typeof row.crm_save_date === "string" ? new Date(row.crm_save_date).getTime() : NaN;
-    let best = candidates[0];
-    if (Number.isFinite(anchorMs)) {
-      let bestDiff = Number.POSITIVE_INFINITY;
-      for (const c of candidates) {
-        const diff = Math.abs(new Date(String(c.check_date)).getTime() - anchorMs);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          best = c;
-        }
-      }
-    }
+    const best = pickCheckinForVisit(
+      {
+        agentCrmId: typeof row.agent_crm_id === "number" ? row.agent_crm_id : null,
+        contactCrmId: typeof row.contact_crm_id === "number" ? row.contact_crm_id : null,
+        visitDay: typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null,
+        crmSaveDate: typeof row.crm_save_date === "string" ? row.crm_save_date : null,
+      },
+      index,
+    );
+    if (!best) continue;
     row.checkin_id = best.crm_checkin_id;
     row.checkin_time = best.check_date;
     row.checkin_agent_crm_id = best.agent_crm_id;
@@ -523,7 +505,8 @@ async function computeTriplesInRange(range: {
         "crm_visit_id, visit_date, agent_crm_id, agent_name, agent_hr_id, double_crm_id, double_name, double_hr_id, contact_crm_id, contact_name",
       )
       .not("double_crm_id", "is", null)
-      .neq("double_crm_id", 0);
+      .neq("double_crm_id", 0)
+      .in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
     let q = base as unknown as MasterQuery;
     if (CRM_RESIGNED_AGENT_CRM_IDS.length > 0) {
       q = q.not("agent_crm_id", "in", `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`);
@@ -980,7 +963,12 @@ function applyMasterFilters(
   if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);
 
   // Dataset scope.
-  if (dataset === "double_visits") q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0);
+  // Canonical double-visit = real partner on a fieldwork visit type (Regular 0 / Campaign -8),
+  // the same predicate DV Analytics / probation / the portal use — so the DV tab count matches them
+  // (a partnered Meeting/Conference is joint-attendance bookkeeping, not a double visit).
+  if (dataset === "double_visits") {
+    q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0).in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
+  }
   if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
   if (dataset === "regular_no_checkin") q = q.eq("reclassified_no_checkin", true);
   if (dataset === "regular_dv_no_checkin") {
