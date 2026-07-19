@@ -14,7 +14,7 @@ export function AnalyticsModuleNav({ tabs, mountRoot }: { tabs: readonly Tab[]; 
   const hrefFor = (href: string) => (mountRoot ? href.replace("/admin/analytics", mountRoot) : href);
 
   return (
-    <nav className="flex border-b border-border">
+    <nav className="phoenix-horizontal-scroll flex overflow-x-auto border-b border-border">
       {tabs.map((tab) => {
         const href = hrefFor(tab.href);
         const active = pathname === href;
