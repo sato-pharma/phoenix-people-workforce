@@ -39,30 +39,40 @@ export function runWeeklyPlansHardeningTests() {
   assert.match(calendarServiceSource, /itemLimit: CALENDAR_ITEM_LIMIT/, "calendar API must return itemLimit");
   assert.match(calendarUiSource, /workspace\.hasMoreHeaders \|\| workspace\.hasMoreItems/, "calendar UI must warn when results are capped");
 
-  assert.doesNotMatch(
-    calendarServiceSource,
-    /rawPlanItems\.filter\(isAllowedCalendarOwner\)/,
-    "shared calendar must not return every allowed-owner item without a viewer line check",
-  );
+  // Cross-line/cross-hierarchy viewer fencing was deliberately removed from the
+  // shared calendar by owner decision 2026-07-19: any viewer who already has
+  // weekly_plans:read access sees any calendar-eligible plan. These guards
+  // replace the pre-2026-07-19 assertions that pinned the old same-line /
+  // District-Manager-hierarchy / Regional-Manager-region fencing in place.
   assert.match(
     calendarServiceSource,
-    /isCompanyWideViewer = access\.scope === "company" \|\| access\.scope === "system"/,
-    "shared calendar must gate company-wide visibility off access.scope, not a hardcoded role list",
-  );
-  assert.match(
-    calendarServiceSource,
-    /sameLine\(item\.lineName, viewer\?\.lineName\)/,
-    "shared calendar must restrict non-company-wide viewers to their own line",
-  );
-  assert.match(
-    calendarServiceSource,
-    /export function isPlanItemVisibleToViewer/,
+    /export function isPlanItemVisibleToViewer\(item: PlanningCalendarPlanItem\): boolean \{/,
     "shared calendar must expose a pure per-item visibility function for testability",
   );
   assert.match(
     calendarServiceSource,
+    /return isAllowedCalendarOwner\(item\);/,
+    "shared calendar must show every calendar-eligible plan to every viewer with calendar access",
+  );
+  assert.match(
+    calendarServiceSource,
+    /rawPlanItems\.filter\(isPlanItemVisibleToViewer\)/,
+    "shared calendar must filter submitted plan items through isPlanItemVisibleToViewer",
+  );
+  assert.doesNotMatch(
+    calendarServiceSource,
+    /sameLine\(item\.lineName, viewer\?\.lineName\)/,
+    "isPlanItemVisibleToViewer must not reintroduce same-line viewer fencing",
+  );
+  assert.doesNotMatch(
+    calendarServiceSource,
     /reportsToManagerSeat\(\{[\s\S]*?\}\)/,
-    "District Manager calendar items must be scoped via direct-report hierarchy, not line-matching",
+    "isPlanItemVisibleToViewer must not reintroduce District-Manager hierarchy viewer fencing",
+  );
+  assert.doesNotMatch(
+    calendarServiceSource,
+    /regionsWithinManagerHierarchy/,
+    "isPlanItemVisibleToViewer must not reintroduce Regional-Manager region-bounded viewer fencing",
   );
 
   assert.match(workflowE2eSource, /EMPLOYEE_PLANS_PATH = "\/employee-portals\/plans"/, "submitter workflow must use employee portal route");
