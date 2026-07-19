@@ -51,10 +51,11 @@ gcloud scheduler jobs create http phoenix-process-notifications \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
-# 3. Background jobs (every 10 min at :03,:13,... — never on a */5 minute)
+# 3. Background jobs (weekly, Friday 03:00 Cairo — quiet slot; drains up to 10 queued
+# admin-requested exports per run and sends a Super-Admin Telegram recap of the run)
 gcloud scheduler jobs create http phoenix-background-jobs \
-    --schedule="3-59/10 * * * *" \
-    --uri="${SERVICE_URL}/api/cron/background-jobs?limit=3" \
+    --schedule="0 3 * * 5" \
+    --uri="${SERVICE_URL}/api/cron/background-jobs?limit=10" \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
