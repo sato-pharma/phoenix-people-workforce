@@ -7,6 +7,7 @@ import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirec
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1625,10 +1626,11 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
     .in("status", ["submitted", "under_review"]);
   if (error) return { processed: 0, errors: 1 };
 
+  const notifyRoles = await resolveNotificationRoleRecipients("resignation_sla_reminder");
   const { data: hrApprovers } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["Super Admin"])
+    .in("role", notifyRoles)
     .eq("is_active", true);
   const hrHrIds = (hrApprovers ?? []).map((a) => String(a.hr_id)).filter(Boolean);
   if (hrHrIds.length === 0) return { processed: 0, errors: 0 };

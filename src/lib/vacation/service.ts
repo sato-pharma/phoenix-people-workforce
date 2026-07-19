@@ -11,8 +11,10 @@ import {
   resolveEmployeeIdentityId,
   systemAccessContext,
   type AccessContext,
+  type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import {
   getEmployeeDirectory,
@@ -1417,15 +1419,22 @@ function tokenHash(token: string) {
 /**
  * Exported so other domains (Payroll Copilot's Unpaid Vacation review tab)
  * can CC HR the same way every vacation notification already does, without
- * duplicating the "who is HR" (active Super Admin) resolution query.
+ * duplicating the "who is HR" resolution query. `roles` defaults to
+ * `["Super Admin"]` — every existing caller keeps that default and is
+ * therefore byte-identical to before; only the vacation SLA cron passes an
+ * admin-configurable override (see resolveNotificationRoleRecipients,
+ * "vacation_sla_hr_escalation").
  */
-export async function getHrRecipients(directory: EmployeeDirectoryData): Promise<HrRecipient[]> {
+export async function getHrRecipients(
+  directory: EmployeeDirectoryData,
+  roles: PhoenixRole[] = ["Super Admin"],
+): Promise<HrRecipient[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
       .select("login_id,hr_id,role,is_active")
       .eq("is_active", true)
-      .in("role", ["Super Admin"]);
+      .in("role", roles);
 
     if (error) {
       // Fail observable, not silent: returning [] here means HR/Super Admin are
@@ -1439,9 +1448,9 @@ export async function getHrRecipients(directory: EmployeeDirectoryData): Promise
     return (data ?? [])
       .map((row) => {
         const hrId = text((row as Record<string, unknown>).hr_id);
-        const role = text((row as Record<string, unknown>).role);
+        const role = text((row as Record<string, unknown>).role) as PhoenixRole;
         if (!hrId) return null;
-        if (role !== "Super Admin") return null;
+        if (!roles.includes(role)) return null;
         const employee = findEmployeeByHrId(directory, hrId);
         return {
           email: employee?.workEmail ?? null,
@@ -5122,7 +5131,8 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
   let hrEscalations = 0;
   const errors: Array<{ message: string; requestId: string }> = [];
   const directory = await getEmployeeDirectory();
-  const hrRecipients = await getHrRecipients(directory);
+  const hrEscalationRoles = await resolveNotificationRoleRecipients("vacation_sla_hr_escalation");
+  const hrRecipients = await getHrRecipients(directory, hrEscalationRoles);
 
   for (const row of overdueRows) {
     try {

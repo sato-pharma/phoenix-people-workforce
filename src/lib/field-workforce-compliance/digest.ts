@@ -19,10 +19,9 @@ import {
   summarizeFieldWorkforceMirrorFreshness,
 } from "@/lib/field-workforce-compliance/live-snapshots";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
+import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getLatestVisitsSyncRuns } from "@/lib/visits-report/service";
-
-const DIGEST_RECIPIENT_ROLES = ["Super Admin"] as const;
 
 export type FieldWorkforceComplianceDigestResult =
   | { ok: true; monthKey: null; recipientCount: 0; sentCount: 0; skipped: true }
@@ -46,10 +45,11 @@ export function previousFieldWorkforceMonthKey(nowIso: string): string {
 
 async function resolveDigestRecipients(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
+  const roles = await resolveNotificationRoleRecipients("field_workforce_compliance_digest");
   const { data, error } = await supabase
     .from("app_auth_users")
     .select("hr_id, role, is_active")
-    .in("role", DIGEST_RECIPIENT_ROLES as unknown as string[])
+    .in("role", roles)
     .eq("is_active", true);
   if (error) throw error;
   const hrIds = new Set<string>();

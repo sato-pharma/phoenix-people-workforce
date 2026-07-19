@@ -234,7 +234,8 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /Forbidden: only assigned pending vacation approvers can decide this request/);
   assert.match(serviceSource, /accessMatchesHrId\(access, request\.managerHrId\)/);
   assert.match(serviceSource, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
-  assert.match(serviceSource, /\.in\("role", \["Super Admin"\]\)/);
+  assert.match(serviceSource, /roles: PhoenixRole\[\] = \["Super Admin"\]/, "getHrRecipients must default to Super Admin while allowing an admin-editable override");
+  assert.match(serviceSource, /\.in\("role", roles\)/);
   assert.match(serviceSource, /managerOfManagerHrId/);
   // CEO-direct-reports: the parallel chain requires only a direct manager; the
   // manager-of-manager step is included only when one exists (no manager above the CEO).
