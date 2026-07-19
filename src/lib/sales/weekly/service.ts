@@ -16,7 +16,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
-import { decumulateRows, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
+import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -1240,18 +1240,23 @@ export async function loadWeeklyDashboard(filters?: {
   );
   const weekComparison = wcSorted.map((w, i) => {
     const prev = i > 0 && wcSorted[i - 1].cycleMonth === w.cycleMonth ? wcSorted[i - 1] : null;
+    // M6: a gap in the uploaded weeks (previous present week number is >1 behind this one) means
+    // de-cumulation subtracted against a non-adjacent week, so this week's figure spans the missing
+    // week(s) and is NOT a true single-week value. weekHasDecumulationGap centralizes the check so it
+    // stays unit-tested; suppressGapSpannedValue then nulls the inflated figures at the source (fix:
+    // "suppress + flag") so no consumer can render the misleading number. Stock is a snapshot and
+    // stays real even across a gap; month totals telescope from the raw sheets, not these figures.
+    const spansGap = weekHasDecumulationGap(prev?.weekNumber ?? null, w.weekNumber);
+    const deltaValuePct = prev && prev.salesValue !== 0 ? Number(((w.salesValue - prev.salesValue) / prev.salesValue).toFixed(4)) : null;
     return {
       cycleMonth: w.cycleMonth,
       weekNumber: w.weekNumber,
       weekStart: w.weekStart || null,
-      salesValue: Number(w.salesValue.toFixed(2)),
-      salesUnits: Number(w.salesUnits.toFixed(2)),
+      salesValue: suppressGapSpannedValue(spansGap, Number(w.salesValue.toFixed(2))),
+      salesUnits: suppressGapSpannedValue(spansGap, Number(w.salesUnits.toFixed(2))),
       stockUnits: Number(w.stockUnits.toFixed(2)),
-      deltaValuePct: prev && prev.salesValue !== 0 ? Number(((w.salesValue - prev.salesValue) / prev.salesValue).toFixed(4)) : null,
-      // M6: a gap in the uploaded weeks (previous present week number is >1 behind this one) means
-      // de-cumulation subtracted against a non-adjacent week, so this week's figure spans the missing
-      // week(s). weekHasDecumulationGap centralizes the check so it stays unit-tested.
-      spansGap: weekHasDecumulationGap(prev?.weekNumber ?? null, w.weekNumber),
+      deltaValuePct: suppressGapSpannedValue(spansGap, deltaValuePct),
+      spansGap,
     };
   });
 
@@ -1376,7 +1381,7 @@ export async function loadWeeklyProductScopeAdmin(): Promise<WeeklyProductScopeA
     const key = canonicalHrIdKey(employee.hrId);
     if (!key) continue;
     const role = normalizeRole(employee.positionTitle ?? employee.jobTitle);
-    byHrKey.set(key, { name: employee.fullName || employee.hrId, role });
+    byHrKey.set(key, { name: employee.displayName || employee.hrId, role });
   }
 
   const assignments = [...assignmentsByHrId.entries()]

@@ -1,13 +1,8 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-compliance/weekend-policy";
 import { isIsoDate } from "@/lib/attendance/working-days";
-
-/**
- * Lifecycle statuses that still count as "on the payroll". Mirrors
- * activeLifecycleStatuses in employee-directory.ts (not exported there).
- */
-const activeStatuses = new Set(["active", "on_leave"]);
 
 export type AttendanceRosterEmployee = {
   /** Hire date — days before this are not expected (mid-range new hires). */
@@ -33,10 +28,6 @@ type EmployeeRow = {
 };
 
 type DepartmentRow = { id: number; name: string | null };
-
-function normalizeStatus(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
-}
 
 /**
  * The set of employees attendance is expected from during a date range.
@@ -100,8 +91,7 @@ export async function getAttendanceRoster(input: {
     // device; a leftover mapping must not make them show as absent.
     if (isFieldWorkforceFridayOnlyTitle(jobTitle)) continue;
 
-    const status = normalizeStatus(employee.employment_status);
-    const isTerminal = status.length > 0 && !activeStatuses.has(status);
+    const isTerminal = isTerminalEmploymentStatus(employee.employment_status);
     const lastWorkingDate = isIsoDate(employee.last_working_date) ? employee.last_working_date : null;
     if (isTerminal) {
       // Exited before the range starts (or exit date unknown) — not expected at all.

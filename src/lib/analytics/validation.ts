@@ -9,13 +9,15 @@
  * consistent with what the database already returns.
  */
 export function safeDividePct(numerator: number, denominator: number | null | undefined): number | null {
-  if (denominator == null || denominator === 0) return null;
-  return Math.round((numerator / denominator) * 10000) / 100;
+  if (denominator == null || denominator === 0 || !Number.isFinite(numerator)) return null;
+  const pct = Math.round((numerator / denominator) * 10000) / 100;
+  return Number.isFinite(pct) ? pct : null;
 }
 
-/** Renders a null percentage as an em dash instead of a misleading "0.0%". */
+/** Renders a null (or NaN/Infinity — an RPC returning a non-numeric field would otherwise render
+ *  the literal string "NaN%") percentage as an em dash instead of a misleading "0.0%". */
 export function formatPctOrDash(value: number | null | undefined, opts?: { decimals?: number }): string {
-  if (value == null) return "—";
+  if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toFixed(opts?.decimals ?? 1)}%`;
 }
 

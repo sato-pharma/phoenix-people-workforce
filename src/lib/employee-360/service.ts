@@ -11,11 +11,14 @@
 //  - Productive visits = visit_type ∈ {0 Regular, -8 Campaign}. Everything else
 //    (Meeting -11, Vacation -4, Training -9, …) is admin/non-visit and is bucketed
 //    explicitly — NEVER defaulted to campaign.
-//  - agent_hr_id casing is inconsistent in the CRM feed; match via hrIdLookupKeys.
-//  - Egypt work week is Sun–Thu (Fri/Sat weekend) — used for utilization.
+//  - agent_hr_id casing is inconsistent in the CRM feed; the CRM read door matches it
+//    case-insensitively, so callers pass the raw hr id.
+//  - Field-force work week (owner-confirmed, matches the CRM data): Sat–Wed are
+//    full working days, Thursday is AM-only (half day), Friday is off. Saturday
+//    IS a working day. Only Friday is excluded from working-days (utilization);
+//    the day-of-week charts dim Friday and lighten Thursday.
 
-import { queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
   COMPANY_CHECKIN_HOUR_SHARE,
@@ -52,6 +55,10 @@ export type VisitRow = {
   contact_crm_id: number | null;
   contact_name: string | null;
   customer_name: string | null;
+  // `double_crm_id` is the raw CRM partner id — the canonical double-visit signal
+  // (see isCrmDoubleVisitRow). `double_hr_id` is only the resolved employee id and
+  // may be null even when a real partner rode along, so it must NOT gate DV counts.
+  double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
   comment: string | null;
@@ -152,7 +159,7 @@ export type VisitSummary = {
   repeatCustomers: number;
   oneTimeCustomers: number;
   topCustomers: NamedCount[];
-  dayOfWeek: number[]; // 0=Sun … 6=Sat, productive counts
+  visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
   workingDaysInWindow: number;
   utilization: number | null;
   visitsSummaryText: string;
@@ -172,7 +179,7 @@ export type CheckinSummary = {
   avgLastHour: number | null;
   avgSpanHours: number | null;
   checkinsPerActiveDay: number | null;
-  dayOfWeek: number[];
+  checkinDayOfWeek: number[]; // 0=Sun … 6=Sat, GPS check-in counts (distinct from the visit dayOfWeek)
   coverageTrend: { month: string; coverage: number | null }[];
   uncorroboratedDays: number;
   distinctLocations: number;
@@ -196,16 +203,17 @@ export function defaultWindow(): Employee360Window {
 
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
   return queryVisits<VisitRow>({
-    agentHrIds: hrIdLookupKeys(hrId),
+    // The CRM read door matches hr ids case-insensitively — pass the raw id.
+    agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
-    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_hr_id,double_name,comment",
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment",
   });
 }
 
 export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
   return queryCheckins<CheckinRow>({
-    agentHrIds: hrIdLookupKeys(hrId),
+    agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
     columns: "check_date,lat,lon",
@@ -244,12 +252,15 @@ function addDays(date: string, delta: number): string {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
-function countWorkingDays(from: string, to: string): number {
+export function countWorkingDays(from: string, to: string): number {
   let count = 0;
   let cursor = from;
   for (let i = 0; i < 400 && cursor <= to; i += 1) {
     const dow = dowOf(cursor);
-    if (dow !== 5 && dow !== 6) count += 1; // exclude Fri/Sat
+    // Field-force work week: only Friday is off. Sat–Wed are full days and
+    // Thursday is a working half-day (AM only) — all of them count. Saturday is
+    // a WORKING day (owner-confirmed; ~16k Sat visits in production).
+    if (dow !== 5) count += 1;
     cursor = addDays(cursor, 1);
   }
   return count;
@@ -293,10 +304,14 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
     else if (bucket === "training") trainingVisits += 1;
     else adminVisits += 1;
 
-    if (row.double_hr_id) doublesReceived += 1;
+    // A double visit is a real partner (double_crm_id) on a fieldwork type {0,-8}
+    // — the canonical crm/reads predicate. Do NOT count a partner riding along on
+    // a Meeting/Vacation/Training row, and key on double_crm_id (raw partner), not
+    // the resolved double_hr_id which can be null for a real, unmapped partner.
+    if (isCrmDoubleVisitRow(row)) doublesReceived += 1;
 
     if (isProductive) {
-      if (row.double_hr_id) productiveDoubles += 1;
+      if (isCrmDoubleVisitRow(row)) productiveDoubles += 1;
       if (row.visit_date) {
         activeDaySet.add(row.visit_date);
         productiveDates.push(row.visit_date);
@@ -406,7 +421,7 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
     repeatCustomers,
     oneTimeCustomers,
     topCustomers,
-    dayOfWeek: dow,
+    visitDayOfWeek: dow,
     workingDaysInWindow,
     utilization,
     visitsSummaryText: summaryText,
@@ -512,7 +527,7 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
     avgLastHour,
     avgSpanHours,
     checkinsPerActiveDay: distinctCheckinDays > 0 ? checkinCount / distinctCheckinDays : null,
-    dayOfWeek: dow,
+    checkinDayOfWeek: dow,
     coverageTrend,
     uncorroboratedDays,
     distinctLocations: locations.size,

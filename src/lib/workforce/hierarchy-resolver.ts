@@ -344,3 +344,47 @@ export function isWithinManagerHierarchy(input: {
 
   return false;
 }
+
+/** Region-identifying field for the Regional Manager scope helpers below. */
+export type RegionSubject = {
+  regionName?: string | null;
+};
+
+/**
+ * Normalizes a region label the same way `regionsWithinManagerHierarchy` keys its result Set, so
+ * callers can safely do `regionKeys.has(normalizeRegionLabel(candidate.regionName))`.
+ */
+export function normalizeRegionLabel(value: string | null | undefined): string {
+  return normalizeName(value);
+}
+
+/**
+ * Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific set
+ * of regions. The RM's OWN `region_name` is often a coarse parent label ("Alexandria + Delta")
+ * that does not string-match the finer labels on their reports ("Delta (1)", "ALEX-BHR", …), so
+ * the region set must be derived from the RM's own management subtree instead.
+ *
+ * Returns the canonicalized region labels covering everyone within the viewer's hierarchy —
+ * chain-walked via `isWithinManagerHierarchy` (seat-continuity aware), not limited to direct
+ * reports, so it stays correct even if a direct report's own region field is blank/coarse but
+ * their team's isn't. Combine with `sameWorkforceLine` to bound an RM's scope: same line AND
+ * region in this set.
+ */
+export function regionsWithinManagerHierarchy<T extends SeatContinuitySubject & RegionSubject & { hrId: string }>(
+  employees: readonly T[],
+  viewerCanonicalHrId: string,
+  canonicalize: CanonicalizeHrId,
+): Set<string> {
+  const byCanonicalHrId = new Map<string, T>();
+  for (const employee of employees) {
+    const key = canonicalize(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
+  }
+  const regions = new Set<string>();
+  for (const employee of employees) {
+    if (!isWithinManagerHierarchy({ employee, byCanonicalHrId, viewerCanonicalHrId, canonicalize })) continue;
+    const region = normalizeRegionLabel(employee.regionName);
+    if (region) regions.add(region);
+  }
+  return regions;
+}

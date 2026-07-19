@@ -8,13 +8,14 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
 import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
-import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import type {
   DoubleVisitBreakdownRow,
+  DoubleVisitCadenceBand,
   DoubleVisitDashboardData,
   DoubleVisitExecutiveManagerReport,
   DoubleVisitExecutiveSummary,
@@ -39,6 +40,7 @@ import type {
   DoubleVisitReportRow,
   DoubleVisitRoleCode,
   DoubleVisitRoleRollup,
+  DoubleVisitRosterEntry,
   DoubleVisitScopeFocus,
   DoubleVisitSourceType,
   DoubleVisitTrendPoint,
@@ -236,15 +238,24 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   const allowedAreas = new Set<string>();
   const allowedLines = new Set<string>();
 
-  if (access.role === "Regional Manager" && viewer?.regionName) {
-    for (const employee of employees) {
-      if (normalizeLabelKey(employee.regionName) !== normalizeLabelKey(viewer.regionName)) continue;
-      const key = normalizedHrKey(employee.hrId);
-      if (key) allowedHrIds.add(key);
-      const area = normalizeLabelKey(employee.areaName);
-      const line = normalizeLabelKey(employee.lineName);
-      if (area) allowedAreas.add(area);
-      if (line) allowedLines.add(line);
+  if (access.role === "Regional Manager" && viewer && viewerKey) {
+    // Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific
+    // set of regions — their scope is Medical Reps on the RM's own line whose region is one their
+    // own management subtree actually covers. Shared with employee-portal + weekly-planning (see
+    // workforce/hierarchy-resolver.ts for why the RM's own region_name can't be used directly).
+    // The previous area/line label expansion leaked BOTH ways (cross-line reps in the same area,
+    // and same-line reps in regions he doesn't cover), so it is removed — allowedAreas/allowedLines
+    // stay empty and scoping is by hrId only. descendantHrIds (above) still carries the RM + his
+    // subtree so rows where THEY are the double-visitor stay in scope.
+    const rmRegionKeys = regionsWithinManagerHierarchy(employees, viewerKey, normalizedHrKey);
+    if (rmRegionKeys.size > 0) {
+      for (const employee of employees) {
+        if (!sameWorkforceLine(viewer, employee)) continue;
+        const region = normalizeRegionLabel(employee.regionName);
+        if (!region || !rmRegionKeys.has(region)) continue;
+        const key = normalizedHrKey(employee.hrId);
+        if (key) allowedHrIds.add(key);
+      }
     }
   }
 
@@ -402,7 +413,7 @@ function dbRowFromMirrorVisit(
     activity_date: visit.visit_date,
     area_name: visitedEmployee?.areaName ?? label.areaName,
     double_visitor_hr_id: visit.double_hr_id ?? (visit.double_crm_id ? `CRM:${visit.double_crm_id}` : null),
-    double_visitor_name: doubleEmployee?.fullName ?? visit.double_name ?? null,
+    double_visitor_name: doubleEmployee?.displayName ?? visit.double_name ?? null,
     id: visit.id,
     line_name: visitedEmployee?.lineName ?? label.lineName,
     period: periodFromAmpm(visit.ampm),
@@ -411,7 +422,7 @@ function dbRowFromMirrorVisit(
     source_type: "ireports360",
     visit_count: 1,
     visited_employee_hr_id: effectiveVisitedHrId,
-    visited_employee_name: visitedEmployee?.fullName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
+    visited_employee_name: visitedEmployee?.displayName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
     visited_employee_status: visitedStatus,
     resolved_via_chain: resolution ? true : undefined,
     chain_hinge_hr_id: resolution?.hingeHrId ?? undefined,
@@ -703,7 +714,7 @@ function buildMrScores(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow
       lineName: employee.lineName,
       managerHrId: employee.managerHrId,
       managerName: employee.managerName,
-      mrName: employee.fullName,
+      mrName: employee.displayName,
       totalDvs: mrRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0),
       trendDirection,
     } satisfies DoubleVisitMrScore;
@@ -800,7 +811,7 @@ function buildExecutiveReports(scores: DoubleVisitMrScore[], employees: Employee
       latestDvDate,
       lineName: group.manager.lineName,
       managerHrId: group.manager.hrId || managerHrId,
-      managerName: group.manager.fullName || group.manager.hrId || managerHrId,
+      managerName: group.manager.displayName || group.manager.hrId || managerHrId,
       neglectedMrCount: group.mrs.filter((mr) => mr.band !== "healthy").length,
       overFocusedMrCount: group.mrs.filter((mr) => averageDvs > 0 && mr.totalDvs >= Math.max(5, averageDvs * 2)).length,
       touchedMrCount: touched.length,
@@ -948,7 +959,7 @@ export function buildManagerSummariesDetailed(
       lastDvDate,
       lineName: employee?.lineName ?? nullableText(visitorRows.find((row) => nullableText(row.line_name))?.line_name),
       managerHrId: visitorKey,
-      managerName: nullableText(employee?.fullName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
+      managerName: nullableText(employee?.displayName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
       neglectedMrCount,
       overFocusedMrCount,
       pmVisits,
@@ -1124,7 +1135,7 @@ export function buildExecutiveSummary(
       areaName: employee.areaName,
       hrId: key,
       lineName: employee.lineName,
-      name: employee.fullName || employee.hrId || key,
+      name: employee.displayName || employee.hrId || key,
       role: dv.role,
       roleCode: dv.roleCode,
     });
@@ -1361,6 +1372,17 @@ const NEVER_VISITED_FLAG_DAYS = 45;
 const FOCUS_NEGLECTED_DISPLAY_LIMIT = 8;
 const FOCUS_PROBATION_DISPLAY_LIMIT = 8;
 
+// DV Planner cadence: how far back to look for a rep's most recent double visit, and the
+// warning/critical thresholds — reused verbatim from buildMrScores' band (30/60 days) so the
+// planner's cadence colours match the DV Analytics + CEO command-center recency bands.
+const CADENCE_LOOKBACK_DAYS = 180;
+
+function cadenceBandFromDays(days: number | null): DoubleVisitCadenceBand {
+  if (days == null || days > 60) return "critical";
+  if (days > 30) return "warning";
+  return "healthy";
+}
+
 const PROBATION_DV_FIELD_BY_ROLE: Partial<Record<string, keyof ProbationDvState>> = {
   "District Manager": "dm_dv_done",
   "Group Product Manager": "pm_gpm_dv_done",
@@ -1486,7 +1508,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
         flagged: !visited && daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         visited,
       };
     });
@@ -1539,14 +1561,101 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
 
 // ── Double Visit Report page: flat, filterable, sortable, exportable drill-down ────
 
+/**
+ * Build the DV Planner roster (one entry per active Medical Rep) from already-scoped inputs.
+ * Exported + pure so the weekly digest can reproduce the exact page roster for any manager scope.
+ *
+ * - `inWindowRows` drives the in-window `visitCount` / `visited` / `lastVisitDate` (selected period).
+ * - `cadenceLastVisitByKey` (most recent DV over the wider cadence lookback) drives
+ *   `lastVisitDateEver` / `daysSinceLastVisit` / `cadenceBand`. When empty (non-cadence callers) it
+ *   falls back to the in-window last date, so `cadenceBand` is never garbage.
+ * - `daysSinceHire` is measured from `dateTo` (report-frame recency); cadence from `today`.
+ */
+export function buildDvPlannerRosterEntries(params: {
+  activeMedicalReps: EmployeeDirectoryRow[];
+  inWindowRows: DoubleVisitReportRow[];
+  cadenceLastVisitByKey: Map<string, string>;
+  probation: DoubleVisitFocusProbationEntry[];
+  dateTo: string;
+  today: string;
+}): DoubleVisitRosterEntry[] {
+  const { activeMedicalReps, inWindowRows, cadenceLastVisitByKey, probation, dateTo, today } = params;
+
+  const statsByKey = new Map<string, { count: number; lastDate: string | null }>();
+  for (const row of inWindowRows) {
+    const key = row.visitedHrId ? canonicalHrIdKey(row.visitedHrId) : null;
+    if (!key) continue;
+    const existing = statsByKey.get(key);
+    if (existing) existing.count += 1;
+    // inWindowRows is sorted newest-first, so the first occurrence per key is the most recent.
+    else statsByKey.set(key, { count: 1, lastDate: row.activityDate });
+  }
+  const probationByKey = new Map(
+    probation
+      .map((entry) => [canonicalHrIdKey(entry.hrId), entry] as const)
+      .filter((entry): entry is [string, DoubleVisitFocusProbationEntry] => Boolean(entry[0])),
+  );
+
+  return activeMedicalReps
+    .map((employee) => {
+      const key = canonicalHrIdKey(employee.hrId);
+      const stats = key ? statsByKey.get(key) : undefined;
+      const probationEntry = key ? probationByKey.get(key) : undefined;
+      const daysSinceHire = daysBetween(employee.hireDate, dateTo);
+      const visited = Boolean(stats && stats.count > 0);
+      // Cadence recency: prefer the wide-lookback max; fall back to in-window last date so the band
+      // stays sensible for callers that didn't opt into the wider cadence scan.
+      const lastVisitDateEver = (key ? cadenceLastVisitByKey.get(key) : undefined) ?? stats?.lastDate ?? null;
+      const daysSinceLastVisit = lastVisitDateEver ? daysBetween(lastVisitDateEver, today) : null;
+      const cadenceBand = cadenceBandFromDays(daysSinceLastVisit);
+      return {
+        areaName: employee.areaName,
+        cadenceBand,
+        cadenceOverdue: cadenceBand !== "healthy",
+        daysSinceHire,
+        daysSinceLastVisit,
+        flagged: !visited && daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
+        hireDate: employee.hireDate,
+        hrId: employee.hrId,
+        lastVisitDate: stats?.lastDate ?? null,
+        lastVisitDateEver,
+        lineName: employee.lineName,
+        managerHrId: employee.managerHrId,
+        managerName: employee.managerName,
+        name: employee.displayName,
+        onProbation: Boolean(probationEntry),
+        probationDaysRemaining: probationEntry?.daysRemaining ?? null,
+        probationDvDone: probationEntry?.dvDone ?? null,
+        visitCount: stats?.count ?? 0,
+        visited,
+      } satisfies DoubleVisitRosterEntry;
+    })
+    .sort((a, b) => {
+      // Alarms first: on-probation, then never-visited, then everyone else — then alphabetical.
+      const weight = (entry: DoubleVisitRosterEntry) => (entry.onProbation ? 0 : !entry.visited ? 1 : 2);
+      const diff = weight(a) - weight(b);
+      return diff !== 0 ? diff : a.name.localeCompare(b.name);
+    });
+}
+
 export async function getDoubleVisitReportData(input: {
   access: AccessContext;
   dateFrom?: string | null;
   dateTo?: string | null;
+  /** DV Planner opt-in: also compute per-rep cadence (days since last DV over CADENCE_LOOKBACK_DAYS,
+   * regardless of the selected window). Off by default so the Double Visit Report page + export keep
+   * their exact current scan cost — only the planner widens the scan. */
+  includeCadence?: boolean;
 }): Promise<DoubleVisitReportData> {
   const today = todayIso();
   const dateFrom = input.dateFrom || addDaysIso(today, -90);
   const dateTo = input.dateTo || today;
+  const includeCadence = input.includeCadence ?? false;
+  // Cadence looks further back than the selected window so "days since last DV" is meaningful even
+  // when the last visit predates the window. The scan widens to cover it; the in-window arrays are
+  // then derived by filter-back (below) so existing consumers are byte-for-byte unchanged.
+  const cadenceFloor = addDaysIso(today, -CADENCE_LOOKBACK_DAYS);
+  const scanFrom = includeCadence && cadenceFloor < dateFrom ? cadenceFloor : dateFrom;
 
   if (!(await isDoubleVisitSchemaReady())) {
     return {
@@ -1556,6 +1665,7 @@ export async function getDoubleVisitReportData(input: {
       filters: { areas: [], doubleVisitorRoles: [], doubleVisitors: [], regions: [], visitKinds: [] },
       neverVisited: [],
       probation: [],
+      roster: [],
       rows: [],
       schemaReady: false,
     };
@@ -1589,11 +1699,32 @@ export async function getDoubleVisitReportData(input: {
       .filter((key): key is string => Boolean(key)),
   );
 
-  const rawRows = await getLiveDoubleVisitRows(dateFrom, dateTo, employees);
-  const scopedRows = filterRowsForAccess(rawRows, input.access, employees).filter((row) => {
+  // One scan over [scanFrom, dateTo] (wider than the window only when includeCadence). scopedRowsWide
+  // carries the full lookback for cadence; scopedRows is the strict in-window set every existing
+  // consumer already reads — derived by filter-back so its contents are identical to before (chain
+  // resolution is same-day, access scope is date-independent). NEVER widen scopedRows in place: it
+  // feeds probationDvCountByKey, neverVisited, visitCount and the in-window history.
+  const rawRows = await getLiveDoubleVisitRows(scanFrom, dateTo, employees);
+  const scopedRowsWide = filterRowsForAccess(rawRows, input.access, employees).filter((row) => {
     if (!row.visited_employee_hr_id) return true;
     return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
   });
+  const scopedRows =
+    includeCadence && scanFrom !== dateFrom
+      ? scopedRowsWide.filter((row) => row.activity_date >= dateFrom && row.activity_date <= dateTo)
+      : scopedRowsWide;
+
+  // Cadence: most recent DV per rep across the FULL lookback (from scopedRowsWide), days measured
+  // from TODAY (not dateTo — see daysSinceHire which deliberately uses dateTo for report recency).
+  const cadenceLastVisitByKey = new Map<string, string>();
+  if (includeCadence) {
+    for (const row of scopedRowsWide) {
+      const key = canonicalHrIdKey(row.visited_employee_hr_id);
+      if (!key) continue;
+      const existing = cadenceLastVisitByKey.get(key);
+      if (!existing || row.activity_date > existing) cadenceLastVisitByKey.set(key, row.activity_date);
+    }
+  }
 
   const rows: DoubleVisitReportRow[] = scopedRows
     .map((row) => {
@@ -1640,7 +1771,7 @@ export async function getDoubleVisitReportData(input: {
         flagged: daysSinceHire != null && daysSinceHire >= NEVER_VISITED_FLAG_DAYS,
         hireDate: employee.hireDate,
         hrId: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         visited: false,
       } satisfies DoubleVisitFocusRosterEntry;
     })
@@ -1669,6 +1800,19 @@ export async function getDoubleVisitReportData(input: {
     } satisfies DoubleVisitFocusProbationEntry;
   });
 
+  // DV Planner roster: every active Medical Rep in scope, one row each. Built by the shared,
+  // exported buildDvPlannerRosterEntries so the weekly digest (Wave 2) computes an identical roster
+  // for any manager scope. Cadence lastVisit comes from the wide lookback (cadenceLastVisitByKey);
+  // in-window count/visited come from `rows`.
+  const roster = buildDvPlannerRosterEntries({
+    activeMedicalReps: scopedEmployees.filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee)),
+    inWindowRows: rows,
+    cadenceLastVisitByKey,
+    probation,
+    dateTo,
+    today,
+  });
+
   const areas = Array.from(new Set(rows.map((row) => row.areaName).filter((value): value is string => Boolean(value)))).sort();
   const regions = Array.from(new Set(rows.map((row) => row.regionName).filter((value): value is string => Boolean(value)))).sort();
   const doubleVisitors = Array.from(
@@ -1684,6 +1828,7 @@ export async function getDoubleVisitReportData(input: {
     filters: { areas, doubleVisitorRoles, doubleVisitors, regions, visitKinds },
     neverVisited,
     probation,
+    roster,
     rows,
     schemaReady: true,
   };

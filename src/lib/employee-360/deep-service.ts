@@ -13,10 +13,11 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { queryVisitsLimited } from "@/lib/crm/reads";
+import { isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
+import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
   CAMPAIGN_TYPE,
   classifyVisit,
@@ -97,20 +98,73 @@ export function applyRestrictedProductFilter(
 async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
   const supabase = getSupabaseAdmin();
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
-  const { data, error } = await supabase
-    .from("sales_records")
-    .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-    .in("employee_hr_id", keys)
-    .limit(20000);
-  if (error) throw new Error(`Employee 360 sales: ${error.message}`);
-  let rows = (data ?? []) as SalesRow[];
+  // PostgREST caps a response at ~1000 rows regardless of .limit(), and a large
+  // team (e.g. an NSM's whole line ≈ 3.7k sales rows) exceeds that — so PAGE with
+  // .range() or the manager sales roll-up silently under-counts.
+  const PAGE = 1000;
+  let rows: SalesRow[] = [];
+  for (let from = 0; from < 100000; from += PAGE) {
+    const { data, error } = await supabase
+      .from("sales_records")
+      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+      .in("employee_hr_id", keys)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Employee 360 sales: ${error.message}`);
+    const batch = (data ?? []) as SalesRow[];
+    rows = rows.concat(batch);
+    if (batch.length < PAGE) break;
+  }
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }
   const subjectKey = String(teamHrIds[0] ?? "").trim().toLowerCase();
   const contributingReps = new Set(rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && k !== subjectKey));
   const isTeamRollup = teamHrIds.length > 1 && contributingReps.size > 0;
+  return aggregateSalesRows(rows, isTeamRollup, contributingReps.size);
+}
 
+/**
+ * PM / Group PM sales attributed by the PRODUCTS they own (product-manager master),
+ * not a team roll-up — a PM has no reports, so the team path returns nothing.
+ * sales_records has no product code, so we attribute by `family` — the SKU-agnostic
+ * grouping that matches the master's family (resolved from the assigned codes). This
+ * is exact for a PM who owns a whole brand and avoids the SKU-level name drift/typos
+ * in sales_records.product (e.g. "Royafloxacin 500mg tab", "Tebofrtin drops").
+ */
+export async function getEmployeeSalesByFamilies(
+  families: string[],
+  viewerRole: PhoenixRole,
+): Promise<SalesSummary> {
+  const fams = Array.from(new Set(families.map((f) => String(f).trim()).filter(Boolean)));
+  if (fams.length === 0) return aggregateSalesRows([], false, 0);
+  const supabase = getSupabaseAdmin();
+  // A whole family spans 2 sales channels × SKUs × months (thousands of rows), and
+  // PostgREST caps a single response (~1000 rows) regardless of .limit(), so we MUST
+  // page through with .range() or the total silently under-counts by ~half.
+  const PAGE = 1000;
+  let rows: SalesRow[] = [];
+  for (let from = 0; from < 100000; from += PAGE) {
+    const { data, error } = await supabase
+      .from("sales_records")
+      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+      .in("family", fams)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Employee 360 product sales: ${error.message}`);
+    const batch = (data ?? []) as SalesRow[];
+    rows = rows.concat(batch);
+    if (batch.length < PAGE) break;
+  }
+  if (!canViewRestrictedProducts(viewerRole)) {
+    rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
+  }
+  return aggregateSalesRows(rows, false, 0);
+}
+
+/** Pure aggregation of sales rows into the SalesSummary shape (shared by the
+ *  team-roll-up and product-based sales paths). */
+function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, contributingRepCount: number): SalesSummary {
   const monthMap = new Map<string, { sales: number; target: number }>();
   const productMap = new Map<string, { family: string | null; sales: number; target: number }>();
   const familyMap = new Map<string, { sales: number; target: number }>();
@@ -156,7 +210,7 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   const growthPct = monthly.length > 1 && monthly[0].sales > 0 ? ((monthly[monthly.length - 1].sales - monthly[0].sales) / monthly[0].sales) * 100 : null;
   const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
   const top = topProducts[0];
-  const teamPrefix = isTeamRollup ? `Team roll-up (${contributingReps.size} rep${contributingReps.size === 1 ? "" : "s"}): ` : "";
+  const teamPrefix = isTeamRollup ? `Team roll-up (${contributingRepCount} rep${contributingRepCount === 1 ? "" : "s"}): ` : "";
   const summaryText =
     rows.length === 0
       ? "No validated sales records for this employee yet (only ~2/3 of reps have linked sales)."
@@ -181,7 +235,7 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
     topProducts,
     byFamily,
     isTeamRollup,
-    teamRepCount: contributingReps.size,
+    teamRepCount: contributingRepCount,
     summaryText,
   };
 }
@@ -369,7 +423,11 @@ function buildDoubleVisitHistory(visits: VisitRow[], tmIds: Set<string>, nameByH
   const events: DoubleVisitEvent[] = [];
   const byVisitor = new Map<string, { name: string | null; count: number; isTm: boolean }>();
   for (const v of visits) {
-    if (!v.double_hr_id || !v.visit_date) continue;
+    // Only real double visits: a genuine partner (double_crm_id) on a fieldwork
+    // type {0,-8}. A partner riding along on a Meeting/Vacation/Training row is
+    // NOT a double visit (matches the canonical crm/reads predicate). We still
+    // require a resolved double_hr_id here because this history names the partner.
+    if (!isCrmDoubleVisitRow(v) || !v.double_hr_id || !v.visit_date) continue;
     const key = String(v.double_hr_id).trim().toLowerCase();
     const isTm = tmIds.has(key);
     const name = v.double_name ?? nameByHrId.get(key) ?? null;
@@ -841,6 +899,9 @@ export type LeadershipActivity = {
   /** Bounded before/after aggregate across double-visited reps (Training Managers only); null otherwise or when the sample is empty. */
   impact: ImpactSet | null;
   impactRepCount: number;
+  /** True when any underlying read hit its cap (impact 12k / dv 8k / coaching 3k) — the counts may
+   * undercount; surfaced in summaryText. */
+  truncated: boolean;
   summaryText: string;
 };
 
@@ -888,15 +949,15 @@ function foldImpactMetricsAcross(list: ImpactMetrics[]): ImpactMetrics {
 // page-load-safe read. `dvByRep` is keyed by lower(agent_hr_id).
 async function computeLeaderImpact(
   dvByRep: Map<string, { exactIds: Set<string>; dates: string[] }>,
-): Promise<{ impact: ImpactSet | null; repCount: number }> {
+): Promise<{ impact: ImpactSet | null; repCount: number; truncated: boolean }> {
   const capped = Array.from(dvByRep.entries())
     .sort((a, b) => b[1].dates.length - a[1].dates.length)
     .slice(0, MAX_IMPACT_REPS);
-  if (capped.length === 0) return { impact: null, repCount: 0 };
+  if (capped.length === 0) return { impact: null, repCount: 0, truncated: false };
 
   const exactIds = Array.from(new Set(capped.flatMap(([, v]) => Array.from(v.exactIds)))).filter(Boolean);
   const allDates = capped.flatMap(([, v]) => v.dates).sort();
-  if (exactIds.length === 0 || allDates.length === 0) return { impact: null, repCount: 0 };
+  if (exactIds.length === 0 || allDates.length === 0) return { impact: null, repCount: 0, truncated: false };
   const minDate = addDays(allDates[0], -(IMPACT_WINDOW_DAYS + 1));
   const maxDate = addDays(allDates[allDates.length - 1], IMPACT_WINDOW_DAYS + 1);
 
@@ -908,6 +969,8 @@ async function computeLeaderImpact(
     columns: "agent_hr_id, visit_date, visit_type, visit_type_description, comment, contact_crm_id, contact_name, customer_name",
     limit: 12000,
   });
+  // The 12,000-row cap (newest-first) can silently drop older rows and skew the before/after window.
+  const truncated = data.length >= 12000;
 
   const rowsByRep = new Map<string, ProductiveRow[]>();
   for (const r of data) {
@@ -928,7 +991,7 @@ async function computeLeaderImpact(
     if (rows.length === 0) continue;
     perRep.push(poolImpact(rows, v.dates, IMPACT_WINDOW_DAYS));
   }
-  if (perRep.length === 0) return { impact: null, repCount: 0 };
+  if (perRep.length === 0) return { impact: null, repCount: 0, truncated: false };
 
   return {
     impact: {
@@ -938,6 +1001,7 @@ async function computeLeaderImpact(
       after: foldImpactMetricsAcross(perRep.map((p) => p.after)),
     },
     repCount: perRep.length,
+    truncated,
   };
 }
 
@@ -959,9 +1023,10 @@ async function getLeadershipActivity(
       .gte("coaching_date", window.from)
       .lte("coaching_date", window.to)
       .limit(3000),
-    // Double visits CONDUCTED by this leader — read through the CRM single door.
+    // Double visits CONDUCTED by this leader — read through the CRM single door (which matches
+    // hr ids case-insensitively, so the raw id suffices; `keys` stays for the coaching query).
     queryVisitsLimited<ConductedDvRow>({
-      doubleHrIds: keys,
+      doubleHrIds: [hrId],
       dateFrom: window.from,
       dateTo: window.to,
       columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
@@ -1041,17 +1106,22 @@ async function getLeadershipActivity(
   recentCoaching.sort((a, b) => b.date.localeCompare(a.date));
   recentDv.sort((a, b) => b.date.localeCompare(a.date));
 
-  const { impact, repCount } = computeImpact
+  const { impact, repCount, truncated: impactTruncated } = computeImpact
     ? await computeLeaderImpact(dvByRepForImpact)
-    : { impact: null, repCount: 0 };
+    : { impact: null, repCount: 0, truncated: false };
+  // Honest cap signal across all three underlying reads (impact 12k, dv 8k, coaching 3k).
+  const truncated = impactTruncated || dvRows.length >= 8000 || (coachRes.data?.length ?? 0) >= 3000;
 
   const avgScoreGiven = scoreCountAll > 0 ? scoreSumAll / scoreCountAll : null;
   const hasData = coachRows.length > 0 || dvRows.length > 0;
-  const summaryText = !hasData
+  const baseSummaryText = !hasData
     ? "No coaching reports authored or double-visits conducted in this period."
     : `Delivered ${coachRows.length} coaching report${coachRows.length === 1 ? "" : "s"} and ${dvRows.length} double-visit${dvRows.length === 1 ? "" : "s"}, ` +
       `reaching ${distinctRepsReached} distinct rep${distinctRepsReached === 1 ? "" : "s"}` +
       (avgScoreGiven != null ? ` at an average coaching score of ${Math.round(avgScoreGiven)}%.` : ".");
+  const summaryText = truncated
+    ? `${baseSummaryText} Some rows were capped for performance, so these figures may undercount.`
+    : baseSummaryText;
 
   return {
     hasData,
@@ -1066,6 +1136,7 @@ async function getLeadershipActivity(
     recentDv: recentDv.slice(0, 12),
     impact,
     impactRepCount: repCount,
+    truncated,
     summaryText,
   };
 }
@@ -1091,10 +1162,19 @@ export async function getEmployee360Profile(
 ): Promise<Employee360Profile> {
   const salesTeam = teamHrIds.length ? teamHrIds : [hrId];
   const isLeader = isFieldLeaderCategory(roleCategory);
+  // PM / Group PM: attribute sales by the PRODUCTS they own (product master), not a
+  // team roll-up (they have no reports). Falls back to the team path when a PM has
+  // no assignments yet (or before the pm_product_assignments migration is applied).
+  const pmSalesFamilies =
+    roleCategory === "product-manager" ? await resolvePmSalesFamilies(await getPmProductCodes(hrId)) : [];
+  const salesPromise =
+    pmSalesFamilies.length > 0
+      ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
+      : getEmployeeSales(salesTeam, viewerRole);
   const [visits, checkins, sales, tmIds, expenses, leadership] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
-    getEmployeeSales(salesTeam, viewerRole),
+    salesPromise,
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
     isLeader
@@ -1134,7 +1214,7 @@ export async function getEmployee360Profile(
   const coachingDates = coaching.reports.map((r) => r.date);
   // Use the FULL visit set for TM dates (doubleVisits.events is capped for display).
   const tmDvDates = visits
-    .filter((v) => v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
+    .filter((v) => isCrmDoubleVisitRow(v) && v.double_hr_id && v.visit_date && tmIds.has(String(v.double_hr_id).trim().toLowerCase()))
     .map((v) => v.visit_date as string);
 
   const impact: InterventionImpact = {

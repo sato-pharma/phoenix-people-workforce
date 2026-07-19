@@ -37,6 +37,8 @@ import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle
 import {
   formatVacantSeatLabel,
   lineScopeIncludesEmployee,
+  normalizeRegionLabel,
+  regionsWithinManagerHierarchy,
   reportsToManagerSeat,
   resolveSeatGrouping,
   sameWorkforceLine,
@@ -1078,7 +1080,7 @@ async function resolvePortalCurrentUser(access: AccessContext): Promise<PortalCu
       currentUser.hrId = employee.hrId;
       currentUser.line = currentUser.line ?? employee.lineName;
       currentUser.managerHrId = currentUser.managerHrId ?? employee.managerHrId;
-      currentUser.name = currentUser.name ?? employee.fullName;
+      currentUser.name = currentUser.name ?? employee.displayName;
     }
   } catch {
     // Keep the auth-derived identity if the directory is temporarily unavailable.
@@ -2575,7 +2577,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       openVacancies: 0,
       pendingApprovals: 0,
       probationDue: 0,
-      scopeLabel: employee.fullName,
+      scopeLabel: employee.displayName,
     },
     empty: {
       payroll: (payrollDashboard?.records.length ?? 0) === 0,
@@ -2795,13 +2797,36 @@ function isCompanyWorkforceRole(role: PhoenixRole) {
 function isLineWorkforceRole(role: PhoenixRole) {
   return (
     role === "National Sales Manager" ||
-    role === "Regional Manager" ||
     role === "Product Manager" ||
     role === "Group Product Manager" ||
     role === "SFE Manager" ||
     role === "Training Manager" ||
     role === "Marketing Manager"
   );
+}
+
+/**
+ * Owner rule (2026-07-18): a Regional Manager owns exactly ONE product line across a specific set
+ * of regions — unlike the other line-workforce roles above, RM is also REGION-bounded, so it is
+ * NOT part of isLineWorkforceRole. The region set is derived from the RM's own management subtree
+ * (regionsWithinManagerHierarchy), since the RM's own region_name is a coarse parent label that
+ * doesn't string-match the finer labels on their reports. Shared with double-visit-analytics +
+ * weekly-planning so the same reps count everywhere.
+ */
+function regionalManagerScopeRows<T extends { hrId: string; lineId?: number | null; lineName?: string | null; managerHrId?: string | null; regionName?: string | null }>(
+  rows: readonly T[],
+  employee: EmployeeDirectoryRow,
+  directory: readonly EmployeeDirectoryRow[],
+  currentCanonicalHrId: string | null,
+): T[] {
+  if (!currentCanonicalHrId) return [];
+  const regionKeys = regionsWithinManagerHierarchy(directory, currentCanonicalHrId, normalizeHrIdForAccess);
+  if (regionKeys.size === 0) return [];
+  return rows.filter((row) => {
+    if (!sameWorkforceLine(employee, row)) return false;
+    const region = normalizeRegionLabel(row.regionName);
+    return Boolean(region && regionKeys.has(region));
+  });
 }
 
 function isTeamWorkforceRole(role: PhoenixRole) {
@@ -2823,6 +2848,10 @@ function resolvePortalWorkforceRows({
   const activeRows = directory.employees.filter(isActiveDirectoryEmployee);
 
   if (isCompanyWorkforceRole(role)) return activeRows;
+
+  if (role === "Regional Manager") {
+    return regionalManagerScopeRows(activeRows, employee, directory.employees, currentCanonicalHrId);
+  }
 
   if (isLineWorkforceRole(role)) {
     return activeRows.filter((row) => {
@@ -2856,9 +2885,10 @@ function resolvePortalWorkforceScopeLabel({
 }) {
   const role = normalizeRole(currentUser.role);
   if (isCompanyWorkforceRole(role)) return "Company";
+  if (role === "Regional Manager") return "Your regions";
   if (isLineWorkforceRole(role)) return employee.lineName ?? currentUser.line ?? "Your line";
   if (isTeamWorkforceRole(role)) return "Your team";
-  return employee.fullName;
+  return employee.displayName;
 }
 
 function countRowsWithUpcomingDate(
@@ -2937,14 +2967,20 @@ function emptyPortalVacancySummary(): PortalVacancySummary {
 
 async function fetchOpenVacancySummaryForScope({
   currentUser,
+  directory,
   employee,
 }: {
   currentUser: PortalCurrentUser;
+  directory: EmployeeDirectoryData;
   employee: EmployeeDirectoryRow;
 }): Promise<PortalVacancySummary> {
   const role = normalizeRole(currentUser.role);
   const currentLine = normalizeLineName(currentUser.line ?? employee.lineName);
   const currentCanonicalHrId = normalizeHrIdForAccess(currentUser.hrId);
+  const regionalManagerRegionKeys =
+    role === "Regional Manager" && currentCanonicalHrId
+      ? regionsWithinManagerHierarchy(directory.employees, currentCanonicalHrId, normalizeHrIdForAccess)
+      : null;
   const supabase = getSupabaseAdmin();
 
   try {
@@ -2968,7 +3004,9 @@ async function fetchOpenVacancySummaryForScope({
 
       if (isTeamWorkforceRole(role) && currentUser.hrId) {
         query = query.eq("manager_hr_id", currentUser.hrId);
-      } else if (isLineWorkforceRole(role) && typeof employee.lineId === "number") {
+      } else if ((role === "Regional Manager" || isLineWorkforceRole(role)) && typeof employee.lineId === "number") {
+        // RM's authoritative region bound is applied client-side below (regionalManagerRegionKeys);
+        // this is only the coarse line_id pre-filter, same as the other line-workforce roles.
         query = query.eq("line_id", employee.lineId);
       }
 
@@ -2977,6 +3015,12 @@ async function fetchOpenVacancySummaryForScope({
 
     const scopedRows = rows.filter((row) => {
       if (isCompanyWorkforceRole(role)) return true;
+      if (role === "Regional Manager") {
+        if (!regionalManagerRegionKeys || regionalManagerRegionKeys.size === 0) return false;
+        if (typeof employee.lineId !== "number" || row.line_id !== employee.lineId) return false;
+        const region = normalizeRegionLabel(row.region_name);
+        return Boolean(region && regionalManagerRegionKeys.has(region));
+      }
       if (isLineWorkforceRole(role)) {
         if (typeof employee.lineId === "number" && typeof row.line_id === "number") {
           return row.line_id === employee.lineId;
@@ -3100,7 +3144,7 @@ async function resolvePortalStructureSummary({
     scope: isNsm ? "line" : "team",
     scopeLabel: isNsm
       ? employee.lineName ?? currentUser.line ?? "Your line"
-      : employee.fullName,
+      : employee.displayName,
     totalStructure: actualNow + vacancyCount,
     vacancies: vacancyCount,
   };
@@ -3299,7 +3343,7 @@ async function resolveSalesRankInTeam(params: {
 
   const nameByHrId = new Map(
     directory.employees
-      .map((employee) => [resolveTeamHrId(employee.hrId), employee.fullName] as const)
+      .map((employee) => [resolveTeamHrId(employee.hrId), employee.displayName] as const)
       .filter(([hrId]) => Boolean(hrId)) as Array<[string, string]>,
   );
   const teamNameToHrId = new Map<string, string>();
@@ -3554,6 +3598,7 @@ export async function getMedicalRepPortalData(
   const vacancySummary = shouldBuildScopeSummaries
     ? await fetchOpenVacancySummaryForScope({
         currentUser,
+        directory,
         employee,
       })
     : emptyPortalVacancySummary();
@@ -4024,7 +4069,7 @@ export async function getMedicalRepPortalData(
         const empExpenses = expenses.filter((e) => e.hrId === hrId);
         const emp = findDirectoryEmployeeByHrId(directory, hrId);
         return {
-          name: emp?.fullName ?? hrId!,
+          name: emp?.displayName ?? hrId!,
           role: emp?.jobTitle ?? "N/A",
           trips: empExpenses.length,
           distance: empExpenses.reduce((sum, e) => sum + (e.km || 0), 0),
@@ -4069,7 +4114,7 @@ export async function getMedicalRepPortalData(
         distance: e.km || 0,
         cost: e.total || 0,
       })),
-      availableEmployees: visibleTeamMembers.map((m) => ({ id: m.hrId, name: m.fullName })),
+      availableEmployees: visibleTeamMembers.map((m) => ({ id: m.hrId, name: m.displayName })),
       availableTerritories: Array.from(new Set(expenses.map((e) => e.location).filter(Boolean))) as string[],
     },
   };
@@ -4265,7 +4310,7 @@ async function buildTeamPerformanceForScope(input: {
       if (canonical) {
         if (normalized) hrIdToCanonical.set(normalized, canonical);
         hrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.fullName);
+        canonicalToName.set(canonical, emp.displayName);
       }
     });
 
@@ -4411,7 +4456,7 @@ async function buildTeamPerformanceForScope(input: {
       membersMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
-        name: emp.fullName,
+        name: emp.displayName,
         managerHrId: seatHrId,
         managerName: grouping.seatName,
         position: 0,
@@ -4508,8 +4553,11 @@ export async function getCompanyMedRepPerformance(
   options: { period?: string | string[] | null } = {},
 ): Promise<CompanyMedRepPerformanceData | null> {
   try {
-    if (access.scope !== "company") return null;
-    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+    // SFE Manager gets company-wide sales scope via getSalesScope, but scopeForRole
+    // doesn't special-case it so AccessContext.scope stays "self" — carve out
+    // explicitly here rather than widening scopeForRole (used well beyond sales).
+    if (access.scope !== "company" && access.role !== "SFE Manager") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin" && access.role !== "SFE Manager") return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -4548,7 +4596,7 @@ export async function getCompanyMedRepPerformance(
         return {
           lineId: info.lineId,
           lineName: info.lineName,
-          nsmName: nsmEmployee?.fullName ?? null,
+          nsmName: nsmEmployee?.displayName ?? null,
           performance,
         };
       }),
@@ -4654,7 +4702,7 @@ export async function getCompanyLineTopAchievers(
 
 async function computeLineTopAchievers(
   lineName: string,
-  reps: Array<{ areaName: string | null; fullName: string; hrId: string }>,
+  reps: Array<{ areaName: string | null; displayName: string; hrId: string }>,
   perLine: number,
 ): Promise<LineTopAchiever[]> {
   const hrIdToCanonical = new Map<string, string>();
@@ -4665,7 +4713,7 @@ async function computeLineTopAchievers(
     const normalized = normalizeHrId(emp.hrId);
     if (normalized) hrIdToCanonical.set(normalized, canonical);
     hrIdToCanonical.set(canonical, canonical);
-    meta.set(canonical, { areaName: emp.areaName, name: emp.fullName });
+    meta.set(canonical, { areaName: emp.areaName, name: emp.displayName });
   }
 
   const repHrIds = reps.map((emp) => emp.hrId).filter(Boolean) as string[];
@@ -5063,7 +5111,7 @@ export async function getEmployeePortalVacancies(
           ? hasMultiLineOverride
             ? viewerAllowedLines!.join(" + ")
             : currentEmployee.lineName ?? currentUser.line ?? "Your line"
-          : currentEmployee.fullName,
+          : currentEmployee.displayName,
       summary: {
         districtManagerVacancies: vacancies.filter((row) => row.isDistrictManagerVacancy).length,
         openVacancies: vacancies.length,
@@ -5144,7 +5192,7 @@ async function buildDsmPerformanceForLineScope(input: {
       if (canonical) {
         if (normalized) dsmHrIdToCanonical.set(normalized, canonical);
         dsmHrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.fullName);
+        canonicalToName.set(canonical, emp.displayName);
       }
     });
     const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
@@ -5308,7 +5356,7 @@ async function buildDsmPerformanceForLineScope(input: {
       dsmsMap.set(canonical, {
         achievementPercent: 0,
         hrId: canonical,
-        name: emp.fullName,
+        name: emp.displayName,
         managerHrId: null, // NSM is the manager
         managerName,
         position: 0,
@@ -5412,8 +5460,11 @@ export async function getCompanyDsmPerformance(
   options: { period?: string | null } = {},
 ): Promise<CompanyDsmPerformanceData | null> {
   try {
-    if (access.scope !== "company") return null;
-    if (access.role !== "CEO" && access.role !== "Super Admin") return null;
+    // SFE Manager gets company-wide sales scope via getSalesScope, but scopeForRole
+    // doesn't special-case it so AccessContext.scope stays "self" — carve out
+    // explicitly here rather than widening scopeForRole (used well beyond sales).
+    if (access.scope !== "company" && access.role !== "SFE Manager") return null;
+    if (access.role !== "CEO" && access.role !== "Super Admin" && access.role !== "SFE Manager") return null;
 
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
@@ -5447,13 +5498,13 @@ export async function getCompanyDsmPerformance(
           directory,
           lineScope,
           nsmCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
-          managerName: nsmEmployee?.fullName ?? `${info.lineName} (NSM seat vacant)`,
+          managerName: nsmEmployee?.displayName ?? `${info.lineName} (NSM seat vacant)`,
           period: options.period ?? null,
         });
         return {
           lineId: info.lineId,
           lineName: info.lineName,
-          nsmName: nsmEmployee?.fullName ?? null,
+          nsmName: nsmEmployee?.displayName ?? null,
           performance,
         };
       }),
@@ -5534,7 +5585,7 @@ export async function getNsmTeamExpenses(
 
     const dsmByCanonicalHrId = new Map<
       string,
-      Pick<EmployeeDirectoryRow, "fullName" | "hrId" | "lineName">
+      Pick<EmployeeDirectoryRow, "displayName" | "hrId" | "lineName">
     >();
 
     scopedDsms.forEach((employee) => {
@@ -5651,7 +5702,7 @@ export async function getNsmTeamExpenses(
 
         return {
           ...expense,
-          dsmName: employee?.fullName ?? expense.specialist ?? expense.hrId ?? "Unknown DSM",
+          dsmName: employee?.displayName ?? expense.specialist ?? expense.hrId ?? "Unknown DSM",
           lineName: employee?.lineName ?? null,
         };
       })

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   RECOGNITION_ENGINE_VERSION,
@@ -73,9 +74,27 @@ function summarizePreviewShape() {
   assert.equal(preview.summary.totalRows, 3);
 }
 
+// A workbook that parses but yields no usable data sheet (pickBestSheet → undefined) must return the
+// clean "header_error" the callers already handle — NOT force-cast undefined into normalizeRows,
+// which crashed with "Cannot read properties of undefined (reading 'rowCount')" and surfaced as a raw
+// 500. Guarded by source scan (a functional test would need a live distributor profile + masters).
+function noUsableSheetReturnsHeaderError() {
+  const source = readFileSync("src/lib/sales/recognize.ts", "utf8");
+  const branch = source.slice(source.indexOf("const sheet = pickBestSheet"));
+  const ifBlock = branch.slice(0, branch.indexOf("// Coded-sheet detection"));
+  assert.match(ifBlock, /if \(!sheet\) \{/, "the no-sheet guard exists");
+  assert.match(ifBlock, /status:\s*"header_error"/, "no-sheet branch returns a clean header_error");
+  assert.doesNotMatch(
+    ifBlock,
+    /sheet as unknown as ExcelJS\.Worksheet|normalizeRows\(sheet as/,
+    "no-sheet branch must NOT force-cast undefined into normalizeRows",
+  );
+}
+
 export function runSalesRecognizeTests() {
   singleRecognizerIdentity();
   engineVersionStamp();
   dominantPeriodPicksMostFrequent();
   summarizePreviewShape();
+  noUsableSheetReturnsHeaderError();
 }

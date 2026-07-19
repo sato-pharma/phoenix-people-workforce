@@ -1,9 +1,11 @@
 import { strict as assert } from "node:assert";
 
 import { isPlanItemVisibleToViewer } from "../src/lib/weekly-planning/calendar-service.ts";
+import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { PlanningCalendarPlanItem } from "../src/lib/weekly-planning/calendar.ts";
+import { regionsWithinManagerHierarchy } from "../src/lib/workforce/hierarchy-resolver.ts";
 
 /**
  * Role-based coverage for the shared planning calendar's owner-eligibility and
@@ -29,6 +31,7 @@ function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: str
     lineName: "Pedia",
     medicalRepHrId: null,
     medicalRepName: null,
+    medicalRepDisplayName: null,
     notes: null,
     planId: "header-1",
     planKind: "weekly",
@@ -51,8 +54,13 @@ function directoryRow(input: Partial<EmployeeDirectoryRow> & { hrId: string }): 
   } as EmployeeDirectoryRow;
 }
 
-function access(input: Partial<AccessContext> & { hrId: string | null; scope: AccessContext["scope"] }): Pick<AccessContext, "scope" | "hrId"> {
-  return { scope: input.scope, hrId: input.hrId };
+function access(
+  input: Partial<AccessContext> & { hrId: string | null; scope: AccessContext["scope"] },
+): Pick<AccessContext, "hrId" | "role" | "scope"> {
+  // Pre-existing tests don't care about role (only isPlanItemVisibleToViewer's Regional Manager
+  // branch reads it) — default to a role that never matches that branch, so their behavior is
+  // unaffected unless a test explicitly opts in with role: "Regional Manager".
+  return { scope: input.scope, hrId: input.hrId, role: input.role ?? "Employee" };
 }
 
 export function runWeeklyPlanCalendarOwnerScopeTests() {
@@ -208,6 +216,51 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     isPlanItemVisibleToViewer(dmItemHeadOffice, access({ scope: "line", hrId: "OTHER" }), directoryRow({ hrId: "OTHER", lineName: "Derma" }), directoryRow({ hrId: "DM-4" })),
     true,
     "a Head Office District Manager item is visible via the Head Office bypass, same as any other role",
+  );
+
+  // --- Regional Manager: line AND region bounded (owner rule 2026-07-18) ---
+  // RM's own region_name is a coarse parent label that doesn't string-match the finer labels
+  // on their reports, so the region set is derived from the RM's own subtree, not their own field.
+
+  const rmRow = directoryRow({ hrId: "RM-1", lineName: "Pedia", regionName: "Alexandria + Delta" });
+  const dm1UnderRm = directoryRow({ hrId: "DM-A", lineName: "Pedia", managerHrId: "RM-1", regionName: "Delta (1)" });
+  const dm2UnderRm = directoryRow({ hrId: "DM-B", lineName: "Pedia", managerHrId: "RM-1", regionName: "ALEX-BHR" });
+  const rmRegionKeys = regionsWithinManagerHierarchy(
+    [rmRow, dm1UnderRm, dm2UnderRm],
+    normalizeHrIdForAccess("RM-1") ?? "RM-1",
+    normalizeHrIdForAccess,
+  );
+  assert.deepEqual(
+    Array.from(rmRegionKeys).sort(),
+    ["alex-bhr", "delta (1)"],
+    "regionsWithinManagerHierarchy derives the RM's regions from his DMs' subtree, not his own coarse region_name",
+  );
+
+  const pmItemDelta1 = planItem({ employeeHrId: "PM-2", employeeJobTitle: "Product Manager", lineName: "Pedia", region: "Delta (1)" });
+  assert.equal(
+    isPlanItemVisibleToViewer(pmItemDelta1, access({ scope: "line", hrId: "RM-1", role: "Regional Manager" }), rmRow, null, rmRegionKeys),
+    true,
+    "RM sees a same-line item in a region his own subtree covers",
+  );
+
+  const pmItemOtherRegion = planItem({ employeeHrId: "PM-3", employeeJobTitle: "Product Manager", lineName: "Pedia", region: "Upper Egypt" });
+  assert.equal(
+    isPlanItemVisibleToViewer(pmItemOtherRegion, access({ scope: "line", hrId: "RM-1", role: "Regional Manager" }), rmRow, null, rmRegionKeys),
+    false,
+    "RM does NOT see a same-line item in a region outside his subtree — the out-of-region leak this rule closes",
+  );
+
+  const pmItemOtherLine = planItem({ employeeHrId: "PM-4", employeeJobTitle: "Product Manager", lineName: "Derma", region: "Delta (1)" });
+  assert.equal(
+    isPlanItemVisibleToViewer(pmItemOtherLine, access({ scope: "line", hrId: "RM-1", role: "Regional Manager" }), rmRow, null, rmRegionKeys),
+    false,
+    "RM does NOT see a different-line item even in a region his subtree covers — line bound still applies",
+  );
+
+  assert.equal(
+    isPlanItemVisibleToViewer(pmItemDelta1, access({ scope: "line", hrId: "RM-1", role: "Regional Manager" }), rmRow, null, undefined),
+    false,
+    "RM sees nothing when the caller forgot to precompute regionalManagerRegionKeys — fails closed, never leaks",
   );
 
   // --- Non-owner items are never visible, regardless of viewer -------------

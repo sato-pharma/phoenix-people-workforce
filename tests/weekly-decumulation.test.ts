@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { decumulateRows, weekHasDecumulationGap, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
+import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
 
 // Build a cumulative row with sensible defaults.
 function row(p: Partial<DecumulableRow> & { weekStart: string; weekNumber: number | null }): DecumulableRow {
@@ -112,9 +112,24 @@ export function runWeeklyDecumulationTests() {
   // A two-week gap (only W1 then W4) also flags.
   assert.equal(weekHasDecumulationGap(1, 4), true, "W4 after missing W2+W3 spans the gap");
 
-  // The dashboard computes spansGap via this helper against the previous present week in the cycle.
+  // ── M6 remediation: suppress the inflated single-week figure for a gap-spanning week ──
+  // Non-gap weeks keep their real value; gap weeks are nulled (suppressed), never shown as a true
+  // single-week number. Works for any value type, including an already-null delta.
+  assert.equal(suppressGapSpannedValue(false, 150), 150, "non-gap week keeps its value");
+  assert.equal(suppressGapSpannedValue(false, 0), 0, "a real zero is kept (not confused with suppression)");
+  assert.equal(suppressGapSpannedValue(true, 150), null, "gap week value is suppressed to null");
+  assert.equal(suppressGapSpannedValue(true, -25), null, "gap week negative value is also suppressed");
+  assert.equal(suppressGapSpannedValue(true, null), null, "already-null delta stays null under suppression");
+  assert.equal(suppressGapSpannedValue(false, null), null, "a null delta on a non-gap week passes through unchanged");
+
+  // The dashboard computes spansGap via the shared helper, then suppresses value/units/WoW at the
+  // source so no downstream consumer (table, cross-month chart, exports) can render the inflated
+  // number as a true single-week value.
   const serviceSource = readFileSync("src/lib/sales/weekly/service.ts", "utf8");
-  assert.match(serviceSource, /spansGap: weekHasDecumulationGap\(prev\?\.weekNumber \?\? null, w\.weekNumber\)/, "weekComparison flags spansGap via the shared helper");
+  assert.match(serviceSource, /const spansGap = weekHasDecumulationGap\(prev\?\.weekNumber \?\? null, w\.weekNumber\)/, "weekComparison computes spansGap via the shared helper");
+  assert.match(serviceSource, /salesValue: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesValue on a gap week");
+  assert.match(serviceSource, /salesUnits: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesUnits on a gap week");
+  assert.match(serviceSource, /deltaValuePct: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses the WoW delta on a gap week");
 
   // ── M7: logical-week (cycle_month + week_number + template) duplicate guard ──
   // persistWeeklyUpload adds a second SELECT pre-check on the logical week slot and maps the unique

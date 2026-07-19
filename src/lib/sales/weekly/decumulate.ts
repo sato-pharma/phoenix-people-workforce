@@ -96,3 +96,15 @@ export function weekHasDecumulationGap(
   if (prevWeekNumber == null) return false;
   return currWeekNumber - prevWeekNumber > 1;
 }
+
+// M6 remediation (chosen fix: "suppress + flag"): when a week spans an upload gap its de-cumulated
+// single-week figure silently includes the missing week(s) and is NOT a true weekly value, so it must
+// never be shown as one. This nulls the figure at the source (the week-comparison builder), so every
+// downstream consumer -- table, cross-month chart, and both exports -- renders it as "—"/blank next to
+// the "spans gap" badge instead of the inflated number. Stock is a point-in-time snapshot (never
+// subtracted) so it stays a real value even across a gap; only sales value/units and the WoW % are
+// suppressed. Month totals are unaffected: they telescope from the raw cumulative sheets, not from
+// these per-week display figures. Pure + unit-tested.
+export function suppressGapSpannedValue<T>(spansGap: boolean, value: T): T | null {
+  return spansGap ? null : value;
+}

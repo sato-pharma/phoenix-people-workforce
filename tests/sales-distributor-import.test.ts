@@ -9,6 +9,7 @@ import {
   buildSourceOfSalesDashboard,
   filterMonthlyClosingMatrix,
   normalizeSourceOfSalesProductInput,
+  parseDiscount,
   validateDistributorSalesWorkbookBuffer,
   type SalesReferenceData,
 } from "../src/lib/sales/monthly-distributor-import.ts";
@@ -151,6 +152,21 @@ async function buildSatoWorkbookBuffer(rows: unknown[][]) {
 }
 
 export async function runSalesDistributorImportTests() {
+  // ── parseDiscount: clamp to [0,1] + out-of-range flag ──
+  // Row value = qty x price x (1 - rate); an unclamped rate could drive value negative or inflate it.
+  assert.deepEqual(parseDiscount(""), { rate: 0, outOfRange: false }, "blank = no discount");
+  assert.deepEqual(parseDiscount("0"), { rate: 0, outOfRange: false }, "zero = no discount");
+  assert.deepEqual(parseDiscount("0.25"), { rate: 0.25, outOfRange: false }, "already-a-fraction stays");
+  assert.deepEqual(parseDiscount("25"), { rate: 0.25, outOfRange: false }, "whole number = percent");
+  assert.deepEqual(parseDiscount("25%"), { rate: 0.25, outOfRange: false }, "percent sign stripped");
+  assert.deepEqual(parseDiscount("100"), { rate: 1, outOfRange: false }, "100% is the in-range max");
+  // The bug this fixes: "150" (typo) → 1.5 → (1 - 1.5) = -0.5 → NEGATIVE row value. Now clamped + flagged.
+  assert.deepEqual(parseDiscount("150"), { rate: 1, outOfRange: true }, "150% clamps to 100% and flags");
+  assert.deepEqual(parseDiscount("150%"), { rate: 1, outOfRange: true }, "150% with sign clamps + flags");
+  // A negative discount (would INFLATE value: 1 - (-0.25) = 1.25) clamps to 0 and flags.
+  assert.deepEqual(parseDiscount("-25"), { rate: 0, outOfRange: true }, "negative discount clamps to 0 and flags");
+  assert.deepEqual(parseDiscount("abc"), { rate: 0, outOfRange: false }, "non-numeric = no discount");
+
   const normalizedProduct = normalizeSourceOfSalesProductInput({
     active: true,
     factoryPrice: "1,250.75",

@@ -644,7 +644,7 @@ export function AccessControlManager({
   const auditEntries = data?.auditLogs.length ?? 0;
   const hasDashboard = data !== null;
   const hasUsers = filteredUsers.length > 0;
-  const lineOptions = data?.lines ?? ["CNS", "Pedia", "Anti-Infective", "Office", "Other"];
+  const lineOptions = data?.lines ?? ["CNS", "Pedia", "Anti Infective", "Office", "Other"];
   const accessMode = canManageUsers
     ? canManagePermissions
       ? "Full admin"

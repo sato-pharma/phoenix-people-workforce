@@ -14,7 +14,7 @@ import type {
   FieldWorkforceRecommendationType,
   FieldWorkforceSeverity,
 } from "@/lib/field-workforce-compliance/types";
-import { isSfeManagerTitle } from "@/lib/field-workforce-compliance/eligibility";
+import { isFieldWorkforceComplianceEligibleTitle, isSfeManagerTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -498,7 +498,14 @@ function generatedRecommendations(
       // never generate a payroll-deduction recommendation — see the ELIGIBLE_TITLES comment
       // in eligibility.ts. This is the "enforced separately in the deductions-governance
       // connector" half of that promise; it was previously undocumented-but-missing.
-      if (!isSfeManagerTitle(employee.roleName)) {
+      //
+      // isFieldWorkforceComplianceEligibleTitle is required here too: employees now also enter
+      // the Team Calendar via fingerprint device-mapping alone (Head Office staff with no
+      // field-eligible title — see the `eligible` filter in ireports360-source.ts). That
+      // inclusion is informational only and must never itself create a payroll consequence, so
+      // only the ORIGINAL, title-eligible population can ever reach a payroll_deduction
+      // recommendation — this is the only place payroll_deduction is generated in the codebase.
+      if (!isSfeManagerTitle(employee.roleName) && isFieldWorkforceComplianceEligibleTitle(employee.roleName)) {
         payrollRecommendations.push(buildRecommendation({
           archive: archiveDetail.archive,
           dates: normalNoActivityDates,
@@ -618,7 +625,9 @@ export function assertNoFieldWorkforceApprovedDecisionConflict(input: {
   const candidateDateKey = normalizedDateKey(input.recommendation.dates);
   const conflict = input.existingRows.some((row) =>
     row.month_key === input.recommendation.monthKey &&
-    row.employee_code === input.recommendation.employeeCode &&
+    // Canonical (case/alias-insensitive) compare so a casing drift in employee_code can't slip a
+    // second approved decision past this deductions-safety guard.
+    canonicalHrIdKey(row.employee_code) === canonicalHrIdKey(input.recommendation.employeeCode) &&
     row.recommendation_key !== input.recommendation.recommendationKey &&
     isApprovedFinalActionStatus(row.decision_status) &&
     normalizedDateKey(row.dates) === candidateDateKey,

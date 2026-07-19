@@ -100,7 +100,7 @@ export function runSalesSourceOfTruthTests() {
 
   const salesPageSource = readFileSync("app/(admin)/sales/page.tsx", "utf8");
   assert.match(salesPageSource, /getSosDashboard/);
-  const salesAnalyticsPageSource = readFileSync("app/(admin)/admin/analytics/source-sales/page.tsx", "utf8");
+  const salesAnalyticsPageSource = readFileSync("src/components/analytics/dashboards/source-sales-dashboard.tsx", "utf8");
   assert.match(salesAnalyticsPageSource, /loadSosByPeriod/);
   // The portal sales dashboards were consolidated into a single scope-aware Source of Sales page
   // that reuses the admin SoS engine via the getPortalSosDashboard wrapper.

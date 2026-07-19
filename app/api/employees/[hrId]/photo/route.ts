@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission, canSeeEmployee } from "@/lib/auth/permissions";
+import { assertPermission, canSeeEmployee, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   clearEmployeePhoto,
@@ -28,6 +28,17 @@ function errorStatus(error: unknown): { message: string; status: number } {
   return { message, status: 500 };
 }
 
+async function loadTargetForScopeCheck(hrId: string) {
+  const { data: target } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id, manager_hr_id")
+    .eq("hr_id", hrId.toUpperCase())
+    .limit(1)
+    .maybeSingle();
+  if (!target) throw new Error(`Employee ${hrId} was not found.`);
+  return target as { hr_id: string | null; manager_hr_id: string | null };
+}
+
 /**
  * HR/Admin scope guard for managing another employee's photo: requires the
  * employees:update permission and that the caller is allowed to see the target.
@@ -36,24 +47,27 @@ async function assertCanManageTargetPhoto(request: Request, hrId: string) {
   const access = await resolveAccessContext(request);
   await assertPermission(access, "employees", "update");
 
-  const { data: target } = await getSupabaseAdmin()
-    .from("employees")
-    .select("hr_id, manager_hr_id")
-    .eq("hr_id", hrId.toUpperCase())
-    .limit(1)
-    .maybeSingle();
-  if (!target) throw new Error(`Employee ${hrId} was not found.`);
-
-  const row = target as { hr_id: string | null; manager_hr_id: string | null };
+  const row = await loadTargetForScopeCheck(hrId);
   if (!canSeeEmployee(access, { hrId: row.hr_id ?? hrId, managerHrId: row.manager_hr_id })) {
     throw new Error("Forbidden: you do not have access to this employee.");
   }
   return access;
 }
 
-// Streams an employee's uploaded photo to any authenticated user (same access
-// posture as the directory). Returns 404 when no photo is set so callers fall
-// back to the bundled static photo / initials.
+// Read-only scope guard for viewing another employee's photo: same directory-visibility
+// rule as assertCanManageTargetPhoto, but without requiring employees:update — anyone who
+// can see the employee in the directory can see their photo, not only editors. Without
+// this, any authenticated user could fetch any other employee's photo by HR_ID.
+async function assertCanViewTargetPhoto(access: AccessContext, hrId: string) {
+  const row = await loadTargetForScopeCheck(hrId);
+  if (!canSeeEmployee(access, { hrId: row.hr_id ?? hrId, managerHrId: row.manager_hr_id })) {
+    throw new Error("Forbidden: you do not have access to this employee.");
+  }
+}
+
+// Streams an employee's uploaded photo to callers who can see them in the directory
+// (same access posture as the directory itself). Returns 404 when no photo is set so
+// callers fall back to the bundled static photo / initials.
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
@@ -66,6 +80,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       throw new Error("Not authenticated.");
     }
     const { hrId } = await params;
+    await assertCanViewTargetPhoto(access, hrId);
     const photo = await streamEmployeePhoto(hrId);
     if (!photo) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });

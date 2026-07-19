@@ -7,6 +7,9 @@ export type EmployeeDirectoryRow = {
   area: string | null;
   crm_id: string | null;
   crm_username: string | null;
+  // Nickname-aware display name (nickname when set, else full_name). Use this for UI/report
+  // labels; keep using full_name for identity/name matching against imported sales data.
+  display_name?: string | null;
   employment_status: string | null;
   full_name: string | null;
   hr_id: string;

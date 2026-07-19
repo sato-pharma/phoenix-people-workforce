@@ -419,7 +419,7 @@ async function getEmployeeIdentity(access: AccessContext) {
     employeeArea: employee?.areaName ?? null,
     employeeHrId: employee.hrId,
     employeeLine: employee?.lineName ?? null,
-    employeeName: employee?.fullName ?? employee.hrId,
+    employeeName: employee?.displayName ?? employee.hrId,
     employeeRole: resolveJobFunctionRole(employee?.jobTitle ?? access.role),
   };
 }

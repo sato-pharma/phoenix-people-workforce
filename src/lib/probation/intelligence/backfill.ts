@@ -110,7 +110,7 @@ export async function planProbationCaseBackfill(): Promise<BackfillReport> {
       // Only flag as unresolved if they'd otherwise plausibly be in probation (no hire date at all).
       unresolved.push({
         employeeHrId: hrId,
-        employeeName: employee.fullName ?? null,
+        employeeName: employee.displayName,
         reason: "missing_hire_date",
       });
       continue;
@@ -122,7 +122,7 @@ export async function planProbationCaseBackfill(): Promise<BackfillReport> {
     const existing = await getProbationCaseByEmployee(hrId);
     const row: BackfillEligibleRow = {
       employeeHrId: hrId,
-      employeeName: employee.fullName ?? null,
+      employeeName: employee.displayName,
       hireDate: employee.hireDate,
       probationEndDate: probationEndDate(employee.hireDate),
       daysRemaining: probationDaysRemaining(employee.hireDate),

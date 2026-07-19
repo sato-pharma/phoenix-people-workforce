@@ -122,7 +122,12 @@ export function MultiSelectFilter({
             <button
               type="button"
               className="text-[#64748B] transition hover:text-[#F97316]"
-              onClick={() => onSelectedChange(options.map((option) => option.code))}
+              // "All" must mean "show every row," which is mode-dependent: in include mode that
+              // means selecting every code (include + all codes = keep everything); in exclude
+              // mode selecting every code would mean "exclude everything" (show ZERO rows) — the
+              // opposite of what the button says — so exclude mode clears the selection instead
+              // (exclude + no codes = keep everything).
+              onClick={() => onSelectedChange(mode === "exclude" ? [] : options.map((option) => option.code))}
             >
               All
             </button>

@@ -81,8 +81,8 @@ export function demoSosByLine(): SosByLineRow[] {
 
 export function demoSosByCustomer(): SosByCustomerRow[] {
   const customers = [
-    { clientCode: "DEMO-C001", line: "Demo Line 1", regionCode: "DEMO-R1", regionName: "Demo Region North" },
-    { clientCode: "DEMO-C002", line: "Demo Line 2", regionCode: "DEMO-R2", regionName: "Demo Region South" },
+    { clientCode: "DEMO-C001", customerName: "Demo Pharmacy Alpha", line: "Demo Line 1", regionCode: "DEMO-R1", regionName: "Demo Region North" },
+    { clientCode: "DEMO-C002", customerName: "Demo Pharmacy Beta", line: "Demo Line 2", regionCode: "DEMO-R2", regionName: "Demo Region South" },
   ];
   return DEMO_PERIODS.flatMap((period, i) =>
     customers.map((customer) => ({
@@ -97,9 +97,9 @@ export function demoSosByCustomer(): SosByCustomerRow[] {
 
 export function demoClosingByEmployee(): ClosingByEmployeeRow[] {
   const employees = [
-    { employeeHrId: "DEMO-001", employeeName: "Demo Rep One", managerHrId: "DEMO-MGR-1", territory: "Demo Territory A", line: "Demo Line 1" },
-    { employeeHrId: "DEMO-002", employeeName: "Demo Rep Two", managerHrId: "DEMO-MGR-1", territory: "Demo Territory B", line: "Demo Line 1" },
-    { employeeHrId: "DEMO-003", employeeName: "Demo Rep Three", managerHrId: "DEMO-MGR-2", territory: "Demo Territory C", line: "Demo Line 2" },
+    { employeeHrId: "DEMO-001", employeeName: "Demo Rep One", managerHrId: "DEMO-MGR-1", managerName: "Demo Manager One", territory: "Demo Territory A", line: "Demo Line 1" },
+    { employeeHrId: "DEMO-002", employeeName: "Demo Rep Two", managerHrId: "DEMO-MGR-1", managerName: "Demo Manager One", territory: "Demo Territory B", line: "Demo Line 1" },
+    { employeeHrId: "DEMO-003", employeeName: "Demo Rep Three", managerHrId: "DEMO-MGR-2", managerName: "Demo Manager Two", territory: "Demo Territory C", line: "Demo Line 2" },
   ];
   return DEMO_PERIODS.flatMap((period) =>
     employees.map((emp, j) => {

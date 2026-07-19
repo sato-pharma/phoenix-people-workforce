@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   computeContribution,
   computeDelta,
+  computeDeltaPctByCode,
   computeMovers,
   computeNewAndLost,
   computeOutliers,
@@ -61,9 +62,27 @@ export function runSosAnalyticsTests() {
   const many = Array.from({ length: 10 }, (_, index) => ({ code: `G${index}`, label: `G${index}`, value: 200 + index }));
   const manyPrior = many.map((row) => ({ ...row, value: 100 }));
   assert.equal(computeMovers(many, manyPrior, 3).gainers.length, 3);
+  // Limit caps each side independently.
   // Case-insensitive code matching.
   const ci = computeMovers([{ code: "x1", label: "X", value: 150 }], [{ code: "X1", label: "X", value: 100 }]);
   assert.equal(ci.gainers.length, 1);
+
+  // ── computeDeltaPctByCode (ALL rows, not just the top-5 movers) ─────────────
+  // Every member present in both periods with a positive prior base gets a delta — including an
+  // UNCHANGED member (C: 100→100), which computeMovers excludes but the full table must show as
+  // 0.0% (not "—"). New (D)/lost (E)/zero-base (F) members have no comparable base and are absent
+  // (the table renders "—" for those). This is the fix for MoM/YoY Δ columns showing "—" on every
+  // row outside the capped movers list.
+  const allDeltas = computeDeltaPctByCode(current, prior);
+  assert.equal(allDeltas["A"], 1, "A present in both → +100%");
+  assert.ok(Math.abs(allDeltas["B"] - -0.1) < 1e-9, "B present in both → -10%");
+  assert.equal(allDeltas["C"], 0, "unchanged member is 0.0%, NOT excluded/'—'");
+  assert.equal("D" in allDeltas, false, "new member (no prior) has no comparable base → absent");
+  assert.equal("E" in allDeltas, false, "lost member (not in current) → absent");
+  assert.equal("F" in allDeltas, false, "zero prior base → absent (no meaningful %)");
+  // Keys are normalized (upper/trim) so the client's row.code.toUpperCase() lookup always hits.
+  const ciAll = computeDeltaPctByCode([{ code: " x1 ", label: "X", value: 150 }], [{ code: "X1", label: "X", value: 100 }]);
+  assert.equal(ciAll["X1"], 0.5, "normalized key matches regardless of case/whitespace");
 
   // ── computeNewAndLost ──────────────────────────────────────────────────────
   const newLost = computeNewAndLost(current, prior);

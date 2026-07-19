@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 
@@ -9,6 +12,20 @@ import { resolveEmployeeMasterExportSalary } from "@/lib/employees/employee-mast
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Phoenix brand tokens (src/styles/tokens.css) — kept in sync manually since ExcelJS
+// styling can't read CSS custom properties.
+const BRAND = {
+  primary: "FFF97316",
+  primaryDark: "FFEA580C",
+  navy: "FF0F172A",
+  slate: "FF475569",
+  border: "FFE2E8F0",
+  bgSoft: "FFF8FAFC",
+  success: "FF22C55E",
+  warning: "FFF59E0B",
+  danger: "FFEF4444",
+};
 
 type ExportColumn = {
   header: string;
@@ -81,8 +98,8 @@ const columns: ExportColumn[] = [
   { header: "Team", key: "team", section: "Organization", width: 18 },
   { header: "Title", key: "jobTitle", section: "Organization", width: 24 },
   { header: "Position", key: "position", section: "Organization", width: 24 },
-  { header: "Direct Manager", key: "directManagerName", section: "Organization", width: 28 },
   { header: "Manager HR_ID", key: "directManagerId", section: "Organization", width: 18 },
+  { header: "Direct Manager (auto)", key: "directManagerName", section: "Organization", width: 28 },
   { header: "Hiring Date", key: "hireDate", section: "Organization", width: 14 },
   { header: "Employment Status", key: "employmentStatus", section: "Organization", width: 18 },
   { header: "Contract Type", key: "contractType", section: "Organization", width: 18 },
@@ -117,12 +134,24 @@ const columns: ExportColumn[] = [
 ];
 
 const sectionColors: Record<string, string> = {
-  "Identity": "FF0F172A",
-  "Organization": "FF047857",
+  "Identity": BRAND.navy,
+  "Organization": BRAND.primaryDark,
   "Contact & Residence": "FF7C3AED",
   "CRM": "FF4338CA",
   "Payroll Reference Information": "FFC2410C",
-  "Lifecycle/System": "FF475569",
+  "Lifecycle/System": BRAND.slate,
+};
+
+// Columns that are live formulas, not user-entered data — protected against edits.
+const FORMULA_COLUMN_KEYS = new Set<keyof ExportRow>(["directManagerName"]);
+
+type LookupValues = {
+  departments: string[];
+  teams: Array<{ label: string; areaId: number | null }>;
+  lines: Array<{ label: string; id: number | null }>;
+  areas: Array<{ label: string; value: string }>;
+  positions: string[];
+  managerDirectory: Array<{ hrId: string; fullName: string }>;
 };
 
 function dateOnly(value: string | null) {
@@ -187,37 +216,141 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
   };
 }
 
-function inlineListFormula(values: string[]) {
-  if (values.some((value) => value.includes(","))) {
-    return null;
-  }
-
-  const formula = `"${values.map((value) => value.replace(/"/g, '""')).join(",")}"`;
-  return formula.length <= 255 ? formula : null;
+// Deterministic sanitizer shared between the TS-side defined-name registration and the
+// live Excel formula (SUBSTITUTE chain below) — both MUST transform a Line/Area label
+// into the identical token, or the INDIRECT() cascade resolves to a dead reference.
+function definedNameToken(prefix: string, label: string) {
+  const token = label
+    .toUpperCase()
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^A-Z0-9_]/g, "")
+    .replace(/^_+|_+$/g, "");
+  return `${prefix}_${token || "NA"}`;
 }
 
-function styleWorksheet(
-  sheet: ExcelJS.Worksheet,
-  lookupValues: { departments: string[]; teams: string[] },
-) {
-  const titleRowNumber = 1;
-  const sectionRowNumber = 2;
-  const headerRowNumber = 3;
-  const firstDataRowNumber = 4;
+// The live formula equivalent of definedNameToken(), so a dropdown picked from a cell
+// resolves via INDIRECT to the matching named range built below.
+function indirectTokenFormula(prefix: string, cellRef: string) {
+  return `"${prefix}_"&SUBSTITUTE(SUBSTITUTE(UPPER(${cellRef}),"-","_")," ","_")`;
+}
 
-  sheet.views = [{ state: "frozen", ySplit: 3 }];
+function columnLetter(index: number) {
+  let n = index;
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+// Hidden reference sheet: a flat Lines list, a flat Areas list (Area is independent of
+// Line — see the note below), one column per Area listing its Teams (the only real
+// cascade level), a Positions list, and a flat Manager directory (HR_ID -> Full Name)
+// driving the live "Direct Manager (auto)" lookup.
+function addLookupDataSheet(workbook: ExcelJS.Workbook, lookups: LookupValues) {
+  const sheet = workbook.addWorksheet("Lookup Data", { state: "veryHidden" });
+  let col = 1;
+
+  function writeList(name: string, header: string, values: string[]) {
+    const letter = columnLetter(col);
+    sheet.getCell(1, col).value = header;
+    values.forEach((value, index) => {
+      sheet.getCell(2 + index, col).value = value;
+    });
+    if (values.length > 0) {
+      workbook.definedNames.add(`'Lookup Data'!$${letter}$2:$${letter}$${1 + values.length}`, name);
+    }
+    col += 1;
+  }
+
+  writeList("LINES_LIST", "Lines", lookups.lines.map((line) => line.label));
+  writeList("POSITIONS_LIST", "Positions", lookups.positions);
+
+  // Area is NOT cascaded from Line: areas are geographic territories, and (verified
+  // against live data) nearly every area has a dedicated rep per line — CNS, Anti, and
+  // Pedia reps commonly share the same area name. A per-line area cascade would either
+  // wrongly hide valid areas or, once corrected for real overlap, degrade to "show all
+  // areas anyway" — so Area is one flat list, consistent for every Line.
+  writeList("AREAS_LIST", "Areas", lookups.areas.map((area) => area.label));
+
+  // Area -> Teams: each team carries its owning area's numeric id; resolve that id back
+  // to the area's label (the same label the cascade formula keys off of) via `value`.
+  const areaLabelById = new Map(lookups.areas.map((area) => [Number(area.value), area.label]));
+  const teamsByAreaLabel = new Map<string, string[]>();
+  for (const area of lookups.areas) teamsByAreaLabel.set(area.label, []);
+  for (const team of lookups.teams) {
+    if (team.areaId == null) continue;
+    const areaLabel = areaLabelById.get(team.areaId);
+    if (!areaLabel) continue;
+    teamsByAreaLabel.get(areaLabel)?.push(team.label);
+  }
+  for (const area of lookups.areas) {
+    writeList(definedNameToken("TEAMS", area.label), `Teams (${area.label})`, teamsByAreaLabel.get(area.label) ?? []);
+  }
+
+  // Flat manager directory for the live VLOOKUP-driven "Direct Manager (auto)" column.
+  const managerHeaderRow = 1;
+  const hrIdCol = col;
+  const nameCol = col + 1;
+  sheet.getCell(managerHeaderRow, hrIdCol).value = "Manager HR_ID";
+  sheet.getCell(managerHeaderRow, nameCol).value = "Manager Full Name";
+  lookups.managerDirectory.forEach((manager, index) => {
+    sheet.getCell(2 + index, hrIdCol).value = manager.hrId;
+    sheet.getCell(2 + index, nameCol).value = manager.fullName;
+  });
+  const hrIdLetter = columnLetter(hrIdCol);
+  const nameLetter = columnLetter(nameCol);
+  const lastRow = Math.max(2, 1 + lookups.managerDirectory.length);
+  workbook.definedNames.add(`'Lookup Data'!$${hrIdLetter}$2:$${nameLetter}$${lastRow}`, "MANAGER_DIRECTORY");
+
+  return sheet;
+}
+
+async function styleWorksheet(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook, lookups: LookupValues, recordCount: number) {
+  const titleRowNumber = 1;
+  const subtitleRowNumber = 2;
+  const sectionRowNumber = 3;
+  const headerRowNumber = 4;
+  const firstDataRowNumber = 5;
+
+  sheet.views = [{ state: "frozen", ySplit: headerRowNumber }];
   sheet.autoFilter = {
     from: { column: 1, row: headerRowNumber },
     to: { column: columns.length, row: headerRowNumber },
   };
   sheet.properties.defaultRowHeight = 20;
-  sheet.mergeCells(titleRowNumber, 1, titleRowNumber, columns.length);
-  const titleCell = sheet.getCell(titleRowNumber, 1);
+
+  // --- Title bar: logo + wordmark + generation metadata (Phoenix brand identity) ---
+  sheet.getRow(titleRowNumber).height = 40;
+  sheet.mergeCells(titleRowNumber, 2, titleRowNumber, columns.length);
+  const titleCell = sheet.getCell(titleRowNumber, 2);
   titleCell.value = systemDocuments.titles.activeEmployeeMasterData;
-  titleCell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos Display", size: 16 };
-  titleCell.fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  titleCell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos Display", size: 18 };
+  titleCell.fill = { fgColor: { argb: BRAND.navy }, pattern: "solid", type: "pattern" };
   titleCell.alignment = { horizontal: "left", vertical: "middle" };
-  sheet.getRow(titleRowNumber).height = 30;
+  sheet.getCell(titleRowNumber, 1).fill = { fgColor: { argb: BRAND.navy }, pattern: "solid", type: "pattern" };
+
+  try {
+    const logoPath = path.join(process.cwd(), "public", "brand", "phoenix-primary-logo.png");
+    const logoBase64 = readFileSync(logoPath).toString("base64");
+    const imageId = workbook.addImage({ base64: logoBase64, extension: "png" });
+    sheet.addImage(imageId, {
+      tl: { col: 0.15, row: 0.08 },
+      ext: { width: 110, height: 32 },
+    });
+  } catch {
+    // Logo asset optional — brand color bar still applies without it.
+  }
+
+  sheet.mergeCells(subtitleRowNumber, 1, subtitleRowNumber, columns.length);
+  const subtitleCell = sheet.getCell(subtitleRowNumber, 1);
+  subtitleCell.value = `${recordCount} active employee record${recordCount === 1 ? "" : "s"} · Generated ${new Date().toISOString().slice(0, 10)} · Team cascades from Area · Direct Manager auto-fills from HR_ID`;
+  subtitleCell.font = { italic: true, color: { argb: "FFFFFFFF" }, name: "Aptos", size: 9 };
+  subtitleCell.fill = { fgColor: { argb: BRAND.primaryDark }, pattern: "solid", type: "pattern" };
+  subtitleCell.alignment = { horizontal: "left", vertical: "middle" };
+  sheet.getRow(subtitleRowNumber).height = 18;
 
   columns.forEach((column, index) => {
     const excelColumn = sheet.getColumn(index + 1);
@@ -231,11 +364,7 @@ function styleWorksheet(
     const cell = sectionRow.getCell(index + 1);
     cell.value = column.section;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos", size: 9 };
-    cell.fill = {
-      fgColor: { argb: sectionColors[column.section] ?? "FF0F172A" },
-      pattern: "solid",
-      type: "pattern",
-    };
+    cell.fill = { fgColor: { argb: sectionColors[column.section] ?? BRAND.navy }, pattern: "solid", type: "pattern" };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   });
 
@@ -244,175 +373,183 @@ function styleWorksheet(
   headerRow.eachCell((cell, columnNumber) => {
     const section = columns[columnNumber - 1]?.section ?? "Lifecycle/System";
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos", size: 11 };
-    cell.fill = {
-      fgColor: { argb: sectionColors[section] ?? "FF0F172A" },
-      pattern: "solid",
-      type: "pattern",
-    };
+    cell.fill = { fgColor: { argb: sectionColors[section] ?? BRAND.navy }, pattern: "solid", type: "pattern" };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
       bottom: { style: "thin", color: { argb: "FFFFFFFF" } },
-      right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      right: { style: "thin", color: { argb: BRAND.border } },
     };
   });
 
-  for (let rowNumber = firstDataRowNumber; rowNumber <= sheet.rowCount; rowNumber += 1) {
+  const lastDataRow = Math.max(sheet.rowCount, firstDataRowNumber + recordCount - 1);
+  const bufferedLastRow = Math.max(lastDataRow, firstDataRowNumber + 999);
+
+  for (let rowNumber = firstDataRowNumber; rowNumber <= lastDataRow; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     row.eachCell((cell) => {
-      cell.font = { color: { argb: "FF0F172A" }, name: "Aptos", size: 10 };
+      cell.font = { color: { argb: BRAND.navy }, name: "Aptos", size: 10 };
       cell.alignment = { vertical: "middle", wrapText: false };
-      cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+      cell.border = { bottom: { style: "thin", color: { argb: BRAND.border } } };
       if (rowNumber % 2 === 0) {
-        cell.fill = { fgColor: { argb: "FFF8FAFC" }, pattern: "solid", type: "pattern" };
+        cell.fill = { fgColor: { argb: BRAND.bgSoft }, pattern: "solid", type: "pattern" };
       }
     });
   }
 
   const moneyColumns = new Set([
-    "netSalary",
-    "basicSalary",
-    "baseSalary",
-    "socialInsurance",
-    "taxes",
-    "medicalInsurance",
-    "fuelAllowance",
-    "extraCostOfLiving",
-    "grossSalary",
+    "netSalary", "basicSalary", "baseSalary", "socialInsurance", "taxes",
+    "medicalInsurance", "fuelAllowance", "extraCostOfLiving", "grossSalary",
   ]);
   columns.forEach((column, index) => {
-    if (moneyColumns.has(column.key)) {
-      sheet.getColumn(index + 1).numFmt = '#,##0.00';
-    }
+    if (moneyColumns.has(column.key)) sheet.getColumn(index + 1).numFmt = "#,##0.00";
   });
 
   const dateColumns = new Set(["birthDate", "hireDate", "lastUpdated"]);
   columns.forEach((column, index) => {
-    if (dateColumns.has(column.key)) {
-      sheet.getColumn(index + 1).numFmt = "yyyy-mm-dd";
-    }
+    if (dateColumns.has(column.key)) sheet.getColumn(index + 1).numFmt = "yyyy-mm-dd";
   });
 
-  const paymentModeColumn = columns.findIndex((column) => column.key === "paymentMode") + 1;
-  const departmentColumn = columns.findIndex((column) => column.key === "department") + 1;
-  const teamColumn = columns.findIndex((column) => column.key === "team") + 1;
-  const genderColumn = columns.findIndex((column) => column.key === "gender") + 1;
-  const contractColumn = columns.findIndex((column) => column.key === "contractType") + 1;
-  const statusColumn = columns.findIndex((column) => column.key === "employmentStatus") + 1;
-  const hasBankAccountColumn = columns.findIndex((column) => column.key === "hasBankAccount") + 1;
-  const medicalInsuranceStatusColumn = columns.findIndex((column) => column.key === "medicalInsuranceStatus") + 1;
-  const socialInsuranceStatusColumn = columns.findIndex((column) => column.key === "socialInsuranceStatus") + 1;
-  const departmentFormula = inlineListFormula(lookupValues.departments);
-  const teamFormula = inlineListFormula(lookupValues.teams);
-  for (let rowNumber = firstDataRowNumber; rowNumber <= Math.max(sheet.rowCount, 1000); rowNumber += 1) {
+  const colIndex = (key: keyof ExportRow) => columns.findIndex((c) => c.key === key) + 1;
+  const employeeIdCol = colIndex("employeeId");
+  const lineCol = colIndex("line");
+  const areaCol = colIndex("area");
+  const teamCol = colIndex("team");
+  const positionCol = colIndex("position");
+  const managerHrIdCol = colIndex("directManagerId");
+  const managerNameCol = colIndex("directManagerName");
+  const paymentModeCol = colIndex("paymentMode");
+  const departmentCol = colIndex("department");
+  const genderCol = colIndex("gender");
+  const contractCol = colIndex("contractType");
+  const statusCol = colIndex("employmentStatus");
+  const hasBankAccountCol = colIndex("hasBankAccount");
+  const medicalInsuranceStatusCol = colIndex("medicalInsuranceStatus");
+  const socialInsuranceStatusCol = colIndex("socialInsuranceStatus");
+
+  const areaLetter = columnLetter(areaCol);
+  const managerHrIdLetter = columnLetter(managerHrIdCol);
+
+  const departmentFormula = lookups.departments.length ? `"${lookups.departments.join(",")}"` : null;
+
+  for (let rowNumber = firstDataRowNumber; rowNumber <= bufferedLastRow; rowNumber += 1) {
     if (departmentFormula) {
-      sheet.getCell(rowNumber, departmentColumn).dataValidation = {
-        allowBlank: true,
-        formulae: [departmentFormula],
-        type: "list",
-      };
+      sheet.getCell(rowNumber, departmentCol).dataValidation = { allowBlank: true, formulae: [departmentFormula], type: "list" };
     }
-    if (teamFormula) {
-      sheet.getCell(rowNumber, teamColumn).dataValidation = {
-        allowBlank: true,
-        formulae: [teamFormula],
-        type: "list",
-      };
+    // Team cascades from Area, same INDIRECT technique as Area cascading from Line.
+    sheet.getCell(rowNumber, teamCol).dataValidation = {
+      allowBlank: true,
+      formulae: [`=INDIRECT(${indirectTokenFormula("TEAMS", `${areaLetter}${rowNumber}`)})`],
+      type: "list",
+      promptTitle: "Select Team",
+      prompt: "Pick an Area first — only that area's teams are shown.",
+      showInputMessage: true,
+      showErrorMessage: false,
+    };
+
+    sheet.getCell(rowNumber, lineCol).dataValidation = {
+      allowBlank: true,
+      formulae: ["LINES_LIST"],
+      type: "list",
+      promptTitle: "Select Line",
+      prompt: "Choose one of the active field lines.",
+      showInputMessage: true,
+    };
+    sheet.getCell(rowNumber, areaCol).dataValidation = {
+      allowBlank: true,
+      formulae: ["AREAS_LIST"],
+      type: "list",
+      promptTitle: "Select Area",
+      prompt: "All currently active areas. Not filtered by Line — most areas have a dedicated rep per line.",
+      showInputMessage: true,
+    };
+    if (lookups.positions.length) {
+      sheet.getCell(rowNumber, positionCol).dataValidation = { allowBlank: true, formulae: ["POSITIONS_LIST"], type: "list" };
     }
-    sheet.getCell(rowNumber, paymentModeColumn).dataValidation = {
-      allowBlank: true,
-      formulae: ['"two_parts,one_part"'],
-      type: "list",
-    };
-    sheet.getCell(rowNumber, genderColumn).dataValidation = {
-      allowBlank: true,
-      formulae: ['"Male,Female,Other,Not specified"'],
-      type: "list",
-    };
-    sheet.getCell(rowNumber, contractColumn).dataValidation = {
+
+    sheet.getCell(rowNumber, paymentModeCol).dataValidation = { allowBlank: true, formulae: ['"two_parts,one_part"'], type: "list" };
+    sheet.getCell(rowNumber, genderCol).dataValidation = { allowBlank: true, formulae: ['"Male,Female,Other,Not specified"'], type: "list" };
+    sheet.getCell(rowNumber, contractCol).dataValidation = {
       allowBlank: true,
       formulae: ['"Permanent,Fixed-term,Temporary,Consultant,Internship,Not specified"'],
       type: "list",
     };
-    sheet.getCell(rowNumber, statusColumn).dataValidation = {
+    sheet.getCell(rowNumber, statusCol).dataValidation = {
       allowBlank: true,
       formulae: ['"active,on_leave"'],
       type: "list",
+      promptTitle: "Lifecycle-protected",
+      prompt: "Only active/on_leave are importable here. Use the Resignation workflow to exit an employee.",
+      showInputMessage: true,
     };
-    sheet.getCell(rowNumber, hasBankAccountColumn).dataValidation = {
-      allowBlank: true,
-      formulae: ['"yes,no"'],
-      type: "list",
-    };
-    sheet.getCell(rowNumber, medicalInsuranceStatusColumn).dataValidation = {
-      allowBlank: true,
-      formulae: ['"yes,no,pending"'],
-      type: "list",
-    };
-    sheet.getCell(rowNumber, socialInsuranceStatusColumn).dataValidation = {
-      allowBlank: true,
-      formulae: ['"yes,no,pending"'],
-      type: "list",
+    sheet.getCell(rowNumber, hasBankAccountCol).dataValidation = { allowBlank: true, formulae: ['"yes,no"'], type: "list" };
+    sheet.getCell(rowNumber, medicalInsuranceStatusCol).dataValidation = { allowBlank: true, formulae: ['"yes,no,pending"'], type: "list" };
+    sheet.getCell(rowNumber, socialInsuranceStatusCol).dataValidation = { allowBlank: true, formulae: ['"yes,no,pending"'], type: "list" };
+
+    // Auto-populate: Direct Manager name resolves live from the Manager HR_ID typed in
+    // the adjacent column — retype/clear the HR_ID and the name updates immediately.
+    const managerHrIdRef = `${managerHrIdLetter}${rowNumber}`;
+    sheet.getCell(rowNumber, managerNameCol).value = {
+      formula: `IFERROR(IF(${managerHrIdRef}="","",VLOOKUP(${managerHrIdRef},MANAGER_DIRECTORY,2,FALSE)),"(not found)")`,
     };
   }
 
-  const approvedDepartmentSet = new Set(lookupValues.departments.map((name) => name.toLowerCase()));
-  for (let rowNumber = firstDataRowNumber; rowNumber <= sheet.rowCount; rowNumber += 1) {
-    const cell = sheet.getCell(rowNumber, departmentColumn);
+  // Duplicate Employee ID -> instant red highlight (a paste-in typo is visible before upload).
+  sheet.addConditionalFormatting({
+    ref: `${columnLetter(employeeIdCol)}${firstDataRowNumber}:${columnLetter(employeeIdCol)}${bufferedLastRow}`,
+    rules: [
+      {
+        type: "expression",
+        formulae: [`COUNTIF($${columnLetter(employeeIdCol)}$${firstDataRowNumber}:$${columnLetter(employeeIdCol)}$${bufferedLastRow},${columnLetter(employeeIdCol)}${firstDataRowNumber})>1`],
+        priority: 1,
+        style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: BRAND.danger } }, font: { color: { argb: "FFFFFFFF" }, bold: true } },
+      },
+    ],
+  });
+
+  const approvedDepartmentSet = new Set(lookups.departments.map((name) => name.toLowerCase()));
+  for (let rowNumber = firstDataRowNumber; rowNumber <= lastDataRow; rowNumber += 1) {
+    const cell = sheet.getCell(rowNumber, departmentCol);
     const value = String(cell.value ?? "").trim();
     if (value && !approvedDepartmentSet.has(value.toLowerCase())) {
       cell.note = "Legacy department value. Choose an approved department before re-uploading if this employee should be remapped.";
       cell.fill = { fgColor: { argb: "FFFFF7ED" }, pattern: "solid", type: "pattern" };
     }
   }
+
+  // Protect the auto-populated formula column so a manual overwrite doesn't silently
+  // desync it from the Manager HR_ID it mirrors — every other cell stays editable.
+  for (let rowNumber = 1; rowNumber <= bufferedLastRow; rowNumber += 1) {
+    columns.forEach((column, index) => {
+      sheet.getCell(rowNumber, index + 1).protection = { locked: FORMULA_COLUMN_KEYS.has(column.key) };
+    });
+  }
+  await sheet.protect("", { selectLockedCells: false, selectUnlockedCells: true, formatCells: true, sort: true, autoFilter: true });
 }
 
-function addInstructionsSheet(
-  workbook: ExcelJS.Workbook,
-  lookupValues: { departments: string[]; teams: string[] },
-) {
+function addInstructionsSheet(workbook: ExcelJS.Workbook, lookups: LookupValues) {
   const sheet = workbook.addWorksheet("Instructions");
   sheet.columns = [
     { header: "Topic", key: "topic", width: 28 },
     { header: "Guidance", key: "guidance", width: 110 },
   ];
   sheet.addRows([
-    {
-      topic: "Purpose",
-      guidance: "Use the Active Employee Master sheet to complete or correct fixed employee master data, then upload it from Employees.",
-    },
-    {
-      topic: "Lifecycle protection",
-      guidance: "Only active and on_leave statuses are accepted by import. Resigned, terminated, inactive, hidden, and payroll-ineligible employees are blocked from reactivation.",
-    },
-    {
-      topic: "Upsert rule",
-      guidance: "Employee ID / HR_ID is the key. Existing HR_ID rows update; new HR_ID rows create new active employee records.",
-    },
-    {
-      topic: "Master data fields",
-      guidance: "All workbook columns are fixed Employee Master fields stored on employees. Users & Access fields and retired wage fields are intentionally excluded.",
-    },
-    {
-      topic: "Department dropdown",
-      guidance: `Department uses active global lookup values: ${lookupValues.departments.join(", ")}. Inactive legacy departments are excluded from the dropdown.`,
-    },
-    {
-      topic: "Team values",
-      guidance: lookupValues.teams.length
-        ? "Team exports use the global teams lookup. If the dropdown is not shown because the list is large, upload is still validated against the global team rules and can create a new team safely when Area is provided."
-        : "Team is accepted as text. Upload validates Team and maps or creates global team rows safely.",
-    },
-    {
-      topic: "Blank optional values",
-      guidance: "Blank optional cells do not erase existing values during import; provide a value only when you want to create or update it.",
-    },
+    { topic: "Purpose", guidance: "Use the Active Employee Master sheet to complete or correct fixed employee master data, then upload it from Employees." },
+    { topic: "Lifecycle protection", guidance: "Only active and on_leave statuses are accepted by import. Resigned, terminated, inactive, hidden, and payroll-ineligible employees are blocked from reactivation." },
+    { topic: "Upsert rule", guidance: "Employee ID / HR_ID is the key. Existing HR_ID rows update; new HR_ID rows create new active employee records." },
+    { topic: "Cascading dropdowns", guidance: "Area is one flat list of all active canonical areas — Line does not filter it, since CNS, Anti-Infective, and Pedia reps commonly share the same area. Pick an Area and the Team dropdown then only shows that area's teams. This mirrors the 42-canonical-area model and prevents mistyped/legacy area names." },
+    { topic: "Auto-populate", guidance: "Direct Manager (auto) is a live formula, not typed text: type or change the Manager HR_ID and the manager's name resolves automatically from the current directory. This cell is protected — edit the HR_ID, not the name." },
+    { topic: "Duplicate Employee ID", guidance: "Any Employee ID repeated more than once highlights red automatically, before you upload." },
+    { topic: "Master data fields", guidance: "All workbook columns are fixed Employee Master fields stored on employees. Users & Access fields and retired wage fields are intentionally excluded." },
+    { topic: "Department dropdown", guidance: `Department uses active global lookup values: ${lookups.departments.join(", ")}. Inactive legacy departments are excluded from the dropdown.` },
+    { topic: "Team values", guidance: lookups.teams.length ? "Team dropdowns cascade from the selected Area." : "Team is accepted as text. Upload validates Team and maps or creates global team rows safely." },
+    { topic: "Blank optional values", guidance: "Blank optional cells do not erase existing values during import; provide a value only when you want to create or update it." },
   ]);
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Aptos" };
-  sheet.getRow(1).fill = { fgColor: { argb: "FF0F172A" }, pattern: "solid", type: "pattern" };
+  sheet.getRow(1).fill = { fgColor: { argb: BRAND.navy }, pattern: "solid", type: "pattern" };
   sheet.eachRow((row) => {
     row.eachCell((cell) => {
       cell.alignment = { vertical: "top", wrapText: true };
-      cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+      cell.border = { bottom: { style: "thin", color: { argb: BRAND.border } } };
     });
   });
 }
@@ -427,14 +564,34 @@ export async function GET(request: Request) {
     await assertPermission(access, "employees", "export");
 
     const directory = filterEmployeeDirectoryForAccess(await getEmployeeDirectory(), access);
-    const lookupValues = {
-      departments: Array.from(
-        new Set(directory.lookups.departments.map((department) => department.label).filter(Boolean)),
-      ).sort((left, right) => left.localeCompare(right)),
-      teams: Array.from(
-        new Set((directory.lookups.teams ?? []).map((team) => team.label).filter(Boolean)),
-      ).sort((left, right) => left.localeCompare(right)),
+
+    const lines = Array.from(
+      new Map(
+        (directory.lookups.lines ?? [])
+          .filter((line) => line.label)
+          .map((line) => [line.label, { label: line.label, id: line.id ?? null }]),
+      ).values(),
+    ).sort((left, right) => left.label.localeCompare(right.label));
+
+    const areas = (directory.lookups.areas ?? [])
+      .filter((area) => area.label)
+      .map((area) => ({ label: area.label, value: area.value }));
+
+    const teams = (directory.lookups.teams ?? [])
+      .filter((team) => team.label)
+      .map((team) => ({ label: team.label, areaId: team.areaId ?? null }));
+
+    const lookupValues: LookupValues = {
+      departments: Array.from(new Set(directory.lookups.departments.map((d) => d.label).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+      teams,
+      lines,
+      areas,
+      positions: Array.from(new Set((directory.lookups.positions ?? []).map((p) => p.label).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+      managerDirectory: directory.employees
+        .filter((employee) => employee.employmentStatus === "active" || employee.employmentStatus === "on_leave" || !employee.employmentStatus)
+        .map((employee) => ({ hrId: employee.hrId, fullName: employee.fullName })),
     };
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = systemDocuments.workbookCreator;
     workbook.created = new Date();
@@ -443,14 +600,15 @@ export async function GET(request: Request) {
     workbook.title = systemDocuments.titles.activeEmployeeMasterDataWorkbook;
 
     const sheet = workbook.addWorksheet("Active Employee Master");
-    sheet.columns = columns.map((column) => ({
-      header: column.header,
-      key: column.key,
-      width: column.width,
-    }));
-    sheet.spliceRows(1, 0, [], columns.map((column) => column.section));
-    sheet.addRows(directory.employees.map(employeeToExportRow));
-    styleWorksheet(sheet, lookupValues);
+    sheet.columns = columns.map((column) => ({ header: column.header, key: column.key, width: column.width }));
+    // 4 header rows precede data (title, subtitle, section, header) — matches
+    // firstDataRowNumber=5 in styleWorksheet.
+    sheet.spliceRows(1, 0, [], [], columns.map((column) => column.section));
+    const exportRows = directory.employees.map(employeeToExportRow);
+    sheet.addRows(exportRows);
+
+    addLookupDataSheet(workbook, lookupValues);
+    await styleWorksheet(sheet, workbook, lookupValues, exportRows.length);
     addInstructionsSheet(workbook, lookupValues);
 
     const buffer = await workbook.xlsx.writeBuffer();

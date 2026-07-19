@@ -1517,17 +1517,17 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                   <VacationSummaryPerson
                     hrId={initialData?.employee.hrId}
                     label="Employee"
-                    name={initialData?.employee.fullName ?? "-"}
+                    name={initialData?.employee.displayName ?? "-"}
                   />
                   <VacationSummaryPerson
                     hrId={initialData?.manager?.hrId}
                     label="Direct manager"
-                    name={initialData?.manager?.fullName ?? "Not assigned"}
+                    name={initialData?.manager?.displayName ?? "Not assigned"}
                   />
                   <VacationSummaryPerson
                     hrId={initialData?.managerOfManager?.hrId}
                     label="Manager of manager"
-                    name={initialData?.managerOfManager?.fullName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
+                    name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
                   />
                   <Badge
                     className="w-fit px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] md:justify-self-end"

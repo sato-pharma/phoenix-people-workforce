@@ -63,12 +63,12 @@ export function runSalesHeadOfficeLockTests() {
 
   // ── Surface source-pins ──────────────────────────────────────────────────────
   const analytics = readSource("../src/lib/analytics/service.ts");
-  for (const fn of ["loadSosByLine", "loadSosByProduct", "loadSosByCustomer", "loadClosingByEmployee", "loadCrossSource"]) {
+  for (const fn of ["loadSosByLine", "loadSosByProduct", "loadSosByCustomer", "loadClosingByEmployee", "loadCrossSource", "loadWeeklyFact"]) {
     assert.ok(analytics.includes(fn), `analytics still defines ${fn}`);
   }
   assert.ok(
-    (analytics.match(/stripHeadOfficeRows\(/g) ?? []).length >= 5,
-    "every line-bearing analytics loader applies stripHeadOfficeRows",
+    (analytics.match(/stripHeadOfficeRows\(/g) ?? []).length >= 6,
+    "every line-bearing analytics loader (incl. weekly) applies stripHeadOfficeRows",
   );
 
   // analytics_sos_by_period / analytics_sos_by_area aggregate the line dimension AWAY, so their
@@ -79,13 +79,28 @@ export function runSalesHeadOfficeLockTests() {
     "loadSosByPeriod and loadSosByArea pass p_exclude_head_office to the RPC",
   );
 
-  // The by-area analytics page must resolve canViewHeadOffice from the role so CEO/Super Admin
-  // still see Head Office while everyone else (the RPC default) fails closed.
-  const byAreaPage = readSource("../app/(admin)/admin/analytics/source-sales/by-area/page.tsx");
+  // The by-area analytics dashboard must resolve canViewHeadOffice from the role so CEO/Super Admin
+  // still see Head Office while everyone else (the RPC default) fails closed. The logic lives in the
+  // shared dashboard component (rendered at both the admin and portal mounts).
+  const byAreaDashboard = readSource("../src/components/analytics/dashboards/source-sales-by-area-dashboard.tsx");
   assert.ok(
-    byAreaPage.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
-    "by-area page passes canViewHeadOffice resolved from the role",
+    byAreaDashboard.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
+    "by-area dashboard passes canViewHeadOffice resolved from the role",
   );
+
+  // The weekly analytics dashboards (overview, detail, by-distributor) carry the Head Office strip
+  // ENTIRELY in TS: the analytics_weekly_fact RPC and analytics.weekly_fact view have no Head
+  // Office exclusion, so loadWeeklyFact strips it and each dashboard must thread the role's flag.
+  for (const rel of [
+    "../src/components/analytics/dashboards/weekly-sales-dashboard.tsx",
+    "../src/components/analytics/dashboards/weekly-sales-detail-dashboard.tsx",
+    "../src/components/analytics/dashboards/weekly-sales-by-distributor-dashboard.tsx",
+  ]) {
+    assert.ok(
+      readSource(rel).includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
+      `weekly analytics dashboard ${rel} passes canViewHeadOffice resolved from the role`,
+    );
+  }
 
   const weekly = readSource("../src/lib/sales/weekly/access.ts");
   assert.ok(

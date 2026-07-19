@@ -991,10 +991,13 @@ export function OrgChartTree({
         vacant={structureKpis.total.vacant}
       />
 
-      {/* Chart canvas */}
+      {/* Chart canvas — overflow-x-auto (not -hidden) so a structure wider than the
+          viewport (common on mobile, where zooming out to 50% often still isn't
+          enough to fit every lane) can be panned into view by touch/scroll instead
+          of just clipping the extra lanes with no way to reach them. */}
       <div
         className={cn(
-          "overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5 print:overflow-visible print:rounded-none print:border-none print:bg-white print:p-0 print:shadow-none",
+          "overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-6 sm:px-5 print:overflow-visible print:rounded-none print:border-none print:bg-white print:p-0 print:shadow-none",
           theme === "admin" ? "shadow-[0_2px_16px_rgba(15,23,42,0.06)] print:shadow-none" : "",
         )}
         onWheel={handleCanvasWheel}
@@ -1003,6 +1006,7 @@ export function OrgChartTree({
           isPrinting
             ? undefined
             : {
+                WebkitOverflowScrolling: "touch",
                 backgroundImage:
                   "linear-gradient(rgba(226,232,240,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(226,232,240,0.6) 1px, transparent 1px)",
                 backgroundSize: "48px 48px",
