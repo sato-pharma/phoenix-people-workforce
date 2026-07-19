@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { checkPlannedDate } from "@/lib/double-visit-analytics/date-check";
 import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-visit-analytics/roster-summary";
 import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
 
@@ -247,24 +248,9 @@ function VisitHistory({ visits }: { visits: DoubleVisitReportRow[] }) {
   );
 }
 
-type DateCheckResult = "confirmed" | "future" | "not-recorded" | "outside-range";
-
-function checkPlannedDate(params: {
-  dateFrom: string;
-  dateTo: string;
-  plannedDate: string;
-  today: string;
-  visits: DoubleVisitReportRow[];
-}): DateCheckResult | null {
-  const { dateFrom, dateTo, plannedDate, today, visits } = params;
-  if (!plannedDate) return null;
-  if (plannedDate > today) return "future";
-  if (plannedDate < dateFrom || plannedDate > dateTo) return "outside-range";
-  return visits.some((visit) => visit.activityDate === plannedDate) ? "confirmed" : "not-recorded";
-}
-
-function DateCheckBadge({ result }: { result: DateCheckResult }) {
-  if (result === "future") {
+function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate> }) {
+  if (!result) return null;
+  if (result.status === "future") {
     return (
       <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase text-blue-700">
         <Clock className="h-3 w-3" />
@@ -272,15 +258,15 @@ function DateCheckBadge({ result }: { result: DateCheckResult }) {
       </span>
     );
   }
-  if (result === "confirmed") {
+  if (result.status === "confirmed") {
     return (
       <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
         <CheckCircle2 className="h-3 w-3" />
-        Confirmed that day
+        Confirmed{result.visitorNames.length > 0 ? ` · with ${result.visitorNames.join(", ")}` : ""}
       </span>
     );
   }
-  if (result === "outside-range") {
+  if (result.status === "outside-range") {
     return (
       <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-500">
         <CalendarSearch className="h-3 w-3" />
@@ -405,6 +391,8 @@ function RosterRow({
             Planned date
             <input
               className="h-8 border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+              max={dateTo}
+              min={dateFrom}
               onChange={(event) => onSetPlannedDate(entry.hrId, event.target.value)}
               type="date"
               value={plannedDate}

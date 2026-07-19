@@ -130,6 +130,7 @@ import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.te
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runDoubleVisitReportExportTests } from "./double-visit-report-export.test.ts";
+import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
@@ -562,6 +563,7 @@ await runTest("action center weekly plans (approver inbox)", runActionCenterWeek
 await runTest("weekly plans round-3 features (bulk approve, export, autosave, timeline, notifications, a11y, virtualization)", runWeeklyPlansRound3FeaturesTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitReportExportTests);
+await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm checkin-match (agent+contact+day rule, crm_save_date tie-break)", runCrmCheckinMatchTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
