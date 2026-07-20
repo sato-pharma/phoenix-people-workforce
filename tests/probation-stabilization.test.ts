@@ -72,10 +72,47 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /workflowApproverHrIds:\s*probationWorkflowApproverHrIds/);
   assert.match(serviceSource, /ctaLabel:\s*"Open Probation Review"/);
   assert.match(serviceSource, /\/api\/probation\/redirect/);
-  assert.doesNotMatch(serviceSource, /recipientHrId,/);
-  assert.doesNotMatch(serviceSource, /recipientHrId:/);
+  // SCOPE LEAK FIX (2026-07-19): notifyProbationWorkflow now resolves an EXPLICIT, dynamically
+  // role-resolved recipientHrId per notification (DM + NSM chain-walk + Super Admin + CEO) instead of
+  // relying on the generic cross-module governance resolver, whose department-based org-scope match
+  // leaked another line's probationer's case-status update to up to 98 active users company-wide. The
+  // ORIGINAL intent of this guard — no HARDCODED/literal recipient list — is preserved by the assertions
+  // below; a dynamically role-resolved recipientHrId is the fix, not the regression it used to guard.
+  assert.doesNotMatch(serviceSource, /recipients:\s*\[/, "no hardcoded literal recipient array");
+  assert.match(serviceSource, /recipientHrIds\.map\(\(recipientHrId\)/, "notifyProbationWorkflow sends one explicit notification per dynamically-resolved recipient");
   assert.doesNotMatch(serviceSource, /Approve in Telegram|Reject in Telegram|callback_query/);
   assert.match(serviceSource, /ensureSystemProbationReview/);
+
+  // ── SCOPE LEAK FIX (owner report 2026-07-19): probation case-status notifications must be
+  // line-scoped, never routed through the generic cross-module governance resolver's
+  // department-based org-scope match (department_id groups the ENTIRE field-sales org under one id
+  // in this data, not per line — that leaked another line's probationer's status to up to 98 active
+  // users company-wide, e.g. an Anti Infective rep's update reaching Pedia/CNS NSMs and reps). ──
+  assert.match(
+    serviceSource,
+    /async function notifyProbationWorkflow\(\s*record: ProbationWorkflowRecord,\s*employee: EmployeeScopeRow,\s*directory: EmployeeScopeRow\[\]/,
+    "notifyProbationWorkflow takes the subject employee + directory so it can resolve its own scoped recipients",
+  );
+  assert.match(
+    serviceSource,
+    /const \[\{ nsmHrIds \}, hrApproverHrIds, ceoHrIds\] = await Promise\.all\(\[\s*resolveFeedbackExtraRecipients\(employee, directory\)/,
+    "reuses the already-correct NSM management-chain walk (resolveFeedbackExtraRecipients), not a department/line broad match",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /await notifyProbationWorkflow\(record, employee\.displayName/,
+    "the old call signature (subject name only, no scoped recipient resolution) must not reappear",
+  );
+  assert.match(
+    serviceSource,
+    /await notifyProbationWorkflow\(record, employee, employees, employee\.displayName/,
+    "case-creation call site passes the subject employee + directory for scoped recipient resolution",
+  );
+  assert.match(
+    serviceSource,
+    /idempotencyKey: `probation:\$\{record\.employeeHrId\}:\$\{record\.status\}:\$\{recipientHrId\}`/,
+    "idempotency key is per (case, status, recipient) — each explicit recipient gets its own dedupe key",
+  );
   assert.match(notificationProcessRouteSource, /runScheduledNotificationProcessing/);
   assert.match(scheduledNotificationProcessingSource, /processDueProbationReminderEvents/);
   assert.match(scheduledNotificationProcessingSource, /processNotificationOutbox/);
