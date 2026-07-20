@@ -61,6 +61,14 @@ export type DeductionsPayrollPreviewRow = {
     fingerPrint: number;
     unpaidVacations: number;
   };
+  // True when this employee's salary_records row already carries a non-zero CRM/Fingerprint/
+  // Unpaid-Vacation total BEFORE this import. The RPC that runs this import blocks re-running
+  // the SAME finalized summary twice, but it cannot see whether a DIFFERENT path (e.g. Automated
+  // Payroll's own live pull of the same deduction_candidates/decisions data) already baked an
+  // equivalent amount into this row — since import is strictly add-on-top, that would double the
+  // deduction. A true value here blocks the import (see canImport) until a human confirms it's
+  // not the same money counted twice.
+  hasExistingGovernanceAmount: boolean;
   matched: boolean;
   payrollRecordId: string | null;
   // Resulting payroll values after import = existing + applied (add-on-top).
@@ -80,6 +88,7 @@ export type DeductionsPayrollPreview = {
   } | null;
   blockers: string[];
   canImport: boolean;
+  employeesWithExistingGovernance: DeductionsPayrollPreviewRow[];
   rows: DeductionsPayrollPreviewRow[];
   summary: DeductionMonthlySummary;
   totals: {
@@ -164,7 +173,6 @@ export function buildDeductionsPayrollPreview(input: {
     totalCrm += money(totals.crm);
     totalFingerPrint += money(totals.fingerPrint);
     totalUnpaidVacations += money(totals.unpaidVacations);
-    void existingGovernance;
     rows.push({
       appliedTotals: {
         crm: money(totals.crm),
@@ -180,6 +188,7 @@ export function buildDeductionsPayrollPreview(input: {
         fingerPrint: money(record?.finger_print),
         unpaidVacations: money(record?.unpaid_vacations),
       },
+      hasExistingGovernanceAmount: existingGovernance > 0,
       matched: Boolean(record),
       payrollRecordId: record?.id ?? null,
       resultingTotals: {
@@ -196,6 +205,18 @@ export function buildDeductionsPayrollPreview(input: {
   if (unmatchedEmployees.length > 0) {
     blockers.push(`${unmatchedEmployees.length} deduction employee(s) are not matched in the payroll batch.`);
   }
+  // Import is strictly add-on-top (see resultingTotals above), and the RPC only guards against
+  // the SAME finalized summary being imported twice. It cannot see a DIFFERENT path -- most
+  // notably Automated Payroll's own live pull of this same deduction_candidates/decisions data
+  // -- having already applied an equivalent amount to this row. Surface it as a hard blocker
+  // (same mechanism as unmatchedEmployees) rather than silently doubling the deduction; a human
+  // has to confirm the pre-existing amount isn't this same money before import can proceed.
+  const employeesWithExistingGovernance = rows.filter((row) => row.hasExistingGovernanceAmount);
+  if (employeesWithExistingGovernance.length > 0) {
+    blockers.push(
+      `${employeesWithExistingGovernance.length} deduction employee(s) already have a non-zero CRM/Fingerprint/Unpaid-Vacation total in this payroll batch. This import adds on top of whatever is already there, so a pre-existing amount usually means it was already applied by another path (e.g. Automated Payroll) or a previous import -- verify manually before importing, or this would double the deduction.`,
+    );
+  }
 
   return {
     batch: input.batch
@@ -208,6 +229,7 @@ export function buildDeductionsPayrollPreview(input: {
       : null,
     blockers,
     canImport: blockers.length === 0,
+    employeesWithExistingGovernance,
     rows,
     summary: input.summary,
     totals: {

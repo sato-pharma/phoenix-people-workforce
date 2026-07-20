@@ -195,7 +195,7 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
         },
       ],
     });
-    assert.equal(preview.canImport, true);
+    // Arithmetic is still computed correctly regardless of the double-count guard below.
     assert.equal(preview.totals.crm, 100);
     assert.equal(preview.totals.fingerPrint, 50);
     assert.equal(preview.totals.unpaidVacations, 70);
@@ -207,6 +207,42 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(a1?.resultingTotals.fingerPrint, 60); // 10 existing + 50 added
     assert.equal(a1?.resultingTotals.unpaidVacations, 0);
     assert.equal(preview.rows.find((row) => row.employeeCode === "B-2")?.matched, true);
+
+    // A-1 already carries a non-zero CRM/Finger Print total BEFORE this import. Import is
+    // strictly add-on-top, and the RPC can only detect the SAME summary re-imported -- not a
+    // DIFFERENT path (e.g. Automated Payroll) having already applied the same governance data --
+    // so this must block until a human confirms it isn't the same deduction counted twice.
+    assert.equal(a1?.hasExistingGovernanceAmount, true);
+    assert.equal(preview.rows.find((row) => row.employeeCode === "B-2")?.hasExistingGovernanceAmount, false);
+    assert.equal(preview.employeesWithExistingGovernance.length, 1);
+    assert.equal(preview.employeesWithExistingGovernance[0]?.employeeCode, "A-1");
+    assert.equal(preview.canImport, false);
+    assert.ok(preview.blockers.some((blocker) => blocker.includes("already have a non-zero")));
+
+    // The clean/expected case: nothing has touched these columns yet, so import proceeds with
+    // no double-count blocker.
+    const clean = buildDeductionsPayrollPreview({
+      batch: { id: "batch-clean", month: 5, year: 2026, status: "adjustments_open" },
+      summary: summary(),
+      lines: [line({ employeeCode: "A-1", payrollColumn: "crm", appliedAmount: 100 })],
+      payrollRecords: [
+        {
+          id: "record-a1-clean",
+          hr_id: "A-1",
+          employee_code: null,
+          full_name: "Employee One",
+          base_salary: 15000,
+          crm: 0,
+          finger_print: 0,
+          unpaid_vacations: 0,
+          total_deductions: 0,
+          second_part: 1000,
+          month_salary: 12000,
+        },
+      ],
+    });
+    assert.equal(clean.canImport, true);
+    assert.equal(clean.employeesWithExistingGovernance.length, 0);
 
     const locked = buildDeductionsPayrollPreview({
       batch: { id: "batch-locked", month: 5, year: 2026, status: "approved" },
