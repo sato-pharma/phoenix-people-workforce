@@ -461,6 +461,19 @@ export async function submitDirectOrder(
   const products = await listSourceOfSalesProducts();
   const product = products.find((candidate) => candidate.productCode === input.productCode);
   if (!product) badRequest(`Unknown product code "${input.productCode}".`);
+  if ((product.line ?? "").trim().toUpperCase() === "IGNORE") {
+    badRequest(`"${product.productName}" is not a submittable Phoenix product.`);
+  }
+  // Server-side line guard (defense in depth — the submit form's dropdown is already
+  // scoped, but this is money-critical: never trust a client-only restriction here).
+  const requesterLine = await resolveDirectOrderRequesterLineName(access);
+  if (requesterLine !== null && requesterLine.toLowerCase() !== (product.line ?? "").trim().toLowerCase()) {
+    badRequest(
+      requesterLine
+        ? `"${product.productName}" is a ${product.line} product — you can only submit direct orders for your own line (${requesterLine}).`
+        : `Your account has no field line on record, so it cannot submit a direct order for "${product.productName}".`,
+    );
+  }
 
   const supabase = getSupabaseAdmin();
   const caps = await loadDirectOrderCaps();
@@ -980,15 +993,45 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
   );
 }
 
-/** Field-line products for the submit form (code, name, line, factory + public price). */
-export async function listDirectOrderProductOptions(): Promise<
+/** Roles with no single field line of their own — see every product, unrestricted
+ *  (matches the direct_orders permission matrix: CEO/SFE Manager never submit their
+ *  own field orders, and Super Admin submits on-behalf without a fixed line). */
+const DIRECT_ORDER_LINE_UNRESTRICTED_ROLES = new Set<PhoenixRole>(["Super Admin", "SFE Manager", "CEO"]);
+
+/**
+ * The requester's own field line (org `lines.name`, e.g. "CNS"/"Pedia"/"Anti Infective"),
+ * or null for an unrestricted role (no line filter — see every product). Fails CLOSED:
+ * a restricted role with no resolvable line returns "" (matches nothing), never "see all".
+ */
+async function resolveDirectOrderRequesterLineName(access: AccessContext): Promise<string | null> {
+  if (DIRECT_ORDER_LINE_UNRESTRICTED_ROLES.has(access.role)) return null;
+  const key = canonicalHrIdKey(access.hrId);
+  if (!key) return "";
+  const directory = await getEmployeeDirectory();
+  const row = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === key);
+  return (row?.lineName ?? "").trim();
+}
+
+/**
+ * Field-line products for the submit form (code, name, line, factory + public price).
+ * Scoped to the caller's own line when `access` is given — a CNS rep must never be
+ * offered a Pedia/Anti Infective product. Omit `access` for an unscoped admin listing
+ * (e.g. the caps editor, which manages caps across every product regardless of line).
+ */
+export async function listDirectOrderProductOptions(access?: AccessContext): Promise<
   Array<{ productCode: string; productName: string; line: string; factoryPrice: number; publicPrice: number | null }>
 > {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase
+  let query = supabase
     .from("source_of_sales_products")
     .select("product_code, product_name, line, factory_price, public_price")
-    .eq("active", true);
+    .eq("active", true)
+    .neq("line", "IGNORE");
+  if (access) {
+    const lineName = await resolveDirectOrderRequesterLineName(access);
+    if (lineName !== null) query = query.ilike("line", lineName);
+  }
+  const { data } = await query;
   return ((data ?? []) as Array<Record<string, unknown>>)
     .map((p) => ({
       productCode: String(p.product_code),
