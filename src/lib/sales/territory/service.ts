@@ -1,0 +1,71 @@
+import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+
+import { fetchTerritoryAreaPharmacies } from "./pharmacies";
+import { resolveTerritoryRootScope } from "./root-scope";
+import { buildTerritorySkeleton, deniedSkeleton } from "./skeleton";
+import type { TerritoryAreaPayload, TerritoryRootScope, TerritorySkeleton } from "./types";
+
+/** Thrown when a request's resolved territory scope denies it — the API layer maps this to 403. */
+export class TerritoryAccessError extends Error {}
+
+// Roles the Territory Drilldown module currently serves. Extended one at a time as each
+// role's slice ships (Medical Rep first, end to end, before District Manager / Regional
+// Manager / National Sales Manager are added) — see the module's phased build plan. Mirrors
+// the PORTAL_SOS_ROLES / isPortalSosRole precedent in portal-sos-dashboard.ts: the role gate
+// lives with the domain service, not the API route, so the page and every route agree.
+export const TERRITORY_DRILLDOWN_ROLES = ["Medical Rep"] as const satisfies readonly PhoenixRole[];
+
+const TERRITORY_DRILLDOWN_ROLE_SET = new Set<PhoenixRole>(TERRITORY_DRILLDOWN_ROLES);
+
+export function isTerritoryDrilldownRole(role: PhoenixRole): boolean {
+  return TERRITORY_DRILLDOWN_ROLE_SET.has(role);
+}
+
+export async function getTerritorySkeleton(ctx: AccessContext): Promise<TerritorySkeleton> {
+  const rootScope = await resolveTerritoryRootScope(ctx);
+  if (rootScope.level === "denied") {
+    return deniedSkeleton(ctx.role, rootScope.diagnostic);
+  }
+  return buildTerritorySkeleton(ctx.role, rootScope);
+}
+
+async function isAreaInRootScope(
+  areaCode: string,
+  rootScope: Exclude<TerritoryRootScope, { level: "denied" }>,
+): Promise<boolean> {
+  if (rootScope.level === "area") {
+    return rootScope.sosAreaCodes.includes(areaCode);
+  }
+  if (rootScope.level === "nationwide") {
+    return true;
+  }
+  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const area = (references.areas ?? []).find((row) => row.areaCode.toUpperCase() === areaCode);
+  if (!area) return false;
+  return rootScope.regionCodes.includes(area.regionCode.toUpperCase());
+}
+
+/**
+ * The lazy per-area pharmacy fetch. Re-derives resolveTerritoryRootScope on EVERY call and
+ * checks the requested area against it — the server boundary is authoritative on every
+ * request, not just at page load, so a client asking for an out-of-scope area gets denied
+ * here regardless of what the (already-scoped) skeleton it was given shows.
+ */
+export async function getTerritoryAreaPharmacies(
+  ctx: AccessContext,
+  areaCode: string,
+  periods: string[],
+): Promise<TerritoryAreaPayload> {
+  const rootScope = await resolveTerritoryRootScope(ctx);
+  if (rootScope.level === "denied") {
+    throw new TerritoryAccessError(rootScope.diagnostic.message);
+  }
+
+  const normalizedAreaCode = areaCode.trim().toUpperCase();
+  if (!normalizedAreaCode || !(await isAreaInRootScope(normalizedAreaCode, rootScope))) {
+    throw new TerritoryAccessError(`Area "${areaCode}" is outside your territory.`);
+  }
+
+  return fetchTerritoryAreaPharmacies(normalizedAreaCode, periods, rootScope.officialLine);
+}

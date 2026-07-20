@@ -424,6 +424,9 @@ import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resigna
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
+import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
+import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
+import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -865,6 +868,9 @@ await runTest("premium offer email (no salary in body + zebra details table)", r
 await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
 await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);
+await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
+await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
+await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

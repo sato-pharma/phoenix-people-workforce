@@ -162,8 +162,12 @@ function regionCodesForNames(
 /**
  * Resolve a Regional Manager's full managed region set from his reporting subtree
  * (seat-continuity aware), bounded to his own line. Fail-closed (empty ⇒ empty data).
+ *
+ * Exported for reuse by the Territory Drilldown module (src/lib/sales/territory/root-scope.ts),
+ * which needs the exact same "his regions, plural" resolution for its Regional Manager root —
+ * do not reimplement subtree walking elsewhere.
  */
-async function resolveRegionalManagerRegionCodes(
+export async function resolveRegionalManagerRegionCodes(
   ctx: AccessContext,
   salesScope: SalesAccessScope,
   references: ReferenceData,
