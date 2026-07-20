@@ -1,0 +1,302 @@
+"use client";
+
+import { ChevronRight, Loader2, MapPin } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { cn } from "@/lib/utils";
+import type {
+  TerritoryAreaNode,
+  TerritoryBlockNode,
+  TerritoryBrickNode,
+  TerritoryPharmacy,
+} from "@/lib/sales/territory/types";
+
+import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
+import type { UseTerritoryTreeResult } from "./use-territory-tree";
+
+function formatEgp(value: number): string {
+  if (value >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
+  return `EGP ${value.toFixed(0)}`;
+}
+
+function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
+  const [showTrend, setShowTrend] = useState(false);
+  return (
+    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 break-words text-[12px] font-bold leading-tight text-slate-900">
+            {pharmacy.clientName}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-[11px] font-black tabular-nums text-slate-500">
+              {formatEgp(pharmacy.totalValue)}
+            </span>
+            <button
+              className="rounded-md border border-slate-200 px-1.5 py-1 text-[10px] font-bold text-slate-500 transition hover:border-orange-300 hover:text-orange-600"
+              onClick={() => setShowTrend((value) => !value)}
+              type="button"
+            >
+              {showTrend ? "Hide trend" : "Trend"}
+            </button>
+          </div>
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {pharmacy.months.map((month) => (
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] font-black",
+                month.hasSales
+                  ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+                  : "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
+              )}
+              key={month.period}
+              title={month.period}
+            >
+              {month.period.slice(5)}
+            </span>
+          ))}
+        </div>
+        {showTrend ? (
+          <div className="mt-2 border-t border-slate-100 pt-2">
+            <PharmacyTrendSparkline months={pharmacy.months} />
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function BrickBranch({
+  brick,
+  pharmacies,
+}: {
+  brick: TerritoryBrickNode;
+  pharmacies: TerritoryPharmacy[] | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const total = (pharmacies ?? []).reduce((sum, pharmacy) => sum + pharmacy.totalValue, 0);
+
+  return (
+    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
+      <button
+        aria-expanded={open}
+        className="group relative flex w-full flex-col gap-1 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition hover:border-slate-300"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-slate-300" />
+        {/* Line 1: the brick name gets the FULL row width, always — never squeezed by the
+            code/stats, which move to their own line below. Wraps rather than truncates. */}
+        <span className="flex items-center gap-2">
+          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-90 text-orange-500")} />
+          <span className="min-w-0 flex-1 break-words text-[12px] font-bold leading-snug text-slate-900">
+            {brick.brickName}
+          </span>
+        </span>
+        <span className="flex items-center justify-between gap-2 pl-[22px]">
+          <span className="shrink-0 text-[10px] font-mono font-semibold text-slate-400">{brick.brickId}</span>
+          {pharmacies ? (
+            <span className="shrink-0 text-[10px] font-black tabular-nums text-slate-500">
+              {pharmacies.length} PHs · {formatEgp(total)}
+            </span>
+          ) : null}
+        </span>
+      </button>
+      {open ? (
+        <ul className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4" role="group">
+          {pharmacies === null ? (
+            <li className="py-1 text-[11px] font-semibold text-slate-400">Loading…</li>
+          ) : pharmacies.length === 0 ? (
+            <li className="py-1 text-[11px] font-semibold text-slate-400">No pharmacies with sales in your line here yet.</li>
+          ) : (
+            pharmacies.map((pharmacy) => <PharmacyCard key={pharmacy.clientCode} pharmacy={pharmacy} />)
+          )}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function BlockLane({
+  block,
+  bricks,
+  pharmaciesByBrick,
+}: {
+  block: TerritoryBlockNode;
+  bricks: TerritoryBrickNode[];
+  pharmaciesByBrick: Map<string, TerritoryPharmacy[]> | null;
+}) {
+  const [open, setOpen] = useState(true);
+
+  // Highest-selling brick first — computed once pharmacy data has loaded; before that,
+  // bricks stay in their skeleton order (nothing to rank yet).
+  const brickStats = bricks.map((brick) => {
+    const pharmacies = pharmaciesByBrick ? pharmaciesByBrick.get(brick.brickId) ?? [] : null;
+    const total = (pharmacies ?? []).reduce((sum, pharmacy) => sum + pharmacy.totalValue, 0);
+    return { brick, pharmacies, total };
+  });
+  const orderedBrickStats = pharmaciesByBrick
+    ? [...brickStats].sort((a, b) => b.total - a.total)
+    : brickStats;
+
+  const blockPharmacyCount = pharmaciesByBrick
+    ? brickStats.reduce((sum, stat) => sum + (stat.pharmacies?.length ?? 0), 0)
+    : null;
+  const blockTotal = pharmaciesByBrick ? brickStats.reduce((sum, stat) => sum + stat.total, 0) : null;
+
+  return (
+    <div className="min-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+      <button
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
+          <span className="block truncate text-[14px] font-black leading-snug">{block.blockCode}</span>
+        </span>
+        <span className="shrink-0 text-right text-[10px] font-black tabular-nums text-white/80">
+          <span className="block">
+            {bricks.length} brick{bricks.length === 1 ? "" : "s"}
+            {blockPharmacyCount !== null ? ` · ${blockPharmacyCount} PHs` : ""}
+          </span>
+          <span className="block text-white">{blockTotal !== null ? formatEgp(blockTotal) : "—"}</span>
+        </span>
+      </button>
+      {open ? (
+        <div className="px-3 py-3">
+          <ul aria-label="Bricks, highest sales first" className="space-y-2" role="tree">
+            {orderedBrickStats.map(({ brick, pharmacies }) => (
+              <BrickBranch brick={brick} key={brick.brickId} pharmacies={pharmacies} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One Medical Rep's locked area, rendered as the chart root — spine card + trunk + branch bar,
+ *  fanning out into block lanes. Auto-loads its own pharmacy data on mount (there's only ever
+ *  one or a small handful of these, unlike an Area lane under a Region/Nationwide root, which
+ *  loads lazily on click instead — see territory-tree-mobile.tsx's AreaLane for that path). */
+function AreaRoot({
+  area,
+  blocks,
+  bricks,
+  tree,
+}: {
+  area: TerritoryAreaNode;
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  useEffect(() => {
+    tree.loadArea(area.areaCode);
+  }, [area.areaCode, tree]);
+
+  const state = tree.areaState(area.areaCode);
+  const pharmaciesByBrick =
+    state.status === "loaded"
+      ? new Map(state.payload.bricks.map((brick) => [brick.brickId, brick.pharmacies]))
+      : null;
+  const totalValue = state.status === "loaded" ? state.payload.totalValue : null;
+  const reconciled = state.status === "loaded" ? state.payload.reconciled : null;
+  const pharmacyCount =
+    state.status === "loaded"
+      ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
+      : null;
+
+  const blocksByCode = new Map<string, TerritoryBrickNode[]>();
+  for (const brick of bricks) {
+    if (!blocksByCode.has(brick.blockCode)) blocksByCode.set(brick.blockCode, []);
+    blocksByCode.get(brick.blockCode)!.push(brick);
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+          <MapPin className="h-3.5 w-3.5" />
+          Your area
+        </div>
+        <p className="mt-1 break-words text-sm font-bold leading-snug">{area.areaName}</p>
+        <p className="mt-1 text-[11px] font-semibold text-white/70">
+          {state.status === "loading" ? (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading your territory…
+            </span>
+          ) : state.status === "error" ? (
+            <span className="text-rose-300">{state.message}</span>
+          ) : totalValue !== null ? (
+            <>
+              {blocks.length} block{blocks.length === 1 ? "" : "s"}
+              {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
+              {" · "}
+              {formatEgp(totalValue)}
+              {reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+            </>
+          ) : null}
+        </p>
+      </div>
+      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
+      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
+        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
+      </div>
+
+      {blocks.length === 0 ? (
+        <p className="mt-8 text-sm font-semibold text-slate-400">No blocks found for this area yet.</p>
+      ) : (
+        <div className="mt-6 grid w-full gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(blocks.length, 3)}, minmax(260px, 1fr))` }}>
+          {blocks.map((block) => (
+            <div className="flex flex-col" key={block.blockCode}>
+              <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
+              <BlockLane
+                block={block}
+                bricks={blocksByCode.get(block.blockCode) ?? []}
+                pharmaciesByBrick={pharmaciesByBrick}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult }) {
+  const { skeleton } = tree;
+
+  if (skeleton.rootLevel !== "area") {
+    return (
+      <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+        This role&apos;s territory view isn&apos;t available yet.
+      </p>
+    );
+  }
+
+  if (skeleton.areas.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+        No area is on file for you yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+      {skeleton.areas.map((area) => (
+        <AreaRoot
+          area={area}
+          blocks={skeleton.blocks.filter((block) => block.areaCode === area.areaCode)}
+          bricks={skeleton.bricks.filter((brick) => brick.areaCode === area.areaCode)}
+          key={area.areaCode}
+          tree={tree}
+        />
+      ))}
+    </div>
+  );
+}
