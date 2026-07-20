@@ -637,11 +637,11 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Medical Rep + District Manager shipped so far — Regional Manager/National Sales
-      // Manager are added one at a time as their own root-scope slice ships (see the
-      // module's phased build plan; TERRITORY_DRILLDOWN_ROLES in
-      // src/lib/sales/territory/service.ts is the server-side gate this list must match).
-      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Territory & Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager"] },
+      // Medical Rep + District Manager + Regional Manager shipped so far — National Sales
+      // Manager is added last as its own root-scope slice ships (see the module's phased
+      // build plan; TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts is the
+      // server-side gate this list must match).
+      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Territory & Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager"] },
     ],
     label: "Sales Operations",
   },
