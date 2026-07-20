@@ -1,10 +1,9 @@
 
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
 import { runAttendanceDigestScheduledProcessing } from "@/lib/attendance/digest-scheduler";
-import { getInactiveUsers, purgeOldActivityEvents } from "@/lib/activity/service";
+import { getInactiveUsers } from "@/lib/activity/service";
 import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
-  cleanupOldNotificationData,
   processNotificationOutbox,
   reapStaleProcessingOutboxRows,
 } from "@/lib/notifications/email";
@@ -120,10 +119,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       budget,
       { fallback: { attempted: 0, failed: 0, sent: 0, error: "step timed out" } },
     );
-    // Never throws; every step inside has its own internal try/catch (see cleanupOldNotificationData).
-    const retention = await runStep("retention", () => cleanupOldNotificationData(), budget);
-    // Activity Control Center retention: drop page-view events older than 90 days. Never throws.
-    const activityRetention = await runStep("activity-retention", () => purgeOldActivityEvents(90), budget);
     // Compute users inactive for 7+ days — logged for now; full alert notifications are a follow-up.
     const inactiveUsers = await runStep("inactive-users", () => getInactiveUsers(7), budget);
     if (inactiveUsers && inactiveUsers.length) {
@@ -138,7 +133,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
 
     return {
       skipped: false as const,
-      activityRetention,
       attendanceAgent,
       attendanceDigest,
       deferred,
@@ -150,7 +144,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       probationReminders,
       reaped,
       reapedVisitsSyncRuns,
-      retention,
       staleSosBatches,
       telegram,
       timings,

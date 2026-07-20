@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 
+import { purgeOldActivityEvents } from "@/lib/activity/service";
+import { cleanupOldNotificationData } from "@/lib/notifications/email";
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-confirmation/route";
@@ -64,6 +66,8 @@ async function runDailyNotifications(request: Request) {
     excuseDrift,
     rateLimitPrune,
     errorEventsPrune,
+    notificationRetention,
+    activityRetention,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-birthday" } });
@@ -143,6 +147,18 @@ async function runDailyNotifications(request: Request) {
       logError("app_error_events retention prune failed", { labels: { event: "cron_failed", job: "error-events-prune" }, error: e });
       return { deleted: null, error: String(e) };
     }),
+    // Moved here from the 5-min notification-process cron (2026-07-19) — deleting old
+    // notification/outbox rows doesn't need to happen 288x/day, once daily is enough.
+    cleanupOldNotificationData().catch((e: unknown) => {
+      logError("Notification retention cleanup failed", { labels: { event: "cron_failed", job: "notification-retention" }, error: e });
+      return { outboxDeleted: 0, outboxTerminalDeleted: 0, eventsRedacted: 0, error: String(e) };
+    }),
+    // Activity Control Center retention: drop page-view events older than 90 days. Moved here
+    // from the 5-min cron for the same reason as notification retention above.
+    purgeOldActivityEvents(90).catch((e: unknown) => {
+      logError("Activity events retention purge failed", { labels: { event: "cron_failed", job: "activity-retention" }, error: e });
+      return { cutoffIso: "", ok: false, error: String(e) };
+    }),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -151,6 +167,7 @@ async function runDailyNotifications(request: Request) {
   ]);
 
   return NextResponse.json({
+    activityRetention,
     birthdays,
     contractRenewals,
     excuseSla,
@@ -158,6 +175,7 @@ async function runDailyNotifications(request: Request) {
     fieldWorkforceComplianceDigest,
     holidayConfirmation,
     marketingSla,
+    notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
     probationWeeklyDigest,
