@@ -136,30 +136,48 @@ export type FreezeFirstPartInput = {
   paymentMode: PayrollPaymentMode | string | null;
   /** Confirmed Part-1 fingerprint deduction (EGP). */
   fingerprint: number;
+  /**
+   * Leaver only (owner rule 2026-07-20): their CRM no-activity + unpaid-vacation
+   * deduction, computed and confirmed at resignation time — a leaver won't be present
+   * for the whole-company Part-2 CRM/Vacation steps, so it's settled here instead.
+   * Netted against their own remaining Second Part first; any shortfall spills into
+   * First Part, since — unlike a continuing employee — a leaver has no next month to
+   * carry an unresolved residual to. Ignored for non-leavers.
+   */
+  leaverDeduction?: number;
 };
 
 /**
  * The frozen First Part (first installment), computed at Part-1 confirm.
  *  two_parts: min(Basic, effNet) − fingerprint   (Basic anchor: leaver → full base, else effective base)
  *  one_part:  effNet − fingerprint                (full net in Part 1, per owner rule)
- * Clamped to ≥ 0.
+ * Clamped to ≥ 0, then — leavers only — reduced further by whatever part of
+ * `leaverDeduction` their own Second Part can't absorb.
  */
 export function freezeFirstPart(input: FreezeFirstPartInput): number {
   const mode = normalizePayrollPaymentMode(input.paymentMode);
   const fp = Math.max(0, roundCurrency(input.fingerprint));
   const effNet = input.effective.net;
+  const isLeaver = input.effective.lifecycle === "leaver";
 
   let firstBeforeFp: number;
   if (mode === "two_parts") {
-    const anchorBase =
-      input.effective.lifecycle === "leaver" ? input.fullBaseSalary : input.effective.base;
+    const anchorBase = isLeaver ? input.fullBaseSalary : input.effective.base;
     const basic = calculateBasicSalary({ baseSalary: anchorBase });
     firstBeforeFp = Math.min(basic, effNet);
   } else {
     firstBeforeFp = effNet;
   }
 
-  return roundCurrency(Math.max(0, firstBeforeFp - fp));
+  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp));
+  if (!isLeaver) return firstAfterFp;
+
+  const leaverDeduction = Math.max(0, roundCurrency(input.leaverDeduction ?? 0));
+  if (leaverDeduction === 0) return firstAfterFp;
+
+  const provisionalSecond = Math.max(0, roundCurrency(effNet - firstAfterFp));
+  const shortfall = Math.max(0, roundCurrency(leaverDeduction - provisionalSecond));
+  return roundCurrency(Math.max(0, firstAfterFp - shortfall));
 }
 
 export type PartsAdditions = {

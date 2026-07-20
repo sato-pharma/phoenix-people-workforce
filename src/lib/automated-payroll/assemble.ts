@@ -85,10 +85,17 @@ export function computeFrozenFirstParts(input: {
       fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
       paymentMode: source?.paymentMode ?? "two_parts",
       fingerprint: num(draft?.fingerprintValue),
+      leaverDeduction: leaverDeductionFor(member, draft),
     });
     frozen.set(member.compact, value);
   }
   return frozen;
+}
+
+/** Leaver's own CRM+vacation deduction, confirmed on the Resignation step (owner rule 2026-07-20). Non-leavers: 0. */
+function leaverDeductionFor(member: PopulationMember, draft: DraftRow | undefined): number {
+  if (member.lifecycle !== "leaver") return 0;
+  return roundCurrency(num(draft?.crm) + num(draft?.unpaidVacations));
 }
 
 /** Assemble every employee's canonical row for the run. */
@@ -115,7 +122,13 @@ export function assembleRows(input: {
     const firstPartFrozen =
       draft?.firstPartFrozen != null
         ? draft.firstPartFrozen
-        : freezeFirstPart({ effective, fullBaseSalary, paymentMode, fingerprint });
+        : freezeFirstPart({
+            effective,
+            fullBaseSalary,
+            paymentMode,
+            fingerprint,
+            leaverDeduction: leaverDeductionFor(member, draft),
+          });
 
     const expenses = num(draft?.expenses);
     const incentive = num(draft?.incentive);

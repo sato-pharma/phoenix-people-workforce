@@ -151,6 +151,46 @@ export function runAutomatedPayrollSplitTests() {
     0,
   );
 
+  // ---- leaver-only netting (owner rule 2026-07-20): CRM+vacation deduction --
+  // leaverLate: net=31500 (full base+ecol+fuel, after-25th branch), Basic=21000
+  // (min(21000,31500)=21000) → provisional Second headroom = 31500-21000 = 10500.
+
+  // Deduction fits entirely within the Second-Part headroom -> First unchanged.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverLate,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      leaverDeduction: 2000,
+    }),
+    21000,
+  );
+
+  // Deduction exceeds the Second-Part headroom (10500) by 4500 -> shortfall spills into First.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverLate,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      leaverDeduction: 15000,
+    }),
+    16500,
+  );
+
+  // Non-leavers ignore leaverDeduction entirely, even if passed by mistake.
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      leaverDeduction: 99999,
+    }),
+    BASIC,
+  );
+
   // ---- assembleParts: First + Second == Total; FP counted once (Part 1) ----
   const frozen = freezeFirstPart({
     effective: regular,
