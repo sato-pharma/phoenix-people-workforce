@@ -10,11 +10,15 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // (see telegram-templates.ts) because this is a code-composed ops digest, not a per-employee
 // workflow notification.
 
-export type IReports360SyncJobName = "ireports360-visits-sync" | "ireports360-visits-reconcile";
+export type IReports360SyncJobName =
+  | "ireports360-visits-sync"
+  | "ireports360-visits-reconcile"
+  | "ireports360-visits-live-sync";
 
 const JOB_LABELS: Record<IReports360SyncJobName, string> = {
   "ireports360-visits-reconcile": "Weekly Wide Reconciliation",
   "ireports360-visits-sync": "Daily Visits Sync",
+  "ireports360-visits-live-sync": "Live Morning Sync (8:30 AM-12:01 PM)",
 };
 
 export type IReports360SyncNotifyInput =
