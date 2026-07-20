@@ -285,10 +285,21 @@ export function runNotificationGovernanceHardeningTests() {
     "notification governance must parse explicit app roles strictly",
   );
   assertContains(policySource, /canAccess\(context,\s*policy\.permissionResource,\s*policy\.permissionAction\)/, "permission-based recipients must use Phoenix permission checks");
-  assertContains(policySource, /hasOrgScope\(candidate,\s*subject,\s*"line"\)/, "permission recipients must consider line scope");
-  assertContains(policySource, /hasOrgScope\(candidate,\s*subject,\s*"department"\)/, "permission recipients must consider department scope");
-  assertContains(policySource, /hasOrgScope\(candidate,\s*subject,\s*"area"\)/, "permission recipients must consider area scope");
-  assertContains(policySource, /hasOrgScope\(candidate,\s*subject,\s*"team"\)/, "permission recipients must consider team scope");
+  // Regression guard (generalized from the probation cross-line leak, PR #1199): permission
+  // recipients must match the subject's own manager chain (or an explicit company/system-scope
+  // role), never a same-department/area/team/line coworker via a coarse org-unit lookup —
+  // department_id alone can span 90+ employees across every product line in this org.
+  assertNotContains(
+    policySource,
+    /hasOrgScope/,
+    "permission recipients must not fall back to department/area/team/line org-unit matching",
+  );
+  assertContains(policySource, /inManagerChain\(candidate,\s*subject,\s*employeesByHrId\)/, "permission recipients must be limited to the subject's manager chain");
+  assertContains(
+    policySource,
+    /context\.scope === "company" \|\|\s*\n?\s*context\.scope === "system"/,
+    "permission recipients outside the manager chain must be limited to explicit company/system-scope roles",
+  );
 
   assertContains(
     policySource,
