@@ -1,9 +1,10 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
-  getEmployeeDirectory,
+  getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
+import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import {
   listCrmDeductionCandidates,
@@ -23,10 +24,11 @@ import {
 } from "@/lib/deductions-governance/calculations";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility.ts";
 import { roundCurrency } from "@/lib/payroll/money";
+import { normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import {
-  getPayrollSalarySourcesByHrId,
+  salarySourceLookupKeys,
   type PayrollSalarySource,
-} from "@/lib/payroll/salary-source.ts";
+} from "@/lib/payroll/salary-source-model.ts";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
@@ -50,16 +52,91 @@ export type PopulationMember = {
   unpaidDaysInSpan: number;
 };
 
+function numberOrNull(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function moneyOrNull(value: number): number | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Mirrors getPayrollSalarySourcesByHrId's per-employee derivation exactly, but built
+ * from an EmployeeDirectoryRow already in hand rather than re-fetching the directory.
+ * Deliberately NOT calling the shared getPayrollSalarySourcesByHrId here: that function
+ * always fetches the ACTIVE-ONLY directory internally, so a leaver would silently get no
+ * salary source (base=0) even after the population fix below lets them through. This
+ * keeps the fix fully self-contained to the Automated Payroll module — no edit to the
+ * shared salary-source.ts file, per the "don't touch existing payroll files" rule.
+ */
+function buildSalarySource(employee: EmployeeDirectoryRow, period: PayrollPeriod): PayrollSalarySource {
+  const standardAllowances = resolveStandardSalaryAllowances({
+    departmentName: employee.departmentName,
+    employeeHrId: employee.hrId,
+    jobTitle: employee.jobTitle,
+    lineName: employee.lineName,
+    month: period.month,
+    positionTitle: employee.positionTitle,
+    year: period.year,
+  });
+  const extraCostOfLiving = standardAllowances.extraCostOfLiving;
+  const fuelAllowance = standardAllowances.fuelAllowance;
+  const socialInsurance = numberOrNull(employee.socialInsurance);
+  const employmentIncomeTax = numberOrNull(employee.taxes);
+  const fixedSalary = resolveFixedSalaryAmounts({
+    baseSalary: numberOrNull(employee.baseSalary),
+    basicSalary: numberOrNull(employee.basicSalary),
+    employmentIncomeTax,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: numberOrNull(employee.grossSalary),
+    netSalary: numberOrNull(employee.netSalary),
+    socialInsurance,
+  });
+  const baseSalary = moneyOrNull(fixedSalary.baseSalary);
+  return {
+    baseSalary,
+    employmentIncomeTax,
+    extraCostOfLiving,
+    fuelAllowance,
+    grossSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.grossSalary),
+    netSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.netSalary),
+    paymentMode: normalizePayrollPaymentMode(employee.salaryPaymentMode),
+    socialInsurance,
+  };
+}
+
 /**
  * The employees a run covers: every active + payroll-eligible employee, plus this
  * month's joiners and leavers (a leaver may already be terminal but must still be
  * settled). Shared by recommend + assemble so both see the exact same population.
+ *
+ * Uses getEmployeeDirectoryRows({includeInactive:true}) deliberately, not the plain
+ * getEmployeeDirectory() — the latter is active-only and silently drops leavers before
+ * this function's own isLeaver bypass ever runs (a leaver's employment_status is
+ * typically already flipped to resigned by the time payroll processes their exit
+ * month), which is exactly why the Resignations step showed no rows.
  */
 export async function resolvePayrollPopulation(period: PayrollPeriod): Promise<PopulationMember[]> {
-  const [directory, feeders] = await Promise.all([getEmployeeDirectory(), buildFeederStates(period)]);
-  const members: PopulationMember[] = [];
+  const { members } = await resolvePayrollPopulationAndSources(period);
+  return members;
+}
 
-  for (const employee of directory.employees) {
+export async function resolvePayrollPopulationAndSources(period: PayrollPeriod): Promise<{
+  members: PopulationMember[];
+  sources: Map<string, PayrollSalarySource>;
+}> {
+  const [employees, feeders] = await Promise.all([
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    buildFeederStates(period),
+  ]);
+  const members: PopulationMember[] = [];
+  const sources = new Map<string, PayrollSalarySource>();
+
+  for (const employee of employees) {
     const compact = compactHrKey(employee.hrId);
     if (!compact) continue;
     const feeder = feeders.get(compact);
@@ -77,9 +154,12 @@ export async function resolvePayrollPopulation(period: PayrollPeriod): Promise<P
       lastWorkingDate: leaverLastWorkingDate,
       unpaidDaysInSpan: feeder?.unpaidDaysBeforeLastWorkingDate ?? 0,
     });
+
+    const source = buildSalarySource(employee, period);
+    for (const key of salarySourceLookupKeys(employee.hrId)) sources.set(key, source);
   }
 
-  return members;
+  return { members, sources };
 }
 
 function baseRow(member: PopulationMember): StepRow {
@@ -291,15 +371,29 @@ function recommendNewHires(
   return rows;
 }
 
-function recommendResignations(
+async function recommendResignations(
+  access: AccessContext,
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
-): StepRow[] {
+): Promise<StepRow[]> {
+  const leavers = members.filter((member) => member.lifecycle === "leaver" && member.lastWorkingDate);
+  if (leavers.length === 0) return [];
+
+  // Owner rule (2026-07-20): a leaver won't be around for the whole-company Part-2 CRM/
+  // Vacation steps, so their deduction is computed and settled right here instead — reusing
+  // the exact same totals those steps would otherwise show for them (the FWC engine already
+  // stops generating no-activity candidates after a resigned employee's last working date, so
+  // this naturally covers only the days they actually worked).
+  const [crmTotals, vacationTotals] = await Promise.all([
+    computeCrmDeductionTotals(access, members, sources, period),
+    computeVacationDeductionTotals(members, sources, period),
+  ]);
+
   const rows: StepRow[] = [];
-  for (const member of members) {
-    if (member.lifecycle !== "leaver" || !member.lastWorkingDate) continue;
+  for (const member of leavers) {
+    if (!member.lastWorkingDate) continue;
     const source = lookupSource(sources, member.employee.hrId);
     const settlement = computeResignationSettlement({
       baseSalary: roundCurrency(source?.baseSalary ?? 0),
@@ -313,21 +407,33 @@ function recommendResignations(
     });
     if (!settlement) continue;
     const draft = drafts.get(member.compact);
+
+    const crmTotal = crmTotals.get(member.compact);
+    const vacationTotal = vacationTotals.get(member.compact);
+    const crmValue = roundCurrency(crmTotal?.value ?? 0);
+    const vacationValue = roundCurrency((vacationTotal?.v2Amount ?? 0) + (vacationTotal?.crmAmount ?? 0));
+
     const row = baseRow(member);
     row.context = {
       "Last Working Date": member.lastWorkingDate,
       Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
       "Days Worked": settlement.daysWorked,
+      "CRM No-Activity Days": roundCurrency(crmTotal?.days ?? 0),
+      "Unpaid Vacation Days": roundCurrency((vacationTotal?.v2Days ?? 0) + (vacationTotal?.crmUnpaidDays ?? 0)),
     };
     row.recommended = {
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
+      crm: crmValue,
+      unpaidVacations: vacationValue,
     };
     row.values = {
       baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
       ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
       fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
+      crm: pick(draft?.crm, crmValue),
+      unpaidVacations: pick(draft?.unpaidVacations, vacationValue),
     };
     rows.push(row);
   }
@@ -410,17 +516,26 @@ async function recommendExpenses(
   return rows;
 }
 
-async function recommendVacation(
+type VacationDeductionTotal = {
+  v2Days: number;
+  v2Amount: number;
+  crmDays: number;
+  crmUnpaidDays: number;
+  crmAmount: number;
+};
+
+/**
+ * Vacation deduction totals for every member (Phoenix v2 unpaid days + CRM-recorded leave,
+ * balance-first). Shared by the Part-2 Vacation step (everyone except leavers, who are
+ * settled at resignation time instead) and the Resignation step (leavers only).
+ */
+async function computeVacationDeductionTotals(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
-  drafts: Map<string, DraftRow>,
-): Promise<StepRow[]> {
+): Promise<Map<string, VacationDeductionTotal>> {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
-  const totals = new Map<
-    string,
-    { v2Days: number; v2Amount: number; crmDays: number; crmUnpaidDays: number; crmAmount: number }
-  >();
+  const totals = new Map<string, VacationDeductionTotal>();
   const ensure = (compact: string) => {
     const existing =
       totals.get(compact) ?? { v2Days: 0, v2Amount: 0, crmDays: 0, crmUnpaidDays: 0, crmAmount: 0 };
@@ -477,10 +592,22 @@ async function recommendVacation(
     entry.crmAmount += amount;
   }
 
+  return totals;
+}
+
+async function recommendVacation(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  period: PayrollPeriod,
+  drafts: Map<string, DraftRow>,
+): Promise<StepRow[]> {
+  const totals = await computeVacationDeductionTotals(members, sources, period);
+  const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {
     const member = byCompact.get(compact);
-    if (!member) continue;
+    // Leavers are settled at resignation time (Part 1) — never here, to avoid double-deducting.
+    if (!member || member.lifecycle === "leaver") continue;
     const draft = drafts.get(compact);
     const amount = roundCurrency(total.v2Amount + total.crmAmount);
     const row = baseRow(member);
@@ -496,13 +623,19 @@ async function recommendVacation(
   return rows;
 }
 
-async function recommendCrm(
+type CrmDeductionTotal = { days: number; value: number; officeExcluded: number };
+
+/**
+ * CRM no-activity deduction totals for every member (punch-excluded, owner rule
+ * 2026-07-20). Shared by the Part-2 CRM step (everyone except leavers) and the
+ * Resignation step (leavers only).
+ */
+async function computeCrmDeductionTotals(
   access: AccessContext,
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
-  drafts: Map<string, DraftRow>,
-): Promise<StepRow[]> {
+): Promise<Map<string, CrmDeductionTotal>> {
   const { rows: candidates } = await listCrmDeductionCandidates(access, period);
   // Owner rule (2026-07-20): a no-CRM-activity day with a fingerprint punch is an office
   // day, not an absence — drop punched dates before deducting (field reps show CRM activity
@@ -511,9 +644,8 @@ async function recommendCrm(
     period,
     members.map((member) => member.employee.hrId),
   );
-  const byCompact = new Map(members.map((member) => [member.compact, member]));
 
-  const totals = new Map<string, { days: number; value: number; officeExcluded: number }>();
+  const totals = new Map<string, CrmDeductionTotal>();
   for (const candidate of candidates) {
     const compact = compactHrKey(candidate.employeeHrIdCompact || candidate.employeeCode);
     if (!compact) continue;
@@ -538,10 +670,23 @@ async function recommendCrm(
     totals.set(compact, existing);
   }
 
+  return totals;
+}
+
+async function recommendCrm(
+  access: AccessContext,
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  period: PayrollPeriod,
+  drafts: Map<string, DraftRow>,
+): Promise<StepRow[]> {
+  const totals = await computeCrmDeductionTotals(access, members, sources, period);
+  const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {
     const member = byCompact.get(compact);
-    if (!member) continue;
+    // Leavers are settled at resignation time (Part 1) — never here, to avoid double-deducting.
+    if (!member || member.lifecycle === "leaver") continue;
     const draft = drafts.get(compact);
     const value = roundCurrency(total.value);
     const row = baseRow(member);
@@ -602,7 +747,7 @@ export async function recommendStep(input: {
     case "p1_new_hires":
       return recommendNewHires(input.members, input.sources, input.period, drafts);
     case "p1_resignations":
-      return recommendResignations(input.members, input.sources, input.period, drafts);
+      return recommendResignations(input.access, input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
     case "p2_expenses":
@@ -628,9 +773,5 @@ export async function loadStepContext(period: PayrollPeriod): Promise<{
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
 }> {
-  const [members, sources] = await Promise.all([
-    resolvePayrollPopulation(period),
-    getPayrollSalarySourcesByHrId(period),
-  ]);
-  return { members, sources };
+  return resolvePayrollPopulationAndSources(period);
 }
