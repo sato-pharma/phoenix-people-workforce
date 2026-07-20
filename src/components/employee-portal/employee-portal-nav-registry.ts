@@ -60,6 +60,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Vacation", fullLabel: "Vacation Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
   { label: "Excuses", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
   { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"] },
+  { label: "DO Appr", fullLabel: "Direct Orders Approvals", href: "/employee-portals/approvals/direct-orders", icon: Inbox, flags: ["showDirectOrdersApprovalsTab"] },
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
@@ -67,6 +68,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
+  { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
+  { label: "DO Report", fullLabel: "Direct Orders Report", href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, flags: ["showDirectOrdersReportTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"] },

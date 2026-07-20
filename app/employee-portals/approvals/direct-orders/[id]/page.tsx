@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
+import { DirectOrderPortalDetail } from "@/components/employee-portal/direct-order-portal-detail";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -17,7 +17,7 @@ export default async function PortalDirectOrderApprovalDetailPage({ params }: { 
   const detail = await getDirectOrderApprovalDetail(access, id);
   return (
     <EmployeePortalPageShell badge="Approvals Hub" title="Direct Order Approval" description="Review and respond to this direct order request.">
-      <DirectOrderRequestDetail detail={detail} backHref="/employee-portals/approvals/direct-orders" />
+      <DirectOrderPortalDetail detail={detail} backHref="/employee-portals/approvals/direct-orders" />
     </EmployeePortalPageShell>
   );
 }
