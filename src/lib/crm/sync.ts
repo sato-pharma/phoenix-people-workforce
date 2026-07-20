@@ -23,6 +23,7 @@ import {
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { googleReverseGeocode, hasGoogleServerKey } from "@/lib/google-maps/server";
 import type { VisitsSyncTrigger } from "@/lib/visits-report/types";
 
 const visitsTable = CRM_VISITS_TABLE;
@@ -38,6 +39,11 @@ const upsertBatchSize = 500;
 // connection pool. Kept even after the 10-day lookback revert: the sequential delete-
 // reconciliation loop further down turned out to still be a second bottleneck on its own.
 const upsertConcurrency = 4;
+// Bounds how many NEW (never-before-resolved) check-in addresses one sync run will pay to
+// reverse-geocode. The recurring cron re-scans a rolling window, so any backlog beyond this cap
+// is simply picked up by a later run rather than risking this run's own maxDuration budget.
+const maxNewCheckinGeocodesPerSync = 200;
+const geocodeConcurrency = 4;
 
 /** True for a well-formed YYYY-MM-DD date string — used to keep a visit with a missing/malformed
  * CRM visitDate from corrupting the NOT NULL `visit_date` column or aborting its whole chunk. */
@@ -140,6 +146,98 @@ function rowFromCheckin(checkin: IReports360Checkin, maps: CrmIdentityMaps) {
   };
 }
 
+export type CheckinDraftRow = ReturnType<typeof rowFromCheckin>;
+
+/** True when a row has no usable address yet but has real coordinates to geocode from. */
+function checkinNeedsAddress(row: CheckinDraftRow): boolean {
+  return (
+    (!row.address || !row.address.trim()) &&
+    typeof row.lat === "number" &&
+    Number.isFinite(row.lat) &&
+    typeof row.lon === "number" &&
+    Number.isFinite(row.lon)
+  );
+}
+
+/**
+ * Pure decision core of the address-backfill step — split out so it's unit-testable without
+ * mocking Supabase or the Google Maps API (same reasoning as resolveWideReconciliationSlice
+ * above). Mutates `address` in place on any row whose crm_checkin_id already resolved to a
+ * known-good address on a prior sync (never re-bills Google for the same check-in twice).
+ * Returns the remainder that still need a fresh geocode call, capped to `cap` — anything beyond
+ * the cap is left for a later sync run rather than risking this run's own time budget.
+ */
+export function selectCheckinsToGeocode(
+  rows: CheckinDraftRow[],
+  existingAddressById: Map<number, string>,
+  cap: number,
+): CheckinDraftRow[] {
+  const needsGeocode: CheckinDraftRow[] = [];
+  for (const row of rows) {
+    if (!checkinNeedsAddress(row)) continue;
+    const known = existingAddressById.get(row.crm_checkin_id);
+    if (known) row.address = known;
+    else needsGeocode.push(row);
+  }
+  return needsGeocode.slice(0, cap);
+}
+
+/**
+ * iReports360 frequently returns a check-in with real GPS coordinates but a blank `address` —
+ * the vendor's own reverse-geocoding step is unreliable. Backfilling it here (the single sync
+ * door) means every downstream reader gets it for free instead of each doing its own lookup.
+ *
+ * Looks up each crm_checkin_id missing an address against what's already stored (so a check-in
+ * only ever gets geocoded once, ever — see selectCheckinsToGeocode), then runs a bounded-
+ * concurrency batch of fresh Geocoding API calls for the rest, capped per run. Any failure mode
+ * (no key configured, lookup error, API error, over the cap) just leaves `address` as whatever
+ * the vendor sent — best-effort, never fails the sync, matching check-ins' existing posture (a
+ * GPS overlay, never required for the sync to succeed).
+ */
+async function backfillMissingCheckinAddresses(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rows: CheckinDraftRow[],
+): Promise<void> {
+  if (!hasGoogleServerKey()) return;
+
+  const candidateIds = rows.filter(checkinNeedsAddress).map((row) => row.crm_checkin_id);
+  if (candidateIds.length === 0) return;
+
+  const existingById = new Map<number, string>();
+  try {
+    for (let from = 0; from < candidateIds.length; from += 500) {
+      const chunk = candidateIds.slice(from, from + 500);
+      const { data, error } = await supabase
+        .from(checkinsTable)
+        .select("crm_checkin_id, address")
+        .in("crm_checkin_id", chunk);
+      if (error) throw new Error(error.message);
+      for (const existing of (data ?? []) as Array<{ address: string | null; crm_checkin_id: number }>) {
+        if (existing.address && existing.address.trim()) existingById.set(existing.crm_checkin_id, existing.address);
+      }
+    }
+  } catch {
+    // best-effort: if the lookup itself fails, fall through and just try a fresh geocode below
+  }
+
+  const toGeocode = selectCheckinsToGeocode(rows, existingById, maxNewCheckinGeocodesPerSync);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(geocodeConcurrency, toGeocode.length) }, async () => {
+      while (cursor < toGeocode.length) {
+        const row = toGeocode[cursor++];
+        try {
+          const result = await googleReverseGeocode({ lat: row.lat as number, lng: row.lon as number });
+          const label = result?.formattedAddress ?? [result?.area, result?.city].filter(Boolean).join(", ");
+          if (label) row.address = label;
+        } catch {
+          // best-effort — leave this row's address as the vendor sent it (null)
+        }
+      }
+    }),
+  );
+}
+
 /**
  * Pulls every visit AND check-in iReports360 recorded in [dateFrom, dateTo] in one
  * authenticated session, and upserts them into ireports360_visits / ireports360_checkins,
@@ -213,6 +311,7 @@ export async function syncIReports360Visits(input: {
 
     const checkinRows = checkins.map((checkin) => rowFromCheckin(checkin, maps));
     const dedupedCheckinRows = dedupeByKey(checkinRows, (row) => row.crm_checkin_id);
+    await backfillMissingCheckinAddresses(supabase, dedupedCheckinRows);
     const checkinsUpserted = await upsertRowsConcurrently(
       supabase,
       checkinsTable,
