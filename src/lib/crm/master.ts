@@ -18,28 +18,9 @@ import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcluded
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
+import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export type CrmMasterDataset =
-  | "visits"
-  | "checkins"
-  | "double_visits"
-  | "triple_visits"
-  | "vacations"
-  | "regular_no_checkin"
-  | "regular_dv_no_checkin"
-  | "crm_issues";
-
-/** All datasets a tab can show, in display order. */
-export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: string }> = [
-  { id: "visits", label: "Visits" },
-  { id: "checkins", label: "Check-ins" },
-  { id: "double_visits", label: "Double Visits" },
-  { id: "triple_visits", label: "Triple Visits" },
-  { id: "vacations", label: "Vacations" },
-  { id: "regular_no_checkin", label: "Regular · No Check-in" },
-  { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
-  { id: "crm_issues", label: "CRM Issues" },
-];
+export { CRM_MASTER_DATASETS, type CrmMasterDataset };
 
 /** Confidence labels for a detected triple visit — shared by the Triple Visits tab column and the
  * Double Visits "Triple?" flag so both read identically. */
@@ -144,15 +125,6 @@ const CRM_VISIT_BASE_COLUMNS: readonly CrmMasterColumn[] = CRM_VISIT_COLUMNS.fil
   (col) => !col.key.startsWith("checkin_"),
 );
 
-const CRM_ISSUE_COLUMN: CrmMasterColumn = {
-  key: "issue",
-  kind: "text",
-  label: "Issue",
-  note: "Why this record isn't fully recognized: an unmapped agent and/or unmapped double visitor — its CRM id did not resolve to a Phoenix employee.",
-};
-
-const CRM_ISSUE_COLUMNS: readonly CrmMasterColumn[] = [CRM_ISSUE_COLUMN, ...CRM_VISIT_BASE_COLUMNS];
-
 /** The "Triple?" flag shown on the Double Visits tab: set when a double visit is part of a triple
  * (a third person was also stacked on it that day), naming who the third person is. */
 const CRM_TRIPLE_FLAG_COLUMN: CrmMasterColumn = {
@@ -250,7 +222,6 @@ function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
   if (dataset === "vacations") return CRM_VACATION_COLUMNS;
   if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
-  if (dataset === "crm_issues") return CRM_ISSUE_COLUMNS;
   if (dataset === "triple_visits") return CRM_TRIPLE_COLUMNS;
   if (dataset === "double_visits") return CRM_DOUBLE_VISIT_COLUMNS;
   return CRM_VISIT_COLUMNS; // visits
@@ -459,24 +430,10 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
   }
 }
 
-/** CRM Issues: anything not fully recognized — an unmapped agent and/or (for a double visit) an
- * unmapped double visitor. Sets the `issue` column describing what didn't resolve. */
-function attachIssueReason(rows: CrmMasterRow[]): void {
-  for (const row of rows) {
-    const agentUnmapped = row.agent_hr_id == null || row.agent_hr_id === "";
-    const hasDouble = typeof row.double_crm_id === "number" && row.double_crm_id !== 0;
-    const doubleUnmapped = hasDouble && (row.double_hr_id == null || row.double_hr_id === "");
-    const reasons: string[] = [];
-    if (agentUnmapped) reasons.push("Agent unmapped");
-    if (doubleUnmapped) reasons.push("Double visitor unmapped");
-    row.issue = reasons.length > 0 ? reasons.join(" · ") : "Unmapped";
-  }
-}
-
 /** Effective visit type: a Regular visit (0) with NO matched GPS check-in is COUNTED as Campaign,
  * but ALWAYS flagged here — never a silent recount. For regular_no_checkin every row is reclassified
  * (the tab filters to it); for visits/double it's derived from the in-memory check-in correlation
- * (checkin_id null). Datasets that don't correlate (vacations, crm_issues) keep the raw type. */
+ * (checkin_id null). Datasets that don't correlate (vacations, triples) keep the raw type. */
 function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[]): void {
   const knowsCheckin =
     dataset === "visits" ||
@@ -1020,9 +977,6 @@ function applyMasterFilters(
   if (dataset === "regular_dv_no_checkin") {
     q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
-  if (dataset === "crm_issues") {
-    q = q.or("agent_hr_id.is.null,and(double_crm_id.not.is.null,double_crm_id.neq.0,double_hr_id.is.null)");
-  }
 
   // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
   if (agentHrId) {
@@ -1049,7 +1003,7 @@ function applyMasterFilters(
 }
 
 /** Merge derived columns onto rows (nearest check-in for visit datasets, triple flag for double
- * visits, issue reason for issues). `range` scopes the triple detection to the same dates. */
+ * visits). `range` scopes the triple detection to the same dates. */
 async function attachDerived(
   dataset: CrmMasterDataset,
   rows: CrmMasterRow[],
@@ -1061,7 +1015,6 @@ async function attachDerived(
     const { byVisitId } = await computeTriplesInRange(range);
     attachTripleFlag(rows, byVisitId);
   }
-  if (dataset === "crm_issues") attachIssueReason(rows);
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
   attachAgentMeta(rows, await loadAgentMetaByHrId(), "agent_hr_id");

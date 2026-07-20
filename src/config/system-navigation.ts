@@ -452,8 +452,9 @@ const adminNavigationSectionSeeds = [
   },
   // Single Super-Admin-only sidebar button opening the CRM hub
   // (app/(admin)/admin/crm/page.tsx, cards in crmPageItems below). The hub is the one
-  // home for all CRM (iReports360) data — sync health + manual pull on the page itself,
-  // plus Visits Report / CRM Integrity / Double Visit Data Integrity as cards.
+  // home for all CRM (iReports360) data — sync health, manual pull, the raw master table,
+  // unmapped-identity resolution, and recovered-chains review all live on the page itself
+  // (via its own tab bar), plus CRM Integrity / Double Visit Data Integrity as linked-out cards.
   {
     id: "crm",
     items: [{ href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] }],
@@ -1713,18 +1714,14 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── CRM hub (app/(admin)/admin/crm/page.tsx) ────────────────────────────────────
-// The single Super-Admin home for CRM (iReports360) data. The hub page itself shows
-// sync health + a manual "sync now"; these sub-modules render as cards. Relocated here
-// from fieldCoachingPageItems so every CRM surface lives under one parent tab. All CRM
-// pulling/reading is centralized in src/lib/crm/*.
+// The single Super-Admin home for CRM (iReports360) data. The hub page itself shows sync
+// health + a manual backfill, the raw master table (Visits/Check-ins/Double Visits/Triple
+// Visits/Vacations/no-check-in views), unmapped-identity resolution, and the recovered-chains
+// audit — all via its own tab bar, not separate pages. These two sub-modules are the only CRM
+// analyses that still need a dedicated page (each renders a different derived report, not a
+// view of the hub's own data) and render as cards linked from the hub. All CRM pulling/reading
+// is centralized in src/lib/crm/*.
 export const crmPageItems: readonly AdminToolsPageItem[] = [
-  {
-    href: "/admin/visits-report",
-    icon: FileSpreadsheet,
-    label: "Visits Report",
-    description: "Browse & export every synced CRM visit; resolve unmapped agents.",
-    roles: ["Super Admin"],
-  },
   {
     href: "/admin/crm-integrity",
     icon: MapPinned,

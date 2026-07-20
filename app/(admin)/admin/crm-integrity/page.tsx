@@ -30,8 +30,8 @@ export default async function CrmIntegrityPage({
 }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
-  // Correlates the same raw CRM mirror Visits Report reads, plus GPS coordinates -- gated to
-  // Super Admin, matching /admin/visits-report and /admin/double-visit-data-integrity exactly.
+  // Correlates the same raw CRM mirror the /admin/crm hub reads, plus GPS coordinates -- gated to
+  // Super Admin, matching /admin/crm and /admin/double-visit-data-integrity exactly.
   if (access.role !== "Super Admin") {
     redirect(resolveLandingPathForRole(access.role));
   }
