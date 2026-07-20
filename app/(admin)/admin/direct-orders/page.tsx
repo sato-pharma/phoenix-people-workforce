@@ -22,7 +22,7 @@ export default async function AdminDirectOrdersPage() {
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders");
   const canSubmit = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
   const [products, bricks, distributors, pharmacies, myRequests, capsData] = await Promise.all([
-    listDirectOrderProductOptions(),
+    listDirectOrderProductOptions(access),
     listDirectOrderBrickOptions(),
     listDirectOrderDistributorOptions(),
     listMyDirectOrderPharmacies(access),
