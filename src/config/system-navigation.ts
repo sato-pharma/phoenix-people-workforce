@@ -747,6 +747,7 @@ const employeePortalNavigationSectionSeeds = [
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/attendance/digests", icon: CalendarClock, label: "Weekly Digest", permissions: [{ resource: "attendance", action: "read" }] },
+      { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
     ],
     label: "Leave Management",
   },

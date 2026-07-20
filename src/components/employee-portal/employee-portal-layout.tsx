@@ -251,6 +251,9 @@ function buildEmployeePortalSections({
     {
       title: "Fieldforce",
       items: [
+        // Every employee-portal role sees their own CRM visits — unconditional, unlike
+        // the flag-gated team/manager views below.
+        { href: "/employee-portals/visits", label: "My Visits", icon: MapPinned },
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),

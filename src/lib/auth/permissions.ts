@@ -95,6 +95,7 @@ export type PermissionResource =
   | "workflow_registry"
   | "report_it"
   | "attendance"
+  | "crm_visits"
   | "user_activity"
   | "synthetic_journeys";
 
@@ -137,6 +138,7 @@ export const permissionResources: PermissionResource[] = [
   "candidates",
   "report_it",
   "attendance",
+  "crm_visits",
   "user_activity",
   "synthetic_journeys",
 ];
@@ -378,6 +380,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     admin: allActions,
     attendance: allActions,
+    crm_visits: ["read"],
     communication: allActions,
     overview: ["read"],
     admin_access: ["read"],
@@ -424,6 +427,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
+    crm_visits: ["read"],
     overview: ["read"],
     imports: ["read"],
     // SoD: read/export only — contract renew/not-renew (can drive termination)
@@ -489,6 +493,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Finance Manager": {
     direct_orders: ["read", "update", "export"],
     attendance: ["read", "export"],
+    crm_visits: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export", "update"],
@@ -508,6 +513,7 @@ const defaultPermissionMatrix: PermissionMap = {
   // role-sets, not a permission resource) + own self-service only; NO HR/payroll/employee authority.
   "Financial Advisor": {
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
     leave: ["read", "create"],
@@ -517,6 +523,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   Employee: {
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     coaching: ["read"],
     employee_documents: ["read", "export"],
@@ -533,6 +540,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   "Medical Rep": {
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     coaching: ["read"],
     employee_documents: ["read", "export"],
@@ -551,6 +559,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "District Manager": {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -575,6 +584,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Regional Manager": {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -598,6 +608,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "National Sales Manager": {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -622,6 +633,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Product Manager": {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -645,6 +657,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Group Product Manager": {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -668,6 +681,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "SFE Manager": {
     direct_orders: ["read", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
+    crm_visits: ["read"],
     overview: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -690,6 +704,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   "Training Manager": {
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -716,6 +731,7 @@ const defaultPermissionMatrix: PermissionMap = {
   // while HR authority remains blocked.
   "Marketing Manager": {
     attendance: ["read"],
+    crm_visits: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],
@@ -736,6 +752,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   Manager: {
     attendance: ["read", "create", "update", "delete", "export"],
+    crm_visits: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
