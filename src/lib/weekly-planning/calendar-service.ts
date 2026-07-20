@@ -1,5 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
-import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { assertPermission, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -102,9 +102,64 @@ function sameLine(left: string | null | undefined, right: string | null | undefi
   return Boolean(a && b && a === b);
 }
 
-// Any viewer with calendar access sees every calendar-eligible plan, cross-line/hierarchy (owner decision 2026-07-19).
-export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem): boolean {
-  return isAllowedCalendarOwner(item);
+function itemHasJobTitle(item: PlanningCalendarPlanItem, needle: string) {
+  return normalizeLowerText(item.employeeJobTitle).includes(needle);
+}
+
+function itemHasLine(item: PlanningCalendarPlanItem, lineName: string) {
+  return sameLine(item.lineName, lineName);
+}
+
+const PEDIA_LINE = "Pedia";
+const ANTI_INFECTIVE_LINE = "Anti Infective";
+
+// B-155 (Ahmed Sharaf Eldeen) is the Product Manager for 2 named cross-line products
+// spanning Pedia + Anti Infective, not a generic "two-line PM" — see
+// PRODUCT_SCOPE_EXCLUSIVE_HR_IDS in marketing-requests/service.ts for the same
+// named-exception pattern applied to this one person's sales/marketing scope.
+const AHMED_SHARAF_HR_ID = "B-155";
+
+export type CalendarViewerContext = {
+  hrId: string;
+  role: string | null;
+  lineName: string | null;
+};
+
+// Role/line-scoped visibility (owner decision 2026-07-20 — supersedes the unconditional
+// cross-line/cross-hierarchy visibility from 2026-07-19, which was itself a same-line/
+// hierarchy fence removal; this is a fresh, more specific rule set, not a plain revert):
+//   - Marketing Manager / Training Manager: unrestricted, see every calendar-eligible plan.
+//   - B-155 (Ahmed Sharaf): Pedia plans + Anti Infective plans + Training Manager's plans.
+//   - Group Product Manager on the Pedia line: Training Manager's plans + all Pedia plans.
+//   - National Sales Manager on the Pedia line: the Group Product Manager's plans + all Pedia plans.
+//   - National Sales Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
+//   - Product Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
+//   - Anyone else with calendar access (CEO, Super Admin, and any role/line not named above)
+//     keeps the unrestricted 2026-07-19 default — only the roles above were narrowed.
+export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
+  if (!isAllowedCalendarOwner(item)) return false;
+
+  const role = normalizeLowerText(viewer.role);
+  if (role === "marketing manager" || role === "training manager") return true;
+
+  if (hrIdsMatch(viewer.hrId, AHMED_SHARAF_HR_ID)) {
+    return itemHasLine(item, PEDIA_LINE) || itemHasLine(item, ANTI_INFECTIVE_LINE) || itemHasJobTitle(item, "training manager");
+  }
+
+  if (role === "group product manager" && sameLine(viewer.lineName, PEDIA_LINE)) {
+    return itemHasJobTitle(item, "training manager") || itemHasLine(item, PEDIA_LINE);
+  }
+  if (role === "national sales manager" && sameLine(viewer.lineName, PEDIA_LINE)) {
+    return itemHasJobTitle(item, "group product manager") || itemHasLine(item, PEDIA_LINE);
+  }
+  if (role === "national sales manager" && sameLine(viewer.lineName, ANTI_INFECTIVE_LINE)) {
+    return itemHasJobTitle(item, "training manager") || itemHasLine(item, ANTI_INFECTIVE_LINE);
+  }
+  if (role === "product manager" && sameLine(viewer.lineName, ANTI_INFECTIVE_LINE)) {
+    return itemHasJobTitle(item, "training manager") || itemHasLine(item, ANTI_INFECTIVE_LINE);
+  }
+
+  return true;
 }
 
 function isPlanningSchemaMissing(error: unknown) {
@@ -267,7 +322,8 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
-    const planItems = rawPlanItems.filter(isPlanItemVisibleToViewer);
+    const viewerContext: CalendarViewerContext = { hrId: viewerHrId, role: access.role, lineName: viewer?.lineName ?? null };
+    const planItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);
     const submittedOwners = new Set(planItems.map((item) => normalizeHrId(item.employeeHrId)).filter(Boolean));

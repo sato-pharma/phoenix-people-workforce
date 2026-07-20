@@ -1,16 +1,21 @@
 import { strict as assert } from "node:assert";
 
 import { isPlanItemVisibleToViewer } from "../src/lib/weekly-planning/calendar-service.ts";
+import type { CalendarViewerContext } from "../src/lib/weekly-planning/calendar-service.ts";
 import type { PlanningCalendarPlanItem } from "../src/lib/weekly-planning/calendar.ts";
 
 /**
- * Coverage for the shared planning calendar's owner-eligibility gate
- * (isAllowedCalendarOwner, reached via isPlanItemVisibleToViewer). Cross-line
- * and cross-hierarchy viewer scoping (same-line, District-Manager-to-NSM,
- * Regional-Manager region bounds) was removed by owner decision 2026-07-19:
- * any viewer who already has weekly_plans:read access sees any
- * calendar-eligible plan. The only remaining question this function answers
- * is whether the plan's owner title is calendar-eligible at all.
+ * Coverage for the shared planning calendar's visibility gate: first
+ * isAllowedCalendarOwner (is the plan's owner title calendar-eligible at all,
+ * regardless of viewer), then the role/line-scoped viewer matrix (owner
+ * decision 2026-07-20, superseding the unconditional 2026-07-19 visibility):
+ *   - Marketing Manager / Training Manager: unrestricted.
+ *   - B-155 (Ahmed Sharaf): Pedia + Anti Infective + Training Manager.
+ *   - Group Product Manager (Pedia line): Training Manager + all Pedia.
+ *   - National Sales Manager (Pedia line): the Group Product Manager + all Pedia.
+ *   - National Sales Manager (Anti Infective line): Training Manager + all Anti Infective.
+ *   - Product Manager (Anti Infective line): Training Manager + all Anti Infective.
+ *   - Any other role/line combination keeps the unrestricted 2026-07-19 default.
  */
 
 function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: string; employeeJobTitle: string | null }): PlanningCalendarPlanItem {
@@ -41,19 +46,27 @@ function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: str
   };
 }
 
-export function runWeeklyPlanCalendarOwnerScopeTests() {
-  // --- Title recognition (isAllowedCalendarOwner, via isPlanItemVisibleToViewer) ---
+function viewer(input: Partial<CalendarViewerContext>): CalendarViewerContext {
+  return { hrId: "VIEWER-1", role: null, lineName: null, ...input };
+}
 
-  const trainingManagerItem = planItem({ employeeHrId: "A-7", employeeJobTitle: "Training Manager", lineName: "Pedia" });
+// An unrestricted viewer used to isolate owner-eligibility assertions from the
+// role/line-scoped matrix below — Marketing Manager sees every eligible item.
+const UNRESTRICTED_VIEWER = viewer({ hrId: "A-9", role: "Marketing Manager" });
+
+export function runWeeklyPlanCalendarOwnerScopeTests() {
+  // --- Title recognition (isAllowedCalendarOwner) ---
+
+  const trainingManagerItem = planItem({ employeeHrId: "A-7", employeeJobTitle: "Training Manager", lineName: "Head Office" });
   assert.equal(
-    isPlanItemVisibleToViewer(trainingManagerItem),
+    isPlanItemVisibleToViewer(trainingManagerItem, UNRESTRICTED_VIEWER),
     true,
     "Training Manager item is recognized as an allowed owner via title",
   );
 
-  const marketingManagerItem = planItem({ employeeHrId: "MM-1", employeeJobTitle: "Marketing Manager", lineName: "Pedia" });
+  const marketingManagerItem = planItem({ employeeHrId: "MM-1", employeeJobTitle: "Marketing Manager", lineName: "Head Office" });
   assert.equal(
-    isPlanItemVisibleToViewer(marketingManagerItem),
+    isPlanItemVisibleToViewer(marketingManagerItem, UNRESTRICTED_VIEWER),
     true,
     "Marketing Manager item is recognized as an allowed owner",
   );
@@ -61,7 +74,7 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
   for (const title of ["District Manager", "District Sales Manager", "DSM"]) {
     const dmItem = planItem({ employeeHrId: "DM-1", employeeJobTitle: title, lineName: "Pedia" });
     assert.equal(
-      isPlanItemVisibleToViewer(dmItem),
+      isPlanItemVisibleToViewer(dmItem, UNRESTRICTED_VIEWER),
       true,
       `District Manager title variant "${title}" is recognized as an allowed owner`,
     );
@@ -69,13 +82,13 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
 
   const territoryManagerFullItem = planItem({ employeeHrId: "TER-1", employeeJobTitle: "Territory Manager", lineName: "Pedia" });
   assert.equal(
-    isPlanItemVisibleToViewer(territoryManagerFullItem),
+    isPlanItemVisibleToViewer(territoryManagerFullItem, UNRESTRICTED_VIEWER),
     true,
     "Territory Manager (full title) is still recognized — regression guard",
   );
   const territoryManagerAliasItem = planItem({ employeeHrId: "TER-2", employeeJobTitle: "TM", lineName: "Pedia" });
   assert.equal(
-    isPlanItemVisibleToViewer(territoryManagerAliasItem),
+    isPlanItemVisibleToViewer(territoryManagerAliasItem, UNRESTRICTED_VIEWER),
     true,
     "Territory Manager 'tm' alias is still recognized — regression guard",
   );
@@ -90,47 +103,91 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
 
   const unrecognizedItem = planItem({ employeeHrId: "MR-1", employeeJobTitle: "Medical Rep", lineName: "Pedia" });
   assert.equal(
-    isPlanItemVisibleToViewer(unrecognizedItem),
+    isPlanItemVisibleToViewer(unrecognizedItem, UNRESTRICTED_VIEWER),
     false,
     "an unrecognized job title (e.g. Medical Rep) is never an allowed owner, regardless of viewer",
   );
 
   const regionalManagerItem = planItem({ employeeHrId: "RM-1", employeeJobTitle: "Regional Manager", lineName: "Pedia" });
   assert.equal(
-    isPlanItemVisibleToViewer(regionalManagerItem),
+    isPlanItemVisibleToViewer(regionalManagerItem, UNRESTRICTED_VIEWER),
     false,
-    "Regional Manager is not (yet) a calendar-eligible owner title — unchanged by the cross-line visibility change",
+    "Regional Manager is not a calendar-eligible owner title — unchanged by the scope matrix",
   );
 
-  // --- Cross-line / cross-hierarchy visibility (owner decision 2026-07-19) ---
-  // Once a plan's owner title is calendar-eligible, it is visible unconditionally —
-  // there is no more per-viewer fencing by line, region, or reporting hierarchy.
+  // --- Default: unrestricted for any role/line not named in the 2026-07-20 matrix ---
 
   const headOfficeItem = planItem({ employeeHrId: "A-8", employeeJobTitle: "Training Manager", lineName: "Head Office" });
   assert.equal(
-    isPlanItemVisibleToViewer(headOfficeItem),
+    isPlanItemVisibleToViewer(headOfficeItem, UNRESTRICTED_VIEWER),
     true,
-    "Head Office line item stays visible (pre-existing bypass, now subsumed by the blanket rule)",
+    "Head Office line item stays visible to an unrestricted viewer",
   );
 
-  const crossLineItem = planItem({ employeeHrId: "PM-1", employeeJobTitle: "Product Manager", lineName: "Derma" });
+  const cnsNsmViewer = viewer({ hrId: "B-122", role: "National Sales Manager", lineName: "CNS" });
+  const dermaItem = planItem({ employeeHrId: "PM-1", employeeJobTitle: "Product Manager", lineName: "Derma" });
   assert.equal(
-    isPlanItemVisibleToViewer(crossLineItem),
+    isPlanItemVisibleToViewer(dermaItem, cnsNsmViewer),
     true,
-    "a Derma-line Product Manager's plan is visible with no viewer/line comparison at all — the same-line fence is gone",
+    "a CNS-line NSM (not named in the 2026-07-20 matrix) keeps the unrestricted default and sees a Derma-line plan",
   );
 
-  const noLineItem = planItem({ employeeHrId: "PM-2", employeeJobTitle: "Product Manager", lineName: null });
+  const superAdminViewer = viewer({ hrId: "SA-1", role: "Super Admin" });
+  const anyLineItem = planItem({ employeeHrId: "PM-2", employeeJobTitle: "Product Manager", lineName: null });
   assert.equal(
-    isPlanItemVisibleToViewer(noLineItem),
+    isPlanItemVisibleToViewer(anyLineItem, superAdminViewer),
     true,
-    "a plan with no lineName on record is still visible — line no longer gates visibility at all",
+    "Super Admin (not named in the matrix) keeps unrestricted visibility, including items with no lineName on record",
   );
 
-  const dmCrossHierarchyItem = planItem({ employeeHrId: "DM-9", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  // --- Role/line-scoped matrix (owner decision 2026-07-20) ---
+
+  const pediaGpmViewer = viewer({ hrId: "A-8", role: "Group Product Manager", lineName: "Pedia" });
+  const pediaFieldItem = planItem({ employeeHrId: "DSM-1", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  const antiInfectiveFieldItem = planItem({ employeeHrId: "DSM-2", employeeJobTitle: "District Manager", lineName: "Anti Infective" });
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItem, pediaGpmViewer), true, "Pedia GPM sees a Pedia-line plan");
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, pediaGpmViewer), true, "Pedia GPM sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(antiInfectiveFieldItem, pediaGpmViewer), false, "Pedia GPM does NOT see an Anti Infective-line plan");
+  assert.equal(isPlanItemVisibleToViewer(marketingManagerItem, pediaGpmViewer), false, "Pedia GPM does NOT see the Marketing Manager's plan (not in scope)");
+
+  const pediaNsmViewer = viewer({ hrId: "A-12", role: "National Sales Manager", lineName: "Pedia" });
+  const pediaGpmItem = planItem({ employeeHrId: "A-8", employeeJobTitle: "Group Product Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItem, pediaNsmViewer), true, "Pedia NSM sees a Pedia-line plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaGpmItem, pediaNsmViewer), true, "Pedia NSM sees the Group Product Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, pediaNsmViewer), false, "Pedia NSM does NOT see the Training Manager's plan (not in scope)");
+  assert.equal(isPlanItemVisibleToViewer(antiInfectiveFieldItem, pediaNsmViewer), false, "Pedia NSM does NOT see an Anti Infective-line plan");
+
+  const antiInfectiveNsmViewer = viewer({ hrId: "B-157", role: "National Sales Manager", lineName: "Anti Infective" });
+  assert.equal(isPlanItemVisibleToViewer(antiInfectiveFieldItem, antiInfectiveNsmViewer), true, "Anti Infective NSM sees an Anti Infective-line plan");
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, antiInfectiveNsmViewer), true, "Anti Infective NSM sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItem, antiInfectiveNsmViewer), false, "Anti Infective NSM does NOT see a Pedia-line plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaGpmItem, antiInfectiveNsmViewer), false, "Anti Infective NSM does NOT see the Group Product Manager's plan (Pedia-only relationship)");
+
+  const antiInfectivePmViewer = viewer({ hrId: "A-10", role: "Product Manager", lineName: "Anti Infective" });
+  assert.equal(isPlanItemVisibleToViewer(antiInfectiveFieldItem, antiInfectivePmViewer), true, "Anti Infective PM sees an Anti Infective-line plan");
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, antiInfectivePmViewer), true, "Anti Infective PM sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItem, antiInfectivePmViewer), false, "Anti Infective PM does NOT see a Pedia-line plan");
+
+  // A generic Pedia-line Product Manager (i.e. not B-155) is not named in the matrix —
+  // falls through to the unrestricted default rather than being silently blocked.
+  const genericPediaPmViewer = viewer({ hrId: "PM-9", role: "Product Manager", lineName: "Pedia" });
   assert.equal(
-    isPlanItemVisibleToViewer(dmCrossHierarchyItem),
+    isPlanItemVisibleToViewer(antiInfectiveFieldItem, genericPediaPmViewer),
     true,
-    "a District Manager's plan is visible unconditionally now — the NSM-hierarchy fence is gone",
+    "a Pedia-line Product Manager other than B-155 is not narrowed — keeps the unrestricted default",
+  );
+
+  // --- B-155 (Ahmed Sharaf): named exception, Pedia + Anti Infective + Training Manager ---
+
+  const ahmedSharafViewer = viewer({ hrId: "B-155", role: "Product Manager", lineName: "Pedia" });
+  const cnsFieldItem = planItem({ employeeHrId: "DSM-3", employeeJobTitle: "District Manager", lineName: "CNS" });
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItem, ahmedSharafViewer), true, "Ahmed Sharaf (B-155) sees a Pedia-line plan");
+  assert.equal(isPlanItemVisibleToViewer(antiInfectiveFieldItem, ahmedSharafViewer), true, "Ahmed Sharaf (B-155) sees an Anti Infective-line plan");
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, ahmedSharafViewer), true, "Ahmed Sharaf (B-155) sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(cnsFieldItem, ahmedSharafViewer), false, "Ahmed Sharaf (B-155) does NOT see a CNS-line plan — his exception is exactly Pedia + Anti Infective, not every line");
+  assert.equal(
+    isPlanItemVisibleToViewer(cnsFieldItem, viewer({ hrId: "b-155", role: "Product Manager", lineName: "Pedia" })),
+    false,
+    "the B-155 exception matches case-insensitively on hrId, same as normalizeHrId elsewhere",
   );
 }
