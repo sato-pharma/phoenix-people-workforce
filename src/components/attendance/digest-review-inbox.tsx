@@ -57,6 +57,7 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyDigestId, setBusyDigestId] = useState<number | null>(null);
+  const [forceSettling, setForceSettling] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, Record<number, LineDraft>>>(() =>
     Object.fromEntries(initialDigests.map((digest) => [digest.id, initDrafts(digest)])),
   );
@@ -87,11 +88,31 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? "Digest review approval failed.");
       setDigests((current) => current.filter((entry) => entry.id !== digest.id));
-      setNotice(`Approved and sent to ${digest.employeeName}.`);
+      setNotice(`Approved and settled for ${digest.employeeName} — no notice sent to them.`);
     } catch (approveError) {
       setError(approveError instanceof Error ? approveError.message : "Digest review approval failed.");
     } finally {
       setBusyDigestId(null);
+    }
+  }
+
+  async function forceSettleSent() {
+    const confirmed = window.confirm(
+      "This settles every digest already sent to an employee under the old process — real deductions, right now, with no employee notice. Continue?",
+    );
+    if (!confirmed) return;
+    setForceSettling(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/attendance/digest-review/force-settle-sent", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Force-settle failed.");
+      setNotice(`Settled ${payload.digestsSettled?.length ?? 0} previously-sent digest(s), ${payload.linesSettled ?? 0} deduction line(s).`);
+    } catch (forceSettleError) {
+      setError(forceSettleError instanceof Error ? forceSettleError.message : "Force-settle failed.");
+    } finally {
+      setForceSettling(false);
     }
   }
 
@@ -122,7 +143,7 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
     <div className="space-y-5">
       <AdminPageHero
         badges={<AdminInsightChip tone="orange">{digests.length} awaiting review</AdminInsightChip>}
-        description="Every digest with a real deduction stops here first — it never reaches the employee until you approve it (edits optional). A clean week skips this and sends automatically."
+        description="Every digest with a real deduction stops here first. Your approval (edits optional) is the final decision — it settles the deduction directly and the employee is never notified. A clean week skips this step entirely."
         eyebrow="Attendance"
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
         title="Weekly Digest Review"
@@ -130,6 +151,18 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="neutral">{notice}</AdminCallout> : null}
+
+      <AdminCallout tone="warning">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>
+            One-time cleanup: digests already sent to employees under the old process are still waiting on their
+            original response window. Settle all of them now as an admin decision instead.
+          </span>
+          <Button disabled={forceSettling} size="sm" type="button" variant="secondary" onClick={() => void forceSettleSent()}>
+            {forceSettling ? "…" : "Force-settle already-sent digests"}
+          </Button>
+        </div>
+      </AdminCallout>
 
       <AdminTableShell description="Either the HR Manager or the System Administrator may act — first to decide wins." title="Pending Review">
         {digests.length === 0 ? (
@@ -213,7 +246,7 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
                   <div className="flex gap-2">
                     <Button disabled={busyDigestId !== null} type="button" onClick={() => approve(digest)}>
                       <CheckCircle2 className="h-4 w-4" />
-                      {busyDigestId === digest.id ? "…" : "Approve & Send"}
+                      {busyDigestId === digest.id ? "…" : "Approve & Settle"}
                     </Button>
                     <Button disabled={busyDigestId !== null} type="button" variant="secondary" onClick={() => voidDigest(digest)}>
                       <XCircle className="h-4 w-4" />
