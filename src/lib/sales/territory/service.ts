@@ -8,15 +8,15 @@ import type { TerritoryAreaPayload, TerritoryRootScope, TerritorySkeleton } from
 /** Thrown when a request's resolved territory scope denies it — the API layer maps this to 403. */
 export class TerritoryAccessError extends Error {}
 
-// Roles the Territory Drilldown module currently serves. Extended one at a time as each
-// role's slice ships (Medical Rep, then District Manager, then Regional Manager; National
-// Sales Manager still to come) — see the module's phased build plan. Mirrors the
-// PORTAL_SOS_ROLES / isPortalSosRole precedent in portal-sos-dashboard.ts: the role gate
+// Every role the Territory Drilldown module serves — the phased rollout (Medical Rep, then
+// District Manager, then Regional Manager, then National Sales Manager) is complete. Mirrors
+// the PORTAL_SOS_ROLES / isPortalSosRole precedent in portal-sos-dashboard.ts: the role gate
 // lives with the domain service, not the API route, so the page and every route agree.
 export const TERRITORY_DRILLDOWN_ROLES = [
   "Medical Rep",
   "District Manager",
   "Regional Manager",
+  "National Sales Manager",
 ] as const satisfies readonly PhoenixRole[];
 
 const TERRITORY_DRILLDOWN_ROLE_SET = new Set<PhoenixRole>(TERRITORY_DRILLDOWN_ROLES);

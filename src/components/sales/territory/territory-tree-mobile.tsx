@@ -450,7 +450,7 @@ export function TerritoryTreeMobile({ tree }: { tree: UseTerritoryTreeResult }) 
     );
   }
 
-  if (skeleton.rootLevel === "region") {
+  if (skeleton.rootLevel === "region" || skeleton.rootLevel === "nationwide") {
     if (skeleton.regions.length === 0) {
       return (
         <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
@@ -459,7 +459,8 @@ export function TerritoryTreeMobile({ tree }: { tree: UseTerritoryTreeResult }) 
       );
     }
     // Exactly one region (District Manager): render it directly. More than one (Regional
-    // Manager's reporting subtree): a synthetic "My Regions" section — see RegionsSection.
+    // Manager's reporting subtree, or a National Sales Manager's whole line nationwide): a
+    // synthetic "My Regions" section — see RegionsSection.
     if (skeleton.regions.length === 1) {
       const region = skeleton.regions[0];
       return (
