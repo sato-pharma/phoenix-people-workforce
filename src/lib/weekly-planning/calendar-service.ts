@@ -106,8 +106,22 @@ function itemHasJobTitle(item: PlanningCalendarPlanItem, needle: string) {
   return normalizeLowerText(item.employeeJobTitle).includes(needle);
 }
 
-function itemHasLine(item: PlanningCalendarPlanItem, lineName: string) {
+// Exact match, not substring — "product manager" is a substring of "group product
+// manager", so a plain .includes() check would wrongly also match GPM items. Only
+// needed where a rule must grant Product Manager but deliberately NOT Group Product
+// Manager (District/Regional Manager below); everywhere else itemHasJobTitle's
+// substring match is intentional (e.g. matching "group product manager" is safe
+// since no other title contains that longer string).
+function itemIsExactlyProductManager(item: PlanningCalendarPlanItem) {
+  return normalizeLowerText(item.employeeJobTitle) === "product manager";
+}
+
+function itemHasLine(item: PlanningCalendarPlanItem, lineName: string | null) {
   return sameLine(item.lineName, lineName);
+}
+
+function itemReportsToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext) {
+  return viewer.directReportHrIds.has(normalizeHrId(item.employeeHrId));
 }
 
 const PEDIA_LINE = "Pedia";
@@ -123,24 +137,47 @@ export type CalendarViewerContext = {
   hrId: string;
   role: string | null;
   lineName: string | null;
+  // Normalized (normalizeHrIdForAccess) HR_IDs of employees whose managerHrId
+  // resolves to this viewer — i.e. who reports to them. Only District/Regional
+  // Manager rules currently use this; computed for every viewer regardless since
+  // it's a cheap filter over the already-loaded directory.
+  directReportHrIds: ReadonlySet<string>;
 };
 
-// Role/line-scoped visibility (owner decision 2026-07-20 — supersedes the unconditional
-// cross-line/cross-hierarchy visibility from 2026-07-19, which was itself a same-line/
-// hierarchy fence removal; this is a fresh, more specific rule set, not a plain revert):
-//   - Marketing Manager / Training Manager: unrestricted, see every calendar-eligible plan.
+// Role/line-scoped visibility (owner decision 2026-07-20, refined twice same-day —
+// supersedes the unconditional cross-line/cross-hierarchy visibility from owner
+// decision 2026-07-19; this is a fresh, more specific rule set, not a plain revert):
+//   - CEO / Super Admin: unrestricted, see every calendar-eligible plan.
+//   - Training Manager: unrestricted, see every calendar-eligible plan.
+//   - Marketing Manager: Training Manager's plans + every Product Manager's and
+//     Group Product Manager's plans, company-wide (not line-scoped — Marketing
+//     Manager has no line of their own to scope to).
 //   - B-155 (Ahmed Sharaf): Pedia plans + Anti Infective plans + Training Manager's plans.
 //   - Group Product Manager on the Pedia line: Training Manager's plans + all Pedia plans.
 //   - National Sales Manager on the Pedia line: the Group Product Manager's plans + all Pedia plans.
 //   - National Sales Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
 //   - Product Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
-//   - Anyone else with calendar access (CEO, Super Admin, and any role/line not named above)
-//     keeps the unrestricted 2026-07-19 default — only the roles above were narrowed.
+//   - District Manager: Training Manager's plans + their OWN line's Product Manager's plans
+//     only — never other lines, never their own line's NSM, never other District Managers
+//     (including peers, and their own submission — this is a coordination view, not "my plan").
+//   - Regional Manager: same shape as District Manager (Training Manager + own-line Product
+//     Manager), PLUS their own line's Group Product Manager, PLUS the plans of the District
+//     Managers who report directly to them (not every District Manager on their line).
+//   - Anyone else with calendar access (any role/line not named above) keeps the
+//     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
   if (!isAllowedCalendarOwner(item)) return false;
 
   const role = normalizeLowerText(viewer.role);
-  if (role === "marketing manager" || role === "training manager") return true;
+  if (role === "ceo" || role === "super admin") return true;
+  if (role === "training manager") return true;
+  if (role === "marketing manager") {
+    // "product manager" is a substring of "group product manager", so this
+    // single check intentionally covers both titles — no exact-match helper
+    // needed here, unlike the District/Regional Manager rules below which must
+    // exclude Group Product Manager specifically.
+    return itemHasJobTitle(item, "training manager") || itemHasJobTitle(item, "product manager");
+  }
 
   if (hrIdsMatch(viewer.hrId, AHMED_SHARAF_HR_ID)) {
     return itemHasLine(item, PEDIA_LINE) || itemHasLine(item, ANTI_INFECTIVE_LINE) || itemHasJobTitle(item, "training manager");
@@ -157,6 +194,17 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
   }
   if (role === "product manager" && sameLine(viewer.lineName, ANTI_INFECTIVE_LINE)) {
     return itemHasJobTitle(item, "training manager") || itemHasLine(item, ANTI_INFECTIVE_LINE);
+  }
+
+  if (role === "district manager") {
+    return itemHasJobTitle(item, "training manager") || (itemIsExactlyProductManager(item) && itemHasLine(item, viewer.lineName));
+  }
+  if (role === "regional manager") {
+    return (
+      itemHasJobTitle(item, "training manager") ||
+      (itemHasLine(item, viewer.lineName) && (itemIsExactlyProductManager(item) || itemHasJobTitle(item, "group product manager"))) ||
+      itemReportsToViewer(item, viewer)
+    );
   }
 
   return true;
@@ -261,6 +309,7 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     const medicalRepEmployee = medicalRepHrId ? directoryByHrId.get(normalizeHrId(medicalRepHrId)) : undefined;
     const medicalRepDisplayName = medicalRepEmployee?.displayName || medicalRepName;
     const conflictKey = planningConflictKey(row.activity_date, lineName, medicalRepHrId ?? medicalRepName);
+    const employeeDisplayName = employee?.displayName || header.employee_name;
     const item: PlanningCalendarPlanItem = {
       activityTitle,
       activityType: row.activity_type,
@@ -270,7 +319,7 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       employeeHrId: header.employee_hr_id,
       employeeJobTitle: header.employee_job_title,
       employeeName: header.employee_name,
-      employeeDisplayName: employee?.displayName || header.employee_name,
+      employeeDisplayName,
       endDate: row.activity_date,
       id: `plan-${row.id}`,
       lineName,
@@ -285,7 +334,10 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
       startDate: row.activity_date,
       status: header.status,
       time: planSlotLabel(row.start_time, row.end_time),
-      title: planningCalendarTitle(header.employee_name, region, area, activityTitle),
+      // title is the rendered UI label (agenda list text + hover tooltip in
+      // planning-calendar.tsx) — must be nickname-aware like employeeDisplayName,
+      // not the raw legal name (see [[feedback-show-names-not-codes]]).
+      title: planningCalendarTitle(employeeDisplayName, region, area, activityTitle),
     };
     return [item];
   });
@@ -322,7 +374,12 @@ export async function getSharedPlanningCalendarWorkspace(
       loadHolidayItems(year, month, start, end),
     ]);
     const viewer = directoryByHrId.get(viewerHrId) ?? null;
-    const viewerContext: CalendarViewerContext = { hrId: viewerHrId, role: access.role, lineName: viewer?.lineName ?? null };
+    const directReportHrIds = new Set(
+      [...directoryByHrId.values()]
+        .filter((row) => hrIdsMatch(row.managerHrId, access.hrId))
+        .map((row) => normalizeHrId(row.hrId)),
+    );
+    const viewerContext: CalendarViewerContext = { hrId: viewerHrId, role: access.role, lineName: viewer?.lineName ?? null, directReportHrIds };
     const planItems = rawPlanItems.filter((item) => isPlanItemVisibleToViewer(item, viewerContext));
     const conflicts = buildPlanningCalendarConflicts(planItems);
     const warnedPlanItems = attachPlanningConflictWarnings(planItems, conflicts);

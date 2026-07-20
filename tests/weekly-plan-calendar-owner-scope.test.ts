@@ -3,18 +3,29 @@ import { strict as assert } from "node:assert";
 import { isPlanItemVisibleToViewer } from "../src/lib/weekly-planning/calendar-service.ts";
 import type { CalendarViewerContext } from "../src/lib/weekly-planning/calendar-service.ts";
 import type { PlanningCalendarPlanItem } from "../src/lib/weekly-planning/calendar.ts";
+import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
 
 /**
  * Coverage for the shared planning calendar's visibility gate: first
  * isAllowedCalendarOwner (is the plan's owner title calendar-eligible at all,
  * regardless of viewer), then the role/line-scoped viewer matrix (owner
- * decision 2026-07-20, superseding the unconditional 2026-07-19 visibility):
- *   - Marketing Manager / Training Manager: unrestricted.
+ * decision 2026-07-20, refined same-day, superseding the unconditional
+ * 2026-07-19 visibility):
+ *   - CEO / Super Admin: unrestricted (explicit, owner-confirmed).
+ *   - Training Manager: unrestricted.
+ *   - Marketing Manager: Training Manager + every Product Manager/Group Product
+ *     Manager, company-wide (not line-scoped).
  *   - B-155 (Ahmed Sharaf): Pedia + Anti Infective + Training Manager.
  *   - Group Product Manager (Pedia line): Training Manager + all Pedia.
  *   - National Sales Manager (Pedia line): the Group Product Manager + all Pedia.
  *   - National Sales Manager (Anti Infective line): Training Manager + all Anti Infective.
  *   - Product Manager (Anti Infective line): Training Manager + all Anti Infective.
+ *   - District Manager: Training Manager + their own line's Product Manager ONLY —
+ *     never Group Product Manager, never their own line's NSM, never other lines,
+ *     never a peer District Manager (including their own submission).
+ *   - Regional Manager: District Manager's scope + their own line's Group Product
+ *     Manager + the District Managers who report DIRECTLY to them (via
+ *     CalendarViewerContext.directReportHrIds, not every District Manager on the line).
  *   - Any other role/line combination keeps the unrestricted 2026-07-19 default.
  */
 
@@ -47,12 +58,13 @@ function planItem(input: Partial<PlanningCalendarPlanItem> & { employeeHrId: str
 }
 
 function viewer(input: Partial<CalendarViewerContext>): CalendarViewerContext {
-  return { hrId: "VIEWER-1", role: null, lineName: null, ...input };
+  return { hrId: "VIEWER-1", role: null, lineName: null, directReportHrIds: new Set(), ...input };
 }
 
 // An unrestricted viewer used to isolate owner-eligibility assertions from the
-// role/line-scoped matrix below — Marketing Manager sees every eligible item.
-const UNRESTRICTED_VIEWER = viewer({ hrId: "A-9", role: "Marketing Manager" });
+// role/line-scoped matrix below — Training Manager sees every eligible item.
+// (Marketing Manager is NOT used here — it is itself scoped, see below.)
+const UNRESTRICTED_VIEWER = viewer({ hrId: "A-7", role: "Training Manager" });
 
 export function runWeeklyPlanCalendarOwnerScopeTests() {
   // --- Title recognition (isAllowedCalendarOwner) ---
@@ -132,13 +144,33 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     "a CNS-line NSM (not named in the 2026-07-20 matrix) keeps the unrestricted default and sees a Derma-line plan",
   );
 
+  // --- CEO / Super Admin: explicit unrestricted (owner-confirmed 2026-07-20) ---
+
   const superAdminViewer = viewer({ hrId: "SA-1", role: "Super Admin" });
   const anyLineItem = planItem({ employeeHrId: "PM-2", employeeJobTitle: "Product Manager", lineName: null });
   assert.equal(
     isPlanItemVisibleToViewer(anyLineItem, superAdminViewer),
     true,
-    "Super Admin (not named in the matrix) keeps unrestricted visibility, including items with no lineName on record",
+    "Super Admin sees everything, including items with no lineName on record",
   );
+
+  const ceoViewer = viewer({ hrId: "AA", role: "CEO" });
+  assert.equal(isPlanItemVisibleToViewer(anyLineItem, ceoViewer), true, "CEO sees everything, including items with no lineName on record");
+
+  // --- Marketing Manager: Training Manager + Product Manager/Group Product
+  // Manager, company-wide (owner correction — narrower than the original
+  // 2026-07-20 "unrestricted" decision for this specific role) ---
+
+  const marketingManagerViewer = viewer({ hrId: "A-9", role: "Marketing Manager" });
+  const dermaPmItem = planItem({ employeeHrId: "PM-DERMA-1", employeeJobTitle: "Product Manager", lineName: "Derma" });
+  const dermaGpmItem = planItem({ employeeHrId: "GPM-DERMA-1", employeeJobTitle: "Group Product Manager", lineName: "Derma" });
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, marketingManagerViewer), true, "Marketing Manager sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(dermaPmItem, marketingManagerViewer), true, "Marketing Manager sees a Product Manager's plan on ANY line (not line-scoped)");
+  assert.equal(isPlanItemVisibleToViewer(dermaGpmItem, marketingManagerViewer), true, "Marketing Manager sees a Group Product Manager's plan on ANY line");
+  const nsmItemForMm = planItem({ employeeHrId: "NSM-1", employeeJobTitle: "National Sales Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(nsmItemForMm, marketingManagerViewer), false, "Marketing Manager does NOT see an NSM's plan — not in scope");
+  const dsmItemForMm = planItem({ employeeHrId: "DSM-MM-1", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(dsmItemForMm, marketingManagerViewer), false, "Marketing Manager does NOT see a District Manager's plan — not in scope");
 
   // --- Role/line-scoped matrix (owner decision 2026-07-20) ---
 
@@ -190,4 +222,54 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     false,
     "the B-155 exception matches case-insensitively on hrId, same as normalizeHrId elsewhere",
   );
+
+  // --- District Manager: Training Manager + own-line Product Manager ONLY ---
+  // (never Group Product Manager, never their own line's NSM, never other lines,
+  // never a peer District Manager — including their own submission, which does not
+  // match either grant; this is a coordination view, not "my own plan".)
+
+  const pediaPmTitledItem = planItem({ employeeHrId: "PM-PEDIA-1", employeeJobTitle: "Product Manager", lineName: "Pedia" });
+  const antiInfectivePmTitledItem = planItem({ employeeHrId: "PM-AI-1", employeeJobTitle: "Product Manager", lineName: "Anti Infective" });
+  const pediaNsmOwnedItem = planItem({ employeeHrId: "A-12", employeeJobTitle: "National Sales Manager", lineName: "Pedia" });
+
+  const pediaDsmViewer = viewer({ hrId: "DSM-PEDIA-1", role: "District Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, pediaDsmViewer), true, "Pedia District Manager sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaPmTitledItem, pediaDsmViewer), true, "Pedia District Manager sees their own line's Product Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaGpmItem, pediaDsmViewer), false, "Pedia District Manager does NOT see the Group Product Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaNsmOwnedItem, pediaDsmViewer), false, "Pedia District Manager does NOT see their own line's NSM's plan");
+  assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, pediaDsmViewer), false, "Pedia District Manager does NOT see an Anti Infective-line plan, even a Product Manager's");
+  const peerDsmItem = planItem({ employeeHrId: "DSM-PEDIA-2", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(peerDsmItem, pediaDsmViewer), false, "Pedia District Manager does NOT see a peer District Manager's plan, even on the same line");
+  const ownDsmItem = planItem({ employeeHrId: "DSM-PEDIA-1", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  assert.equal(
+    isPlanItemVisibleToViewer(ownDsmItem, pediaDsmViewer),
+    false,
+    "a District Manager does not see their own plan on this shared calendar either — matches neither grant; this is a coordination view, not a personal one",
+  );
+
+  // --- Regional Manager: District Manager's scope + own-line Group Product Manager
+  // + the District Managers who report DIRECTLY to them (not every District Manager
+  // on their line) ---
+
+  const reportingDsmHrId = "DSM-PEDIA-3";
+  const nonReportingDsmHrId = "DSM-PEDIA-4";
+  const regionalManagerViewer = viewer({
+    hrId: "RM-PEDIA-1",
+    role: "Regional Manager",
+    lineName: "Pedia",
+    directReportHrIds: new Set([normalizeHrIdForAccess(reportingDsmHrId) ?? ""]),
+  });
+  assert.equal(isPlanItemVisibleToViewer(trainingManagerItem, regionalManagerViewer), true, "Regional Manager sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaPmTitledItem, regionalManagerViewer), true, "Regional Manager sees their own line's Product Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaGpmItem, regionalManagerViewer), true, "Regional Manager sees their own line's Group Product Manager's plan (unlike District Manager)");
+  assert.equal(isPlanItemVisibleToViewer(pediaNsmOwnedItem, regionalManagerViewer), false, "Regional Manager does NOT see their own line's NSM's plan");
+  const reportingDsmItem = planItem({ employeeHrId: reportingDsmHrId, employeeJobTitle: "District Manager", lineName: "Pedia" });
+  assert.equal(isPlanItemVisibleToViewer(reportingDsmItem, regionalManagerViewer), true, "Regional Manager sees the plan of a District Manager who reports directly to them");
+  const nonReportingDsmItem = planItem({ employeeHrId: nonReportingDsmHrId, employeeJobTitle: "District Manager", lineName: "Pedia" });
+  assert.equal(
+    isPlanItemVisibleToViewer(nonReportingDsmItem, regionalManagerViewer),
+    false,
+    "Regional Manager does NOT see a same-line District Manager who does not report to them",
+  );
+  assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, regionalManagerViewer), false, "Regional Manager does NOT see an Anti Infective-line plan");
 }

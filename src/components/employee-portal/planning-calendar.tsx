@@ -82,12 +82,12 @@ function uniqueSorted(values: Array<string | null | undefined>) {
 
 function planSearchText(item: PlanningCalendarPlanItem) {
   return [
-    item.employeeName,
+    item.employeeDisplayName,
     item.employeeHrId,
     item.activityTitle,
     item.region,
     item.area,
-    item.medicalRepName,
+    item.medicalRepDisplayName || item.medicalRepName,
     item.lineName,
     item.status,
   ]
