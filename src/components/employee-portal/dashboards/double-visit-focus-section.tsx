@@ -90,14 +90,29 @@ function CoverageRing({ pct }: { pct: number }) {
   );
 }
 
-function ScopeFocusPanel({ scope, reportHref }: { scope: DoubleVisitScopeFocus; reportHref: string }) {
+function ScopeFocusPanel({
+  periodFrom,
+  periodTo,
+  scope,
+  reportHref,
+}: {
+  periodFrom: string;
+  periodTo: string;
+  scope: DoubleVisitScopeFocus;
+  reportHref: string;
+}) {
   return (
     <div className="overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
       <div className="relative flex items-center justify-between bg-[#0b1f3a] px-4 py-3 sm:px-6 sm:py-4">
         <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-[#f47b20]/60 via-[#f47b20]/20 to-transparent" />
         <div className="flex items-center gap-3">
           <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
-          <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Scope Focus</h2>
+          <div>
+            <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-white">Scope Focus</h2>
+            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/40">
+              {formatDate(periodFrom)} – {formatDate(periodTo)}
+            </p>
+          </div>
         </div>
         <Target className="h-4 w-4 text-[#f47b20]/60" />
       </div>
@@ -229,7 +244,14 @@ export function DoubleVisitFocusSection({ focus }: { focus: DoubleVisitPortalFoc
   return (
     <>
       <DvTrendBlock reportHref={focus.reportHref} trend={focus.trend} />
-      {focus.scope && <ScopeFocusPanel reportHref={focus.reportHref} scope={focus.scope} />}
+      {focus.scope && (
+        <ScopeFocusPanel
+          periodFrom={focus.periodFrom}
+          periodTo={focus.periodTo}
+          reportHref={focus.reportHref}
+          scope={focus.scope}
+        />
+      )}
       <ProbationWatchlistBlock
         probation={focus.probation}
         probationTruncated={focus.probationTruncated}

@@ -313,6 +313,10 @@ export type DoubleVisitScopeFocus = {
 };
 
 export type DoubleVisitPortalFocus = {
+  /** Inclusive start of the window trend/scope/probation-DV-count are computed over (YYYY-MM-DD). */
+  periodFrom: string;
+  /** Inclusive end of that window (YYYY-MM-DD), i.e. today. */
+  periodTo: string;
   probation: DoubleVisitFocusProbationEntry[];
   probationTruncated: boolean;
   reportHref: string;

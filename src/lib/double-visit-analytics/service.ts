@@ -1450,9 +1450,10 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
 
   const buckets = focusMonthBuckets(FOCUS_TREND_START_MONTH);
   const trendStart = `${buckets[0].month}-01`;
+  const periodTo = todayIso();
 
   const [allDvRows, probationRows] = await Promise.all([
-    getLiveDoubleVisitRows(trendStart, todayIso(), employees),
+    getLiveDoubleVisitRows(trendStart, periodTo, employees),
     getProbationRows(access).catch(() => []),
   ]);
   // The probation watchlist must live inside the SAME double-visit scope as the coverage roster
@@ -1551,6 +1552,8 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     .sort((a, b) => a.daysRemaining - b.daysRemaining);
 
   return {
+    periodFrom: trendStart,
+    periodTo,
     probation: probationAll.slice(0, FOCUS_PROBATION_DISPLAY_LIMIT),
     probationTruncated: probationAll.length > FOCUS_PROBATION_DISPLAY_LIMIT,
     reportHref: "/employee-portals/double-visit-report",
