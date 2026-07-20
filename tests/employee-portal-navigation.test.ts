@@ -237,6 +237,20 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(trainingManagerForDirectOrders.showDirectOrdersTab, false, "Direct Orders must not show for a role outside the module's requester set");
   assert.equal(trainingManagerForDirectOrders.showDirectOrdersApprovalsTab, false, "Direct Orders Approvals must not show for a role that never approves");
 
+  // Direct Orders is hidden from the CNS line entirely (owner decision, 2026-07-20) --
+  // even a role that would otherwise qualify never sees any of the 3 tabs on CNS.
+  const cnsDistrictManager = resolveEmployeePortalNavVisibility("District Manager", undefined, "CNS");
+  const cnsRegionalManager = resolveEmployeePortalNavVisibility("Regional Manager", undefined, "CNS");
+  const cnsNationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager", undefined, "CNS");
+  assert.equal(cnsDistrictManager.showDirectOrdersTab, false, "CNS District Manager must not see Direct Orders");
+  assert.equal(cnsDistrictManager.showDirectOrdersReportTab, false, "CNS District Manager must not see Direct Orders Report");
+  assert.equal(cnsRegionalManager.showDirectOrdersTab, false, "CNS Regional Manager must not see Direct Orders");
+  assert.equal(cnsRegionalManager.showDirectOrdersApprovalsTab, false, "CNS Regional Manager must not see Direct Orders Approvals even though RM is normally a person-rung approver");
+  assert.equal(cnsNationalSalesManager.showDirectOrdersApprovalsTab, false, "CNS National Sales Manager must not see Direct Orders Approvals");
+  // A non-CNS line for the same roles must be unaffected (the exclusion is CNS-specific).
+  const pediaDistrictManager = resolveEmployeePortalNavVisibility("District Manager", undefined, "Pedia");
+  assert.equal(pediaDistrictManager.showDirectOrdersTab, true, "Pedia District Manager keeps Direct Orders -- the CNS exclusion must not leak to other lines");
+
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
   assert.equal(marketingManagerDefault.showDirectOrdersTab, false, "Marketing Manager is NOT a Direct Orders requester role");
   // MM mirrors GPM on every nav surface EXCEPT five intentional differences:
