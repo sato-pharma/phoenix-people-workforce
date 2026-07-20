@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Braces, ChevronLeft, ChevronRight, Database, Download, Info, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, SlidersHorizontal } from "lucide-react";
 
 import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
@@ -10,40 +10,16 @@ import type {
   CrmMasterAmpm,
   CrmMasterColumn,
   CrmMasterData,
-  CrmMasterDataset,
   CrmMasterMappingStatus,
   CrmMasterRow,
 } from "@/lib/crm/master";
-import type { VisitsSyncRun } from "@/lib/visits-report/types";
-
-const DATASET_TABS: Array<{ id: CrmMasterDataset; label: string }> = [
-  { id: "visits", label: "Visits" },
-  { id: "checkins", label: "Check-ins" },
-  { id: "double_visits", label: "Double Visits" },
-  { id: "triple_visits", label: "Triple Visits" },
-  { id: "vacations", label: "Vacations" },
-  { id: "regular_no_checkin", label: "Regular · No Check-in" },
-  { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
-  { id: "crm_issues", label: "CRM Issues" },
-];
+// Value import from the dependency-free sibling file, NOT master.ts itself — master.ts pulls in
+// the Supabase admin client + employee-directory/PDF chain, which must never reach this "use
+// client" component's bundle (see CRM_MASTER_DATASETS' own doc comment).
+import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
 function datasetLabel(dataset: CrmMasterDataset): string {
-  return DATASET_TABS.find((tab) => tab.id === dataset)?.label ?? dataset;
-}
-
-function formatCairo(iso: string | null): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(date);
+  return CRM_MASTER_DATASETS.find((tab) => tab.id === dataset)?.label ?? dataset;
 }
 
 /** Date only, e.g. "11 Jul 2026" (UTC — a plain calendar date has no time-of-day). */
@@ -160,12 +136,9 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const [showAdvanced, setShowAdvanced] = useState(advancedActive);
   const [exportBusy, setExportBusy] = useState(false);
 
-  // Tab / navigation responsiveness: a pending transition dims the table + highlights the tab you
-  // clicked immediately, so switching tabs never feels dead while the server round-trips. The
-  // optimistic dataset is trusted only while the navigation is in flight; data.dataset is the truth.
+  // Navigation responsiveness: a pending transition dims the table while filters/pagination/page
+  // size round-trip to the server (tab switching itself is now CrmTabBar's own concern).
   const [isPending, startTransition] = useTransition();
-  const [pendingDataset, setPendingDataset] = useState<CrmMasterDataset | null>(null);
-  const activeDataset = isPending && pendingDataset ? pendingDataset : data.dataset;
 
   // Synced top horizontal scrollbar: a thin bar directly above the table whose scroll position
   // mirrors the table body's, so wide columns can be panned without scrolling to the bottom.
@@ -218,7 +191,6 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const totalPages = Math.max(1, Math.ceil(data.totalCount / data.pageSize));
   const rangeStart = data.totalCount === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
   const rangeEnd = Math.min(data.page * data.pageSize, data.totalCount);
-  const lastSuccess = data.latestSyncRuns.find((run: VisitsSyncRun) => run.status === "success") ?? null;
 
   function navigate(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -227,13 +199,6 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       else params.set(key, value);
     }
     startTransition(() => router.push(`${pathname}?${params.toString()}`));
-  }
-
-  function switchDataset(dataset: CrmMasterDataset) {
-    if (dataset === data.dataset) return;
-    setPendingDataset(dataset); // highlight the clicked tab instantly, before the server responds
-    // Reset page + filters that are dataset-specific; keep the date range + agent + line + hiring.
-    navigate({ dataset, page: null, search: null, ampm: null, visitType: null, mappingStatus: null, minDuration: null, halfDaysOnly: null });
   }
 
   function applyFilters() {
@@ -326,79 +291,8 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     }
   }
 
-  // CRM Issues: resolve an unmapped agent via the existing resolve-identity flow (writes the
-  // crm_id → hr_id override, or marks resigned). Works on whichever DB the app is connected to.
-  async function resolveIdentity(
-    crmId: number,
-    agentName: string | null,
-    action: "mapped" | "resigned",
-    mappedHrId: string | null,
-  ) {
-    try {
-      const response = await fetch("/api/admin/visits-report/resolve-identity", {
-        body: JSON.stringify({ action, crmId, crmName: agentName, mappedHrId }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json()) as { message?: string; success?: boolean };
-      if (!response.ok || !payload.success) {
-        window.alert(payload.message ?? "Could not resolve this CRM identity.");
-        return;
-      }
-      router.refresh();
-    } catch {
-      window.alert("Could not resolve this CRM identity.");
-    }
-  }
-
-  function onMapAgent(crmId: number, agentName: string | null) {
-    const hrId = window.prompt(`Map "${agentName ?? `CRM id ${crmId}`}" to which HR ID?  (e.g. CN-0005)`);
-    if (!hrId || !hrId.trim()) return;
-    void resolveIdentity(crmId, agentName, "mapped", hrId.trim());
-  }
-
-  function onMarkResigned(crmId: number, agentName: string | null) {
-    if (!window.confirm(`Mark "${agentName ?? `CRM id ${crmId}`}" as resigned? Their CRM records will be hidden.`)) return;
-    void resolveIdentity(crmId, agentName, "resigned", null);
-  }
-
-  const datasets = DATASET_TABS;
-
   return (
     <div className="space-y-4">
-      {/* Dataset toggle + freshness */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex flex-wrap overflow-hidden border border-slate-200">
-          {datasets.map((ds) => {
-            const isActive = ds.id === activeDataset;
-            const isLoadingTab = isPending && ds.id === pendingDataset;
-            return (
-              <button
-                className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold transition ${
-                  isActive ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                key={ds.id}
-                onClick={() => switchDataset(ds.id)}
-                type="button"
-              >
-                {isLoadingTab ? (
-                  <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Database aria-hidden="true" className="h-3.5 w-3.5" />
-                )}
-                {ds.label}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-xs text-slate-500">
-          Last successful sync:{" "}
-          <span className="font-semibold text-slate-700">{formatCairo(lastSuccess?.completedAt ?? null)}</span>
-          {lastSuccess ? <span className="text-slate-400"> (Cairo)</span> : null}
-          {!data.configured ? <span className="ml-2 text-amber-700">· iReports360 not configured</span> : null}
-        </p>
-      </div>
-
       {/* Basic filters */}
       <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white p-4">
         <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -702,11 +596,8 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
                 {data.rows.map((row: CrmMasterRow) => (
                   <RowGroup
                     columns={data.columns}
-                    dataset={data.dataset}
                     isOpen={expanded.has(row.id)}
                     key={row.id}
-                    onMap={onMapAgent}
-                    onResign={onMarkResigned}
                     onToggle={() => toggleRaw(row.id)}
                     row={row}
                   />
@@ -723,24 +614,15 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
 function RowGroup({
   columns,
-  dataset,
   isOpen,
-  onMap,
-  onResign,
   onToggle,
   row,
 }: {
   columns: readonly CrmMasterColumn[];
-  dataset: CrmMasterDataset;
   isOpen: boolean;
-  onMap: (crmId: number, agentName: string | null) => void;
-  onResign: (crmId: number, agentName: string | null) => void;
   onToggle: () => void;
   row: CrmMasterRow;
 }) {
-  const crmId = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
-  const agentName = typeof row.agent_name === "string" ? row.agent_name : null;
-  const showFix = dataset === "crm_issues" && crmId != null;
   // Vacations tab: tint rows that are a national/official holiday (the service sets `national_holiday`).
   const isNationalHoliday = typeof row.national_holiday === "string" && row.national_holiday.length > 0;
   return (
@@ -761,28 +643,6 @@ function RowGroup({
         ))}
         <td className="whitespace-nowrap px-3 py-2 text-right">
           <div className="inline-flex items-center gap-1">
-            {showFix ? (
-              <>
-                <button
-                  className="border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100"
-                  onClick={() => {
-                    if (crmId != null) onMap(crmId, agentName);
-                  }}
-                  type="button"
-                >
-                  Map…
-                </button>
-                <button
-                  className="border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500 transition hover:bg-slate-50"
-                  onClick={() => {
-                    if (crmId != null) onResign(crmId, agentName);
-                  }}
-                  type="button"
-                >
-                  Resigned
-                </button>
-              </>
-            ) : null}
             <button
               aria-expanded={isOpen}
               className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${

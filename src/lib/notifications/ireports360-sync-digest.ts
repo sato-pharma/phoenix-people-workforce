@@ -91,14 +91,14 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
     lines.push(`Check-ins fetched: ${input.result.checkinsFetched}`);
     lines.push(`Check-ins upserted: ${input.result.checkinsUpserted}`);
     lines.push("");
-    lines.push("Details → /admin/visits-report");
+    lines.push("Details → /admin/crm");
   } else {
     lines.push(`❌ iReports360 CRM Sync FAILED — ${label}`);
     lines.push(`Window: ${input.dateFrom} → ${input.dateTo}`);
     lines.push("");
     lines.push(`Error: ${input.errorMessage}`.slice(0, 500));
     lines.push("");
-    lines.push("Details → /admin/visits-report");
+    lines.push("Details → /admin/crm");
   }
   return lines.join("\n");
 }
@@ -145,7 +145,7 @@ export async function notifyIReports360SyncResult(input: IReports360SyncNotifyIn
     await Promise.all(
       recipients.map(async (recipient) => {
         await createSystemNotification({
-          actionUrl: "/admin/visits-report",
+          actionUrl: "/admin/crm",
           actorId: "ireports360-sync-cron",
           channels: ["in_app", "telegram"],
           eventType: `ireports360_sync_${input.status}`,

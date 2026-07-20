@@ -195,9 +195,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/data-backup/download/:jobId", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/exports/table", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Company-wide unscoped iReports360 data sync utility; checks access.role === "Super Admin"
-  // directly rather than the permission matrix.
+  // directly rather than the permission matrix. Both routes now back the CRM hub (/admin/crm)
+  // directly — the curated visits-report/export route was retired when its page merged into the
+  // hub's own (superset) master-export.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/visits-report/backfill", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/visits-report/export", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/visits-report/resolve-identity", permission: null, guard: "domain-helper", csrfRequired: true }),
   // CRM master table XLSX export: returns all rows for the current dataset+filters. Super-Admin-gated
   // inline (same as the /admin/crm page), so guarded by the domain helper, not the permission matrix.

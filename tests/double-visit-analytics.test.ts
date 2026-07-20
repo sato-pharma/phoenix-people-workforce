@@ -557,13 +557,14 @@ export function runDoubleVisitAnalyticsTests() {
   assert.doesNotMatch(integrity, /Recovered Via Chain/i, "recovered-chain audit UI must not live on the Data Integrity page");
   assert.doesNotMatch(integrity, /recoveredChains/, "the Integrity workspace must not read recoveredChains any more");
 
-  // The Visits Report page + workspace now own the Recovered Chains audit tab.
-  const visitsReportPage = readFileSync("app/(admin)/admin/visits-report/page.tsx", "utf8");
-  assert.match(visitsReportPage, /getDoubleVisitRecoveredChains/, "the Visits Report page loads recovered chains");
-  assert.match(visitsReportPage, /tab === "recovered"/, "the Visits Report page recognizes the recovered tab");
+  // The CRM hub page + its recovered-chains panel now own the Recovered Chains audit tab
+  // (moved from the former Visits Report page when it merged into the hub).
+  const crmHubPage = readFileSync("app/(admin)/admin/crm/page.tsx", "utf8");
+  assert.match(crmHubPage, /getDoubleVisitRecoveredChains/, "the CRM hub page loads recovered chains");
+  assert.match(crmHubPage, /view === "recovered"/, "the CRM hub page recognizes the recovered view");
 
-  const visitsReportWorkspace = readFileSync("src/components/visits-report/visits-report-workspace.tsx", "utf8");
-  assert.match(visitsReportWorkspace, /Recovered Chains/, "the Visits Report workspace has a Recovered Chains tab");
-  assert.match(visitsReportWorkspace, /RecoveredChainsPanel/, "the Visits Report workspace renders the recovered-chains panel");
-  assert.match(visitsReportWorkspace, /DoubleVisitRecoveredChain/, "the Visits Report workspace types against the shared DoubleVisitRecoveredChain shape");
+  const recoveredChainsPanel = readFileSync("src/components/crm/crm-recovered-chains-panel.tsx", "utf8");
+  assert.match(recoveredChainsPanel, /Recovered via chain/, "the CRM recovered-chains panel has its recovered-chain audit copy");
+  assert.match(recoveredChainsPanel, /CrmRecoveredChainsPanel/, "the panel component is named CrmRecoveredChainsPanel");
+  assert.match(recoveredChainsPanel, /DoubleVisitRecoveredChain/, "the panel types against the shared DoubleVisitRecoveredChain shape");
 }

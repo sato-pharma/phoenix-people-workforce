@@ -1,15 +1,27 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileSpreadsheet, MapPinned, TriangleAlert } from "lucide-react";
+import { MapPinned, TriangleAlert } from "lucide-react";
 
 import { CrmMasterTable } from "@/components/crm/crm-master-table";
+import { CrmSyncStatusPanel } from "@/components/crm/crm-sync-status-panel";
+import { CrmTabBar, type CrmActiveTab } from "@/components/crm/crm-tab-bar";
+import { CrmUnmappedIdentitiesPanel } from "@/components/crm/crm-unmapped-identities-panel";
+import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
+import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
+import { isIReports360Configured } from "@/lib/crm/config";
+import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
+import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+const HUB_PATHNAME = "/admin/crm";
 
 function dateParam(value: string | string[] | undefined) {
   const text = typeof value === "string" ? value.slice(0, 10) : "";
@@ -25,9 +37,14 @@ function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-// Deeper, same-data tools over the CRM mirror — one click from the master table.
+function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | null {
+  return value === "unmapped" || value === "recovered" ? value : null;
+}
+
+// Deeper, same-data tools over the CRM mirror — one click from the master table. Unmapped-identity
+// resolution and the recovered-chains audit live on this same page now (see the tab bar below), not
+// as separate routes — only the two analyses that need their own dedicated page stay linked out.
 const crmTools = [
-  { description: "Curated visit log with GPS-correlation & unmapped-agent tools", href: "/admin/visits-report", icon: FileSpreadsheet, label: "Visits Report" },
   { description: "Visits ↔ GPS check-in correlation, save-lag & impossible-travel flags", href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity" },
   { description: "Data-integrity checks for double-visit records", href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Data Integrity" },
 ] as const;
@@ -45,44 +62,72 @@ export default async function CrmHubPage({
   }
 
   const params = await searchParams;
-  // getCrmMasterData normalizes any unknown value back to "visits".
-  const dataset = (typeof params.dataset === "string" ? params.dataset : "visits") as CrmMasterDataset;
-  const dateFrom = dateParam(params.dateFrom);
-  const dateTo = dateParam(params.dateTo);
-  const search = stringParam(params.search);
-  const page = intParam(params.page, 1);
-  const pageSize = intParam(params.pageSize, 50);
-  const agentHrId = stringParam(params.agentHrId);
-  const ampm: CrmMasterAmpm | null = params.ampm === "AM" || params.ampm === "PM" ? params.ampm : null;
-  const visitType = stringParam(params.visitType);
-  const mappingStatus: CrmMasterMappingStatus | null =
-    params.mappingStatus === "agent_mapped" || params.mappingStatus === "agent_unmapped" ? params.mappingStatus : null;
-  const line = stringParam(params.line);
-  const hireFrom = dateParam(params.hireFrom);
-  const hireTo = dateParam(params.hireTo);
-  const minDuration = typeof params.minDuration === "string" && Number.isFinite(Number(params.minDuration)) ? Number(params.minDuration) : null;
-  const halfDaysOnly = params.halfDaysOnly === "1";
+  const view = viewParam(params.view);
+  const today = todayIso();
+  const dateFrom = dateParam(params.dateFrom) ?? addDaysIso(today, -30);
+  const dateTo = dateParam(params.dateTo) ?? today;
 
-  const data = await getCrmMasterData({
-    agentHrId,
-    ampm,
-    dataset,
-    dateFrom,
-    dateTo,
-    halfDaysOnly,
-    hireFrom,
-    hireTo,
-    line,
-    mappingStatus,
-    minDuration,
-    page,
-    pageSize,
-    search,
-    visitType,
-  });
+  let activeTab: CrmActiveTab;
+  let syncPanel: { configured: boolean; latestSyncRuns: VisitsSyncRun[] };
+  let masterTable: ReactNode = null;
+  let derivedView: ReactNode = null;
 
-  // Remount the client table when any URL-derived input changes so its filter inputs re-seed.
-  const tableKey = `${dataset}:${dateFrom}:${dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}:${line}:${hireFrom}:${hireTo}:${minDuration}:${halfDaysOnly}`;
+  if (view === "unmapped") {
+    activeTab = "unmapped";
+    const [identities, latestSyncRuns] = await Promise.all([getUnmappedCrmIdentities(), getLatestVisitsSyncRuns()]);
+    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    derivedView = <CrmUnmappedIdentitiesPanel identities={identities} pathname={HUB_PATHNAME} />;
+  } else if (view === "recovered") {
+    activeTab = "recovered";
+    const [recoveredChains, latestSyncRuns] = await Promise.all([
+      getDoubleVisitRecoveredChains({ access, dateFrom, dateTo }),
+      getLatestVisitsSyncRuns(),
+    ]);
+    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    derivedView = <CrmRecoveredChainsPanel chains={recoveredChains} />;
+  } else {
+    // getCrmMasterData normalizes any unknown value back to "visits".
+    const dataset = (typeof params.dataset === "string" ? params.dataset : "visits") as CrmMasterDataset;
+    const search = stringParam(params.search);
+    const page = intParam(params.page, 1);
+    const pageSize = intParam(params.pageSize, 50);
+    const agentHrId = stringParam(params.agentHrId);
+    const ampm: CrmMasterAmpm | null = params.ampm === "AM" || params.ampm === "PM" ? params.ampm : null;
+    const visitType = stringParam(params.visitType);
+    const mappingStatus: CrmMasterMappingStatus | null =
+      params.mappingStatus === "agent_mapped" || params.mappingStatus === "agent_unmapped" ? params.mappingStatus : null;
+    const line = stringParam(params.line);
+    const hireFrom = dateParam(params.hireFrom);
+    const hireTo = dateParam(params.hireTo);
+    const minDuration = typeof params.minDuration === "string" && Number.isFinite(Number(params.minDuration)) ? Number(params.minDuration) : null;
+    const halfDaysOnly = params.halfDaysOnly === "1";
+
+    const data = await getCrmMasterData({
+      agentHrId,
+      ampm,
+      dataset,
+      // The raw master table itself allows a fully open date range (no default) — only the
+      // sync panel / derived views below need a concrete default window.
+      dateFrom: dateParam(params.dateFrom),
+      dateTo: dateParam(params.dateTo),
+      halfDaysOnly,
+      hireFrom,
+      hireTo,
+      line,
+      mappingStatus,
+      minDuration,
+      page,
+      pageSize,
+      search,
+      visitType,
+    });
+
+    activeTab = data.dataset;
+    syncPanel = { configured: data.configured, latestSyncRuns: data.latestSyncRuns };
+    // Remount the client table when any URL-derived input changes so its filter inputs re-seed.
+    const tableKey = `${dataset}:${data.dateFrom}:${data.dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}:${line}:${hireFrom}:${hireTo}:${minDuration}:${halfDaysOnly}`;
+    masterTable = <CrmMasterTable data={data} key={tableKey} />;
+  }
 
   return (
     <div className="space-y-5">
@@ -113,7 +158,12 @@ export default async function CrmHubPage({
         </div>
       </div>
 
-      <CrmMasterTable key={tableKey} data={data} />
+      <CrmSyncStatusPanel configured={syncPanel.configured} dateFrom={dateFrom} dateTo={dateTo} latestSyncRuns={syncPanel.latestSyncRuns} />
+
+      <CrmTabBar active={activeTab} />
+
+      {masterTable}
+      {derivedView}
     </div>
   );
 }
