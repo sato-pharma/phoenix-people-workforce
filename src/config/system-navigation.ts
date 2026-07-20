@@ -390,6 +390,29 @@ const adminNavigationSectionSeeds = [
     label: "Payroll Management",
   },
 
+  // Automated Payroll — the HR-owned stepped monthly-salary wizard (Part 1 / Part 2 /
+  // publish). The wizard is Super Admin (HR) only; the Finance tab is a read/export-only
+  // locked-sheet download for CEO / Financial Advisor / Finance Manager. Role-gated per
+  // item; server routes + pages re-enforce (sidebar visibility is UX, never the boundary).
+  {
+    id: "automated-payroll",
+    items: [
+      {
+        href: "/admin/automated-payroll",
+        icon: FileSpreadsheet,
+        label: "Automated Payroll",
+        roles: ["Super Admin"],
+      },
+      {
+        href: "/admin/automated-payroll/finance",
+        icon: ScrollText,
+        label: "Payroll — Finance",
+        roles: ["CEO", "Financial Advisor", "Finance Manager", "Super Admin"],
+      },
+    ],
+    label: "Automated Payroll",
+  },
+
   // ── Tier 5: Field operations ──────────────────────────────────────────────────
   // Items ordered: overview → active queue → data entry → historical → config
   // Collapsed to a single standalone sidebar button that opens the Outstation
