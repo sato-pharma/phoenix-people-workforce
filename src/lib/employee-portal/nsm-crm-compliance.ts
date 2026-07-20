@@ -1,13 +1,22 @@
-import { hasRealVendorTime, queryVisits } from "@/lib/crm/reads";
+import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
+import { queryCheckins, queryVisits, resolveVisitTime, type VisitTimeSource } from "@/lib/crm/reads";
 
-// NSM "first CRM visit" compliance for the noon (12 PM Cairo) iReports360 sync:
-// who on the NSM's line has / hasn't submitted a real field visit today, plus the
-// earliest few submitters ("early birds"). Read-only; the caller supplies the
-// line-scoped rosters (already permission-scoped), so this never widens access.
+// NSM "first CRM visit" compliance for the recurring iReports360 sync (3x/day plus a live
+// 8:30 AM-12:01 PM morning window — see the ireports360-visits-* cron routes): who on the NSM's
+// line has / hasn't submitted a real field visit today, plus the earliest few submitters
+// ("early birds"). Read-only; the caller supplies the line-scoped rosters (already
+// permission-scoped), so this never widens access.
 
 export type CrmPerson = { hrId: string; name: string };
 
-export type CrmEarlyBird = { hrId: string; name: string; role: "Med Rep" | "DSM"; at: string };
+export type CrmEarlyBird = {
+  hrId: string;
+  name: string;
+  role: "Med Rep" | "DSM";
+  at: string;
+  /** GPS check-in time vs. self-reported save time — see resolveVisitTime (crm/reads.ts). */
+  source: VisitTimeSource;
+};
 
 export type NsmCrmComplianceData = {
   /** Africa/Cairo calendar day the check is computed for (YYYY-MM-DD). */
@@ -20,15 +29,23 @@ export type NsmCrmComplianceData = {
   dsms: { total: number; submitted: number; missing: CrmPerson[] };
   /** Earliest submitters across the line roster, soonest first (max 3). */
   earlyBirds: CrmEarlyBird[];
+  /** True only when the underlying fetch itself failed (see nsmCrmComplianceUnavailable) — lets
+   * the UI tell a real outage apart from the ordinary "nothing mirrored yet today" state, which
+   * looks identical otherwise (synced: false in both). Absent/false in the normal paths below. */
+  error?: boolean;
 };
 
 type VisitRow = {
   agent_hr_id: string | null;
+  agent_crm_id: number | null;
+  contact_crm_id: number | null;
   double_hr_id: string | null;
   crm_save_date: string | null;
   synced_at: string | null;
   visit_type: number | null;
 };
+
+type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string | null };
 
 // Collapse HR IDs to a hyphen-insensitive, case-insensitive key so canonical
 // ("B100") and stored ("B-100") forms always match (guards the hr-id hyphen trap).
@@ -50,8 +67,33 @@ async function fetchVisitsForDate(date: string): Promise<VisitRow[]> {
   return queryVisits<VisitRow>({
     dateFrom: date,
     dateTo: date,
-    columns: "agent_hr_id, double_hr_id, crm_save_date, synced_at, visit_type",
+    columns: "agent_hr_id, agent_crm_id, contact_crm_id, double_hr_id, crm_save_date, synced_at, visit_type",
   });
+}
+
+async function fetchCheckinsForDate(date: string): Promise<CheckinRow[]> {
+  // Same single-day scope as fetchVisitsForDate, so GPS correlation below never reaches outside
+  // the day being checked. Cheap: one day, not the Visits Report's multi-week window.
+  return queryCheckins<CheckinRow>({
+    dateFrom: date,
+    dateTo: date,
+    columns: "agent_crm_id, contact_crm_id, check_date",
+  });
+}
+
+/** Built by the caller's catch handler when getNsmCrmCompliance itself throws (a real fetch
+ * failure), so the UI can distinguish that from the ordinary "not synced yet" state instead of
+ * both collapsing to the same silent-looking empty board. */
+export function nsmCrmComplianceUnavailable(input: { reps: CrmPerson[]; dsms: CrmPerson[]; date?: string }): NsmCrmComplianceData {
+  return {
+    date: input.date ?? cairoToday(),
+    lastSyncAt: null,
+    synced: false,
+    error: true,
+    reps: { total: input.reps.length, submitted: 0, missing: [...input.reps] },
+    dsms: { total: input.dsms.length, submitted: 0, missing: [...input.dsms] },
+    earlyBirds: [],
+  };
 }
 
 export async function getNsmCrmCompliance(input: {
@@ -69,11 +111,19 @@ export async function getNsmCrmCompliance(input: {
     earlyBirds: [],
   };
 
-  const rows = await fetchVisitsForDate(date);
+  const [rows, checkins] = await Promise.all([fetchVisitsForDate(date), fetchCheckinsForDate(date)]);
   if (rows.length === 0) return notSynced;
 
-  const agentEarliest = new Map<string, number>(); // match key -> earliest submission ms (as visiting agent)
-  const doubleEarliest = new Map<string, number>(); // match key -> earliest submission ms (as double-visit partner)
+  // Same GPS-first waterfall as the CRM master table / Visits Report (resolveVisitTime,
+  // crm/reads.ts): GPS check-in time -> save time -> none. Ranking purely by crm_save_date (the
+  // rep's own submission/paperwork time) previously let a rep who merely logged fast outrank one
+  // who genuinely arrived earlier but saved later — the exact distortion #1192 fixed for the
+  // Master table and Visits Report but had left this board still doing.
+  const checkinIndex = indexCheckinsByAgentContactDay(checkins);
+
+  type Best = { when: number; source: VisitTimeSource };
+  const agentEarliest = new Map<string, Best>(); // match key -> earliest resolved visit (as visiting agent)
+  const doubleEarliest = new Map<string, Best>(); // match key -> earliest resolved visit (as double-visit partner)
   let lastSync = 0;
 
   for (const row of rows) {
@@ -83,23 +133,26 @@ export async function getNsmCrmCompliance(input: {
     }
     if (!isRealVisit(row.visit_type)) continue;
 
-    // Early-bird ranking is by SUBMISSION time (crm_save_date) only — never the visit_date_time
-    // midnight placeholder (which would rank a rep as spuriously "earliest"), nor synced_at (the
-    // sync clock, not the rep's own submission). A row without a real save time still counts as
-    // submitted below, but can never be an early bird (when = MAX_SAFE_INTEGER).
-    const stamp = hasRealVendorTime(row.crm_save_date) ? row.crm_save_date : null;
-    const parsed = stamp ? Date.parse(stamp) : NaN;
+    // Never anchored on visit_date_time (a fixed midnight placeholder) or synced_at (the sync
+    // clock, not the rep's own visit) — see resolveVisitTime's own contract. A row that resolves
+    // to no real time still counts as submitted below, but can never be an early bird.
+    const match = pickCheckinForVisit(
+      { agentCrmId: row.agent_crm_id, contactCrmId: row.contact_crm_id, visitDay: date, crmSaveDate: row.crm_save_date },
+      checkinIndex,
+    );
+    const resolved = resolveVisitTime({ nearestCheckinTime: match?.check_date ?? null, crmSaveDate: row.crm_save_date });
+    const parsed = resolved.time ? Date.parse(resolved.time) : NaN;
     const when = Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
 
     const agent = matchKey(row.agent_hr_id);
     if (agent) {
       const cur = agentEarliest.get(agent);
-      if (cur === undefined || when < cur) agentEarliest.set(agent, when);
+      if (cur === undefined || when < cur.when) agentEarliest.set(agent, { when, source: resolved.source });
     }
     const dbl = matchKey(row.double_hr_id);
     if (dbl) {
       const cur = doubleEarliest.get(dbl);
-      if (cur === undefined || when < cur) doubleEarliest.set(dbl, when);
+      if (cur === undefined || when < cur.when) doubleEarliest.set(dbl, { when, source: resolved.source });
     }
   }
 
@@ -108,11 +161,17 @@ export async function getNsmCrmCompliance(input: {
   const repMissing: CrmPerson[] = [];
   let repSubmitted = 0;
   for (const person of input.reps) {
-    const at = agentEarliest.get(matchKey(person.hrId));
-    if (at !== undefined) {
+    const best = agentEarliest.get(matchKey(person.hrId));
+    if (best !== undefined) {
       repSubmitted += 1;
-      if (at !== Number.MAX_SAFE_INTEGER) {
-        earlyBirds.push({ hrId: person.hrId, name: person.name, role: "Med Rep", at: new Date(at).toISOString() });
+      if (best.when !== Number.MAX_SAFE_INTEGER) {
+        earlyBirds.push({
+          at: new Date(best.when).toISOString(),
+          hrId: person.hrId,
+          name: person.name,
+          role: "Med Rep",
+          source: best.source,
+        });
       }
     } else {
       repMissing.push(person);
@@ -124,14 +183,20 @@ export async function getNsmCrmCompliance(input: {
   for (const person of input.dsms) {
     const key = matchKey(person.hrId);
     // A DSM "submits" either by a solo visit (agent) or by accompanying a rep (double).
-    const at = Math.min(
-      agentEarliest.get(key) ?? Number.POSITIVE_INFINITY,
-      doubleEarliest.get(key) ?? Number.POSITIVE_INFINITY,
-    );
-    if (Number.isFinite(at)) {
+    const asAgent = agentEarliest.get(key);
+    const asDouble = doubleEarliest.get(key);
+    const best =
+      asAgent === undefined ? asDouble : asDouble === undefined ? asAgent : asAgent.when <= asDouble.when ? asAgent : asDouble;
+    if (best !== undefined) {
       dsmSubmitted += 1;
-      if (at !== Number.MAX_SAFE_INTEGER) {
-        earlyBirds.push({ hrId: person.hrId, name: person.name, role: "DSM", at: new Date(at).toISOString() });
+      if (best.when !== Number.MAX_SAFE_INTEGER) {
+        earlyBirds.push({
+          at: new Date(best.when).toISOString(),
+          hrId: person.hrId,
+          name: person.name,
+          role: "DSM",
+          source: best.source,
+        });
       }
     } else {
       dsmMissing.push(person);

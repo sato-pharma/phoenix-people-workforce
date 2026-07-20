@@ -15,7 +15,8 @@ import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingO
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
-import { getNsmCrmCompliance, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
+import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 // Roles that get the double-visit "focus" landing widgets (trend, scope coverage, probation
 // watch) and the Double Visit Report page. Kept as its own gate (rather than folded into
@@ -239,10 +240,17 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         }));
 
       // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10.
-      const crm = await getNsmCrmCompliance({
+      const crmInput = {
         reps: repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
         dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
-      }).catch(() => null);
+      };
+      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
+        logPortalFailure(
+          { hrId: access.hrId, module: "nsm-crm-compliance", role: access.role, route: "/employee-portals" },
+          error,
+        );
+        return nsmCrmComplianceUnavailable(crmInput);
+      });
 
       return {
         ...emptyRoleExtras,
