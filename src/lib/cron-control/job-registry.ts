@@ -22,7 +22,7 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
   {
     gcpJobName: "phoenix-background-jobs",
     label: "Background Jobs Worker",
-    description: "Drains the durable background-job outbox (imports, exports, and other async work).",
+    description: "Drains the durable background-job outbox (imports, exports, and other async work) and sends a Super Admin Telegram/in-app recap after every run.",
     route: "/api/cron/background-jobs",
   },
   {
@@ -34,7 +34,7 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
   {
     gcpJobName: "phoenix-notify-daily",
     label: "Daily Notifications",
-    description: "Birthdays, contract renewals, holiday reminders, and vacation/marketing/outstation SLA digests.",
+    description: "Birthdays, contract renewals, holiday reminders, vacation/marketing/outstation SLA digests, and daily notification/activity-log retention cleanup.",
     route: "/api/notifications/daily",
   },
   {
