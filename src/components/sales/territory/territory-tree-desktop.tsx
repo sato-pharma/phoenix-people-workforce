@@ -423,6 +423,118 @@ function RegionRoot({
   );
 }
 
+/** A Region as a collapsible lane — used only when the viewer's subtree spans more than one
+ *  region (a Regional Manager). Nothing to fetch on expand: opening a region just reveals its
+ *  own (already-in-skeleton) Area lanes, each of which lazy-loads independently exactly like
+ *  under a single-region root — see AreaLane. Orange (not the dark slate every other tier
+ *  uses) so a multi-region tree stays scannable — "you've crossed into a new region" reads at
+ *  a glance instead of requiring the small uppercase label to be read. */
+function RegionLane({
+  region,
+  areas,
+  blocks,
+  bricks,
+  tree,
+}: {
+  region: TerritoryRegionNode;
+  areas: TerritoryAreaNode[];
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-orange-900/20 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+      <button
+        aria-expanded={open}
+        className="flex w-full flex-col gap-1 bg-gradient-to-br from-orange-600 to-orange-700 px-4 py-3 text-left text-white"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <span className="flex items-center gap-2">
+          <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")} />
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">Region</span>
+        </span>
+        <span className="break-words pl-6 text-[15px] font-black leading-snug">{region.regionName}</span>
+        <span className="pl-6 text-[10px] font-black tabular-nums text-white/85">
+          {areas.length} area{areas.length === 1 ? "" : "s"}
+        </span>
+      </button>
+      {open ? (
+        areas.length === 0 ? (
+          <p className="p-4 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
+        ) : (
+          <div
+            className="grid gap-4 p-4"
+            style={{ gridTemplateColumns: `repeat(${Math.min(areas.length, 3)}, minmax(260px, 1fr))` }}
+          >
+            {areas.map((area) => (
+              <AreaLane
+                area={area}
+                blocks={blocks.filter((block) => block.areaCode === area.areaCode)}
+                bricks={bricks.filter((brick) => brick.areaCode === area.areaCode)}
+                key={area.areaCode}
+                tree={tree}
+              />
+            ))}
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+/** Synthetic "My Regions" chart root — used only when the viewer's own subtree spans more
+ *  than one region (a Regional Manager). A single-region viewer (District Manager) renders
+ *  RegionRoot directly instead; this wrapper exists purely to give a multi-region viewer one
+ *  unifying head instead of several disconnected "Your region" cards. Like RegionRoot, this
+ *  never fetches anything itself — see RegionLane/AreaLane for where fetching happens. */
+function RegionsRoot({
+  regions,
+  skeletonAreas,
+  blocks,
+  bricks,
+  tree,
+}: {
+  regions: TerritoryRegionNode[];
+  skeletonAreas: TerritoryAreaNode[];
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  return (
+    <div className="flex flex-col items-center">
+      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+          <MapPin className="h-3.5 w-3.5" />
+          My regions
+        </div>
+        <p className="mt-1 text-sm font-bold leading-snug">
+          {regions.length} regions — expand any to see its areas
+        </p>
+      </div>
+      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
+      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
+        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
+      </div>
+
+      <div className="mt-6 w-full space-y-4">
+        {regions.map((region) => (
+          <RegionLane
+            areas={skeletonAreas.filter((area) => area.regionCode === region.regionCode)}
+            blocks={blocks}
+            bricks={bricks}
+            key={region.regionCode}
+            region={region}
+            tree={tree}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult }) {
   const { skeleton } = tree;
 
@@ -457,18 +569,32 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
         </p>
       );
     }
-    return (
-      <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
-        {skeleton.regions.map((region) => (
+    // Exactly one region (District Manager): that region IS the chart root. More than one
+    // (Regional Manager's reporting subtree): a synthetic "My Regions" head with region lanes
+    // beneath it, instead of several disconnected "Your region" root cards — see RegionsRoot.
+    if (skeleton.regions.length === 1) {
+      const region = skeleton.regions[0];
+      return (
+        <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
           <RegionRoot
             areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
             blocks={skeleton.blocks}
             bricks={skeleton.bricks}
-            key={region.regionCode}
             region={region}
             tree={tree}
           />
-        ))}
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+        <RegionsRoot
+          blocks={skeleton.blocks}
+          bricks={skeleton.bricks}
+          regions={skeleton.regions}
+          skeletonAreas={skeleton.areas}
+          tree={tree}
+        />
       </div>
     );
   }

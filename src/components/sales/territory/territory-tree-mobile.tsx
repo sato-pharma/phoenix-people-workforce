@@ -338,6 +338,92 @@ function RegionSection({
   );
 }
 
+/** A Region as a native-<details> lane — used only when the viewer's subtree spans more than
+ *  one region (a Regional Manager). Nothing to fetch on open: it just reveals its own
+ *  (already-in-skeleton) Area accordions, each of which lazy-loads independently — see
+ *  AreaDetails. Orange (not the dark slate every other tier uses) so a multi-region tree stays
+ *  scannable — "you've crossed into a new region" reads at a glance. */
+function RegionDetails({
+  region,
+  areas,
+  blocks,
+  bricks,
+  tree,
+}: {
+  region: TerritoryRegionNode;
+  areas: TerritoryAreaNode[];
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  return (
+    <details className="rounded-lg border border-orange-900/20 bg-white open:pb-2.5" open>
+      <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-orange-600 to-orange-700 px-4 py-3 text-white">
+        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">Region</span>
+        <span className="break-words text-[15px] font-black leading-snug">{region.regionName}</span>
+        <span className="text-[10px] font-black tabular-nums text-white/85">
+          {areas.length} area{areas.length === 1 ? "" : "s"}
+        </span>
+      </summary>
+      <div className="space-y-2 border-t border-slate-100 px-2.5 pt-2.5">
+        {areas.length === 0 ? (
+          <p className="py-1 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
+        ) : (
+          areas.map((area) => (
+            <AreaDetails
+              area={area}
+              blocks={blocks.filter((block) => block.areaCode === area.areaCode)}
+              bricks={bricks.filter((brick) => brick.areaCode === area.areaCode)}
+              key={area.areaCode}
+              tree={tree}
+            />
+          ))
+        )}
+      </div>
+    </details>
+  );
+}
+
+/** Synthetic "My Regions" root section — used only when the viewer's own subtree spans more
+ *  than one region (a Regional Manager). A single-region viewer (District Manager) renders
+ *  RegionSection directly instead — see the rootLevel === "region" branch below. */
+function RegionsSection({
+  regions,
+  skeletonAreas,
+  blocks,
+  bricks,
+  tree,
+}: {
+  regions: TerritoryRegionNode[];
+  skeletonAreas: TerritoryAreaNode[];
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">My regions</p>
+        <p className="mt-1 text-[11px] font-semibold text-white/70">
+          {regions.length} regions — tap any to see its areas
+        </p>
+      </div>
+      <div className="space-y-2">
+        {regions.map((region) => (
+          <RegionDetails
+            areas={skeletonAreas.filter((area) => area.regionCode === region.regionCode)}
+            blocks={blocks}
+            bricks={bricks}
+            key={region.regionCode}
+            region={region}
+            tree={tree}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TerritoryTreeMobile({ tree }: { tree: UseTerritoryTreeResult }) {
   const { skeleton } = tree;
 
@@ -372,19 +458,28 @@ export function TerritoryTreeMobile({ tree }: { tree: UseTerritoryTreeResult }) 
         </p>
       );
     }
+    // Exactly one region (District Manager): render it directly. More than one (Regional
+    // Manager's reporting subtree): a synthetic "My Regions" section — see RegionsSection.
+    if (skeleton.regions.length === 1) {
+      const region = skeleton.regions[0];
+      return (
+        <RegionSection
+          areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
+          blocks={skeleton.blocks}
+          bricks={skeleton.bricks}
+          region={region}
+          tree={tree}
+        />
+      );
+    }
     return (
-      <div className="space-y-6">
-        {skeleton.regions.map((region) => (
-          <RegionSection
-            areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
-            blocks={skeleton.blocks}
-            bricks={skeleton.bricks}
-            key={region.regionCode}
-            region={region}
-            tree={tree}
-          />
-        ))}
-      </div>
+      <RegionsSection
+        blocks={skeleton.blocks}
+        bricks={skeleton.bricks}
+        regions={skeleton.regions}
+        skeletonAreas={skeleton.areas}
+        tree={tree}
+      />
     );
   }
 
