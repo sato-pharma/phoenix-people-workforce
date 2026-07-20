@@ -1,4 +1,4 @@
-﻿import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
+﻿import { canonicalHrIdKey, hrIdsMatch, resolveStoredHrId } from "@/lib/hr-id";
 import {
   createEmployeeColumnLookup,
   requiredEmployeeImportFields,
@@ -662,6 +662,25 @@ export function validateEmployeeImportRows(
     buildRecord(row, firstDataRowNumber + index, mapping),
   );
   const records = builtRows.map(({ record }) => record);
+
+  // Resolve every uploaded HR_ID (and manager HR_ID) to the value actually stored in
+  // employees.hr_id when one exists, via hr-id.ts's alias table (e.g. a legacy "AAA" upload
+  // resolves to the live "AA" row). This MUST happen before the rowsToInsert/rowsToUpdate
+  // split below and before anything else reads record.hrId, so every downstream consumer of
+  // this record — the routing decision right here, the confirm route's upsert, and the
+  // manager-linking pass — is working from the same value that's actually in the database.
+  // Fixing it once, here, at the point the record is finalized, is what keeps a future write
+  // path from needing to remember to canonicalize on its own: there is nothing left to forget.
+  const existingHrIdByCanonicalKey = options.existingState?.employeeHrIdByCanonicalKey;
+  for (const record of records) {
+    if (record.hrId) {
+      record.hrId = resolveStoredHrId(record.hrId, existingHrIdByCanonicalKey);
+    }
+    if (record.managerHrId) {
+      record.managerHrId = resolveStoredHrId(record.managerHrId, existingHrIdByCanonicalKey);
+    }
+  }
+
   const orgMappingWarnings = builtRows.flatMap(
     ({ orgMappingWarnings }) => orgMappingWarnings,
   );
