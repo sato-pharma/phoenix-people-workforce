@@ -159,7 +159,9 @@ async function maybeCloseDigest(digestId: number) {
     .from("attendance_weekly_digests")
     .update({ status: "settled", updated_at: new Date().toISOString() })
     .eq("id", digestId)
-    .in("status", ["sent", "draft"]);
+    // "pending_admin_review" covers approveDigestReview's direct-settle path
+    // (owner decision 2026-07-21: admin approval never routes through 'sent').
+    .in("status", ["sent", "draft", "pending_admin_review"]);
 }
 
 async function insertSettlement(input: {
@@ -501,10 +503,18 @@ export type DigestReviewLineEdit = {
 /**
  * System Administrator / HR Manager approves a pending-review digest,
  * optionally editing any line first (the system-computed value is snapshotted
- * into original_* the moment a line is actually changed). Approval transitions
- * the digest straight to 'sent' with the (possibly edited) totals and finally
- * notifies the employee — same self-exclusion + CEO-fallback reviewer pool as
- * dispute review ("if the subject is an approver, the others handle it").
+ * into original_* the moment a line is actually changed).
+ *
+ * Owner decision (2026-07-21): admin approval is final — it settles every
+ * deductible line immediately (via the same insertSettlement path
+ * confirmDigestLines/autoConfirmDigest use, so payroll governance still fires
+ * from that one centralized point) and never routes through 'sent' /
+ * auto_confirm_at / an employee notification. This supersedes the July 3
+ * self-settlement model (see attendance-weekly-digest-selfsettlement-spec)
+ * for this action specifically — the employee is never notified and never
+ * gets a dispute window; the admin's review is the only decision that counts.
+ * Missing-punch (0-day) lines are untouched here and keep flowing through
+ * their own separate verification chain, same as before.
  */
 export async function approveDigestReview(input: {
   digestId: number;
@@ -565,40 +575,106 @@ export async function approveDigestReview(input: {
   const totalDeductionValue = lines.reduce((sum, line) => sum + line.deductionValue, 0);
 
   const now = new Date();
-  const autoConfirmAt = new Date(now.getTime() + settings.autoConfirmHours * 60 * 60 * 1000);
   const { data: updated, error } = await supabase
     .from("attendance_weekly_digests")
     .update({
-      auto_confirm_at: autoConfirmAt.toISOString(),
       reviewed_at: now.toISOString(),
       reviewed_by: input.actorHrId,
-      sent_at: now.toISOString(),
-      status: "sent",
       total_deduction_days: totalDeductionDays,
       total_deduction_value: totalDeductionValue,
       updated_at: now.toISOString(),
     })
     .eq("id", input.digestId)
     .eq("status", "pending_admin_review")
-    .select("id,employee_hr_id,currency")
+    .select("id,employee_hr_id")
     .maybeSingle();
   if (error) throw error;
   if (!updated) throw conflictError("This digest has already been acted on.");
 
-  const updatedDigest = updated as { id: number; employee_hr_id: string; currency: string };
-  const employeeName = await loadEmployeeName(updatedDigest.employee_hr_id);
-  const weekLabel = `${digest.week_start} to ${digest.week_end}`;
-  const { eventId } = await notifyDigestSent({
-    actionUrl: input.actionUrl,
-    autoConfirmHours: settings.autoConfirmHours,
-    currency: updatedDigest.currency,
-    employeeHrId: updatedDigest.employee_hr_id,
-    employeeName,
-    lines,
-    totalDeductionValue,
-    weekLabel,
-  });
-  await recordDigestNotificationEvent(input.digestId, eventId);
+  const updatedDigest = updated as { id: number; employee_hr_id: string };
+
+  // Settle every deductible line directly — the admin's approval IS the final
+  // decision (see the doc comment above); no 'sent' state, no employee step.
+  await settleAllDeductibleLines(input.digestId, updatedDigest.employee_hr_id, input.actorHrId);
+  await maybeCloseDigest(input.digestId);
+}
+
+/**
+ * Shared by approveDigestReview and forceSettleSentDigests: settles every
+ * still-pending deductible line for a digest as an Admin decision, via the
+ * same insertSettlement path employee-confirm/auto-confirm use (so payroll
+ * governance fires the same way regardless of how a line got settled).
+ */
+async function settleAllDeductibleLines(digestId: number, employeeHrId: string, actorHrId: string): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const { data: pendingLines, error: pendingLinesError } = await supabase
+    .from("attendance_digest_lines")
+    .select("id,work_date,status,deduction_days,deduction_value")
+    .eq("digest_id", digestId)
+    .eq("action", "pending")
+    .gt("deduction_days", 0);
+  if (pendingLinesError) throw pendingLinesError;
+
+  let settledCount = 0;
+  for (const line of (pendingLines ?? []) as Array<{
+    id: number;
+    work_date: string;
+    status: "late" | "short_hours";
+    deduction_days: number;
+    deduction_value: number;
+  }>) {
+    const claimNow = new Date().toISOString();
+    const { data: claimedLine, error: claimError } = await supabase
+      .from("attendance_digest_lines")
+      .update({ acted_at: claimNow, action: "confirmed", updated_at: claimNow })
+      .eq("id", line.id)
+      .eq("digest_id", digestId)
+      .eq("action", "pending")
+      .select("id")
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimedLine) continue; // acted on concurrently — leave it alone
+
+    await insertSettlement({
+      action: "confirmed",
+      actorHrId,
+      actorRole: "Admin",
+      deductionDays: Number(line.deduction_days),
+      deductionValue: Number(line.deduction_value),
+      digestLineId: line.id,
+      employeeHrId,
+      lineStatus: line.status,
+      workDate: line.work_date,
+    });
+    settledCount += 1;
+  }
+  return settledCount;
+}
+
+/**
+ * Owner decision (2026-07-21): force-settle every digest still sitting in
+ * 'sent' from before the direct-settle change above shipped — those were
+ * routed to the employee under the old self-settlement model and would
+ * otherwise sit on their original 48h auto-confirm clock. This applies the
+ * same "admin decision is final" settlement to each of them right now,
+ * one-time catch-up for whatever is still in 'sent' at call time.
+ */
+export async function forceSettleSentDigests(actorHrId: string): Promise<{ digestsSettled: number[]; linesSettled: number }> {
+  const supabase = getSupabaseAdmin();
+  const { data: sentDigests, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,employee_hr_id")
+    .eq("status", "sent");
+  if (error) throw error;
+
+  const digestsSettled: number[] = [];
+  let linesSettled = 0;
+  for (const digest of (sentDigests ?? []) as Array<{ id: number; employee_hr_id: string }>) {
+    linesSettled += await settleAllDeductibleLines(digest.id, digest.employee_hr_id, actorHrId);
+    await maybeCloseDigest(digest.id);
+    digestsSettled.push(digest.id);
+  }
+  return { digestsSettled, linesSettled };
 }
 
 /**
