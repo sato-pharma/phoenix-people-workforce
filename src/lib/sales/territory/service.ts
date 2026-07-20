@@ -1,20 +1,22 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
-import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 import { fetchTerritoryAreaPharmacies } from "./pharmacies";
 import { resolveTerritoryRootScope } from "./root-scope";
-import { buildTerritorySkeleton, deniedSkeleton } from "./skeleton";
+import { buildTerritorySkeleton, deniedSkeleton, loadLineAreas, resolveAuLineCode } from "./skeleton";
 import type { TerritoryAreaPayload, TerritoryRootScope, TerritorySkeleton } from "./types";
 
 /** Thrown when a request's resolved territory scope denies it — the API layer maps this to 403. */
 export class TerritoryAccessError extends Error {}
 
 // Roles the Territory Drilldown module currently serves. Extended one at a time as each
-// role's slice ships (Medical Rep first, end to end, before District Manager / Regional
-// Manager / National Sales Manager are added) — see the module's phased build plan. Mirrors
+// role's slice ships (Medical Rep first end to end, then District Manager; Regional Manager
+// and National Sales Manager still to come) — see the module's phased build plan. Mirrors
 // the PORTAL_SOS_ROLES / isPortalSosRole precedent in portal-sos-dashboard.ts: the role gate
 // lives with the domain service, not the API route, so the page and every route agree.
-export const TERRITORY_DRILLDOWN_ROLES = ["Medical Rep"] as const satisfies readonly PhoenixRole[];
+export const TERRITORY_DRILLDOWN_ROLES = [
+  "Medical Rep",
+  "District Manager",
+] as const satisfies readonly PhoenixRole[];
 
 const TERRITORY_DRILLDOWN_ROLE_SET = new Set<PhoenixRole>(TERRITORY_DRILLDOWN_ROLES);
 
@@ -30,6 +32,15 @@ export async function getTerritorySkeleton(ctx: AccessContext): Promise<Territor
   return buildTerritorySkeleton(ctx.role, rootScope);
 }
 
+/**
+ * Whether `areaCode` is actually inside the caller's resolved scope. For "region" (District
+ * Manager today) and "nationwide" (future National Sales Manager) this MUST check the same
+ * line-scoped organogram seat structure buildTerritorySkeleton uses to list areas — not just
+ * region membership — or a viewer could fetch a sibling line's area (e.g. a region's Anti
+ * Infective DM requesting a CNS-only area) even though it never appears in their own tree. A
+ * region routinely hosts a separate DM seat per line, each covering a different subset of
+ * that region's areas (see loadLineAreas), so "same region" alone is not "in my territory".
+ */
 async function isAreaInRootScope(
   areaCode: string,
   rootScope: Exclude<TerritoryRootScope, { level: "denied" }>,
@@ -37,13 +48,12 @@ async function isAreaInRootScope(
   if (rootScope.level === "area") {
     return rootScope.sosAreaCodes.includes(areaCode);
   }
-  if (rootScope.level === "nationwide") {
-    return true;
-  }
-  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const area = (references.areas ?? []).find((row) => row.areaCode.toUpperCase() === areaCode);
-  if (!area) return false;
-  return rootScope.regionCodes.includes(area.regionCode.toUpperCase());
+  const auLineCode = resolveAuLineCode(rootScope.officialLine);
+  if (!auLineCode) return false;
+  const regionCodes =
+    rootScope.level === "region" ? new Set(rootScope.regionCodes.map((code) => code.toUpperCase())) : null;
+  const lineAreas = await loadLineAreas(auLineCode, regionCodes);
+  return lineAreas.some((area) => area.areaCode.toUpperCase() === areaCode);
 }
 
 /**

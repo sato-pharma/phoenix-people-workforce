@@ -9,6 +9,7 @@ import type {
   TerritoryBlockNode,
   TerritoryBrickNode,
   TerritoryPharmacy,
+  TerritoryRegionNode,
 } from "@/lib/sales/territory/types";
 
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
@@ -179,10 +180,48 @@ function BlockLane({
   );
 }
 
+/** Groups bricks by block and renders the block-lane grid — the shared body used by both
+ *  AreaRoot (Area is the chart root, Medical Rep) and AreaLane (Area is a lazy nested lane
+ *  under a Region root, District Manager+). */
+function AreaBody({
+  blocks,
+  bricks,
+  pharmaciesByBrick,
+}: {
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  pharmaciesByBrick: Map<string, TerritoryPharmacy[]> | null;
+}) {
+  const blocksByCode = new Map<string, TerritoryBrickNode[]>();
+  for (const brick of bricks) {
+    if (!blocksByCode.has(brick.blockCode)) blocksByCode.set(brick.blockCode, []);
+    blocksByCode.get(brick.blockCode)!.push(brick);
+  }
+
+  if (blocks.length === 0) {
+    return <p className="text-sm font-semibold text-slate-400">No blocks found for this area yet.</p>;
+  }
+
+  return (
+    <div className="grid w-full gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(blocks.length, 3)}, minmax(260px, 1fr))` }}>
+      {blocks.map((block) => (
+        <div className="flex flex-col" key={block.blockCode}>
+          <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
+          <BlockLane
+            block={block}
+            bricks={blocksByCode.get(block.blockCode) ?? []}
+            pharmaciesByBrick={pharmaciesByBrick}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** One Medical Rep's locked area, rendered as the chart root — spine card + trunk + branch bar,
  *  fanning out into block lanes. Auto-loads its own pharmacy data on mount (there's only ever
  *  one or a small handful of these, unlike an Area lane under a Region/Nationwide root, which
- *  loads lazily on click instead — see territory-tree-mobile.tsx's AreaLane for that path). */
+ *  loads lazily on click instead — see AreaLane below). */
 function AreaRoot({
   area,
   blocks,
@@ -209,12 +248,6 @@ function AreaRoot({
     state.status === "loaded"
       ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
       : null;
-
-  const blocksByCode = new Map<string, TerritoryBrickNode[]>();
-  for (const brick of bricks) {
-    if (!blocksByCode.has(brick.blockCode)) blocksByCode.set(brick.blockCode, []);
-    blocksByCode.get(brick.blockCode)!.push(brick);
-  }
 
   return (
     <div className="flex flex-col items-center">
@@ -247,17 +280,140 @@ function AreaRoot({
         <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
       </div>
 
-      {blocks.length === 0 ? (
-        <p className="mt-8 text-sm font-semibold text-slate-400">No blocks found for this area yet.</p>
+      <div className="mt-6 w-full">
+        <AreaBody blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
+      </div>
+    </div>
+  );
+}
+
+/** An Area as a collapsible lane — used whenever Area is NOT the chart root (a District
+ *  Manager's region root today; Regional Manager/National Sales Manager next). Unlike AreaRoot,
+ *  this never eager-loads: a region can hold many areas, and fetching all of them upfront would
+ *  defeat lazy-loading per level, so the pharmacy data only fetches the first time this lane is
+ *  expanded. */
+function AreaLane({
+  area,
+  blocks,
+  bricks,
+  tree,
+}: {
+  area: TerritoryAreaNode;
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  const [open, setOpen] = useState(false);
+  const state = tree.areaState(area.areaCode);
+  const pharmaciesByBrick =
+    state.status === "loaded"
+      ? new Map(state.payload.bricks.map((brick) => [brick.brickId, brick.pharmacies]))
+      : null;
+  const pharmacyCount =
+    state.status === "loaded"
+      ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
+      : null;
+
+  const handleToggle = () => {
+    setOpen((value) => {
+      const next = !value;
+      if (next) tree.loadArea(area.areaCode);
+      return next;
+    });
+  };
+
+  return (
+    <div className="min-w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+      <button
+        aria-expanded={open}
+        className="flex w-full flex-col gap-1 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
+        onClick={handleToggle}
+        type="button"
+      >
+        <span className="flex items-center gap-2">
+          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
+        </span>
+        <span className="break-words pl-[22px] text-[14px] font-black leading-snug">{area.areaName}</span>
+        <span className="pl-[22px] text-[10px] font-black tabular-nums text-white/80">
+          {blocks.length} block{blocks.length === 1 ? "" : "s"}
+          {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
+          {state.status === "loaded" ? (
+            <>
+              {" · "}
+              {formatEgp(state.payload.totalValue)}
+              {state.payload.reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
+            </>
+          ) : null}
+        </span>
+      </button>
+      {open ? (
+        <div className="px-3 py-3">
+          {state.status === "loading" ? (
+            <p className="flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading this area…
+            </p>
+          ) : state.status === "error" ? (
+            <p className="text-[11px] font-semibold text-rose-500">{state.message}</p>
+          ) : (
+            <AreaBody blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One District Manager's region (or, later, one of a Regional Manager's regions), rendered as
+ *  the chart root one tier above AreaRoot. Never eager-loads anything itself — a region can
+ *  hold many areas, so each fans out below as its own lazy AreaLane instead, and the region
+ *  card only ever shows structural counts already known from the skeleton (no sales total is
+ *  fetched at this tier — see AreaLane for where the real numbers come from). */
+function RegionRoot({
+  region,
+  areas,
+  blocks,
+  bricks,
+  tree,
+}: {
+  region: TerritoryRegionNode;
+  areas: TerritoryAreaNode[];
+  blocks: TerritoryBlockNode[];
+  bricks: TerritoryBrickNode[];
+  tree: UseTerritoryTreeResult;
+}) {
+  return (
+    <div className="flex flex-col items-center">
+      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+          <MapPin className="h-3.5 w-3.5" />
+          Your region
+        </div>
+        <p className="mt-1 break-words text-sm font-bold leading-snug">{region.regionName}</p>
+        <p className="mt-1 text-[11px] font-semibold text-white/70">
+          {areas.length} area{areas.length === 1 ? "" : "s"} — expand any to load its sales
+        </p>
+      </div>
+      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
+      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
+        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
+      </div>
+
+      {areas.length === 0 ? (
+        <p className="mt-8 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
       ) : (
-        <div className="mt-6 grid w-full gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(blocks.length, 3)}, minmax(260px, 1fr))` }}>
-          {blocks.map((block) => (
-            <div className="flex flex-col" key={block.blockCode}>
+        <div
+          className="mt-6 grid w-full gap-4"
+          style={{ gridTemplateColumns: `repeat(${Math.min(areas.length, 3)}, minmax(280px, 1fr))` }}
+        >
+          {areas.map((area) => (
+            <div className="flex flex-col" key={area.areaCode}>
               <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
-              <BlockLane
-                block={block}
-                bricks={blocksByCode.get(block.blockCode) ?? []}
-                pharmaciesByBrick={pharmaciesByBrick}
+              <AreaLane
+                area={area}
+                blocks={blocks.filter((block) => block.areaCode === area.areaCode)}
+                bricks={bricks.filter((brick) => brick.areaCode === area.areaCode)}
+                tree={tree}
               />
             </div>
           ))}
@@ -270,33 +426,56 @@ function AreaRoot({
 export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult }) {
   const { skeleton } = tree;
 
-  if (skeleton.rootLevel !== "area") {
+  if (skeleton.rootLevel === "area") {
+    if (skeleton.areas.length === 0) {
+      return (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+          No area is on file for you yet.
+        </p>
+      );
+    }
     return (
-      <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-        This role&apos;s territory view isn&apos;t available yet.
-      </p>
+      <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+        {skeleton.areas.map((area) => (
+          <AreaRoot
+            area={area}
+            blocks={skeleton.blocks.filter((block) => block.areaCode === area.areaCode)}
+            bricks={skeleton.bricks.filter((brick) => brick.areaCode === area.areaCode)}
+            key={area.areaCode}
+            tree={tree}
+          />
+        ))}
+      </div>
     );
   }
 
-  if (skeleton.areas.length === 0) {
+  if (skeleton.rootLevel === "region") {
+    if (skeleton.regions.length === 0) {
+      return (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+          No region is on file for you yet.
+        </p>
+      );
+    }
     return (
-      <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-        No area is on file for you yet.
-      </p>
+      <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+        {skeleton.regions.map((region) => (
+          <RegionRoot
+            areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
+            blocks={skeleton.blocks}
+            bricks={skeleton.bricks}
+            key={region.regionCode}
+            region={region}
+            tree={tree}
+          />
+        ))}
+      </div>
     );
   }
 
   return (
-    <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
-      {skeleton.areas.map((area) => (
-        <AreaRoot
-          area={area}
-          blocks={skeleton.blocks.filter((block) => block.areaCode === area.areaCode)}
-          bricks={skeleton.bricks.filter((brick) => brick.areaCode === area.areaCode)}
-          key={area.areaCode}
-          tree={tree}
-        />
-      ))}
-    </div>
+    <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+      This role&apos;s territory view isn&apos;t available yet.
+    </p>
   );
 }
