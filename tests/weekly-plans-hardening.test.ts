@@ -39,30 +39,36 @@ export function runWeeklyPlansHardeningTests() {
   assert.match(calendarServiceSource, /itemLimit: CALENDAR_ITEM_LIMIT/, "calendar API must return itemLimit");
   assert.match(calendarUiSource, /workspace\.hasMoreHeaders \|\| workspace\.hasMoreItems/, "calendar UI must warn when results are capped");
 
-  // Cross-line/cross-hierarchy viewer fencing was deliberately removed from the
-  // shared calendar by owner decision 2026-07-19: any viewer who already has
-  // weekly_plans:read access sees any calendar-eligible plan. These guards
-  // replace the pre-2026-07-19 assertions that pinned the old same-line /
-  // District-Manager-hierarchy / Regional-Manager-region fencing in place.
+  // The unconditional cross-line/cross-hierarchy viewer visibility from owner
+  // decision 2026-07-19 was superseded by a role/line-scoped matrix on
+  // 2026-07-20: Marketing Manager and Training Manager stay unrestricted, but
+  // Group Product Manager / National Sales Manager / Product Manager are now
+  // scoped to their own line (plus one named counterpart role each), and B-155
+  // (Ahmed Sharaf) has a hardcoded Pedia + Anti Infective + Training Manager
+  // exception. See tests/weekly-plan-calendar-owner-scope.test.ts for the full
+  // per-role/line matrix coverage. These guards confirm the matrix shape
+  // without pinning the exact conditional wording, and confirm the old
+  // hierarchy-based mechanisms (manager-seat / region fencing) were not what
+  // came back — the new scoping is pure role+line+HR_ID matching, not topology.
   assert.match(
     calendarServiceSource,
-    /export function isPlanItemVisibleToViewer\(item: PlanningCalendarPlanItem\): boolean \{/,
-    "shared calendar must expose a pure per-item visibility function for testability",
+    /export function isPlanItemVisibleToViewer\(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext\): boolean \{/,
+    "shared calendar's visibility function must take a viewer context, not just the item",
   );
   assert.match(
     calendarServiceSource,
-    /return isAllowedCalendarOwner\(item\);/,
-    "shared calendar must show every calendar-eligible plan to every viewer with calendar access",
+    /if \(!isAllowedCalendarOwner\(item\)\) return false;/,
+    "shared calendar must still gate on owner-eligibility before any viewer-scoped matrix logic",
   );
   assert.match(
     calendarServiceSource,
-    /rawPlanItems\.filter\(isPlanItemVisibleToViewer\)/,
-    "shared calendar must filter submitted plan items through isPlanItemVisibleToViewer",
+    /rawPlanItems\.filter\(\(item\) => isPlanItemVisibleToViewer\(item, viewerContext\)\)/,
+    "shared calendar must filter submitted plan items through isPlanItemVisibleToViewer with a resolved viewer context",
   );
-  assert.doesNotMatch(
+  assert.match(
     calendarServiceSource,
-    /sameLine\(item\.lineName, viewer\?\.lineName\)/,
-    "isPlanItemVisibleToViewer must not reintroduce same-line viewer fencing",
+    /const AHMED_SHARAF_HR_ID = "B-155";/,
+    "the shared calendar must keep the named B-155 (Ahmed Sharaf) exception, matching the same pattern as PRODUCT_SCOPE_EXCLUSIVE_HR_IDS",
   );
   assert.doesNotMatch(
     calendarServiceSource,
