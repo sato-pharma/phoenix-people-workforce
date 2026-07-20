@@ -6,8 +6,10 @@ import {
   isValidIsoDate,
   resolveWideReconciliationSlice,
   rowFromVisit,
+  selectCheckinsToGeocode,
   WIDE_RECONCILIATION_SLICE_DAYS,
   WIDE_RECONCILIATION_TOTAL_DAYS,
+  type CheckinDraftRow,
 } from "../src/lib/crm/sync.ts";
 import { mapVisitRow } from "../src/lib/crm/reads.ts";
 import type { IReports360Visit } from "../src/lib/crm/client.ts";
@@ -21,6 +23,24 @@ function emptyMaps(): CrmIdentityMaps {
     hrIdByCrmId: new Map(),
     hrIdByCrmUsername: new Map(),
     hrIdByManualOverride: new Map(),
+  };
+}
+
+function checkinDraft(overrides: Partial<CheckinDraftRow> = {}): CheckinDraftRow {
+  return {
+    address: null,
+    agent_crm_id: 100,
+    agent_hr_id: "M-1",
+    check_date: "2026-07-01T10:00:00",
+    contact_crm_id: null,
+    contact_name: null,
+    crm_checkin_id: 1,
+    lat: 30.0444,
+    lon: 31.2357,
+    raw_payload: {},
+    synced_at: "2026-07-01T10:05:00Z",
+    updated_at: "2026-07-01T10:05:00Z",
+    ...overrides,
   };
 }
 
@@ -59,6 +79,37 @@ export function runVisitsReportSyncTests() {
   );
   assert.equal(deduped.length, 2, "two distinct ids survive, the duplicate collapses");
   assert.equal(deduped.find((row) => row.id === 1)?.tag, "second-wins", "last occurrence wins for a repeated key");
+
+  // ── selectCheckinsToGeocode: check-in address backfill decision logic ───────────
+  // A row with a real vendor-supplied address is never touched or selected.
+  const hasAddress = checkinDraft({ address: "Real Address, Cairo" });
+  const skipHasAddress = selectCheckinsToGeocode([hasAddress], new Map(), 10);
+  assert.equal(skipHasAddress.length, 0, "a row that already has a real address is never selected for geocoding");
+  assert.equal(hasAddress.address, "Real Address, Cairo", "and its address is left untouched");
+
+  // A row missing coordinates can never be geocoded, regardless of address state.
+  const noCoords = checkinDraft({ address: null, lat: null, lon: null });
+  assert.equal(selectCheckinsToGeocode([noCoords], new Map(), 10).length, 0, "a row with no lat/lon is never selected");
+
+  // A row missing an address, with coordinates, and NO prior known address: needs a fresh geocode.
+  const freshCandidate = checkinDraft({ crm_checkin_id: 42, address: "" });
+  const freshResult = selectCheckinsToGeocode([freshCandidate], new Map(), 10);
+  assert.equal(freshResult.length, 1, "a never-before-seen check-in missing an address needs a fresh geocode");
+  assert.equal(freshResult[0].crm_checkin_id, 42);
+
+  // A row missing an address, but this crm_checkin_id already resolved to a known address on a
+  // PRIOR sync: reuse it in place, never call Google again for the same check-in.
+  const alreadyKnown = checkinDraft({ crm_checkin_id: 99, address: null });
+  const existingById = new Map([[99, "Previously Resolved Address"]]);
+  const reuseResult = selectCheckinsToGeocode([alreadyKnown], existingById, 10);
+  assert.equal(reuseResult.length, 0, "a check-in with a known prior address is never re-selected for geocoding");
+  assert.equal(alreadyKnown.address, "Previously Resolved Address", "its address is filled in from the prior resolution");
+
+  // The per-run cap: only the first `cap` never-before-seen rows are selected; the rest are left
+  // for a later sync run rather than risking this run's own time/cost budget.
+  const manyCandidates = Array.from({ length: 5 }, (_, i) => checkinDraft({ crm_checkin_id: 200 + i, address: null }));
+  const capped = selectCheckinsToGeocode(manyCandidates, new Map(), 2);
+  assert.equal(capped.length, 2, "the cap must bound how many rows are selected in one run, regardless of how many need it");
 
   // ── rowFromVisit: null-guard on visitDate ────────────────────────────────────────
   const maps = emptyMaps();
@@ -128,6 +179,19 @@ export function runVisitsReportSyncTests() {
   assert.doesNotMatch(service, /lookbackDays = 21/, "the 21-day lookback that caused the 2026-07-08 timeout must not regress");
   assert.match(service, /lookbackDays = 10/, "daily cron's lookback must be back at the pre-#796 10-day window");
   assert.equal(WIDE_RECONCILIATION_TOTAL_DAYS, 120, "wide reconciliation's total window must be materially larger than the daily cron's");
+
+  // ── Check-in address backfill: wiring that isn't unit-testable without a mocked Supabase
+  // client — locked in as static source assertions (same established pattern as above).
+  assert.match(
+    service,
+    /await backfillMissingCheckinAddresses\(supabase, dedupedCheckinRows\);/,
+    "the address backfill must run on the deduped check-in rows before they're upserted",
+  );
+  assert.match(
+    service,
+    /if \(!hasGoogleServerKey\(\)\) return;/,
+    "the backfill must no-op entirely when no Google Maps server key is configured, never throw",
+  );
 
   // ── resolveWideReconciliationSlice: stateless weekly slice rotation (2026-07-06 timeout fix) ──
   // A single 120-day reconciliation run got killed mid-run (see the doc comment on
