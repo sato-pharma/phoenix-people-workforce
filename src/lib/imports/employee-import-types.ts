@@ -205,6 +205,13 @@ export type ExistingImportState = {
   crmUsernameToHrId?: Map<string, string>;
   employeeOrgSeats?: ExistingEmployeeOrgSeat[];
   employeeHrIds?: Set<string>;
+  /**
+   * Canonical HR_ID key (hr-id.ts's alias-resolved, lowercased key) -> the exact hr_id value
+   * actually stored in employees.hr_id. Lets the validator rewrite an uploaded alias spelling
+   * (e.g. legacy "AAA") to the real stored value (e.g. "AA") BEFORE routing/writing, so the
+   * confirm route's upsert conflict-matches the existing row instead of duplicating it.
+   */
+  employeeHrIdByCanonicalKey?: Map<string, { hrId: string }>;
   managerHrIds?: Set<string>;
   terminalEmployeeHrIds?: Set<string>;
   protectedLifecycleHrIds?: Set<string>;

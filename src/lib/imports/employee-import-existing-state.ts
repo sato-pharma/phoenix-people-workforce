@@ -1,3 +1,4 @@
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   ExistingEmployeeOrgSeat,
   ExistingImportState,
@@ -181,6 +182,7 @@ async function loadEmployeeState(
   const crmIdToHrId = new Map<string, string>();
   const crmUsernameToHrId = new Map<string, string>();
   const employeeOrgSeats: ExistingEmployeeOrgSeat[] = [];
+  const employeeHrIdByCanonicalKey = new Map<string, { hrId: string }>();
 
   for (const row of rows) {
     const crmId = String(row.crm_id ?? "").trim().toLowerCase();
@@ -193,6 +195,13 @@ async function loadEmployeeState(
 
     if (crmUsername && hrId) {
       crmUsernameToHrId.set(crmUsername, hrId);
+    }
+
+    if (hrId) {
+      const canonicalKey = canonicalHrIdKey(hrId);
+      if (canonicalKey && !employeeHrIdByCanonicalKey.has(canonicalKey)) {
+        employeeHrIdByCanonicalKey.set(canonicalKey, { hrId });
+      }
     }
 
     if (hrId && isActiveImportEmployee(row)) {
@@ -211,6 +220,7 @@ async function loadEmployeeState(
     crmIdToHrId,
     crmUsernameToHrId,
     employeeOrgSeats,
+    employeeHrIdByCanonicalKey,
     employeeHrIds: new Set(
       rows.flatMap((row) => (row.hr_id ? [String(row.hr_id).trim().toUpperCase()] : [])),
     ),
