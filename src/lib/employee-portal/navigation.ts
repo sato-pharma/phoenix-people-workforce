@@ -2,6 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
+import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -55,6 +56,13 @@ export type EmployeePortalNavVisibility = {
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
   showActionsTab?: boolean;
+  // Direct Orders — submit/report are the same requester-role set the module itself
+  // enforces server-side (DIRECT_ORDER_REQUESTER_ROLES); approvals is only the two
+  // roles that ever sit as a person-rung in the approval ladder (see
+  // directOrderManagementLadder) — the CEO's rung always resolves to the admin shell.
+  showDirectOrdersTab?: boolean;
+  showDirectOrdersReportTab?: boolean;
+  showDirectOrdersApprovalsTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -238,6 +246,8 @@ export function resolveEmployeePortalNavVisibility(
   // line's data). Deliberately NOT folded into showSalesIntelligence: that flag also drives
   // Coaching Analytics and Double-Visit Analytics, which NSM was not asked to gain here.
   const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
+  const showDirectOrdersTab = isDirectOrderRequesterRole(resolvedRole);
+  const isDirectOrderApprovalRung = resolvedRole === "Regional Manager" || isNationalSalesManager;
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -325,6 +335,9 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Training Manager",
     showActionsTab: !isTrainingManager && !isMedicalRep,
+    showDirectOrdersTab,
+    showDirectOrdersReportTab: showDirectOrdersTab,
+    showDirectOrdersApprovalsTab: isDirectOrderApprovalRung,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

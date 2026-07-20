@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { DirectOrderSubmitForm } from "@/components/direct-orders/direct-order-submit-form";
+import { DirectOrderPortalSubmit } from "@/components/employee-portal/direct-order-portal-submit";
 import { loadDirectOrderCaps } from "@/lib/direct-orders/caps";
 import {
   listDirectOrderBrickOptions,
@@ -40,10 +40,10 @@ export default async function PortalDirectOrdersPage() {
       description="Submit a direct (company) order for approval up your management line to the CEO."
     >
       {canSubmit ? (
-        <DirectOrderSubmitForm products={products} bricks={bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
+        <DirectOrderPortalSubmit products={products} bricks={bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
       ) : (
-        <p className="border border-[#e4e9ec] bg-white px-4 py-6 text-sm text-slate-500">
-          Your role cannot submit direct orders. Approvers review them under Approvals Hub › Direct Orders Approvals.
+        <p className="rounded border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+          Your role cannot submit direct orders. Approvers review them under Approvals Hub &gt; Direct Orders Approvals.
         </p>
       )}
     </EmployeePortalPageShell>
