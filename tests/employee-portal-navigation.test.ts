@@ -219,20 +219,43 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showProbationTab, true, "Group Product Manager should see the line-scoped Probation tab in nav");
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
+  // Direct Orders -- submit/report are the module's own requester-role set; approvals is
+  // only the two roles that ever sit as a person-rung in the approval ladder.
+  const districtManagerDefault = resolveEmployeePortalNavVisibility("District Manager");
+  const regionalManagerDefault = resolveEmployeePortalNavVisibility("Regional Manager");
+  assert.equal(districtManagerDefault.showDirectOrdersTab, true, "District Manager should see Direct Orders (requester role)");
+  assert.equal(districtManagerDefault.showDirectOrdersReportTab, true, "District Manager should see Direct Orders Report");
+  assert.equal(districtManagerDefault.showDirectOrdersApprovalsTab, false, "District Manager never sits as a person-rung, so no Approvals tab");
+  assert.equal(regionalManagerDefault.showDirectOrdersTab, true, "Regional Manager should see Direct Orders (requester role)");
+  assert.equal(regionalManagerDefault.showDirectOrdersApprovalsTab, true, "Regional Manager is a person-rung approver, so the Approvals tab must show");
+  assert.equal(nsmDefault.showDirectOrdersTab, true, "National Sales Manager should see Direct Orders (requester role)");
+  assert.equal(nsmDefault.showDirectOrdersApprovalsTab, true, "National Sales Manager is a person-rung approver, so the Approvals tab must show");
+  assert.equal(productManagerDefault.showDirectOrdersTab, true, "Product Manager should see Direct Orders (requester role)");
+  assert.equal(productManagerDefault.showDirectOrdersApprovalsTab, false, "Product Manager goes straight to CEO, so no Approvals tab");
+  assert.equal(groupProductManagerDefault.showDirectOrdersTab, true, "Group Product Manager should see Direct Orders (requester role)");
+  const trainingManagerForDirectOrders = resolveEmployeePortalNavVisibility("Training Manager");
+  assert.equal(trainingManagerForDirectOrders.showDirectOrdersTab, false, "Direct Orders must not show for a role outside the module's requester set");
+  assert.equal(trainingManagerForDirectOrders.showDirectOrdersApprovalsTab, false, "Direct Orders Approvals must not show for a role that never approves");
+
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
-  // MM mirrors GPM on every nav surface EXCEPT three intentional differences:
+  assert.equal(marketingManagerDefault.showDirectOrdersTab, false, "Marketing Manager is NOT a Direct Orders requester role");
+  // MM mirrors GPM on every nav surface EXCEPT five intentional differences:
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
   // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
+  // - Direct Orders submit/report are hidden: MM is NOT in DIRECT_ORDER_REQUESTER_ROLES,
+  //   so the module's own server-side gate would reject an MM submission anyway
   assert.deepEqual(
     {
       ...marketingManagerDefault,
       showIncentiveTab: groupProductManagerDefault.showIncentiveTab,
       showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
       showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
+      showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
+      showDirectOrdersReportTab: groupProductManagerDefault.showDirectOrdersReportTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, and the Double Visit Report tab)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, and Direct Orders submit/report)",
   );
   assert.equal(groupProductManagerDefault.showDoubleVisitReportTab, true, "Group Product Manager sees the Double Visit Report tab (in DV_FOCUS_ROLES)");
   assert.equal(marketingManagerDefault.showDoubleVisitReportTab, false, "Marketing Manager does NOT get the Double Visit Report tab (not in DV_FOCUS_ROLES — its page would redirect)");
