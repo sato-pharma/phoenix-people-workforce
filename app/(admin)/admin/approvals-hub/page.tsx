@@ -55,11 +55,17 @@ export default async function AdminApprovalsHubPage({
 
   // Admin audience: the full cross-module inbox (marketing always excluded — it keeps
   // its own dedicated inbox). "My requests" and history resolve in parallel.
-  const [baseItems, myRequests, historicalItems]: [Awaited<ReturnType<typeof getAwaitingMyActionItems>>, MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
+  const [baseItems, rawMyRequests, rawHistoricalItems]: [Awaited<ReturnType<typeof getAwaitingMyActionItems>>, MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
     getAwaitingMyActionItems(access, "admin"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
   ]);
+  // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
+  // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
+  // module each) — drop them here too, reusing MIGRATED_DEEPLINK_BASES as the one list of which
+  // modules that applies to, so a request never shows twice.
+  const myRequests = rawMyRequests.filter((item) => !MIGRATED_DEEPLINK_BASES[item.module]);
+  const historicalItems = rawHistoricalItems.filter((item) => !MIGRATED_DEEPLINK_BASES[item.module]);
   const items = [...baseItems];
   if (initialModule && initialId && !items.some((item) => item.id === initialId && item.module === initialModule)) {
     const linkedItem = await getActionCenterDeepLinkItem(access, initialModule, initialId);
