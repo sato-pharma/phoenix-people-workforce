@@ -30,6 +30,10 @@ import {
   type PayrollSalarySource,
 } from "@/lib/payroll/salary-source-model.ts";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
+import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
+import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
+import { scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
@@ -333,6 +337,136 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
   return byCompact;
 }
 
+/**
+ * Faithful copy of ireports360-source.ts's VISIT_TYPE_TO_STATUS map (owner-confirmed
+ * 2026-07-20; that map is private to that file, so it's duplicated here — keep in sync if
+ * it ever changes). visitType 0 = a regular visit, handled separately below.
+ */
+const LEAVER_VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
+  [-1, "CP"], // Conference
+  [-2, "CP"], // Group Meeting
+  [-4, "AV"], // Annual Vacation
+  [-8, "CP"], // Campaign (Prospection)
+  [-9, "CP"], // Training
+  [-11, "CP"], // Meeting
+  [-12, "CP"], // Traveling
+  [-15, "AV"], // Health Day
+]);
+
+type LeaverVisitRow = {
+  visit_date: string | null;
+  visit_type: number | null;
+  agent_hr_id: string | null;
+  double_hr_id: string | null;
+  agent_crm_id: number | string | null;
+  double_crm_id: number | string | null;
+};
+
+/**
+ * Per-day CRM classification for ONE leaver's employed span this period, computed directly
+ * from the CRM visits mirror rather than through either of the two existing paths — both
+ * silently exclude a resigned employee before computing anything:
+ *  - listCrmDeductionCandidates reads the pre-synced `deduction_candidates` cache, whose own
+ *    sync job produced nothing for a leaver's exit month (verified 2026-07-20 against real
+ *    production leavers: rows exist for prior months, none for the resignation month).
+ *  - buildFieldWorkforceCompliancePreviewFromVisitsReport filters its employee population to
+ *    classifyEmployeeNode(employee).eligible_for_headcount, which is explicitly false for a
+ *    resigned employee — see that file's own comment: "Employees who have left the company
+ *    ... are not rendered in the monthly report."
+ *
+ * Reuses the exact same exported eligibility/weekly-off/holiday rules those paths use, and
+ * the same visit-type-to-status mapping (see LEAVER_VISIT_TYPE_TO_STATUS above), applied only
+ * to this one leaver's own visits via the sanctioned CRM reader (scanVisitsForRange) rather
+ * than a raw query — no module outside src/lib/crm may query the mirror table directly.
+ */
+async function computeLeaverCrmDates(input: {
+  hrId: string;
+  crmId: string | null;
+  jobTitle: string | null;
+  hireDate: string | null;
+  lastWorkingDate: string;
+  period: PayrollPeriod;
+}): Promise<{ noActivityDates: string[]; avDates: string[] }> {
+  const empty = { noActivityDates: [], avDates: [] };
+  if (!isFieldWorkforceComplianceEligibleTitle(input.jobTitle)) return empty;
+
+  try {
+    const { start, end } = periodBounds(input.period);
+    const hireIso = input.hireDate ? input.hireDate.slice(0, 10) : null;
+    const loopStart = hireIso && hireIso > start ? hireIso : start;
+    const loopEnd = input.lastWorkingDate < end ? input.lastWorkingDate : end;
+    if (loopStart > loopEnd) return empty;
+
+    const hrKey = compactHrKey(input.hrId);
+    const crmIdText = input.crmId != null ? String(input.crmId).trim() : "";
+
+    const [visits, holidayResult] = await Promise.all([
+      scanVisitsForRange<LeaverVisitRow>({
+        dateFrom: loopStart,
+        dateTo: loopEnd,
+        columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
+      }),
+      getConfirmedNationalHolidays({ month: input.period.month, year: input.period.year }),
+    ]);
+
+    const byDay = new Map<string, LeaverVisitRow[]>();
+    for (const visit of visits) {
+      const agentKey = compactHrKey(visit.agent_hr_id ?? "");
+      const doubleKey = compactHrKey(visit.double_hr_id ?? "");
+      const isMine =
+        (agentKey && agentKey === hrKey) ||
+        (doubleKey && doubleKey === hrKey) ||
+        (!agentKey && crmIdText && String(visit.agent_crm_id ?? "").trim() === crmIdText) ||
+        (!doubleKey && crmIdText && String(visit.double_crm_id ?? "").trim() === crmIdText);
+      if (!isMine) continue;
+      const dateIso = (visit.visit_date ?? "").slice(0, 10);
+      if (!dateIso) continue;
+      const list = byDay.get(dateIso) ?? [];
+      list.push(visit);
+      byDay.set(dateIso, list);
+    }
+
+    const holidayDates = new Set<string>();
+    for (const holiday of holidayResult.holidays) {
+      for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
+        holidayDates.add(date);
+      }
+    }
+
+    const noActivityDates: string[] = [];
+    const avDates: string[] = [];
+    for (const dateIso of eachDateInclusive(loopStart, loopEnd)) {
+      if (isFieldWorkforceWeeklyOff({ dateIso, title: input.jobTitle })) continue;
+      if (holidayDates.has(dateIso)) continue;
+
+      const dayVisits = byDay.get(dateIso) ?? [];
+      if (dayVisits.length === 0) {
+        noActivityDates.push(dateIso);
+        continue;
+      }
+
+      // Mirrors dayCellValue exactly: regular visits win, then CP, then AV (owner decision
+      // 2026-07-20) — a day with ANY recorded visit is never "no activity".
+      let regularCount = 0;
+      let hasAv = false;
+      for (const visit of dayVisits) {
+        const visitType = Number(visit.visit_type ?? 0);
+        if (visitType === 0) {
+          regularCount += 1;
+        } else if (LEAVER_VISIT_TYPE_TO_STATUS.get(visitType) === "AV") {
+          hasAv = true;
+        }
+      }
+      if (regularCount === 0 && hasAv) avDates.push(dateIso);
+    }
+
+    return { noActivityDates, avDates };
+  } catch (error) {
+    console.error("[automated-payroll:recommend] leaver CRM classification failed:", error);
+    return empty;
+  }
+}
+
 // ---- Part 1 -----------------------------------------------------------------
 
 function recommendNewHires(
@@ -372,7 +506,6 @@ function recommendNewHires(
 }
 
 async function recommendResignations(
-  access: AccessContext,
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
@@ -382,13 +515,18 @@ async function recommendResignations(
   if (leavers.length === 0) return [];
 
   // Owner rule (2026-07-20): a leaver won't be around for the whole-company Part-2 CRM/
-  // Vacation steps, so their deduction is computed and settled right here instead — reusing
-  // the exact same totals those steps would otherwise show for them (the FWC engine already
-  // stops generating no-activity candidates after a resigned employee's last working date, so
-  // this naturally covers only the days they actually worked).
-  const [crmTotals, vacationTotals] = await Promise.all([
-    computeCrmDeductionTotals(access, members, sources, period),
+  // Vacation steps, so their deduction is computed and settled right here instead. CRM
+  // no-activity + CRM-recorded leave are computed directly per leaver via
+  // computeLeaverCrmDates (see its own doc comment) rather than through the shared Part-2
+  // sourcing, which silently excludes resigned employees at two different layers — verified
+  // 2026-07-20 against real production leavers whose CRM figures were showing zero despite
+  // real underlying activity gaps. Phoenix-submitted (v2) unpaid vacation isn't affected by
+  // that exclusion, so its existing balance-aware total is still read the normal way — only
+  // its v2Days/v2Amount fields are used here; its crm* fields come from the same
+  // leaver-excluded source this function works around, so they're ignored.
+  const [vacationTotals, v2Dates] = await Promise.all([
     computeVacationDeductionTotals(members, sources, period),
+    loadV2VacationDatesByCompact(period),
   ]);
 
   const rows: StepRow[] = [];
@@ -407,32 +545,73 @@ async function recommendResignations(
     });
     if (!settlement) continue;
     const draft = drafts.get(member.compact);
+    const baseSalary = roundCurrency(source?.baseSalary ?? 0);
 
-    const crmTotal = crmTotals.get(member.compact);
+    const crmDates = await computeLeaverCrmDates({
+      hrId: member.employee.hrId,
+      crmId: member.employee.crmId,
+      jobTitle: member.employee.jobTitle,
+      hireDate: member.employee.hireDate,
+      lastWorkingDate: member.lastWorkingDate,
+      period,
+    });
+
+    const noActivityDays = crmDates.noActivityDates.length;
+    const crmValue =
+      noActivityDays > 0
+        ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: noActivityDays }) ?? 0
+        : 0;
+
+    // CRM-recorded leave (AV), balance-first, de-duped against any Phoenix v2 vacation
+    // already covering the same date (owner rule 2026-07-20, same as the Part-2 Vacation step).
+    const covered = v2Dates.get(member.compact);
+    const crmOnlyAvDates = crmDates.avDates.filter((date) => !covered?.has(date)).sort();
+    let crmLeaveBalanceDays = 0;
+    if (crmOnlyAvDates.length > 0) {
+      try {
+        const snapshot = await calculatePaymentForRequest({
+          durationDays: crmOnlyAvDates.length,
+          employeeHrId: member.employee.hrId,
+          hireDate: member.employee.hireDate,
+          startDate: crmOnlyAvDates[0],
+          vacationType: "annual",
+        });
+        crmLeaveBalanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
+      } catch (error) {
+        console.error("[automated-payroll:recommend] leaver CRM leave balance check failed:", error);
+      }
+    }
+    const crmLeaveUnpaidDays = Math.max(0, crmOnlyAvDates.length - crmLeaveBalanceDays);
+    const crmLeaveAmount =
+      crmLeaveUnpaidDays > 0
+        ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: crmLeaveUnpaidDays }) ?? 0
+        : 0;
+
     const vacationTotal = vacationTotals.get(member.compact);
-    const crmValue = roundCurrency(crmTotal?.value ?? 0);
-    const vacationValue = roundCurrency((vacationTotal?.v2Amount ?? 0) + (vacationTotal?.crmAmount ?? 0));
+    const v2Days = vacationTotal?.v2Days ?? 0;
+    const v2Amount = vacationTotal?.v2Amount ?? 0;
+    const vacationValue = roundCurrency(v2Amount + crmLeaveAmount);
 
     const row = baseRow(member);
     row.context = {
       "Last Working Date": member.lastWorkingDate,
       Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
       "Days Worked": settlement.daysWorked,
-      "CRM No-Activity Days": roundCurrency(crmTotal?.days ?? 0),
-      "Unpaid Vacation Days": roundCurrency((vacationTotal?.v2Days ?? 0) + (vacationTotal?.crmUnpaidDays ?? 0)),
+      "CRM No-Activity Days": noActivityDays,
+      "Unpaid Vacation Days": roundCurrency(v2Days + crmLeaveUnpaidDays),
     };
     row.recommended = {
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
-      crm: crmValue,
+      crm: roundCurrency(crmValue),
       unpaidVacations: vacationValue,
     };
     row.values = {
       baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
       ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
       fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
-      crm: pick(draft?.crm, crmValue),
+      crm: pick(draft?.crm, roundCurrency(crmValue)),
       unpaidVacations: pick(draft?.unpaidVacations, vacationValue),
     };
     rows.push(row);
@@ -747,7 +926,7 @@ export async function recommendStep(input: {
     case "p1_new_hires":
       return recommendNewHires(input.members, input.sources, input.period, drafts);
     case "p1_resignations":
-      return recommendResignations(input.access, input.members, input.sources, input.period, drafts);
+      return recommendResignations(input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
     case "p2_expenses":
