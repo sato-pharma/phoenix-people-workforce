@@ -29,10 +29,12 @@ export type PlanningCalendarPlanItem = {
   conflictWarning: string | null;
   employeeHrId: string;
   employeeJobTitle: string | null;
+  // Raw legal name (as recorded on the plan header at submission time) — kept
+  // for anything that genuinely needs the legal record; UI rendering (planning
+  // calendar) uses employeeDisplayName / title instead, both nickname-aware.
   employeeName: string;
   // Nickname-aware short name for compact UI (month-grid cells). Falls back to
-  // employeeName when no nickname is set; legal/audit contexts keep using
-  // employeeName / title instead.
+  // employeeName when no nickname is set.
   employeeDisplayName: string;
   endDate: string;
   id: string;
@@ -52,6 +54,9 @@ export type PlanningCalendarPlanItem = {
   startDate: string;
   status: EmployeePlanStatus;
   time: string | null;
+  // Rendered UI label ("Employee - Region - Area"), shown as agenda-list text
+  // and a hover tooltip in planning-calendar.tsx — built from
+  // employeeDisplayName (nickname-aware), not the raw employeeName.
   title: string;
 };
 
