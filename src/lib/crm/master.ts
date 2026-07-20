@@ -89,8 +89,7 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
-  { key: "visit_time", kind: "datetime_local", label: "Visit Time", note: "The ONE authoritative visit time (Cairo): the GPS check-in time when the visit has one (real on-site presence), otherwise the rep's logged/save time. The 'Source' column says which. Never the empty midnight placeholder." },
-  { key: "visit_time_source", kind: "text", label: "Visit Time Source", note: "'GPS check-in' = the visit time above is a real GPS check-in (on site). 'Logged/save' = it is the submission time only, which a rep often logs hours later or the next morning — treat as approximate." },
+  { key: "visit_time", kind: "datetime_local", label: "Visit Time", note: "The ONE authoritative visit time (Cairo), shown with its source badge: GPS = a real GPS check-in (on site). Logged = the rep's submission time only, which is often hours later or the next morning — treat as approximate. Never the empty midnight placeholder." },
   { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "When the agent saved/submitted this visit in the CRM (Cairo time). This is paperwork time, NOT proof of being on site — reps frequently batch-log visits later, even after midnight. Prefer the Visit Time column above." },
   { key: "ampm", kind: "text", label: "AM/PM" },
   { key: "agent_crm_id", kind: "number", label: "Agent CRM ID" },

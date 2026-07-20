@@ -85,6 +85,50 @@ function renderCell(value: unknown, kind: CrmMasterColumn["kind"]): string {
   return String(value);
 }
 
+/** Africa/Cairo, 12-hour clock only (no date) — for the Visit Time cell's inline badge, mirroring
+ * the Visits Report's time+source display. Vendor-local, so no timezone shift (see formatVendorLocal). */
+function formatVendorTimeOnly(value: unknown): string {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
+}
+
+/** Export-only rendering: no JSX badge in an XLSX cell, so the visit_time_source is folded into
+ * the text as a "(GPS)"/"(Logged)" suffix — otherwise removing the dedicated source column would
+ * silently drop that information from exports, not just from the on-screen table. */
+function renderExportCell(row: Record<string, unknown>, col: CrmMasterColumn): string {
+  if (col.key === "visit_time") {
+    const value = row[col.key];
+    if (value === null || value === undefined || value === "") return "—";
+    const source = row.visit_time_source;
+    const suffix = source === "GPS check-in" ? " (GPS)" : source === "Logged/save" ? " (Logged)" : "";
+    return `${formatVendorLocal(value)}${suffix}`;
+  }
+  return renderCell(row[col.key], col.kind);
+}
+
+/** The Visit Time cell: date+time on top, a GPS/Logged source badge below — the same visual as
+ * the Visits Report's Visit Time column, so the two screens read identically. `source` is the raw
+ * row.visit_time_source value ("GPS check-in" | "Logged/save" | null); visit_time_source is
+ * deliberately not its own table column (redundant once folded in here). */
+function VisitTimeCell({ source, value }: { source: unknown; value: unknown }) {
+  if (value === null || value === undefined || value === "") return <span className="text-slate-400">—</span>;
+  const isGps = source === "GPS check-in";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
+      <span
+        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+          isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+        }`}
+        title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
+      >
+        {isGps ? "GPS" : "Logged"}
+      </span>
+    </span>
+  );
+}
+
 export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -265,7 +309,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       const columns: ExportColumn[] = data.columns.map((col) => ({ key: col.key, label: col.label }));
       const rows: ExportRow[] = payload.rows.map((row) => {
         const out: ExportRow = {};
-        for (const col of data.columns) out[col.key] = renderCell(row[col.key], col.kind);
+        for (const col of data.columns) out[col.key] = renderExportCell(row, col);
         return out;
       });
       await downloadXlsxExport({
@@ -708,7 +752,11 @@ function RowGroup({
       >
         {columns.map((col) => (
           <td className="whitespace-nowrap px-3 py-2" key={col.key}>
-            {renderCell(row[col.key], col.kind)}
+            {col.key === "visit_time" ? (
+              <VisitTimeCell source={row.visit_time_source} value={row[col.key]} />
+            ) : (
+              renderCell(row[col.key], col.kind)
+            )}
           </td>
         ))}
         <td className="whitespace-nowrap px-3 py-2 text-right">
