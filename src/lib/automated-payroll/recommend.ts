@@ -32,7 +32,7 @@ import {
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
-import { scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
@@ -364,7 +364,7 @@ type LeaverVisitRow = {
 
 /**
  * Per-day CRM classification for ONE leaver's employed span this period, computed directly
- * from the CRM visits mirror rather than through either of the two existing paths — both
+ * from the CRM visits mirror rather than through any of the three existing paths — ALL THREE
  * silently exclude a resigned employee before computing anything:
  *  - listCrmDeductionCandidates reads the pre-synced `deduction_candidates` cache, whose own
  *    sync job produced nothing for a leaver's exit month (verified 2026-07-20 against real
@@ -373,11 +373,19 @@ type LeaverVisitRow = {
  *    classifyEmployeeNode(employee).eligible_for_headcount, which is explicitly false for a
  *    resigned employee — see that file's own comment: "Employees who have left the company
  *    ... are not rendered in the monthly report."
+ *  - scanVisitsForRange itself (the sanctioned CRM reader) additionally excludes the visits of
+ *    ANY resigned employee at the row level (the "live departed-agent exclusion", so a departed
+ *    rep's history doesn't pollute company-wide/live dashboards) — which silently ate a leaver's
+ *    OWN visits from THIS function too, since the leaver being looked up is by definition
+ *    resigned. Verified 2026-07-20 against a real production leaver (B-111): 8 real field-visit
+ *    days in her final week were all reported as "no activity" because her own crm_id was in the
+ *    exclusion list. Fixed by reading through scanVisitsForRangeIncludingDeparted instead, which
+ *    is the same full scan minus that one exclusion — see its doc comment.
  *
  * Reuses the exact same exported eligibility/weekly-off/holiday rules those paths use, and
  * the same visit-type-to-status mapping (see LEAVER_VISIT_TYPE_TO_STATUS above), applied only
- * to this one leaver's own visits via the sanctioned CRM reader (scanVisitsForRange) rather
- * than a raw query — no module outside src/lib/crm may query the mirror table directly.
+ * to this one leaver's own visits via the sanctioned CRM reader rather than a raw query — no
+ * module outside src/lib/crm may query the mirror table directly.
  */
 async function computeLeaverCrmDates(input: {
   hrId: string;
@@ -401,7 +409,7 @@ async function computeLeaverCrmDates(input: {
     const crmIdText = input.crmId != null ? String(input.crmId).trim() : "";
 
     const [visits, holidayResult] = await Promise.all([
-      scanVisitsForRange<LeaverVisitRow>({
+      scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
         dateFrom: loopStart,
         dateTo: loopEnd,
         columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",

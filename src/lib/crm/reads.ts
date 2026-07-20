@@ -872,6 +872,35 @@ export async function scanVisitsForRange<T = CrmVisitRow>(options: {
 }
 
 /**
+ * Same full scan as {@link scanVisitsForRange}, but WITHOUT the live departed-agent exclusion.
+ * That exclusion exists to hide a resigned rep's visits from company-wide/live views (dashboards,
+ * the FWC monthly matrix) — but a caller that is deliberately looking up one specific person's OWN
+ * visit history BECAUSE they resigned (e.g. computing a leaver's final-month CRM no-activity/leave
+ * days for payroll) must never have that person's own activity hidden from them for the very reason
+ * it's being asked about. Narrow, intentional carve-out — every company-wide/live read must keep
+ * using {@link scanVisitsForRange}. Returns `[]` if the schema is missing.
+ */
+export async function scanVisitsForRangeIncludingDeparted<T = CrmVisitRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+}): Promise<T[]> {
+  const supabase = getSupabaseAdmin();
+  try {
+    return await fetchAllRows<T>(() =>
+      supabase
+        .from(CRM_VISITS_TABLE)
+        .select(options.columns)
+        .gte("visit_date", options.dateFrom)
+        .lte("visit_date", options.dateTo),
+    );
+  } catch (error) {
+    if (isCrmSchemaMissingError(error)) return [];
+    throw error;
+  }
+}
+
+/**
  * Presence check for the probation "CRM-unmapped" badge: of the given resolved hr ids, which
  * actually appear as an `agent_hr_id` on at least one visit. Returns the distinct raw
  * `agent_hr_id` values found (callers canonicalize).
