@@ -122,6 +122,18 @@ async function resolveActiveHrApproverHrIds(): Promise<string[]> {
     .filter(Boolean) as string[];
 }
 
+async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", roles)
+    .eq("is_active", true);
+  if (error) return [];
+  return ((data ?? []) as Array<{ hr_id?: string | null }>)
+    .map((row) => normalizeHrId(row.hr_id))
+    .filter(Boolean) as string[];
+}
+
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
   return access.scope === "system" || hrProbationRoles.has(access.role);
 }
@@ -526,49 +538,88 @@ async function insertHistory(
   if (error && !isProbationSchemaMissing(error)) throw error;
 }
 
-async function notifyProbationWorkflow(record: ProbationWorkflowRecord, employeeDisplayName: string, title: string, tone: "success" | "warning" | "danger") {
-  await createSystemNotification({
-    actionUrl: "/api/probation/redirect",
-    actorId: "system",
-    email: {
-      ctaHref: "/api/probation/redirect",
-      ctaLabel: "Open probation tracker",
-      employeeHrId: record.employeeHrId,
-      metrics: [
-        { label: "Employee", value: `${employeeDisplayName} (${record.employeeHrId})` },
-        { label: "Status", value: record.status },
-        { label: "Decision", value: record.decision ?? "Pending" },
-      ],
-      notificationType: "probation",
-      subject: `Phoenix ${title} - ${employeeDisplayName}`,
-      summary: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
-      // The admin-editable probation_workflow template renders an employee detail table
-      // ({{line}}/{{jobTitle}}/{{endDate}}); the generic metric→context mapping leaves
-      // those tokens empty. Fill them from the workflow record so the email is not blank.
-      templateContext: {
-        area: record.areaName ?? "—",
-        employeeHrId: record.employeeHrId,
-        employeeName: employeeDisplayName,
-        endDate: record.probationEndDate ?? "—",
-        jobTitle: record.jobTitle ?? "—",
-        line: record.lineName ?? "—",
-      },
-      title,
-      tone,
-    },
-    eventType: "workflow_updated",
-    message: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
-    metadata: {
-      decision: record.decision ?? null,
-      employeeHrId: record.employeeHrId,
-      idempotencyKey: `probation:${record.employeeHrId}:${record.status}`,
-      status: record.status,
-    },
-    module: "probation",
-    priority: tone === "danger" ? "critical" : "high",
-    subjectHrId: record.employeeHrId,
-    title,
-  });
+// SCOPE LEAK FIX (owner report 2026-07-19): this used to call createSystemNotification with no
+// explicit recipient, which fell through to the generic cross-module governance resolver. Its
+// "probation.*" policy uses a "permission_based" strategy that treats matching department_id as
+// sufficient organizational scope — but in this org department_id groups the ENTIRE field-sales org
+// (124 employees, every product line) under one id, not per line. Net effect: up to 98 active users
+// company-wide (any role holding probation:read, which is nearly every role) received another line's
+// probationer's case-status notification — e.g. an Anti Infective probationer's update reaching the
+// Pedia and CNS National Sales Managers, District Managers, and Medical Reps.
+//
+// Fixed by resolving an EXPLICIT, line-scoped recipient list ourselves — reusing
+// resolveFeedbackExtraRecipients's NSM management-chain walk (already correct, used by the SLA
+// reminder path below) instead of the generic governance's broad department match — and sending one
+// createSystemNotification per recipient. An explicit recipientHrId never invokes
+// resolveNotificationRecipientsWithGovernance (see system.ts), so this bypasses the leaky path
+// entirely for this call site without touching the shared governance code other modules rely on.
+async function notifyProbationWorkflow(
+  record: ProbationWorkflowRecord,
+  employee: EmployeeScopeRow,
+  directory: EmployeeScopeRow[],
+  employeeDisplayName: string,
+  title: string,
+  tone: "success" | "warning" | "danger",
+) {
+  const manager = managerOf(employee, directory);
+  const dmHrId = normalizeHrId(manager?.hrId);
+  const [{ nsmHrIds }, hrApproverHrIds, ceoHrIds] = await Promise.all([
+    resolveFeedbackExtraRecipients(employee, directory),
+    resolveActiveHrApproverHrIds(),
+    activeHrIdsByRole(["CEO"]),
+  ]);
+  const recipientHrIds = Array.from(
+    new Set([dmHrId, ...nsmHrIds, ...hrApproverHrIds, ...ceoHrIds].filter((hrId): hrId is string => Boolean(hrId))),
+  );
+  if (recipientHrIds.length === 0) return;
+
+  await Promise.all(
+    recipientHrIds.map((recipientHrId) =>
+      createSystemNotification({
+        actionUrl: "/api/probation/redirect",
+        actorId: "system",
+        email: {
+          ctaHref: "/api/probation/redirect",
+          ctaLabel: "Open probation tracker",
+          employeeHrId: record.employeeHrId,
+          metrics: [
+            { label: "Employee", value: `${employeeDisplayName} (${record.employeeHrId})` },
+            { label: "Status", value: record.status },
+            { label: "Decision", value: record.decision ?? "Pending" },
+          ],
+          notificationType: "probation",
+          subject: `Phoenix ${title} - ${employeeDisplayName}`,
+          summary: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
+          // The admin-editable probation_workflow template renders an employee detail table
+          // ({{line}}/{{jobTitle}}/{{endDate}}); the generic metric→context mapping leaves
+          // those tokens empty. Fill them from the workflow record so the email is not blank.
+          templateContext: {
+            area: record.areaName ?? "—",
+            employeeHrId: record.employeeHrId,
+            employeeName: employeeDisplayName,
+            endDate: record.probationEndDate ?? "—",
+            jobTitle: record.jobTitle ?? "—",
+            line: record.lineName ?? "—",
+          },
+          title,
+          tone,
+        },
+        eventType: "workflow_updated",
+        message: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
+        metadata: {
+          decision: record.decision ?? null,
+          employeeHrId: record.employeeHrId,
+          idempotencyKey: `probation:${record.employeeHrId}:${record.status}:${recipientHrId}`,
+          status: record.status,
+        },
+        module: "probation",
+        priority: tone === "danger" ? "critical" : "high",
+        recipientHrId,
+        subjectHrId: record.employeeHrId,
+        title,
+      }).catch(() => undefined),
+    ),
+  );
 }
 
 export function getProbationReminderSchedule(hireDate: string | null | undefined) {
@@ -1057,7 +1108,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
   const record = mapEvaluation(data as ProbationEvaluationDbRow);
   await ensureProbationReminderEvents(employee, employees);
   await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
-  await notifyProbationWorkflow(record, employee.displayName, "Probation Evaluation Created", "warning");
+  await notifyProbationWorkflow(record, employee, employees, employee.displayName, "Probation Evaluation Created", "warning");
   invalidateExecutiveDashboardCache("probation evaluation created", ["probation"]);
   return record;
 }
@@ -1149,6 +1200,8 @@ export async function runProbationWorkflow(
   await insertHistory(updated, action, actor, row.status, { decisionReason: cleanText(input.decisionReason), note });
   await notifyProbationWorkflow(
     updated,
+    employee,
+    employees,
     employee.displayName,
     action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
     updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
