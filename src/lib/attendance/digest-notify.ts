@@ -99,7 +99,7 @@ export async function notifyDigestSent(input: {
   const result = await createSystemNotification({
     actionUrl: input.actionUrl,
     actorId: "system",
-    channels: ["email", "telegram", "in_app"],
+    channels: ["telegram", "in_app"],
     email: {
       recipientName: input.employeeName,
       templateContext: {
