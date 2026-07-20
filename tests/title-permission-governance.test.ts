@@ -130,10 +130,15 @@ export function runTitlePermissionGovernanceTests() {
   assert.match(policySource, /manager_hr_id/, "manager resolution must key off manager_hr_id");
   assert.match(policySource, /reportsTo\(/, "direct-report check must be identity based");
   assert.match(policySource, /inManagerChain\(/, "manager-chain check must walk manager_hr_id");
-  assert.match(
+  // Regression guard for the cross-line/cross-department notification leak (probation
+  // PR #1199, generalized here): permission recipients must be limited to the subject's
+  // own manager chain (or an explicit company/system-scope role), never a same-department/
+  // area/team/line coworker. `hasOrgScope` was the broad org-unit matcher that caused the
+  // leak — it must not exist in this file anymore.
+  assert.doesNotMatch(
     policySource,
-    /hasOrgScope\(candidate, subject, "team"\)/,
-    "permission recipients must be limited by team scope",
+    /hasOrgScope/,
+    "permission recipients must not fall back to department/area/team/line org-unit matching",
   );
   assert.match(
     policySource,
