@@ -58,6 +58,7 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyDigestId, setBusyDigestId] = useState<number | null>(null);
   const [forceSettling, setForceSettling] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, Record<number, LineDraft>>>(() =>
     Object.fromEntries(initialDigests.map((digest) => [digest.id, initDrafts(digest)])),
   );
@@ -116,6 +117,26 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
     }
   }
 
+  async function recoverVoided() {
+    const confirmed = window.confirm(
+      "This recovers every voided digest that still had a real deduction value and settles it now as an admin decision — real deductions, right now, with no employee notice. Continue?",
+    );
+    if (!confirmed) return;
+    setRecovering(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/attendance/digest-review/recover-voided", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Recover-voided failed.");
+      setNotice(`Recovered and settled ${payload.digestsSettled?.length ?? 0} voided digest(s), ${payload.linesSettled ?? 0} deduction line(s).`);
+    } catch (recoverError) {
+      setError(recoverError instanceof Error ? recoverError.message : "Recover-voided failed.");
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   async function voidDigest(digest: PendingDigestReviewView) {
     const reason = window.prompt(`Why are you voiding ${digest.employeeName}'s digest? (the employee will never see it)`);
     if (!reason || !reason.trim()) return;
@@ -160,6 +181,15 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
           </span>
           <Button disabled={forceSettling} size="sm" type="button" variant="secondary" onClick={() => void forceSettleSent()}>
             {forceSettling ? "…" : "Force-settle already-sent digests"}
+          </Button>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-amber-200/60 pt-3">
+          <span>
+            Digests that were Voided instead of Approved still have their real deduction value intact — Void never
+            deletes it, only Approve/Force-settle actually creates a payroll deduction. Recover and settle those now.
+          </span>
+          <Button disabled={recovering} size="sm" type="button" variant="secondary" onClick={() => void recoverVoided()}>
+            {recovering ? "…" : "Recover voided digests"}
           </Button>
         </div>
       </AdminCallout>

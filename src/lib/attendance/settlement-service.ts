@@ -161,7 +161,9 @@ async function maybeCloseDigest(digestId: number) {
     .eq("id", digestId)
     // "pending_admin_review" covers approveDigestReview's direct-settle path
     // (owner decision 2026-07-21: admin approval never routes through 'sent').
-    .in("status", ["sent", "draft", "pending_admin_review"]);
+    // "void" covers recoverVoidedDigests (a voided digest whose lines were
+    // never actually settled, recovered back into a real payroll deduction).
+    .in("status", ["sent", "draft", "pending_admin_review", "void"]);
 }
 
 async function insertSettlement(input: {
@@ -670,6 +672,38 @@ export async function forceSettleSentDigests(actorHrId: string): Promise<{ diges
   const digestsSettled: number[] = [];
   let linesSettled = 0;
   for (const digest of (sentDigests ?? []) as Array<{ id: number; employee_hr_id: string }>) {
+    linesSettled += await settleAllDeductibleLines(digest.id, digest.employee_hr_id, actorHrId);
+    await maybeCloseDigest(digest.id);
+    digestsSettled.push(digest.id);
+  }
+  return { digestsSettled, linesSettled };
+}
+
+/**
+ * Owner decision (2026-07-21): recover digests that were voided instead of
+ * approved during today's review pass, before it was clear that Void
+ * permanently discards the deduction (no notification either way, but no
+ * payroll candidate is ever created for a voided line). Voiding only ever
+ * flips the digest's own status column -- every underlying line keeps its
+ * original action='pending' plus its computed deduction_days/value/reason
+ * untouched, so this is a genuine recovery, not a re-guess: it settles those
+ * still-pending deductible lines the same "admin decision is final" way as
+ * approveDigestReview/forceSettleSentDigests. Scoped to
+ * total_deduction_value > 0 so a digest that was correctly voided for being
+ * genuinely empty/zero is left alone.
+ */
+export async function recoverVoidedDigests(actorHrId: string): Promise<{ digestsSettled: number[]; linesSettled: number }> {
+  const supabase = getSupabaseAdmin();
+  const { data: voidedDigests, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,employee_hr_id")
+    .eq("status", "void")
+    .gt("total_deduction_value", 0);
+  if (error) throw error;
+
+  const digestsSettled: number[] = [];
+  let linesSettled = 0;
+  for (const digest of (voidedDigests ?? []) as Array<{ id: number; employee_hr_id: string }>) {
     linesSettled += await settleAllDeductibleLines(digest.id, digest.employee_hr_id, actorHrId);
     await maybeCloseDigest(digest.id);
     digestsSettled.push(digest.id);
