@@ -6,13 +6,14 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { applyOrganogramMirrorSafety } from "@/lib/reports/organogram-safety";
+import { applyOrganogramMirrorSafety, seatOccupancyKey } from "@/lib/reports/organogram-safety";
 import {
   getVacancyReport,
   isEmployeeVisibleInOrganogram,
   type OrganogramReportRow,
   type VacancyReportData,
   type VacancyReportDiagnostic,
+  type VacancyReportRow,
 } from "@/lib/reports/vacancies";
 import { buildOrganogramSeatReport, scopeAuOrganogramRows } from "@/lib/reports/organogram-au-source";
 
@@ -124,32 +125,6 @@ export function canAccessCompanyVacancies(access: AccessContext) {
 // seats), matching getEmployeePortalVacancies' manager_hr_id scoping.
 export function isTeamScopedVacancyRole(access: AccessContext) {
   return access.role === "District Manager";
-}
-
-function scopeVacancyReportToTeam(
-  report: VacancyReportData,
-  access: AccessContext,
-): VacancyReportData {
-  const managerKey = normalizeHrIdForAccess(access.hrId);
-  if (!managerKey) {
-    return emptyReport({
-      code: "team_unresolved",
-      message: "We couldn't resolve your HR ID to scope vacancy reports to your team.",
-    });
-  }
-
-  const matchesManager = (managerHrId: string | null | undefined) =>
-    normalizeHrIdForAccess(managerHrId) === managerKey;
-
-  const scopedReport = {
-    ...report,
-    organogramRows: applyOrganogramMirrorSafety(
-      report.organogramRows.filter((row) => matchesManager(row.managerHrId)),
-    ),
-    rows: report.rows.filter((row) => matchesManager(row.managerHrId)),
-  };
-
-  return { ...scopedReport, summary: recalculateSummary(scopedReport) };
 }
 
 export function scopeOrganogramReportData(
@@ -312,16 +287,114 @@ export async function getOrganogramReport(
   return { organogramRows: scopedRows, rows: [], summary: seatReport.summary };
 }
 
+export function seatKeysOfActiveEmployees(rows: OrganogramReportRow[]): Set<string> {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    if (row.type !== "employee") continue;
+    const key = seatOccupancyKey(row);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+// A position_vacancies row claiming "open" is stale when the organogram's own
+// occupancy-truth model (buildOrganogramSeatReport, the same seat data /organogram
+// renders) shows an active employee currently on that exact seat (level+line+area+
+// manager) — the identical signal that already hides a stale vacancy from the
+// organogram tree (see suppressFilledVacancyRows in organogram-safety.ts), applied
+// here to the flat Vacancy Report's rows/summary so the two surfaces can no longer
+// disagree about the same seat. Rows that are already filled/cancelled, or whose
+// seat the AU model has no opinion on, pass through untouched — this only removes
+// rows that are WRONGLY claiming to still be open.
+export function reconcileVacancyRowsAgainstOccupancy(
+  rows: VacancyReportRow[],
+  occupiedSeatKeys: Set<string>,
+): VacancyReportRow[] {
+  return rows.filter((row) => {
+    if (row.status !== "open") return true;
+    const key = seatOccupancyKey(row);
+    return !key || !occupiedSeatKeys.has(key);
+  });
+}
+
+// Builds the vacancy report from the organogram's own AU seat model: the tree
+// (organogramRows) IS /organogram's tree, unscoped; the flat list (rows) keeps its
+// rich position_vacancies-sourced fields (vacancy code, note, created date, team)
+// but has any stale "open" row reconciled away. position_vacancies itself, and the
+// hiring/offer-close write path that owns it, are untouched — this only changes
+// how the report DISPLAYS filled-vs-vacant, matching the organogram's own logic.
+async function buildAuBackedVacancyReport(): Promise<VacancyReportData> {
+  const [seatReport, legacyReport] = await Promise.all([
+    buildOrganogramSeatReport(),
+    getVacancyReport(),
+  ]);
+  const occupiedSeatKeys = seatKeysOfActiveEmployees(seatReport.organogramRows);
+  const rows = reconcileVacancyRowsAgainstOccupancy(legacyReport.rows, occupiedSeatKeys);
+  const report: VacancyReportData = {
+    organogramRows: seatReport.organogramRows,
+    rows,
+    summary: legacyReport.summary,
+  };
+  return { ...report, summary: recalculateSummary(report) };
+}
+
+export function scopeAuVacancyReportToLines(
+  report: VacancyReportData,
+  lineNames: string[],
+): VacancyReportData {
+  const matchesAny = (line: string | null | undefined) => {
+    const n = normalizeLineName(line);
+    return Boolean(n && lineNames.some((allowed) => normalizeLineName(allowed) === n));
+  };
+  const scoped = {
+    ...report,
+    organogramRows: scopeAuOrganogramRows(report.organogramRows, { lineNames, mode: "line" }),
+    rows: report.rows.filter((row) => matchesAny(row.lineName)),
+  };
+  return { ...scoped, summary: recalculateSummary(scoped) };
+}
+
+// District Manager: only vacancies reporting directly to them (their own team's
+// open seats), matching the legacy scopeVacancyReportToTeam's exact semantics —
+// applied here to the AU-sourced tree/rows instead of the legacy-sourced ones.
+export function scopeAuVacancyReportToTeam(
+  report: VacancyReportData,
+  access: AccessContext,
+): VacancyReportData {
+  const managerKey = normalizeHrIdForAccess(access.hrId);
+  if (!managerKey) {
+    return emptyReport({
+      code: "team_unresolved",
+      message: "We couldn't resolve your HR ID to scope vacancy reports to your team.",
+    });
+  }
+
+  const matchesManager = (managerHrId: string | null | undefined) =>
+    normalizeHrIdForAccess(managerHrId) === managerKey;
+
+  const scoped = {
+    ...report,
+    organogramRows: report.organogramRows.filter((row) => matchesManager(row.managerHrId)),
+    rows: report.rows.filter((row) => matchesManager(row.managerHrId)),
+  };
+  return { ...scoped, summary: recalculateSummary(scoped) };
+}
+
 /**
  * The single scoped entry point for the vacancy report (`app/api/reports/vacancies`,
  * the admin vacancies page, and the admin-shell workspace vacancies page). Classifies
  * the caller's role into company-wide / line-scoped / team-scoped and filters
  * accordingly — mirrors the getOrganogramReport pattern above, extended with the two
  * roles unique to the `vacancies` permission (Talent Acquisition, District Manager).
+ *
+ * The organogram is the source of truth for filled-vs-vacant: the tree here is the
+ * exact same AU seat data /organogram renders, and the flat position_vacancies-
+ * sourced list is reconciled against that same occupancy truth before its rows are
+ * counted, so the two surfaces can never show disagreeing numbers for one seat.
  */
 export async function getScopedVacancyReport(access: AccessContext): Promise<VacancyReportData> {
   if (canAccessCompanyVacancies(access)) {
-    const report = await getVacancyReport();
+    const report = await buildAuBackedVacancyReport();
     // Mirror the organogram's Head Office boundary: company-org roles without
     // head-office access (Marketing / Training Manager) must not see Head Office
     // vacancies either. Talent Acquisition recruits for Head Office, so it is
@@ -334,7 +407,7 @@ export async function getScopedVacancyReport(access: AccessContext): Promise<Vac
 
   if (isLineScopedOrganogramRole(access)) {
     const [report, lineNames] = await Promise.all([
-      getVacancyReport(),
+      buildAuBackedVacancyReport(),
       resolveOrganogramLinesForEmployee(access),
     ]);
 
@@ -346,12 +419,12 @@ export async function getScopedVacancyReport(access: AccessContext): Promise<Vac
       });
     }
 
-    return scopeOrganogramReportData(report, { lineNames, mode: "line" });
+    return scopeAuVacancyReportToLines(report, lineNames);
   }
 
   if (isTeamScopedVacancyRole(access)) {
-    const report = await getVacancyReport();
-    return scopeVacancyReportToTeam(report, access);
+    const report = await buildAuBackedVacancyReport();
+    return scopeAuVacancyReportToTeam(report, access);
   }
 
   return emptyReport({

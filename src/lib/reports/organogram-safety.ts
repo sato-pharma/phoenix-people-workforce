@@ -204,7 +204,15 @@ function isRemovedVacancyStatus(status: string | null | undefined) {
 // distinct area seats, so matching on it could wrongly mark a real vacant area as
 // filled). Rows without a specific area/line/manager are under-specified and
 // return null, so they are never suppressed on a guess.
-function seatOccupancyKey(row: OrganogramReportRow): string | null {
+//
+// Exported (and narrowed to just the fields it reads) so callers outside the
+// organogram tree — e.g. reconciling the flat position_vacancies-sourced
+// Vacancy Report against the organogram's own occupancy truth — can reuse this
+// exact key instead of standing up a second, parallel "is this seat filled"
+// implementation.
+export function seatOccupancyKey(
+  row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle" | "managerHrId" | "managerName" | "areaName" | "lineName">,
+): string | null {
   const level = classifyOrganogramStructureLevel(row);
   if (!level) return null;
 
