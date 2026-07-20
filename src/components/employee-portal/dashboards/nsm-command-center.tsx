@@ -152,7 +152,7 @@ function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: str
 }
 
 function CrmBoard({ crm }: { crm: CrmData }) {
-  const syncLabel = crm?.lastSyncAt ? `as of ${cairoTime(crm.lastSyncAt)}` : "12 PM sync";
+  const syncLabel = crm?.lastSyncAt ? `as of ${cairoTime(crm.lastSyncAt)}` : "awaiting sync";
 
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
@@ -160,11 +160,19 @@ function CrmBoard({ crm }: { crm: CrmData }) {
         title="CRM First Visit"
         right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">{syncLabel}</span>}
       />
-      {!crm || !crm.synced ? (
+      {crm?.error ? (
+        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-sm text-slate-500">
+            CRM data is temporarily unavailable — this is a fetch issue, not a compliance gap. Try again shortly.
+          </p>
+        </div>
+      ) : !crm || !crm.synced ? (
         <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
           <Clock className="h-4 w-4 shrink-0 text-slate-400" />
           <p className="text-sm text-slate-500">
-            Awaiting today&apos;s 12&nbsp;PM CRM sync — first-visit compliance appears once visits are mirrored from iReports360.
+            Awaiting today&apos;s first CRM sync — visits mirror from iReports360 roughly every 15&nbsp;minutes from 8:30&nbsp;AM
+            to noon, then again at 12:07&nbsp;PM and 7:07&nbsp;PM.
           </p>
         </div>
       ) : (
@@ -198,16 +206,27 @@ function CrmBoard({ crm }: { crm: CrmData }) {
               <p className="text-sm text-slate-500">No visits submitted yet today.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {crm.earlyBirds.map((b, i) => (
-                  <span
-                    key={b.hrId || b.name}
-                    className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
-                  >
-                    <span className="font-black text-emerald-600">{i + 1}</span>
-                    {b.name}
-                    <span className="font-normal text-emerald-600/70">{vendorLocalTime(b.at)}</span>
-                  </span>
-                ))}
+                {crm.earlyBirds.map((b, i) => {
+                  const isGps = b.source === "gps_checkin";
+                  return (
+                    <span
+                      key={b.hrId || b.name}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"
+                    >
+                      <span className="font-black text-emerald-600">{i + 1}</span>
+                      {b.name}
+                      <span className="font-normal text-emerald-600/70">{vendorLocalTime(b.at)}</span>
+                      <span
+                        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                          isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}
+                        title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
+                      >
+                        {isGps ? "GPS" : "Logged"}
+                      </span>
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
