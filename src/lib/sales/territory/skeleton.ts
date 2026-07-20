@@ -46,6 +46,31 @@ export function resolveAuLineCode(officialLine: string): string | null {
 }
 
 /**
+ * au.regions' code -> name map, via its public wrapper au_v_regions — the SAME organogram
+ * source area names already come from. Needed because au's operational_region_code vocabulary
+ * is sometimes MORE granular than source_of_sales_regions: e.g. Anti Infective operationally
+ * splits Upper Egypt into "UE-1"/"UE-2" DM territories (au_v_line_area_map reflects that split),
+ * while source_of_sales_regions has only one plain "UE" row — so a region-name lookup against
+ * the Source-of-Sales table would silently have no name (and therefore no visible region card)
+ * for those areas, even though their sales data is real and reachable.
+ */
+async function loadAuRegionNames(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("au_v_regions")
+    .select("region_code,region_name,is_active")
+    .eq("is_active", true);
+  if (error) throw error;
+  const names = new Map<string, string>();
+  for (const row of data ?? []) {
+    const code = String((row as { region_code?: string | null }).region_code ?? "").trim();
+    const name = String((row as { region_name?: string | null }).region_name ?? "").trim();
+    if (code) names.set(code.toUpperCase(), name || code);
+  }
+  return names;
+}
+
+/**
  * Areas that structurally belong to ONE line's own People Organogram seat tree — optionally
  * narrowed to a set of regions — via au_v_line_area_map (the same seat structure
  * loadTargetableAreas already reads in monthly-targets.ts). `carries_target = true` selects
@@ -99,7 +124,7 @@ export async function buildTerritorySkeleton(
     rootScope.level === "region" ? new Set(rootScope.regionCodes.map((code) => code.toUpperCase())) : null;
   const auLineCode = resolveAuLineCode(rootScope.officialLine);
 
-  const [references, allAreas] = await Promise.all([
+  const [references, allAreas, auRegionNames] = await Promise.all([
     loadSalesReferenceData({ includeCustomerBricks: false }),
     rootScope.level === "area"
       ? loadCanonicalAreas()
@@ -109,6 +134,7 @@ export async function buildTerritorySkeleton(
         // resolved rootScope carries a real product line by construction) — fail closed to an
         // empty area list rather than falling back to an unfiltered/wrong-line listing.
         : Promise.resolve([] as CanonicalArea[]),
+    loadAuRegionNames(),
   ]);
 
   // areaCodesInScope: non-null ONLY for the "area" root (a Medical Rep locked to their own
@@ -131,11 +157,8 @@ export async function buildTerritorySkeleton(
     regionCodesInScope = new Set(areaRows.map((area) => area.regionCode.toUpperCase()));
   }
   // rootScope.level === "region": regionCodesInScope was already set above the parallel fetch.
-  // rootScope.level === "nationwide": stays null → every region included.
-
-  const regions = references.regions
-    .filter((region) => !regionCodesInScope || regionCodesInScope.has(region.regionCode.toUpperCase()))
-    .map((region) => ({ regionCode: region.regionCode, regionName: region.regionName }));
+  // rootScope.level === "nationwide": stays null → loadLineAreas above ran with no region
+  // restriction, so allAreas already covers every region the viewer's line has any presence in.
 
   const areas = allAreas
     .filter((area) =>
@@ -147,6 +170,19 @@ export async function buildTerritorySkeleton(
     )
     .map((area) => ({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode }));
   const finalAreaCodesInScope = new Set(areas.map((area) => area.areaCode.toUpperCase()));
+
+  // Regions shown = exactly the regions actually represented in `areas` above, named via the
+  // organogram (au_v_regions) rather than source_of_sales_regions — never an empty region card
+  // for a region where the viewer's line structurally has zero areas (confirmed to happen for
+  // real: Anti Infective has 0 active areas in "Others" nationwide), and never a real region of
+  // areas with no name to show (also confirmed for real: Anti Infective's "UE-1"/"UE-2" Upper
+  // Egypt split exists only in au.regions, not in source_of_sales_regions). Deriving the region
+  // list from the final area list, rather than independently from a region master table, means
+  // it's automatically correct for every root level without special-casing any of them.
+  const regionCodesWithAreas = new Set(areas.map((area) => area.regionCode.toUpperCase()));
+  const regions = [...regionCodesWithAreas]
+    .map((regionCode) => ({ regionCode, regionName: auRegionNames.get(regionCode) ?? regionCode }))
+    .sort((a, b) => a.regionName.localeCompare(b.regionName));
 
   const blocks = allBlocks
     .filter((block) => finalAreaCodesInScope.has(block.areaCode.toUpperCase()))

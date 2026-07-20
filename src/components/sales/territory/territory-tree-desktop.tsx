@@ -561,7 +561,7 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
     );
   }
 
-  if (skeleton.rootLevel === "region") {
+  if (skeleton.rootLevel === "region" || skeleton.rootLevel === "nationwide") {
     if (skeleton.regions.length === 0) {
       return (
         <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
@@ -570,8 +570,9 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
       );
     }
     // Exactly one region (District Manager): that region IS the chart root. More than one
-    // (Regional Manager's reporting subtree): a synthetic "My Regions" head with region lanes
-    // beneath it, instead of several disconnected "Your region" root cards — see RegionsRoot.
+    // (Regional Manager's reporting subtree, or a National Sales Manager's whole line
+    // nationwide): a synthetic "My Regions" head with region lanes beneath it, instead of
+    // several disconnected "Your region" root cards — see RegionsRoot.
     if (skeleton.regions.length === 1) {
       const region = skeleton.regions[0];
       return (
