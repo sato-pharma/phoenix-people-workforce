@@ -423,12 +423,6 @@ function accessContextFor(candidate: RecipientCandidate): AccessContext | null {
   };
 }
 
-function sameNullableNumber(left: unknown, right: unknown) {
-  const l = left === null || left === undefined || left === "" ? null : Number(left);
-  const r = right === null || right === undefined || right === "" ? null : Number(right);
-  return l !== null && r !== null && Number.isFinite(l) && Number.isFinite(r) && l === r;
-}
-
 function reportsTo(candidate: RecipientCandidate, subject: RecipientCandidate | null) {
   return Boolean(subject?.employee?.manager_hr_id && cleanHrId(subject.employee.manager_hr_id) === candidate.recipient.hrId);
 }
@@ -444,14 +438,6 @@ function inManagerChain(candidate: RecipientCandidate, subject: RecipientCandida
     managerHrId = cleanHrId(employeesByHrId.get(managerHrId)?.manager_hr_id);
   }
   return false;
-}
-
-function hasOrgScope(candidate: RecipientCandidate, subject: RecipientCandidate | null, scope: "area" | "department" | "line" | "team") {
-  if (!candidate.employee || !subject?.employee) return false;
-  if (scope === "area") return sameNullableNumber(candidate.employee.area_id, subject.employee.area_id);
-  if (scope === "department") return sameNullableNumber(candidate.employee.department_id, subject.employee.department_id);
-  if (scope === "line") return sameNullableNumber(candidate.employee.line_id, subject.employee.line_id);
-  return sameNullableNumber(candidate.employee.team_id, subject.employee.team_id);
 }
 
 async function permissionBasedRecipients(input: ResolveNotificationRecipientsInput, policy: NotificationPolicy, subject: RecipientCandidate | null) {
@@ -478,10 +464,6 @@ async function permissionBasedRecipients(input: ResolveNotificationRecipientsInp
       candidate.recipient.hrId === subject.recipient.hrId ||
       reportsTo(candidate, subject) ||
       inManagerChain(candidate, subject, employeesByHrId) ||
-      hasOrgScope(candidate, subject, "line") ||
-      hasOrgScope(candidate, subject, "department") ||
-      hasOrgScope(candidate, subject, "area") ||
-      hasOrgScope(candidate, subject, "team") ||
       // Company/system-scope roles (e.g. Super Admin, CEO) already see every
       // employee — never require them to also match the subject's org chain.
       context.scope === "company" ||
