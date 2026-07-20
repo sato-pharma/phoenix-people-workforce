@@ -6,6 +6,7 @@ export function runEmailProductionReadinessTests() {
   const sendSource = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
   const emailSource = readFileSync("src/lib/notifications/email.ts", "utf8");
   const scheduledSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
+  const dailySource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
   const healthSource = readFileSync("app/api/health/email/route.ts", "utf8");
 
   // P0-1: forceTestingDelivery is env-controlled
@@ -77,16 +78,19 @@ export function runEmailProductionReadinessTests() {
   assert.match(healthSource, /RESEND_API_KEY/, "health check must verify RESEND_API_KEY");
   assert.match(healthSource, /healthy.*degraded|degraded.*healthy/, "health check must report status");
 
-  // P1-8: retention cleanup
+  // P1-8: retention cleanup. Moved 2026-07-19 from the 5-min scheduled-processing cron to the
+  // once-daily notifications cron (deleting rows past a fixed cutoff has no benefit running
+  // 288x/day) — the P1 requirement is that it stays wired into a cron, so this asserts the daily
+  // route now calls it rather than scheduled-processing.
   assert.match(
     emailSource,
     /cleanupOldNotificationData/,
     "email module must export a retention cleanup function",
   );
   assert.match(
-    scheduledSource,
+    dailySource,
     /cleanupOldNotificationData/,
-    "scheduled processing must call retention cleanup",
+    "daily notifications cron must call retention cleanup",
   );
 
   // P1-9: terminal-failed stats

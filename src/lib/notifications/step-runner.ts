@@ -1,6 +1,6 @@
 // Per-step timing + timeout budget for the multi-step notification-processing cron.
 //
-// runScheduledNotificationProcessing runs ~15 steps serially under Cloud Run's 300s
+// runScheduledNotificationProcessing runs ~13 steps serially under Cloud Run's 300s
 // request cap. With no budget, a single slow or hung step — e.g. an unbounded external
 // call — blocks the whole chain, the handler never returns, and the request 504s at
 // 300s. That is exactly the 2026-07-15 outage: every 5-minute invocation timed out for
