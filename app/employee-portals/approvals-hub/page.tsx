@@ -58,11 +58,17 @@ export default async function PortalApprovalsHubPage({
   // Portal audience: after the migrated-module redirect above, the live inbox only carries the
   // access-scoped residual modules (contract renewal). Unscoped HR/admin sources (resignation,
   // outstation) never reach a portal manager — see getAwaitingMyActionItems.
-  const [items, myRequests, historicalItems]: [ActionHubItem[], MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
+  const [items, rawMyRequests, rawHistoricalItems]: [ActionHubItem[], MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
     getAwaitingMyActionItems(access, "portal"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
   ]);
+  // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
+  // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
+  // module each) — drop them here too, reusing MIGRATED_DEEPLINK_BASES as the one list of which
+  // modules that applies to, so a request never shows twice.
+  const myRequests = rawMyRequests.filter((item) => !MIGRATED_DEEPLINK_BASES[item.module]);
+  const historicalItems = rawHistoricalItems.filter((item) => !MIGRATED_DEEPLINK_BASES[item.module]);
 
   // A deep link (from a notification or the history tab) may point at a decided item that is no
   // longer in the live pending inbox. Resolve it read-only and surface it inline so "View request"
