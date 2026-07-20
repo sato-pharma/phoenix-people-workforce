@@ -21,7 +21,7 @@ import {
   type CrmIdentityMaps,
 } from "@/lib/crm/identity";
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
-import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { VisitsSyncTrigger } from "@/lib/visits-report/types";
 
@@ -347,6 +347,20 @@ export async function runScheduledIReports360Sync(lookbackDays = 10) {
   const dateTo = todayIso();
   const dateFrom = addDaysIso(dateTo, -lookbackDays);
   return syncIReports360Visits({ dateFrom, dateTo, trigger: "cron" });
+}
+
+/**
+ * "Live" first-visit sync: unlike the recurring cron's 10-day rolling pull, this is scoped to
+ * TODAY only (Cairo calendar day) — cheap enough to run every ~15 min through the 8:30 AM-12:01 PM
+ * morning compliance window (see isWithinLiveSyncWindow in crm/dates.ts) without repeatedly
+ * re-fetching/re-upserting the trailing 9 days the regular 3x/day cron already covers. Feeds the
+ * exact same ireports360_visits mirror the NSM "CRM First Visit" board reads (see
+ * employee-portal/nsm-crm-compliance.ts) — a visit+checkin submitted on the CRM shows up there
+ * within one tick instead of waiting for the next of the 3 fixed daily syncs.
+ */
+export async function runLiveIReports360Sync() {
+  const date = cairoTodayIso();
+  return syncIReports360Visits({ dateFrom: date, dateTo: date, trigger: "cron" });
 }
 
 /**

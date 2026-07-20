@@ -11,3 +11,35 @@ export function addDaysIso(dateIso: string, days: number): string {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
+
+/** Today's date as YYYY-MM-DD in Africa/Cairo — deliberately distinct from {@link todayIso}
+ * (UTC): the live-sync window below and the NSM "CRM First Visit" compliance check
+ * (nsm-crm-compliance.ts's own cairoToday) both need the Cairo CALENDAR day, which briefly runs a
+ * day ahead of the UTC one (21:00-23:59 UTC = 00:00-02:59 Cairo). */
+export function cairoTodayIso(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
+}
+
+/** Africa/Cairo wall-clock hour/minute for `at` (defaults to now) — extracted from a formatted
+ * string, never by reconstructing a `Date` from it (that would silently depend on the runtime's
+ * own local timezone to re-parse correctly). Same safe pattern as nsm-command-center.tsx's
+ * cairoTime. */
+export function cairoHourMinute(at: Date = new Date()): { hour: number; minute: number } {
+  const formatted = at.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit" });
+  const [hour, minute] = formatted.split(":").map(Number);
+  return { hour, minute };
+}
+
+// The business window the live-sync cron exists for: reps are expected to log their first CRM
+// visit by late morning, so polling every ~15 min is only useful 8:30 AM-12:01 PM Cairo. The GCP
+// schedule itself fires a little wider than this (see setup-gcp-cron.sh) so this is the real,
+// exact gate — a firing outside it is a cheap, intentional no-op rather than a wasted vendor pull.
+const LIVE_SYNC_WINDOW_START_MINUTES = 8 * 60 + 30; // 8:30 AM
+const LIVE_SYNC_WINDOW_END_MINUTES = 12 * 60 + 1; // 12:01 PM
+
+/** True when `at` (defaults to now) falls inside the live-sync compliance window, Cairo time. */
+export function isWithinLiveSyncWindow(at: Date = new Date()): boolean {
+  const { hour, minute } = cairoHourMinute(at);
+  const minutesSinceMidnight = hour * 60 + minute;
+  return minutesSinceMidnight >= LIVE_SYNC_WINDOW_START_MINUTES && minutesSinceMidnight <= LIVE_SYNC_WINDOW_END_MINUTES;
+}

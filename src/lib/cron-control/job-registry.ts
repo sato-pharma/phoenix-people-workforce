@@ -1,4 +1,4 @@
-// Static metadata for the 5 GCP Cloud Scheduler jobs that drive this system's automation.
+// Static metadata for the 6 GCP Cloud Scheduler jobs that drive this system's automation.
 // This is the single place job descriptions live — the dashboard never shows a raw GCP job
 // name without a human label, and `tests/cron-control-registry.test.ts` cross-checks every
 // `route` here against `src/lib/security/access-registry.ts` so this can't silently drift
@@ -9,7 +9,8 @@ export type CronJobKey =
   | "phoenix-process-notifications"
   | "phoenix-notify-daily"
   | "phoenix-ireports360-sync"
-  | "phoenix-reconcile-visits";
+  | "phoenix-reconcile-visits"
+  | "phoenix-ireports360-live-sync";
 
 export type CronJobRegistryEntry = {
   gcpJobName: CronJobKey;
@@ -48,6 +49,12 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
     label: "iReports360 Wide Reconcile",
     description: "Weekly full-window reconciliation of iReports360 visit data against the local mirror.",
     route: "/api/cron/ireports360-visits-reconcile",
+  },
+  {
+    gcpJobName: "phoenix-ireports360-live-sync",
+    label: "iReports360 Live Morning Sync",
+    description: "High-frequency same-day-only sync, 8:30 AM-12:01 PM Cairo, so CRM First Visit / Early Birds reflects a visit+check-in within minutes of submission during the compliance window.",
+    route: "/api/cron/ireports360-visits-live-sync",
   },
 ] as const;
 
