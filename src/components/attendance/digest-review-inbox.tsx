@@ -10,6 +10,8 @@ import type { PendingDigestReviewView } from "@/lib/attendance/digest-read";
 type Props = {
   initialDigests: PendingDigestReviewView[];
   initialError: string | null;
+  initialSettled: PendingDigestReviewView[];
+  initialSettledError: string | null;
 };
 
 type LineDraft = { deductionDays: string; deductionValue: string; reason: string };
@@ -52,7 +54,7 @@ function initDrafts(digest: PendingDigestReviewView): Record<number, LineDraft> 
   return drafts;
 }
 
-export function DigestReviewInbox({ initialDigests, initialError }: Props) {
+export function DigestReviewInbox({ initialDigests, initialError, initialSettled, initialSettledError }: Props) {
   const [digests, setDigests] = useState(initialDigests);
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,6 +64,54 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
   const [drafts, setDrafts] = useState<Record<number, Record<number, LineDraft>>>(() =>
     Object.fromEntries(initialDigests.map((digest) => [digest.id, initDrafts(digest)])),
   );
+
+  const [settledDigests, setSettledDigests] = useState(initialSettled);
+  const [settledError, setSettledError] = useState<string | null>(initialSettledError);
+  const [settledNotice, setSettledNotice] = useState<string | null>(null);
+  const [savingLineId, setSavingLineId] = useState<number | null>(null);
+  const [settledDrafts, setSettledDrafts] = useState<Record<number, Record<number, LineDraft>>>(() =>
+    Object.fromEntries(initialSettled.map((digest) => [digest.id, initDrafts(digest)])),
+  );
+
+  function updateSettledDraft(digestId: number, lineId: number, patch: Partial<LineDraft>) {
+    setSettledDrafts((current) => ({
+      ...current,
+      [digestId]: { ...current[digestId], [lineId]: { ...current[digestId]?.[lineId], ...patch } as LineDraft },
+    }));
+  }
+
+  async function saveCorrection(digest: PendingDigestReviewView, lineId: number) {
+    const draft = settledDrafts[digest.id]?.[lineId];
+    if (!draft) return;
+    setSavingLineId(lineId);
+    setSettledError(null);
+    setSettledNotice(null);
+    try {
+      const response = await fetch(`/api/attendance/digest-review/${digest.id}/lines/${lineId}/correct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deductionDays: Number(draft.deductionDays),
+          deductionValue: Number(draft.deductionValue),
+          reason: draft.reason,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Correction failed.");
+      setSettledNotice(`Corrected ${digest.employeeName}'s line — no notice sent to them.`);
+      const refreshed = await fetch("/api/attendance/digest-review/settled").then((res) => res.json());
+      if (Array.isArray(refreshed.digests)) {
+        setSettledDigests(refreshed.digests);
+        setSettledDrafts(
+          Object.fromEntries((refreshed.digests as PendingDigestReviewView[]).map((d) => [d.id, initDrafts(d)])),
+        );
+      }
+    } catch (correctError) {
+      setSettledError(correctError instanceof Error ? correctError.message : "Correction failed.");
+    } finally {
+      setSavingLineId(null);
+    }
+  }
 
   function updateDraft(digestId: number, lineId: number, patch: Partial<LineDraft>) {
     setDrafts((current) => ({
@@ -282,6 +332,98 @@ export function DigestReviewInbox({ initialDigests, initialError }: Props) {
                       <XCircle className="h-4 w-4" />
                       Void
                     </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </AdminTableShell>
+
+      {settledError ? <AdminCallout tone="danger">{settledError}</AdminCallout> : null}
+      {settledNotice ? <AdminCallout tone="neutral">{settledNotice}</AdminCallout> : null}
+
+      <AdminTableShell
+        description="Already decided (Approve & Settle, force-settle, or recover-voided). Edit and Save Correction to fix a specific line after the fact — this never re-notifies the employee and never re-opens the whole digest."
+        title="Already Settled"
+      >
+        {settledDigests.length === 0 ? (
+          <div className="p-8 text-center text-sm font-semibold text-slate-500">No settled deductions yet.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {settledDigests.map((digest) => {
+              const draftLines = settledDrafts[digest.id] ?? {};
+              return (
+                <div className="space-y-3 p-4" key={digest.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-950">{digest.employeeName} ({digest.employeeHrId})</p>
+                      <p className="text-xs font-semibold text-slate-500">
+                        Week {digest.weekIndex} &middot; {digest.weekStart} to {digest.weekEnd} &middot; {digest.totalDeductionDays} day(s) &middot;{" "}
+                        {digest.totalDeductionValue.toFixed(2)} EGP &middot; {digest.status.replace("_", " ")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {digest.lines.filter((line) => line.deductionDays > 0).map((line) => {
+                      const draft = draftLines[line.id];
+                      if (!draft) return null;
+                      return (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" key={line.id}>
+                          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{formatDate(line.workDate)} &middot; {line.status.replace("_", " ")}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            Check-in {formatClock(line.checkInMinutes)} &middot; Check-out {formatClock(line.checkOutMinutes)} &middot; Worked {formatDuration(line.workedMinutes)}
+                            {line.lateMinutes > 0 ? ` · ${line.lateMinutes} min late` : ""}
+                            {line.shortMinutes > 0 ? ` · ${line.shortMinutes} min short` : ""}
+                          </p>
+                          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <label className="block space-y-1">
+                              <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Days</span>
+                              <input
+                                className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                value={draft.deductionDays}
+                                onChange={(event) => updateSettledDraft(digest.id, line.id, { deductionDays: event.target.value })}
+                              />
+                            </label>
+                            <label className="block space-y-1">
+                              <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Value (EGP)</span>
+                              <input
+                                className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={draft.deductionValue}
+                                onChange={(event) => updateSettledDraft(digest.id, line.id, { deductionValue: event.target.value })}
+                              />
+                            </label>
+                            <label className="block space-y-1 sm:col-span-1">
+                              <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Reason</span>
+                              <input
+                                className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                value={draft.reason}
+                                onChange={(event) => updateSettledDraft(digest.id, line.id, { reason: event.target.value })}
+                              />
+                            </label>
+                          </div>
+                          <div className="mt-2">
+                            <Button
+                              disabled={savingLineId !== null}
+                              size="sm"
+                              type="button"
+                              variant="secondary"
+                              onClick={() => saveCorrection(digest, line.id)}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              {savingLineId === line.id ? "…" : "Save Correction"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
