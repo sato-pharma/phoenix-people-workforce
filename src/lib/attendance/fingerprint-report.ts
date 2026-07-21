@@ -4,12 +4,19 @@ import {
   resolveActiveAttendancePolicy,
   resolvePolicyAttendanceStatus,
   summarizeFingerprintRows,
+  type PolicyAttendanceStatusResult,
 } from "@/lib/attendance/metrics";
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
-import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
-import { formatAttendanceWorkingWeekdays, type AttendanceWorkingWeekday } from "@/lib/attendance/work-schedule";
+import { loadAttendanceFlexPolicyGroups, type AttendanceFlexPolicyGroupDbRow } from "@/lib/attendance/policy-groups";
+import { formatAttendanceWorkingWeekdays } from "@/lib/attendance/work-schedule";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import {
+  bracketsForEventType,
+  evaluateFlexibleHoursDay,
+  type FlexibleHoursConfig,
+} from "@/lib/attendance/flexible-hours";
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -110,20 +117,6 @@ type EmployeeRow = {
 type DepartmentRow = {
   id: number;
   name: string | null;
-};
-
-type PolicyRow = {
-  effective_from: string;
-  effective_to: string | null;
-  grace_minutes: number | null;
-  id: number;
-  is_active: boolean | null;
-  policy_name: string | null;
-  scheduled_end: string | null;
-  scheduled_start: string | null;
-  target_type: string | null;
-  target_value: string | null;
-  working_weekdays: AttendanceWorkingWeekday[] | null;
 };
 
 type PolicyRuleRow = {
@@ -336,6 +329,66 @@ function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: Fingerp
   ].join(" ").toLowerCase().includes(filters.search.toLowerCase());
 }
 
+function policyTimeToMinutes(value: string | null | undefined): number | null {
+  const [hourText, minuteText] = String(value ?? "").slice(0, 5).split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  return hour * 60 + minute;
+}
+
+/**
+ * Computes one row's status/deduction via the SAME flexible-hours engine the weekly digest
+ * uses to actually settle payroll deductions (evaluateFlexibleHoursDay in flexible-hours.ts),
+ * for any policy that has been migrated onto that model (required_minutes set). Owner-confirmed
+ * 2026-07-21: this report must never independently re-derive a different number for a policy
+ * the digest engine already governs — only employees explicitly excepted from the model
+ * (required_minutes: null) still fall back to the older grace-period formula below.
+ *
+ * Maps the engine's own status vocabulary onto this report's pre-existing labels ("Short
+ * hours" -> "Short day", "Missing punch" -> "Single punch") so every downstream consumer of
+ * this report (employee-attendance, monthly-summary, analytics, the FWC cross-check, the
+ * portal) keeps working against the status strings it already pattern-matches on — only the
+ * underlying calculation changed, not the report's contract.
+ */
+function statusFromFlexibleHours(input: {
+  baseSalary: number | null;
+  policy: AttendanceFlexPolicyGroupDbRow;
+  rules: PolicyRuleRow[];
+  firstPunchMinutes: number | null;
+  lastPunchMinutes: number | null;
+  visiblePunchCount: number;
+}): PolicyAttendanceStatusResult {
+  const scheduledStartMinutes = policyTimeToMinutes(input.policy.scheduled_start) ?? 9 * 60;
+  const config: FlexibleHoursConfig = {
+    scheduledStartMinutes,
+    flexCeilingMinutes: scheduledStartMinutes + (input.policy.flex_minutes ?? 0),
+    requiredMinutes: input.policy.required_minutes!,
+  };
+  const result = evaluateFlexibleHoursDay({
+    config,
+    firstPunchMinutes: input.firstPunchMinutes,
+    lastPunchMinutes: input.lastPunchMinutes,
+    lateBrackets: bracketsForEventType(input.rules, input.policy.id, "late"),
+    shortBrackets: bracketsForEventType(input.rules, input.policy.id, "short_hours"),
+    visiblePunchCount: input.visiblePunchCount,
+  });
+
+  const status = result.status === "Short hours" ? "Short day" : result.status === "Missing punch" ? "Single punch" : result.status;
+  const deductionValue = result.deductionDays > 0
+    ? calculateDeductionAmountFromBaseSalary({ baseSalary: input.baseSalary ?? 0, deductionDays: result.deductionDays })
+    : 0;
+
+  return {
+    deductionDays: String(result.deductionDays),
+    deductionValue: result.deductionDays <= 0 ? "0" : deductionValue != null ? deductionValue.toFixed(2) : "Base salary missing",
+    earlyLeaveMinutes: "",
+    lateMinutes: result.lateMinutes > 0 ? String(result.lateMinutes) : "",
+    recommendedAction: result.reason,
+    status,
+  };
+}
+
 const PUNCH_QUERY_LIMIT = 20000;
 
 export async function getFingerprintAttendanceReport(input: {
@@ -383,7 +436,7 @@ export async function getFingerprintAttendanceReport(input: {
       .from("employees")
       .select("hr_id,full_name,job_title,department_id,base_salary")
       .order("full_name"),
-    loadAttendancePolicyGroups({ activeOnly: true }),
+    loadAttendanceFlexPolicyGroups({ activeOnly: true }),
     supabase
       .from("attendance_policy_rules")
       .select("policy_id,event_type,from_minutes,to_minutes,recommended_action,deduction_days,deduction_value,is_active,sort_order")
@@ -426,7 +479,7 @@ export async function getFingerprintAttendanceReport(input: {
     }
   }
 
-  const activePolicyRows = policyRows as PolicyRow[];
+  const activePolicyRows = policyRows as AttendanceFlexPolicyGroupDbRow[];
   const rulesByPolicy = new Map<number, PolicyRuleRow[]>();
   for (const rule of (ruleResult.data ?? []) as PolicyRuleRow[]) {
     const list = rulesByPolicy.get(rule.policy_id) ?? [];
@@ -555,15 +608,26 @@ export async function getFingerprintAttendanceReport(input: {
       ? resolveActiveAttendancePolicy(employee, activePolicyRows, bucket.reportDate, bucket.reportDate)
       : null;
     const policyRules = policy ? rulesByPolicy.get(policy.id) ?? [] : [];
-    const status = resolvePolicyAttendanceStatus({
-      baseSalary: employee?.base_salary ?? null,
-      durationMinutes: Math.floor(durationMs / 60000),
-      firstPunchMinutes: firstPunch ? localMinutesOfDay(firstPunch) : null,
-      lastPunchMinutes: lastPunch ? localMinutesOfDay(lastPunch) : null,
-      policy,
-      rules: policyRules,
-      visiblePunchCount: visiblePunchTimes.length,
-    });
+    const firstPunchMinutes = firstPunch ? localMinutesOfDay(firstPunch) : null;
+    const lastPunchMinutes = lastPunch ? localMinutesOfDay(lastPunch) : null;
+    const status = policy && policy.required_minutes != null
+      ? statusFromFlexibleHours({
+          baseSalary: employee?.base_salary ?? null,
+          firstPunchMinutes,
+          lastPunchMinutes,
+          policy,
+          rules: policyRules,
+          visiblePunchCount: visiblePunchTimes.length,
+        })
+      : resolvePolicyAttendanceStatus({
+          baseSalary: employee?.base_salary ?? null,
+          durationMinutes: Math.floor(durationMs / 60000),
+          firstPunchMinutes,
+          lastPunchMinutes,
+          policy,
+          rules: policyRules,
+          visiblePunchCount: visiblePunchTimes.length,
+        });
     const department = typeof employee?.department_id === "number"
       ? departmentMap.get(employee.department_id) ?? ""
       : "";
