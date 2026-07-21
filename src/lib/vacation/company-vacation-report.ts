@@ -80,9 +80,20 @@ export type CompanyVacationReportSource =
   | "CRM Signal — Half-Day (Attendance Partial)";
 
 export type CompanyVacationReportRow = {
+  /** Remaining balance after this request, as stored on the HR request at creation time (see
+   * src/lib/vacation/service.ts's calculatePaymentForRequest / VacationBalanceSnapshot). Only
+   * ever set for HR-sourced rows — CRM Signal rows are unverified estimates that never touched
+   * the balance engine, so this stays null for them rather than showing a misleading number. */
+  balanceAfterDays: number | null;
+  /** Balance available immediately before this request was deducted. Same HR-only scope as
+   * balanceAfterDays above. */
+  balanceBeforeDays: number | null;
   detail: string;
   employeeName: string;
   endDate: string;
+  /** Derived from balanceBeforeDays > 0. Null (not "No") for CRM Signal rows, since balance was
+   * never evaluated for them — distinct from a real HR request that ran out of balance. */
+  hasBalance: boolean | null;
   hrId: string;
   jobTitle: string | null;
   lineName: string | null;
@@ -110,6 +121,8 @@ type EmployeeRow = {
 };
 
 export type HrVacationRequestRow = {
+  balance_after_days: number | string | null;
+  balance_before_days: number | string | null;
   duration_days: number | null;
   employee_hr_id: string | null;
   employee_name: string | null;
@@ -211,7 +224,7 @@ async function loadHolidayDateSet(startDate: string, endDate: string): Promise<S
 async function loadHrVacationRequestsRaw(startDate: string, endDate: string): Promise<HrVacationRequestRow[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("v2_vacation_requests")
-    .select("id,employee_hr_id,employee_name,line_name,vacation_type,start_date,end_date,duration_days,status")
+    .select("id,employee_hr_id,employee_name,line_name,vacation_type,start_date,end_date,duration_days,status,balance_before_days,balance_after_days")
     .lte("start_date", endDate)
     .gte("end_date", startDate);
   if (error) throw new Error(`Failed to load HR vacation requests: ${error.message}`);
@@ -384,10 +397,15 @@ function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<string,
   return rawRows.map((row): CompanyVacationReportRow => {
     const key = canonicalHrIdKey(row.employee_hr_id ?? "");
     const employee = key ? employeeByKey.get(key) : undefined;
+    const balanceBeforeDays = row.balance_before_days == null ? null : Number(row.balance_before_days);
+    const balanceAfterDays = row.balance_after_days == null ? null : Number(row.balance_after_days);
     return {
+      balanceAfterDays: balanceAfterDays != null && Number.isFinite(balanceAfterDays) ? balanceAfterDays : null,
+      balanceBeforeDays: balanceBeforeDays != null && Number.isFinite(balanceBeforeDays) ? balanceBeforeDays : null,
       detail: row.vacation_type ?? "",
       employeeName: row.employee_name ?? row.employee_hr_id ?? "",
       endDate: row.end_date,
+      hasBalance: balanceBeforeDays != null && Number.isFinite(balanceBeforeDays) ? balanceBeforeDays > 0 : null,
       hrId: row.employee_hr_id ?? "",
       jobTitle: employee?.job_title ?? null,
       lineName: row.line_name ?? employee?.line_name ?? null,
@@ -485,9 +503,15 @@ async function buildCrmSignalRows(input: {
       if (!classified) continue;
 
       rows.push({
+        // CRM Signal rows are unverified estimates that never went through the balance engine
+        // (see the CompanyVacationReportRow doc comment) — left null, not computed on the fly,
+        // to avoid an N+1 balance-period lookup per row for every CRM signal in the range.
+        balanceAfterDays: null,
+        balanceBeforeDays: null,
         detail: classified.detail,
         employeeName: resolveEmployeeDisplayName(employee?.full_name ?? dayVisits[0]?.agent_name ?? key, employee?.nickname),
         endDate: dateIso,
+        hasBalance: null,
         hrId: employee?.hr_id ?? key,
         jobTitle: employee?.job_title ?? null,
         lineName: employee?.line_name ?? null,
