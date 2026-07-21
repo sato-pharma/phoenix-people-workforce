@@ -37,6 +37,8 @@ function tier1(reconcile: Partial<ReconcileInput>): ReconcileInput {
     planSaysOffice: null,
     hasPunch: true,
     deviceOutage: false,
+    hasCrmLeave: false,
+    hasCrmFieldVisit: false,
     ...reconcile,
   };
 }
@@ -103,7 +105,18 @@ export function runAttendanceDigestGeneratorTests() {
     days: [
       day(
         "2026-06-24",
-        { tier: "office_days_only", isWorkingDay: true, isHoliday: false, hasApprovedLeave: false, hasApprovedExcuse: false, planSaysOffice: true, hasPunch: false, deviceOutage: false },
+        {
+          tier: "office_days_only",
+          isWorkingDay: true,
+          isHoliday: false,
+          hasApprovedLeave: false,
+          hasApprovedExcuse: false,
+          planSaysOffice: true,
+          hasPunch: false,
+          deviceOutage: false,
+          hasCrmLeave: false,
+          hasCrmFieldVisit: false,
+        },
         null,
         null,
         0,
