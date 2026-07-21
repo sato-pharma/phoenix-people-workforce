@@ -202,17 +202,20 @@ function AreaBody({
     return <p className="text-sm font-semibold text-slate-400">No blocks found for this area yet.</p>;
   }
 
+  // A vertical stack, not a multi-column grid: a CSS grid row's height is shared by every
+  // item in that row, so one block with far more bricks than its row-mates (a real, common
+  // case — a block can range from 1 brick to 30+) would silently stretch the whole row,
+  // stranding the shorter block's card at the top of an oversized cell with a large dead gap
+  // below it. Stacking removes any row to share.
   return (
-    <div className="grid w-full gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(blocks.length, 3)}, minmax(260px, 1fr))` }}>
+    <div className="w-full space-y-3">
       {blocks.map((block) => (
-        <div className="flex flex-col" key={block.blockCode}>
-          <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
-          <BlockLane
-            block={block}
-            bricks={blocksByCode.get(block.blockCode) ?? []}
-            pharmaciesByBrick={pharmaciesByBrick}
-          />
-        </div>
+        <BlockLane
+          block={block}
+          bricks={blocksByCode.get(block.blockCode) ?? []}
+          key={block.blockCode}
+          pharmaciesByBrick={pharmaciesByBrick}
+        />
       ))}
     </div>
   );
@@ -402,20 +405,18 @@ function RegionRoot({
       {areas.length === 0 ? (
         <p className="mt-8 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
       ) : (
-        <div
-          className="mt-6 grid w-full gap-4"
-          style={{ gridTemplateColumns: `repeat(${Math.min(areas.length, 3)}, minmax(280px, 1fr))` }}
-        >
+        // A vertical stack, not a multi-column grid — see AreaBody's comment: a shared grid
+        // row would stretch every area in it to match whichever one happens to be expanded
+        // with the most blocks/bricks, stranding shorter areas with a large dead gap below them.
+        <div className="mt-6 w-full max-w-3xl space-y-4">
           {areas.map((area) => (
-            <div className="flex flex-col" key={area.areaCode}>
-              <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
-              <AreaLane
-                area={area}
-                blocks={blocks.filter((block) => block.areaCode === area.areaCode)}
-                bricks={bricks.filter((brick) => brick.areaCode === area.areaCode)}
-                tree={tree}
-              />
-            </div>
+            <AreaLane
+              area={area}
+              blocks={blocks.filter((block) => block.areaCode === area.areaCode)}
+              bricks={bricks.filter((brick) => brick.areaCode === area.areaCode)}
+              key={area.areaCode}
+              tree={tree}
+            />
           ))}
         </div>
       )}
@@ -447,16 +448,16 @@ function RegionLane({
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
       <button
         aria-expanded={open}
-        className="flex w-full flex-col gap-1 bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-left text-white"
+        className="flex w-full flex-col gap-1 bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-left text-slate-900"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
         <span className="flex items-center gap-2">
-          <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Region</span>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-600 transition-transform", open && "rotate-90")} />
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
         </span>
         <span className="break-words pl-6 text-[15px] font-black leading-snug">{region.regionName}</span>
-        <span className="pl-6 text-[10px] font-black tabular-nums text-white/85">
+        <span className="pl-6 text-[10px] font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
       </button>
@@ -464,10 +465,10 @@ function RegionLane({
         areas.length === 0 ? (
           <p className="p-4 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
         ) : (
-          <div
-            className="grid gap-4 p-4"
-            style={{ gridTemplateColumns: `repeat(${Math.min(areas.length, 3)}, minmax(260px, 1fr))` }}
-          >
+          // A vertical stack, not a multi-column grid — see AreaBody's comment: a shared grid
+          // row would stretch every area in it to match whichever one happens to be expanded
+          // with the most blocks/bricks, stranding shorter areas with a large dead gap below.
+          <div className="space-y-4 p-4">
             {areas.map((area) => (
               <AreaLane
                 area={area}
@@ -504,8 +505,8 @@ function RegionsRoot({
 }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+      <div className="min-w-[240px] max-w-md rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 px-5 py-3.5 text-center text-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">
           <MapPin className="h-3.5 w-3.5" />
           My regions
         </div>

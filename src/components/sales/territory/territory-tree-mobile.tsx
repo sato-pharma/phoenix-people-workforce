@@ -358,10 +358,10 @@ function RegionDetails({
 }) {
   return (
     <details className="rounded-lg border border-slate-200 bg-white open:pb-2.5" open>
-      <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
-        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Region</span>
+      <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-slate-900">
+        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
         <span className="break-words text-[15px] font-black leading-snug">{region.regionName}</span>
-        <span className="text-[10px] font-black tabular-nums text-white/85">
+        <span className="text-[10px] font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
       </summary>
@@ -402,9 +402,9 @@ function RegionsSection({
 }) {
   return (
     <div className="space-y-3">
-      <div className="rounded-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">My regions</p>
-        <p className="mt-1 text-[11px] font-semibold text-white/70">
+      <div className="rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-slate-900">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">My regions</p>
+        <p className="mt-1 text-[11px] font-semibold text-slate-600">
           {regions.length} regions — tap any to see its areas
         </p>
       </div>
