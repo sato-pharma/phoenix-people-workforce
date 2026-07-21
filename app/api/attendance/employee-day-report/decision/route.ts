@@ -19,9 +19,14 @@ export async function POST(request: Request) {
     await assertPermission(access, "attendance", "read");
     if (!access.hrId) throw validationError("No HR ID on session.");
 
+    // Same reviewer gate as digest-review approve/correct — only HR Manager and
+    // Super Admin may make a direct day-level attendance decision.
     const authorized = await isAuthorizedDisputeReviewer(access.hrId, access.role === "Super Admin");
     if (!authorized) {
-      return NextResponse.json({ error: "forbidden", message: "You are not an authorized digest reviewer." }, { status: 403 });
+      return NextResponse.json(
+        { error: "forbidden", message: "You are not an authorized attendance reviewer." },
+        { status: 403 },
+      );
     }
 
     const payload = (await request.json().catch(() => ({}))) as {
@@ -40,15 +45,24 @@ export async function POST(request: Request) {
     if (typeof payload.reason !== "string" || !payload.reason.trim()) {
       throw validationError("A reason is required.");
     }
+    const deductionDays = Number(payload.deductionDays ?? 0);
+    const deductionValue = Number(payload.deductionValue ?? 0);
+    if (!Number.isFinite(deductionDays) || deductionDays < 0) {
+      throw validationError("deductionDays must be a non-negative number.");
+    }
+    if (!Number.isFinite(deductionValue) || deductionValue < 0) {
+      throw validationError("deductionValue must be a non-negative number.");
+    }
 
     const result = await setDayAttendanceDecision({
       actorHrId: access.hrId,
-      dateIso: payload.dateIso,
-      deductionDays: Number(payload.deductionDays),
-      deductionValue: Number(payload.deductionValue),
-      employeeHrId: payload.employeeHrId,
-      reason: payload.reason,
+      dateIso: payload.dateIso.trim(),
+      deductionDays,
+      deductionValue,
+      employeeHrId: payload.employeeHrId.trim(),
+      reason: payload.reason.trim(),
     });
+
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (isForbiddenError(error)) {
