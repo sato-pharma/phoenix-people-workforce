@@ -426,9 +426,8 @@ function RegionRoot({
 /** A Region as a collapsible lane — used only when the viewer's subtree spans more than one
  *  region (a Regional Manager). Nothing to fetch on expand: opening a region just reveals its
  *  own (already-in-skeleton) Area lanes, each of which lazy-loads independently exactly like
- *  under a single-region root — see AreaLane. Orange (not the dark slate every other tier
- *  uses) so a multi-region tree stays scannable — "you've crossed into a new region" reads at
- *  a glance instead of requiring the small uppercase label to be read. */
+ *  under a single-region root — see AreaLane. Same dark-slate header every other tier uses;
+ *  the uppercase "Region" label is what tells it apart, not a competing accent color. */
 function RegionLane({
   region,
   areas,
@@ -445,16 +444,16 @@ function RegionLane({
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-orange-900/20 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
       <button
         aria-expanded={open}
-        className="flex w-full flex-col gap-1 bg-gradient-to-br from-orange-600 to-orange-700 px-4 py-3 text-left text-white"
+        className="flex w-full flex-col gap-1 bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-left text-white"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
         <span className="flex items-center gap-2">
-          <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")} />
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">Region</span>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Region</span>
         </span>
         <span className="break-words pl-6 text-[15px] font-black leading-snug">{region.regionName}</span>
         <span className="pl-6 text-[10px] font-black tabular-nums text-white/85">
