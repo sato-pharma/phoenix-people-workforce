@@ -30,18 +30,20 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json().catch(() => ({}))) as {
+      employeeHrId?: unknown;
       dateIso?: unknown;
       deductionDays?: unknown;
       deductionValue?: unknown;
-      employeeHrId?: unknown;
       reason?: unknown;
     };
-
+    if (typeof payload.employeeHrId !== "string" || !payload.employeeHrId.trim()) {
+      throw validationError("employeeHrId is required.");
+    }
     if (typeof payload.dateIso !== "string" || !payload.dateIso.trim()) {
       throw validationError("dateIso is required.");
     }
-    if (typeof payload.employeeHrId !== "string" || !payload.employeeHrId.trim()) {
-      throw validationError("employeeHrId is required.");
+    if (typeof payload.reason !== "string" || !payload.reason.trim()) {
+      throw validationError("A reason is required.");
     }
     const deductionDays = Number(payload.deductionDays ?? 0);
     const deductionValue = Number(payload.deductionValue ?? 0);
@@ -52,16 +54,16 @@ export async function POST(request: Request) {
       throw validationError("deductionValue must be a non-negative number.");
     }
 
-    await setDayAttendanceDecision({
+    const result = await setDayAttendanceDecision({
       actorHrId: access.hrId,
       dateIso: payload.dateIso.trim(),
       deductionDays,
       deductionValue,
       employeeHrId: payload.employeeHrId.trim(),
-      reason: typeof payload.reason === "string" ? payload.reason.trim() : "",
+      reason: payload.reason.trim(),
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
