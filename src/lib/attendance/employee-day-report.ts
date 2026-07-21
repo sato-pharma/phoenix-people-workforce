@@ -87,6 +87,14 @@ export type EmployeeDayOutcome =
   | "missing_punch"
   | "future";
 
+/** The already-stored decision for this date, if a digest line exists for it yet — null means
+ * no digest has been generated for that week (Confirm/Decline will generate it on demand). */
+export type EmployeeDayDecision = {
+  action: "pending" | "confirmed" | "auto_confirmed" | "disputed";
+  storedDeductionDays: number;
+  storedDeductionValue: number;
+} | null;
+
 export type EmployeeDayReportRow = {
   dateIso: string;
   weekday: string;
@@ -100,6 +108,7 @@ export type EmployeeDayReportRow = {
   shortMinutes: number;
   deductionDays: number;
   deductionValue: number;
+  decision: EmployeeDayDecision;
 };
 
 export type EmployeeDayByDayReport = {
@@ -155,6 +164,8 @@ export async function getEmployeeDayByDayReport(input: {
   );
   if (!employee) throw validationError(`No employee found for ${input.employeeHrId}.`);
 
+  const decisionByDate = await loadExistingDecisions(hrId, input.dateFromIso, input.dateToIso);
+
   const policy = resolveActiveAttendancePolicy(
     { hr_id: employee.hr_id, job_title: employee.job_title },
     flexPolicies,
@@ -194,8 +205,10 @@ export async function getEmployeeDayByDayReport(input: {
     const visiblePunchCount = punchInfo?.visiblePunchCount ?? 0;
     const hasApprovedException = exceptionMap.get(`${hrId}|${dateIso}`)?.status === "approved";
 
+    const storedDecision = decisionByDate.get(dateIso) ?? null;
+
     if (classification.isFuture) {
-      days.push(dayRow(dateIso, "future", "In the future — not yet part of any digest.", firstPunchMinutes, lastPunchMinutes, visiblePunchCount));
+      days.push(dayRow(dateIso, "future", "In the future — not yet part of any digest.", firstPunchMinutes, lastPunchMinutes, visiblePunchCount, storedDecision));
       continue;
     }
 
@@ -237,7 +250,7 @@ export async function getEmployeeDayByDayReport(input: {
                   : hasOutageToday
                     ? "device_outage"
                     : "no_plan_field_day"; // remaining office_days_only skip branches (field-per-plan / no-plan-designated)
-      days.push(dayRow(dateIso, outcome, decision.reason, firstPunchMinutes, lastPunchMinutes, visiblePunchCount));
+      days.push(dayRow(dateIso, outcome, decision.reason, firstPunchMinutes, lastPunchMinutes, visiblePunchCount, storedDecision));
       continue;
     }
 
@@ -249,6 +262,7 @@ export async function getEmployeeDayByDayReport(input: {
         firstPunchMinutes,
         lastPunchMinutes,
         visiblePunchCount,
+        storedDecision,
       ));
       continue;
     }
@@ -272,6 +286,7 @@ export async function getEmployeeDayByDayReport(input: {
       : 0;
     days.push({
       dateIso,
+      decision: storedDecision,
       deductionDays: result.deductionDays,
       deductionValue,
       firstPunchMinutes,
@@ -289,6 +304,45 @@ export async function getEmployeeDayByDayReport(input: {
   return { dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, days, employeeHrId: hrId, employeeName, jobTitle, tier: policy.judgment_mode };
 }
 
+/** Existing digest-line decisions for this employee across the range, keyed by work_date — a
+ * confirmed/auto_confirmed/disputed line reflects a decision already made; a date with no entry
+ * has no digest generated for it yet. Digests only ever cover the fixed weekly-cycle tiling
+ * (digest-cycle.ts), so this reads whichever of those weeks overlap the requested range. */
+async function loadExistingDecisions(
+  hrId: string,
+  dateFromIso: string,
+  dateToIso: string,
+): Promise<Map<string, EmployeeDayDecision>> {
+  const map = new Map<string, EmployeeDayDecision>();
+  const supabase = getSupabaseAdmin();
+  const { data: digestRows, error: digestError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id")
+    .eq("employee_hr_id", hrId)
+    .lte("week_start", dateToIso)
+    .gte("week_end", dateFromIso);
+  if (digestError) throw digestError;
+  const digestIds = ((digestRows ?? []) as Array<{ id: number }>).map((row) => row.id);
+  if (digestIds.length === 0) return map;
+
+  const { data: lineRows, error: lineError } = await supabase
+    .from("attendance_digest_lines")
+    .select("work_date,action,deduction_days,deduction_value")
+    .in("digest_id", digestIds)
+    .gte("work_date", dateFromIso)
+    .lte("work_date", dateToIso);
+  if (lineError) throw lineError;
+  type LineDecisionRow = { work_date: string; action: "pending" | "confirmed" | "auto_confirmed" | "disputed"; deduction_days: number; deduction_value: number };
+  for (const row of (lineRows ?? []) as LineDecisionRow[]) {
+    map.set(row.work_date, {
+      action: row.action,
+      storedDeductionDays: Number(row.deduction_days),
+      storedDeductionValue: Number(row.deduction_value),
+    });
+  }
+  return map;
+}
+
 function dayRow(
   dateIso: string,
   outcome: EmployeeDayOutcome,
@@ -296,9 +350,11 @@ function dayRow(
   firstPunchMinutes: number | null,
   lastPunchMinutes: number | null,
   visiblePunchCount: number,
+  decision: EmployeeDayDecision,
 ): EmployeeDayReportRow {
   return {
     dateIso,
+    decision,
     deductionDays: 0,
     deductionValue: 0,
     firstPunchMinutes,
