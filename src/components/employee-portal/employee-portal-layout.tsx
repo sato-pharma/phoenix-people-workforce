@@ -31,6 +31,7 @@ import {
   FileSpreadsheet,
   Fingerprint,
   Gift,
+  IdCard,
   CalendarDays,
   Headphones,
   ChevronsLeft,
@@ -209,6 +210,9 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        // Open to every role, self-scoped (see src/lib/employee-360/access.ts) — same
+        // employee_profile:read gate as the rest of "My Workspace", no visibility flag needed.
+        { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
         // Incentive now lives in the Payroll section; "Other Approvals" now lives in the
         // Approvals Hub section — neither belongs in My Workspace anymore.
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
