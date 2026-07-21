@@ -17,6 +17,7 @@ import {
   saveTelegramModulePolicy,
   type TelegramModulePolicy,
 } from "@/lib/notifications/telegram-governance";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 function testRunId() {
@@ -381,7 +382,10 @@ async function safeWriteAuditLog(input: Parameters<typeof writeAuditLog>[0], con
     await writeAuditLog(input);
   } catch (error) {
     // An audit failure must never break the governance action it records.
-    console.error(`Telegram audit log failed (${context})`, error);
+    logError(`Telegram audit log failed (${context})`, {
+      labels: { event: "telegram_audit_log_failed", context },
+      error,
+    });
   }
 }
 

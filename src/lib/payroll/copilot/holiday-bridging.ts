@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -157,7 +158,10 @@ async function loadExistingExclusions(
       .gte("start_date", start)
       .lte("start_date", end);
     if (error) {
-      console.error("[payroll-copilot:holiday-bridging] existing exclusions load failed:", error);
+      logError("Failed to load existing holiday-bridging exclusions for period", {
+        labels: { event: "holiday_bridging_exclusions_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -165,7 +169,10 @@ async function loadExistingExclusions(
       map.set(key, { decidedAt: String(row.decided_at ?? ""), decidedBy: String(row.decided_by ?? "") });
     }
   } catch (error) {
-    console.error("[payroll-copilot:holiday-bridging] existing exclusions load threw:", error);
+    logError("Existing holiday-bridging exclusions load threw an exception", {
+      labels: { event: "holiday_bridging_exclusions_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return map;
 }
@@ -196,7 +203,10 @@ export async function listHolidayBridgingCandidates(period: CopilotPeriod): Prom
   ]);
 
   if (error) {
-    console.error("[payroll-copilot:holiday-bridging] vacation requests load failed:", error);
+    logError("Failed to load vacation requests for holiday-bridging candidates", {
+      labels: { event: "holiday_bridging_vacation_requests_load_failed", month: period.month, year: period.year },
+      error,
+    });
     return [];
   }
 
@@ -261,7 +271,10 @@ export async function buildHolidayBridgingSalaryTotals(period: CopilotPeriod): P
       totals.set(key, roundCurrency((totals.get(key) ?? 0) + candidate.salaryDeductionAmount));
     }
   } catch (error) {
-    console.error("[payroll-copilot:holiday-bridging] salary totals build failed:", error);
+    logError("Failed to build holiday-bridging salary-deduction totals", {
+      labels: { event: "holiday_bridging_salary_totals_build_failed", month: period.month, year: period.year },
+      error,
+    });
   }
   return totals;
 }

@@ -40,7 +40,13 @@ export function runEmailFollowupsTests() {
   const marketing = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
   assert.match(marketing, /export async function runMarketingSlaDaily/, "daily SLA scan exists");
   assert.match(marketing, /export function classifyMarketingSla/, "SLA classifier is exported");
-  assert.match(marketing, /console\.error/, "marketing notify failures are surfaced (no longer silent)");
+  assert.match(marketing, /logError/, "marketing notify failures are surfaced (no longer silent)");
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
-  assert.match(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA is wired into the daily cron");
+  // Disabled 2026-07-22 at owner request — the daily cron no longer calls
+  // runMarketingSlaDaily(), replaced with an explicit disabled:true stub.
+  assert.match(
+    dailyRoute,
+    /marketing SLA reminder\/escalation emails stopped[\s\S]*?disabled: true/,
+    "marketing SLA disable must be an explicit stub, not a silent removal",
+  );
 }

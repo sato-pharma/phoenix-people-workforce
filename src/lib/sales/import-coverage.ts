@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -115,7 +116,10 @@ export async function saveCoverageSnapshot(input: {
   });
   if (error) {
     // Non-fatal: coverage snapshot is analytics — never block an import for it.
-    console.error("[sos-coverage] Failed to save snapshot:", error.message);
+    logError("Failed to save SoS import coverage snapshot", {
+      labels: { event: "sos_coverage_snapshot_save_failed", batchId: input.batchId, distributorCode: input.distributorCode },
+      error,
+    });
   }
 }
 

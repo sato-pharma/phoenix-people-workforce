@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { logError } from "@/lib/observability/log";
 import {
   canAccess,
   parseRoleStrict,
@@ -261,7 +262,12 @@ async function authUserByHrId(hrId: string | null | undefined): Promise<AuthReci
     if (error) throw error;
     return data as AuthRecipientRow | null;
   } catch (error) {
-    if (!schemaMissing(error)) console.error("Notification auth recipient lookup failed", error);
+    if (!schemaMissing(error)) {
+      logError("Notification auth recipient lookup failed", {
+        labels: { event: "notification_auth_recipient_lookup_failed", hr_id: normalized },
+        error,
+      });
+    }
     return null;
   }
 }
@@ -287,7 +293,12 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
     const candidate = { auth, employee, role };
     return { ...candidate, recipient: recipientFromCandidate(candidate) };
   } catch (error) {
-    if (!schemaMissing(error)) console.error("Notification employee recipient lookup failed", error);
+    if (!schemaMissing(error)) {
+      logError("Notification employee recipient lookup failed", {
+        labels: { event: "notification_employee_recipient_lookup_failed", hr_id: normalized },
+        error,
+      });
+    }
     return null;
   }
 }
@@ -329,7 +340,12 @@ async function candidatesByHrIds(hrIds: string[]): Promise<Map<string, Recipient
     }
     return output;
   } catch (error) {
-    if (!schemaMissing(error)) console.error("Notification batch recipient lookup failed", error);
+    if (!schemaMissing(error)) {
+      logError("Notification batch recipient lookup failed", {
+        labels: { event: "notification_batch_recipient_lookup_failed" },
+        error,
+      });
+    }
     return output;
   }
 }
@@ -362,7 +378,12 @@ async function activeAuthCandidates() {
       })
       .filter((candidate) => candidate.role && candidate.recipient.hrId);
   } catch (error) {
-    if (!schemaMissing(error)) console.error("Notification active auth recipient lookup failed", error);
+    if (!schemaMissing(error)) {
+      logError("Notification active auth recipient lookup failed", {
+        labels: { event: "notification_active_auth_recipient_lookup_failed" },
+        error,
+      });
+    }
     return [];
   }
 }
@@ -381,7 +402,12 @@ async function managerFor(hrId: string | null | undefined) {
     const manager = await employeeByHrId(managerHrId);
     return manager ? [manager] : [];
   } catch (error) {
-    if (!schemaMissing(error)) console.error("Notification manager recipient lookup failed", error);
+    if (!schemaMissing(error)) {
+      logError("Notification manager recipient lookup failed", {
+        labels: { event: "notification_manager_recipient_lookup_failed", hr_id: employee.hrId },
+        error,
+      });
+    }
     return [];
   }
 }

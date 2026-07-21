@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { describeUnexpectedError, errorMessageOf } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { logError } from "@/lib/observability/log";
 import { roundMarketingMoney, roundMarketingRatio } from "@/lib/marketing-requests/roi";
 import { resolveRoiDataCoverage } from "@/lib/marketing-requests/roi-labels";
 import {
@@ -134,7 +135,11 @@ export function chunk<T>(items: T[], size = 400): T[][] {
  */
 export function logRoiServiceFailure(stage: string, error: unknown, meta?: Record<string, unknown>): void {
   if (errorMessageOf(error).toLowerCase().startsWith("forbidden:")) return;
-  console.error(`[marketing-roi] ${stage} failed`, describeUnexpectedError(error), meta ? JSON.stringify(meta) : "");
+  logError(`Marketing ROI service failure: ${stage}`, {
+    labels: { event: "marketing_roi_service_failed", stage },
+    error,
+    context: { details: describeUnexpectedError(error), ...(meta ?? {}) },
+  });
 }
 
 /** Load every row of `table` for the given request ids (chunked .in()). */

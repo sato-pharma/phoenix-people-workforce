@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SuppressionReason = "hard_bounce" | "complaint" | "unsubscribe" | "manual";
@@ -29,7 +30,7 @@ export async function addEmailSuppression(input: {
     { onConflict: "address" },
   );
   if (error) {
-    console.error("Failed to add email suppression", error);
+    logError("Failed to add email suppression", { labels: { event: "email_suppression_add_failed", source: input.source, reason: input.reason }, error });
     return false;
   }
   return true;

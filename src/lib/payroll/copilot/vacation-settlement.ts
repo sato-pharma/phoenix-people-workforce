@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -75,7 +76,10 @@ async function loadExistingSettlements(
       .gte("start_date", start)
       .lte("start_date", end);
     if (error) {
-      console.error("[payroll-copilot:vacation-settlement] existing settlements load failed:", error);
+      logError("Failed to load existing vacation settlements for period", {
+        labels: { event: "vacation_settlement_existing_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -92,7 +96,10 @@ async function loadExistingSettlements(
       map.set(key, { method, decidedAt: String(row.decided_at ?? "") });
     }
   } catch (error) {
-    console.error("[payroll-copilot:vacation-settlement] existing settlements load threw:", error);
+    logError("Existing vacation settlements load threw an exception", {
+      labels: { event: "vacation_settlement_existing_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return map;
 }
@@ -116,7 +123,10 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
   ]);
 
   if (error) {
-    console.error("[payroll-copilot:vacation-settlement] unpaid requests load failed:", error);
+    logError("Failed to load unpaid vacation requests for period", {
+      labels: { event: "vacation_settlement_unpaid_requests_load_failed", month: period.month, year: period.year },
+      error,
+    });
     return [];
   }
 
@@ -152,7 +162,10 @@ export async function listUnpaidVacationCandidates(period: CopilotPeriod): Promi
       // partial coverage is allowed (remaining days are deducted from salary).
       balanceAvailable = balanceDaysAvailable > 0;
     } catch (balanceError) {
-      console.error("[payroll-copilot:vacation-settlement] balance check failed:", balanceError);
+      logError("Vacation balance check failed for employee", {
+        labels: { event: "vacation_settlement_balance_check_failed", hrId },
+        error: balanceError,
+      });
     }
 
     // How many days will actually be consumed from balance (capped at unpaidDays).
@@ -203,7 +216,10 @@ export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): 
       .gte("start_date", start)
       .lte("start_date", end);
     if (error) {
-      console.error("[payroll-copilot:vacation-settlement] salary totals load failed:", error);
+      logError("Failed to load settled vacation salary-deduction totals", {
+        labels: { event: "vacation_settlement_salary_totals_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return totals;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -213,7 +229,10 @@ export async function buildSettledSalaryDeductionTotals(period: CopilotPeriod): 
       totals.set(key, (totals.get(key) ?? 0) + (Number.isFinite(amount) ? amount : 0));
     }
   } catch (error) {
-    console.error("[payroll-copilot:vacation-settlement] salary totals load threw:", error);
+    logError("Settled vacation salary-deduction totals load threw an exception", {
+      labels: { event: "vacation_settlement_salary_totals_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return totals;
 }
@@ -297,7 +316,9 @@ async function sendBalanceSettlementEmailSafely(candidate: UnpaidVacationCandida
     const compact = compactHrKey(candidate.employeeHrId);
     const employee = directory.employees.find((row) => compactHrKey(row.hrId) === compact);
     if (!employee?.workEmail) {
-      console.error(`[payroll-copilot:vacation-settlement] no work email for ${candidate.employeeHrId}, email skipped`);
+      logError("Vacation balance settlement email skipped: no work email on file", {
+        labels: { event: "vacation_settlement_email_missing_work_email", hrId: candidate.employeeHrId },
+      });
       return;
     }
     const manager = employee.managerHrId
@@ -323,6 +344,9 @@ async function sendBalanceSettlementEmailSafely(candidate: UnpaidVacationCandida
       wouldHaveDeductedAmount: candidate.salaryDeductionAmount,
     });
   } catch (error) {
-    console.error("[payroll-copilot:vacation-settlement] balance settlement email failed:", error);
+    logError("Vacation balance settlement email failed to send", {
+      labels: { event: "vacation_settlement_email_failed", hrId: candidate.employeeHrId },
+      error,
+    });
   }
 }

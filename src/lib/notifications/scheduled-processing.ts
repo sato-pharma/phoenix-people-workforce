@@ -14,6 +14,7 @@ import { processFeedbackSlaReminders } from "@/lib/probation/intelligence/feedba
 import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/probation-emails";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { reapStaleIReports360SyncRuns } from "@/lib/crm/sync";
+import { logError } from "@/lib/observability/log";
 
 // This cron runs many steps serially under the route's `maxDuration = 300`. Each step is
 // bounded by a soft per-step cap and a global deadline (see step-runner.ts) so a single
@@ -52,7 +53,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "probation-reminders",
       () =>
         processDueProbationReminderEvents(limit).catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-probation-reminders" } });
+          logError("Probation reminder processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-probation-reminders" },
+            error: e,
+          });
           return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, error: String(e) };
         }),
       budget,
@@ -63,7 +67,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "probation-feedback-sla",
       () =>
         processFeedbackSlaReminders().catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-probation-feedback-sla" } });
+          logError("Probation feedback SLA reminder processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-probation-feedback-sla" },
+            error: e,
+          });
           return { scanned: 0, due: 0, escalated: 0, overdue: 0, notificationsEmitted: 0, error: String(e) };
         }),
       budget,
@@ -74,7 +81,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "probation-milestones",
       () =>
         processProbationMilestoneEmails().catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-probation-milestones" } });
+          logError("Probation milestone email processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-probation-milestones" },
+            error: e,
+          });
           return { scanned: 0, sent: 0, error: String(e) };
         }),
       budget,
@@ -93,7 +103,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "outbox",
       () =>
         processNotificationOutbox(limit).catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-outbox" } });
+          logError("Notification outbox processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-outbox" },
+            error: e,
+          });
           return { attempted: 0, failed: 1, processedIds: [] as string[], sent: 0, skipped: 0, error: String(e) };
         }),
       budget,
@@ -103,7 +116,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "deferred",
       () =>
         processDeferredDeliveryRetries(limit).catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-deferred" } });
+          logError("Deferred delivery retry processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-deferred" },
+            error: e,
+          });
           return { attempted: 0, deferred: 0, sent: 0, skipped: 0, error: String(e) };
         }),
       budget,
@@ -113,7 +129,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       "telegram",
       () =>
         processTelegramDeliveryRetries(limit).catch((e: unknown) => {
-          console.error(e, { tags: { cron: "notification-process-telegram" } });
+          logError("Telegram delivery retry processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-telegram" },
+            error: e,
+          });
           return { attempted: 0, failed: 1, sent: 0, error: String(e) };
         }),
       budget,

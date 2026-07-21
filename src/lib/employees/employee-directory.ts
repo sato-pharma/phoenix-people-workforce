@@ -11,6 +11,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib
 import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
+import { logError } from "@/lib/observability/log";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
 import { resolveEmployeeDisplayName } from "./display-name";
@@ -954,9 +955,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     try {
       employeeRows = await supabaseRest<EmployeeDbRow[]>(`employees?${fallbackParams}`);
     } catch (fallbackError) {
-      console.error(fallbackError, {
-        tags: { component: "employee-directory", action: "fetchEmployeeDirectory-fallback" },
-        extra: { message: employeeDirectoryErrorMessage(fallbackError) },
+      logError("Employee directory fallback select failed", {
+        labels: { event: "employee_directory_fallback_failed", component: "employee-directory", action: "fetchEmployeeDirectory-fallback" },
+        error: fallbackError,
       });
       // If a warm cache exists, serve stale data rather than crashing the page.
       if (directoryCache) {

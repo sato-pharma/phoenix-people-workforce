@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { logError } from "@/lib/observability/log";
 
 type OpenAiEnv = Record<string, string | undefined>;
 type ResponseCreateInput = Parameters<OpenAI["responses"]["create"]>[0];
@@ -89,9 +90,14 @@ function logOpenAiError(context: string, error: unknown) {
   const requestId = requestIdFrom(error);
   const status = statusFrom(error);
   const detail = sanitizeOpenAiLogMessage(messageFrom(error));
-  console.error(
-    `[openai:${context}] request failed${status ? ` status=${status}` : ""}${requestId ? ` request_id=${requestId}` : ""}: ${detail}`,
-  );
+  // Never pass the raw `error` object to logError here: its serializeError() reads
+  // error.message/error.stack directly, bypassing sanitizeOpenAiLogMessage entirely and
+  // re-leaking the API key that `detail` above just redacted. A request/timeout/rate-limit
+  // error never has a useful stack anyway (it's a network/HTTP failure, not a code defect) —
+  // requestId/status/code in labels plus the sanitized message is the full diagnostic value.
+  logError(`OpenAI request failed: ${detail}`, {
+    labels: { event: "openai_request_failed", context, status: status ?? null, requestId: requestId ?? null },
+  });
 }
 
 export function normalizeOpenAiError(error: unknown, context = "request") {

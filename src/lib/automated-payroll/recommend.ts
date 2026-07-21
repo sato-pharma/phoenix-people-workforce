@@ -34,6 +34,7 @@ import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-c
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
@@ -222,7 +223,10 @@ async function loadPayoutExpenses(period: PayrollPeriod): Promise<Map<string, nu
       .eq("payout_year", period.year)
       .is("imported_payroll_batch_id", null);
     if (error) {
-      console.error("[automated-payroll:recommend] payout expenses load failed:", error.message);
+      logError("Automated payroll: payout expenses load failed", {
+        labels: { event: "automated_payroll_payout_expenses_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return totals;
     }
     for (const row of (data ?? []) as Array<{ hr_id: string | null; total: number | null }>) {
@@ -231,7 +235,10 @@ async function loadPayoutExpenses(period: PayrollPeriod): Promise<Map<string, nu
       totals.set(compact, roundCurrency((totals.get(compact) ?? 0) + Number(row.total ?? 0)));
     }
   } catch (error) {
-    console.error("[automated-payroll:recommend] payout expenses load threw:", error);
+    logError("Automated payroll: payout expenses load threw an exception", {
+      labels: { event: "automated_payroll_payout_expenses_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return totals;
 }
@@ -258,7 +265,10 @@ async function loadPunchedDatesByCompact(
       byCompact.set(compact, dates);
     }
   } catch (error) {
-    console.error("[automated-payroll:recommend] punch-date load threw:", error);
+    logError("Automated payroll: punch-date load threw an exception", {
+      labels: { event: "automated_payroll_punch_date_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return byCompact;
 }
@@ -295,10 +305,10 @@ async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<st
       byCompact.set(compact, dates);
     }
   } catch (error) {
-    console.error(
-      "[automated-payroll:recommend] CRM leave load failed (non-fatal):",
-      error instanceof Error ? error.message : error,
-    );
+    logError("Automated payroll: CRM leave load failed (non-fatal)", {
+      labels: { event: "automated_payroll_crm_leave_load_failed", month: period.month, year: period.year },
+      error,
+    });
   }
   return byCompact;
 }
@@ -315,7 +325,10 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
       .lte("start_date", end)
       .gte("end_date", start);
     if (error) {
-      console.error("[automated-payroll:recommend] v2 vacation dates load failed:", error.message);
+      logError("Automated payroll: v2 vacation dates load failed", {
+        labels: { event: "automated_payroll_v2_vacation_dates_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return byCompact;
     }
     for (const row of (data ?? []) as Array<{
@@ -332,7 +345,10 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
       byCompact.set(compact, dates);
     }
   } catch (error) {
-    console.error("[automated-payroll:recommend] v2 vacation dates load threw:", error);
+    logError("Automated payroll: v2 vacation dates load threw an exception", {
+      labels: { event: "automated_payroll_v2_vacation_dates_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return byCompact;
 }
@@ -470,7 +486,10 @@ async function computeLeaverCrmDates(input: {
 
     return { noActivityDates, avDates };
   } catch (error) {
-    console.error("[automated-payroll:recommend] leaver CRM classification failed:", error);
+    logError("Automated payroll: leaver CRM classification failed", {
+      labels: { event: "automated_payroll_leaver_crm_classification_failed", hrId: input.hrId },
+      error,
+    });
     return empty;
   }
 }
@@ -586,7 +605,10 @@ async function recommendResignations(
         });
         crmLeaveBalanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
       } catch (error) {
-        console.error("[automated-payroll:recommend] leaver CRM leave balance check failed:", error);
+        logError("Automated payroll: leaver CRM leave balance check failed", {
+          labels: { event: "automated_payroll_leaver_crm_leave_balance_check_failed", hrId: member.employee.hrId },
+          error,
+        });
       }
     }
     const crmLeaveUnpaidDays = Math.max(0, crmOnlyAvDates.length - crmLeaveBalanceDays);
@@ -792,7 +814,10 @@ export async function computeVacationDeductionTotals(
       });
       balanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
     } catch (error) {
-      console.error("[automated-payroll:recommend] CRM leave balance check failed:", error);
+      logError("Automated payroll: CRM leave balance check failed", {
+        labels: { event: "automated_payroll_crm_leave_balance_check_failed", hrId: member.employee.hrId },
+        error,
+      });
     }
     const unpaidDays = Math.max(0, crmOnly.length - balanceDays);
     const base = roundCurrency(lookupSource(sources, member.employee.hrId)?.baseSalary ?? 0);
@@ -862,7 +887,14 @@ export async function settleCrmLeaveBalanceForPeriod(input: {
       vacation_request_ids: [],
     });
     if (error) {
-      console.error("[automated-payroll:recommend] CRM leave balance settlement insert failed:", error);
+      logError("Automated payroll: CRM leave balance settlement insert failed", {
+        labels: {
+          event: "automated_payroll_crm_leave_balance_settlement_insert_failed",
+          hrId: settlement.employeeHrId,
+          runId: input.runId ?? null,
+        },
+        error,
+      });
       continue;
     }
     settled += 1;

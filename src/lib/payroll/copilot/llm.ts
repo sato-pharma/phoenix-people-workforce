@@ -1,4 +1,5 @@
 import { createOpenAiResponseText, hasOpenAiApiKey, resolveOpenAiCopilotModel } from "@/lib/ai/openai-client";
+import { logError } from "@/lib/observability/log";
 
 import { COPILOT_OVERRIDE_FIELDS, type ProposedAction } from "./types.ts";
 
@@ -280,7 +281,10 @@ export async function parseCeoReply(text: string, context: ParseContext): Promis
       const actions = await parseWithLlm(trimmed, context);
       if (actions.length > 0) return actions;
     } catch (error) {
-      console.error("[payroll-copilot:llm] parse failed, using deterministic fallback:", error);
+      logError("Payroll copilot LLM parse failed, using deterministic fallback", {
+        labels: { event: "copilot_llm_parse_failed" },
+        error,
+      });
     }
   }
   return parseDeterministic(trimmed, context);

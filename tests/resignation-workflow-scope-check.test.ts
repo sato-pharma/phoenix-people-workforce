@@ -96,7 +96,7 @@ export async function runResignationWorkflowScopeCheckTests() {
   );
   assert.match(
     service,
-    /catch \(error\) \{\s*console\.error\(error, \{ tags: \{ cron: "resignation-sla-reminder", recipientHrId: hrId \} \}\);\s*errors\+\+;\s*\}/,
+    /catch \(error\) \{\s*logError\("Resignation SLA reminder failed for recipient", \{ labels: \{ event: "resignation_sla_reminder_failed", cron: "resignation-sla-reminder", recipientHrId: hrId \}, error \}\);\s*errors\+\+;\s*\}/,
     "a failed SLA reminder send must be captured in Sentry, tagged with the affected recipient",
   );
 }

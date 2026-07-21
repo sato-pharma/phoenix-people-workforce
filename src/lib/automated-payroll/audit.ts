@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { StepKey } from "./types.ts";
@@ -23,9 +24,23 @@ export async function writeAutomatedPayrollAudit(input: {
       detail: input.detail ?? {},
     });
     if (error) {
-      console.error("[automated-payroll:audit] insert failed:", error.message);
+      logError("Automated payroll: audit log insert failed", {
+        labels: {
+          event: "automated_payroll_audit_insert_failed",
+          runId: input.runId,
+          action: input.action,
+        },
+        error,
+      });
     }
   } catch (error) {
-    console.error("[automated-payroll:audit] insert threw:", error);
+    logError("Automated payroll: audit log insert threw an exception", {
+      labels: {
+        event: "automated_payroll_audit_insert_threw",
+        runId: input.runId,
+        action: input.action,
+      },
+      error,
+    });
   }
 }

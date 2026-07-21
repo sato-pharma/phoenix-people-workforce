@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { CopilotPeriod, EmployeeFeederState } from "./types.ts";
@@ -37,7 +38,10 @@ export async function getBaseSalaryMap(): Promise<Map<string, number>> {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from("employees").select("hr_id,base_salary");
     if (error) {
-      console.error("[payroll-copilot:feeders] base-salary load failed:", error);
+      logError("Failed to load base-salary map for payroll copilot feeders", {
+        labels: { event: "feeders_base_salary_load_failed" },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<{ hr_id: string; base_salary: number | null }>) {
@@ -46,7 +50,10 @@ export async function getBaseSalaryMap(): Promise<Map<string, number>> {
       if (key && Number.isFinite(salary) && salary > 0) map.set(key, salary);
     }
   } catch (error) {
-    console.error("[payroll-copilot:feeders] base-salary load threw:", error);
+    logError("Base-salary map load threw an exception", {
+      labels: { event: "feeders_base_salary_load_threw" },
+      error,
+    });
   }
   return map;
 }
@@ -84,12 +91,18 @@ async function safeRows(
   try {
     const { data, error } = await run();
     if (error) {
-      console.error(`[payroll-copilot:feeders:${context}] query failed:`, error);
+      logError(`Payroll copilot feeder query failed: ${context}`, {
+        labels: { event: "feeders_query_failed", feeder: context },
+        error,
+      });
       return [];
     }
     return Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
   } catch (error) {
-    console.error(`[payroll-copilot:feeders:${context}] query threw:`, error);
+    logError(`Payroll copilot feeder query threw an exception: ${context}`, {
+      labels: { event: "feeders_query_threw", feeder: context },
+      error,
+    });
     return [];
   }
 }
