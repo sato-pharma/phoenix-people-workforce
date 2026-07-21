@@ -264,6 +264,7 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/attendance/missing-punch", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/missing-punch/:id/decide", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/settlement-dashboard", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/attendance/approved-deductions-export", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/settlement-dashboard/remind-all", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/settlement-ledger", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
