@@ -235,26 +235,33 @@ export function SettlementDashboardView({ initialDashboard, initialError, canRem
               {ledgerLoading ? "Loading…" : "Load"}
             </Button>
             {ledgerEntries ? (
-              <ExportXlsxButton
-                columns={[
-                  { key: "employeeName", label: "Employee" },
-                  { key: "employeeHrId", label: "HR ID" },
-                  { key: "workDate", label: "Work Date" },
-                  { key: "lineStatus", label: "Type" },
-                  { key: "action", label: "Outcome" },
-                  { key: "deductionDays", label: "Days", numeric: true },
-                  { key: "deductionValue", label: "Value (EGP)", numeric: true },
-                  { key: "actorHrId", label: "Actor" },
-                  { key: "actorRole", label: "Actor Role" },
-                  { key: "reviewerHrId", label: "Reviewer" },
-                  { key: "reason", label: "Reason" },
-                  { key: "decidedAt", label: "Decided At" },
-                ]}
-                rows={ledgerExportRows}
-                sheetName="Settlement Ledger"
-                subtitle={`${ledgerDateFrom} to ${ledgerDateTo}`}
-                title="Attendance Settlement Audit Ledger"
-              />
+              <>
+                <ExportXlsxButton
+                  columns={[
+                    { key: "employeeName", label: "Employee" },
+                    { key: "employeeHrId", label: "HR ID" },
+                    { key: "workDate", label: "Work Date" },
+                    { key: "lineStatus", label: "Type" },
+                    { key: "action", label: "Outcome" },
+                    { key: "deductionDays", label: "Days", numeric: true },
+                    { key: "deductionValue", label: "Value (EGP)", numeric: true },
+                    { key: "actorHrId", label: "Actor" },
+                    { key: "actorRole", label: "Actor Role" },
+                    { key: "reviewerHrId", label: "Reviewer" },
+                    { key: "reason", label: "Reason" },
+                    { key: "decidedAt", label: "Decided At" },
+                  ]}
+                  rows={ledgerExportRows}
+                  sheetName="Settlement Ledger"
+                  subtitle={`${ledgerDateFrom} to ${ledgerDateTo}`}
+                  title="Attendance Settlement Audit Ledger"
+                />
+                <Button asChild variant="secondary">
+                  <a href={`/api/attendance/approved-deductions-export?dateFrom=${ledgerDateFrom}&dateTo=${ledgerDateTo}`}>
+                    Premium Export (Approved)
+                  </a>
+                </Button>
+              </>
             ) : null}
           </div>
         }

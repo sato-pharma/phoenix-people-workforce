@@ -54,6 +54,23 @@ function initDrafts(digest: PendingDigestReviewView): Record<number, LineDraft> 
   return drafts;
 }
 
+/**
+ * Guards against auth-redirect HTML responses (e.g. session-expired → login page).
+ * Without this, fetch follows the redirect and response.json() throws the confusing
+ * "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON" error.
+ */
+async function safeJson<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      response.status === 401 || response.status === 403
+        ? "Session expired. Please refresh the page and sign in again."
+        : `Unexpected server response (HTTP ${response.status}). Please refresh and try again.`,
+    );
+  }
+  return (await response.json()) as T;
+}
+
 export function DigestReviewInbox({ initialDigests, initialError, initialSettled, initialSettledError }: Props) {
   const [digests, setDigests] = useState(initialDigests);
   const [error, setError] = useState<string | null>(initialError);
@@ -96,10 +113,11 @@ export function DigestReviewInbox({ initialDigests, initialError, initialSettled
           reason: draft.reason,
         }),
       });
-      const payload = await response.json();
+      const payload = await safeJson<{ message?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Correction failed.");
       setSettledNotice(`Corrected ${digest.employeeName}'s line — no notice sent to them.`);
-      const refreshed = await fetch("/api/attendance/digest-review/settled").then((res) => res.json());
+      const refreshRes = await fetch("/api/attendance/digest-review/settled");
+      const refreshed = await safeJson<{ digests?: PendingDigestReviewView[] }>(refreshRes);
       if (Array.isArray(refreshed.digests)) {
         setSettledDigests(refreshed.digests);
         setSettledDrafts(
@@ -136,7 +154,7 @@ export function DigestReviewInbox({ initialDigests, initialError, initialSettled
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lineEdits }),
       });
-      const payload = await response.json();
+      const payload = await safeJson<{ message?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Digest review approval failed.");
       setDigests((current) => current.filter((entry) => entry.id !== digest.id));
       setNotice(`Approved and settled for ${digest.employeeName} — no notice sent to them.`);
@@ -157,7 +175,7 @@ export function DigestReviewInbox({ initialDigests, initialError, initialSettled
     setNotice(null);
     try {
       const response = await fetch("/api/attendance/digest-review/force-settle-sent", { method: "POST" });
-      const payload = await response.json();
+      const payload = await safeJson<{ message?: string; digestsSettled?: unknown[]; linesSettled?: number }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Force-settle failed.");
       setNotice(`Settled ${payload.digestsSettled?.length ?? 0} previously-sent digest(s), ${payload.linesSettled ?? 0} deduction line(s).`);
     } catch (forceSettleError) {
@@ -177,7 +195,7 @@ export function DigestReviewInbox({ initialDigests, initialError, initialSettled
     setNotice(null);
     try {
       const response = await fetch("/api/attendance/digest-review/recover-voided", { method: "POST" });
-      const payload = await response.json();
+      const payload = await safeJson<{ message?: string; digestsSettled?: unknown[]; linesSettled?: number }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Recover-voided failed.");
       setNotice(`Recovered and settled ${payload.digestsSettled?.length ?? 0} voided digest(s), ${payload.linesSettled ?? 0} deduction line(s).`);
     } catch (recoverError) {
@@ -199,7 +217,7 @@ export function DigestReviewInbox({ initialDigests, initialError, initialSettled
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason.trim() }),
       });
-      const payload = await response.json();
+      const payload = await safeJson<{ message?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Digest void failed.");
       setDigests((current) => current.filter((entry) => entry.id !== digest.id));
       setNotice(`Voided ${digest.employeeName}'s digest — never sent.`);
