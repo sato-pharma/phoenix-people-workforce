@@ -14,6 +14,15 @@
 //        plan field  + no punch  → normal field day, skip
 //        no plan                 → not an office day, skip
 //
+// Owner-confirmed addendum (2026-07-21): the above only ever checked Phoenix's
+// OWN vacation_requests/excuse_requests tables and (Tier-2 only) the weekly
+// plan — it had no awareness of CRM (iReports360), so a day covered only by a
+// CRM-recorded leave, or explained only by a real CRM field visit, was judged
+// purely on device-punch timing with no way to know either was true. Both are
+// now universal cancels, same standing as Phoenix leave/excuse and applying to
+// BOTH tiers — a genuine field day proves itself the same way regardless of
+// whether the employee's formal policy tier expects field work at all.
+//
 // This module is the pure gating matrix only. The actual deduction math is the
 // separately-tested flexible-hours engine; the generator composes the two.
 
@@ -41,6 +50,22 @@ export type ReconcileInput = {
    * become a missing-punch line or a false field-punch-anomaly flag.
    */
   deviceOutage: boolean;
+  /**
+   * A CRM-recorded leave day (iReports360 visit type -4 Annual Vacation or
+   * -15 Health Day) covers this date, per getCrmLeaveDayMap — a leave the
+   * employee may never have formally submitted through Phoenix's own
+   * vacation_requests, but is real per the CRM record. Universal cancel,
+   * same as hasApprovedLeave.
+   */
+  hasCrmLeave: boolean;
+  /**
+   * A real CRM field activity — a regular visit OR a CP-type entry
+   * (Conference/Group Meeting/Campaign/Training/Meeting/Traveling) — was
+   * logged this date, per getCrmActivityDayMaps's fieldVisitMap. Proof of
+   * legitimate field/CRM-logged work explaining an office-punch absence.
+   * Universal cancel, applies to both tiers.
+   */
+  hasCrmFieldVisit: boolean;
 };
 
 export type ReconcileDecision =
@@ -54,6 +79,8 @@ export function reconcileDay(input: ReconcileInput): ReconcileDecision {
   if (input.isHoliday) return { action: "skip", reason: "Official holiday." };
   if (input.hasApprovedLeave) return { action: "skip", reason: "Approved leave." };
   if (input.hasApprovedExcuse) return { action: "skip", reason: "Approved excuse." };
+  if (input.hasCrmLeave) return { action: "skip", reason: "CRM-recorded leave." };
+  if (input.hasCrmFieldVisit) return { action: "skip", reason: "Real CRM field visit recorded — legitimate field day." };
   if (input.deviceOutage) return { action: "skip", reason: "Fingerprint device was not syncing this day — cannot judge attendance." };
 
   if (input.tier === "office_days_only") {
