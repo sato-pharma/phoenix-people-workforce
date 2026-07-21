@@ -1,9 +1,11 @@
 import { strict as assert } from "node:assert";
 
-import { classifyAvDate, dedupeHrVacationRequestsById, type HrVacationRequestRow } from "../src/lib/vacation/company-vacation-report.ts";
+import { buildHrRows, classifyAvDate, dedupeHrVacationRequestsById, type HrVacationRequestRow } from "../src/lib/vacation/company-vacation-report.ts";
 
 function hrRequest(overrides: Partial<HrVacationRequestRow> & { id: string }): HrVacationRequestRow {
   return {
+    balance_after_days: null,
+    balance_before_days: null,
     duration_days: 1,
     employee_hr_id: "A-7",
     employee_name: "Test Employee",
@@ -59,6 +61,7 @@ export function runCompanyVacationReportTests() {
   assert.equal(mixed.detail, "Annual Leave");
   assert.equal(mixed.workingDays, 1);
   assert.equal(mixed.source, "CRM Signal — Vacation");
+  assert.equal(mixed.dayPart, "full_day", "a full working-day result always carries dayPart full_day");
 
   // Owner-confirmed (2026-07): no visit-count heuristic for a non-device-mapped employee — the
   // CRM AV marking alone is trusted as a full day, regardless of any regular/campaign activity
@@ -94,6 +97,10 @@ export function runCompanyVacationReportTests() {
   assert.ok(partial);
   assert.equal(partial.workingDays, 0.5);
   assert.equal(partial.source, "CRM Signal — Half-Day (Attendance Partial)");
+  // No ampm data at all was passed in (CRM claimed a full day; the downgrade to half is purely
+  // fingerprint-driven) -> the resolver has no AM/PM signal to read, so it falls back to the
+  // documented pm_only default rather than fabricating a direction.
+  assert.equal(partial.dayPart, "pm_only", "a fingerprint-only downgrade with no CRM ampm marking falls back to pm_only");
 
   // Device-mapped, punched, >=5h worked -> proven fully worked -> dropped entirely, NEVER
   // returned as a 0-day row (owner-confirmed: a vacation report never shows a 0-day row).
@@ -122,9 +129,16 @@ export function runCompanyVacationReportTests() {
   assert.ok(amHalf);
   assert.equal(amHalf.workingDays, 0.5, "a CRM AV row marked AM is a half-day (0.5)");
   assert.equal(amHalf.source, "CRM Signal — Vacation");
+  // Bug fix (approve route previously always recorded pm_only regardless of the CRM's own AM/PM
+  // marking): dayPart must reflect the actual half the CRM recorded, and the detail text must
+  // name it rather than the old generic "(half-day — CRM AM/PM)" wording.
+  assert.equal(amHalf.dayPart, "am_only", "an AM-marked CRM row resolves dayPart to am_only, not the old hardcoded pm_only");
+  assert.equal(amHalf.detail, "Annual Leave (half-day — CRM AM)");
 
   const pmHalf = classifyAvDate({ comments: ["Annual Leave"], ampms: ["PM"], isDeviceMapped: false, isHoliday: false, workedMinutes: null });
   assert.equal(pmHalf?.workingDays, 0.5, "a CRM AV row marked PM is a half-day (0.5)");
+  assert.equal(pmHalf?.dayPart, "pm_only");
+  assert.equal(pmHalf?.detail, "Annual Leave (half-day — CRM PM)");
 
   // AM + PM on the same date = a full day (0.5 + 0.5), capped at 1.0.
   const amPlusPm = classifyAvDate({
@@ -150,6 +164,7 @@ export function runCompanyVacationReportTests() {
     workedMinutes: null,
   });
   assert.equal(excusePlusAmHalf?.workingDays, 0.5, "after dropping the excuse row, the surviving AM row drives 0.5");
+  assert.equal(excusePlusAmHalf?.dayPart, "am_only", "dayPart resolution also uses only the surviving (non-excuse) row's ampm");
 
   // Device fingerprint proving <5h still forces 0.5 even if the CRM marked a full day.
   const fingerprintOverridesFullDay = classifyAvDate({
@@ -160,4 +175,47 @@ export function runCompanyVacationReportTests() {
     workedMinutes: 119,
   });
   assert.equal(fingerprintOverridesFullDay?.workingDays, 0.5, "a <5h fingerprint still downgrades a CRM full day to a half-day");
+  assert.equal(fingerprintOverridesFullDay?.dayPart, "pm_only", "no CRM ampm marking on the downgraded row -> falls back to pm_only");
+
+  // ── buildHrRows: Has Balance / Balance After must only reflect an ACTUAL deduction ──
+  // (2026-07-22 fix: the stored balance snapshot was previously surfaced for every HR status and
+  // every vacation_type, which misread a Pending/Rejected/Cancelled request's submission-time
+  // snapshot as a real balance change, and misread a compensatory day's balance-exempt 0/0 as
+  // "ran out of leave".)
+  const employeeByKey = new Map();
+
+  const [approvedAnnual] = buildHrRows([hrRequest({
+    id: "req-approved",
+    balance_before_days: 10,
+    balance_after_days: 8,
+    duration_days: 2,
+    status: "approved",
+    vacation_type: "annual",
+  })], employeeByKey);
+  assert.equal(approvedAnnual.hasBalance, true, "an approved annual request with balance surfaces Has Balance: Yes");
+  assert.equal(approvedAnnual.balanceAfterDays, 8);
+
+  const [approvedCompensatory] = buildHrRows([hrRequest({
+    id: "req-comp",
+    balance_before_days: 0,
+    balance_after_days: 0,
+    duration_days: 1,
+    status: "approved",
+    vacation_type: "compensatory",
+  })], employeeByKey);
+  assert.equal(approvedCompensatory.hasBalance, null, "compensatory is balance-exempt (always paid outside the leave pool) -> N/A, not a misleading No");
+  assert.equal(approvedCompensatory.balanceAfterDays, null);
+
+  for (const status of ["pending", "rejected", "cancelled"]) {
+    const [row] = buildHrRows([hrRequest({
+      id: `req-${status}`,
+      balance_before_days: 10,
+      balance_after_days: 8,
+      duration_days: 2,
+      status,
+      vacation_type: "annual",
+    })], employeeByKey);
+    assert.equal(row.hasBalance, null, `a ${status} request never actually deducted balance -> Has Balance must be N/A, not the submission-time snapshot`);
+    assert.equal(row.balanceAfterDays, null, `a ${status} request's stored balance_after_days must not be surfaced as if it happened`);
+  }
 }
