@@ -341,8 +341,8 @@ function RegionSection({
 /** A Region as a native-<details> lane — used only when the viewer's subtree spans more than
  *  one region (a Regional Manager). Nothing to fetch on open: it just reveals its own
  *  (already-in-skeleton) Area accordions, each of which lazy-loads independently — see
- *  AreaDetails. Orange (not the dark slate every other tier uses) so a multi-region tree stays
- *  scannable — "you've crossed into a new region" reads at a glance. */
+ *  AreaDetails. Same dark-slate header every other tier uses; the uppercase "Region" label is
+ *  what tells it apart, not a competing accent color. */
 function RegionDetails({
   region,
   areas,
@@ -357,9 +357,9 @@ function RegionDetails({
   tree: UseTerritoryTreeResult;
 }) {
   return (
-    <details className="rounded-lg border border-orange-900/20 bg-white open:pb-2.5" open>
-      <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-orange-600 to-orange-700 px-4 py-3 text-white">
-        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">Region</span>
+    <details className="rounded-lg border border-slate-200 bg-white open:pb-2.5" open>
+      <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
+        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Region</span>
         <span className="break-words text-[15px] font-black leading-snug">{region.regionName}</span>
         <span className="text-[10px] font-black tabular-nums text-white/85">
           {areas.length} area{areas.length === 1 ? "" : "s"}
