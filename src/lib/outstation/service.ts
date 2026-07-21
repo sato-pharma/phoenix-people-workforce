@@ -26,6 +26,7 @@ import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decis
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { logError } from "@/lib/observability/log";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
@@ -1040,7 +1041,7 @@ async function resolveOutstationSubmitAlertHrIds(): Promise<string[]> {
     }
     return Array.from(hrIds);
   } catch (error) {
-    console.error("[outstation] submit-alert recipient lookup failed; submit notification skipped", error);
+    logError("Outstation submit-alert recipient lookup failed; submit notification skipped", { labels: { event: "outstation_submit_alert_recipient_lookup_failed" }, error });
     return [];
   }
 }
@@ -1131,7 +1132,7 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
       ),
     );
   } catch (error) {
-    console.error("[outstation] submitted notification dispatch failed (non-blocking)", error);
+    logError("Outstation submitted notification dispatch failed (non-blocking)", { labels: { event: "outstation_submitted_notification_dispatch_failed" }, error });
   }
 }
 
@@ -1184,7 +1185,7 @@ async function notifyOutstationDecision(input: {
       }),
     ]);
   } catch (error) {
-    console.error("[outstation] decision notification dispatch failed (non-blocking)", error);
+    logError("Outstation decision notification dispatch failed (non-blocking)", { labels: { event: "outstation_decision_notification_dispatch_failed" }, error });
   }
 }
 
@@ -2721,7 +2722,7 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
         });
         processed++;
       } catch (error) {
-        console.error(error, { tags: { cron: "outstation-sla-reminder", recipientHrId: hrId } });
+        logError("Outstation SLA reminder failed for recipient", { labels: { event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", recipientHrId: hrId }, error });
         errors++;
       }
     }

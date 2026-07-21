@@ -20,12 +20,6 @@ import {
   parseFieldWorkforceComplianceMatrix,
 } from "../src/lib/field-workforce-compliance/parser.ts";
 
-function collectObjectKeys(value: unknown): string[] {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) return value.flatMap((item) => collectObjectKeys(item));
-  return Object.entries(value).flatMap(([key, nested]) => [key, ...collectObjectKeys(nested)]);
-}
-
 export async function runFieldWorkforceComplianceTests() {
   const parsed = parseFieldWorkforceComplianceMatrix({
     fileName: "Jan 2026 team calendar.xlsx",

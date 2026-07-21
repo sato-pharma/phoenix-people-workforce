@@ -10,6 +10,7 @@ import {
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { validationError } from "@/lib/http/api-errors";
 import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1229,7 +1230,7 @@ export async function dispatchDirectOrderApprovedEmail(requestId: string): Promi
     const [row] = await getDirectOrderReport(systemAccessContext, { requestId });
     if (row) await sendDirectOrderApprovedEmail(row);
   } catch (error) {
-    console.error(`[direct-orders] approved-email dispatch failed for ${requestId}:`, error);
+    logError("Direct order approved-email dispatch failed", { labels: { event: "direct_order_approved_email_dispatch_failed", requestId }, error });
   }
 }
 

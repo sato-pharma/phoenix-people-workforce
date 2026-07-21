@@ -7,6 +7,7 @@ import {
   computeEngagement,
 } from "@/lib/activity/engagement";
 import { resolveActivityModule } from "@/lib/activity/modules";
+import { logError } from "@/lib/observability/log";
 import type {
   ActivityAnomaly,
   ActivityIdentity,
@@ -276,7 +277,10 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
     // Stay quiet if the table simply isn't there yet (migration applied separately)
     // so we don't spam logs/Sentry on every navigation before deploy ordering settles.
     if (!isMissingRelationError(error)) {
-      console.error("[activity] recordPageView failed", error.message);
+      logError("Activity page-view recording failed", {
+        labels: { event: "activity_record_page_view_failed" },
+        error,
+      });
     }
   }
 }
@@ -1161,12 +1165,18 @@ export async function purgeOldActivityEvents(retentionDays = 90): Promise<{ cuto
     const supabase = getSupabaseAdmin();
     const { error } = await supabase.from("activity_events").delete().lt("created_at", cutoff);
     if (error) {
-      console.error("[activity] purgeOldActivityEvents failed", error.message);
+      logError("Activity retention purge failed", {
+        labels: { event: "activity_purge_old_events_failed", retentionDays },
+        error,
+      });
       return { cutoffIso: cutoff, ok: false };
     }
     return { cutoffIso: cutoff, ok: true };
   } catch (error) {
-    console.error("[activity] purgeOldActivityEvents threw", error);
+    logError("Activity retention purge threw", {
+      labels: { event: "activity_purge_old_events_threw", retentionDays },
+      error,
+    });
     return { cutoffIso: cutoff, ok: false };
   }
 }

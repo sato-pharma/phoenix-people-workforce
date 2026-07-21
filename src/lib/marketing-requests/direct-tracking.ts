@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -64,7 +65,10 @@ export async function setMarketingRequestTrackDirectSales(
   // here must not lose the persisted flag change.
   const { error: refreshError } = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: null });
   if (refreshError) {
-    console.error(`[marketing-direct-tracking] ROI refresh after toggle failed for ${cleanId}:`, refreshError);
+    logError("Marketing ROI facts refresh after direct-tracking toggle failed", {
+      labels: { event: "marketing_direct_tracking_roi_refresh_failed", requestId: cleanId },
+      error: refreshError,
+    });
   }
 
   return {

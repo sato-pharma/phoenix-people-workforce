@@ -9,6 +9,7 @@ import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/wo
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
+import { logError } from "@/lib/observability/log";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
@@ -1661,7 +1662,7 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
         });
         processed++;
       } catch (error) {
-        console.error(error, { tags: { cron: "resignation-sla-reminder", recipientHrId: hrId } });
+        logError("Resignation SLA reminder failed for recipient", { labels: { event: "resignation_sla_reminder_failed", cron: "resignation-sla-reminder", recipientHrId: hrId }, error });
         errors++;
       }
     }

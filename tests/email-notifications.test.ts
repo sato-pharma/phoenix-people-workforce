@@ -130,6 +130,6 @@ export function runEmailNotificationTests() {
   assert.match(scheduledProcessingSource, /processNotificationOutbox\(limit\)\.catch\(/, "outbox processing must have catch boundary");
   assert.match(scheduledProcessingSource, /processDeferredDeliveryRetries\(limit\)\.catch\(/, "deferred delivery retries must have catch boundary");
   assert.match(scheduledProcessingSource, /processTelegramDeliveryRetries\(limit\)\.catch\(/, "telegram delivery retries must have catch boundary");
-  assert.match(scheduledProcessingSource, /console\.error\(e, \{ tags: \{ cron: "notification-process-outbox" \} \}\)/, "outbox errors must be captured in Sentry with tags");
-  assert.match(scheduledProcessingSource, /console\.error\(e, \{ tags: \{ cron: "notification-process-telegram" \} \}\)/, "telegram retry errors must be captured in Sentry with tags");
+  assert.match(scheduledProcessingSource, /logError\("Notification outbox processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-outbox" \},/, "outbox errors must be captured in Sentry with tags");
+  assert.match(scheduledProcessingSource, /logError\("Telegram delivery retry processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-telegram" \},/, "telegram retry errors must be captured in Sentry with tags");
 }

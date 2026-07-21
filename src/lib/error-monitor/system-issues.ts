@@ -12,7 +12,6 @@ import {
   getUserAttemptSummary,
   partitionUserAttempts,
   type ErrorEventRow,
-  type UnknownAttemptsSummary,
   type UserAttemptRow,
 } from "@/lib/error-monitor/service";
 import { getRecentGcpLogEntries, type GcpLogEntry } from "@/lib/observability/gcp-logs";

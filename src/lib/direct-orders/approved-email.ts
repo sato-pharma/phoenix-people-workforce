@@ -13,6 +13,7 @@ import {
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 
@@ -138,6 +139,6 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
     const outcome = sendResult.skipped ? `skipped (${sendResult.reason})` : `sent (${sendResult.id ?? "ok"})`;
     console.info(`[direct-orders] approved-email for ${row.id} → to=${DIRECT_ORDER_APPROVED_TO} cc=${cc.length}: ${outcome}`);
   } catch (error) {
-    console.error(`[direct-orders] approved-email failed for ${row.id}:`, error);
+    logError("Direct order approved-email failed", { labels: { event: "direct_order_approved_email_failed", requestId: row.id }, error });
   }
 }

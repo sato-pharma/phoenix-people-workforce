@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupersededBatch = {
@@ -66,7 +67,10 @@ export async function cleanupStalePendingSosBatches(): Promise<number> {
     if (error) throw error;
     return Number(data ?? 0);
   } catch (error) {
-    console.error(JSON.stringify({ event: "sos_stale_pending_cleanup_failed", error: error instanceof Error ? error.message : String(error) }));
+    logError("Stale pending SoS batch cleanup failed", {
+      labels: { event: "sos_stale_pending_cleanup_failed" },
+      error,
+    });
     return 0;
   }
 }

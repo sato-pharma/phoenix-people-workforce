@@ -18,6 +18,7 @@ import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { logError } from "@/lib/observability/log";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import type {
   VisitsReportData,
@@ -132,7 +133,10 @@ async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
     if (departedHrIds.length > 0) liveIds = await scanDepartedAgentCrmIds(departedHrIds);
   } catch (error) {
     // Best-effort live tier; the static safety-net still applies (fail-safe over-hide).
-    console.error("[crm/reads] live departed-agent exclusion failed; using static list only", error);
+    logError("Live departed-agent CRM exclusion failed; using static list only", {
+      labels: { event: "crm_live_departed_exclusion_failed" },
+      error,
+    });
   }
   const ids = Array.from(new Set<number>([...CRM_RESIGNED_AGENT_CRM_IDS, ...liveIds])).sort((a, b) => a - b);
   return { ids, inList: ids.length > 0 ? `(${ids.join(",")})` : "" };

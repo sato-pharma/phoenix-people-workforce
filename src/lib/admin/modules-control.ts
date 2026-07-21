@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { validationError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ModuleControlTargetType = "user" | "role" | "position" | "line";
@@ -479,11 +480,7 @@ async function restoreRows(rows: Array<Record<string, unknown>>) {
   if (rows.length === 0) return;
   const { error } = await supabase.from("sidebar_module_assignments").insert(rows);
   if (error) {
-    console.error(JSON.stringify({
-      context: "sidebar_module_assignments_restore",
-      error: error.message,
-      event: "module_control_compensation_failed",
-    }));
+    logError("sidebar_module_assignments restore failed", { labels: { event: "module_control_compensation_failed", context: "sidebar_module_assignments_restore" }, error });
   }
 }
 

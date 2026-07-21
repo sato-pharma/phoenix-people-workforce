@@ -2,10 +2,10 @@
 // ExcelForge workbook the /sales Export button produces, at CEO/Super-Admin scope with the
 // confidential-reveal already on (recipients are hard-gated to those two roles, so there is
 // nothing left to protect by excluding LA003/LA004/SS001 from a report only they will ever
-// receive), and emails it as an attachment. Two callers: the manual on-demand API route
-// (POST /api/sales/sos-dashboard/email-report) today, and — per the Round-2 plan — a future
-// monthly-closing-triggered cron hook (not built yet; see the TODO in
-// app/api/sales/monthly-closing/publish/route.ts).
+// receive), and emails it as an attachment. Three callers: the manual on-demand API route
+// (POST /api/sales/sos-dashboard/email-report), the daily cron check below (fires once a
+// monthly closing period becomes fully published across every line), and the underlying
+// send path both share.
 
 import { systemDeployment } from "@/config/system-settings";
 import { systemAccessContext } from "@/lib/auth/permissions";
@@ -16,9 +16,12 @@ import {
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { listAllPublishedClosings, normalizeClosingLine } from "@/lib/sales/monthly-closing-publication";
+import { listMonthlyClosingLines } from "@/lib/sales/monthly-distributor-import";
 import { periodProseLabel } from "@/lib/sales/periods";
 import { buildSosBiWorkbook } from "@/lib/sales/sos-bi-workbook";
 import { getSosDashboard } from "@/lib/sales/sos-dashboard";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SosReportDeliveryResult =
@@ -153,4 +156,120 @@ export async function buildAndEmailSosBiReport(input: {
     return { period, reason: result.reason, sent: false };
   }
   return { period, recipients, sent: true };
+}
+
+export type SosMonthlyReportCheckResult = {
+  checkedPeriods: string[];
+  sentPeriods: string[];
+  errors: Array<{ period: string; error: string }>;
+};
+
+/**
+ * Pure logic, no DB I/O: given the full list of active monthly-closing lines and every
+ * currently-published (line, period) row, return every period whose published lines cover
+ * ALL active lines — i.e. every period ready for the CEO/Super-Admin BI report.
+ *
+ * A period with zero published closings never appears as a key in `publishedClosings`
+ * grouping, so it's naturally excluded (nothing to check) rather than needing a special case.
+ */
+export function computeFullyPublishedPeriods(
+  activeLines: string[],
+  publishedClosings: Array<{ normalizedLine: string; period: string }>,
+): string[] {
+  if (activeLines.length === 0) return [];
+
+  const normalizedActiveLines = new Set(activeLines.map((line) => normalizeClosingLine(line)));
+  const publishedLinesByPeriod = new Map<string, Set<string>>();
+  for (const closing of publishedClosings) {
+    const set = publishedLinesByPeriod.get(closing.period) ?? new Set<string>();
+    set.add(closing.normalizedLine);
+    publishedLinesByPeriod.set(closing.period, set);
+  }
+
+  const fullyPublished: string[] = [];
+  for (const [period, publishedLineSet] of publishedLinesByPeriod) {
+    const isFullyPublished = [...normalizedActiveLines].every((line) => publishedLineSet.has(line));
+    if (isFullyPublished) fullyPublished.push(period);
+  }
+  return fullyPublished;
+}
+
+/**
+ * Daily check (called from the /api/notifications/daily orchestrator): for every period
+ * with at least one published monthly closing, if EVERY active line is now published for
+ * that period, send the CEO/Super-Admin BI report exactly once.
+ *
+ * "Fully published" stays true indefinitely once reached (nothing un-publishes a period in
+ * the normal flow), so this can't rely on Resend's own Idempotency-Key header alone — that
+ * key's dedupe window is not documented as indefinite, and this check runs daily forever.
+ * Own dedupe via `notification_outbox.dedupe_key` (same key string also passed as
+ * sendPhoenixEmail's idempotencyKey, so both layers agree): insert a `status: "sent"` marker
+ * row after a successful send. The outbox drain worker only ever claims
+ * `status IN ("pending", "failed")` rows (see processNotificationOutbox in
+ * src/lib/notifications/email.ts), so this marker is never picked up for delivery — it is
+ * purely a "have we already reported this period" flag, reusing existing infrastructure
+ * instead of a new table/migration.
+ */
+export async function runSosMonthlyClosingReportCheck(): Promise<SosMonthlyReportCheckResult> {
+  const checkedPeriods: string[] = [];
+  const sentPeriods: string[] = [];
+  const errors: Array<{ period: string; error: string }> = [];
+
+  try {
+    const [activeLines, publishedClosings] = await Promise.all([
+      listMonthlyClosingLines(),
+      listAllPublishedClosings(),
+    ]);
+    const fullyPublishedPeriods = computeFullyPublishedPeriods(activeLines, publishedClosings);
+    if (fullyPublishedPeriods.length === 0) return { checkedPeriods, sentPeriods, errors };
+
+    const supabase = getSupabaseAdmin();
+
+    for (const period of fullyPublishedPeriods) {
+      checkedPeriods.push(period);
+
+      const dedupeKey = `sos-bi-report:${period}`;
+      const { data: existingMarker, error: lookupError } = await supabase
+        .from("notification_outbox")
+        .select("id")
+        .eq("dedupe_key", dedupeKey)
+        .maybeSingle();
+      if (lookupError) {
+        errors.push({ period, error: lookupError.message });
+        continue;
+      }
+      if (existingMarker) continue; // Already reported for this period.
+
+      const result = await buildAndEmailSosBiReport({ period });
+      if (!result.sent) {
+        errors.push({ period, error: result.reason });
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      const { error: markerError } = await supabase.from("notification_outbox").insert({
+        attempts: 1,
+        dedupe_key: dedupeKey,
+        max_attempts: 1,
+        next_attempt_at: now,
+        payload: { period, recipients: result.recipients, type: "sos_monthly_bi_report" },
+        sent_at: now,
+        status: "sent",
+        updated_at: now,
+      });
+      if (markerError) {
+        errors.push({ period, error: `Report sent but dedupe marker insert failed: ${markerError.message}` });
+        continue;
+      }
+      sentPeriods.push(period);
+    }
+  } catch (error) {
+    logError("SoS monthly-closing report check failed", {
+      labels: { event: "sos_monthly_report_check_failed" },
+      error,
+    });
+    errors.push({ period: "unknown", error: error instanceof Error ? error.message : String(error) });
+  }
+
+  return { checkedPeriods, sentPeriods, errors };
 }

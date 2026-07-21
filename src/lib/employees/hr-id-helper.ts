@@ -1,4 +1,5 @@
 import { getRequiredEnv } from "@/lib/env";
+import { logError } from "@/lib/observability/log";
 
 const databaseQueryTimeoutMs = 8000;
 
@@ -61,7 +62,7 @@ export async function generateNextHrIdForLine(
         else if (searchStr.includes("office")) prefix = "OF";
       }
     } catch (error) {
-      console.error("Failed to fetch line for HR_ID generation:", error);
+      logError("Failed to fetch line for HR_ID generation", { labels: { event: "hr_id_line_lookup_failed", lineId }, error });
       // Fallback to PH prefix if line fetch fails
     }
   }

@@ -18,6 +18,7 @@ import ExcelJS from "exceljs";
 
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
 import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { logError } from "@/lib/observability/log";
 import { type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
 import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
@@ -119,7 +120,10 @@ async function judgeWithAi(
   if (!res.ok) {
     // Log upstream body server-side only — it can echo request details / key fragments on 401.
     const body = await res.text().catch(() => "");
-    console.error(`[weekly-verify] AI request failed (${res.status}): ${body.slice(0, 300)}`);
+    logError("Weekly verify AI request failed", {
+      labels: { event: "weekly_verify_ai_request_failed", httpStatus: res.status },
+      context: { bodySnippet: body.slice(0, 300) },
+    });
     recordAiCall({
       component: "sales_weekly_ai_verify",
       errorCode: String(res.status),
@@ -283,7 +287,10 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
       aiNote = summary ? summary.slice(0, 600) : "Column check complete.";
     } catch (error) {
       // Degrade gracefully — keep the deterministic plan, let the operator verify manually.
-      console.error("[weekly-verify] AI overlay failed:", error instanceof Error ? error.message : error);
+      logError("Weekly verify AI overlay failed", {
+        labels: { event: "weekly_verify_ai_overlay_failed" },
+        error,
+      });
       aiUsed = false;
       aiNote = "The AI column check could not run just now — review the mapping below and confirm it looks right before uploading.";
     }
