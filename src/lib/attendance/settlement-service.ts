@@ -36,6 +36,8 @@ import {
 } from "@/lib/attendance/digest-notify";
 import { pushAttendanceSettlementToPayroll } from "@/lib/attendance/settlement-payroll";
 import { recordDigestNotificationEvent } from "@/lib/attendance/digest-read-receipts";
+import { computeSettlementWeekDigests, persistSettlementWeekDigests } from "@/lib/attendance/digest-service";
+import { resolveDigestCycle, settlementWeekForDate, tileSettlementWeeks } from "@/lib/attendance/digest-cycle";
 
 export type DigestLineAction = "pending" | "confirmed" | "disputed" | "auto_confirmed";
 
@@ -710,6 +712,171 @@ export async function correctSettledLine(input: {
     oldValues: { deductionDays: oldDays, deductionValue: oldValue, reason: line.reason },
     summary: `Already-settled digest line corrected for ${digest.employee_hr_id} on ${line.work_date} by ${input.actorHrId}`,
   });
+}
+
+/**
+ * Confirms (or declines, by passing deductionDays: 0) ONE pending line directly — unlike
+ * approveDigestReview, not gated on the digest's overall status, since this is meant to be
+ * called for a single day picked out of the employee day-by-day report, independent of
+ * whatever else in that week has or hasn't been decided. "Decline" isn't a separate action:
+ * it's the same confirm, with the values edited down to zero first — pushAttendanceSettlementToPayroll
+ * already no-ops on a zero-day settlement, so a declined day creates no payroll candidate.
+ * TOCTOU-safe: claims the line via a conditional update (action='pending' -> 'confirmed')
+ * before settling, so a concurrent double-click can never double-settle.
+ */
+export async function confirmPendingLine(input: {
+  digestId: number;
+  lineId: number;
+  actorHrId: string;
+  deductionDays: number;
+  deductionValue: number;
+  reason: string;
+}): Promise<void> {
+  const digest = await loadDigest(input.digestId);
+  const settings = await getDigestSettings();
+  const reviewers = await resolveDisputeReviewers(digest.employee_hr_id, settings);
+  const actor = normalizeAttendanceHrId(input.actorHrId);
+  if (!actor || !reviewers.includes(actor)) {
+    throw new Error("Forbidden: you are not an authorized reviewer for this digest.");
+  }
+
+  const line = await loadLine(input.digestId, input.lineId);
+  if (line.status === "missing_punch") {
+    throw validationError("Missing-punch lines are never confirmed here — they go through the missing-punch verification chain.");
+  }
+  if (line.action !== "pending") {
+    throw conflictError(`This line is already ${line.action}.`);
+  }
+  if (!Number.isFinite(input.deductionDays) || input.deductionDays < 0) {
+    throw validationError("Deduction days must be zero or a positive number.");
+  }
+  if (!Number.isFinite(input.deductionValue) || input.deductionValue < 0) {
+    throw validationError("Deduction value must be zero or a positive number.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const claimNow = new Date().toISOString();
+  const { data: claimedLine, error: claimError } = await supabase
+    .from("attendance_digest_lines")
+    .update({
+      acted_at: claimNow,
+      action: "confirmed",
+      deduction_days: input.deductionDays,
+      deduction_value: input.deductionValue,
+      original_deduction_days: line.deduction_days,
+      original_deduction_value: line.deduction_value,
+      original_reason: line.reason,
+      reason: input.reason,
+      updated_at: claimNow,
+    })
+    .eq("id", input.lineId)
+    .eq("digest_id", input.digestId)
+    .eq("action", "pending")
+    .select("id")
+    .maybeSingle();
+  if (claimError) throw claimError;
+  if (!claimedLine) throw conflictError("This line was already acted on.");
+
+  await insertSettlement({
+    action: "confirmed",
+    actorHrId: input.actorHrId,
+    actorRole: "Admin",
+    deductionDays: input.deductionDays,
+    deductionValue: input.deductionValue,
+    digestLineId: input.lineId,
+    employeeHrId: digest.employee_hr_id,
+    lineStatus: line.status as "late" | "short_hours",
+    reason: input.reason,
+    workDate: line.work_date,
+  });
+
+  await maybeCloseDigest(input.digestId);
+}
+
+/**
+ * Single entry point for the employee day-by-day report's Edit/Decline/Confirm controls:
+ * given one employee and one calendar date, resolves (creating on demand if needed) the
+ * digest line that date belongs to, and routes to whichever settlement path applies —
+ * confirmPendingLine for a fresh decision, correctSettledLine for one already made. This is
+ * how a confirmed day from that report becomes a real ATTENDANCE_DEVICE deduction_candidates
+ * row — the exact same row Automated Payroll's Fingerprint Deductions step reads.
+ */
+export async function setDayAttendanceDecision(input: {
+  employeeHrId: string;
+  dateIso: string;
+  deductionDays: number;
+  deductionValue: number;
+  reason: string;
+  actorHrId: string;
+}): Promise<{ digestId: number; lineId: number }> {
+  const hrId = normalizeAttendanceHrId(input.employeeHrId);
+  if (!hrId) throw validationError("Invalid employee HR id.");
+
+  const cycle = resolveDigestCycle(input.dateIso);
+  const weekIndex = settlementWeekForDate(input.dateIso, cycle);
+  if (!weekIndex) throw validationError("Date is outside any settlement cycle.");
+  const week = tileSettlementWeeks(cycle).find((entry) => entry.index === weekIndex);
+  if (!week) throw validationError("Could not resolve the settlement week for this date.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: existingDigest, error: digestReadError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id")
+    .eq("employee_hr_id", hrId)
+    .eq("cycle_key", cycle.cycleKey)
+    .eq("week_index", weekIndex)
+    .maybeSingle();
+  if (digestReadError) throw digestReadError;
+
+  let digestId: number;
+  if (existingDigest) {
+    digestId = (existingDigest as { id: number }).id;
+  } else {
+    // No digest exists yet for this employee's week — generate + persist just their result
+    // (computeSettlementWeekDigests/persistSettlementWeekDigests are the exact unchanged
+    // weekly-digest engine the scheduler uses; scoping the persist to one employee's result
+    // touches only their rows, never anyone else's).
+    const { results } = await computeSettlementWeekDigests(week);
+    const mine = results.find((result) => normalizeAttendanceHrId(result.employeeHrId) === hrId);
+    if (!mine) throw validationError("This employee is not on the flexible-hours model for this week.");
+    const { digestIds } = await persistSettlementWeekDigests({ cycleKey: cycle.cycleKey, digests: [mine], week });
+    if (digestIds.length === 0) throw validationError("Could not create a digest for this week — it may already be past draft.");
+    digestId = digestIds[0];
+  }
+
+  const { data: lineRow, error: lineError } = await supabase
+    .from("attendance_digest_lines")
+    .select("id,action")
+    .eq("digest_id", digestId)
+    .eq("work_date", input.dateIso)
+    .maybeSingle();
+  if (lineError) throw lineError;
+  if (!lineRow) throw validationError("No deductible line exists for this date.");
+  const line = lineRow as { id: number; action: DigestLineAction };
+
+  if (line.action === "pending") {
+    await confirmPendingLine({
+      actorHrId: input.actorHrId,
+      deductionDays: input.deductionDays,
+      deductionValue: input.deductionValue,
+      digestId,
+      lineId: line.id,
+      reason: input.reason,
+    });
+  } else if (line.action === "confirmed" || line.action === "auto_confirmed") {
+    await correctSettledLine({
+      actorHrId: input.actorHrId,
+      deductionDays: input.deductionDays,
+      deductionValue: input.deductionValue,
+      digestId,
+      lineId: line.id,
+      reason: input.reason,
+    });
+  } else {
+    throw validationError(`This day has an open dispute — resolve it via Dispute Review first.`);
+  }
+
+  return { digestId, lineId: line.id };
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CalendarSearch } from "lucide-react";
+import { CalendarSearch, CheckCircle2, XCircle } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   EmployeeDayByDayReport,
   EmployeeDayOutcome,
+  EmployeeDayReportRow,
   FlexEligibleEmployeeOption,
 } from "@/lib/attendance/employee-day-report";
 
@@ -59,6 +60,16 @@ const OUTCOME_TONE: Record<EmployeeDayOutcome, string> = {
   weekly_off: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
+const DECISION_LABEL: Record<string, string> = {
+  auto_confirmed: "Confirmed",
+  confirmed: "Confirmed",
+  disputed: "Disputed",
+  pending: "Pending review",
+};
+
+/** Outcomes that carry an actual deduction decision — the only rows Edit/Decline/Confirm apply to. */
+const ACTIONABLE_OUTCOMES: ReadonlySet<EmployeeDayOutcome> = new Set(["late", "short_hours"]);
+
 function formatClock(minutes: number | null): string {
   if (minutes === null) return "—";
   const hour = Math.floor(minutes / 60) % 24;
@@ -71,6 +82,21 @@ function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return `${hours}h ${remainder}m`;
+}
+
+type Draft = { deductionDays: string; deductionValue: string; reason: string };
+
+function initDrafts(days: EmployeeDayReportRow[]): Record<string, Draft> {
+  const drafts: Record<string, Draft> = {};
+  for (const day of days) {
+    if (!ACTIONABLE_OUTCOMES.has(day.outcome)) continue;
+    drafts[day.dateIso] = {
+      deductionDays: String(day.deductionDays),
+      deductionValue: String(day.deductionValue),
+      reason: day.reason,
+    };
+  }
+  return drafts;
 }
 
 export function EmployeeDayReport({
@@ -86,11 +112,53 @@ export function EmployeeDayReport({
   const [employeeHrId, setEmployeeHrId] = useState(initialEmployeeHrId);
   const [dateFrom, setDateFrom] = useState(initialDateFrom);
   const [dateTo, setDateTo] = useState(initialDateTo);
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() => (initialReport ? initDrafts(initialReport.days) : {}));
+  const [busyDate, setBusyDate] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
 
   function viewReport() {
     if (!employeeHrId || !dateFrom || !dateTo) return;
     const params = new URLSearchParams({ dateFrom, dateTo, employeeHrId });
     router.push(`/attendance/employee-day-report?${params.toString()}`);
+  }
+
+  function updateDraft(dateIso: string, patch: Partial<Draft>) {
+    setDrafts((current) => ({ ...current, [dateIso]: { ...current[dateIso], ...patch } as Draft }));
+  }
+
+  async function submitDecision(dateIso: string, mode: "confirm" | "decline") {
+    if (!initialReport) return;
+    const draft = drafts[dateIso];
+    if (!draft) return;
+    setBusyDate(dateIso);
+    setDecisionError(null);
+    setDecisionNotice(null);
+    try {
+      const response = await fetch("/api/attendance/employee-day-report/decision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dateIso,
+          deductionDays: mode === "decline" ? 0 : Number(draft.deductionDays),
+          deductionValue: mode === "decline" ? 0 : Number(draft.deductionValue),
+          employeeHrId: initialReport.employeeHrId,
+          reason: mode === "decline" ? `Declined by admin. ${draft.reason}`.trim() : draft.reason,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? "Decision failed.");
+      setDecisionNotice(
+        mode === "decline"
+          ? `Declined ${dateIso} — no deduction will reach payroll.`
+          : `Confirmed ${dateIso} — this will appear in Automated Payroll's Fingerprint Deductions.`,
+      );
+      router.refresh();
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : "Decision failed.");
+    } finally {
+      setBusyDate(null);
+    }
   }
 
   const totals = initialReport
@@ -107,7 +175,7 @@ export function EmployeeDayReport({
     <div className="space-y-5">
       <AdminPageHero
         badges={initialReport ? <AdminInsightChip tone="orange">{initialReport.days.length} day(s) shown</AdminInsightChip> : null}
-        description="Pick one employee and a date range — every calendar day in that range is listed, including why a day produced no deduction (weekly off, holiday, approved leave, CRM-covered, etc.), not just the days that did."
+        description="Pick one employee and a date range — every calendar day in that range is listed. Edit, Decline, or Confirm a late/short-hours day directly here; a Confirm settles it exactly like Digest Review does, and it's what Automated Payroll's Fingerprint Deductions step reads."
         eyebrow="Attendance"
         icon={<CalendarSearch className="h-3.5 w-3.5" />}
         title="Employee Day-by-Day Report"
@@ -115,6 +183,8 @@ export function EmployeeDayReport({
 
       {employeesError ? <AdminCallout tone="danger">{employeesError}</AdminCallout> : null}
       {initialError ? <AdminCallout tone="danger">{initialError}</AdminCallout> : null}
+      {decisionError ? <AdminCallout tone="danger">{decisionError}</AdminCallout> : null}
+      {decisionNotice ? <AdminCallout tone="neutral">{decisionNotice}</AdminCallout> : null}
 
       <AdminTableShell description="Only employees on the flexible-hours model appear here — the same population the weekly digest governs." title="Filters">
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-4">
@@ -172,7 +242,7 @@ export function EmployeeDayReport({
             title="Day-by-Day Detail"
           >
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[960px] text-left text-sm">
+              <table className="w-full min-w-[1180px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-3 py-2">Date</th>
@@ -185,30 +255,102 @@ export function EmployeeDayReport({
                     <th className="px-3 py-2">Days</th>
                     <th className="px-3 py-2">Value (EGP)</th>
                     <th className="px-3 py-2">Reason</th>
+                    <th className="px-3 py-2">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {initialReport.days.map((day) => (
-                    <tr className="align-top" key={day.dateIso}>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                        {day.dateIso}
-                        <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
-                          {OUTCOME_LABEL[day.outcome]}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.firstPunchMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.lastPunchMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDuration(day.workedMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.lateMinutes > 0 ? `${day.lateMinutes} min` : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.shortMinutes > 0 ? `${day.shortMinutes} min` : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionDays > 0 ? day.deductionDays : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionValue > 0 ? day.deductionValue.toFixed(2) : "—"}</td>
-                      <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
-                    </tr>
-                  ))}
+                  {initialReport.days.map((day) => {
+                    const actionable = ACTIONABLE_OUTCOMES.has(day.outcome);
+                    const draft = drafts[day.dateIso];
+                    const decisionLabel = day.decision ? DECISION_LABEL[day.decision.action] : "Not yet generated";
+                    return (
+                      <tr className="align-top" key={day.dateIso}>
+                        <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                          {day.dateIso}
+                          <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                            {OUTCOME_LABEL[day.outcome]}
+                          </span>
+                          {actionable ? (
+                            <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                              {decisionLabel}
+                              {day.decision && (day.decision.action === "confirmed" || day.decision.action === "auto_confirmed")
+                                ? `: ${day.decision.storedDeductionDays}d / ${day.decision.storedDeductionValue.toFixed(2)} EGP`
+                                : ""}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.firstPunchMinutes)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.lastPunchMinutes)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDuration(day.workedMinutes)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.lateMinutes > 0 ? `${day.lateMinutes} min` : "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.shortMinutes > 0 ? `${day.shortMinutes} min` : "—"}</td>
+                        {actionable && draft ? (
+                          <>
+                            <td className="px-3 py-2">
+                              <input
+                                className="h-8 w-16 rounded-md border border-slate-200 px-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                value={draft.deductionDays}
+                                onChange={(event) => updateDraft(day.dateIso, { deductionDays: event.target.value })}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                className="h-8 w-24 rounded-md border border-slate-200 px-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={draft.deductionValue}
+                                onChange={(event) => updateDraft(day.dateIso, { deductionValue: event.target.value })}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                className="h-8 w-40 rounded-md border border-slate-200 px-1.5 text-xs font-medium text-slate-700 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                value={draft.reason}
+                                onChange={(event) => updateDraft(day.dateIso, { reason: event.target.value })}
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <div className="flex gap-1">
+                                <Button
+                                  disabled={busyDate !== null}
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => submitDecision(day.dateIso, "confirm")}
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  {busyDate === day.dateIso ? "…" : "Confirm"}
+                                </Button>
+                                <Button
+                                  disabled={busyDate !== null}
+                                  size="sm"
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => submitDecision(day.dateIso, "decline")}
+                                >
+                                  <XCircle className="h-3.5 w-3.5" />
+                                  Decline
+                                </Button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionDays > 0 ? day.deductionDays : "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionValue > 0 ? day.deductionValue.toFixed(2) : "—"}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-slate-400">—</td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
