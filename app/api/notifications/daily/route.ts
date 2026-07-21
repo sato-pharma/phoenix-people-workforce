@@ -10,14 +10,11 @@ import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
-import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
-import { processProbationWeeklyDigest } from "@/lib/probation/intelligence/probation-emails";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
-import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -85,10 +82,8 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-vacation-sla" } });
       return { success: false, error: String(e) };
     }),
-    runMarketingSlaDaily().catch((e: unknown) => {
-      console.error(e, { tags: { cron: "daily-marketing-sla" } });
-      return { success: false, error: String(e) };
-    }),
+    // Disabled 2026-07-22 at owner request — marketing SLA reminder/escalation emails stopped.
+    Promise.resolve({ errors: [], escalations: 0, overdue: 0, reminders: 0, runDate: "", scanned: 0, disabled: true }),
     runRecruitmentDailyNotifications().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-recruitment-notifications" } });
       return { success: false, error: String(e) };
@@ -101,12 +96,8 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "weekly-system-health-digest" } });
       return { delivered: 0, skipped: true, error: String(e), sourceWarnings: [] };
     }),
-    // Probation weekly Double-Visit digest (MOD-1) — self-gates to one Cairo weekday, replacing the
-    // per-DV-day snapshot email. Safe to call daily; a non-digest day is a no-op.
-    processProbationWeeklyDigest().catch((e: unknown) => {
-      console.error(e, { tags: { cron: "probation-weekly-digest" } });
-      return { scanned: 0, sent: 0, error: String(e) };
-    }),
+    // Disabled 2026-07-22 at owner request — probation weekly Double-Visit digest stopped.
+    Promise.resolve({ scanned: 0, sent: 0, disabled: true }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
       return { success: false, error: String(e) };
@@ -123,10 +114,8 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-excuse-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
     }),
-    runOutstationSlaDaily().catch((e) => {
-      console.error(e, { tags: { cron: "daily-outstation-sla" } });
-      return { processed: 0, errors: 1, detail: String(e) };
-    }),
+    // Disabled 2026-07-22 at owner request — outstation SLA reminder emails stopped.
+    Promise.resolve({ processed: 0, errors: 0, disabled: true }),
     runResignationSlaDaily().catch((e) => {
       console.error(e, { tags: { cron: "daily-resignation-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
