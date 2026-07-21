@@ -255,6 +255,8 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/attendance/digest-review", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/approve", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/void", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/lines/:lineId/correct", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/attendance/digest-review/settled", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/force-settle-sent", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/recover-voided", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/missing-punch", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
