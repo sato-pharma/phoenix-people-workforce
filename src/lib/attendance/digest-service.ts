@@ -27,6 +27,7 @@ import {
   listIsoDatesInRange,
 } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
+import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { getCompanyWideOutageDates } from "@/lib/attendance/ingestion-health";
 import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
@@ -129,22 +130,26 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
   // since the DB column's actual casing is not guaranteed to match (a
   // recurring bug class in this codebase). Mirrors the pattern already used in
   // fingerprint-report.ts and roster.ts.
-  const [employeeResult, ruleResult, context, leaveMap, excuseMap, exceptionMap, planMap, punchMap, outageDates] = await Promise.all([
-    supabase.from("employees").select("hr_id,base_salary"),
-    supabase
-      .from("attendance_policy_rules")
-      .select("policy_id,event_type,from_minutes,to_minutes,deduction_days,is_active")
-      .eq("is_active", true),
-    buildAttendanceCalendarContext({ dateFromIso: week.startIso, dateToIso: week.endIso }),
-    getApprovedLeaveDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
-    getApprovedExcuseDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
-    getAttendanceExceptionMap(hrIds, week.startIso, week.endIso),
-    getPlanOfficeDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
-    loadEmployeeDayPunchMinutes({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
-    // Device-outage fail-safe: a day with zero punches company-wide never
-    // becomes a false missing-punch/field-punch-anomaly for anyone.
-    getCompanyWideOutageDates(week.startIso, week.endIso),
-  ]);
+  const [employeeResult, ruleResult, context, leaveMap, excuseMap, exceptionMap, planMap, punchMap, outageDates, crmActivity] =
+    await Promise.all([
+      supabase.from("employees").select("hr_id,base_salary"),
+      supabase
+        .from("attendance_policy_rules")
+        .select("policy_id,event_type,from_minutes,to_minutes,deduction_days,is_active")
+        .eq("is_active", true),
+      buildAttendanceCalendarContext({ dateFromIso: week.startIso, dateToIso: week.endIso }),
+      getApprovedLeaveDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+      getApprovedExcuseDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+      getAttendanceExceptionMap(hrIds, week.startIso, week.endIso),
+      getPlanOfficeDayMap({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+      loadEmployeeDayPunchMinutes({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+      // Device-outage fail-safe: a day with zero punches company-wide never
+      // becomes a false missing-punch/field-punch-anomaly for anyone.
+      getCompanyWideOutageDates(week.startIso, week.endIso),
+      // CRM-recorded leave + real field visits — universal cancels, same
+      // standing as Phoenix's own leave/excuse (see digest-reconcile.ts).
+      getCrmActivityDayMaps({ dateFromIso: week.startIso, dateToIso: week.endIso, employeeHrIds: hrIds }),
+    ]);
 
   if (employeeResult.error) throw employeeResult.error;
   if (ruleResult.error) throw ruleResult.error;
@@ -181,6 +186,8 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
       const excuseDates = excuseMap.get(employee.hrId) ?? new Set<string>();
       const officeDates = planMap.get(employee.hrId) ?? new Map<string, boolean>();
       const punches = punchMap.get(employee.hrId) ?? new Map<string, EmployeeDayPunches>();
+      const crmLeaveDates = crmActivity.leaveMap.get(employee.hrId) ?? new Set<string>();
+      const crmFieldVisitDates = crmActivity.fieldVisitMap.get(employee.hrId) ?? new Set<string>();
 
       const days: DigestDayInput[] = [];
       for (const dateIso of dates) {
@@ -207,6 +214,8 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
             planSaysOffice: officeDates.get(dateIso) ?? null,
             hasPunch: (punchInfo?.visiblePunchCount ?? 0) > 0,
             deviceOutage: outageDates.has(dateIso),
+            hasCrmLeave: crmLeaveDates.has(dateIso),
+            hasCrmFieldVisit: crmFieldVisitDates.has(dateIso),
           },
           firstPunchMinutes: punchInfo?.firstPunchMinutes ?? null,
           lastPunchMinutes: punchInfo?.lastPunchMinutes ?? null,

@@ -532,7 +532,7 @@ async function recommendResignations(
   // that exclusion, so its existing balance-aware total is still read the normal way — only
   // its v2Days/v2Amount fields are used here; its crm* fields come from the same
   // leaver-excluded source this function works around, so they're ignored.
-  const [vacationTotals, v2Dates] = await Promise.all([
+  const [{ totals: vacationTotals }, v2Dates] = await Promise.all([
     computeVacationDeductionTotals(members, sources, period),
     loadV2VacationDatesByCompact(period),
   ]);
@@ -712,17 +712,44 @@ type VacationDeductionTotal = {
 };
 
 /**
+ * One employee's CRM-only-leave balance breakdown for a period — the detail
+ * `settleCrmLeaveBalanceForPeriod` needs to durably record, beyond the
+ * aggregated `VacationDeductionTotal` used for the payroll-sheet number.
+ */
+export type CrmLeaveBalanceSettlement = {
+  employeeHrId: string;
+  compact: string;
+  /** Earliest CRM-only AV date this period — the settlement row's anchor date. */
+  startDate: string;
+  /** Count of CRM-only AV dates this period (no Phoenix v2 request covering them). */
+  totalDays: number;
+  /** Days actually covered by the employee's live balance (<= totalDays). */
+  balanceDaysConsumed: number;
+  /** Days beyond balance, deducted from salary instead. */
+  unpaidDays: number;
+  salaryDeductionAmount: number;
+};
+
+/**
  * Vacation deduction totals for every member (Phoenix v2 unpaid days + CRM-recorded leave,
  * balance-first). Shared by the Part-2 Vacation step (everyone except leavers, who are
  * settled at resignation time instead) and the Resignation step (leavers only).
+ *
+ * Also returns crmLeaveSettlements — the same CRM-only-leave figures broken out per employee,
+ * consumed by settleCrmLeaveBalanceForPeriod to durably record the balance draw-down when the
+ * Part-2 Vacation step is confirmed (owner rule 2026-07-21: a vacation day, whether sourced
+ * from CRM or a formal Phoenix request, must subtract from balance first and salary only for
+ * what balance doesn't cover — durably, not just as a one-off payroll-sheet number that
+ * disappears next period).
  */
-async function computeVacationDeductionTotals(
+export async function computeVacationDeductionTotals(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
-): Promise<Map<string, VacationDeductionTotal>> {
+): Promise<{ totals: Map<string, VacationDeductionTotal>; crmLeaveSettlements: CrmLeaveBalanceSettlement[] }> {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const totals = new Map<string, VacationDeductionTotal>();
+  const crmLeaveSettlements: CrmLeaveBalanceSettlement[] = [];
   const ensure = (compact: string) => {
     const existing =
       totals.get(compact) ?? { v2Days: 0, v2Amount: 0, crmDays: 0, crmUnpaidDays: 0, crmAmount: 0 };
@@ -777,9 +804,70 @@ async function computeVacationDeductionTotals(
     entry.crmDays += crmOnly.length;
     entry.crmUnpaidDays += unpaidDays;
     entry.crmAmount += amount;
+    crmLeaveSettlements.push({
+      balanceDaysConsumed: roundCurrency(Math.min(balanceDays, crmOnly.length)),
+      compact,
+      employeeHrId: member.employee.hrId,
+      salaryDeductionAmount: amount,
+      startDate: crmOnly[0],
+      totalDays: crmOnly.length,
+      unpaidDays,
+    });
   }
 
-  return totals;
+  return { crmLeaveSettlements, totals };
+}
+
+/**
+ * Durably records the balance-first-else-salary settlement for each employee's CRM-only
+ * leave days this period, reusing the SAME payroll_copilot_vacation_settlements ledger a
+ * formal Phoenix unpaid-request settlement writes to (balanceSettledDaysInPeriod in
+ * vacation/service.ts already sums it, regardless of source) — so a CRM-only AV day counts
+ * against the employee's real balance in every FUTURE balance check, not just this month's
+ * payroll sheet. vacation_request_ids stays [] (no formal request exists); that's also how a
+ * CRM-sourced row is told apart from a Copilot-decided one when reviewing the table directly.
+ * Idempotent: re-confirming the same step supersedes the prior live row for that
+ * employee+startDate before inserting, so a re-run never double-counts.
+ */
+export async function settleCrmLeaveBalanceForPeriod(input: {
+  crmLeaveSettlements: CrmLeaveBalanceSettlement[];
+  actorHrId: string;
+  runId?: string | null;
+}): Promise<{ settled: number }> {
+  const supabase = getSupabaseAdmin();
+  let settled = 0;
+  for (const settlement of input.crmLeaveSettlements) {
+    if (settlement.totalDays <= 0) continue;
+
+    await supabase
+      .from("payroll_copilot_vacation_settlements")
+      .update({ superseded_at: new Date().toISOString() })
+      .eq("employee_hr_id_compact", settlement.compact)
+      .eq("start_date", settlement.startDate)
+      .is("superseded_at", null);
+
+    const method: "balance" | "partial_balance" | "salary" =
+      settlement.unpaidDays <= 0 ? "balance" : settlement.balanceDaysConsumed > 0 ? "partial_balance" : "salary";
+
+    const { error } = await supabase.from("payroll_copilot_vacation_settlements").insert({
+      balance_days_consumed: method === "salary" ? null : settlement.balanceDaysConsumed,
+      decided_by: input.actorHrId,
+      employee_hr_id: settlement.employeeHrId,
+      employee_hr_id_compact: settlement.compact,
+      run_id: input.runId ?? null,
+      salary_deduction_amount: method === "balance" ? null : settlement.salaryDeductionAmount,
+      settlement_method: method,
+      start_date: settlement.startDate,
+      unpaid_days: settlement.totalDays,
+      vacation_request_ids: [],
+    });
+    if (error) {
+      console.error("[automated-payroll:recommend] CRM leave balance settlement insert failed:", error);
+      continue;
+    }
+    settled += 1;
+  }
+  return { settled };
 }
 
 async function recommendVacation(
@@ -788,7 +876,7 @@ async function recommendVacation(
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
-  const totals = await computeVacationDeductionTotals(members, sources, period);
+  const { totals } = await computeVacationDeductionTotals(members, sources, period);
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {

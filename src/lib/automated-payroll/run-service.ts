@@ -29,7 +29,13 @@ import {
   assertAutomatedPayrollHrActor,
   assertAutomatedPayrollPublisher,
 } from "./permissions.ts";
-import { loadStepContext, recommendStep, type PopulationMember } from "./recommend.ts";
+import {
+  computeVacationDeductionTotals,
+  loadStepContext,
+  recommendStep,
+  settleCrmLeaveBalanceForPeriod,
+  type PopulationMember,
+} from "./recommend.ts";
 import { reconcile } from "./reconcile.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
 import type {
@@ -272,6 +278,22 @@ export async function confirmStep(
     confirmedAt: nowIso(),
     confirmedBy: actorId(access),
   });
+
+  // Owner rule (2026-07-21): a vacation day — CRM-sourced or a formal Phoenix request —
+  // must durably subtract from balance first, salary only for what balance doesn't cover.
+  // Confirming this step is the one moment CRM-only leave (no v2_vacation_requests row)
+  // becomes real: settle it into the same ledger a formal request settlement uses, so future
+  // balance checks see it consumed, not just this month's payroll-sheet number.
+  if (stepKey === "p2_vacation") {
+    const { crmLeaveSettlements } = await computeVacationDeductionTotals(members, sources, period);
+    const { settled } = await settleCrmLeaveBalanceForPeriod({
+      actorHrId: actorId(access),
+      crmLeaveSettlements,
+      runId,
+    });
+    if (settled > 0) summary.crmLeaveBalanceSettled = settled;
+  }
+
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),

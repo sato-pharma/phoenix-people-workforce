@@ -15,7 +15,7 @@ export function runAttendanceFailClosedBadDataTests() {
   // 1. Per-employee isolation: the loop body must be wrapped so one throw
   //    doesn't abort processing for the rest of the roster.
   const loopStart = digestService.indexOf("for (const employee of scoped)");
-  const loopBody = digestService.slice(loopStart, loopStart + 3000);
+  const loopBody = digestService.slice(loopStart, loopStart + 3600);
   assert.match(loopBody, /try \{/, "the per-employee loop body must be wrapped in try/catch");
   assert.match(
     loopBody,
