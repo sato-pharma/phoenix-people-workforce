@@ -47,6 +47,8 @@ function rowValues(row: CompanyVacationReportRow) {
     row.startDate,
     row.endDate,
     row.workingDays,
+    row.hasBalance === null ? "N/A" : row.hasBalance ? "Yes" : "No",
+    row.balanceAfterDays ?? "",
     row.detail,
     row.requestId ?? "",
   ];
@@ -81,6 +83,8 @@ export function generateCompanyVacationReportWorkbook(input: {
     "Start Date",
     "End Date",
     "Days",
+    "Has Balance",
+    "Balance After",
     "Detail",
     "HR Request ID",
   ];
@@ -135,6 +139,7 @@ export function generateCompanyVacationReportWorkbook(input: {
     ["CRM Signal — Vacation", "An Annual Vacation entry logged in the field CRM (iReports360), with no fingerprint or field-activity contradiction found. Not yet a formal HR request."],
     ["CRM Signal — Half-Day (Attendance Partial)", "A CRM vacation entry where the employee (fingerprint-mapped only) also had under 5 hours of fingerprint activity that day — likely a half-day, not a full vacation day."],
     ["Execution boundary", "This export is report-only. \"CRM Signal\" rows are unverified estimates — they do not deduct or restore any leave balance and are not employee-submitted requests. Turning one into a real leave adjustment requires explicit HR review through the Field Workforce Compliance recommendation workflow."],
+    ["Has Balance / Balance After", "Taken from the balance stored on the HR request at the moment it was made — the same balance-engine result used to approve/deduct it. Shown as \"N/A\" for CRM Signal rows, which never went through the balance engine."],
     ["Excluded from this report", "Public national holidays, CRM entries whose comment reads as an excuse (e.g. \"Afternoon Excuse\") rather than actual vacation, and any day a fingerprint-mapped employee proved 5+ hours worked are already filtered out — this report never shows a 0-day row."],
   ]);
   styleHeader(notes.getRow(1));

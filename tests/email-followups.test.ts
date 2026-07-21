@@ -42,11 +42,5 @@ export function runEmailFollowupsTests() {
   assert.match(marketing, /export function classifyMarketingSla/, "SLA classifier is exported");
   assert.match(marketing, /logError/, "marketing notify failures are surfaced (no longer silent)");
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
-  // Disabled 2026-07-22 at owner request — the daily cron no longer calls
-  // runMarketingSlaDaily(), replaced with an explicit disabled:true stub.
-  assert.match(
-    dailyRoute,
-    /marketing SLA reminder\/escalation emails stopped[\s\S]*?disabled: true/,
-    "marketing SLA disable must be an explicit stub, not a silent removal",
-  );
+  assert.doesNotMatch(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA reminder/escalation is intentionally disabled in the daily cron");
 }
