@@ -212,6 +212,10 @@ export function resolveEmployeePortalNavVisibility(
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
+  // Direct Orders is hidden from the CNS line entirely (owner decision) — even a role
+  // that would otherwise qualify (DM/RM/NSM/PM/GPM) never sees these 3 tabs while on
+  // the CNS line. This is a NAV-ONLY exclusion; it does not touch data access.
+  const isCnsLine = normalizedLine === "cns";
   const isTrainingManager = resolvedRole === "Training Manager";
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
@@ -251,8 +255,8 @@ export function resolveEmployeePortalNavVisibility(
   // line's data). Deliberately NOT folded into showSalesIntelligence: that flag also drives
   // Coaching Analytics and Double-Visit Analytics, which NSM was not asked to gain here.
   const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
-  const showDirectOrdersTab = isDirectOrderRequesterRole(resolvedRole);
-  const isDirectOrderApprovalRung = resolvedRole === "Regional Manager" || isNationalSalesManager;
+  const showDirectOrdersTab = !isCnsLine && isDirectOrderRequesterRole(resolvedRole);
+  const isDirectOrderApprovalRung = !isCnsLine && (resolvedRole === "Regional Manager" || isNationalSalesManager);
 
   return {
     showDashboardTab: !isTrainingManager,
