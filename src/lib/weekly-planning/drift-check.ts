@@ -7,6 +7,7 @@
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -154,7 +155,10 @@ export async function runWeeklyPlansDriftCheck(): Promise<WeeklyPlansDriftResult
           }
         }
       } catch (listError) {
-        console.error("[weekly-plans] D4 gap listing failed", listError);
+        logError("Weekly plans drift D4 gap listing failed", {
+          labels: { event: "weekly_plans_drift_d4_gap_listing_failed" },
+          error: listError,
+        });
       }
     }
 

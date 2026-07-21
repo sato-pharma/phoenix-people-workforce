@@ -235,11 +235,11 @@ export function runApprovalsHubTests() {
 
   // Never silently collapse a real failure to an empty bucket without at least one server log line
   // — a swallowed error must not look identical to "nothing pending" for this actor.
-  assert.match(svc, /console\.error\("\[approvals-hub\] getVacationActionCenterData failed"/, "vacation bucket failures are logged, not silently swallowed");
-  assert.match(svc, /console\.error\("\[approvals-hub\] getVacationReportData failed"/, "vacation report failures are logged, not silently swallowed");
-  assert.match(svc, /console\.error\("\[approvals-hub\] countVacationAwaiting failed"/, "vacation badge-count failures are logged, not silently swallowed");
-  assert.match(svc, /console\.error\("\[approvals-hub\] countExcuseAwaiting failed"/, "excuse badge-count failures are logged, not silently swallowed");
-  assert.match(svc, /console\.error\("\[approvals-hub\] getManagerPendingExcuses failed"/, "excuse pending failures are logged, not silently swallowed");
+  assert.match(svc, /logError\("Approvals hub vacation action-center data load failed"/, "vacation bucket failures are logged, not silently swallowed");
+  assert.match(svc, /logError\("Approvals hub vacation report data load failed"/, "vacation report failures are logged, not silently swallowed");
+  assert.match(svc, /logError\("Approvals hub count vacation awaiting failed"/, "vacation badge-count failures are logged, not silently swallowed");
+  assert.match(svc, /logError\("Approvals hub count excuse awaiting failed"/, "excuse badge-count failures are logged, not silently swallowed");
+  assert.match(svc, /logError\("Approvals hub manager pending excuses load failed"/, "excuse pending failures are logged, not silently swallowed");
 
   // ──────────────────────────────────────────────────────────────────────────
   // Weekly / Monthly Plan approvals (consolidation only — routing unchanged)

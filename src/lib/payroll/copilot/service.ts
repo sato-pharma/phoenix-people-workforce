@@ -2,6 +2,7 @@ import {
   getEmployeeDirectory,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
 import { payrollPaymentModeLabel } from "@/lib/payroll/policy";
 import {
@@ -139,7 +140,10 @@ async function loadInsuranceWages(): Promise<Map<string, number | null>> {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from("employees").select("hr_id,social_insurance_wage");
     if (error) {
-      console.error("[payroll-copilot:service] insurance wage load failed:", error);
+      logError("Failed to load employee social-insurance wage data", {
+        labels: { event: "copilot_insurance_wage_load_failed" },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -149,7 +153,10 @@ async function loadInsuranceWages(): Promise<Map<string, number | null>> {
       map.set(key, wage === null || wage === undefined ? null : Number(wage));
     }
   } catch (error) {
-    console.error("[payroll-copilot:service] insurance wage load threw:", error);
+    logError("Employee social-insurance wage data load threw an exception", {
+      labels: { event: "copilot_insurance_wage_load_threw" },
+      error,
+    });
   }
   return map;
 }
@@ -397,7 +404,12 @@ async function syncFlags(runId: string, draft: CopilotDraftState): Promise<void>
   );
   if (rows.length > 0) {
     const { error } = await supabase.from("payroll_copilot_flags").insert(rows);
-    if (error) console.error("[payroll-copilot:service] flag sync failed:", error);
+    if (error) {
+      logError("Failed to sync open payroll copilot flags", {
+        labels: { event: "copilot_flag_sync_failed", runId },
+        error,
+      });
+    }
   }
 }
 
@@ -460,7 +472,10 @@ async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlo
     const expensesPending = expenses.filter((candidate) => candidate.existingDecision === null).length;
     if (expensesPending > 0) blocking.push({ label: "Expenses", count: expensesPending });
   } catch (error) {
-    console.error("[payroll-copilot:service] other-tabs pending count failed:", error);
+    logError("Failed to count other payroll copilot tabs pending items", {
+      labels: { event: "copilot_other_tabs_pending_count_failed", month: period.month, year: period.year },
+      error,
+    });
   }
   return blocking;
 }
@@ -637,7 +652,10 @@ export async function proposeFromMessage(
           : null,
       })),
     }).catch((error) => {
-      console.error("[payroll-copilot:service] assistant answer failed:", error);
+      logError("Payroll copilot assistant answer failed", {
+        labels: { event: "copilot_assistant_answer_failed", runId },
+        error,
+      });
       return null;
     });
   }

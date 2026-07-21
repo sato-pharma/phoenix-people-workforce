@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Brevo transactional webhooks are NOT HMAC-signed (unlike Resend/svix). We authenticate them
@@ -206,7 +207,7 @@ export async function recordBrevoWebhookEvent(row: BrevoDeliveryEventRow): Promi
     if (suppressions.length > 0) {
       const suppressionResult = await supabase.from("email_suppressions").upsert(suppressions, { onConflict: "address" });
       if (suppressionResult.error && !isDuplicateKeyError(suppressionResult.error)) {
-        console.error("Failed to upsert email suppressions from Brevo webhook", suppressionResult.error);
+        logError("Failed to upsert email suppressions from Brevo webhook", { labels: { event: "brevo_webhook_suppression_upsert_failed" }, error: suppressionResult.error });
       }
     }
   }

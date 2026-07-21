@@ -63,7 +63,7 @@ export function runNotificationGovernanceHardeningTests() {
   );
   assertContains(
     systemSource,
-    /console\.error\(error,\s*\{\s*tags:\s*\{\s*component:\s*"notifications",\s*context\s*\}\s*\}\)/,
+    /logError\(`\[notifications\] \$\{context\} failed`,\s*\{\s*labels:\s*\{\s*event:\s*"notification_send_failed",\s*context\s*\},\s*error,?\s*\}\)/,
     "shared failure logger must report to Sentry, not just console",
   );
   assertContains(

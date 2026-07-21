@@ -1,4 +1,5 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -78,7 +79,10 @@ async function loadExistingDecisions(
       .gte("request_trip_start_date", start)
       .lte("request_trip_start_date", end);
     if (error) {
-      console.error("[payroll-copilot:expense-review] existing decisions load failed:", error);
+      logError("Failed to load existing expense decisions for period", {
+        labels: { event: "expense_review_existing_decisions_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -88,7 +92,10 @@ async function loadExistingDecisions(
       });
     }
   } catch (error) {
-    console.error("[payroll-copilot:expense-review] existing decisions load threw:", error);
+    logError("Existing expense decisions load threw an exception", {
+      labels: { event: "expense_review_existing_decisions_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return map;
 }
@@ -112,7 +119,10 @@ export async function listExpenseCandidates(period: CopilotPeriod): Promise<Expe
   ]);
 
   if (error) {
-    console.error("[payroll-copilot:expense-review] expense requests load failed:", error);
+    logError("Failed to load outstation expense requests for period", {
+      labels: { event: "expense_review_requests_load_failed", month: period.month, year: period.year },
+      error,
+    });
     return [];
   }
 
@@ -165,7 +175,10 @@ export async function buildIncludedExpenseTotals(period: CopilotPeriod): Promise
       .gte("request_trip_start_date", start)
       .lte("request_trip_start_date", end);
     if (error) {
-      console.error("[payroll-copilot:expense-review] included totals load failed:", error);
+      logError("Failed to load included expense totals for period", {
+        labels: { event: "expense_review_included_totals_load_failed", month: period.month, year: period.year },
+        error,
+      });
       return totals;
     }
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -175,7 +188,10 @@ export async function buildIncludedExpenseTotals(period: CopilotPeriod): Promise
       totals.set(key, (totals.get(key) ?? 0) + (Number.isFinite(amount) ? amount : 0));
     }
   } catch (error) {
-    console.error("[payroll-copilot:expense-review] included totals load threw:", error);
+    logError("Included expense totals load threw an exception", {
+      labels: { event: "expense_review_included_totals_load_threw", month: period.month, year: period.year },
+      error,
+    });
   }
   return totals;
 }

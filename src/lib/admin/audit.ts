@@ -1,5 +1,6 @@
 
 import { getOperationalAuditLogs } from "@/lib/operations/events";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
@@ -128,18 +129,15 @@ export async function writeAuditLog(input: AuditLogInput) {
   try {
     await insertAuditLog(input);
   } catch (error) {
-    console.error(JSON.stringify({
-      actorLoginId: input.actorLoginId ?? null,
-      entityId: input.entityId ?? null,
-      entityType: input.entityType,
-      error: error instanceof Error ? error.message : String(error),
-      event: "audit_persistence_failed",
-      summary: input.summary,
-    }));
-    console.error(error, {
-      level: "error",
-      tags: { event: "audit_persistence_failed", entityType: input.entityType },
-      extra: { summary: input.summary, entityId: input.entityId ?? null },
+    logError("Audit log could not be persisted", {
+      labels: { event: "audit_persistence_failed", entityType: input.entityType, entityId: input.entityId ?? null },
+      context: { actorLoginId: input.actorLoginId ?? null, summary: input.summary },
+      error,
+    });
+    logError("Audit log could not be persisted", {
+      labels: { event: "audit_persistence_failed", entityType: input.entityType },
+      context: { summary: input.summary, entityId: input.entityId ?? null },
+      error,
     });
   }
 }
@@ -148,19 +146,16 @@ export async function writeRequiredAuditLog(input: AuditLogInput) {
   try {
     await insertAuditLog(input);
   } catch (error) {
-    console.error(JSON.stringify({
-      actorLoginId: input.actorLoginId ?? null,
-      entityId: input.entityId ?? null,
-      entityType: input.entityType,
-      error: error instanceof Error ? error.message : String(error),
-      event: "critical_audit_persistence_failed",
-      summary: input.summary,
-    }));
+    logError("Critical audit log could not be persisted", {
+      labels: { event: "critical_audit_persistence_failed", entityType: input.entityType, entityId: input.entityId ?? null },
+      context: { actorLoginId: input.actorLoginId ?? null, summary: input.summary },
+      error,
+    });
     // Critical: a required audit row could not be written. Page this loudly.
-    console.error(error, {
-      level: "fatal",
-      tags: { event: "critical_audit_persistence_failed", entityType: input.entityType },
-      extra: { summary: input.summary, entityId: input.entityId ?? null },
+    logError("Critical audit log could not be persisted", {
+      labels: { event: "critical_audit_persistence_failed", entityType: input.entityType },
+      context: { summary: input.summary, entityId: input.entityId ?? null },
+      error,
     });
     throw new AuditPersistenceError(error);
   }

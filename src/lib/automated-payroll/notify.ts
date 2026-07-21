@@ -2,6 +2,7 @@ import {
   createSystemNotification,
   type SystemNotificationChannel,
 } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { AUTOMATED_PAYROLL_NOTIFY_ROLES } from "./permissions.ts";
@@ -31,7 +32,10 @@ async function resolveRecipients(): Promise<string[]> {
       .in("role", [...AUTOMATED_PAYROLL_NOTIFY_ROLES])
       .eq("is_active", true);
     if (error) {
-      console.error("[automated-payroll:notify] recipient lookup failed:", error.message);
+      logError("Automated payroll: notification recipient lookup failed", {
+        labels: { event: "automated_payroll_notify_recipient_lookup_failed" },
+        error,
+      });
       return [];
     }
     const hrIds = new Set<string>();
@@ -41,7 +45,10 @@ async function resolveRecipients(): Promise<string[]> {
     }
     return [...hrIds];
   } catch (error) {
-    console.error("[automated-payroll:notify] recipient lookup threw:", error);
+    logError("Automated payroll: notification recipient lookup threw an exception", {
+      labels: { event: "automated_payroll_notify_recipient_lookup_threw" },
+      error,
+    });
     return [];
   }
 }
@@ -74,7 +81,15 @@ async function fanOut(input: {
           runId: input.run.id,
         },
       }).catch((error) => {
-        console.error(`[automated-payroll:notify] send failed for ${recipientHrId}:`, error);
+        logError("Automated payroll: notification send failed", {
+          labels: {
+            event: "automated_payroll_notify_send_failed",
+            notifyEvent: input.eventType,
+            hrId: recipientHrId,
+            runId: input.run.id,
+          },
+          error,
+        });
       }),
     ),
   );

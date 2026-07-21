@@ -73,6 +73,7 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -1307,11 +1308,16 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
       const skipLevel = mgr?.managerHrId ? directory.employees.find((e) => hrIdsMatch(e.hrId, mgr.managerHrId)) : null;
       if (skipLevel?.hrId) {
         managerRecipients = [{ hrId: skipLevel.hrId }];
-        console.error(`[weekly-plans] plan ${plan.id} has NULL manager_hr_id — routing to skip-level manager ${skipLevel.hrId}`);
+        logError("Weekly plan has null manager_hr_id — routing to skip-level manager", {
+          labels: { event: "weekly_plan_null_manager_skip_level_routed", planId: plan.id, skipLevelManagerHrId: skipLevel.hrId },
+        });
       }
     } catch (lookupError) {
       errored = true;
-      console.error(`[weekly-plans] skip-level manager lookup failed for plan ${plan.id}`, lookupError);
+      logError("Weekly plan skip-level manager lookup failed", {
+        labels: { event: "weekly_plan_skip_level_manager_lookup_failed", planId: plan.id },
+        error: lookupError,
+      });
     }
   }
 
@@ -1324,11 +1330,16 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
       const ceos = await authUsersByRole("CEO");
       if (ceos.length > 0) {
         managerRecipients = ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
-        console.error(`[weekly-plans] plan ${plan.id} has NULL manager_hr_id for an NSM — routing to CEO`);
+        logError("Weekly plan has null manager_hr_id for an NSM — routing to CEO", {
+          labels: { event: "weekly_plan_null_manager_nsm_ceo_routed", planId: plan.id },
+        });
       }
     } catch (lookupError) {
       errored = true;
-      console.error(`[weekly-plans] CEO lookup failed for plan ${plan.id}`, lookupError);
+      logError("Weekly plan CEO lookup failed", {
+        labels: { event: "weekly_plan_ceo_lookup_failed", planId: plan.id },
+        error: lookupError,
+      });
     }
   }
 
@@ -1339,16 +1350,23 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
       if (admins.length > 0) {
         managerRecipients = admins;
         fellBackToSuperAdmin = true;
-        console.error(`[weekly-plans] plan ${plan.id} falling back to Super Admin — no manager resolved`);
+        logError("Weekly plan falling back to Super Admin — no manager resolved", {
+          labels: { event: "weekly_plan_manager_fallback_super_admin", planId: plan.id },
+        });
       }
     } catch (fallbackError) {
       errored = true;
-      console.error(`[weekly-plans] Super Admin fallback failed for plan ${plan.id}`, fallbackError);
+      logError("Weekly plan Super Admin fallback failed", {
+        labels: { event: "weekly_plan_super_admin_fallback_failed", planId: plan.id },
+        error: fallbackError,
+      });
     }
   }
 
   if (managerRecipients.length === 0) {
-    console.error(`[weekly-plans] plan ${plan.id} (employee ${plan.employee_hr_id}) persisted but no manager recipient resolved — manual follow-up required`);
+    logError("Weekly plan persisted but no manager recipient resolved — manual follow-up required", {
+      labels: { event: "weekly_plan_no_manager_recipient_resolved", planId: plan.id, employeeHrId: plan.employee_hr_id },
+    });
     return { errored, fellBackToSuperAdmin, recipientCount: 0 };
   }
 
@@ -1382,7 +1400,10 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
     });
     return { errored, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
   } catch (notifyError) {
-    console.error(`[weekly-plans] failed to notify manager for plan ${plan.id}`, notifyError);
+    logError("Weekly plan failed to notify manager", {
+      labels: { event: "weekly_plan_notify_manager_failed", planId: plan.id },
+      error: notifyError,
+    });
     return { errored: true, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
   }
 }
@@ -1401,10 +1422,15 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
       const admins = await resolveSuperAdminRecipients();
       primary = admins.filter((recipient) => !hrIdsMatch(recipient.hrId, plan.manager_hr_id));
       if (primary.length > 0) {
-        console.error(`[weekly-plans] hrAcknowledgementRecipients() returned 0 for plan ${plan.id} — using Super Admin fallback`);
+        logError("Weekly plan hrAcknowledgementRecipients returned 0 — using Super Admin fallback", {
+          labels: { event: "weekly_plan_hr_recipients_empty_super_admin_fallback", planId: plan.id },
+        });
       }
     } catch (fallbackError) {
-      console.error(`[weekly-plans] HR + Super Admin fallback lookup failed for plan ${plan.id}`, fallbackError);
+      logError("Weekly plan HR + Super Admin fallback lookup failed", {
+        labels: { event: "weekly_plan_hr_super_admin_fallback_lookup_failed", planId: plan.id },
+        error: fallbackError,
+      });
     }
   }
 
@@ -1449,7 +1475,10 @@ async function notifyCeo(plan: PlanHeaderRow) {
       title: `${plan.employee_name}'s ${plan.plan_kind} plan needs CEO approval`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify CEO for plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify CEO", {
+      labels: { event: "weekly_plan_notify_ceo_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -1464,7 +1493,10 @@ async function notifyHr(plan: PlanHeaderRow) {
       title: `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify HR for plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify HR", {
+      labels: { event: "weekly_plan_notify_hr_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -1479,7 +1511,10 @@ async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: Emp
       title: `Your ${plan.plan_kind} plan was ${action.includes("reject") ? "rejected" : "returned"}`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify employee of ${action} for plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify employee of return/reject", {
+      labels: { event: "weekly_plan_notify_employee_return_or_reject_failed", planId: plan.id, action },
+      error,
+    });
   }
 }
 
@@ -1500,7 +1535,10 @@ async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
       title: `Your ${plan.plan_kind} plan was approved by your manager`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify employee of manager approval for plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify employee of manager approval", {
+      labels: { event: "weekly_plan_notify_employee_manager_approved_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -1610,7 +1648,10 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
       });
     }));
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify participants of a new comment on plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify participants of a new comment", {
+      labels: { event: "weekly_plan_notify_comment_participants_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -2833,7 +2874,10 @@ export async function reassignWeeklyPlanManager(
   // Retarget the standard manager-stage alert to the newly-assigned manager (best-effort;
   // notifyManager reads the freshly-updated manager_hr_id off `updated`).
   await notifyManager(updated).catch((err) =>
-    console.error(`[weekly-plans] reassign notify failed for plan ${plan.id}`, err),
+    logError("Weekly plan reassign notify failed", {
+      labels: { event: "weekly_plan_reassign_notify_failed", planId: plan.id },
+      error: err,
+    }),
   );
   return mapPlan(updated);
 }
@@ -2875,7 +2919,10 @@ async function notifyEmployeeAcknowledged(plan: PlanHeaderRow) {
       title: `Your ${plan.plan_kind} plan was acknowledged by HR`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] ack notify failed for plan ${plan.id}`, error);
+    logError("Weekly plan HR-acknowledgement notify failed", {
+      labels: { event: "weekly_plan_ack_notify_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -2891,7 +2938,10 @@ async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
       title: `Visit details required for your ${plan.plan_kind} plan`,
     });
   } catch (error) {
-    console.error(`[weekly-plans] failed to notify employee for visit details request on plan ${plan.id}`, error);
+    logError("Weekly plan failed to notify employee for visit details request", {
+      labels: { event: "weekly_plan_notify_visit_details_requested_failed", planId: plan.id },
+      error,
+    });
   }
 }
 
@@ -2967,7 +3017,12 @@ export async function cancelEmployeePlan(access: AccessContext, planId: string, 
     summary: `${plan.plan_kind} plan cancelled`,
   });
   const cancelledRow = await loadPlanRow(planId);
-  await notifyManager(cancelledRow).catch((err) => console.error("[weekly-plans] cancel notify failed", err));
+  await notifyManager(cancelledRow).catch((err) =>
+    logError("Weekly plan cancel notify failed", {
+      labels: { event: "weekly_plan_cancel_notify_failed", planId: cancelledRow.id },
+      error: err,
+    }),
+  );
   return mapPlan(cancelledRow);
 }
 
@@ -2998,7 +3053,9 @@ export async function bulkDecideEmployeePlans(
 // must never roll back or block the already-committed status transition.
 async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
   if (!plan.manager_hr_id) {
-    console.error(`[weekly-plans] plan ${plan.id} edit request has no manager_hr_id — manual follow-up required`);
+    logError("Weekly plan edit request has no manager_hr_id — manual follow-up required", {
+      labels: { event: "weekly_plan_edit_request_no_manager", planId: plan.id },
+    });
     return;
   }
   try {
@@ -3012,7 +3069,10 @@ async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
       title: `${plan.employee_name} requested to edit their ${plan.plan_kind} plan`,
     });
   } catch (notifyError) {
-    console.error(`[weekly-plans] failed to notify manager of edit request for plan ${plan.id}`, notifyError);
+    logError("Weekly plan failed to notify manager of edit request", {
+      labels: { event: "weekly_plan_notify_manager_edit_request_failed", planId: plan.id },
+      error: notifyError,
+    });
   }
 }
 
@@ -3035,7 +3095,10 @@ async function notifyEmployeeEditRequestDecision(
       title: decision === "approve" ? "Your edit request was approved" : "Your edit request was rejected",
     });
   } catch (notifyError) {
-    console.error(`[weekly-plans] failed to notify employee of edit request decision for plan ${plan.id}`, notifyError);
+    logError("Weekly plan failed to notify employee of edit request decision", {
+      labels: { event: "weekly_plan_notify_employee_edit_request_decision_failed", planId: plan.id },
+      error: notifyError,
+    });
   }
 }
 

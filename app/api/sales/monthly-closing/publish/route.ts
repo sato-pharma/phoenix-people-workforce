@@ -66,17 +66,11 @@ export async function POST(request: Request) {
       period: String(body.period ?? ""),
       actorHrId: resolveEmployeeIdentityId(access),
     });
-    // TODO(sos-report-delivery): auto-trigger the CEO/Super-Admin Source-of-Sales BI email
-    // report here once every line's monthly closing for a period is published — deferred
-    // (owner: "will set up later"). buildAndEmailSosBiReport({ period }) from
-    // src/lib/sales/sos-report-delivery.ts already does the work; the manual trigger at
-    // POST /api/sales/sos-dashboard/email-report exercises the same path today. Recommended
-    // design when this is picked up: do NOT call it inline here (this route is per-line, and
-    // firing per-line publish would multi-send / risk this request's own timeout budget).
-    // Instead add a step to the existing /api/notifications/daily orchestrator
-    // (src/lib/notifications/scheduled-processing.ts) that detects a period with EVERY line's
-    // closing published and enqueues the report exactly once via a dedupe key (e.g.
-    // `sos-bi-report:${period}`, matching buildAndEmailSosBiReport's own email idempotencyKey).
+    // The CEO/Super-Admin Source-of-Sales BI report auto-fires once every line's monthly
+    // closing for this period is published — not inline here (this route is per-line; firing
+    // per-line would risk this request's own timeout budget). See
+    // runSosMonthlyClosingReportCheck in src/lib/sales/sos-report-delivery.ts, run daily from
+    // /api/notifications/daily.
     return NextResponse.json({ success: true, published: true });
   } catch (error) {
     return mapError(error);

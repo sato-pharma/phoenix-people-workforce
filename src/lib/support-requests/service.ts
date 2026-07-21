@@ -12,6 +12,7 @@
 import { assertPermission, hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const SUPPORT_REQUEST_STATUSES = ["Pending", "In Progress", "Resolved", "Closed"] as const;
@@ -106,10 +107,10 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
     recipients = await resolveHrSupportRecipients();
   } catch (error) {
     errored = true;
-    console.error(
-      `[support-requests] primary HR recipient lookup failed for ticket ${request.id} (hr ${request.hrId})`,
+    logError("Primary HR recipient lookup failed for support ticket", {
+      labels: { event: "support_request_hr_recipient_lookup_failed", ticketId: request.id, hrId: request.hrId },
       error,
-    );
+    });
   }
 
   recipients = recipients.filter((recipient) => !hrIdsMatch(recipient.hrId, request.hrId));
@@ -124,17 +125,17 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
       }
     } catch (fallbackError) {
       errored = true;
-      console.error(
-        `[support-requests] Super Admin fallback lookup failed for ticket ${request.id} (hr ${request.hrId})`,
-        fallbackError,
-      );
+      logError("Super Admin fallback lookup failed for support ticket", {
+        labels: { event: "support_request_super_admin_fallback_failed", ticketId: request.id, hrId: request.hrId },
+        error: fallbackError,
+      });
     }
   }
 
   if (recipients.length === 0) {
-    console.error(
-      `[support-requests] ticket ${request.id} (hr ${request.hrId}) persisted but no HR recipient was resolved — manual follow-up required`,
-    );
+    logError("Support ticket persisted but no HR recipient was resolved — manual follow-up required", {
+      labels: { event: "support_request_no_hr_recipient_resolved", ticketId: request.id, hrId: request.hrId },
+    });
     return { errored, fellBackToSuperAdmin, recipientCount: 0 };
   }
 
@@ -192,10 +193,10 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
     );
     return { errored, fellBackToSuperAdmin, recipientCount: recipients.length };
   } catch (error) {
-    console.error(
-      `[support-requests] failed to fan out HR notification for ticket ${request.id} (hr ${request.hrId})`,
+    logError("Failed to fan out HR notification for support ticket", {
+      labels: { event: "support_request_notification_fanout_failed", ticketId: request.id, hrId: request.hrId },
       error,
-    );
+    });
     return { errored: true, fellBackToSuperAdmin, recipientCount: recipients.length };
   }
 }

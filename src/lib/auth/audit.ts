@@ -1,6 +1,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeLoginId, resolveStoredLoginId } from "@/lib/auth/credentials";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const loginThrottleWindowMinutes = 15;
@@ -72,7 +73,7 @@ export async function registerFailedLoginAttempt(input: {
     loginId,
     success: false,
   }).catch((error: unknown) => {
-    console.error(error, { tags: { component: "auth", context: "recordLoginAttempt.failed" } });
+    logError("recordLoginAttempt failed to record a failed login", { labels: { event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt.failed" }, error });
   });
 
   const supabase = getSupabaseAdmin();
@@ -123,7 +124,7 @@ export async function clearFailedLoginState(input: {
     loginId,
     success: true,
   }).catch((error: unknown) => {
-    console.error(error, { tags: { component: "auth", context: "recordLoginAttempt.success" } });
+    logError("recordLoginAttempt failed to record a successful login", { labels: { event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt.success" }, error });
   });
 
   const supabase = getSupabaseAdmin();

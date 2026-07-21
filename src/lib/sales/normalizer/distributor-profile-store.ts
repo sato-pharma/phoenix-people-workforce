@@ -6,6 +6,7 @@
 // Resolution is DB-first with a short cache. If the table is absent (unapplied migration) the load
 // fails CLOSED to the code profiles and LOGS — it never silently behaves as code-only without a trace.
 
+import { logError } from "@/lib/observability/log";
 import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
@@ -74,7 +75,10 @@ async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from(PROFILE_TABLE).select("*").eq("active", true);
     if (error) {
-      console.error(`[distributor-profile-store] override load failed (${error.code ?? "?"}): ${error.message}`);
+      logError("Distributor profile override load failed", {
+        labels: { event: "distributor_profile_load_failed", errorCode: error.code ?? "unknown" },
+        error,
+      });
     } else {
       for (const raw of data ?? []) {
         const row = raw as DbProfileRow;
@@ -83,7 +87,10 @@ async function loadDbProfiles(): Promise<Map<string, DbProfileRow>> {
       }
     }
   } catch (e) {
-    console.error("[distributor-profile-store] override load threw:", e instanceof Error ? e.message : e);
+    logError("Distributor profile override load threw", {
+      labels: { event: "distributor_profile_load_threw" },
+      error: e,
+    });
   }
   cache = { at: Date.now(), byCode };
   return byCode;

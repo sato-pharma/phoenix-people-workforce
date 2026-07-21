@@ -28,6 +28,7 @@ import {
 } from "@/lib/auth/supabase-identity";
 import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const phoenixLines = ["CNS", "Pedia", "Anti Infective", "Office", "Other"] as const;
@@ -214,7 +215,7 @@ async function listPermissionOverrides(): Promise<PermissionOverrideRow[]> {
     // "no overrides", which misrepresents the live policy to an admin. Log it
     // so the discrepancy is diagnosable rather than invisible.
     if (error) {
-      console.error("[access-control] role_permission_overrides provenance load failed", error);
+      logError("role_permission_overrides provenance load failed", { labels: { event: "access_control_permission_overrides_load_failed" }, error });
     }
     return [];
   }
@@ -266,11 +267,7 @@ function isStoredActive(record: AccessUserRecord | null) {
 }
 
 function logCompensationFailure(context: string, error: unknown) {
-  console.error(JSON.stringify({
-    context,
-    error: error instanceof Error ? error.message : String(error),
-    event: "access_control_compensation_failed",
-  }));
+  logError("Access-control compensation step failed", { labels: { event: "access_control_compensation_failed", context }, error });
 }
 
 async function countActiveSuperAdmins() {

@@ -9,6 +9,7 @@ import {
 } from "@/lib/communication/metrics";
 import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
+import { logError } from "@/lib/observability/log";
 import { fetchVacationNotificationEnrichments } from "@/lib/vacation/notification-enrichment";
 import {
   getExcuseApprovalsForResponder,
@@ -508,9 +509,12 @@ export async function markAllInAppNotificationsRead(access: AccessContext) {
   );
   const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
   if (failures.length > 0) {
-    console.error(
+    logError(
       `markAllInAppNotificationsRead: ${failures.length}/${unread.length} notification(s) failed to mark read`,
-      failures[0].reason,
+      {
+        labels: { event: "in_app_mark_all_read_partial_failure", failed: failures.length, total: unread.length },
+        error: failures[0].reason,
+      },
     );
   }
   return { marked: unread.length - failures.length };
@@ -573,9 +577,12 @@ export async function archiveAllInAppNotifications(access: AccessContext) {
   );
   const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
   if (failures.length > 0) {
-    console.error(
+    logError(
       `archiveAllInAppNotifications: ${failures.length}/${notifications.length} notification(s) failed to archive`,
-      failures[0].reason,
+      {
+        labels: { event: "in_app_archive_all_partial_failure", failed: failures.length, total: notifications.length },
+        error: failures[0].reason,
+      },
     );
   }
   return { archived: notifications.length - failures.length };

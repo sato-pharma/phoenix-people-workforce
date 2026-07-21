@@ -1,5 +1,6 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { CopilotPeriod, RecurringAdjustment } from "./types.ts";
 
@@ -54,14 +55,20 @@ export async function listRecurringForPeriod(
       .select("*")
       .eq("active", true);
     if (error) {
-      console.error("[payroll-copilot:recurring] list failed:", error);
+      logError("Failed to list recurring payroll adjustments", {
+        labels: { event: "recurring_list_failed", month: period.month, year: period.year },
+        error,
+      });
       return [];
     }
     return ((data ?? []) as Array<Record<string, unknown>>)
       .map(mapRecurring)
       .filter((item) => isRecurringActiveForPeriod(item, period));
   } catch (error) {
-    console.error("[payroll-copilot:recurring] list threw:", error);
+    logError("Listing recurring payroll adjustments threw an exception", {
+      labels: { event: "recurring_list_threw", month: period.month, year: period.year },
+      error,
+    });
     return [];
   }
 }
@@ -95,12 +102,18 @@ export async function createRecurringAdjustment(input: {
       .select("id")
       .single();
     if (error) {
-      console.error("[payroll-copilot:recurring] create failed:", error);
+      logError("Failed to create recurring payroll adjustment", {
+        labels: { event: "recurring_create_failed", hrId: input.employeeHrId, kind: input.kind },
+        error,
+      });
       return null;
     }
     return data ? String((data as Record<string, unknown>).id) : null;
   } catch (error) {
-    console.error("[payroll-copilot:recurring] create threw:", error);
+    logError("Creating recurring payroll adjustment threw an exception", {
+      labels: { event: "recurring_create_threw", hrId: input.employeeHrId, kind: input.kind },
+      error,
+    });
     return null;
   }
 }
@@ -125,10 +138,16 @@ export async function consumeRecurringForPeriod(period: CopilotPeriod): Promise<
         })
         .eq("id", item.id);
       if (error) {
-        console.error("[payroll-copilot:recurring] consume failed:", error);
+        logError("Failed to consume recurring payroll adjustment installment", {
+          labels: { event: "recurring_consume_failed", recurringId: item.id, hrId: item.employeeHrId },
+          error,
+        });
       }
     } catch (error) {
-      console.error("[payroll-copilot:recurring] consume threw:", error);
+      logError("Consuming recurring payroll adjustment installment threw an exception", {
+        labels: { event: "recurring_consume_threw", recurringId: item.id, hrId: item.employeeHrId },
+        error,
+      });
     }
   }
 }

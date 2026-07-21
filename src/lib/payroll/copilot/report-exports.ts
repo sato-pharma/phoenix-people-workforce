@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compactHrKey } from "./feeders.ts";
@@ -123,7 +124,10 @@ export async function getHireDateMap(): Promise<Map<string, string>> {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from("employees").select("hr_id,hire_date");
     if (error) {
-      console.error("[payroll-copilot:report-exports] hire-date load failed:", error);
+      logError("Failed to load employee hire-date map for payroll copilot report export", {
+        labels: { event: "report_exports_hire_date_load_failed" },
+        error,
+      });
       return map;
     }
     for (const row of (data ?? []) as Array<{ hr_id: string; hire_date: string | null }>) {
@@ -131,7 +135,10 @@ export async function getHireDateMap(): Promise<Map<string, string>> {
       if (key) map.set(key, row.hire_date ? String(row.hire_date).slice(0, 10) : "");
     }
   } catch (error) {
-    console.error("[payroll-copilot:report-exports] hire-date load threw:", error);
+    logError("Employee hire-date map load threw an exception", {
+      labels: { event: "report_exports_hire_date_load_threw" },
+      error,
+    });
   }
   return map;
 }
