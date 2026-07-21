@@ -93,6 +93,8 @@ UNION ALL
    FROM public.coaching_report_audit_logs;
 
 -- 2. Drop the now-orphaned GPS fraud audit-log table.
+-- SAFE: dead fraud-tracking feature already fully removed from the app (no code reads or
+-- writes this table); the unified audit view above was already recreated without its arm.
 DROP TABLE IF EXISTS public.outstation_location_audit_logs;
 
 -- 3. Drop the dead fraud columns from the outstation requests table.
