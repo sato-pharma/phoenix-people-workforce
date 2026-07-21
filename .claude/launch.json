@@ -3,9 +3,8 @@
   "configurations": [
     {
       "name": "phoenix-workforce",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "pnpm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": ".",
       "port": 3000,
       "autoPort": true
     }
