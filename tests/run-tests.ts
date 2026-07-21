@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runOfferEmailPremiumTests } from "./offer-email-premium.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
@@ -447,6 +448,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("i18n config", runI18nConfigTests);
+await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);

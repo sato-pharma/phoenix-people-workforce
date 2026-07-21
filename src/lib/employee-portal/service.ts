@@ -3190,7 +3190,7 @@ function egp(value: number) {
 // while genuinely different targets add up. This realizes the additive intent (matching
 // the admin Source-of-Sales dashboard) without double-counting a repeated target.
 // Values are compared per integer cent to absorb floating-point representation noise.
-function addDistinctTargetValue(map: Map<string, Set<number>>, key: string, target: number): void {
+export function addDistinctTargetValue(map: Map<string, Set<number>>, key: string, target: number): void {
   if (!Number.isFinite(target) || target <= 0) return;
   const cents = Math.round(target * 100);
   let set = map.get(key);
@@ -3201,7 +3201,7 @@ function addDistinctTargetValue(map: Map<string, Set<number>>, key: string, targ
   set.add(cents);
 }
 
-function sumDistinctTargetValues(set: Set<number> | undefined): number {
+export function sumDistinctTargetValues(set: Set<number> | undefined): number {
   if (!set) return 0;
   let cents = 0;
   set.forEach((value) => {
