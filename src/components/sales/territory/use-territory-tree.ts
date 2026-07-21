@@ -45,6 +45,16 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
       signal: controller.signal,
     })
       .then(async (response) => {
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          // Auth middleware can redirect to the login page, which fetch follows and
+          // returns as HTML — detect it before .json() throws a confusing parse error.
+          throw new Error(
+            response.status === 401 || response.status === 403
+              ? "Session expired. Please refresh the page and sign in again."
+              : `Unexpected server response (HTTP ${response.status}). Please refresh and try again.`,
+          );
+        }
         const json = (await response.json()) as {
           success: boolean;
           message?: string;
