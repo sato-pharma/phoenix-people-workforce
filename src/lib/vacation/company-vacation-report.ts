@@ -79,20 +79,32 @@ export type CompanyVacationReportSource =
   | "CRM Signal — Vacation"
   | "CRM Signal — Half-Day (Attendance Partial)";
 
+/** Which half of the day a 0.5-day entry covers. "full_day" for a 1-day entry. Threaded through
+ * from the CRM's own ampm marking so the approve route (app/api/vacation/company-report/approve)
+ * can record the correct half instead of always guessing PM — see classifyAvDate. */
+export type CompanyVacationDayPart = "am_only" | "full_day" | "pm_only";
+
 export type CompanyVacationReportRow = {
   /** Remaining balance after this request, as stored on the HR request at creation time (see
    * src/lib/vacation/service.ts's calculatePaymentForRequest / VacationBalanceSnapshot). Only
-   * ever set for HR-sourced rows — CRM Signal rows are unverified estimates that never touched
-   * the balance engine, so this stays null for them rather than showing a misleading number. */
+   * set for an "HR Approved" row whose vacation_type isn't "compensatory" — see buildHrRows for
+   * why both of those exclusions matter. Null for everything else (CRM Signal rows never
+   * touched the balance engine; Pending/Rejected/Cancelled rows never actually deducted
+   * anything, so their stored snapshot would misleadingly read as a real balance change). */
   balanceAfterDays: number | null;
-  /** Balance available immediately before this request was deducted. Same HR-only scope as
+  /** Balance available immediately before this request was deducted. Same scope as
    * balanceAfterDays above. */
   balanceBeforeDays: number | null;
+  /** Which half of the day this row covers, for a 0.5-day CRM Signal row only (null for HR rows
+   * and full-day rows — HR rows already have their own stored day_part and never go through the
+   * approve route). Lets the "Approve as real leave" action record the correct half instead of
+   * defaulting to PM regardless of the actual CRM/fingerprint evidence. */
+  dayPart: CompanyVacationDayPart | null;
   detail: string;
   employeeName: string;
   endDate: string;
-  /** Derived from balanceBeforeDays > 0. Null (not "No") for CRM Signal rows, since balance was
-   * never evaluated for them — distinct from a real HR request that ran out of balance. */
+  /** Derived from balanceBeforeDays > 0. Null (not "No") wherever balanceBeforeDays is null —
+   * see that field's doc comment for the full list of cases this covers. */
   hasBalance: boolean | null;
   hrId: string;
   jobTitle: string | null;
@@ -309,10 +321,22 @@ const loadDeviceMappedHrIdsCached = unstable_cache(
 );
 
 export type ClassifiedAvDate = {
+  dayPart: CompanyVacationDayPart;
   detail: string;
   source: CompanyVacationReportSource;
   workingDays: number;
 };
+
+/** Picks which half a 0.5-day result covers, from the CRM's own ampm marking on the surviving
+ * (non-excuse) rows for that date — the same authoritative signal classifyAvDate already reads
+ * to decide the day is a half-day at all, not a new inference. Falls back to "pm_only" (the
+ * previous unconditional behavior) only when no row carries an AM/PM mark at all — e.g. a
+ * fingerprint-driven downgrade of a CRM-claimed full day, where the CRM never recorded which
+ * half was actually worked. */
+function resolveHalfDayPart(rows: Array<{ ampm: string | null }>): CompanyVacationDayPart {
+  const marked = rows.find((row) => row.ampm === "AM" || row.ampm === "PM");
+  return marked?.ampm === "AM" ? "am_only" : "pm_only";
+}
 
 /**
  * Pure decision logic for one employee-day's AV visit rows, extracted so it's directly
@@ -356,8 +380,14 @@ export function classifyAvDate(input: {
       // Proven fully worked — not a vacation day at all, so it's dropped, never shown as 0.
       return null;
     }
+    const halfDayPart = resolveHalfDayPart(nonExcuseRows);
     return {
-      detail: `Fingerprint shows under 5h worked — likely a half-day ("${comment}").`,
+      dayPart: halfDayPart,
+      detail: `Fingerprint shows under 5h worked — likely a half-day ("${comment}")${
+        nonExcuseRows.some((row) => row.ampm === "AM" || row.ampm === "PM")
+          ? ` (${halfDayPart === "am_only" ? "AM" : "PM"})`
+          : ""
+      }.`,
       source: "CRM Signal — Half-Day (Attendance Partial)",
       workingDays: 0.5,
     };
@@ -367,8 +397,12 @@ export function classifyAvDate(input: {
   // marking, including its own AM/PM half-day flag. No visit-count inference: a regular/campaign
   // visit-count heuristic must never downgrade or zero an AV day here.
   const isCrmHalfDay = crmDayValue <= 0.5;
+  const halfDayPart = isCrmHalfDay ? resolveHalfDayPart(nonExcuseRows) : "full_day";
   return {
-    detail: isCrmHalfDay ? `${comment || "Annual Vacation"} (half-day — CRM AM/PM)` : (comment || "Annual Vacation"),
+    dayPart: halfDayPart,
+    detail: isCrmHalfDay
+      ? `${comment || "Annual Vacation"} (half-day — CRM ${halfDayPart === "am_only" ? "AM" : "PM"})`
+      : (comment || "Annual Vacation"),
     source: "CRM Signal — Vacation",
     workingDays: crmDayValue,
   };
@@ -385,8 +419,9 @@ function buildEmployeeLookup(rows: EmployeeRow[]): Map<string, EmployeeRow> {
 
 /** Every HR vacation request in range, tagged by its current status. Job title/line come from
  * the shared employee lookup (employeeByKey), not from v2_vacation_requests, which has no
- * job_title column — this is what previously left job title blank on every HR-sourced row. */
-function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<string, EmployeeRow>): CompanyVacationReportRow[] {
+ * job_title column — this is what previously left job title blank on every HR-sourced row.
+ * Exported (pure, DB-free) so the balance-column exclusions below are directly unit-testable. */
+export function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<string, EmployeeRow>): CompanyVacationReportRow[] {
   const statusToSource: Record<string, CompanyVacationReportSource> = {
     approved: "HR Approved",
     cancelled: "HR Cancelled",
@@ -397,20 +432,35 @@ function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<string,
   return rawRows.map((row): CompanyVacationReportRow => {
     const key = canonicalHrIdKey(row.employee_hr_id ?? "");
     const employee = key ? employeeByKey.get(key) : undefined;
-    const balanceBeforeDays = row.balance_before_days == null ? null : Number(row.balance_before_days);
-    const balanceAfterDays = row.balance_after_days == null ? null : Number(row.balance_after_days);
+    const source = statusToSource[String(row.status ?? "").toLowerCase()] ?? "HR Pending";
+    const rawBalanceBeforeDays = row.balance_before_days == null ? null : Number(row.balance_before_days);
+    const rawBalanceAfterDays = row.balance_after_days == null ? null : Number(row.balance_after_days);
+    // The stored balance snapshot is only meaningful for a request that actually deducted
+    // balance: it must be Approved (Pending/Rejected/Cancelled never touched the balance — the
+    // stored numbers are just a submission-time snapshot of what WOULD have happened) AND not
+    // "compensatory" (calculateVacationPayment always returns balanceBeforeDays/AfterDays 0/0 for
+    // compensatory, which isn't drawn from the annual/emergency balance pool at all — showing
+    // that as "Has Balance: No" would misleadingly read as "ran out of leave").
+    const balanceApplies = source === "HR Approved" && row.vacation_type !== "compensatory";
+    const balanceBeforeDays = balanceApplies && rawBalanceBeforeDays != null && Number.isFinite(rawBalanceBeforeDays)
+      ? rawBalanceBeforeDays
+      : null;
+    const balanceAfterDays = balanceApplies && rawBalanceAfterDays != null && Number.isFinite(rawBalanceAfterDays)
+      ? rawBalanceAfterDays
+      : null;
     return {
-      balanceAfterDays: balanceAfterDays != null && Number.isFinite(balanceAfterDays) ? balanceAfterDays : null,
-      balanceBeforeDays: balanceBeforeDays != null && Number.isFinite(balanceBeforeDays) ? balanceBeforeDays : null,
+      balanceAfterDays,
+      balanceBeforeDays,
+      dayPart: null,
       detail: row.vacation_type ?? "",
       employeeName: row.employee_name ?? row.employee_hr_id ?? "",
       endDate: row.end_date,
-      hasBalance: balanceBeforeDays != null && Number.isFinite(balanceBeforeDays) ? balanceBeforeDays > 0 : null,
+      hasBalance: balanceBeforeDays != null ? balanceBeforeDays > 0 : null,
       hrId: row.employee_hr_id ?? "",
       jobTitle: employee?.job_title ?? null,
       lineName: row.line_name ?? employee?.line_name ?? null,
       requestId: row.id,
-      source: statusToSource[String(row.status ?? "").toLowerCase()] ?? "HR Pending",
+      source,
       startDate: row.start_date,
       // duration_days, NOT working_days: working_days has a static DB default of 1 and is
       // never actually written by src/lib/vacation/service.ts's create/admin-create paths (only
@@ -508,6 +558,7 @@ async function buildCrmSignalRows(input: {
         // to avoid an N+1 balance-period lookup per row for every CRM signal in the range.
         balanceAfterDays: null,
         balanceBeforeDays: null,
+        dayPart: classified.dayPart,
         detail: classified.detail,
         employeeName: resolveEmployeeDisplayName(employee?.full_name ?? dayVisits[0]?.agent_name ?? key, employee?.nickname),
         endDate: dateIso,

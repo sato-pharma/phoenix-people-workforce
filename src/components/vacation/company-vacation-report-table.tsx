@@ -90,10 +90,11 @@ function ApproveControl({
     );
   }
 
+  const halfDayLabel = row.dayPart === "am_only" ? " (AM)" : row.dayPart === "pm_only" ? " (PM)" : "";
   const handleClick = async () => {
     const confirmed = window.confirm(
       `Approve this as a REAL vacation request for ${row.employeeName} (${row.hrId})?\n\n` +
-      `${row.startDate}${row.endDate !== row.startDate ? ` – ${row.endDate}` : ""} · ${row.workingDays} day(s)\n\n` +
+      `${row.startDate}${row.endDate !== row.startDate ? ` – ${row.endDate}` : ""} · ${row.workingDays} day(s)${halfDayLabel}\n\n` +
       "This will create an approved vacation_requests record and deduct it from their actual leave entitlement. " +
       "This is not reversible from this page. Continue?",
     );
@@ -191,6 +192,7 @@ export function CompanyVacationReportTable({
   const handleApprove = async (row: CompanyVacationReportRow) => {
     const response = await fetch("/api/vacation/company-report/approve", {
       body: JSON.stringify({
+        dayPart: row.dayPart,
         detail: row.detail,
         endDate: row.endDate,
         hrId: row.hrId,
@@ -315,8 +317,9 @@ export function CompanyVacationReportTable({
       <p className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-800">
         <strong>Approve as real leave</strong> on a CRM Signal row creates an approved vacation request and deducts it from that
         employee&apos;s actual entitlement — one row at a time, only when you click it. HR-sourced rows are already real records.
-        <strong> Has Balance</strong> / <strong>Balance After</strong> reflect the balance stored on real HR requests at the time
-        they were made and show <strong>—</strong> for unverified CRM Signal rows, which never touched the balance engine.
+        <strong> Has Balance</strong> / <strong>Balance After</strong> reflect an actual deduction, so they only show a value for
+        <strong> HR Approved</strong> rows (excluding compensatory days, which are always fully paid outside the leave balance) —
+        Pending/Rejected/Cancelled and CRM Signal rows show <strong>—</strong> since nothing was actually deducted for them.
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">

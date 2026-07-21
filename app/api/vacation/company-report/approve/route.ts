@@ -39,12 +39,24 @@ export async function POST(request: Request) {
     const endDate = typeof body?.endDate === "string" ? body.endDate : startDate;
     const workingDays = Number(body?.workingDays);
     const detail = typeof body?.detail === "string" ? body.detail : "";
+    const requestedDayPart = typeof body?.dayPart === "string" ? body.dayPart : "";
     if (!hrId || !startDate || !endDate) {
       return NextResponse.json({ error: "invalid_request", message: "hrId, startDate, and endDate are required.", success: false }, { status: 400 });
     }
     if (![0.5, 1].includes(workingDays)) {
       return NextResponse.json({ error: "invalid_request", message: "workingDays must be 0.5 or 1 for a single CRM Signal row.", success: false }, { status: 400 });
     }
+    // Prefer the report's own resolved dayPart (derived from the CRM's ampm marking — see
+    // classifyAvDate/resolveHalfDayPart in company-vacation-report.ts) so a half-day approval
+    // records the correct AM/PM half instead of guessing. Only trust it when it actually matches
+    // workingDays — a stale/tampered client value must never silently override the real duration
+    // (e.g. "am_only" paired with workingDays: 1 would be nonsensical). Falls back to the old
+    // full_day/pm_only default when the client didn't send one or sent something inconsistent.
+    const dayPart = workingDays === 1
+      ? "full_day"
+      : requestedDayPart === "am_only" || requestedDayPart === "pm_only"
+        ? requestedDayPart
+        : "pm_only";
 
     // Overlap-containment guard (defends against double-deduction). The DB has a unique index on
     // the EXACT tuple (employee_hr_id, start_date, end_date) for active requests, so approving
@@ -80,7 +92,7 @@ export async function POST(request: Request) {
     const notes = `Approved from the Company Vacation Report (CRM signal review) by ${actorLoginId}. Original CRM detail: "${detail}".`;
 
     const created = await createVacationRequestAsAdmin(access, {
-      dayPart: workingDays === 1 ? "full_day" : "pm_only",
+      dayPart,
       employeeHrId: hrId,
       endDate,
       notes,
