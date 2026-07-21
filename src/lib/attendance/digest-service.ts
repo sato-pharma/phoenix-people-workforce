@@ -39,17 +39,12 @@ import {
   type DigestLineDraft,
 } from "@/lib/attendance/digest-generator";
 import type { AttendanceJudgmentMode } from "@/lib/attendance/digest-reconcile";
-import type { DeductionBracket, FlexibleHoursConfig } from "@/lib/attendance/flexible-hours";
+import {
+  bracketsForEventType,
+  type AttendancePolicyRuleRow,
+  type FlexibleHoursConfig,
+} from "@/lib/attendance/flexible-hours";
 import type { SettlementWeek } from "@/lib/attendance/digest-cycle";
-
-type PolicyRuleRow = {
-  policy_id: number;
-  event_type: string | null;
-  from_minutes: number | null;
-  to_minutes: number | null;
-  deduction_days: number | string | null;
-  is_active: boolean | null;
-};
 
 export type EmployeeWeekDigestResult = {
   employeeHrId: string;
@@ -66,17 +61,6 @@ function timeToMinutes(value: string | null | undefined): number | null {
   const minute = Number(minuteText);
   if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
   return hour * 60 + minute;
-}
-
-function bracketsForEventType(rules: PolicyRuleRow[], policyId: number, eventType: string): DeductionBracket[] {
-  return rules
-    .filter((rule) => rule.policy_id === policyId && rule.event_type === eventType && rule.is_active !== false)
-    .map((rule) => ({
-      fromMinutes: rule.from_minutes ?? 1,
-      toMinutes: rule.to_minutes,
-      deductionDays: Number(rule.deduction_days) || 0,
-    }))
-    .sort((left, right) => left.fromMinutes - right.fromMinutes);
 }
 
 type ScopedEmployee = {
@@ -160,7 +144,7 @@ export async function computeSettlementWeekDigests(week: SettlementWeek): Promis
     if (hrId) salaryByHrId.set(hrId, row.base_salary);
   }
 
-  const rules = (ruleResult.data ?? []) as PolicyRuleRow[];
+  const rules = (ruleResult.data ?? []) as AttendancePolicyRuleRow[];
   const dates = listIsoDatesInRange(week.startIso, week.endIso);
   const results: EmployeeWeekDigestResult[] = [];
 

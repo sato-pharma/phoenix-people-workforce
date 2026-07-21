@@ -85,6 +85,38 @@ export function bracketDeductionDays(brackets: DeductionBracket[], minutes: numb
   return match ? match.deductionDays : 0;
 }
 
+export type AttendancePolicyRuleRow = {
+  policy_id: number;
+  event_type: string | null;
+  from_minutes: number | null;
+  to_minutes: number | null;
+  deduction_days: number | string | null;
+  is_active: boolean | null;
+};
+
+/**
+ * Builds one policy's bracket set for one event type ("late" / "short_hours") from raw
+ * attendance_policy_rules rows. Shared by every consumer of this engine (the weekly-digest
+ * generator and the fingerprint report) so there is exactly one place that turns DB rows into
+ * brackets — two independent copies of this mapping is how a rule-table gap (e.g. a policy
+ * missing its short_hours rows) would silently diverge between the two, i.e. exactly the
+ * fingerprint-report-vs-digest inconsistency this engine already had to be reconciled with once.
+ */
+export function bracketsForEventType(
+  rules: AttendancePolicyRuleRow[],
+  policyId: number,
+  eventType: string,
+): DeductionBracket[] {
+  return rules
+    .filter((rule) => rule.policy_id === policyId && rule.event_type === eventType && rule.is_active !== false)
+    .map((rule) => ({
+      fromMinutes: rule.from_minutes ?? 1,
+      toMinutes: rule.to_minutes,
+      deductionDays: Number(rule.deduction_days) || 0,
+    }))
+    .sort((left, right) => left.fromMinutes - right.fromMinutes);
+}
+
 /**
  * Evaluate a single employee-day under the flexible-hours model.
  * The result carries both the classified status and the exact deduction days.
