@@ -17,9 +17,9 @@ export function runAuthAuditHardeningTests() {
     "recordLoginAttempt failures must not be swallowed without logging",
   );
 
-  const failedLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: false,\s*\}\)\.catch\(\(error: unknown\) => \{\s*console\.error\(error, \{ tags: \{ component: "auth", context: "recordLoginAttempt\.failed" \} \}\);\s*\}\);/g)];
+  const failedLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: false,\s*\}\)\.catch\(\(error: unknown\) => \{\s*logError\("recordLoginAttempt failed to record a failed login", \{ labels: \{ event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt\.failed" \}, error \}\);\s*\}\);/g)];
   assert.equal(failedLoginMatches.length, 1, "the failed-login recordLoginAttempt call must capture its error to Sentry");
 
-  const successLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: true,\s*\}\)\.catch\(\(error: unknown\) => \{\s*console\.error\(error, \{ tags: \{ component: "auth", context: "recordLoginAttempt\.success" \} \}\);\s*\}\);/g)];
+  const successLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: true,\s*\}\)\.catch\(\(error: unknown\) => \{\s*logError\("recordLoginAttempt failed to record a successful login", \{ labels: \{ event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt\.success" \}, error \}\);\s*\}\);/g)];
   assert.equal(successLoginMatches.length, 1, "the successful-login recordLoginAttempt call must capture its error to Sentry");
 }

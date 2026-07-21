@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
+import { logError } from "@/lib/observability/log";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 
 import { CopilotError } from "./service.ts";
@@ -34,6 +35,9 @@ export function copilotErrorResponse(error: unknown): NextResponse {
   if (isPayrollConflictError(error)) {
     return NextResponse.json({ error: "payroll_conflict", message }, { status: 409 });
   }
-  console.error("[payroll-copilot] request failed:", error);
+  logError("Payroll copilot request failed", {
+    labels: { event: "copilot_request_failed" },
+    error,
+  });
   return NextResponse.json({ error: "copilot_failed", message }, { status: 500 });
 }

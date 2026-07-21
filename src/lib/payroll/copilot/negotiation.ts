@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { createRecurringAdjustment } from "./recurring.ts";
@@ -63,12 +64,18 @@ export async function applyActions(input: {
         created_by: input.actor,
       });
       if (error) {
-        console.error("[payroll-copilot:negotiation] insert failed:", error);
+        logError("Failed to insert payroll copilot adjustment", {
+          labels: { event: "negotiation_adjustment_insert_failed", runId: input.runId, hrId: action.hrId, kind: action.kind },
+          error,
+        });
         continue;
       }
       applied += 1;
     } catch (error) {
-      console.error("[payroll-copilot:negotiation] insert threw:", error);
+      logError("Inserting payroll copilot adjustment threw an exception", {
+        labels: { event: "negotiation_adjustment_insert_threw", runId: input.runId, hrId: action.hrId, kind: action.kind },
+        error,
+      });
     }
   }
 
@@ -81,7 +88,10 @@ export async function applyActions(input: {
         .eq("run_id", input.runId)
         .in("employee_hr_id", touched);
     } catch (error) {
-      console.error("[payroll-copilot:negotiation] flag update threw:", error);
+      logError("Payroll copilot flag status update threw an exception", {
+        labels: { event: "negotiation_flag_update_threw", runId: input.runId },
+        error,
+      });
     }
   }
 

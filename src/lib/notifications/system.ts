@@ -26,6 +26,7 @@ import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governan
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram";
@@ -457,7 +458,10 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
         workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
       } catch (employeeError) {
         if (!schemaMissing(employeeError, "employees")) {
-          console.error("Notification recipient work email lookup failed", employeeError);
+          logError("Notification recipient work email lookup failed", {
+            labels: { event: "notification_recipient_work_email_lookup_failed", hr_id: resolvedHrId },
+            error: employeeError,
+          });
         }
       }
     }
@@ -471,7 +475,10 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     };
   } catch (error) {
     if (!schemaMissing(error, "app_auth_users")) {
-      console.error("Notification recipient profile lookup failed", error);
+      logError("Notification recipient profile lookup failed", {
+        labels: { event: "notification_recipient_profile_lookup_failed", hr_id: hrId || null, user_id: userId || null },
+        error,
+      });
     }
     return { email: null, hrId: hrId || null, name: null, role: null, userId: userId || null };
   }
@@ -650,7 +657,10 @@ async function upsertDelivery(input: {
       }, { onConflict: "idempotency_key" });
   } catch (error) {
     if (!schemaMissing(error, "notification_deliveries")) {
-      console.error("Notification delivery audit failed", error);
+      logError("Notification delivery audit failed", {
+        labels: { event: "notification_delivery_audit_failed", channel: input.channel, hr_id: input.recipient.hrId },
+        error,
+      });
     }
   }
 }
@@ -715,7 +725,10 @@ async function claimDelivery(input: {
     if (isUniqueViolation(error)) return { alreadySent: false, claimed: false };
     if (schemaMissing(error, "notification_deliveries")) return { alreadySent: false, claimed: true };
     // Fail-open on unexpected errors so a legitimate notification isn't silently dropped.
-    console.error("Notification delivery claim failed", error);
+    logError("Notification delivery claim failed", {
+      labels: { event: "notification_delivery_claim_failed", channel: input.channel, hr_id: input.recipient.hrId },
+      error,
+    });
     return { alreadySent: false, claimed: true };
   }
 }
@@ -739,7 +752,10 @@ async function markTelegramConnectionNeedsRelink(recipient: RecipientProfile, re
     if (error) throw error;
   } catch (error) {
     if (!schemaMissing(error, "telegram_connections")) {
-      console.error("Failed to flag Telegram connection for re-link", error);
+      logError("Failed to flag Telegram connection for re-link", {
+        labels: { event: "telegram_connection_relink_flag_failed", hr_id: hrId || null, user_id: userId || null },
+        error,
+      });
     }
   }
 }
@@ -1281,8 +1297,14 @@ type TelegramRetryPayload = {
 // Shared logger for best-effort/fire-and-forget notification sends that must never
 // throw into their caller. Console + Sentry so a swallowed failure still leaves a trace.
 export function logNotificationSendFailure(context: string, error: unknown) {
-  console.error(`[notifications] ${context} failed`, error);
-  console.error(error, { tags: { component: "notifications", context } });
+  logError(`[notifications] ${context} failed`, {
+    labels: { event: "notification_send_failed", context },
+    error,
+  });
+  logError(`Notification send failure: ${context}`, {
+    labels: { event: "notification_send_failed_detail", context },
+    error,
+  });
 }
 
 // Email/in-app fallback for a Telegram delivery that has exhausted its retries (cron

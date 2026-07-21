@@ -9,6 +9,7 @@
 
 import { phoenixRoles, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const notificationRoleKeys = [
@@ -148,12 +149,10 @@ export async function getNotificationRolePolicies(): Promise<NotificationRolePol
       };
     });
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "notification_role_policies_read_failed",
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    logError("Notification role policies read failed", {
+      labels: { event: "notification_role_policies_read_failed" },
+      error,
+    });
     return notificationRoleKeys.map((key) => DEFAULT_NOTIFICATION_ROLE_POLICIES[key]);
   }
 }

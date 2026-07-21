@@ -8,6 +8,7 @@
 // behaviour, never a silent blank. The parser keeps the code contract as its compiled default and only
 // reads an override when one is resolved, so "no DB override == byte-identical current parse".
 
+import { logError } from "@/lib/observability/log";
 import {
   listCodeWeeklyContracts,
   weeklyContractByCode,
@@ -136,7 +137,10 @@ async function loadWeeklyColumnProfiles(): Promise<Map<string, WeeklyColumnProfi
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from(PROFILE_TABLE).select("*").eq("active", true);
     if (error) {
-      console.error(`[weekly-column-profile-store] override load failed (${error.code ?? "?"}): ${error.message}`);
+      logError("Weekly column profile override load failed", {
+        labels: { event: "weekly_column_profile_load_failed", errorCode: error.code ?? "unknown" },
+        error,
+      });
     } else {
       for (const raw of data ?? []) {
         const row = raw as WeeklyColumnProfileRow;
@@ -145,7 +149,10 @@ async function loadWeeklyColumnProfiles(): Promise<Map<string, WeeklyColumnProfi
       }
     }
   } catch (e) {
-    console.error("[weekly-column-profile-store] override load threw:", e instanceof Error ? e.message : e);
+    logError("Weekly column profile override load threw", {
+      labels: { event: "weekly_column_profile_load_threw" },
+      error: e,
+    });
   }
   cache = { at: Date.now(), byCode };
   return byCode;

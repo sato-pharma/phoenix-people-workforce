@@ -20,6 +20,7 @@ import {
   toMarketingRequestWorkflowStatus,
 } from "@/lib/marketing-requests/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -1812,9 +1813,9 @@ async function notifyMarketingWorkflow(params: {
     title: params.title,
   }).catch((error) => {
     // Best-effort, but no longer silent — surface so a broken marketing notification is visible.
-    console.error(error, {
-      tags: { component: "marketing-requests", eventType: params.eventType },
-      extra: { requestId: params.request.id },
+    logError("Marketing workflow notification failed", {
+      labels: { event: "marketing_notification_failed", eventType: params.eventType, requestId: params.request.id },
+      error,
     });
   });
 }
@@ -1922,7 +1923,10 @@ export async function runMarketingSlaDaily(): Promise<{
       }
     }
   } catch (error) {
-    console.error(error, { tags: { component: "marketing-requests", cron: "marketing-sla" } });
+    logError("Marketing SLA daily scan failed", {
+      labels: { event: "marketing_sla_scan_failed" },
+      error,
+    });
     errors.push({ message: error instanceof Error ? error.message : "Marketing SLA scan failed.", requestId: "scan" });
   }
   return { errors, escalations, overdue, reminders, runDate: today, scanned };

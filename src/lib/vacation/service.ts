@@ -23,6 +23,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -1370,7 +1371,7 @@ async function hasAlternateHrApprover(excludeHrId: string | null) {
       return hrId ? !excludedGroup.has(hrId) : false;
     });
   } catch (error) {
-    console.error("[vacation] alternate HR approver lookup failed; enforcing separation of duties", error);
+    logError("Alternate HR approver lookup failed; enforcing separation of duties", { labels: { event: "vacation_alternate_hr_approver_lookup_failed" }, error });
     return true;
   }
 }
@@ -1441,7 +1442,7 @@ export async function getHrRecipients(
       // notified about nobody. Keep returning [] so a notification-lookup failure
       // never blocks the employee's vacation action, but log it so the dropped
       // notification is diagnosable.
-      console.error("[vacation] HR recipient lookup failed; HR notifications skipped", error);
+      logError("HR recipient lookup failed; HR notifications skipped", { labels: { event: "vacation_hr_recipient_lookup_failed" }, error });
       return [];
     }
 
@@ -1460,7 +1461,7 @@ export async function getHrRecipients(
       })
       .filter((entry): entry is HrRecipient => Boolean(entry));
   } catch (error) {
-    console.error("[vacation] HR recipient lookup threw; HR notifications skipped", error);
+    logError("HR recipient lookup threw; HR notifications skipped", { labels: { event: "vacation_hr_recipient_lookup_threw" }, error });
     return [];
   }
 }
@@ -2218,7 +2219,7 @@ async function balanceSettledDaysInPeriod(input: {
       0,
     );
   } catch (error) {
-    console.error("[vacation:service] balance-settled days lookup failed:", error);
+    logError("Balance-settled days lookup failed", { labels: { event: "vacation_balance_settled_days_lookup_failed", employeeHrId: input.employeeHrId }, error });
     return 0;
   }
 }

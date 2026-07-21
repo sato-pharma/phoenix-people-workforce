@@ -1,3 +1,4 @@
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { StatutoryConfig, TaxBracket } from "./types.ts";
@@ -87,12 +88,18 @@ export async function getStatutoryConfigForPeriod(period: {
       .limit(1)
       .maybeSingle();
     if (error) {
-      console.error("[payroll-statutory:config] load failed, using default:", error);
+      logError("Statutory config load failed, using default configuration", {
+        labels: { event: "statutory_config_load_failed", periodStart },
+        error,
+      });
     } else if (data) {
       config = mapConfigRow(data as Record<string, unknown>);
     }
   } catch (error) {
-    console.error("[payroll-statutory:config] load threw, using default:", error);
+    logError("Statutory config load threw an exception, using default configuration", {
+      labels: { event: "statutory_config_load_threw", periodStart },
+      error,
+    });
   }
 
   cache.set(periodStart, { at: Date.now(), config });

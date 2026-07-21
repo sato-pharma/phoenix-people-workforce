@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { deriveAppErrorStatus, getCurrentReleaseTag, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
+import { logError } from "@/lib/observability/log";
 
 export type ErrorEventSource = "server" | "client";
 
@@ -93,13 +94,10 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
     });
 
     if (error) {
-      console.error("Failed to persist app_error_events row:", error.message);
+      logError("Failed to persist app_error_events row", { labels: { event: "app_error_insert_failed" }, error });
     }
   } catch (loggingError) {
-    console.error(
-      "logAppError threw:",
-      loggingError instanceof Error ? loggingError.message : loggingError,
-    );
+    logError("logAppError threw", { labels: { event: "log_app_error_threw" }, error: loggingError });
   }
 }
 
@@ -207,7 +205,7 @@ export async function getActiveErrorSignatures(currentRelease: string): Promise<
     }
     return signatures;
   } catch (error) {
-    console.error("Failed to load active error signatures (all will read Resolved):", error);
+    logError("Failed to load active error signatures (all will read Resolved)", { labels: { event: "active_error_signatures_load_failed" }, error });
     return new Set();
   }
 }
@@ -272,7 +270,7 @@ export async function getErrorClusterAggregates(days = 7): Promise<ErrorClusterA
       .map(({ releaseSet, ...rest }) => ({ ...rest, releases: Array.from(releaseSet) }))
       .sort((a, b) => b.count - a.count);
   } catch (error) {
-    console.error("Failed to load error cluster aggregates:", error);
+    logError("Failed to load error cluster aggregates", { labels: { event: "error_cluster_aggregates_load_failed" }, error });
     return [];
   }
 }
@@ -369,7 +367,7 @@ export async function getWeeklyHealthSummary(days = 7): Promise<WeeklyHealthSumm
       windowDays,
     };
   } catch (error) {
-    console.error("Failed to build weekly health summary:", error);
+    logError("Failed to build weekly health summary", { labels: { event: "weekly_health_summary_failed" }, error });
     return empty;
   }
 }
@@ -409,7 +407,7 @@ export async function getReproTrail(hrId: string | null | undefined, beforeIso: 
       path: (row.path as string) ?? "",
     }));
   } catch (error) {
-    console.error("Failed to load repro trail:", error);
+    logError("Failed to load repro trail", { labels: { event: "repro_trail_load_failed", hrId: hrKey }, error });
     return [];
   }
 }
@@ -477,7 +475,7 @@ export async function getAccountDirectory(): Promise<Map<string, AccountIdentity
     const { data } = await getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id, name, role");
     return buildAccountDirectory((data ?? []) as AccountDirectoryRow[]);
   } catch (error) {
-    console.error("Failed to load account directory:", error);
+    logError("Failed to load account directory", { labels: { event: "account_directory_load_failed" }, error });
     return new Map();
   }
 }
@@ -599,7 +597,7 @@ export async function getLoginSecuritySignals(days = 7): Promise<LoginSecuritySi
       windowDays,
     };
   } catch (error) {
-    console.error("Failed to load login security signals:", error);
+    logError("Failed to load login security signals", { labels: { event: "login_security_signals_load_failed" }, error });
     return empty;
   }
 }
@@ -723,7 +721,7 @@ export async function getDeployTimeline(currentRelease: string, days = 14): Prom
 
     return { buckets, markers, regressions, windowDays };
   } catch (error) {
-    console.error("Failed to load deploy timeline:", error);
+    logError("Failed to load deploy timeline", { labels: { event: "deploy_timeline_load_failed", currentRelease }, error });
     return empty;
   }
 }

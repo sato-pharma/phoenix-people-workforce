@@ -16,6 +16,7 @@ import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailNotificationTypes = [
@@ -1561,7 +1562,10 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
   // the next drain cycle will re-send it (duplicate). Surface the failure so the
   // misconfiguration/transient DB error is visible instead of silently duplicating mail.
   if (error) {
-    console.error("[notifications/outbox] failed to mark row sent (risk of duplicate send):", row.id, error);
+    logError("Notification outbox row failed to mark sent (risk of duplicate send)", {
+      labels: { event: "outbox_mark_sent_failed", outbox_id: row.id },
+      error,
+    });
   }
 }
 
@@ -1667,7 +1671,10 @@ export async function reapStaleProcessingOutboxRows(): Promise<number> {
     return data?.length ?? 0;
   } catch (error) {
     if (!notificationSchemaMissing(error)) {
-      console.error("[notifications/reap] failed to reap stale processing rows:", error);
+      logError("Failed to reap stale processing notification outbox rows", {
+        labels: { event: "outbox_reap_stale_failed" },
+        error,
+      });
     }
     return 0;
   }
@@ -1696,12 +1703,18 @@ export async function cleanupOldNotificationData(): Promise<{
       .select("id");
 
     if (outboxError && !notificationSchemaMissing(outboxError)) {
-      console.error("Outbox retention cleanup failed", outboxError);
+      logError("Notification outbox retention cleanup failed", {
+        labels: { event: "outbox_retention_cleanup_failed" },
+        error: outboxError,
+      });
     }
     outboxDeleted = outboxData?.length ?? 0;
   } catch (error) {
     if (!notificationSchemaMissing(error)) {
-      console.error("[notifications/cleanup] unexpected error during outbox retention:", error);
+      logError("Unexpected error during notification outbox retention cleanup", {
+        labels: { event: "outbox_retention_cleanup_unexpected_error" },
+        error,
+      });
     }
   }
 
@@ -1720,12 +1733,18 @@ export async function cleanupOldNotificationData(): Promise<{
       .select("id");
 
     if (terminalError && !notificationSchemaMissing(terminalError)) {
-      console.error("Outbox terminal-row retention cleanup failed", terminalError);
+      logError("Notification outbox terminal-row retention cleanup failed", {
+        labels: { event: "outbox_terminal_retention_cleanup_failed" },
+        error: terminalError,
+      });
     }
     outboxTerminalDeleted = terminalData?.length ?? 0;
   } catch (error) {
     if (!notificationSchemaMissing(error)) {
-      console.error("[notifications/cleanup] unexpected error during terminal-row retention:", error);
+      logError("Unexpected error during notification outbox terminal-row retention cleanup", {
+        labels: { event: "outbox_terminal_retention_cleanup_unexpected_error" },
+        error,
+      });
     }
   }
 
@@ -1742,12 +1761,18 @@ export async function cleanupOldNotificationData(): Promise<{
       .select("id");
 
     if (eventsError) {
-      console.error("Delivery events retention cleanup failed", eventsError);
+      logError("Email delivery events retention cleanup failed", {
+        labels: { event: "delivery_events_retention_cleanup_failed" },
+        error: eventsError,
+      });
     }
     eventsRedacted = eventsData?.length ?? 0;
   } catch (error) {
     if (!notificationSchemaMissing(error)) {
-      console.error("[notifications/cleanup] unexpected error during delivery-events redaction:", error);
+      logError("Unexpected error during email delivery events redaction", {
+        labels: { event: "delivery_events_redaction_unexpected_error" },
+        error,
+      });
     }
   }
 
@@ -1932,10 +1957,14 @@ export async function safeSendNotificationEmail(input: NotificationEmailInput) {
     if (notificationSchemaMissing(error)) {
       return sendNotificationEmailDirect(input);
     }
-    console.error(error, {
-      tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
+    logError("Notification email send failed", {
+      labels: { event: "notification_email_send_failed", notification_type: input.notificationType ?? "unknown" },
+      error,
     });
-    console.error("Email notification failed", error);
+    logError("Email notification failed", {
+      labels: { event: "notification_email_failed" },
+      error,
+    });
     return {
       reason: error instanceof Error ? error.message : "Email notification failed.",
       skipped: true,

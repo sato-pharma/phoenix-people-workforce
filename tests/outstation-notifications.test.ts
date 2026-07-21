@@ -154,7 +154,7 @@ export function runOutstationNotificationsTests() {
   assert.doesNotMatch(slaSlice, /\}\s*catch\s*\{\s*errors\+\+;\s*\}/, "the SLA reminder loop must not swallow errors without reporting them");
   assert.match(
     slaSlice,
-    /catch \(error\) \{\s*console\.error\(error, \{ tags: \{ cron: "outstation-sla-reminder", recipientHrId: hrId \} \}\);\s*errors\+\+;\s*\}/,
+    /catch \(error\) \{\s*logError\("Outstation SLA reminder failed for recipient", \{ labels: \{ event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", recipientHrId: hrId \}, error \}\);\s*errors\+\+;\s*\}/,
     "a failed SLA reminder send must be captured in Sentry, tagged with the affected recipient",
   );
 }

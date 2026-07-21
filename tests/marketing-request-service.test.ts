@@ -199,7 +199,8 @@ export async function runMarketingRequestServiceTests() {
   for (const slaEvent of ["due_date_reminder", "overdue_reminder", "escalation"] as const) {
     assert.match(serviceSource, new RegExp(slaEvent), `SLA classifier must cover ${slaEvent}`);
   }
-  assert.match(dailyRouteSource, /runMarketingSlaDaily/, "marketing SLA reminders must be invoked by the daily cron route");
+  // Disabled 2026-07-22 at owner request — replaced with an explicit disabled:true stub.
+  assert.match(dailyRouteSource, /marketing SLA reminder\/escalation emails stopped/, "marketing SLA disable is explicit, not a silent removal");
   // Routing metadata keys the policy strategies depend on must be present.
   for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds", "escalationOwnerHrId"] as const) {
     assert.match(serviceSource, new RegExp(key), `notification routing must set ${key}`);
@@ -208,7 +209,7 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /marketing-request:\$\{params\.eventType\}:/, "workflow notifications must carry a per-event idempotency key");
   assert.match(serviceSource, /marketing-request-submitted:/, "submit notification must carry an idempotency key");
   // Notification failures surface (Sentry) but never throw into the workflow.
-  assert.match(serviceSource, /console\.error/, "marketing notification failures must be surfaced, not silently swallowed");
+  assert.match(serviceSource, /logError/, "marketing notification failures must be surfaced, not silently swallowed");
   // Telegram delivery on the decision events too (not just request_assigned).
   for (const event of ["request_approved", "request_rejected", "request_returned"] as const) {
     assert.match(policySource, new RegExp(`"marketing_requests\\.${event}":[^\\n]*telegramAllowed:\\s*true`), `${event} must allow Telegram`);

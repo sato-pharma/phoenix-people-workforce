@@ -1,6 +1,7 @@
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const phoenixRoles = [
@@ -1091,10 +1092,7 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
         // transient DB error can't quietly widen access; only a cold start with
         // no prior matrix falls back to the built-in defaults. We intentionally
         // do not cache this degraded result, so the next call retries the DB.
-        console.error(
-          "[permissions] role_permission_overrides load failed; retaining last-known matrix",
-          error,
-        );
+        logError("role_permission_overrides load failed; retaining last-known matrix", { labels: { event: "permission_matrix_load_failed" }, error });
         return permissionCache?.matrix ?? applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
       })
       .finally(() => {

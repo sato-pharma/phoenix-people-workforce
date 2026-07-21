@@ -22,6 +22,7 @@ import {
 } from "@/lib/crm/identity";
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { googleReverseGeocode, hasGoogleServerKey } from "@/lib/google-maps/server";
 import type { VisitsSyncTrigger } from "@/lib/visits-report/types";
@@ -553,7 +554,10 @@ export async function reapStaleIReports360SyncRuns(): Promise<number> {
     if (error) throw new Error(error.message);
     return data?.length ?? 0;
   } catch (error) {
-    console.error("[crm/sync/reap] failed to reap stale sync runs:", error);
+    logError("Failed to reap stale iReports360 sync runs", {
+      labels: { event: "crm_sync_reap_stale_runs_failed" },
+      error,
+    });
     return 0;
   }
 }

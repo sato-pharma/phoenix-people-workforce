@@ -18,6 +18,7 @@ import {
 } from "@/lib/excuses/service";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
@@ -144,11 +145,17 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
   // transient error looks identical to "nothing pending" for exactly this actor.
   const [center, report] = await Promise.all([
     getVacationActionCenterData(access).catch((error) => {
-      console.error("[approvals-hub] getVacationActionCenterData failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+      logError("Approvals hub vacation action-center data load failed", {
+        labels: { event: "approvals_hub_vacation_action_center_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+        error,
+      });
       return null;
     }),
     getVacationReportData(access, { status: "all" }).catch((error) => {
-      console.error("[approvals-hub] getVacationReportData failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+      logError("Approvals hub vacation report data load failed", {
+        labels: { event: "approvals_hub_vacation_report_data_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+        error,
+      });
       return null;
     }),
   ]);
@@ -217,7 +224,10 @@ export async function countVacationAwaiting(access: AccessContext): Promise<numb
     const { awaiting } = await getVacationApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    console.error("[approvals-hub] countVacationAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub count vacation awaiting failed", {
+      labels: { event: "approvals_hub_count_vacation_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return 0;
   }
 }
@@ -229,7 +239,10 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
     const { awaiting } = await getVacationApprovalsForResponder(access);
     return awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue");
   } catch (error) {
-    console.error("[approvals-hub] isVacationAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub vacation awaiting-overdue check failed", {
+      labels: { event: "approvals_hub_vacation_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return false;
   }
 }
@@ -249,7 +262,10 @@ export async function getVacationAwaitingBadge(access: AccessContext): Promise<{
       overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
     };
   } catch (error) {
-    console.error("[approvals-hub] getVacationAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub vacation awaiting badge computation failed", {
+      labels: { event: "approvals_hub_vacation_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return { count: 0, overdue: false };
   }
 }
@@ -263,7 +279,10 @@ export type ExcuseApprovalsBuckets = {
 export async function getExcuseApprovalsForResponder(access: AccessContext): Promise<ExcuseApprovalsBuckets> {
   const hrId = access.hrId?.trim() ?? "";
   const pending = await getManagerPendingExcuses(access).catch((error) => {
-    console.error("[approvals-hub] getManagerPendingExcuses failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub manager pending excuses load failed", {
+      labels: { event: "approvals_hub_manager_pending_excuses_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return [] as EmployeeExcuseRequest[];
   });
 
@@ -279,7 +298,10 @@ export async function countExcuseAwaiting(access: AccessContext): Promise<number
     const { awaiting } = await getExcuseApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    console.error("[approvals-hub] countExcuseAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub count excuse awaiting failed", {
+      labels: { event: "approvals_hub_count_excuse_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return 0;
   }
 }
@@ -290,7 +312,10 @@ export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<bo
     const { awaiting } = await getExcuseApprovalsForResponder(access);
     return awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue");
   } catch (error) {
-    console.error("[approvals-hub] isExcuseAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub excuse awaiting-overdue check failed", {
+      labels: { event: "approvals_hub_excuse_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return false;
   }
 }
@@ -304,7 +329,10 @@ export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ c
       overdue: awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue"),
     };
   } catch (error) {
-    console.error("[approvals-hub] getExcuseAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub excuse awaiting badge computation failed", {
+      labels: { event: "approvals_hub_excuse_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return { count: 0, overdue: false };
   }
 }
@@ -868,7 +896,10 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
   if (!viewerCanonicalHrId) return { groups: [], totalPeople: 0 };
 
   const directory = await getEmployeeDirectory().catch((error) => {
-    console.error("[approvals-hub] buildApprovalScope directory load failed", { role: access.role, error });
+    logError("Approvals hub approval scope directory load failed", {
+      labels: { event: "approvals_hub_build_approval_scope_directory_failed", role: access.role },
+      error,
+    });
     return null;
   });
   const employees = directory?.employees ?? [];
@@ -991,7 +1022,10 @@ export async function getCompanyVacationRequestsExcludingFieldForce(access: Acce
   }
   const [report, directory] = await Promise.all([
     getVacationReportData(access, { status: "all" }).catch((error) => {
-      console.error("[approvals-hub] getCompanyVacationRequestsExcludingFieldForce report failed", { role: access.role, error });
+      logError("Approvals hub company vacation requests report load failed", {
+        labels: { event: "approvals_hub_company_vacation_requests_report_failed", role: access.role },
+        error,
+      });
       return null;
     }),
     getEmployeeDirectory().catch(() => null),
@@ -1040,7 +1074,10 @@ export async function getCompanyExcuseRequestsExcludingFieldForce(access: Access
     getEmployeeDirectory().catch(() => null),
   ]);
   if (error) {
-    console.error("[approvals-hub] getCompanyExcuseRequestsExcludingFieldForce query failed", { role: access.role, error });
+    logError("Approvals hub company excuse requests query failed", {
+      labels: { event: "approvals_hub_company_excuse_requests_query_failed", role: access.role },
+      error,
+    });
     return [];
   }
   const titleByHrId = buildTitleByHrId(directory?.employees ?? []);
@@ -1143,7 +1180,10 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     getEmployeeDirectory(),
   ]);
   if (error) {
-    console.error("[approvals-hub] getPlanApprovalsForResponder query failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub plan approvals query failed", {
+      labels: { event: "approvals_hub_plan_approvals_query_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return { awaiting: [], upcoming: [] };
   }
 
@@ -1206,7 +1246,10 @@ export async function isPlanAwaitingOverdue(access: AccessContext): Promise<bool
     const { awaiting } = await getPlanApprovalsForResponder(access);
     return awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue");
   } catch (error) {
-    console.error("[approvals-hub] isPlanAwaitingOverdue failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub plan awaiting-overdue check failed", {
+      labels: { event: "approvals_hub_plan_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return false;
   }
 }
@@ -1216,7 +1259,10 @@ export async function countPlanAwaiting(access: AccessContext): Promise<number> 
     const { awaiting } = await getPlanApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    console.error("[approvals-hub] countPlanAwaiting failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub count plan awaiting failed", {
+      labels: { event: "approvals_hub_count_plan_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return 0;
   }
 }
@@ -1230,7 +1276,10 @@ export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ cou
       overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
     };
   } catch (error) {
-    console.error("[approvals-hub] getPlanAwaitingBadge failed", { hrId: access.hrId, role: access.role, scope: access.scope, error });
+    logError("Approvals hub plan awaiting badge computation failed", {
+      labels: { event: "approvals_hub_plan_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
     return { count: 0, overdue: false };
   }
 }
@@ -1803,7 +1852,10 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
     getEmployeeDirectory(),
   ]);
   if (error) {
-    console.error("[approvals-hub] getCompanyPlanRequests query failed", { role: access.role, error });
+    logError("Approvals hub company plan requests query failed", {
+      labels: { event: "approvals_hub_company_plan_requests_query_failed", role: access.role },
+      error,
+    });
     return [];
   }
 

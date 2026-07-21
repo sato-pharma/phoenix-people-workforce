@@ -19,6 +19,8 @@
 // it stops the step from BLOCKING the chain. The abandoned promise settles on its own,
 // and because Promise.race attaches handlers to it, a late rejection is not unhandled.
 
+import { logError } from "@/lib/observability/log";
+
 export type StepStatus = "ok" | "timeout" | "error" | "skipped";
 export type StepTiming = { step: string; ms: number; status: StepStatus };
 
@@ -95,7 +97,12 @@ export async function runStep<T>(
     if ("error" in outcome) {
       budget.timings.push({ step: name, ms, status: "error" });
       if (options.onError) options.onError(outcome.error);
-      else console.error(`[cron:process] step "${name}" failed after ${ms}ms`, outcome.error);
+      else {
+        logError(`Notification-processing cron step "${name}" failed`, {
+          labels: { event: "cron_step_failed", step: name, duration_ms: ms },
+          error: outcome.error,
+        });
+      }
       return options.fallback;
     }
     budget.timings.push({ step: name, ms, status: "ok" });

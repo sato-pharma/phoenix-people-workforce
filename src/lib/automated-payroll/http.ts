@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
+import { logError } from "@/lib/observability/log";
 
 /**
  * Shared route helpers for the Automated Payroll API. Maps the service layer's
@@ -22,7 +23,12 @@ export function jsonError(error: unknown, fallback = "Automated Payroll request 
   else if (lower.startsWith("validation")) status = 400;
   else if (lower.includes("not authenticated")) status = 401;
 
-  if (status === 500) console.error("[automated-payroll:route]", error);
+  if (status === 500) {
+    logError("Automated payroll: unhandled route error", {
+      labels: { event: "automated_payroll_route_unhandled_error" },
+      error,
+    });
+  }
 
   const clientMessage =
     status === 500 ? fallback : message.replace(/^(forbidden|conflict|validation|not found)\s*:?\s*/i, "");

@@ -19,6 +19,7 @@ import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import { conflictError } from "@/lib/http/api-errors";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type EmployeeExcuseType = "morning" | "afternoon";
@@ -529,7 +530,7 @@ async function notifyDecisionRecipients(input: {
       title,
     });
   } catch (error) {
-    console.error(`[excuses] failed to notify employee of decision for request ${input.request.id}`, error);
+    logError("Failed to notify employee of excuse decision", { labels: { event: "excuse_employee_decision_notify_failed", requestId: input.request.id }, error });
   }
 
   await notifyHrVisibilityRecipients({

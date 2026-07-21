@@ -2,6 +2,7 @@
 // (admin management). Blocks are time-bound by default (see the migration) so a mistake
 // self-heals; enforcement is fail-open so a DB blip can never lock everyone out.
 
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const DEFAULT_BLOCK_DAYS = 30;
@@ -34,7 +35,7 @@ export async function isIpBlocked(ip: string | null): Promise<boolean> {
     if (!row) return false;
     return row.expires_at === null || row.expires_at > nowIso;
   } catch (error) {
-    console.error("isIpBlocked failed (failing open — not blocking):", error);
+    logError("isIpBlocked failed (failing open — not blocking)", { labels: { event: "ip_blocklist_check_failed", ip }, error });
     return false;
   }
 }
@@ -85,7 +86,7 @@ export async function getBlockedIps(): Promise<BlockedIp[]> {
       reason: (row.reason as string | null) ?? null,
     }));
   } catch (error) {
-    console.error("getBlockedIps failed:", error);
+    logError("getBlockedIps failed", { labels: { event: "ip_blocklist_load_failed" }, error });
     return [];
   }
 }

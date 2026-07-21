@@ -8,6 +8,7 @@
 // column labels. Never data rows, quantities, customer codes, addresses, or product names (mirrors the
 // posture of ai-suggest.ts / weekly ai-verify.ts).
 
+import { logError } from "@/lib/observability/log";
 import { aiChatJson, resolveAiProvider } from "@/lib/sales/ai/provider";
 
 export type HeaderMismatchSuggestion = { expected: string; suggestedHeader: string | null; note?: string };
@@ -61,7 +62,10 @@ export async function explainHeaderMismatch(input: HeaderMismatchInput): Promise
       : [];
     return { aiUsed: true, summary: String(parsed.summary ?? "").slice(0, 600), suggestions };
   } catch (error) {
-    console.error("[ai-explain] header mismatch explain failed:", error instanceof Error ? error.message : error);
+    logError("Header mismatch AI explain failed", {
+      labels: { event: "sos_ai_explain_failed" },
+      error,
+    });
     return EMPTY;
   }
 }

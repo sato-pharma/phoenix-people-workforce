@@ -10,6 +10,7 @@ import {
   listDeductionCandidates,
   type DeductionInboxRow,
 } from "@/lib/deductions-governance/service";
+import { logError } from "@/lib/observability/log";
 
 import { compactHrKey, getBaseSalaryMap } from "./feeders.ts";
 import type { CopilotPeriod } from "./types.ts";
@@ -40,7 +41,10 @@ export async function resolveCopilotCycleWindow(period: CopilotPeriod): Promise<
     const settings = await getDigestSettings();
     return resolveDigestCycle(probeDate, settings.cycleAnchorDay);
   } catch (error) {
-    console.error("[payroll-copilot:deductions-review] digest settings load failed, using default anchor 24:", error);
+    logError("Digest settings load failed, using default anchor day 24", {
+      labels: { event: "deductions_review_digest_settings_load_failed", month: period.month, year: period.year },
+      error,
+    });
     return resolveDigestCycle(probeDate, 24);
   }
 }
@@ -150,7 +154,10 @@ export async function listFingerprintDeductionCandidates(
     getDigestSettings().catch(() => null),
   ]);
   const scope = await countFlexibleHoursScope(cycle).catch((error) => {
-    console.error("[payroll-copilot:deductions-review] flexible-hours scope count failed:", error);
+    logError("Flexible-hours scope count failed", {
+      labels: { event: "deductions_review_flexible_hours_scope_failed", month: period.month, year: period.year },
+      error,
+    });
     return null;
   });
   return {
@@ -180,7 +187,10 @@ export async function syncCrmLiveMonthCandidates(period: CopilotPeriod, createdB
       year: period.year,
     });
   } catch (error) {
-    console.error("[payroll-copilot:deductions-review] CRM live-month sync failed:", error);
+    logError("CRM live-month no-activity candidate sync failed", {
+      labels: { event: "deductions_review_crm_live_month_sync_failed", month: period.month, year: period.year },
+      error,
+    });
   }
 }
 
@@ -271,7 +281,10 @@ export async function buildApprovedDeductionTotals(
       totals.set(key, existing);
     }
   } catch (error) {
-    console.error("[payroll-copilot:deductions-review] approved-totals load failed:", error);
+    logError("Failed to load approved fingerprint/CRM deduction totals", {
+      labels: { event: "deductions_review_approved_totals_load_failed", month: period.month, year: period.year },
+      error,
+    });
   }
   return totals;
 }

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ResendDeliveryStatus =
@@ -231,7 +232,7 @@ export async function recordResendWebhookEvent(row: DeliveryEventRow): Promise<{
         .from("email_suppressions")
         .upsert(suppressions, { onConflict: "address" });
       if (suppressionResult.error && !isDuplicateKeyError(suppressionResult.error)) {
-        console.error("Failed to upsert email suppressions", suppressionResult.error);
+        logError("Failed to upsert email suppressions from Resend webhook", { labels: { event: "resend_webhook_suppression_upsert_failed" }, error: suppressionResult.error });
       }
     }
   }
