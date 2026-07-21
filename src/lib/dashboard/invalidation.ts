@@ -1,5 +1,7 @@
 import { revalidatePath, revalidateTag } from "next/cache.js";
 
+import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/vacation/company-vacation-report";
+
 export type ExecutiveDashboardModule =
   | "employees"
   | "vacancies"
@@ -39,6 +41,14 @@ export function invalidateExecutiveDashboardCache(
     // their shared reference data; non-sales changes leave those caches to their own TTL.
     if (uniqueModules.includes("sales")) {
       for (const tag of SALES_DASHBOARD_CACHE_TAGS) revalidateTag(tag, "max");
+    }
+    // A leave-affecting change (create/update/delete/decision on any v2_vacation_requests row,
+    // from any of the 9+ call sites across the vacation workflow) must also bust the Company
+    // Vacation Report's historical cache — otherwise a past-month status change can stay stale
+    // there for up to HISTORICAL_REVALIDATE_SECONDS (6h). Previously only the CRM-signal approve
+    // route busted this tag, so every other mutation path went stale silently.
+    if (uniqueModules.includes("leave")) {
+      revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
     }
   } catch (error) {
     console.warn("Executive dashboard route revalidation failed.", {

@@ -938,7 +938,7 @@ function holidayMonthKeysForDates(dates: string[]) {
   });
 }
 
-async function validateOfficialHolidayAdjacency(input: {
+export async function validateOfficialHolidayAdjacency(input: {
   endDate: string;
   startDate: string;
 }) {
