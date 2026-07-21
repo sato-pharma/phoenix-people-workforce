@@ -52,6 +52,11 @@ export type EmployeePortalNavVisibility = {
   // for RM and line managers). Every page enforces sales/weekly_sales read AND the per-viewer
   // AnalyticsViewerScope server-side; this flag only surfaces the sidebar link.
   showSalesAnalyticsTab?: boolean;
+  // Territory & Sales Drilldown — geography-rooted (Region>Area>Block>Brick>Pharmacy) sales
+  // tree at /employee-portals/territory-drilldown. All four sales roles now shipped (see
+  // TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the server-side gate
+  // this flag must stay in sync with).
+  showTerritoryDrilldownTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -323,6 +328,11 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
+    showTerritoryDrilldownTab:
+      isMedicalRep ||
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate
