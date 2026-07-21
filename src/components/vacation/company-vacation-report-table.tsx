@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Download, Loader2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Download, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { CompanyVacationReportRow, CompanyVacationReportSource } from "@/lib/vacation/company-vacation-report";
@@ -40,6 +40,29 @@ function isCrmSignalSource(source: CompanyVacationReportSource) {
 
 function rowKey(row: CompanyVacationReportRow) {
   return `${row.hrId}|${row.startDate}|${row.source}`;
+}
+
+type HasBalanceFilter = "All" | "Yes" | "No" | "N/A";
+
+function hasBalanceFilterValue(row: CompanyVacationReportRow): HasBalanceFilter {
+  if (row.hasBalance === null) return "N/A";
+  return row.hasBalance ? "Yes" : "No";
+}
+
+function HasBalanceBadge({ hasBalance }: { hasBalance: boolean | null }) {
+  if (hasBalance === null) {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+        hasBalance ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700",
+      )}
+    >
+      {hasBalance ? "Yes" : "No"}
+    </span>
+  );
 }
 
 /**
@@ -121,15 +144,41 @@ export function CompanyVacationReportTable({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<CompanyVacationReportSource | "All">("All");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [lineName, setLineName] = useState("All");
+  const [hasBalance, setHasBalance] = useState<HasBalanceFilter>("All");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const lineOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of rows) {
+      if (row.lineName) names.add(row.lineName);
+    }
+    return ["All", ...[...names].sort((left, right) => left.localeCompare(right))];
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows.filter((row) => {
       if (source !== "All" && row.source !== source) return false;
+      if (lineName !== "All" && (row.lineName ?? "") !== lineName) return false;
+      if (hasBalance !== "All" && hasBalanceFilterValue(row) !== hasBalance) return false;
+      if (fromDate && row.endDate < fromDate) return false;
+      if (toDate && row.startDate > toDate) return false;
       if (!needle) return true;
       return `${row.employeeName} ${row.hrId} ${row.jobTitle ?? ""} ${row.lineName ?? ""}`.toLowerCase().includes(needle);
     });
-  }, [rows, query, source]);
+  }, [rows, query, source, lineName, hasBalance, fromDate, toDate]);
+
+  const resetAdvancedFilters = () => {
+    setLineName("All");
+    setHasBalance("All");
+    setFromDate("");
+    setToDate("");
+  };
+
+  const advancedFiltersActive = lineName !== "All" || hasBalance !== "All" || Boolean(fromDate) || Boolean(toDate);
 
   const totals = useMemo(() => {
     const byEmployee = new Map<string, number>();
@@ -178,6 +227,19 @@ export function CompanyVacationReportTable({
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
+          <button
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition",
+              advancedFiltersActive
+                ? "border-orange-300 bg-orange-50 text-orange-700"
+                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+            )}
+            onClick={() => setShowAdvanced((value) => !value)}
+            type="button"
+          >
+            Advanced Filters{advancedFiltersActive ? " •" : ""}
+            {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <p className="text-xs text-slate-500">
@@ -193,9 +255,68 @@ export function CompanyVacationReportTable({
         </div>
       </div>
 
+      {showAdvanced ? (
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Line
+            <select
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal"
+              onChange={(event) => setLineName(event.target.value)}
+              value={lineName}
+            >
+              {lineOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            Has Balance
+            <select
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal"
+              onChange={(event) => setHasBalance(event.target.value as HasBalanceFilter)}
+              value={hasBalance}
+            >
+              <option value="All">All</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+              <option value="N/A">N/A (CRM Signal)</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            From
+            <input
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal"
+              onChange={(event) => setFromDate(event.target.value)}
+              type="date"
+              value={fromDate}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+            To
+            <input
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal"
+              onChange={(event) => setToDate(event.target.value)}
+              type="date"
+              value={toDate}
+            />
+          </label>
+          {advancedFiltersActive ? (
+            <button
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              onClick={resetAdvancedFilters}
+              type="button"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-800">
         <strong>Approve as real leave</strong> on a CRM Signal row creates an approved vacation request and deducts it from that
         employee&apos;s actual entitlement — one row at a time, only when you click it. HR-sourced rows are already real records.
+        <strong> Has Balance</strong> / <strong>Balance After</strong> reflect the balance stored on real HR requests at the time
+        they were made and show <strong>—</strong> for unverified CRM Signal rows, which never touched the balance engine.
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -209,8 +330,10 @@ export function CompanyVacationReportTable({
               <th className="px-4 py-3">Start</th>
               <th className="px-4 py-3">End</th>
               <th className="px-4 py-3">Days</th>
+              <th className="px-4 py-3">Has Balance</th>
+              <th className="px-4 py-3">Balance After</th>
               <th className="px-4 py-3">Detail</th>
-              <th className="px-4 py-3">Review</th>
+              <th className="sticky right-0 bg-slate-900 px-4 py-3 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.3)]">Review</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -223,8 +346,10 @@ export function CompanyVacationReportTable({
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.startDate}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.endDate}</td>
                 <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{row.workingDays}</td>
+                <td className="whitespace-nowrap px-4 py-3"><HasBalanceBadge hasBalance={row.hasBalance} /></td>
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.balanceAfterDays ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-500">{row.detail}</td>
-                <td className="px-4 py-3">
+                <td className="sticky right-0 bg-white px-4 py-3 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)]">
                   {isCrmSignalSource(row.source) ? (
                     <ApproveControl disabled={false} onApprove={handleApprove} row={row} />
                   ) : (
@@ -235,7 +360,7 @@ export function CompanyVacationReportTable({
             ))}
             {filtered.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-sm text-slate-400" colSpan={9}>No rows match this filter.</td>
+                <td className="px-4 py-8 text-center text-sm text-slate-400" colSpan={11}>No rows match this filter.</td>
               </tr>
             ) : null}
           </tbody>

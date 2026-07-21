@@ -4,6 +4,8 @@ import { classifyAvDate, dedupeHrVacationRequestsById, type HrVacationRequestRow
 
 function hrRequest(overrides: Partial<HrVacationRequestRow> & { id: string }): HrVacationRequestRow {
   return {
+    balance_after_days: null,
+    balance_before_days: null,
     duration_days: 1,
     employee_hr_id: "A-7",
     employee_name: "Test Employee",
