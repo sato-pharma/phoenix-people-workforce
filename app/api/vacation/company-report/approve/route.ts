@@ -8,7 +8,12 @@ import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/vacation/company-vacation-report";
-import { createVacationRequestAsAdmin, isVacationSchemaMissing, vacationErrorMessage } from "@/lib/vacation/service";
+import {
+  createVacationRequestAsAdmin,
+  isVacationSchemaMissing,
+  vacationErrorMessage,
+  validateOfficialHolidayAdjacency,
+} from "@/lib/vacation/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +62,12 @@ export async function POST(request: Request) {
       : requestedDayPart === "am_only" || requestedDayPart === "pm_only"
         ? requestedDayPart
         : "pm_only";
+
+    // Holiday-adjacency guard — the employee self-submit path already blocks a request starting
+    // or ending directly before/after a confirmed national holiday; the admin-create path (which
+    // this route reuses) does not inherit that check, so a CRM signal sitting next to a holiday
+    // needs it applied explicitly here rather than being silently approvable.
+    await validateOfficialHolidayAdjacency({ endDate, startDate });
 
     // Overlap-containment guard (defends against double-deduction). The DB has a unique index on
     // the EXACT tuple (employee_hr_id, start_date, end_date) for active requests, so approving
@@ -122,6 +133,13 @@ export async function POST(request: Request) {
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
+    }
+    if (/national holiday/i.test(message)) {
+      return NextResponse.json({
+        error: "holiday_adjacency",
+        message: `${startDate || "This date"} is directly adjacent to a confirmed national holiday, so it can't be auto-approved as annual leave. Reconcile it manually before recording it. No balance was changed.`,
+        success: false,
+      }, { status: 400 });
     }
     // createVacationRequestAsAdmin recomputes duration from the day part; on a weekly-off day (or
     // any date with no HR working day) that recompute throws a generic "must include at least one
