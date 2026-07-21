@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type AuditEntityType =
   | "attendance_holiday_override"
   | "attendance_settlement"
+  | "attendance_settlement_correction"
   | "auth_session"
   | "calendar_event"
   | "cron_job_control"

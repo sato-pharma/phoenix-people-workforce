@@ -1256,6 +1256,14 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     roles: ["CEO", "Super Admin"],
   },
   {
+    href: "/attendance/employee-day-report",
+    icon: Fingerprint,
+    label: "Employee Day-by-Day Report",
+    description: "One employee, any date range — every calendar day with full detail (why it was skipped, or the late/short/deduction breakdown).",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
     href: "/attendance/monthly-summary",
     icon: CalendarCheck,
     label: "Monthly Summary",
