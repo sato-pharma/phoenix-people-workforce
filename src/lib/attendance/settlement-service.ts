@@ -602,6 +602,117 @@ export async function approveDigestReview(input: {
 }
 
 /**
+ * Corrects one line of an ALREADY-settled digest — e.g. new CRM evidence, or a plain data-entry
+ * fix, discovered after Approve & Settle already ran. Deliberately does NOT touch
+ * attendance_settlements (that ledger is a trigger-enforced, insert-only, unique-per-line record
+ * of what was actually decided and when — a true historical fact, never rewritten). Instead:
+ *   1. Updates the line itself (snapshotting original_* the same way approveDigestReview does).
+ *   2. Recomputes the parent digest's totals by delta.
+ *   3. Supersedes the payroll-governance candidate this line already pushed (insertSettlement's
+ *      one-way trigger, at the original confirm) and — if the corrected amount is still > 0 —
+ *      pushes a fresh one, reusing pushAttendanceSettlementToPayroll exactly as the original
+ *      confirm did, so a corrected amount still reaches payroll and a zeroed one doesn't.
+ * Same reviewer authorization as approveDigestReview (either the HR Manager or the System
+ * Administrator, first to act).
+ */
+export async function correctSettledLine(input: {
+  digestId: number;
+  lineId: number;
+  actorHrId: string;
+  deductionDays: number;
+  deductionValue: number;
+  reason: string;
+}): Promise<void> {
+  const digest = await loadDigest(input.digestId);
+  if (digest.status !== "settled" && digest.status !== "auto_confirmed") {
+    throw new Error(`Forbidden: digest is ${digest.status}, not an already-settled digest.`);
+  }
+
+  const settings = await getDigestSettings();
+  const reviewers = await resolveDisputeReviewers(digest.employee_hr_id, settings);
+  const actor = normalizeAttendanceHrId(input.actorHrId);
+  if (!actor || !reviewers.includes(actor)) {
+    throw new Error("Forbidden: you are not an authorized reviewer for this digest.");
+  }
+
+  const line = await loadLine(input.digestId, input.lineId);
+  if (line.status === "missing_punch") {
+    throw validationError("Missing-punch lines are never corrected here — they go through the missing-punch verification chain.");
+  }
+  if (!Number.isFinite(input.deductionDays) || input.deductionDays < 0) {
+    throw validationError("Deduction days must be zero or a positive number.");
+  }
+  if (!Number.isFinite(input.deductionValue) || input.deductionValue < 0) {
+    throw validationError("Deduction value must be zero or a positive number.");
+  }
+
+  const oldDays = Number(line.deduction_days);
+  const oldValue = Number(line.deduction_value);
+  const wasEdited = input.deductionDays !== oldDays || input.deductionValue !== oldValue || input.reason !== line.reason;
+  if (!wasEdited) return;
+
+  const supabase = getSupabaseAdmin();
+  const { error: editError } = await supabase
+    .from("attendance_digest_lines")
+    .update({
+      deduction_days: input.deductionDays,
+      deduction_value: input.deductionValue,
+      original_deduction_days: line.deduction_days,
+      original_deduction_value: line.deduction_value,
+      original_reason: line.reason,
+      reason: input.reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.lineId)
+    .eq("digest_id", input.digestId);
+  if (editError) throw editError;
+
+  const { data: digestTotalsRow, error: digestReadError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("total_deduction_days,total_deduction_value")
+    .eq("id", input.digestId)
+    .single();
+  if (digestReadError) throw digestReadError;
+  const totals = digestTotalsRow as { total_deduction_days: number; total_deduction_value: number };
+  const { error: totalsError } = await supabase
+    .from("attendance_weekly_digests")
+    .update({
+      total_deduction_days: Number(totals.total_deduction_days) - oldDays + input.deductionDays,
+      total_deduction_value: Number(totals.total_deduction_value) - oldValue + input.deductionValue,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.digestId);
+  if (totalsError) throw totalsError;
+
+  await supabase
+    .from("deduction_candidates")
+    .update({ superseded_at: new Date().toISOString() })
+    .eq("source_module", "ATTENDANCE_DEVICE")
+    .eq("source_record_id", `digest-line-${input.lineId}`)
+    .is("superseded_at", null);
+
+  if (input.deductionDays > 0) {
+    await pushAttendanceSettlementToPayroll({
+      deductionDays: input.deductionDays,
+      digestLineId: input.lineId,
+      employeeHrId: digest.employee_hr_id,
+      lineStatus: line.status as "late" | "short_hours",
+      outcome: "confirmed",
+      workDate: line.work_date,
+    });
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: String(input.lineId),
+    entityType: "attendance_settlement_correction",
+    newValues: { deductionDays: input.deductionDays, deductionValue: input.deductionValue, reason: input.reason },
+    oldValues: { deductionDays: oldDays, deductionValue: oldValue, reason: line.reason },
+    summary: `Already-settled digest line corrected for ${digest.employee_hr_id} on ${line.work_date} by ${input.actorHrId}`,
+  });
+}
+
+/**
  * Shared by approveDigestReview and forceSettleSentDigests: settles every
  * still-pending deductible line for a digest as an Admin decision, via the
  * same insertSettlement path employee-confirm/auto-confirm use (so payroll

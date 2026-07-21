@@ -229,21 +229,11 @@ export type PendingDigestReviewView = DigestSummaryView & {
   lines: DigestLineView[];
 };
 
-/**
- * Every digest currently held for admin review — a real deduction was found
- * but it has NOT reached the employee yet. This is the admin's whole-company
- * queue, distinct from listMyDigests (self) and listOpenDisputes (post-send).
- */
-export async function listPendingDigestReviews(): Promise<PendingDigestReviewView[]> {
-  const supabase = getSupabaseAdmin();
-  const { data: digestRows, error: digestError } = await supabase
-    .from("attendance_weekly_digests")
-    .select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
-    .eq("status", "pending_admin_review")
-    .order("week_start", { ascending: true });
-  if (digestError) throw digestError;
-  const digests = (digestRows ?? []) as Array<Record<string, unknown>>;
+/** Shared by listPendingDigestReviews and listSettledDigestReviews: fetches each digest's
+ * lines and joins the employee's display name onto an already-fetched digest-row set. */
+async function buildDigestReviewViews(digests: Array<Record<string, unknown>>): Promise<PendingDigestReviewView[]> {
   if (digests.length === 0) return [];
+  const supabase = getSupabaseAdmin();
 
   const digestIds = digests.map((row) => Number(row.id));
   const { data: lineRows, error: linesError } = await supabase
@@ -281,4 +271,40 @@ export async function listPendingDigestReviews(): Promise<PendingDigestReviewVie
       lines: linesByDigest.get(Number(row.id)) ?? [],
     };
   });
+}
+
+/**
+ * Every digest currently held for admin review — a real deduction was found
+ * but it has NOT reached the employee yet. This is the admin's whole-company
+ * queue, distinct from listMyDigests (self) and listOpenDisputes (post-send).
+ */
+export async function listPendingDigestReviews(): Promise<PendingDigestReviewView[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: digestRows, error: digestError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
+    .eq("status", "pending_admin_review")
+    .order("week_start", { ascending: true });
+  if (digestError) throw digestError;
+  return buildDigestReviewViews((digestRows ?? []) as Array<Record<string, unknown>>);
+}
+
+/**
+ * Every already-decided digest that carries a real deduction — the same row shape as the
+ * pending-review inbox (name, date, late/short minutes, editable Days/Value/Reason), for the
+ * digests that already went through Approve & Settle (or force-settle / recover-voided) and
+ * so no longer show up in listPendingDigestReviews. Lets an admin find and correct a specific
+ * already-settled line without going through raw SQL — owner rule 2026-07-21: the decision
+ * report must show this shape for every real deduction, not just the ones still pending.
+ */
+export async function listSettledDigestReviews(): Promise<PendingDigestReviewView[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: digestRows, error: digestError } = await supabase
+    .from("attendance_weekly_digests")
+    .select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,sent_at,auto_confirm_at,total_deduction_days,total_deduction_value,currency")
+    .in("status", ["settled", "auto_confirmed"])
+    .gt("total_deduction_value", 0)
+    .order("week_start", { ascending: false });
+  if (digestError) throw digestError;
+  return buildDigestReviewViews((digestRows ?? []) as Array<Record<string, unknown>>);
 }
