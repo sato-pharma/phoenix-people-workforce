@@ -17,6 +17,7 @@ import {
   Gift,
   Headphones,
   Home,
+  IdCard,
   Inbox,
   type LucideIcon,
   MapPinned,
@@ -64,6 +65,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
+  { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },

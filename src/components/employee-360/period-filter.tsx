@@ -20,13 +20,16 @@ export function PeriodFilter({
   activeKey,
   from,
   to,
+  basePath,
 }: {
   hrId: string;
   activeKey: PeriodKey;
   from: string;
   to: string;
+  /** Override the link base (e.g. the employee-portal's self-service route, which has no /[hrId] segment). Defaults to the admin detail route. */
+  basePath?: string;
 }) {
-  const base = `/employee-360/${encodeURIComponent(hrId)}`;
+  const base = basePath ?? `/employee-360/${encodeURIComponent(hrId)}`;
   return (
     <div className="flex flex-col gap-3 rounded-[16px] border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap gap-1.5">
