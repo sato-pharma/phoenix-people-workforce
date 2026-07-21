@@ -46,8 +46,8 @@ export function LineTopAchieversCard({
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="whitespace-nowrap text-sm font-bold text-slate-900">{achiever.name}</p>
-                    <p className="whitespace-nowrap text-[11px] text-slate-400">{achiever.areaName ?? "—"}</p>
+                    <p className="truncate text-sm font-bold text-slate-900" title={achiever.name}>{achiever.name}</p>
+                    <p className="truncate text-[11px] text-slate-400">{achiever.areaName ?? "—"}</p>
                   </div>
                   <span className={`whitespace-nowrap text-base font-black tabular-nums ${achievementColor(achiever.achievementPercent)}`}>
                     {achiever.achievementPercent.toFixed(1)}%

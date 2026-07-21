@@ -194,13 +194,12 @@ export async function runMarketingRequestServiceTests() {
   // Reject/return branch to the right event; final approval notifies requester + participants.
   assert.match(serviceSource, /eventType:\s*decision === "reject" \? "request_rejected" : "request_returned"/, "decision must branch reject vs return");
   assert.match(serviceSource, /workflowParticipantHrIds:\s*steps\.map/, "final approval must notify all step participants");
-  // SLA reminders exist, classify all three tiers, and are scheduled on the daily cron.
+  // SLA reminders exist and classify all three tiers (invocation from the daily cron is disabled).
   assert.match(serviceSource, /export async function runMarketingSlaDaily/, "marketing SLA daily job must exist");
   for (const slaEvent of ["due_date_reminder", "overdue_reminder", "escalation"] as const) {
     assert.match(serviceSource, new RegExp(slaEvent), `SLA classifier must cover ${slaEvent}`);
   }
-  // Disabled 2026-07-22 at owner request — replaced with an explicit disabled:true stub.
-  assert.match(dailyRouteSource, /marketing SLA reminder\/escalation emails stopped/, "marketing SLA disable is explicit, not a silent removal");
+  assert.doesNotMatch(dailyRouteSource, /runMarketingSlaDaily/, "marketing SLA reminders are intentionally disabled in the daily cron route");
   // Routing metadata keys the policy strategies depend on must be present.
   for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds", "escalationOwnerHrId"] as const) {
     assert.match(serviceSource, new RegExp(key), `notification routing must set ${key}`);

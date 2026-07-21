@@ -346,10 +346,10 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
         <Link
           key={i}
           href={action.href}
-          className="flex min-h-[48px] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-[11px]"
+          className="flex min-h-[48px] min-w-0 items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-[11px]"
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
-          <span className="whitespace-nowrap">{action.label}</span>
+          <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>
         </Link>
       ))}
     </div>
@@ -502,9 +502,12 @@ export function RankingPanel({
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
                   <div className="min-w-0">
-                    <p className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.name}</p>
+                    <p className="truncate text-sm font-semibold text-slate-800" title={row.name}>{row.name}</p>
                     {showManager && row.managerName ? (
-                      <p className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      <p
+                        className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-400"
+                        title={row.managerName}
+                      >
                         {row.managerName}
                       </p>
                     ) : null}

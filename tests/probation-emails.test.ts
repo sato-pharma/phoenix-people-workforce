@@ -112,8 +112,7 @@ export function runProbationEmailsTests() {
   const cron = src("src/lib/notifications/scheduled-processing.ts");
   assert.match(cron, /processProbationMilestoneEmails\(\)/, "milestone sweep wired into the notifications cron");
   const dailyRoute = src("app/api/notifications/daily/route.ts");
-  // Disabled 2026-07-22 at owner request — replaced with an explicit disabled:true stub.
-  assert.match(dailyRoute, /probation weekly Double-Visit digest stopped/, "weekly digest disable is explicit, not a silent removal");
+  assert.doesNotMatch(dailyRoute, /processProbationWeeklyDigest\(\)/, "weekly Double-Visit digest is intentionally disabled in the daily notifications cron");
 
   // ── FRESH START (owner directive 2026-07-17): no catch-up emails on re-enable ──
   // Behavioral: the cutoff helpers classify pre-reset vs post-reset activity correctly.

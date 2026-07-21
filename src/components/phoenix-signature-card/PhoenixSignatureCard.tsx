@@ -23,25 +23,63 @@ export function PhoenixSignatureCard({
   const titleLabel = title.trim().toUpperCase() || "PHOENIX WORKFORCE";
   const sigName = prefix ? `${prefix} ${signatureNameFor(name)}` : signatureNameFor(name);
   const nameRef = useRef<HTMLSpanElement>(null);
+  const nameBoxRef = useRef<HTMLParagraphElement>(null);
   const [nameWidth, setNameWidth] = useState<number | null>(null);
+  const [nameFontPx, setNameFontPx] = useState<number | null>(null);
   const mobileNameRef = useRef<HTMLSpanElement>(null);
+  const mobileNameBoxRef = useRef<HTMLParagraphElement>(null);
   const [mobileNameWidth, setMobileNameWidth] = useState<number | null>(null);
+  const [mobileNameFontPx, setMobileNameFontPx] = useState<number | null>(null);
 
+  // Long full names (script font, one line, no wrap) can render wider than the
+  // card allows — shrink-to-fit by actual measured width instead of clipping
+  // silently. Scale-invariant: divides by the font-size that produced the
+  // current measurement, so it converges without oscillating.
   useEffect(() => {
-    if (!nameRef.current) return;
-    const measure = () => setNameWidth(nameRef.current!.offsetWidth);
+    const span = nameRef.current;
+    const box = nameBoxRef.current;
+    if (!span || !box) return;
+    const measure = () => {
+      // getBoundingClientRect, not scrollWidth/offsetWidth — those are
+      // unreliable (often 0) on a plain `display: inline` element.
+      const containerWidth = box.getBoundingClientRect().width;
+      const naturalWidth = span.getBoundingClientRect().width;
+      const currentPx = parseFloat(getComputedStyle(span).fontSize) || 16;
+      if (containerWidth > 0 && naturalWidth > containerWidth) {
+        const widthPerPx = naturalWidth / currentPx;
+        setNameFontPx(Math.max((containerWidth / widthPerPx) * 0.97, currentPx * 0.4));
+      } else if (containerWidth > 0 && naturalWidth < containerWidth * 0.92) {
+        setNameFontPx(null);
+      }
+      setNameWidth(naturalWidth);
+    };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(nameRef.current);
+    ro.observe(box);
+    document.fonts?.ready?.then(measure).catch(() => {});
     return () => ro.disconnect();
   }, [sigName]);
 
   useEffect(() => {
-    if (!mobileNameRef.current) return;
-    const measure = () => setMobileNameWidth(mobileNameRef.current!.offsetWidth);
+    const span = mobileNameRef.current;
+    const box = mobileNameBoxRef.current;
+    if (!span || !box) return;
+    const measure = () => {
+      const containerWidth = box.getBoundingClientRect().width;
+      const naturalWidth = span.getBoundingClientRect().width;
+      const currentPx = parseFloat(getComputedStyle(span).fontSize) || 16;
+      if (containerWidth > 0 && naturalWidth > containerWidth) {
+        const widthPerPx = naturalWidth / currentPx;
+        setMobileNameFontPx(Math.max((containerWidth / widthPerPx) * 0.97, currentPx * 0.4));
+      } else if (containerWidth > 0 && naturalWidth < containerWidth * 0.92) {
+        setMobileNameFontPx(null);
+      }
+      setMobileNameWidth(naturalWidth);
+    };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(mobileNameRef.current);
+    ro.observe(box);
+    document.fonts?.ready?.then(measure).catch(() => {});
     return () => ro.disconnect();
   }, [sigName]);
 
@@ -142,16 +180,18 @@ export function PhoenixSignatureCard({
         >
           {/* Signature name */}
           <p
+            ref={mobileNameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
               fontStyle: "italic",
               fontWeight: 500,
               color: "#2a3a5c",
-              fontSize: "clamp(20px, 6.6vw, 34px)",
+              fontSize: mobileNameFontPx ? `${mobileNameFontPx}px` : "clamp(20px, 6.6vw, 34px)",
               lineHeight: 1.1,
               margin: 0,
               whiteSpace: "nowrap",
               overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
           >
             <span ref={mobileNameRef} style={{ display: "inline" }}>{sigName}</span>
@@ -247,8 +287,16 @@ export function PhoenixSignatureCard({
         style={{ left: "26%", top: "42%", right: "4%" }}
       >
         <p
+          ref={nameBoxRef}
           className="italic font-medium text-[#2a3a5c]"
-          style={{ fontFamily: '"Pinyon Script", cursive', fontSize: "clamp(1.1rem, 3.8cqw, 4.2rem)", lineHeight: 1.1 }}
+          style={{
+            fontFamily: '"Pinyon Script", cursive',
+            fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.1rem, 3.8cqw, 4.2rem)",
+            lineHeight: 1.1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           <span ref={nameRef} style={{ display: "inline" }}>{sigName}</span>
         </p>
