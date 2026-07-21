@@ -12,6 +12,8 @@ function base(overrides: Partial<ReconcileInput> = {}): ReconcileInput {
     planSaysOffice: null,
     hasPunch: true,
     deviceOutage: false,
+    hasCrmLeave: false,
+    hasCrmFieldVisit: false,
     ...overrides,
   };
 }
@@ -81,5 +83,34 @@ export function runAttendanceDigestReconcileTests() {
     reconcileDay(base({ deviceOutage: true, hasPunch: true })).action,
     "skip",
     "an outage day is skipped even if this employee happens to have a punch (company-wide signal wins)",
+  );
+
+  // --- CRM awareness (2026-07-21): universal cancels, both tiers ---
+  assert.equal(
+    reconcileDay(base({ hasCrmLeave: true })).action,
+    "skip",
+    "a CRM-recorded leave day is skipped even with no matching Phoenix vacation_requests row",
+  );
+  assert.equal(
+    reconcileDay(base({ hasCrmFieldVisit: true, hasPunch: false })).action,
+    "skip",
+    "tier-1, no office punch, but a real CRM field visit that day — skipped, not a missing-punch line",
+  );
+  assert.equal(
+    t2({ planSaysOffice: true, hasPunch: false, hasCrmFieldVisit: true }).action,
+    "skip",
+    "a real CRM field visit cancels even a tier-2 office no-show flag",
+  );
+  assert.equal(
+    t2({ planSaysOffice: null, hasCrmLeave: true }).action,
+    "skip",
+    "CRM leave cancels a tier-2 day regardless of plan/no-plan",
+  );
+  // Precedence: CRM signals are universal cancels, so they still win even when
+  // a punch also exists that day (e.g. a half-day office stop before a field visit).
+  assert.equal(
+    reconcileDay(base({ hasCrmFieldVisit: true, hasPunch: true })).action,
+    "skip",
+    "a real CRM field visit cancels judgment even if a punch also exists that day",
   );
 }
