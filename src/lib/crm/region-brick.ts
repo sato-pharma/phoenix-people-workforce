@@ -41,28 +41,30 @@ type MutableUnmappedRegion = {
   visitCount: number;
 };
 
-/**
- * Every distinct crm_region_id that does not yet have a "mapped" resolution — a punch-list for an
- * admin to assign a real Phoenix brick to, ranked by visit volume (highest first) so the busiest
- * localities get attention first. Not date-scoped on purpose, same reasoning as
- * getUnmappedCrmIdentities: the goal is every region that still needs a decision, not just ones
- * active in a chosen window. Keyset-paginated (id > cursor), not OFFSET — same reason as the
- * unmapped-identities scan (a narrow WHERE clause degrades badly under OFFSET pagination).
- */
-export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
+type StoredResolution = { brickId: string | null; status: string };
+
+/** Every stored resolution decision, keyed by crm_region_id. Returns an empty map (never throws)
+ * before the migration ships, matching the identity-resolutions read pattern. */
+async function loadResolutionsByRegionId(): Promise<Map<number, StoredResolution>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from(resolutionsTable).select("crm_region_id, brick_id, status");
+  if (error) {
+    if (isCrmSchemaMissingError(error)) return new Map();
+    throw new Error(error.message);
+  }
+  const map = new Map<number, StoredResolution>();
+  for (const row of (data ?? []) as Array<{ brick_id: string | null; crm_region_id: number; status: string }>) {
+    map.set(row.crm_region_id, { brickId: row.brick_id, status: row.status });
+  }
+  return map;
+}
+
+/** Full keyset scan (id > cursor) of every distinct crm_region_id in ireports360_visits, with its
+ * display name, visit count, and first/last-seen dates. The single scan both getUnmappedCrmRegions
+ * and getAllCrmRegionsForTemplate build on, so the two can never disagree about what regions exist. */
+async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> {
   const supabase = getSupabaseAdmin();
   const regions = new Map<number, MutableUnmappedRegion>();
-
-  const { data: resolutions, error: resolutionsError } = await supabase
-    .from(resolutionsTable)
-    .select("crm_region_id, status");
-  if (resolutionsError && !isCrmSchemaMissingError(resolutionsError)) throw new Error(resolutionsError.message);
-  const resolvedIds = new Set<number>(
-    ((resolutions ?? []) as Array<{ crm_region_id: number; status: string }>)
-      .filter((r) => r.status === "mapped" || r.status === "ignored")
-      .map((r) => r.crm_region_id),
-  );
-
   const pageSize = 1000;
   let cursor: string | null = null;
   for (;;) {
@@ -75,7 +77,7 @@ export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
     if (cursor) query = query.gt("id", cursor);
     const { data, error } = await query;
     if (error) {
-      if (isCrmSchemaMissingError(error)) return [];
+      if (isCrmSchemaMissingError(error)) return regions;
       throw new Error(error.message);
     }
     const page = (data ?? []) as Array<{ crm_region_id: number; crm_region_name: string | null; id: string; visit_date: string }>;
@@ -98,9 +100,54 @@ export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
     if (page.length < pageSize) break;
     cursor = page[page.length - 1].id;
   }
+  return regions;
+}
 
+/**
+ * Every distinct crm_region_id that does not yet have a "mapped" resolution — a punch-list for an
+ * admin to assign a real Phoenix brick to, ranked by visit volume (highest first) so the busiest
+ * localities get attention first. Not date-scoped on purpose, same reasoning as
+ * getUnmappedCrmIdentities: the goal is every region that still needs a decision, not just ones
+ * active in a chosen window.
+ */
+export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
+  const [regions, resolutions] = await Promise.all([scanAllCrmRegions(), loadResolutionsByRegionId()]);
   return Array.from(regions.values())
-    .filter((region) => !resolvedIds.has(region.crmRegionId))
+    .filter((region) => {
+      const status = resolutions.get(region.crmRegionId)?.status;
+      return status !== "mapped" && status !== "ignored";
+    })
+    .sort((a, b) => b.visitCount - a.visitCount);
+}
+
+/** One row of the full download template: every CRM region ever seen, with its current
+ * resolution (if any) — used by the Region Mapping tab's "Download Template" export so an admin
+ * can bulk-edit/correct every region (not just unmapped ones) in one spreadsheet. */
+export type CrmRegionTemplateRow = {
+  brickId: string | null;
+  crmRegionId: number;
+  crmRegionName: string;
+  status: string;
+  visitCount: number;
+};
+
+/** Every distinct CRM region ever seen, each annotated with its current resolution status/brick_id
+ * (or "pending"/null when never resolved) — the full punch-list for the downloadable template,
+ * unlike getUnmappedCrmRegions which only lists the ones still needing a decision. Sorted by visit
+ * volume (highest first), same ranking rationale. */
+export async function getAllCrmRegionsForTemplate(): Promise<CrmRegionTemplateRow[]> {
+  const [regions, resolutions] = await Promise.all([scanAllCrmRegions(), loadResolutionsByRegionId()]);
+  return Array.from(regions.values())
+    .map((region) => {
+      const resolution = resolutions.get(region.crmRegionId);
+      return {
+        brickId: resolution?.brickId ?? null,
+        crmRegionId: region.crmRegionId,
+        crmRegionName: region.crmRegionName,
+        status: resolution?.status ?? "pending",
+        visitCount: region.visitCount,
+      };
+    })
     .sort((a, b) => b.visitCount - a.visitCount);
 }
 
@@ -157,4 +204,117 @@ export async function setCrmRegionBrickResolution(input: {
   if (upsertError) throw new Error(upsertError.message);
 
   return { areaId: resolvedAreaId, brickId: resolvedBrickId, regionId: resolvedRegionId };
+}
+
+/** One parsed row from an uploaded region-mapping spreadsheet, before validation. Column-parsing
+ * (locating headers, reading cell text) lives in the API route; this service only deals in plain
+ * values so it stays testable without ExcelJS/File in scope. */
+export type CrmRegionBulkImportInputRow = {
+  brickId: string;
+  crmRegionId: number;
+  crmRegionName: string;
+  row: number;
+  statusText: string;
+};
+
+export type CrmRegionBulkImportBlockedRow = { crmRegionId: number; reason: string; row: number };
+
+export type CrmRegionBulkImportResult = {
+  blockedRows: CrmRegionBulkImportBlockedRow[];
+  ignored: number;
+  mapped: number;
+  skipped: number;
+  totalRead: number;
+};
+
+const BULK_IMPORT_CHUNK = 500;
+
+/** True for status text that means "mark this region ignored" (case/whitespace-insensitive). */
+function isIgnoredStatusText(statusText: string): boolean {
+  const normalized = statusText.trim().toLowerCase();
+  return normalized === "ignore" || normalized === "ignored";
+}
+
+/**
+ * Bulk-applies a whole parsed spreadsheet of CRM-region -> brick decisions in one call — the
+ * "Upload Mapping" counterpart to the Region Mapping tab's one-row-at-a-time resolver. Each row:
+ *   - Brick ID present -> validated against the real brick master (source_of_sales_bricks, must be
+ *     active); invalid/unknown/inactive brick ids are rejected into blockedRows rather than
+ *     silently skipped, so a typo is visible in the summary instead of quietly doing nothing.
+ *   - Brick ID blank + Status says ignore/ignored -> resolved as "ignored".
+ *   - Brick ID blank + no ignore status -> skipped (no change) — a blank row never resets an
+ *     existing decision back to pending; use the single-row "Keep Pending" action for that.
+ * Validates every brick_id against ONE batch-fetched active-brick set (not one query per row) —
+ * the brick master is small (~400 rows) and this can process hundreds of regions per upload.
+ */
+export async function bulkImportCrmRegionBrickMappings(input: {
+  resolvedByHrId: string | null;
+  rows: CrmRegionBulkImportInputRow[];
+}): Promise<CrmRegionBulkImportResult> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: bricks, error: bricksError } = await supabase
+    .from("source_of_sales_bricks")
+    .select("brick_id, active");
+  if (bricksError) throw new Error(bricksError.message);
+  const activeBrickIds = new Set(
+    ((bricks ?? []) as Array<{ active: boolean; brick_id: string }>)
+      .filter((b) => b.active)
+      .map((b) => b.brick_id),
+  );
+  const allBrickIds = new Set(((bricks ?? []) as Array<{ brick_id: string }>).map((b) => b.brick_id));
+
+  const blockedRows: CrmRegionBulkImportBlockedRow[] = [];
+  const upserts: Record<string, unknown>[] = [];
+  let skipped = 0;
+  let ignored = 0;
+  const stamp = new Date().toISOString();
+
+  for (const row of input.rows) {
+    const brickId = row.brickId.trim();
+    if (!brickId) {
+      if (isIgnoredStatusText(row.statusText)) {
+        ignored += 1;
+        upserts.push({
+          brick_id: null,
+          crm_region_id: row.crmRegionId,
+          crm_region_name: row.crmRegionName || null,
+          resolved_at: stamp,
+          resolved_by_hr_id: input.resolvedByHrId,
+          status: "ignored",
+          updated_at: stamp,
+        });
+      } else {
+        skipped += 1;
+      }
+      continue;
+    }
+    if (!allBrickIds.has(brickId)) {
+      blockedRows.push({ crmRegionId: row.crmRegionId, reason: `Brick ID "${brickId}" does not exist in the brick master.`, row: row.row });
+      continue;
+    }
+    if (!activeBrickIds.has(brickId)) {
+      blockedRows.push({ crmRegionId: row.crmRegionId, reason: `Brick ID "${brickId}" exists but is not active.`, row: row.row });
+      continue;
+    }
+    upserts.push({
+      brick_id: brickId,
+      crm_region_id: row.crmRegionId,
+      crm_region_name: row.crmRegionName || null,
+      resolved_at: stamp,
+      resolved_by_hr_id: input.resolvedByHrId,
+      status: "mapped",
+      updated_at: stamp,
+    });
+  }
+
+  let mapped = 0;
+  for (let index = 0; index < upserts.length; index += BULK_IMPORT_CHUNK) {
+    const chunk = upserts.slice(index, index + BULK_IMPORT_CHUNK);
+    const { error } = await supabase.from(resolutionsTable).upsert(chunk, { onConflict: "crm_region_id" });
+    if (error) throw new Error(error.message);
+    mapped += chunk.filter((c) => c.status === "mapped").length;
+  }
+
+  return { blockedRows, ignored, mapped, skipped, totalRead: input.rows.length };
 }
