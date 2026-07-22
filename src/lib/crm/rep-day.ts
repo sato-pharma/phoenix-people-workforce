@@ -133,11 +133,14 @@ type RepDayVisitMirrorRow = {
   comment: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
+  crm_region_id: number | null;
+  crm_region_name: string | null;
   crm_save_date: string | null;
   crm_visit_id: number;
   customer_name: string | null;
   double_crm_id: number | null;
   double_name: string | null;
+  speciality: string | null;
   visit_date: string;
   visit_type: number;
   visit_type_description: string | null;
@@ -159,7 +162,10 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): IReports360Visit {
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: row.crm_visit_id,
+    region: row.crm_region_name,
+    regionID: row.crm_region_id,
     saveDate: row.crm_save_date,
+    speciality: row.speciality,
     visitDate: row.visit_date,
     visitType: row.visit_type,
     visitTypeDescription: row.visit_type_description,
@@ -254,7 +260,9 @@ async function fetchRepDayFromMirror(
   const { data, error } = await supabase
     .from(CRM_VISITS_TABLE)
     .select(
-      "agent_crm_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, double_name, visit_date, visit_type, visit_type_description",
+      "agent_crm_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
+        "crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, double_name, " +
+        "speciality, visit_date, visit_type, visit_type_description",
     )
     .eq("visit_date", day)
     .or(`agent_crm_id.eq.${agentId},double_crm_id.eq.${agentId}`);

@@ -203,6 +203,9 @@ export const accessRegistry = [
   // CRM master table XLSX export: returns all rows for the current dataset+filters. Super-Admin-gated
   // inline (same as the /admin/crm page), so guarded by the domain helper, not the permission matrix.
   sessionApi({ methods: ["GET"], pattern: "/api/admin/crm/master-export", permission: null, guard: "domain-helper" }),
+  // Region Mapping tab resolver: assigns a CRM region to a real Phoenix brick. Same posture as
+  // resolve-identity above — checks access.role === "Super Admin" directly.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/resolve-region", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/field-workforce-compliance/**", permission: { resource: "hr_calendar", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions-governance/decisions", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions-governance/finalize", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
