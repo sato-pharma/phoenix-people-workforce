@@ -9,6 +9,13 @@ Sentry.init({
     process.env.NEXT_PUBLIC_SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // Without this, local `next dev` and production share one bucket in Sentry — dev-only
+  // noise (e.g. transient Fast Refresh/webpack HMR glitches) shows up as "High priority"
+  // production issues (confirmed: PHX-B9-4/5/6 were all local dev-server errors). NODE_ENV
+  // is one of the few env vars Next.js always inlines into the client bundle too, so this
+  // needs no new build-time ARG/ENV plumbing.
+  environment: process.env.NODE_ENV === "development" ? "development" : "production",
+
   // NEXT_PUBLIC_COMMIT_SHA is baked in at build time (see Dockerfile) — matches the
   // same $SHA_TAG used for next.config.ts's withSentryConfig release + the server/edge
   // configs' runtime COMMIT_SHA, so all three agree on one release identifier.

@@ -10,6 +10,19 @@ Sentry.init({
     process.env.SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // Without this, local `next dev` and production share one bucket in Sentry — dev-only
+  // noise (e.g. transient Fast Refresh/webpack HMR glitches) shows up as "High priority"
+  // production issues (confirmed: PHX-B9-4/5/6 were all local dev-server errors).
+  // K_SERVICE is Cloud Run's auto-injected service name — "phoenix-hr-staging" for
+  // staging, "phoenix-hr" for production (both run the identical built image; NODE_ENV
+  // alone can't tell them apart since staging reuses the prod build).
+  environment:
+    process.env.NODE_ENV !== "production"
+      ? "development"
+      : process.env.K_SERVICE === "phoenix-hr-staging"
+        ? "staging"
+        : "production",
+
   // COMMIT_SHA is set as a runtime env var at deploy time (deploy-cloud-run.yml/
   // deploy-cloud-run-staging.yml); NEXT_PUBLIC_COMMIT_SHA is the build-time fallback.
   // Both carry the same $SHA_TAG value from the same workflow run.
