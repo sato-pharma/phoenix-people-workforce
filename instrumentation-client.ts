@@ -14,8 +14,11 @@ Sentry.init({
   // configs' runtime COMMIT_SHA, so all three agree on one release identifier.
   release: process.env.NEXT_PUBLIC_COMMIT_SHA,
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+  // Add optional integrations for additional features.
+  // feedbackIntegration is registered with autoInject: false — it does NOT show a floating
+  // widget globally. src/components/admin/sentry-feedback-widget.tsx manually mounts it only
+  // within the admin/ops shell (app/(admin)/layout.tsx), never on employee-facing pages.
+  integrations: [Sentry.replayIntegration(), Sentry.feedbackIntegration({ autoInject: false })],
 
   // 100% in dev catches everything locally; 20% in production balances trace coverage
   // against ingest volume/cost. Adjust further with tracesSampler if specific routes
