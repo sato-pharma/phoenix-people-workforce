@@ -1,9 +1,16 @@
 // Next.js instrumentation hook. Forwards server-side request errors (App Router)
 // to our own self-hosted app_error_events table (see src/lib/error-monitor/service.ts)
-// so crashes stay queryable by HR ID/module.
+// AND to Sentry, so crashes stay queryable by HR ID/module and alertable via Sentry.
+
+import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
-  // Edge and Node configs can go here if needed in the future
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./sentry.server.config");
+  }
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
 }
 
 // Deliberately avoids importing any server-only module (session/crypto code
@@ -56,11 +63,11 @@ async function forwardServerErrorToIngestion(
 }
 
 // Captures errors thrown in nested React Server Components / route handlers —
-// forwards to our own error table.
-export async function onRequestError(
-  error: unknown,
-  request: { headers?: Record<string, string | string[] | undefined>; path?: string },
-  context: { routeType?: string },
-) {
-  await forwardServerErrorToIngestion(error, request, context);
+// forwards to our own error table AND to Sentry.
+export async function onRequestError(...args: Parameters<typeof Sentry.captureRequestError>) {
+  const [error, request, context] = args;
+  await Promise.all([
+    forwardServerErrorToIngestion(error, request, context),
+    Sentry.captureRequestError(error, request, context),
+  ]);
 }
