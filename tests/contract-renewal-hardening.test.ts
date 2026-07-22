@@ -56,7 +56,8 @@ export function runContractRenewalHardeningTests() {
   assert.doesNotMatch(reminderRoute, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.doesNotMatch(reminderRoute, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from contract renewals");
   assert.match(reminderRoute, /managerOfManager/);
-  assert.match(reminderRoute, /actionUrl = "\/contracts\/renewals"/);
+  assert.match(reminderRoute, /actionUrl = "\/contracts"/);
+  assert.doesNotMatch(reminderRoute, /actionUrl = "\/contracts\/renewals"/, "\"/contracts/renewals\" is not a real route and 404s for every recipient");
   assert.doesNotMatch(reminderRoute, /recipientHrId:/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");

@@ -106,7 +106,10 @@ export async function runContractRenewalNotifications(request: Request) {
     const managerOfManager = managerOf(directManager, employeesByHrId);
     const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId, hrApproverHrIds);
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
-    const actionUrl = "/contracts/renewals";
+    // "/contracts" is the real Contract Renewal page (app/(admin)/contracts/page.tsx); the
+    // page itself redirects any viewer lacking the "contracts" permission to /employee-portals
+    // instead of erroring. "/contracts/renewals" never existed as a route and 404'd for everyone.
+    const actionUrl = "/contracts";
     // Isolated per employee: one bad send (e.g. a transient email/network error) must not abort
     // the loop and skip every remaining employee's contract-renewal reminder for today.
     try {
