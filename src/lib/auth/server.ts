@@ -1,4 +1,5 @@
 import { cache } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 import {
   parseRoleStrict,
@@ -381,7 +382,16 @@ export async function resolveSessionAccessContext(token: string | null | undefin
   return state?.access ?? null;
 }
 
-export async function resolveAccessContext(request: Request): Promise<AccessContext> {
+// Tags the current Sentry scope with the resolved HR_ID only — never email/name/loginId.
+// This is deliberately narrow: HR_ID is an internal employee code, not PII like an email
+// address, and it's the minimum needed to unlock "Users Affected" counts on Sentry issues.
+// Adding this back is a scoped exception to the dataCollection PII lockdown (see
+// instrumentation-client.ts et al.), not a reversal of it.
+function tagSentryUser(access: AccessContext) {
+  Sentry.setUser(access.hrId ? { id: access.hrId } : null);
+}
+
+async function resolveAccessContextInner(request: Request): Promise<AccessContext> {
   const cookieHeader = request.headers.get("cookie");
   const sessionContext = await resolveSessionAccessContext(
     getCookieValue(cookieHeader, phoenixSessionCookieName),
@@ -418,13 +428,19 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   });
 }
 
+export async function resolveAccessContext(request: Request): Promise<AccessContext> {
+  const access = await resolveAccessContextInner(request);
+  tagSentryUser(access);
+  return access;
+}
+
 // Per-request memoized: the admin/portal layout, the page it renders, and AppShell all resolve the
 // access context on the same request. React cache() dedupes them to ONE session validation + one
 // set of employees/app_auth_users reads per request (was re-run per call → the bulk of the ~154k
 // employee reads). cache() is request-scoped, so it never leaks a session across requests and stays
 // correct under force-dynamic; the session-version / role / active / lifecycle checks still run
 // (once) and their rejection audits still fire (once).
-export const resolveAccessContextFromPage = cache(async (): Promise<AccessContext> => {
+const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext> => {
   const cookieStore = await cookies();
   const headerStore = await headers();
   const cookieValue = cookieStore.get(phoenixSessionCookieName)?.value;
@@ -460,6 +476,12 @@ export const resolveAccessContextFromPage = cache(async (): Promise<AccessContex
     source: "dev-header",
   });
 });
+
+export async function resolveAccessContextFromPage(): Promise<AccessContext> {
+  const access = await resolveAccessContextFromPageInner();
+  tagSentryUser(access);
+  return access;
+}
 
 function buildInitials(input: string) {
   const parts = input
