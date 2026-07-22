@@ -1,15 +1,11 @@
-// Digest cycle + settlement-week tiling for the weekly-digest model.
+// Payroll cycle window math for Payroll Copilot.
 //
-// Owner-confirmed (2026-07-03):
-//   • The payroll/fingerprint month runs day-24 -> day-24 (anchor configurable,
-//     attendance_digest_settings.cycle_anchor_day, default 24).
-//   • Each cycle is tiled into EXACTLY four settlement weeks. Weeks 1-3 are seven
-//     days; week 4 absorbs the remaining days up to the cycle end, so all four
-//     digests land and settle before the cut-off.
+// Owner-confirmed (2026-07-03): the payroll/fingerprint month runs
+// day-24 -> day-24 (anchor day fixed, see PAYROLL_CYCLE_ANCHOR_DAY below).
 //
 // Pure calendar arithmetic (UTC, no timezone) so it is deterministic and testable.
 
-export type DigestCycle = {
+export type CycleWindow = {
   /** 'YYYY-MM' of the month the cycle ends in (the "July cycle" ends 23 Jul). */
   cycleKey: string;
   /** Inclusive ISO start date (the anchor day of the previous month). */
@@ -19,12 +15,7 @@ export type DigestCycle = {
   anchorDay: number;
 };
 
-export type SettlementWeek = {
-  /** 1..4 */
-  index: number;
-  startIso: string;
-  endIso: string;
-};
+export const PAYROLL_CYCLE_ANCHOR_DAY = 24;
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -56,7 +47,7 @@ export function inclusiveDayCount(startIso: string, endIso: string): number {
  * A date on/after the anchor day belongs to the cycle starting that month;
  * a date before it belongs to the cycle that started the previous month.
  */
-export function resolveDigestCycle(dateIso: string, anchorDay = 24): DigestCycle {
+export function resolveCycleWindow(dateIso: string, anchorDay = PAYROLL_CYCLE_ANCHOR_DAY): CycleWindow {
   const [year, month, day] = dateIso.split("-").map(Number);
 
   let startYear = year;
@@ -86,38 +77,4 @@ export function resolveDigestCycle(dateIso: string, anchorDay = 24): DigestCycle
     endIso,
     anchorDay,
   };
-}
-
-/**
- * Tile a cycle into exactly four settlement weeks. Weeks 1-3 are seven days;
- * week 4 runs from day 22 of the cycle to the cycle end (absorbing the extras).
- */
-export function tileSettlementWeeks(cycle: DigestCycle): SettlementWeek[] {
-  const weeks: SettlementWeek[] = [];
-  let weekStart = cycle.startIso;
-
-  for (let index = 1; index <= 3; index += 1) {
-    const weekEnd = addDays(weekStart, 6);
-    // Never run a fixed week past the cycle end (defensive; real 24->24 cycles
-    // are ~30 days so this clamp does not trigger in practice).
-    const clampedEnd = weekEnd > cycle.endIso ? cycle.endIso : weekEnd;
-    weeks.push({ index, startIso: weekStart, endIso: clampedEnd });
-    weekStart = addDays(clampedEnd, 1);
-    if (weekStart > cycle.endIso) break;
-  }
-
-  if (weeks.length < 4 && weekStart <= cycle.endIso) {
-    weeks.push({ index: 4, startIso: weekStart, endIso: cycle.endIso });
-  }
-
-  return weeks;
-}
-
-/** The 1..4 settlement-week index that contains `dateIso`, or null if outside the cycle. */
-export function settlementWeekForDate(dateIso: string, cycle: DigestCycle): number | null {
-  if (dateIso < cycle.startIso || dateIso > cycle.endIso) return null;
-  const week = tileSettlementWeeks(cycle).find(
-    (candidate) => dateIso >= candidate.startIso && dateIso <= candidate.endIso,
-  );
-  return week ? week.index : null;
 }

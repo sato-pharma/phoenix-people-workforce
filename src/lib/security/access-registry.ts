@@ -230,7 +230,6 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/attendance/device-user-mappings/template", permission: { resource: "employees", action: "export" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/attendance/device-user-mappings/**", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/attendance/policies", permission: { resource: "employees", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ methods: allMethods, pattern: "/api/attendance/digest-settings", permission: { resource: "employees", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // guard: "domain-helper" — gated via assertFingerprintReportPermission (CEO gets a
   // page-scoped exception to the employees hard boundary; see src/lib/auth/permissions.ts).
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/attendance/fingerprint-report/export", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
@@ -241,36 +240,8 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/attendance/exceptions", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/exceptions", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/attendance/exceptions/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/digests", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/digests/:id", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/confirm", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/dispute", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  // Dispute review authorization is data-driven (attendance_digest_settings.approver_hr_ids),
-  // not resource/action-expressible — assertPermission is the coarse baseline;
-  // isAuthorizedDisputeReviewer (in-route + re-checked in the service) is the real gate.
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/disputes", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/disputes/:lineId/review", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  // Digest review gate: a deduction-bearing digest routes here before it ever reaches
-  // the employee. Same data-driven "either approver" authorization as dispute review.
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/digest-review", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/approve", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/void", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/:id/lines/:lineId/correct", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/digest-review/settled", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/force-settle-sent", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digest-review/recover-voided", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/employee-day-report/decision", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/missing-punch", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/missing-punch", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/missing-punch/:id/decide", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/settlement-dashboard", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/attendance/approved-deductions-export", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/settlement-dashboard/remind-all", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/settlement-ledger", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/passport/:hrId", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ methods: readOnly, pattern: "/api/attendance/hr-pattern-insights", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
 
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),

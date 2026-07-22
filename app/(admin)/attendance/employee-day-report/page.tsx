@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { EmployeeDayReport } from "@/components/attendance/employee-day-report";
-import { isAuthorizedDisputeReviewer } from "@/lib/attendance/digest-read";
 import { getEmployeeDayByDayReport, listFlexEligibleEmployees } from "@/lib/attendance/employee-day-report";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -18,11 +17,10 @@ export default async function EmployeeDayReportPage({ searchParams }: PageProps)
     redirect("/employee-portals");
   }
 
-  // This report exposes the same per-employee punch/deduction detail as digest-review —
-  // gate it the same way (reviewer or Super Admin), not just the coarse attendance:read
-  // permission every basic attendance surface uses. Fail closed on a DB/config error.
-  const authorized = await isAuthorizedDisputeReviewer(access.hrId, access.role === "Super Admin").catch(() => false);
-  if (!authorized) {
+  // This report exposes per-employee punch/deduction detail — gate it to Super Admin only,
+  // not just the coarse attendance:read permission every basic attendance surface uses
+  // (matches the nav entry's own systemAdministratorNavigationRoles restriction).
+  if (access.role !== "Super Admin") {
     redirect("/employee-portals");
   }
 

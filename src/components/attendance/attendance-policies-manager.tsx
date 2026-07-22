@@ -62,7 +62,7 @@ type PolicyForm = {
   targetType: AttendancePolicyTargetType;
   targetValue: string;
   workingWeekdays: string[];
-  /** Flexible-hours weekly-digest fields — empty flexMinutes/requiredMinutes = not enrolled. */
+  /** Flexible-hours fields — empty flexMinutes/requiredMinutes = not enrolled. */
   flexMinutes: string;
   requiredMinutes: string;
   halfDaySplitMinutes: string;
@@ -644,10 +644,11 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
 
               <div className="space-y-4 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
                 <div>
-                  <p className={sectionTitleClassName}>Weekly-Digest Flexible Hours</p>
+                  <p className={sectionTitleClassName}>Flexible Hours</p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    Optional. Set Required Minutes to enroll this policy&apos;s employees in the weekly attendance digest
-                    (confirm/dispute settlement). Leave both blank to keep this policy on the legacy fixed-schedule engine.
+                    Optional. Set Required Minutes to enroll this policy&apos;s employees in the flexible-hours evaluation
+                    used by the Fingerprint Report and Payroll Copilot&apos;s attendance-deduction tab. Leave both blank
+                    to keep this policy on the legacy fixed-schedule engine.
                   </p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

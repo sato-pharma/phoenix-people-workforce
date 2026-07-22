@@ -1,6 +1,5 @@
 
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
-import { runAttendanceDigestScheduledProcessing } from "@/lib/attendance/digest-scheduler";
 import { getInactiveUsers } from "@/lib/activity/service";
 import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
@@ -92,9 +91,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
     );
     // Never throws; per-day idempotency key prevents duplicate alerts across runs.
     const attendanceAgent = await runStep("attendance-agent", () => runAttendanceIngestionAlert(), budget);
-    // Never throws; draft/sent status guards + unique constraints make every step idempotent,
-    // so a missed day or a re-run always safely catches up.
-    const attendanceDigest = await runStep("attendance-digest", () => runAttendanceDigestScheduledProcessing(), budget);
     // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
     const exitedDeductions = await runStep("exited-deductions", () => supersedeExitedEmployeeDeductionCandidates(), budget);
     // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
@@ -153,7 +149,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
     return {
       skipped: false as const,
       attendanceAgent,
-      attendanceDigest,
       deferred,
       exitedDeductions,
       inactiveUsers: inactiveUsers?.length ?? 0,
