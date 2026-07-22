@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { SentryFeedbackWidget } from "@/components/admin/sentry-feedback-widget";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 
@@ -24,8 +25,11 @@ export default async function AdminGroupLayout({ children }: { children: ReactNo
   }
 
   return (
-    <AppShell accessContext={access} navigationMode="admin">
-            {children}
-    </AppShell>
+    <>
+      <AppShell accessContext={access} navigationMode="admin">
+              {children}
+      </AppShell>
+      <SentryFeedbackWidget />
+    </>
   );
 }

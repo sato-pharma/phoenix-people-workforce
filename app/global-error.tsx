@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { isStaleDeployChunkError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 
@@ -19,6 +20,7 @@ export default function GlobalError({
 
     console.error(error);
     reportClientError({ digest: error.digest ?? null, error });
+    Sentry.captureException(error);
   }, [error]);
 
   return (

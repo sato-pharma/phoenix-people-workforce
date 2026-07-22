@@ -1,9 +1,16 @@
 // Next.js instrumentation hook. Forwards server-side request errors (App Router)
 // to our own self-hosted app_error_events table (see src/lib/error-monitor/service.ts)
-// so crashes stay queryable by HR ID/module.
+// AND to Sentry, so crashes stay queryable by HR ID/module and alertable via Sentry.
+
+import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
-  // Edge and Node configs can go here if needed in the future
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./sentry.server.config");
+  }
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
 }
 
 // Deliberately avoids importing any server-only module (session/crypto code
@@ -56,17 +63,17 @@ async function forwardServerErrorToIngestion(
 }
 
 // Captures errors thrown in nested React Server Components / route handlers —
-// forwards to our own error table.
+// forwards to our own error table AND to Sentry.
 // Benign client-initiated disconnect codes — the server is not at fault.
-// Forwarding these as errors creates false-positive alerts in the error table.
+// Forwarding these as errors creates false-positive alerts in both the error table and Sentry.
 const IGNORED_CONNECTION_ERROR_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE"]);
 
-export async function onRequestError(
-  error: unknown,
-  request: { headers?: Record<string, string | string[] | undefined>; path?: string },
-  context: { routeType?: string },
-) {
+export async function onRequestError(...args: Parameters<typeof Sentry.captureRequestError>) {
+  const [error, request, context] = args;
   const code = (error as NodeJS.ErrnoException).code;
   if (code && IGNORED_CONNECTION_ERROR_CODES.has(code)) return;
-  await forwardServerErrorToIngestion(error, request, context);
+  await Promise.all([
+    forwardServerErrorToIngestion(error, request, context),
+    Sentry.captureRequestError(error, request, context),
+  ]);
 }
