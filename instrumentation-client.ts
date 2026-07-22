@@ -12,8 +12,10 @@ Sentry.init({
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
+  // 100% in dev catches everything locally; 20% in production balances trace coverage
+  // against ingest volume/cost. Adjust further with tracesSampler if specific routes
+  // need different treatment.
+  tracesSampleRate: process.env.NODE_ENV === "development" ? 1 : 0.2,
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
@@ -25,12 +27,11 @@ Sentry.init({
   // Define how likely Replay events are sampled when an error occurs.
   replaysOnErrorSampleRate: 1.0,
 
-  dataCollection: {
-    // To disable sending user data and HTTP bodies, uncomment the lines below. For more info visit:
-    // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
-    // userInfo: false,
-    // httpBodies: [],
-  },
+  // Deliberately omitting `dataCollection` entirely: passing it at all — even `{}` — flips
+  // every unset PII/body-collection category to its permissive default (full user info +
+  // HTTP bodies), overriding the SDK's safer `sendDefaultPii: false` default that applies
+  // only when this key is absent. This is an HR platform (salaries, personal data) — do not
+  // re-add this key without explicit per-field opt-in.
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
