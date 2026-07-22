@@ -146,7 +146,7 @@ export default withSentryConfig(nextConfig, {
 
   org: "phoenix-workforce",
 
-  project: "javascript-nextjs",
+  project: "phx-b9",
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
