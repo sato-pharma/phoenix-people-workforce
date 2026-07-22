@@ -67,4 +67,17 @@ export function runCrmSingleSourceTests() {
   ]) {
     assert.match(reads, new RegExp(`export async function ${fn}\\b`), `crm/reads.ts exposes ${fn}()`);
   }
+
+  // The resigned-agent exclusion stays the default everywhere — only an explicit,
+  // documented opt-in (still going through the one door) may bypass it.
+  assert.match(
+    reads,
+    /includeResignedAgents\?: boolean;/,
+    "the door must expose an explicit opt-in to see resigned-agent rows, not require callers to bypass the door themselves",
+  );
+  assert.match(
+    reads,
+    /const excludedInList = options\.includeResignedAgents \? "" : await getEffectiveExcludedInList\(\);/,
+    "the resigned-agent exclusion must default ON — only skipped when a caller explicitly opts in",
+  );
 }

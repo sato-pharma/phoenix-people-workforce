@@ -682,7 +682,6 @@ export function derivePrivateCalendarExceptions(input: {
       // needed. A desk-typed plan (Office/Admin) still expects a punch.
       const hasSelfProvingPresence =
         plans.some((p) => p.planCountsAsAttendance) || doubleVisits.length > 0;
-      const hasDeskPlan = plans.some((p) => !p.planCountsAsAttendance);
       const isCovered =
         attendance.length > 0 ||
         vacations.length > 0 ||
@@ -723,38 +722,30 @@ export function derivePrivateCalendarExceptions(input: {
         }));
       }
 
-      // Uncovered expected workday. If the day carried a desk-typed plan, surface
-      // the more specific "plan without attendance"; otherwise the generic missing
-      // cover. Mutually exclusive (never both), and never fires on an off-day or a
-      // day already covered by attendance, leave, excuse, holiday, or field/remote
-      // presence.
+      // Uncovered expected workday only. isExpectedWorkday already encodes the
+      // full weekly-off policy correctly per role: Friday is off for everyone
+      // (isFieldWorkforceFriday — unconditional, no job-title carve-out), and
+      // Saturday is off for everyone except Medical Rep / District (Sales)
+      // Manager, whose weekend is Friday-only (isFieldWorkforceFridayOnlyTitle).
+      // A day that isn't expected to have activity for this employee (their
+      // weekly off, whichever day that is) stays blank when uncovered — no
+      // label, no noise — while a real captured record on any day, off or not,
+      // still shows normally (items are never exception-gated). The
+      // employee-facing calendar hides plan items entirely (actualOnly), so
+      // whether a hidden plan existed for this day is irrelevant to what the
+      // employee actually sees: an uncovered expected workday reads the same
+      // way, no activity was recognized anywhere, full stop.
       if (isExpectedWorkday(employee, date) && !isCovered) {
-        if (hasDeskPlan) {
-          const plannedSummary = Array.from(new Set(
-            plans.filter((item) => !item.planCountsAsAttendance).map((item) => item.title),
-          )).join(", ") || "a desk plan";
-          exceptions.push(createException({
-            code: "plan_deviation",
-            date,
-            description: `Should be: ${plannedSummary} · Actually: No attendance recorded.`,
-            employeeHrId: employee.hrId,
-            employeeName: employee.fullName,
-            relatedItemIds: plans.map((item) => item.id),
-            severity: "warning",
-            title: "Plan Deviation",
-          }));
-        } else {
-          exceptions.push(createException({
-            code: "missing_attendance_cover",
-            date,
-            description: `${employee.fullName} has no fingerprint attendance, approved vacation, approved excuse, or national vacation covering this workday.`,
-            employeeHrId: employee.hrId,
-            employeeName: employee.fullName,
-            relatedItemIds: [],
-            severity: "danger",
-            title: "Missing attendance cover",
-          }));
-        }
+        exceptions.push(createException({
+          code: "no_activity_recorded",
+          date,
+          description: `${employee.fullName}: no CRM double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.`,
+          employeeHrId: employee.hrId,
+          employeeName: employee.fullName,
+          relatedItemIds: [],
+          severity: "danger",
+          title: "No Activity Recorded",
+        }));
       }
     }
   }

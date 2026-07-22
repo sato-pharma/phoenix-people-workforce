@@ -329,6 +329,7 @@ function currentMonthBounds(referenceDate = todayIso()) {
 // ── Live loader: ireports360_visits -> DoubleVisitDbRow ─────────────────────────────
 
 type MirrorVisitRow = {
+  agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
   ampm: string | null;
@@ -365,20 +366,50 @@ function extractNameAreaLine(value: string | null | undefined) {
   return { areaName, lineName, name: name || raw };
 }
 
-async function paginateLiveMirrorVisits(dateFrom: string, dateTo: string): Promise<MirrorVisitRow[]> {
+async function paginateLiveMirrorVisits(
+  dateFrom: string,
+  dateTo: string,
+  options?: { includeResignedAgents?: boolean },
+): Promise<MirrorVisitRow[]> {
   // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
-  // row cap, resigned/excluded agents removed). The canonical double-visit predicate — a real
-  // partner (double_crm_id present and ≠ 0) on a fieldwork visit type (Regular 0 / Campaign -8) —
-  // lives in crm/reads, so this module can never drift from the Visits Report's own definition.
+  // row cap, resigned/excluded agents removed by default). The canonical double-visit predicate —
+  // a real partner (double_crm_id present and ≠ 0) on a fieldwork visit type (Regular 0 / Campaign
+  // -8) — lives in crm/reads, so this module can never drift from the Visits Report's own
+  // definition. `includeResignedAgents` is default-false and only ever passed by the private
+  // calendar's Performed-visit loader (see loadDoubleVisitPrivateCalendarItems) — every other
+  // caller of this function keeps the resigned-agent exclusion. dbRowFromMirrorVisit below
+  // compensates by preferring the raw CRM label over a resigned employee's identity, since the
+  // resolved agent_hr_id is frequently just a stale, reused CRM account (see memory
+  // crm-resigned-slot-reused-for-new-hire).
   return getDoubleVisitRows<MirrorVisitRow>({
     dateFrom,
     dateTo,
+    includeResignedAgents: options?.includeResignedAgents,
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
-      "id, crm_visit_id, visit_date, agent_hr_id, agent_name, contact_name, customer_name, " +
+      "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
       "double_crm_id, double_hr_id, double_name, ampm, raw_payload",
   });
 }
+
+// Hand-verified corrections for specific `agent_crm_id` values that currently
+// resolve to a RESIGNED employee (via `employees.crm_id`) but actually belong to
+// someone else now — whoever administers iReports360 reuses a resigned employee's
+// CRM account for their replacement instead of creating a new one (see memory
+// crm-resigned-slot-reused-for-new-hire). Add an entry here ONLY after manually
+// confirming the real person: the raw `agent_name` label's name AND current area
+// must both match the target employee — never guess from name alone.
+//
+// 2026-07-22 (owner-confirmed against Private Calendar for A-7, July 2026):
+//   1391 -> AI-0003 "Soaf Atef" (area "Cairo East 1" matches the raw label exactly;
+//           no crm_id/crm_username on file yet for this employee at all).
+//   1536 -> B-164 "Essam Mohamed Youssef Elsayed" (area field is currently "Dokki -
+//           Mohandseen - Bolak", matching the raw label's "Dokki"; his crm_username
+//           still says "Nasr City" — a stale label from before he moved areas).
+const CRM_AGENT_ID_HR_ID_CORRECTIONS: Readonly<Record<number, string>> = {
+  1391: "AI-0003",
+  1536: "B-164",
+};
 
 function dbRowFromMirrorVisit(
   visit: MirrorVisitRow,
@@ -388,8 +419,13 @@ function dbRowFromMirrorVisit(
 ): DoubleVisitDbRow {
   // When the same-day chain resolves this "manager-visited" row down to the real MR, the visited
   // party becomes that MR (the whole convoy actually saw them); otherwise it stays the recorded
-  // agent. Everything downstream — coverage, MR scores, calendar — then credits the real MR.
-  const effectiveVisitedHrId = resolution ? resolution.mrHrId : visit.agent_hr_id;
+  // agent, unless a hand-verified correction above applies. Everything downstream — coverage, MR
+  // scores, calendar — then credits the real, correctly-identified person.
+  const rawVisitedHrId = resolution ? resolution.mrHrId : visit.agent_hr_id;
+  const correctedHrId = !resolution && visit.agent_crm_id != null
+    ? CRM_AGENT_ID_HR_ID_CORRECTIONS[visit.agent_crm_id]
+    : undefined;
+  const effectiveVisitedHrId = correctedHrId ?? rawVisitedHrId;
   const visitedKey = canonicalHrIdKey(effectiveVisitedHrId);
   const visitedEmployee = visitedKey ? employeeByHrKey.get(visitedKey) ?? null : null;
   const doubleKey = canonicalHrIdKey(visit.double_hr_id);
@@ -409,20 +445,32 @@ function dbRowFromMirrorVisit(
     visitedStatus = "resigned";
   }
 
+  // A resolved visited-employee identity that is itself RESIGNED is more often a stale
+  // CRM account reused for that resigned employee's replacement (see memory
+  // crm-resigned-slot-reused-for-new-hire) than a real visit with someone who has since
+  // left. Prefer the raw CRM label (agent_name/contact_name/customer_name — always
+  // current per-sync) for the DISPLAYED name/area/line in that case. Never silently
+  // re-match to a different employee record; that guesswork is exactly what caused the
+  // original mis-attribution, and the correct replacement employee may not even exist
+  // in Phoenix yet.
+  const preferRawLabel = visitedStatus === "resigned";
+
   return {
     activity_date: visit.visit_date,
-    area_name: visitedEmployee?.areaName ?? label.areaName,
+    area_name: preferRawLabel ? (label.areaName ?? visitedEmployee?.areaName ?? null) : (visitedEmployee?.areaName ?? label.areaName),
     double_visitor_hr_id: visit.double_hr_id ?? (visit.double_crm_id ? `CRM:${visit.double_crm_id}` : null),
     double_visitor_name: doubleEmployee?.displayName ?? visit.double_name ?? null,
     id: visit.id,
-    line_name: visitedEmployee?.lineName ?? label.lineName,
+    line_name: preferRawLabel ? (label.lineName ?? visitedEmployee?.lineName ?? null) : (visitedEmployee?.lineName ?? label.lineName),
     period: periodFromAmpm(visit.ampm),
     raw_payload: visit.raw_payload,
     source_record_id: String(visit.crm_visit_id),
     source_type: "ireports360",
     visit_count: 1,
     visited_employee_hr_id: effectiveVisitedHrId,
-    visited_employee_name: visitedEmployee?.displayName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name),
+    visited_employee_name: preferRawLabel
+      ? (label.name ?? (resolution ? resolution.mrName : visit.agent_name))
+      : (visitedEmployee?.displayName ?? label.name ?? (resolution ? resolution.mrName : visit.agent_name)),
     visited_employee_status: visitedStatus,
     resolved_via_chain: resolution ? true : undefined,
     chain_hinge_hr_id: resolution?.hingeHrId ?? undefined,
@@ -549,8 +597,9 @@ export async function getLiveDoubleVisitRows(
   dateFrom: string,
   dateTo: string,
   employees: EmployeeDirectoryRow[],
+  options?: { includeResignedAgents?: boolean },
 ): Promise<DoubleVisitDbRow[]> {
-  const mirrorRows = await paginateLiveMirrorVisits(dateFrom, dateTo);
+  const mirrorRows = await paginateLiveMirrorVisits(dateFrom, dateTo, options);
   if (mirrorRows.length === 0) return [];
   const employeeByHrKey = new Map(
     employees
@@ -1924,7 +1973,12 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
     const selected = new Set(employeeHrIds.map(normalizedHrKey).filter((value): value is string => Boolean(value)));
     if (selected.size === 0) return { items: [] as PrivateCalendarItem[], ready: true };
     const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-    const rows = await getLiveDoubleVisitRows(start, end, employees);
+    // A double visit is real, positive proof the calendar owner did field work that day —
+    // that stays true even when the visited party's resolved identity is a resigned
+    // employee (dbRowFromMirrorVisit already swaps in the raw CRM name/area for display
+    // in that case, since the resolution is frequently just a stale, reused CRM account —
+    // see memory crm-resigned-slot-reused-for-new-hire). Never silently hide a real visit.
+    const rows = await getLiveDoubleVisitRows(start, end, employees, { includeResignedAgents: true });
     const items: PrivateCalendarItem[] = [];
 
     const performed = groupCalendarRows(
@@ -1941,8 +1995,18 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
       const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
       const visitedNames = joinedDistinct(group.map((row) => row.visited_employee_name), "Unmapped or vacant");
       const areaLabel = joinedDistinct(group.map((row) => row.area_name), "Unmapped");
+      // Resolved to a resigned employee -> dbRowFromMirrorVisit already substituted the raw
+      // CRM name/area for display, but that identity has not been matched to a current
+      // Phoenix employee record (their replacement may not even be onboarded yet) — say so
+      // plainly rather than silently presenting an unverified name as confirmed.
+      const identityUnverified = group.some((row) => row.visited_employee_status === "resigned");
       items.push(privateCalendarItem({
-        chipLines: [`DV with ${visitedNames}`, `${workloadTime(group)} visits`, areaLabel],
+        chipLines: [
+          `DV with ${visitedNames}`,
+          `${workloadTime(group)} visits`,
+          areaLabel,
+          ...(identityUnverified ? ["Name from CRM, unmatched to an employee record"] : []),
+        ],
         date: first.activity_date,
         description: `${total} Double Visit activity count from the live iReports360 visit mirror.`,
         detailLines: [
@@ -1950,6 +2014,9 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
           `Area: ${areaLabel}`,
           `Line: ${joinedDistinct(group.map((row) => row.line_name), "Unmapped")}`,
           `Visited: ${visitedNames}`,
+          ...(identityUnverified
+            ? ["Note: this name/area comes straight from the CRM sync — it could not be matched to a current Phoenix employee record (the CRM account may have been reassigned to a new hire)."]
+            : []),
         ],
         employeeHrId: first.double_visitor_hr_id,
         employeeName: first.double_visitor_name,
