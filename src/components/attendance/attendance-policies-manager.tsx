@@ -80,9 +80,9 @@ const blankRule: RuleForm = {
 };
 
 const standardLateRules: RuleForm[] = [
-  { ...blankRule, deductionDays: "0.25", eventType: "late", fromMinutes: "16", recommendedAction: "Deduct quarter day", toMinutes: "30" },
-  { ...blankRule, deductionDays: "0.5", eventType: "late", fromMinutes: "31", recommendedAction: "Deduct half day", toMinutes: "45" },
-  { ...blankRule, deductionDays: "1", eventType: "late", fromMinutes: "46", recommendedAction: "Deduct full day", toMinutes: "" },
+  { ...blankRule, deductionDays: "0.125", eventType: "late", fromMinutes: "16", recommendedAction: "Deduct eighth day", toMinutes: "30" },
+  { ...blankRule, deductionDays: "0.25", eventType: "late", fromMinutes: "31", recommendedAction: "Deduct quarter day", toMinutes: "45" },
+  { ...blankRule, deductionDays: "0.5", eventType: "late", fromMinutes: "46", recommendedAction: "Deduct half day", toMinutes: "" },
 ];
 
 function today() {
@@ -819,7 +819,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     </label>
                     <label className="space-y-1.5">
                       <span className={labelClassName}>Day fraction</span>
-                      <input className={fieldClassName} list="attendance-deduction-day-options" placeholder="Day fraction" step="0.25" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value, deductionValue: "" })} />
+                      <input className={fieldClassName} list="attendance-deduction-day-options" placeholder="Day fraction" step="0.125" type="number" value={rule.deductionDays} onChange={(event) => updateRule(index, { deductionDays: event.target.value, deductionValue: "" })} />
                     </label>
                     <label className="flex h-11 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-inner shadow-slate-100/60 md:col-span-2 xl:col-span-1">
                       <span>Active</span>
@@ -831,6 +831,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             </div>
             <datalist id="attendance-deduction-day-options">
               <option value="0" />
+              <option value="0.125" />
               <option value="0.25" />
               <option value="0.5" />
               <option value="1" />
