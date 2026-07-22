@@ -1871,6 +1871,7 @@ function calendarItemId(prefix: string, employeeHrId: string, date: string) {
 }
 
 function privateCalendarItem(input: {
+  chipLines: string[];
   date: string;
   description: string;
   detailLines: string[];
@@ -1883,6 +1884,7 @@ function privateCalendarItem(input: {
 }): PrivateCalendarItem {
   return {
     approvalImpact: "Double Visit evidence is read-only field activity context. It does not mutate attendance, leave, deductions, payroll, or compliance decisions.",
+    chipLines: input.chipLines,
     description: input.description,
     detailLines: input.detailLines,
     employeeDepartmentName: null,
@@ -1937,21 +1939,24 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
       const first = group[0];
       if (!first?.double_visitor_hr_id) continue;
       const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+      const visitedNames = joinedDistinct(group.map((row) => row.visited_employee_name), "Unmapped or vacant");
+      const areaLabel = joinedDistinct(group.map((row) => row.area_name), "Unmapped");
       items.push(privateCalendarItem({
+        chipLines: [`DV with ${visitedNames}`, `${workloadTime(group)} visits`, areaLabel],
         date: first.activity_date,
         description: `${total} Double Visit activity count from the live iReports360 visit mirror.`,
         detailLines: [
           `AM/PM: ${workloadTime(group)}`,
-          `Area: ${joinedDistinct(group.map((row) => row.area_name), "Unmapped")}`,
+          `Area: ${areaLabel}`,
           `Line: ${joinedDistinct(group.map((row) => row.line_name), "Unmapped")}`,
-          `Visited: ${joinedDistinct(group.map((row) => row.visited_employee_name), "Unmapped or vacant")}`,
+          `Visited: ${visitedNames}`,
         ],
         employeeHrId: first.double_visitor_hr_id,
         employeeName: first.double_visitor_name,
         id: calendarItemId("double-visit-performed", first.double_visitor_hr_id, first.activity_date),
         status: "performed",
         time: workloadTime(group),
-        title: "Performed Double Visits",
+        title: `Performed ${total} visit${total === 1 ? "" : "s"} with ${visitedNames} - ${areaLabel}`,
       }));
     }
 
@@ -1967,13 +1972,16 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
       const first = group[0];
       if (!first?.visited_employee_hr_id) continue;
       const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+      const doubleVisitorNames = joinedDistinct(group.map((row) => row.double_visitor_name), "Unmapped");
+      const areaLabel = joinedDistinct(group.map((row) => row.area_name), "Unmapped");
       items.push(privateCalendarItem({
+        chipLines: [`DV with ${doubleVisitorNames}`, `${workloadTime(group)} visits`, areaLabel],
         date: first.activity_date,
         description: `${total} Double Visit received from the live iReports360 visit mirror.`,
         detailLines: [
           `AM/PM: ${workloadTime(group)}`,
-          `Double visitor: ${joinedDistinct(group.map((row) => row.double_visitor_name), "Unmapped")}`,
-          `Area: ${joinedDistinct(group.map((row) => row.area_name), "Unmapped")}`,
+          `Double visitor: ${doubleVisitorNames}`,
+          `Area: ${areaLabel}`,
           `Line: ${joinedDistinct(group.map((row) => row.line_name), "Unmapped")}`,
         ],
         employeeHrId: first.visited_employee_hr_id,
@@ -1981,7 +1989,7 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
         id: calendarItemId("double-visit-received", first.visited_employee_hr_id, first.activity_date),
         status: "received",
         time: workloadTime(group),
-        title: "Received Double Visit",
+        title: `Received ${total} visit${total === 1 ? "" : "s"} with ${doubleVisitorNames} - ${areaLabel}`,
       }));
     }
 

@@ -14,6 +14,7 @@ import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mappin
 import {
   bracketsForEventType,
   evaluateFlexibleHoursDay,
+  requiredMinutesForHalfDayVacation,
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
@@ -49,6 +50,11 @@ export type FingerprintReportColumn = {
 
 export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & {
   dateIso: string;
+  // Set when an approved Am/Pm-Only vacation covered part of this day — the
+  // "Complete" status above was judged against a halved required-minutes
+  // window, not the full day, so downstream display should not call it a
+  // "full" day.
+  halfDayVacationPart?: "am_only" | "pm_only";
   hasException?: boolean;
   sortKey: string;
 };
@@ -137,6 +143,70 @@ type PunchBucket = {
   punches: Date[];
   reportDate: string;
 };
+
+type HalfDayVacationDbRow = {
+  day_part: string | null;
+  employee_hr_id: string;
+  end_date: string | null;
+  start_date: string;
+};
+
+type HalfDayVacationPart = "am_only" | "pm_only";
+
+/**
+ * Approved half-day (Am/Pm Only) vacations, keyed by `${normalizedHrId}|${dateIso}`.
+ * An approved half-day vacation covers exactly one half of the shift — the other
+ * half is expected to carry a punch and must not be judged against the FULL day's
+ * required minutes (that was the July 2026 "Short day" false-positive: a PM-only
+ * vacation + a complete AM punch getting docked as if the whole day were required).
+ * Full-day leave is unaffected here — it is already gated out upstream by
+ * `hasApprovedLeave` in the payroll digest's reconcileDay, and by the private
+ * calendar's own vacation-covers-the-day check; this map only ever softens the
+ * required-minutes window, never skips judgment outright.
+ */
+async function loadApprovedHalfDayVacationMap(
+  employeeHrIds: string[],
+  dateFrom: string,
+  dateTo: string,
+): Promise<Map<string, HalfDayVacationPart>> {
+  const map = new Map<string, HalfDayVacationPart>();
+  if (employeeHrIds.length === 0) return map;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("v2_vacation_requests")
+      .select("employee_hr_id,start_date,end_date,day_part")
+      .eq("status", "approved")
+      .in("day_part", ["am_only", "pm_only"])
+      .lte("start_date", dateTo)
+      .gte("end_date", dateFrom)
+      .limit(2000);
+    if (error) throw error;
+
+    for (const row of (data ?? []) as HalfDayVacationDbRow[]) {
+      const hrId = normalizeHrId(row.employee_hr_id);
+      const part = row.day_part as HalfDayVacationPart;
+      if (!hrId || (part !== "am_only" && part !== "pm_only")) continue;
+      // A half-day vacation is, by definition, a single date — but iterate the
+      // (start, end) range defensively rather than assuming start === end.
+      const start = row.start_date;
+      const end = row.end_date || row.start_date;
+      let cursor = start;
+      let guard = 0;
+      while (cursor <= end && guard < 31) {
+        if (cursor >= dateFrom && cursor <= dateTo) map.set(`${hrId}|${cursor}`, part);
+        const next = new Date(`${cursor}T00:00:00Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        cursor = next.toISOString().slice(0, 10);
+        guard += 1;
+      }
+    }
+  } catch {
+    // Best-effort: if v2_vacation_requests is unavailable, fall back to judging
+    // the full day rather than failing the whole report.
+  }
+  return map;
+}
 
 export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "deviceUserId", label: "AC-No." },
@@ -358,12 +428,16 @@ function statusFromFlexibleHours(input: {
   firstPunchMinutes: number | null;
   lastPunchMinutes: number | null;
   visiblePunchCount: number;
+  // An approved Am/Pm-Only vacation covering this day halves the required
+  // presence instead of judging against the full scheduled day.
+  halfDayVacationPart: HalfDayVacationPart | null;
 }): PolicyAttendanceStatusResult {
   const scheduledStartMinutes = policyTimeToMinutes(input.policy.scheduled_start) ?? 9 * 60;
+  const requiredMinutes = requiredMinutesForHalfDayVacation(input.policy.required_minutes!, input.halfDayVacationPart);
   const config: FlexibleHoursConfig = {
     scheduledStartMinutes,
     flexCeilingMinutes: scheduledStartMinutes + (input.policy.flex_minutes ?? 0),
-    requiredMinutes: input.policy.required_minutes!,
+    requiredMinutes,
   };
   const result = evaluateFlexibleHoursDay({
     config,
@@ -571,6 +645,7 @@ export async function getFingerprintAttendanceReport(input: {
   }
 
   const exceptionMap = await getAttendanceExceptionMap(employeeHrIds, dateFrom, dateTo);
+  const halfDayVacationMap = await loadApprovedHalfDayVacationMap(employeeHrIds, dateFrom, dateTo);
 
   const buckets = new Map<string, PunchBucket>();
   for (const punch of punches) {
@@ -610,10 +685,12 @@ export async function getFingerprintAttendanceReport(input: {
     const policyRules = policy ? rulesByPolicy.get(policy.id) ?? [] : [];
     const firstPunchMinutes = firstPunch ? localMinutesOfDay(firstPunch) : null;
     const lastPunchMinutes = lastPunch ? localMinutesOfDay(lastPunch) : null;
+    const halfDayVacationPart = halfDayVacationMap.get(`${bucket.employeeHrId}|${bucket.reportDate}`) ?? null;
     const status = policy && policy.required_minutes != null
       ? statusFromFlexibleHours({
           baseSalary: employee?.base_salary ?? null,
           firstPunchMinutes,
+          halfDayVacationPart,
           lastPunchMinutes,
           policy,
           rules: policyRules,
@@ -650,6 +727,7 @@ export async function getFingerprintAttendanceReport(input: {
       employeeHrId: bucket.employeeHrId,
       employeeName: employee?.full_name?.trim() || bucket.employeeHrId,
       graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
+      halfDayVacationPart: halfDayVacationPart ?? undefined,
       hasException: hasApprovedException,
       jobTitle: employee?.job_title?.trim() || "",
       lateMinutes: hasApprovedException ? "0" : status.lateMinutes,

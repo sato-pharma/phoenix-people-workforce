@@ -26,6 +26,7 @@ export default async function EmployeePrivateCalendarPage() {
   try {
     workspace = await getPrivateCalendarWorkspace({
       access,
+      actualOnly: true,
       month: now.getUTCMonth() + 1,
       year: now.getUTCFullYear(),
     });
@@ -40,7 +41,7 @@ export default async function EmployeePrivateCalendarPage() {
   return (
     <EmployeePortalPageShell
       badge="Private Calendar"
-      description="Attendance, approved vacations, approved excuses, plans, and national vacations for the selected employee."
+      description="The actual activity the system recognized for you this month — attendance punches, approved vacations, approved excuses, CRM double visits, and national vacations. Planned activity is not shown here."
       title="Private Calendar"
     >
       {workspace ? (
