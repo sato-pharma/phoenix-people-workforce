@@ -100,6 +100,7 @@ import { runAttendanceDigestCycleTests } from "./attendance-digest-cycle.test.ts
 import { runAttendanceDigestReconcileTests } from "./attendance-digest-reconcile.test.ts";
 import { runAttendanceDigestGeneratorTests } from "./attendance-digest-generator.test.ts";
 import { runAttendanceSettlementServiceTests } from "./attendance-settlement-service.test.ts";
+import { runAttendanceEmployeeDayReportTests } from "./attendance-employee-day-report.test.ts";
 import { runAttendanceDigestSchedulerTests } from "./attendance-digest-scheduler.test.ts";
 import { runAttendanceSettlementPayrollTests } from "./attendance-settlement-payroll.test.ts";
 import { runAttendanceDigestRoutesTests } from "./attendance-digest-routes.test.ts";
@@ -546,6 +547,7 @@ await runTest("attendance digest cycle + week tiling", runAttendanceDigestCycleT
 await runTest("attendance digest reconciliation gating", runAttendanceDigestReconcileTests);
 await runTest("attendance digest generator (build week)", runAttendanceDigestGeneratorTests);
 await runTest("attendance settlement service (confirm/dispute/immutability)", runAttendanceSettlementServiceTests);
+await runTest("attendance employee day-by-day report (access/policy-range/draft-sync)", runAttendanceEmployeeDayReportTests);
 await runTest("attendance digest scheduler (generate/send/auto-confirm)", runAttendanceDigestSchedulerTests);
 await runTest("attendance settlement payroll bridge", runAttendanceSettlementPayrollTests);
 await runTest("attendance digest API routes (self-scope + reviewer gating)", runAttendanceDigestRoutesTests);
