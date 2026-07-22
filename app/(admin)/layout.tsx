@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { SentryFeedbackWidget } from "@/components/admin/sentry-feedback-widget";
+import { SentryUserTag } from "@/components/observability/sentry-user-tag";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 
@@ -30,6 +31,7 @@ export default async function AdminGroupLayout({ children }: { children: ReactNo
               {children}
       </AppShell>
       <SentryFeedbackWidget />
+      <SentryUserTag hrId={access.hrId} />
     </>
   );
 }
