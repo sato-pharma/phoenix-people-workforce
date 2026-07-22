@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
@@ -45,7 +46,12 @@ async function runSync() {
 
   let mirrorSync: Awaited<ReturnType<typeof runScheduledIReports360Sync>>;
   try {
-    mirrorSync = await runScheduledIReports360Sync();
+    mirrorSync = await Sentry.withMonitor("ireports360-visits-sync", () => runScheduledIReports360Sync(), {
+      checkinMargin: 10,
+      maxRuntime: 10,
+      schedule: { type: "crontab", value: "7 9,12,19 * * *" },
+      timezone: "Africa/Cairo",
+    });
   } catch (error) {
     await notifyIReports360SyncResult({
       dateFrom,

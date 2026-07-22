@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 
@@ -197,7 +198,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
   try {
-    return await runDailyNotifications(request);
+    return await Sentry.withMonitor("notifications-daily", () => runDailyNotifications(request), {
+      checkinMargin: 10,
+      maxRuntime: 10,
+      schedule: { type: "crontab", value: "36 6 * * *" },
+      timezone: "Africa/Cairo",
+    });
   } catch (error) {
     logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
     const message = error instanceof Error ? error.message : "Daily notification run failed.";

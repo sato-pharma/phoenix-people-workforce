@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { cairoTodayIso, isWithinLiveSyncWindow } from "@/lib/crm/dates";
@@ -61,7 +62,15 @@ export async function GET(request: Request) {
     );
   }
   try {
-    return await runSync();
+    // Wrapped at the whole-request level (not just runLiveIReports360Sync) so an
+    // outside-the-window no-op skip still sends an "ok" check-in — every GCP-scheduled
+    // firing (including intentional skips) should count as a successful heartbeat.
+    return await Sentry.withMonitor("ireports360-visits-live-sync", () => runSync(), {
+      checkinMargin: 5,
+      maxRuntime: 3,
+      schedule: { type: "crontab", value: "1,16,31,46 8-12 * * *" },
+      timezone: "Africa/Cairo",
+    });
   } catch (error) {
     logError("iReports360 live visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = error instanceof Error ? error.message : "iReports360 live visits sync failed.";
