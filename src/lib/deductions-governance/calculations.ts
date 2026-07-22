@@ -57,6 +57,10 @@ export function payrollColumnForDeduction(input: {
 }): DeductionPayrollColumn | null {
   if (input.sourceModule === "FIELD_WORKFORCE") return "crm";
   if (input.sourceModule === "ATTENDANCE_DEVICE") return "finger_print";
+  // Super-Admin-decided Private Calendar "No Activity Recorded" days (company-wide,
+  // not limited to field-force titles) — same payroll meaning as CRM no-activity,
+  // so it lands on the same "crm" column rather than needing a new one.
+  if (input.sourceModule === "MANUAL_HR" && input.deductionType === "no_activity") return "crm";
   if (
     input.sourceModule === "VACATION" ||
     input.deductionType === "unpaid_leave" ||

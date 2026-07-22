@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  CalendarX2,
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -1398,6 +1399,14 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Review and govern payroll deduction decisions.",
     permissions: [{ resource: "deductions", action: "read" }],
     excludedRoles: ["CEO"],
+  },
+  {
+    href: "/admin/no-activity-days",
+    icon: CalendarX2,
+    label: "No Activity Days",
+    description: "Company-wide No Activity Recorded days — clarifications and payroll deduction decisions.",
+    permissions: [{ resource: "deductions", action: "read" }],
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

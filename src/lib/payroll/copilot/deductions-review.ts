@@ -54,7 +54,7 @@ export function candidateOverlapsWindow(dates: string[], cycle: CycleWindow): bo
 async function fetchAllCandidatesForMonthKey(
   access: AccessContext,
   monthKey: string,
-  sourceModule: "ATTENDANCE_DEVICE" | "FIELD_WORKFORCE",
+  sourceModule: "ATTENDANCE_DEVICE" | "FIELD_WORKFORCE" | "MANUAL_HR",
 ): Promise<DeductionInboxRow[]> {
   const rows: DeductionInboxRow[] = [];
   let page = 1;
@@ -78,7 +78,7 @@ async function fetchAllCandidatesForMonthKey(
 async function listCandidatesForSourceModule(
   access: AccessContext,
   period: CopilotPeriod,
-  sourceModule: "ATTENDANCE_DEVICE" | "FIELD_WORKFORCE",
+  sourceModule: "ATTENDANCE_DEVICE" | "FIELD_WORKFORCE" | "MANUAL_HR",
 ): Promise<{ cycle: CycleWindow; rows: DeductionInboxRow[] }> {
   const cycle = await resolveCopilotCycleWindow(period);
   const monthKeys = monthKeysForWindow(cycle);
@@ -210,6 +210,14 @@ export type ApprovedDeductionTotals = { crm: number; fingerPrint: number };
  * stay approval-gated (must be explicitly "Approved for Payroll" on the
  * Fingerprint tab before they reach the sheet).
  *
+ * MANUAL_HR no_activity rows (Private Calendar "No Activity Recorded" days,
+ * decided by a Super Admin in the dedicated No Activity Days report — see
+ * src/lib/private-calendar/no-activity-clarifications.ts) share the same
+ * "crm" payroll column as CRM no-activity (payrollColumnForDeduction), but
+ * are approval-gated like fingerprint, NEVER unconditional like CRM: a
+ * Super Admin must explicitly decide every one, individually or in bulk —
+ * there is no silent/automatic deduction path anywhere in this system.
+ *
  * Called from deep inside `assembleDraft`, which has no request-scoped
  * `AccessContext` available — uses `systemAccessContext` the same way other
  * internal cross-module reads do, since `listDeductionCandidates` does not
@@ -221,9 +229,10 @@ export async function buildApprovedDeductionTotals(
 ): Promise<Map<string, ApprovedDeductionTotals>> {
   const totals = new Map<string, ApprovedDeductionTotals>();
   try {
-    const [fingerprint, crm] = await Promise.all([
+    const [fingerprint, crm, manualHr] = await Promise.all([
       listCandidatesForSourceModule(systemAccessContext, period, "ATTENDANCE_DEVICE"),
       listCandidatesForSourceModule(systemAccessContext, period, "FIELD_WORKFORCE"),
+      listCandidatesForSourceModule(systemAccessContext, period, "MANUAL_HR"),
     ]);
 
     for (const row of fingerprint.rows) {
@@ -241,6 +250,7 @@ export async function buildApprovedDeductionTotals(
     // column here yet never appear in the review tab — money deducted that was never
     // reviewable. Filtering to the same set keeps "what's deducted" == "what's shown".
     const crmReviewableRows = crm.rows.filter((row) => row.deductionType === "no_activity");
+    const manualHrReviewableRows = manualHr.rows.filter((row) => row.deductionType === "no_activity");
     const needsEstimate = crmReviewableRows.some(
       (row) => row.decision?.decisionStatus !== "Approved for Payroll",
     );
@@ -256,6 +266,17 @@ export async function buildApprovedDeductionTotals(
       }) ?? 0;
       const existing = totals.get(key) ?? { crm: 0, fingerPrint: 0 };
       existing.crm += amount;
+      totals.set(key, existing);
+    }
+
+    // MANUAL_HR is approval-gated (unlike CRM's unconditional rule above) — only
+    // an explicit "Approved for Payroll" decision counts toward the sheet.
+    for (const row of manualHrReviewableRows) {
+      if (row.decision?.decisionStatus !== "Approved for Payroll") continue;
+      const key = compactHrKey(row.employeeHrIdCompact || row.employeeCode);
+      if (!key) continue;
+      const existing = totals.get(key) ?? { crm: 0, fingerPrint: 0 };
+      existing.crm += row.decision.appliedAmount ?? 0;
       totals.set(key, existing);
     }
   } catch (error) {
