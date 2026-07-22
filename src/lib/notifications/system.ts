@@ -145,16 +145,6 @@ const employeeSubjectWorkflowModules = new Set([
   "weekly_plans",
 ]);
 
-const workflowEmailEnvelopeModules = new Set([
-  ...employeeSubjectWorkflowModules,
-  "coaching",
-  "contracts",
-  "expenses",
-  "leave",
-  "marketing_requests",
-  "weekly_planning",
-]);
-
 // Aggregate digests (many employees rolled into one email) live in a
 // per-employee workflow module but have no single subject by design — exempt
 // them by event type so the module-level identity guard doesn't fail them.
@@ -362,17 +352,30 @@ function requestedChannelsForEnvelope(input: CreateSystemNotificationInput) {
   return dedupeChannels(policy.channels.length > 0 ? policy.channels : ["in_app", "email"]);
 }
 
+/**
+ * Whether a multi-recipient event should collapse to ONE email (primary To, everyone
+ * else Cc) instead of one independent send per governed recipient.
+ *
+ * Bug (owner report, 2026-07-22): createSystemNotification fans out per governed
+ * recipient, and several notification types (module "general") re-resolve a static
+ * HR-inbox address list on EVERY one of those per-recipient sends — so a 3-recipient
+ * event (e.g. outstation submission notifying a manager + CEO + Super Admin) put the
+ * shared inbox addresses in 3 separate emails instead of 1, and anyone who is both a
+ * governed recipient AND in that static list got the same notification 2-4x. This used
+ * to be gated to an allowlist of modules AND require a resolvable subject employee HR ID
+ * — narrow enough that most duplicate-prone modules (attendance digests, etc.) fell
+ * through to the buggy per-recipient path. Collapsing to an envelope whenever there is
+ * more than one recipient closes that gap everywhere at once. The identity guard is
+ * still enforced downstream in buildChannelEmailInput/validateNotificationEmailIdentity
+ * for modules that require a subject — dropping the pre-check here only changes WHERE
+ * that guard runs (once for the envelope instead of once per recipient), not whether it
+ * runs.
+ */
 function shouldUseWorkflowEmailEnvelope(input: CreateSystemNotificationInput, recipients: NotificationRecipient[]) {
   if (recipients.length <= 1) return false;
   if (!requestedChannelsForEnvelope(input).includes("email")) return false;
   if (isSensitivePayroll(input)) return false;
-  const moduleName = cleanText(input.module).toLowerCase();
-  if (!workflowEmailEnvelopeModules.has(moduleName)) return false;
-  return Boolean(
-    cleanHrId(input.email?.employeeHrId) ||
-    cleanHrId(input.subjectHrId) ||
-    metadataHrId(input.metadata, ["employeeHrId", "subjectHrId", "requestOwnerHrId"]),
-  );
+  return true;
 }
 
 function recipientKey(recipient: Pick<NotificationRecipient, "email" | "hrId" | "userId">) {
@@ -1777,6 +1780,84 @@ async function createWorkflowEmailEnvelopeNotification(
     recipientHrId: primary.hrId ?? null,
     recipientUserId: primary.userId ?? null,
   });
+}
+
+/**
+ * Notify a fixed, caller-supplied list of HR IDs — e.g. "every active Super Admin and the
+ * CEO" — instead of a governance-resolved recipient set. Mirrors createSystemNotification's
+ * governance branch (per-recipient in-app/telegram, ONE consolidated To/Cc email) for
+ * callers that pick their own recipient list rather than using
+ * resolveNotificationRecipientsWithGovernance.
+ *
+ * Bug fixed here (owner report, 2026-07-22): callers like notifyOutstationSubmitted looped
+ * createSystemNotification once per recipientHrId. Each of those calls hits the "explicit
+ * recipient" branch below, which bypasses the governance branch's email-envelope
+ * consolidation entirely — every recipient got their OWN independent email, so a
+ * 3-recipient event fired 3 separate emails instead of 1. Callers with a fixed recipient
+ * list should use this helper instead of looping createSystemNotification themselves.
+ */
+export async function createSystemNotificationForRecipients(
+  input: Omit<CreateSystemNotificationInput, "recipientHrId" | "recipientUserId">,
+  recipientHrIds: Array<string | null | undefined>,
+): Promise<SystemNotificationResult> {
+  const uniqueHrIds = Array.from(new Set(recipientHrIds.map((hrId) => cleanHrId(hrId)).filter(Boolean)));
+  if (uniqueHrIds.length === 0) return { deliveries: [], eventId: null, eventKey: "" };
+
+  for (const hrId of uniqueHrIds) {
+    if (!explicitRecipientAllowed({ ...input, recipientHrId: hrId })) {
+      return createGovernanceSkippedNotification(input, []);
+    }
+  }
+
+  if (uniqueHrIds.length === 1) {
+    return createSystemNotificationForRecipient({ ...input, recipientHrId: uniqueHrIds[0] });
+  }
+
+  // A shared eventKey (from a caller-supplied idempotencyKey with no per-recipient
+  // suffix) would make every recipient's notification_events upsert collide on the same
+  // row (onConflict: "event_key"), so the last write wins and earlier recipients' in-app
+  // notification ends up attributed to the wrong recipient. Suffix per recipient, exactly
+  // like the governance branch below does.
+  const baseIdempotencyKey = typeof input.metadata?.idempotencyKey === "string" ? cleanText(input.metadata.idempotencyKey) : "";
+  const useEmailEnvelope = requestedChannelsForEnvelope(input).includes("email") && !isSensitivePayroll(input);
+  const nonEmailChannels = requestedChannelsForEnvelope(input).filter((channel) => channel !== "email");
+
+  const results = await Promise.all(
+    uniqueHrIds.flatMap((hrId) => {
+      if (useEmailEnvelope && nonEmailChannels.length === 0) return [];
+      return [
+        createSystemNotificationForRecipient({
+          ...input,
+          ...(useEmailEnvelope ? { channels: nonEmailChannels } : {}),
+          metadata: {
+            ...(input.metadata ?? {}),
+            ...(baseIdempotencyKey ? { idempotencyKey: `${baseIdempotencyKey}:${hrId}` } : {}),
+          },
+          recipientHrId: hrId,
+        }),
+      ];
+    }),
+  );
+
+  if (useEmailEnvelope) {
+    const profiles = await Promise.all(
+      uniqueHrIds.map((hrId) => loadRecipientProfile({ ...input, recipientHrId: hrId, recipientUserId: null })),
+    );
+    const recipients: NotificationRecipient[] = profiles.map((profile) => ({
+      email: profile.email,
+      hrId: profile.hrId,
+      name: profile.name,
+      userId: profile.userId,
+    }));
+    const envelope = await createWorkflowEmailEnvelopeNotification(input, recipients, baseIdempotencyKey);
+    if (envelope) results.push(envelope);
+  }
+
+  return {
+    deliveries: results.flatMap((result) => result.deliveries),
+    eventId: results[0]?.eventId ?? null,
+    eventKey: results[0]?.eventKey ?? "",
+  };
 }
 
 export async function createSystemNotification(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {

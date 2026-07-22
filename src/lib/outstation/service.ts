@@ -24,7 +24,7 @@ import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classific
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
@@ -1066,7 +1066,12 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
       { label: "Line / Area", value: `${text(request.employeeLine) || "—"} / ${text(request.employeeArea) || "—"}` },
       { label: "Transportation", value: request.transportationType },
       { label: "Expense type", value: request.expenseType },
-      { label: "Trip dates", value: `${request.tripStartDate} to ${request.tripEndDate}` },
+      // "Amount" and "Trip start"/"Trip end" (not a combined "Trip dates") are the exact
+      // labels the OUTSTATION email template's amount/startDate/endDate tokens look up via
+      // metricValue() — using different labels here left those tokens rendering blank.
+      { label: "Amount", value: claimedAmount },
+      { label: "Trip start", value: request.tripStartDate },
+      { label: "Trip end", value: request.tripEndDate },
       { label: "Trip length", value: request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)` },
       { label: "Destination", value: destination },
       {
@@ -1096,40 +1101,39 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
       { label: "Notes", value: text(request.notes) || "—" },
     ];
 
+    // Short human summary only — the structured fields above (rendered separately as the
+    // template's metrics table) already carry every detail, so repeating them here as a
+    // second wall of text made the email read as duplicated content.
     const messageLines = [
       `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
       `Trip: ${request.tripStartDate} to ${request.tripEndDate} · Destination: ${destination} · Transportation: ${request.transportationType}`,
       `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
-      "",
-      ...metrics.map((row) => `${row.label}: ${row.value}`),
     ];
 
-    await Promise.allSettled(
-      recipients.map((recipientHrId) =>
-        createSystemNotification({
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl,
+        category: "general",
+        channels: ["email", "telegram"],
+        email: { metrics },
+        eventType: "request_submitted",
+        message: messageLines.join("\n"),
+        metadata: {
           actionUrl,
-          category: "general",
-          channels: ["email", "telegram"],
-          email: { metrics },
-          eventType: "request_submitted",
-          message: messageLines.join("\n"),
-          metadata: {
-            actionUrl,
-            claimedAmount,
-            employeeHrId: request.employeeHrId,
-            employeeName: request.employeeName,
-            idempotencyKey: `outstation:${request.id}:request_submitted:${recipientHrId.toUpperCase()}`,
-            requestId: String(request.id),
-            status: "Submitted",
-          },
-          module: "outstation",
-          priority: "normal",
-          recipientHrId,
-          recordId: String(request.id),
-          telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
-          title: `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
-        }),
-      ),
+          claimedAmount,
+          employeeHrId: request.employeeHrId,
+          employeeName: request.employeeName,
+          idempotencyKey: `outstation:${request.id}:request_submitted`,
+          requestId: String(request.id),
+          status: "Submitted",
+        },
+        module: "outstation",
+        priority: "normal",
+        recordId: String(request.id),
+        telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
+        title: `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
+      },
+      recipients,
     );
   } catch (error) {
     logError("Outstation submitted notification dispatch failed (non-blocking)", { labels: { event: "outstation_submitted_notification_dispatch_failed" }, error });
@@ -2702,16 +2706,15 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
   for (const row of data ?? []) {
     const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
     if (ageDays < 3) continue;
-    for (const hrId of approverHrIds) {
-      try {
-        await createSystemNotification({
+    try {
+      await createSystemNotificationForRecipients(
+        {
           channels: ["email"],
           eventType: "outstation_sla_reminder",
           message: `${String(row.employee_name)}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
-          metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${hrId}:${today}` },
+          metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${today}` },
           module: "outstation",
           priority: "normal",
-          recipientHrId: hrId,
           title: "Outstation approval overdue",
           actionUrl: `/admin/approvals-hub?module=outstation&id=${String(row.id)}`,
           email: {
@@ -2719,12 +2722,13 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
             ctaLabel: "Review now",
             tone: "warning" as const,
           },
-        });
-        processed++;
-      } catch (error) {
-        logError("Outstation SLA reminder failed for recipient", { labels: { event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", recipientHrId: hrId }, error });
-        errors++;
-      }
+        },
+        approverHrIds,
+      );
+      processed += approverHrIds.length;
+    } catch (error) {
+      logError("Outstation SLA reminder failed for recipients", { labels: { event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", requestId: String(row.id) }, error });
+      errors += approverHrIds.length;
     }
   }
   return { processed, errors };

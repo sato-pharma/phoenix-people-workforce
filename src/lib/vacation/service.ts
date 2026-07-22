@@ -22,7 +22,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
+import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -1786,26 +1786,24 @@ async function notifyRecipients(input: {
     ).values(),
   );
 
-  await Promise.allSettled(
-    recipientHrIds.map((recipientHrId) =>
-      createSystemNotification({
-        ...(input.channels ? { channels: input.channels } : {}),
-        actionUrl: input.href,
-        category: "vacation_request",
-        eventType: input.type,
-        message: input.message,
-        metadata: {
-          ...(input.metadata ?? {}),
-          ...(input.subjectHrId ? { employeeHrId: input.subjectHrId } : {}),
-          idempotencyKey: `vacation:${input.requestId}:${input.type}:${recipientHrId}`,
-        },
-        module: "vacation",
-        priority: "high",
-        recipientHrId,
-        subjectHrId: input.subjectHrId ?? undefined,
-        title: input.title,
-      }),
-    ),
+  await createSystemNotificationForRecipients(
+    {
+      ...(input.channels ? { channels: input.channels } : {}),
+      actionUrl: input.href,
+      category: "vacation_request",
+      eventType: input.type,
+      message: input.message,
+      metadata: {
+        ...(input.metadata ?? {}),
+        ...(input.subjectHrId ? { employeeHrId: input.subjectHrId } : {}),
+        idempotencyKey: `vacation:${input.requestId}:${input.type}`,
+      },
+      module: "vacation",
+      priority: "high",
+      subjectHrId: input.subjectHrId ?? undefined,
+      title: input.title,
+    },
+    recipientHrIds,
   );
 }
 

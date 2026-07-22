@@ -152,9 +152,17 @@ export function runOutstationNotificationsTests() {
 
   const slaSlice = functionSlice(service, "export async function runOutstationSlaDaily");
   assert.doesNotMatch(slaSlice, /\}\s*catch\s*\{\s*errors\+\+;\s*\}/, "the SLA reminder loop must not swallow errors without reporting them");
+  // Recipients for a given overdue request are now notified in ONE consolidated send
+  // (createSystemNotificationForRecipients — see the 2026-07-22 duplicate-email fix), so a
+  // failure is tagged by the affected request rather than by an individual recipient.
   assert.match(
     slaSlice,
-    /catch \(error\) \{\s*logError\("Outstation SLA reminder failed for recipient", \{ labels: \{ event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", recipientHrId: hrId \}, error \}\);\s*errors\+\+;\s*\}/,
-    "a failed SLA reminder send must be captured in Sentry, tagged with the affected recipient",
+    /catch \(error\) \{\s*logError\("Outstation SLA reminder failed for recipients", \{ labels: \{ event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", requestId: String\(row\.id\) \}, error \}\);\s*errors \+= approverHrIds\.length;\s*\}/,
+    "a failed SLA reminder send must be captured in Sentry, tagged with the affected request",
+  );
+  assert.match(
+    slaSlice,
+    /createSystemNotificationForRecipients\(/,
+    "the SLA reminder must send ONE consolidated email to all approvers, not one send per recipient",
   );
 }

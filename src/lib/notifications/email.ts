@@ -1376,6 +1376,17 @@ export function classifyOutboxSkip(
 
 const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
 
+// Owner request (2026-07-22): CC this address on every automated notification email so
+// there is always one standing copy of outbound HR/workflow mail. Excluded from
+// password-reset/account-setup links (transactionalEmailTypes) — those carry a one-time
+// auth secret for a specific person and must never be copied to a third-party inbox.
+const alwaysCcEmailAddress = "omar.anwar@satopharma.com";
+
+function alwaysCcRecipients(notificationType: EmailNotificationType | undefined): string[] {
+  if (!notificationType || transactionalEmailTypes.has(notificationType)) return [];
+  return [alwaysCcEmailAddress];
+}
+
 function listUnsubscribeHeaders(
   notificationType: EmailNotificationType | undefined,
   primaryRecipient?: string,
@@ -1416,11 +1427,19 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (!from) return { reason: "NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
   if (delivery.skipped) return delivery;
 
-  const requestId = notificationDedupeKey(input);
+  // Merge in the standing CC address, but never alongside a "to" recipient it already is
+  // (avoid a redundant header entry when the always-cc'd person is also the addressee).
+  const cc = cleanEmailList([
+    ...(input.cc ?? []),
+    ...alwaysCcRecipients(input.notificationType),
+  ]).filter((address) => !delivery.recipients.includes(address));
+  const inputWithCc: NotificationEmailInput = { ...input, cc };
+
+  const requestId = notificationDedupeKey(inputWithCc);
   const migratedTemplateKey = migratedTemplateKeyForNotification(input);
 
   if (migratedTemplateKey) {
-    const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, input, delivery.recipients);
+    const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, inputWithCc, delivery.recipients);
     return sendTemplatedEmail({
       candidateEmail: input.candidateEmail,
       context: {
@@ -1463,7 +1482,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   const fanout = delivery.recipients.length > 1;
   return sendPhoenixEmail({
     bcc: input.bcc,
-    cc: input.cc,
+    cc,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal
