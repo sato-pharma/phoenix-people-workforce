@@ -41,7 +41,6 @@ overrides:
 #   prebuilt native binding.
 allowBuilds:
   "@sentry/cli": true
-  "@sentry/node-cpu-profiler": true
   protobufjs: true
   sharp: true
   supabase: true

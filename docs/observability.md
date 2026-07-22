@@ -35,8 +35,18 @@ self-hosted: HR-ID/module-queryable errors, GCP log-based alerting, login-securi
 - **Alerts:** a basic "new issue → email" rule is configured in the Sentry dashboard (Alerts →
   Rules). Slack/PagerDuty/MS Teams/webhook channels are dashboard-only (Settings → Integrations,
   then add an action to the alert rule) — no app code involved.
-- **Not yet enabled:** profiling, custom metrics, the user feedback widget, GitHub integration —
-  see the Sentry rollout plan for status/rationale if picking these up.
+- **Feedback widget:** `Sentry.feedbackIntegration({ autoInject: false })` is registered, and
+  `src/components/admin/sentry-feedback-widget.tsx` manually mounts it only inside
+  `app/(admin)/layout.tsx` — never on employee-facing pages.
+- **GitHub integration:** the Sentry GitHub App is installed against this repo (suspect commits),
+  and `getsentry/action-release` runs in both deploy workflows after traffic promotion
+  (best-effort, `continue-on-error: true`) to mark each deploy as a Sentry release.
+- **Not enabled:** server-side CPU profiling (`@sentry/profiling-node`) was tried and reverted —
+  it breaks Next.js's instrumentation-hook loading under this app's production build (Turbopack;
+  see the `userAgent` note above), throwing `ERR_MODULE_NOT_FOUND` for `@sentry/core` at server
+  startup. `serverExternalPackages` did not fix it. Revisit only with a specific fix in hand, not
+  by re-adding the same config. Custom metrics (`Sentry.metrics`) also not enabled — low priority,
+  add only for specific counters if/when needed.
 
 ## Error capture
 
