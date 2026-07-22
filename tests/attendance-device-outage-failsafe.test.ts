@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
  * (getCompanyWideOutageDates in ingestion-health.ts), so — matching this
  * module's established pattern — pinned via source inspection; the pure
  * gating logic itself (reconcileDay's deviceOutage branch) has real behavioral
- * coverage in attendance-digest-reconcile.test.ts.
+ * coverage in attendance-reconcile-day.test.ts.
  */
 export function runAttendanceDeviceOutageFailsafeTests() {
   const ingestionHealth = readFileSync("src/lib/attendance/ingestion-health.ts", "utf8");
@@ -20,7 +20,7 @@ export function runAttendanceDeviceOutageFailsafeTests() {
   assert.match(
     ingestionHealth,
     /export async function getCompanyWideOutageDates/,
-    "the outage detector must exist and be exported for the digest generator to use",
+    "the outage detector must exist and be exported",
   );
   assert.match(
     ingestionHealth,
@@ -33,21 +33,7 @@ export function runAttendanceDeviceOutageFailsafeTests() {
     "only expected working days are candidates — a silent weekend/holiday is normal, not an outage",
   );
 
-  // 2. Wired into the generator, per settlement week, and threaded into every
-  //    employee's reconcile input — not computed once and forgotten.
-  const digestService = readFileSync("src/lib/attendance/digest-service.ts", "utf8");
-  assert.match(
-    digestService,
-    /getCompanyWideOutageDates\(week\.startIso, week\.endIso\)/,
-    "the generator must fetch outage dates for the settlement week being computed",
-  );
-  assert.match(
-    digestService,
-    /deviceOutage: outageDates\.has\(dateIso\)/,
-    "every employee-day's reconcile input must carry the real outage signal for that date",
-  );
-
-  // 3. The pure gate treats it as a universal cancel, before either tier's
+  // 2. The pure gate treats it as a universal cancel, before either tier's
   //    judge/flag logic — see digest-reconcile.ts's own ordering.
   const reconcile = readFileSync("src/lib/attendance/digest-reconcile.ts", "utf8");
   const universalCancelsBlock = reconcile.slice(reconcile.indexOf("Universal cancels"), reconcile.indexOf("if (input.tier"));

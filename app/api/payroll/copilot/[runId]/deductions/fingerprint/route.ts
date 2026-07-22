@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
     assertCopilotAccess(access);
     const { runId } = await params;
     const period = await getRunPeriod(runId);
-    const { cycle, rows, dryRun, rosterCount, scopedCount } = await listFingerprintDeductionCandidates(access, period);
+    const { cycle, rows, rosterCount, scopedCount } = await listFingerprintDeductionCandidates(access, period);
     const hireDates = await getHireDateMap();
 
     if (new URL(request.url).searchParams.get("format") === "xlsx") {
@@ -47,7 +47,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
 
     return NextResponse.json({
       cycle,
-      dryRun,
       rosterCount,
       scopedCount,
       candidates: rows.map((row) => ({

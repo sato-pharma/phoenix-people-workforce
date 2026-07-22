@@ -65,7 +65,6 @@ export function DeductionReviewTable({
   valueLabel: string;
 }) {
   const [rows, setRows] = useState<DeductionCandidate[] | null>(null);
-  const [dryRun, setDryRun] = useState(false);
   const [rosterCount, setRosterCount] = useState<number | null>(null);
   const [scopedCount, setScopedCount] = useState<number | null>(null);
   const [autoApplies, setAutoApplies] = useState(false);
@@ -81,7 +80,6 @@ export function DeductionReviewTable({
       });
       const data = (await res.json().catch(() => ({}))) as {
         candidates?: DeductionCandidate[];
-        dryRun?: boolean;
         rosterCount?: number | null;
         scopedCount?: number | null;
         autoAppliesUnlessRejected?: boolean;
@@ -89,7 +87,6 @@ export function DeductionReviewTable({
       };
       if (!res.ok) throw new Error(data.message ?? "Failed to load.");
       setRows(data.candidates ?? []);
-      setDryRun(Boolean(data.dryRun));
       setRosterCount(typeof data.rosterCount === "number" ? data.rosterCount : null);
       setScopedCount(typeof data.scopedCount === "number" ? data.scopedCount : null);
       setAutoApplies(Boolean(data.autoAppliesUnlessRejected));
@@ -196,27 +193,18 @@ export function DeductionReviewTable({
           issue); click <strong>Confirm</strong> to lock in the exact days/value instead of the estimate.
         </div>
       ) : null}
-      {dryRun ? (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-          Attendance deductions are currently in <strong>dry-run mode</strong> — the weekly-digest
-          engine is computing recommendations but not yet pushing real candidates into payroll. Zero
-          candidates here is expected until dry-run is turned off in Attendance settings.
-        </div>
-      ) : null}
       {rosterCount != null && scopedCount != null && scopedCount < rosterCount ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
           Only <strong>{scopedCount} of {rosterCount}</strong> employees on the attendance roster have a
           minimum-hours (required_minutes) policy configured this period — attendance deductions can
           only ever apply to that smaller group until more employees are migrated onto a flexible-hours
-          policy in Attendance settings, even with dry-run off.
+          policy in Attendance settings.
         </div>
       ) : null}
       {!rows ? (
         <p className="px-4 py-6 text-sm text-slate-500">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-500">
-          {dryRun ? "No candidates while dry-run is on." : "No candidates for this period."}
-        </p>
+        <p className="px-4 py-6 text-sm text-slate-500">No candidates for this period.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
