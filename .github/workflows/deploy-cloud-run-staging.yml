@@ -241,6 +241,19 @@ jobs:
             --project ${{ env.PROJECT_ID }} \
             --to-latest
 
+      - name: Mark Sentry release as deployed
+        # Mirrors deploy-cloud-run.yml's equivalent step. Best-effort: never fail an
+        # already-live staging deploy over a Sentry deploy-marker call.
+        continue-on-error: true
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: phoenix-workforce
+          SENTRY_PROJECT: phx-b9
+        with:
+          environment: staging
+          version: ${{ steps.image.outputs.sha_tag || steps.image_fallback.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}
+
       - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
         # Staging chains off every prod deploy (see header comment above), so it
         # accumulates a sha-* tag just as fast as phoenix-hr and was found with 16

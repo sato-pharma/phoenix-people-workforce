@@ -176,6 +176,21 @@ jobs:
             --project ${{ env.PROJECT_ID }} \
             --to-latest
 
+      - name: Mark Sentry release as deployed
+        # Same $SHA_TAG used for the image tag / withSentryConfig release / Sentry.init
+        # release option (see next.config.ts, instrumentation-client.ts). This only adds
+        # the deploy-marker/suspect-commit UI in Sentry — release tagging itself already
+        # works without this step. Best-effort: never fail an already-live deploy over it.
+        continue-on-error: true
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: phoenix-workforce
+          SENTRY_PROJECT: phx-b9
+        with:
+          environment: production
+          version: ${{ steps.preflight.outputs.sha_tag }}
+
       - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
         # Each sha-* tag was deployed with --min-instances 1, which reserves 1 vCPU
         # permanently even at 0% traffic. Left unpruned, these accumulate across every
