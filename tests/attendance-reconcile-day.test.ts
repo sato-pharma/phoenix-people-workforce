@@ -18,7 +18,7 @@ function base(overrides: Partial<ReconcileInput> = {}): ReconcileInput {
   };
 }
 
-export function runAttendanceDigestReconcileTests() {
+export function runAttendanceReconcileDayTests() {
   // --- Tier 1 (head office): judged every working day ---
   assert.equal(reconcileDay(base()).action, "judge", "a normal working day is judged");
   assert.equal(reconcileDay(base({ isWorkingDay: false })).action, "skip", "weekly off is skipped");

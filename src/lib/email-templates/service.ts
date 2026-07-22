@@ -51,13 +51,11 @@ export const emailTemplateKeys = [
   "recruitment_update",
   "coaching_report",
   "payroll_update",
-  "attendance_digest",
   "attendance_workflow",
   "general",
 ] as const;
 
 export const EMAIL_TEMPLATE_KEYS = {
-  ATTENDANCE_DIGEST: "attendance_digest",
   ATTENDANCE_WORKFLOW: "attendance_workflow",
   BIRTHDAY: "birthday",
   COACHING_REPORT: "coaching_report",
@@ -127,10 +125,10 @@ export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptio
 export type EmailTemplateContext = {
   amount?: string | null;
   area?: string | null;
-  /** Pre-rendered HTML deduction table (day/date, value, quantity, reason) for the attendance_digest template. */
+  /** Pre-rendered HTML/text summary table used by digest-style templates (e.g. dv_planner_weekly). */
   digestTable?: string | null;
   digestTableText?: string | null;
-  /** Formatted date range for the settlement week, e.g. "2026-06-24 to 2026-06-30". */
+  /** Formatted date range label for a digest-style template, e.g. "2026-06-24 to 2026-06-30". */
   weekLabel?: string | null;
   candidateName?: string | null;
   ctaLabel?: string | null;
@@ -430,7 +428,7 @@ const placeholderHints = [
   "vacationType",
   // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
   "planTable",
-  // Pre-rendered HTML deduction table + week date range (attendance_digest only).
+  // Pre-rendered HTML summary table + date-range label for digest-style templates.
   "digestTable",
   "weekLabel",
   // Coaching score table for the coaching_report template.
@@ -476,7 +474,6 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   recruitment_update: emptyRules(["hr", "recruiter"], []),
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
   payroll_update: emptyRules(["admin"], ["finance"]),
-  attendance_digest: emptyRules(["employee"]),
   attendance_workflow: emptyRules(["employee"], ["hr_manager", "admin"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
@@ -652,18 +649,6 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "payroll_update",
     templateName: "Payroll Update",
-  },
-  attendance_digest: {
-    bodyHtml: "<p>{{summary}}</p>{{digestTable}}<p>{{status}}</p>",
-    bodyText: "{{summary}}\n\n{{digestTable}}\n\n{{status}}",
-    closingText: "Open Phoenix Workforce to confirm or dispute.",
-    description: "Weekly attendance digest sent to an employee after admin review, showing any deductible days.",
-    greeting: "Dear {{honorific}}{{recipientName}},",
-    isActive: true,
-    previewText: "Your weekly attendance digest is ready.",
-    subject: "Weekly attendance digest — {{weekLabel}}",
-    templateKey: "attendance_digest",
-    templateName: "Weekly Attendance Digest",
   },
   general: {
     bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
@@ -1051,7 +1036,6 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   recruitment_update: "Recruitment",
   coaching_report: "Employee Lifecycle",
   payroll_update: "General",
-  attendance_digest: "General",
   attendance_workflow: "General",
   weekly_plans: "General",
   outstation: "General",
@@ -2220,35 +2204,6 @@ function buildSampleCoachingScoreTable(): { scoreTable: string; scoreTableText: 
   };
 }
 
-function sampleDigestContext(): Partial<EmailTemplateContext> {
-  return { weekLabel: "2026-06-24 to 2026-06-30", ...buildSampleDigestTable() };
-}
-
-function buildSampleDigestTable(): { digestTable: string; digestTableText: string } {
-  const cell = "border:1px solid #e2e8f0;padding:8px 10px;font-size:13px;text-align:left";
-  const cellR = `${cell};text-align:right`;
-  const head = "background-color:#0f172a;color:#ffffff;padding:8px 10px;font-size:12px;text-align:left";
-  const headR = `${head};text-align:right`;
-  const rows: Array<{ date: string; value: string; qty: string; reason: string }> = [
-    { date: "Mon, 24 Jun 2026", value: "150.00 EGP", qty: "0.25", reason: "Late 20 min but completed the required hours — penalty halved." },
-  ];
-  return {
-    digestTable: [
-      '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%">',
-      `<thead><tr><th style="${head}">Day</th><th style="${headR}">Deduction Value</th><th style="${headR}">Quantity</th></tr></thead>`,
-      `<tbody>${rows
-        .map(
-          (row) =>
-            `<tr><td style="${cell}">${row.date}</td><td style="${cellR}">${row.value}</td><td style="${cellR}">${row.qty}</td></tr>` +
-            `<tr><td colspan="3" style="${cell};border-top:none;color:#64748b;font-size:12px;">${row.reason}</td></tr>`,
-        )
-        .join("")}</tbody>`,
-      "</table>",
-    ].join(""),
-    digestTableText: rows.map((row) => `- ${row.date}: ${row.value}, ${row.qty} day(s) — ${row.reason}`).join("\n"),
-  };
-}
-
 function sampleDvPlannerDigestContext(): Partial<EmailTemplateContext> {
   return { weekLabel: "2026-07-12 to 2026-07-18", ...buildSampleDvPlannerDigestTable() };
 }
@@ -2317,8 +2272,6 @@ export async function previewTemplate(templateKey: string, input: {
     context = { ...input.context, ...sampleCoachingScoreContext() };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST && !text(input.context?.productsTable).includes("<table")) {
     context = { ...sampleMarketingContext(), ...input.context };
-  } else if (templateKey === EMAIL_TEMPLATE_KEYS.ATTENDANCE_DIGEST && !text(input.context?.digestTable).includes("<table")) {
-    context = { ...sampleDigestContext(), ...input.context };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY && !text(input.context?.digestTable).includes("<table")) {
     context = { ...sampleDvPlannerDigestContext(), ...input.context };
   }
@@ -2490,7 +2443,6 @@ export async function sendTemplateTestEmail(input: {
     // renders as (mirrors previewTemplate).
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.COACHING_REPORT ? buildSampleCoachingScoreTable() : {}),
-    ...(key === EMAIL_TEMPLATE_KEYS.ATTENDANCE_DIGEST ? buildSampleDigestTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY ? buildSampleDvPlannerDigestTable() : {}),
     ...(input.context ?? {}),
   };
