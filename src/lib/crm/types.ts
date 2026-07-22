@@ -37,11 +37,14 @@ export type CrmVisitRow = {
   comment: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
+  crm_region_id: number | null;
+  crm_region_name: string | null;
   crm_save_date: string | null;
   customer_name: string | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  speciality: string | null;
   visit_date: string;
   visit_date_time: string | null;
   visit_type: number | null;

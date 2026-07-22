@@ -24,7 +24,13 @@ export type IReports360Visit = {
   doubleID: number | null;
   doubleName: string | null;
   id: number;
+  // Added by the vendor 2026-07-22: the visited contact's locality (region/regionID) and medical
+  // specialty. Populated on regular customer visits only (visitType 0); null on campaign/meeting/
+  // leave entries, which carry no real contact. Finer-grained than Phoenix's own au.regions.
+  region: string | null;
+  regionID: number | null;
   saveDate: string | null;
+  speciality: string | null;
   visitDate: string;
   visitType: number;
   visitTypeDescription: string | null;

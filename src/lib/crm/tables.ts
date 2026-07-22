@@ -18,3 +18,6 @@ export const CRM_SYNC_RUNS_TABLE = "ireports360_visits_sync_runs";
 
 /** Manual crm_id -> hr_id identity resolutions (override tier of the identity waterfall). */
 export const CRM_IDENTITY_RESOLUTIONS_TABLE = "ireports360_crm_identity_resolutions";
+
+/** Manual CRM-region -> Phoenix-brick resolutions (see the Region Mapping admin tab). */
+export const CRM_REGION_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_region_brick_resolutions";

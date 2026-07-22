@@ -32,7 +32,10 @@ function visit(
     doubleID,
     doubleName: doubleID != null ? "Double.Partner" : null,
     id: agentID * 1000 + Number(visitDate.slice(8, 10)),
+    region: null,
+    regionID: null,
     saveDate: null,
+    speciality: null,
     visitDate,
     visitType: 0, // regular visit
     visitTypeDescription: "Regular",
@@ -183,7 +186,10 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: 0,
+    region: null,
+    regionID: null,
     saveDate: null,
+    speciality: null,
     visitDate: row.visit_date,
     visitType: row.visit_type as number,
     visitTypeDescription: null,
@@ -244,7 +250,8 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   // --- Tier 0.1/0.2: deterministic crm_id -> hr_id resolution + confidence, NO fuzzy names ---
   const baseVisit = (agentID: number, agentName: string | null): FieldWorkforceMatrixVisit => ({
     agentID, agentName, ampm: null, attendance: null, callType: null, comment: null, contactID: null,
-    contactName: null, customerName: null, doubleID: null, doubleName: null, id: 0, saveDate: null,
+    contactName: null, customerName: null, doubleID: null, doubleName: null, id: 0, region: null,
+    regionID: null, saveDate: null, speciality: null,
     visitDate: "2026-05-06", visitType: 0, visitTypeDescription: null,
   });
   const identityEmployees: FieldWorkforceEmployeeInput[] = [
@@ -465,7 +472,8 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   ): FieldWorkforceMatrixVisit => ({
     agentID, agentName: "x", ampm, attendance: null, callType: null, comment: null,
     contactID, contactName, customerName: null, doubleID: null, doubleName: null, id: 0,
-    saveDate: null, visitDate, visitType: 0, visitTypeDescription: null,
+    region: null, regionID: null, saveDate: null, speciality: null,
+    visitDate, visitType: 0, visitTypeDescription: null,
   });
   const caEmployees: FieldWorkforceEmployeeInput[] = [
     { crmId: "300", crmUsername: null, employmentStatus: "active", fullName: "CA High Concentration + Low Variety", displayName: "CA High Concentration + Low Variety", hireDate: "2024-01-01", hrId: "CA-1", jobTitle: "Medical Representative", positionTitle: null },

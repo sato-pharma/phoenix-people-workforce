@@ -9,13 +9,14 @@ import { Database, Loader2 } from "lucide-react";
 // client" component's bundle.
 import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered";
+export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping";
 
 /** Aggregated/derived views that sit alongside the raw per-dataset tabs — not a CrmMasterDataset,
  * since they don't come from a paginated slice of one table (see CrmUnmappedIdentitiesPanel /
- * CrmRecoveredChainsPanel). */
-const EXTRA_TABS: ReadonlyArray<{ id: "unmapped" | "recovered"; label: string }> = [
+ * CrmRecoveredChainsPanel / CrmRegionMappingPanel). */
+const EXTRA_TABS: ReadonlyArray<{ id: "unmapped" | "recovered" | "region_mapping"; label: string }> = [
   { id: "unmapped", label: "Unmapped Agents" },
+  { id: "region_mapping", label: "Region Mapping" },
   { id: "recovered", label: "Recovered Chains" },
 ];
 
@@ -39,7 +40,7 @@ export function CrmTabBar({ active }: { active: CrmActiveTab }) {
     for (const key of ["page", "search", "ampm", "visitType", "mappingStatus", "minDuration", "halfDaysOnly"]) {
       params.delete(key);
     }
-    if (tab === "unmapped" || tab === "recovered") {
+    if (tab === "unmapped" || tab === "recovered" || tab === "region_mapping") {
       params.delete("dataset");
       params.set("view", tab);
     } else {

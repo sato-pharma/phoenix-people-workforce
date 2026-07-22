@@ -10,7 +10,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_CHECKINS_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -84,6 +84,13 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
   { key: "contact_name", kind: "text", label: "Contact Name" },
   { key: "customer_name", kind: "text", label: "Customer Name" },
+  { key: "crm_region_id", kind: "number", label: "CRM Region ID", note: "iReports360's own locality id for the visited contact (vendor field: regionID, added 2026-07-22). Finer-grained than Phoenix's own geography — one Phoenix brick/area typically covers several of these. Null on non-customer visit types (campaign/meeting/leave)." },
+  { key: "crm_region_name", kind: "text", label: "CRM Region Name", note: "iReports360's display name for the CRM Region ID (vendor field: region)." },
+  { key: "phx_brick_id", kind: "text", label: "PHX Mapped Brick ID", note: "The real Phoenix brick (source_of_sales_bricks) an admin has mapped this CRM region to — see the Region Mapping tab. '—' until resolved." },
+  { key: "phx_area_id", kind: "text", label: "PHX Area ID", note: "The mapped brick's Phoenix area code (source_of_sales_bricks.area_code)." },
+  { key: "phx_region_id", kind: "text", label: "PHX Region ID", note: "The mapped brick's Phoenix region code (source_of_sales_bricks.region_code)." },
+  { key: "speciality", kind: "text", label: "Speciality", note: "The visited contact's medical specialty from iReports360 (vendor field: speciality, added 2026-07-22). Null on non-customer visit types." },
+  { key: "grade", kind: "text", label: "Grade", note: "Reserved — iReports360 does not currently send a customer/doctor grade field (checked 2026-07-22: not present on /visits or /checkins, no sibling endpoint exists). Shows '—' until a real data source is identified." },
   { key: "visit_type", kind: "number", label: "Visit Type" },
   { key: "visit_type_description", kind: "text", label: "Visit Type Description" },
   { key: "effective_type", kind: "text", label: "Effective Type", note: "How the system counts this visit. A Regular visit with NO matching GPS check-in is counted as Campaign — always shown here (flagged), never silently recounted." },
@@ -229,8 +236,8 @@ function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[
 
 const VISIT_SELECT =
   "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
-  "contact_crm_id, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, double_name, " +
-  "visit_date, visit_type, visit_type_description, synced_at, raw_payload";
+  "contact_crm_id, contact_name, crm_region_id, crm_region_name, crm_save_date, customer_name, double_crm_id, " +
+  "double_hr_id, double_name, speciality, visit_date, visit_type, visit_type_description, synced_at, raw_payload";
 
 const CHECKIN_SELECT =
   "id, crm_checkin_id, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, " +
@@ -659,6 +666,68 @@ function attachAgentMeta(rows: CrmMasterRow[], metaByHrId: Map<string, AgentMeta
   }
 }
 
+/** One CRM region's resolved Phoenix brick mapping (joined against the real brick master). */
+type BrickMapping = { areaId: string | null; brickId: string; regionId: string | null };
+
+/** Builds crm_region_id -> {brickId, areaId, regionId} from every "mapped" resolution, joined
+ * against source_of_sales_bricks for the brick's real area_code/region_code — the same master
+ * validated against the owner's manually-mapped xlsx (2026-07-22). Small table (bounded by
+ * distinct CRM region count, ~300), so one unpaginated read is safe. Degrades to an empty map on
+ * any error (cells then show "—") — this is a display overlay, never load-bearing for the sync. */
+async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> {
+  const supabase = getSupabaseAdmin();
+  const map = new Map<number, BrickMapping>();
+  try {
+    const { data: resolutions, error: resolutionsError } = await supabase
+      .from(CRM_REGION_BRICK_RESOLUTIONS_TABLE)
+      .select("crm_region_id, brick_id")
+      .eq("status", "mapped")
+      .not("brick_id", "is", null);
+    if (resolutionsError) return map;
+    const rows = (resolutions ?? []) as Array<{ brick_id: string | null; crm_region_id: number }>;
+    if (rows.length === 0) return map;
+
+    const brickIds = Array.from(new Set(rows.map((r) => r.brick_id).filter((v): v is string => Boolean(v))));
+    const { data: bricks, error: bricksError } = await supabase
+      .from("source_of_sales_bricks")
+      .select("brick_id, area_code, region_code")
+      .in("brick_id", brickIds);
+    if (bricksError) return map;
+    const brickById = new Map(
+      ((bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>).map(
+        (b) => [b.brick_id, b],
+      ),
+    );
+
+    for (const row of rows) {
+      if (!row.brick_id) continue;
+      const brick = brickById.get(row.brick_id);
+      map.set(row.crm_region_id, {
+        areaId: brick?.area_code ?? null,
+        brickId: row.brick_id,
+        regionId: brick?.region_code ?? null,
+      });
+    }
+  } catch {
+    return map;
+  }
+  return map;
+}
+
+/** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id from its crm_region_id, and grade
+ * to null (rendered as "—" — reserved column, see CRM_VISIT_COLUMNS note; no data source exists
+ * yet). Unmapped/unset regions correctly show "—" throughout. */
+function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, BrickMapping>): void {
+  for (const row of rows) {
+    const regionId = typeof row.crm_region_id === "number" ? row.crm_region_id : null;
+    const mapping = regionId != null ? mapByRegionId.get(regionId) : undefined;
+    row.phx_brick_id = mapping?.brickId ?? null;
+    row.phx_area_id = mapping?.areaId ?? null;
+    row.phx_region_id = mapping?.regionId ?? null;
+    row.grade = null;
+  }
+}
+
 /** Distinct product-line names for the "Line" filter dropdown (small `lines` table). */
 async function loadLineOptions(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin().from("lines").select("name").order("name", { ascending: true });
@@ -1018,6 +1087,10 @@ async function attachDerived(
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
   attachAgentMeta(rows, await loadAgentMetaByHrId(), "agent_hr_id");
+  // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
+  // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
+  // isVisitDataset already scopes to.
+  if (isVisitDataset(dataset)) attachBrickMapping(rows, await loadBrickMappingByRegionId());
 }
 
 /**
