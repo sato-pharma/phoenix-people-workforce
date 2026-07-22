@@ -64,8 +64,14 @@ async function forwardServerErrorToIngestion(
 
 // Captures errors thrown in nested React Server Components / route handlers —
 // forwards to our own error table AND to Sentry.
+// Benign client-initiated disconnect codes — the server is not at fault.
+// Forwarding these as errors creates false-positive alerts in both the error table and Sentry.
+const IGNORED_CONNECTION_ERROR_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE"]);
+
 export async function onRequestError(...args: Parameters<typeof Sentry.captureRequestError>) {
   const [error, request, context] = args;
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code && IGNORED_CONNECTION_ERROR_CODES.has(code)) return;
   await Promise.all([
     forwardServerErrorToIngestion(error, request, context),
     Sentry.captureRequestError(error, request, context),
