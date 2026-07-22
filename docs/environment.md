@@ -60,17 +60,23 @@ All environment variables are listed in `.env.example` at the repository root. C
 | ATTENDANCE_DEFAULT_DEVICE_ID | Default ZKTeco device ID | 1 |
 | ATTENDANCE_REPORT_TIME_ZONE | Timezone for attendance reports | Africa/Cairo |
 
-## Observability / Sentry (Optional)
+## Observability / Sentry
+
+Not optional in practice — Sentry is wired in by default (see docs/observability.md); a missing
+DSN just falls back to the hardcoded project DSN in source, it doesn't disable Sentry.
 
 | Variable | Description |
 |---|---|
-| NEXT_PUBLIC_SENTRY_DSN | Sentry DSN (enables browser monitoring) |
-| SENTRY_DSN | Server/edge DSN override |
-| SENTRY_AUTH_TOKEN | Auth token for source map upload |
-| SENTRY_ORG | Sentry organization slug |
-| SENTRY_PROJECT | Sentry project slug |
+| NEXT_PUBLIC_SENTRY_DSN | Browser DSN. Falls back to the correct project's DSN if unset — never a real `.env.example` value needed. |
+| SENTRY_DSN | Server/edge DSN. Same fallback behavior. |
+| SENTRY_AUTH_TOKEN | Source-map upload auth token. **Build-time only**, sourced from GCP Secret Manager as a BuildKit secret mount (`cloudbuild.yaml`/`Dockerfile`) — never set as a plain env var anywhere, never a real `.env.example` value. |
+| COMMIT_SHA | Runtime release identifier, set by the deploy workflows from the same `$SHA_TAG` used for the Cloud Run image tag. Feeds both Sentry's `release` and the self-hosted `app_error_events.release` field. |
+| NEXT_PUBLIC_COMMIT_SHA | Build-time twin of `COMMIT_SHA`, baked into the client bundle (Sentry's client-side `release`). |
 
-See docs/observability.md for activation steps.
+`SENTRY_ORG`/`SENTRY_PROJECT` are not env vars in this repo — they're hardcoded directly in
+`next.config.ts`'s `withSentryConfig` call (org `phoenix-workforce`, project `phx-b9`).
+
+See docs/observability.md for the full picture.
 
 ## Cloud Scheduler / Deployment
 

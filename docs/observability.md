@@ -1,11 +1,57 @@
 # Observability
 
-_Phoenix Workforce runs on GCP Cloud Run. **Sentry has been fully removed** — do not reintroduce `@sentry/*`, `withSentryConfig`, or `sentry.*.config.ts`. Observability is native GCP + a self-hosted error table._
+_Phoenix Workforce runs on GCP Cloud Run. Observability is **two intentionally parallel systems**,
+not a migration from one to the other: Sentry (issues, tracing, session replay, cron-monitor
+heartbeats) and a self-hosted, GCP-native pipeline (structured logging, log-based metrics/alerts,
+the `app_error_events` table). Every error/request-error capture point fans out to both — see
+`instrumentation.ts`'s `onRequestError`, which runs the self-hosted forward-to-`/api/errors/client`
+call and `Sentry.captureRequestError` together via `Promise.all` (neither blocks or depends on the
+other), and `app/global-error.tsx`, which calls both `reportClientError` and
+`Sentry.captureException`. Do not remove either side without discussing first — they serve
+different audiences (Sentry: trace/error-correlated search, cron-monitor alerting, session replay;
+self-hosted: HR-ID/module-queryable errors, GCP log-based alerting, login-security correlation)._
+
+## Sentry
+
+- **Config:** `next.config.ts` (`withSentryConfig`, org `phoenix-workforce`, project `phx-b9`) +
+  `instrumentation-client.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` (`Sentry.init`).
+  DSN reads `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` with a hardcoded fallback to the correct project.
+- **PII:** `dataCollection` is deliberately **omitted** from all three `Sentry.init` calls — passing
+  it at all (even `{}`) flips PII/body collection to its permissive default, which is wrong for an
+  HR platform. Do not re-add it without an explicit per-field opt-in.
+- **Sampling:** `tracesSampleRate` is 100% in dev, 20% in production (cost/noise tradeoff).
+- **Release:** `release` on both `withSentryConfig` and every `Sentry.init` call reads
+  `COMMIT_SHA`/`NEXT_PUBLIC_COMMIT_SHA`, set by the deploy workflows from the same `$SHA_TAG` used
+  for the Cloud Run image tag — see "Error capture" below, which shares this identifier.
+- **Source maps:** uploaded at build time via `@sentry/webpack-plugin`, authenticated with
+  `SENTRY_AUTH_TOKEN` sourced from GCP Secret Manager as a BuildKit `--secret` mount in
+  `Dockerfile`/`cloudbuild.yaml` (never a plain build-arg/env, so it never persists in the pushed
+  `:deps-cache`/`:latest-cache` image layers).
+- **Cron monitors:** all 6 GCP-scheduled cron routes (`app/api/notifications/{daily,process}`,
+  `app/api/cron/{background-jobs,ireports360-visits-sync,ireports360-visits-reconcile,ireports360-visits-live-sync}`)
+  wrap their real work in `Sentry.withMonitor(slug, fn, { schedule, timezone: "Africa/Cairo", ... })`,
+  matching `scripts/setup-gcp-cron.sh`'s `--schedule`/`--time-zone` exactly. Sentry alerts on missed/
+  failed check-ins independently of the app's own per-job notification logic.
+- **Alerts:** a basic "new issue → email" rule is configured in the Sentry dashboard (Alerts →
+  Rules). Slack/PagerDuty/MS Teams/webhook channels are dashboard-only (Settings → Integrations,
+  then add an action to the alert rule) — no app code involved.
+- **Feedback widget:** `Sentry.feedbackIntegration({ autoInject: false })` is registered, and
+  `src/components/admin/sentry-feedback-widget.tsx` manually mounts it only inside
+  `app/(admin)/layout.tsx` — never on employee-facing pages.
+- **GitHub integration:** the Sentry GitHub App is installed against this repo (suspect commits),
+  and `getsentry/action-release` runs in both deploy workflows after traffic promotion
+  (best-effort, `continue-on-error: true`) to mark each deploy as a Sentry release.
+- **Not enabled:** server-side CPU profiling (`@sentry/profiling-node`) was tried and reverted —
+  it breaks Next.js's instrumentation-hook loading under this app's production build (Turbopack;
+  see the `userAgent` note above), throwing `ERR_MODULE_NOT_FOUND` for `@sentry/core` at server
+  startup. `serverExternalPackages` did not fix it. Revisit only with a specific fix in hand, not
+  by re-adding the same config. Custom metrics (`Sentry.metrics`) also not enabled — low priority,
+  add only for specific counters if/when needed.
 
 ## Error capture
 
-- **Server errors:** `instrumentation.ts` `onRequestError` forwards to `/api/errors/client` (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table (`src/lib/error-monitor/service.ts`). Fields include route, module, hr_id, message, stack, `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
-- **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → same endpoint.
+- **Server errors:** `instrumentation.ts` `onRequestError` forwards to `/api/errors/client` (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table (`src/lib/error-monitor/service.ts`), **and** in parallel calls `Sentry.captureRequestError` (see Sentry section above) — neither path blocks or depends on the other. Fields include route, module, hr_id, message, stack, `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
+- **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → same endpoint, **and** `app/global-error.tsx` also calls `Sentry.captureException`.
 - **Retention:** `pruneOldAppErrorEvents()` runs in the daily cron (default 90 days, `PHOENIX_ERROR_EVENT_RETENTION_DAYS`).
 - **Access:** the table is service-role only (RLS-enabled, no policies); the admin error dashboard reads it via the admin client with an application permission check.
 

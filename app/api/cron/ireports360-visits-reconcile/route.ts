@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
@@ -35,7 +36,12 @@ async function runReconcile() {
 
   let result: Awaited<ReturnType<typeof runWideIReports360Reconciliation>>;
   try {
-    result = await runWideIReports360Reconciliation();
+    result = await Sentry.withMonitor("ireports360-visits-reconcile", () => runWideIReports360Reconciliation(), {
+      checkinMargin: 15,
+      maxRuntime: 10,
+      schedule: { type: "crontab", value: "24 4 * * 0" },
+      timezone: "Africa/Cairo",
+    });
   } catch (error) {
     await notifyIReports360SyncResult({
       dateFrom,

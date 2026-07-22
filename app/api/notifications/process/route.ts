@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -53,7 +54,12 @@ export async function GET(request: Request) {
     // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
-    return await runNotificationOutbox(limit);
+    return await Sentry.withMonitor("notifications-process", () => runNotificationOutbox(limit), {
+      checkinMargin: 5,
+      maxRuntime: 5,
+      schedule: { type: "crontab", value: "*/5 * * * *" },
+      timezone: "Africa/Cairo",
+    });
   } catch (error) {
     console.error(error, { tags: { cron: "notification-outbox-drain" } });
     const message = error instanceof Error ? error.message : "Notification processing failed.";
