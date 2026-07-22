@@ -103,7 +103,13 @@ const nextConfig: NextConfig = {
   // paths break (Next tries to resolve them as bundled "vendor-chunks" that don't exist).
   // Marking them external makes API routes `require()` them natively from node_modules
   // instead, so the on-disk .afm lookups keep working.
-  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core"],
+  // @sentry/profiling-node: bundling it (Turbopack or webpack) breaks its own internal
+  // import of @sentry/core — the bundler produces a nested .next/node_modules copy whose
+  // relative import path to @sentry/core doesn't resolve, throwing
+  // ERR_MODULE_NOT_FOUND at server startup (confirmed in CI's preview-smoke job).
+  // Marking it external makes it a plain runtime require() from node_modules instead,
+  // same reasoning as the pdfmake/pdfkit/puppeteer-core entries below.
+  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "@sentry/profiling-node"],
   experimental: {
     serverActions: {
       allowedOrigins: [
