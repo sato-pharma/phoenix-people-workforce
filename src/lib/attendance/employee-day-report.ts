@@ -39,17 +39,23 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 
 export type FlexEligibleEmployeeOption = { hrId: string; employeeName: string; jobTitle: string };
 
-/** The dropdown source for the day-by-day report — everyone currently on the flexible-hours
- * model (resolved policy has required_minutes set), not the whole attendance-tracked roster. */
-export async function listFlexEligibleEmployees(): Promise<FlexEligibleEmployeeOption[]> {
+/** The dropdown source for the day-by-day report — everyone flex-eligible (resolved policy has
+ * required_minutes set) at some point across the given range, not the whole attendance-tracked
+ * roster. Defaults to today/today so the dropdown is still populated before an admin has picked
+ * a range — but once they have, callers should pass THAT range: an employee who resigned, or
+ * whose policy moved off the flexible-hours model, since the period being reviewed must still be
+ * selectable, or the historical review this report exists for is impossible for exactly them. */
+export async function listFlexEligibleEmployees(range?: { dateFromIso: string; dateToIso: string }): Promise<FlexEligibleEmployeeOption[]> {
   const today = cairoTodayIso();
+  const dateFromIso = range?.dateFromIso ?? today;
+  const dateToIso = range?.dateToIso ?? today;
   const [roster, flexPolicies] = await Promise.all([
-    getAttendanceRoster({ dateFromIso: today, dateToIso: today }),
+    getAttendanceRoster({ dateFromIso, dateToIso }),
     loadAttendanceFlexPolicyGroups({ activeOnly: true }),
   ]);
   const eligible: FlexEligibleEmployeeOption[] = [];
   for (const employee of roster) {
-    const policy = resolveActiveAttendancePolicy({ hr_id: employee.hrId, job_title: employee.jobTitle }, flexPolicies, today, today);
+    const policy = resolveActiveAttendancePolicy({ hr_id: employee.hrId, job_title: employee.jobTitle }, flexPolicies, dateFromIso, dateToIso);
     if (policy && policy.required_minutes != null) {
       eligible.push({ employeeName: employee.employeeName, hrId: employee.hrId, jobTitle: employee.jobTitle });
     }
@@ -85,7 +91,8 @@ export type EmployeeDayOutcome =
   | "late"
   | "short_hours"
   | "missing_punch"
-  | "future";
+  | "future"
+  | "not_flex_eligible";
 
 /** The already-stored decision for this date, if a digest line exists for it yet — null means
  * no digest has been generated for that week (Confirm/Decline will generate it on demand). */
@@ -93,6 +100,7 @@ export type EmployeeDayDecision = {
   action: "pending" | "confirmed" | "auto_confirmed" | "disputed";
   storedDeductionDays: number;
   storedDeductionValue: number;
+  storedReason: string;
 } | null;
 
 export type EmployeeDayReportRow = {
@@ -166,28 +174,47 @@ export async function getEmployeeDayByDayReport(input: {
 
   const decisionByDate = await loadExistingDecisions(hrId, input.dateFromIso, input.dateToIso);
 
-  const policy = resolveActiveAttendancePolicy(
-    { hr_id: employee.hr_id, job_title: employee.job_title },
-    flexPolicies,
-    input.dateFromIso,
-    input.dateToIso,
-  );
   const jobTitle = employee.job_title?.trim() ?? "";
   const employeeName = employee.full_name?.trim() || hrId;
 
-  if (!policy || policy.required_minutes == null) {
-    return { dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, days: [], employeeHrId: hrId, employeeName, jobTitle, tier: null };
-  }
-
+  // Resolved PER DAY, not once for the whole admin-chosen range — an arbitrary range can
+  // span a policy change (new scheduled_start/flex_minutes/required_minutes/brackets, or
+  // the employee only became flex-eligible partway through). The weekly digest engine avoids
+  // this by resolving policy per settlement WEEK (digest-service.ts); a report spanning
+  // months needs the same guard at day granularity. Derived per-policy values are memoized
+  // by policy.id since the same policy typically governs many consecutive days.
   const rules = (ruleResult.data ?? []) as PolicyRuleDbRow[];
-  const scheduledStartMinutes = timeToMinutes(policy.scheduled_start) ?? 9 * 60;
-  const config: FlexibleHoursConfig = {
-    scheduledStartMinutes,
-    flexCeilingMinutes: scheduledStartMinutes + (policy.flex_minutes ?? 0),
-    requiredMinutes: policy.required_minutes,
+  type ResolvedDayPolicy = {
+    policy: NonNullable<ReturnType<typeof resolveActiveAttendancePolicy<(typeof flexPolicies)[number]>>>;
+    config: FlexibleHoursConfig;
+    lateBrackets: ReturnType<typeof bracketsForEventType>;
+    shortBrackets: ReturnType<typeof bracketsForEventType>;
   };
-  const lateBrackets = bracketsForEventType(rules, policy.id, "late");
-  const shortBrackets = bracketsForEventType(rules, policy.id, "short_hours");
+  const policyCache = new Map<number, ResolvedDayPolicy | null>();
+  function resolvePolicyForDay(dateIso: string): ResolvedDayPolicy | null {
+    const dayPolicy = resolveActiveAttendancePolicy(
+      { hr_id: employee!.hr_id, job_title: employee!.job_title },
+      flexPolicies,
+      dateIso,
+      dateIso,
+    );
+    if (!dayPolicy || dayPolicy.required_minutes == null) return null;
+    const cached = policyCache.get(dayPolicy.id);
+    if (cached !== undefined) return cached;
+    const scheduledStartMinutes = timeToMinutes(dayPolicy.scheduled_start) ?? 9 * 60;
+    const resolved: ResolvedDayPolicy = {
+      config: {
+        scheduledStartMinutes,
+        flexCeilingMinutes: scheduledStartMinutes + (dayPolicy.flex_minutes ?? 0),
+        requiredMinutes: dayPolicy.required_minutes,
+      },
+      lateBrackets: bracketsForEventType(rules, dayPolicy.id, "late"),
+      policy: dayPolicy,
+      shortBrackets: bracketsForEventType(rules, dayPolicy.id, "short_hours"),
+    };
+    policyCache.set(dayPolicy.id, resolved);
+    return resolved;
+  }
 
   const leaveDates = leaveMap.get(hrId) ?? new Set<string>();
   const excuseDates = excuseMap.get(hrId) ?? new Set<string>();
@@ -197,15 +224,26 @@ export async function getEmployeeDayByDayReport(input: {
   const crmFieldVisitDates = crmActivity.fieldVisitMap.get(hrId) ?? new Set<string>();
 
   const days: EmployeeDayReportRow[] = [];
+  let reportTier: AttendanceJudgmentMode | null = null;
   for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) {
-    const classification = classifyAttendanceDay({ context, dateIso, jobTitle, workingWeekdays: policy.working_weekdays });
+    const storedDecision = decisionByDate.get(dateIso) ?? null;
     const punchInfo = punches.get(dateIso);
     const firstPunchMinutes = punchInfo?.firstPunchMinutes ?? null;
     const lastPunchMinutes = punchInfo?.lastPunchMinutes ?? null;
     const visiblePunchCount = punchInfo?.visiblePunchCount ?? 0;
-    const hasApprovedException = exceptionMap.get(`${hrId}|${dateIso}`)?.status === "approved";
 
-    const storedDecision = decisionByDate.get(dateIso) ?? null;
+    const dayPolicy = resolvePolicyForDay(dateIso);
+    if (!dayPolicy) {
+      // Not on the flexible-hours model on this specific date — never silently borrow a
+      // policy from a different day's version to judge it (see the memoized resolver above).
+      days.push(dayRow(dateIso, "not_flex_eligible", "Not on the flexible-hours model on this date.", firstPunchMinutes, lastPunchMinutes, visiblePunchCount, storedDecision));
+      continue;
+    }
+    reportTier = dayPolicy.policy.judgment_mode;
+    const { config, lateBrackets, shortBrackets } = dayPolicy;
+
+    const classification = classifyAttendanceDay({ context, dateIso, jobTitle, workingWeekdays: dayPolicy.policy.working_weekdays });
+    const hasApprovedException = exceptionMap.get(`${hrId}|${dateIso}`)?.status === "approved";
 
     if (classification.isFuture) {
       days.push(dayRow(dateIso, "future", "In the future — not yet part of any digest.", firstPunchMinutes, lastPunchMinutes, visiblePunchCount, storedDecision));
@@ -228,7 +266,7 @@ export async function getEmployeeDayByDayReport(input: {
       isHoliday: classification.isHoliday,
       isWorkingDay: !classification.isWeeklyOff,
       planSaysOffice: officeDates.get(dateIso) ?? null,
-      tier: policy.judgment_mode,
+      tier: dayPolicy.policy.judgment_mode,
     });
 
     if (decision.action === "skip") {
@@ -301,7 +339,11 @@ export async function getEmployeeDayByDayReport(input: {
     });
   }
 
-  return { dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, days, employeeHrId: hrId, employeeName, jobTitle, tier: policy.judgment_mode };
+  // Null only when NO day in the range resolved a flex policy at all — the same "isn't on the
+  // flexible-hours model" case the caller already handles. A range that's flex-eligible for
+  // only part of its span still returns a real tier plus a per-day mix of judged rows and
+  // not_flex_eligible rows for the rest.
+  return { dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, days, employeeHrId: hrId, employeeName, jobTitle, tier: reportTier };
 }
 
 /** Existing digest-line decisions for this employee across the range, keyed by work_date — a
@@ -327,17 +369,24 @@ async function loadExistingDecisions(
 
   const { data: lineRows, error: lineError } = await supabase
     .from("attendance_digest_lines")
-    .select("work_date,action,deduction_days,deduction_value")
+    .select("work_date,action,deduction_days,deduction_value,reason")
     .in("digest_id", digestIds)
     .gte("work_date", dateFromIso)
     .lte("work_date", dateToIso);
   if (lineError) throw lineError;
-  type LineDecisionRow = { work_date: string; action: "pending" | "confirmed" | "auto_confirmed" | "disputed"; deduction_days: number; deduction_value: number };
+  type LineDecisionRow = {
+    work_date: string;
+    action: "pending" | "confirmed" | "auto_confirmed" | "disputed";
+    deduction_days: number;
+    deduction_value: number;
+    reason: string | null;
+  };
   for (const row of (lineRows ?? []) as LineDecisionRow[]) {
     map.set(row.work_date, {
       action: row.action,
       storedDeductionDays: Number(row.deduction_days),
       storedDeductionValue: Number(row.deduction_value),
+      storedReason: row.reason ?? "",
     });
   }
   return map;

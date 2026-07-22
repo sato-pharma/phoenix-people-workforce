@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeeDayReport } from "@/components/attendance/employee-day-report";
+import { isAuthorizedDisputeReviewer } from "@/lib/attendance/digest-read";
 import { getEmployeeDayByDayReport, listFlexEligibleEmployees } from "@/lib/attendance/employee-day-report";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -17,11 +18,24 @@ export default async function EmployeeDayReportPage({ searchParams }: PageProps)
     redirect("/employee-portals");
   }
 
+  // This report exposes the same per-employee punch/deduction detail as digest-review —
+  // gate it the same way (reviewer or Super Admin), not just the coarse attendance:read
+  // permission every basic attendance surface uses. Fail closed on a DB/config error.
+  const authorized = await isAuthorizedDisputeReviewer(access.hrId, access.role === "Super Admin").catch(() => false);
+  if (!authorized) {
+    redirect("/employee-portals");
+  }
+
   const filters = await searchParams;
   let employees: Awaited<ReturnType<typeof listFlexEligibleEmployees>> = [];
   let employeesError: string | null = null;
   try {
-    employees = await listFlexEligibleEmployees();
+    // Once an admin has picked a range, scope the dropdown to THAT range so someone who
+    // resigned or moved off the flexible-hours model since is still selectable — otherwise
+    // defaults to today, which is all that's needed before any range is picked.
+    employees = await listFlexEligibleEmployees(
+      filters?.dateFrom && filters?.dateTo ? { dateFromIso: filters.dateFrom, dateToIso: filters.dateTo } : undefined,
+    );
   } catch (error) {
     employeesError = error instanceof Error ? error.message : "Employee list failed to load.";
   }
