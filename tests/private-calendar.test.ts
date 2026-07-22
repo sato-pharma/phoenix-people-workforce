@@ -405,8 +405,8 @@ export function runPrivateCalendarTests() {
   );
   assert.equal(
     serviceSource.match(/\.in\("employee_hr_id", employeeHrKeys\)/g)?.length,
-    3,
-    "vacation, excuse, and plan private-calendar loaders must use expanded employee HR_ID keys",
+    4,
+    "vacation, excuse, plan, and no-activity-status private-calendar loaders must use expanded employee HR_ID keys",
   );
   assert.match(
     excuseLoaderSource,

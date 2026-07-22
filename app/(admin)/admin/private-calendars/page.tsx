@@ -293,7 +293,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               &larr; Back to list
             </a>
           </div>
-          <PrivateCalendar initialWorkspace={workspace} />
+          <PrivateCalendar initialWorkspace={workspace} viewerHrId={access.hrId} />
         </div>
       )}
 

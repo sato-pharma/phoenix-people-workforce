@@ -9,6 +9,7 @@ import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytic
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -30,6 +31,7 @@ import {
   privateCalendarSources,
   resolvePrivateCalendarVisibleEmployees,
   summarizePrivateCalendarItems,
+  type PrivateCalendarException,
   type PrivateCalendarItem,
   type PrivateCalendarPlanRow,
   type PrivateCalendarSource,
@@ -159,6 +161,171 @@ function decorateItemsWithEmployeeMetadata(items: PrivateCalendarItem[], employe
 function filterItemsByEmployees(items: PrivateCalendarItem[], employees: EmployeeDirectoryRow[]) {
   const allowed = new Set(employees.map((employee) => privateCalendarHrIdKey(employee.hrId)).filter(Boolean));
   return items.filter((item) => !item.employeeHrId || allowed.has(privateCalendarHrIdKey(item.employeeHrId)));
+}
+
+// An accepted data dispute never mutates the original synced item — it overlays
+// a visible "Admin-verified correction" note on top, so the original source
+// data stays fully auditable alongside the verified truth. Only accepted,
+// item-scoped disputes annotate the matching item directly; every dispute
+// (any status, item-scoped or whole-day) also gets a standalone status
+// exception via appendDisputeStatusExceptions below, so the employee always
+// sees where their request stands even before/without a decision.
+function applyAcceptedDisputeOverlays(
+  items: PrivateCalendarItem[],
+  disputes: PrivateCalendarDataDispute[],
+): PrivateCalendarItem[] {
+  const acceptedItemScoped = disputes.filter((dispute) => dispute.status === "accepted" && dispute.itemSource != null);
+  if (acceptedItemScoped.length === 0) return items;
+  return items.map((item) => {
+    const matching = acceptedItemScoped.find((dispute) =>
+      privateCalendarHrIdKey(dispute.employeeHrId) === privateCalendarHrIdKey(item.employeeHrId)
+      && dispute.disputeDate === item.startDate
+      && dispute.itemSource === item.source
+      && (dispute.itemSourceRecordId == null || dispute.itemSourceRecordId === item.sourceRecordId));
+    if (!matching) return item;
+    const note = `Admin-verified correction: ${matching.claimText} (verified via ${matching.claimSourceText})`;
+    return {
+      ...item,
+      chipLines: [...(item.chipLines ?? [item.title]), "Admin-verified correction"],
+      detailLines: [...item.detailLines, note],
+    };
+  });
+}
+
+// Employee-visible status/history: every review request the employee submitted
+// shows up on its day, worded and colored per status — pending (info, still
+// awaiting a Super Admin decision), accepted (info, same "verified correction"
+// wording the item-level overlay above uses for item-scoped ones), or rejected
+// (warning, with the admin's note so the employee knows why).
+function appendDisputeStatusExceptions(
+  exceptions: PrivateCalendarException[],
+  disputes: PrivateCalendarDataDispute[],
+): PrivateCalendarException[] {
+  if (disputes.length === 0) return exceptions;
+  const statusExceptions: PrivateCalendarException[] = disputes.map((dispute) => {
+    if (dispute.status === "pending_review") {
+      return {
+        code: "data_review_pending",
+        date: dispute.disputeDate,
+        description: `You requested a review: "${dispute.claimText}" (verify via ${dispute.claimSourceText}). Awaiting a Super Admin decision.`,
+        employeeHrId: dispute.employeeHrId,
+        employeeName: dispute.employeeName,
+        id: `private-calendar-dispute-status-${dispute.id}`,
+        relatedItemIds: [],
+        severity: "info",
+        title: "Review Requested — Pending",
+      };
+    }
+    if (dispute.status === "rejected") {
+      return {
+        code: "data_review_rejected",
+        date: dispute.disputeDate,
+        description: `Your review request was reviewed and declined.${dispute.adminDecisionNote ? ` Admin note: ${dispute.adminDecisionNote}` : ""}`,
+        employeeHrId: dispute.employeeHrId,
+        employeeName: dispute.employeeName,
+        id: `private-calendar-dispute-status-${dispute.id}`,
+        relatedItemIds: [],
+        severity: "warning",
+        title: "Review Request Declined",
+      };
+    }
+    return {
+      code: "data_correction_verified",
+      date: dispute.disputeDate,
+      description: `${dispute.claimText} — verified via ${dispute.claimSourceText}.${dispute.adminDecisionNote ? ` Admin note: ${dispute.adminDecisionNote}` : ""}`,
+      employeeHrId: dispute.employeeHrId,
+      employeeName: dispute.employeeName,
+      id: `private-calendar-dispute-status-${dispute.id}`,
+      relatedItemIds: [],
+      severity: "info",
+      title: "Data Correction Verified",
+    };
+  });
+  return [...exceptions, ...statusExceptions];
+}
+
+type NoActivityStatusRow = {
+  activity_date: string;
+  admin_note: string | null;
+  clarification_text: string | null;
+  confirmed_no_activity: boolean;
+  employee_hr_id: string;
+  employee_name: string | null;
+  id: string;
+  resolution: "deducted" | "not_deducted" | null;
+  status: "pending_review" | "resolved";
+};
+
+// Local, read-only fetch — deliberately not imported from
+// no-activity-clarifications.ts, which itself imports getCompanyNoActivityDays
+// from this file; importing back from there would create a circular module
+// dependency. Mirrors the same inline-query pattern already used throughout
+// this file (loadVacationItems, loadExcuseItems, etc.) for other domains'
+// tables.
+async function loadNoActivityClarificationStatuses(
+  employeeHrIds: string[],
+  start: string,
+  end: string,
+): Promise<NoActivityStatusRow[]> {
+  const employeeHrKeys = expandHrIdLookupKeys(employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean));
+  if (employeeHrKeys.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("private_calendar_no_activity_clarifications")
+    .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
+    .in("employee_hr_id", employeeHrKeys)
+    .gte("activity_date", start)
+    .lte("activity_date", end);
+  if (error) {
+    if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
+    throw error;
+  }
+  return (data ?? []) as NoActivityStatusRow[];
+}
+
+// Employee-visible status/history for no-activity clarifications: only
+// surfaced once the employee (or the system, via the day-after clarify
+// prompt) or an admin has actually acted — an untouched "No Activity
+// Recorded" day already gets that label from derivePrivateCalendarExceptions,
+// so a pending row with no clarification yet would just be a duplicate of
+// that same message.
+function appendNoActivityStatusExceptions(
+  exceptions: PrivateCalendarException[],
+  rows: NoActivityStatusRow[],
+): PrivateCalendarException[] {
+  if (rows.length === 0) return exceptions;
+  const additions: PrivateCalendarException[] = [];
+  for (const row of rows) {
+    const hasResponse = Boolean(row.clarification_text) || row.confirmed_no_activity;
+    if (row.status === "pending_review" && hasResponse) {
+      additions.push({
+        code: "no_activity_clarification_pending",
+        date: row.activity_date,
+        description: row.confirmed_no_activity && !row.clarification_text
+          ? "You confirmed no activity happened this day. Awaiting Super Admin review."
+          : `You clarified: "${row.clarification_text}". Awaiting Super Admin review.`,
+        employeeHrId: row.employee_hr_id,
+        employeeName: row.employee_name,
+        id: `private-calendar-no-activity-status-${row.id}`,
+        relatedItemIds: [],
+        severity: "info",
+        title: "Clarification Submitted — Pending",
+      });
+    } else if (row.status === "resolved") {
+      const deducted = row.resolution === "deducted";
+      additions.push({
+        code: "no_activity_resolved",
+        date: row.activity_date,
+        description: `${deducted ? "This day was deducted from payroll." : "No deduction was applied for this day."}${row.admin_note ? ` Admin note: ${row.admin_note}` : ""}`,
+        employeeHrId: row.employee_hr_id,
+        employeeName: row.employee_name,
+        id: `private-calendar-no-activity-status-${row.id}`,
+        relatedItemIds: [],
+        severity: deducted ? "danger" : "info",
+        title: deducted ? "No Activity — Deducted" : "No Activity — Cleared",
+      });
+    }
+  }
+  return [...exceptions, ...additions];
 }
 
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PrivateCalendarItem[]> {
@@ -426,7 +593,20 @@ export async function getPrivateCalendarWorkspace(input: {
     vacation: vacations.ready,
   };
 
-  const displayItems = input.actualOnly ? filterPrivateCalendarActualItems(items) : items;
+  const scopeEmployeeHrIds = scopeEmployees.map((employee) => employee.hrId);
+  const [employeeDisputes, noActivityStatusRows] = await Promise.all([
+    (await Promise.all(
+      scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
+    )).flat(),
+    loadNoActivityClarificationStatuses(scopeEmployeeHrIds, start, end).catch(() => []),
+  ]);
+  const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
+  const exceptionsWithStatuses = appendNoActivityStatusExceptions(
+    appendDisputeStatusExceptions(exceptions, employeeDisputes),
+    noActivityStatusRows,
+  );
+
+  const displayItems = input.actualOnly ? filterPrivateCalendarActualItems(itemsWithCorrections) : itemsWithCorrections;
 
   return {
     access: {
@@ -439,10 +619,10 @@ export async function getPrivateCalendarWorkspace(input: {
     selectedEmployee: mapPrivateCalendarEmployee(selectedEmployee),
     sourceReadiness,
     summary: summarizePrivateCalendarItems(displayItems),
-    exceptions,
+    exceptions: exceptionsWithStatuses,
     teamSummary: buildPrivateCalendarTeamSummary({
       employees: mappedScopeEmployees,
-      exceptions,
+      exceptions: exceptionsWithStatuses,
       items: displayItems,
     }),
     visibleEmployees: resolvePrivateCalendarVisibleEmployees(input.access, employees, globalHrIds),
@@ -450,4 +630,106 @@ export async function getPrivateCalendarWorkspace(input: {
     weeks: buildMonthGrid(input.year, input.month),
     year: input.year,
   };
+}
+
+export type CompanyNoActivityDay = {
+  date: string;
+  description: string;
+  employeeHrId: string;
+  employeeName: string;
+};
+
+function monthsTouchedByRange(start: string, end: string): Array<{ year: number; month: number }> {
+  const months: Array<{ year: number; month: number }> = [];
+  const seen = new Set<string>();
+  let cursor = new Date(`${start}T00:00:00Z`);
+  const stop = new Date(`${end}T00:00:00Z`);
+  while (cursor <= stop) {
+    const year = cursor.getUTCFullYear();
+    const month = cursor.getUTCMonth() + 1;
+    const key = `${year}-${month}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      months.push({ year, month });
+    }
+    cursor = new Date(Date.UTC(year, month, 1));
+  }
+  return months;
+}
+
+/**
+ * Company-wide "No Activity Recorded" days across every active employee for
+ * the given date range — the same derivePrivateCalendarExceptions engine the
+ * employee's own calendar uses (guaranteeing the admin report and what an
+ * employee sees on their calendar can never disagree), just fed the whole
+ * roster instead of one employee/team. Backs the No Activity Days report
+ * (src/lib/private-calendar/no-activity-clarifications.ts) — this function
+ * only computes which days ARE no-activity; it does not touch clarifications
+ * or deduction decisions.
+ */
+export async function getCompanyNoActivityDays(input: {
+  access: AccessContext;
+  end: string;
+  start: string;
+}): Promise<CompanyNoActivityDay[]> {
+  await assertPermission(input.access, "deductions", "read");
+
+  const employees = await getEmployeeDirectoryRows();
+  const hrIds = employees.map((employee) => employee.hrId);
+  const months = monthsTouchedByRange(input.start, input.end);
+
+  const [attendance, vacations, excuses, doubleVisits, attendancePolicyRows, ...holidaysByMonth] = await Promise.all([
+    loadAttendanceItems(hrIds, input.start, input.end),
+    loadVacationItems(hrIds, input.start, input.end),
+    loadExcuseItems(hrIds, input.start, input.end),
+    loadDoubleVisitPrivateCalendarItems(hrIds, input.start, input.end),
+    loadAttendancePolicyScheduleRows(),
+    ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
+  ]);
+
+  const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
+    ...attendance.items,
+    ...vacations.items,
+    ...excuses.items,
+    ...holidaysByMonth.flat(),
+    ...doubleVisits.items,
+  ], employees), employees);
+
+  const fieldVisitDates = new Set<string>();
+  for (const item of allItems) {
+    if (item.source === "double_visit") fieldVisitDates.add(item.startDate);
+  }
+  const items = fieldVisitDates.size > 0
+    ? allItems.filter((item) => item.source !== "attendance" || !fieldVisitDates.has(item.startDate))
+    : allItems;
+
+  const mappedEmployees = employees.map(mapPrivateCalendarEmployee);
+  const exceptions = derivePrivateCalendarExceptions({
+    employees: mappedEmployees,
+    end: input.end,
+    isExpectedWorkday: (employee, date) => {
+      const policy = resolveActiveAttendancePolicy(
+        { hr_id: employee.hrId, job_title: employee.jobTitle },
+        attendancePolicyRows,
+        date,
+        date,
+      );
+      return isAttendanceScheduledWorkingDay({
+        dateIso: date,
+        jobTitle: employee.jobTitle,
+        workingWeekdays: policy?.working_weekdays,
+      });
+    },
+    items,
+    start: input.start,
+  });
+
+  return exceptions
+    .filter((exception) => exception.title === "No Activity Recorded" && exception.employeeHrId)
+    .map((exception) => ({
+      date: exception.date,
+      description: exception.description,
+      employeeHrId: exception.employeeHrId as string,
+      employeeName: exception.employeeName ?? exception.employeeHrId as string,
+    }));
 }

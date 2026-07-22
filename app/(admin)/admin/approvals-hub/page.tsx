@@ -10,6 +10,7 @@ import {
   getMyRequestItems,
   getMyApprovalHistory,
 } from "@/lib/action-center/service";
+import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 
 export const dynamic = "force-dynamic";
 
@@ -54,11 +55,19 @@ export default async function AdminApprovalsHubPage({
   }
 
   // Admin audience: the full cross-module inbox (marketing always excluded — it keeps
-  // its own dedicated inbox). "My requests" and history resolve in parallel.
-  const [baseItems, rawMyRequests, rawHistoricalItems]: [Awaited<ReturnType<typeof getAwaitingMyActionItems>>, MyRequestItem[], HistoricalApprovalItem[]] = await Promise.all([
+  // its own dedicated inbox). "My requests" and history resolve in parallel. Private-calendar
+  // data disputes are Super-Admin-only end to end (assertDisputeDecisionActor), so they're
+  // fetched only for that role — everyone else simply never gets the Disputes Inbox tab.
+  const [baseItems, rawMyRequests, rawHistoricalItems, disputes]: [
+    Awaited<ReturnType<typeof getAwaitingMyActionItems>>,
+    MyRequestItem[],
+    HistoricalApprovalItem[],
+    Awaited<ReturnType<typeof listPendingPrivateCalendarDataDisputes>> | null,
+  ] = await Promise.all([
     getAwaitingMyActionItems(access, "admin"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
+    access.role === "Super Admin" ? listPendingPrivateCalendarDataDisputes(access).catch(() => []) : Promise.resolve(null),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
@@ -77,9 +86,14 @@ export default async function AdminApprovalsHubPage({
     items,
   };
 
-  // Approvers land on their inbox; pure requesters (empty inbox) land on "My requests".
-  const initialTab: "inbox" | "mine" | "historical" =
-    initialModule || initialId || items.length > 0 ? "inbox" : myRequests.length > 0 ? "mine" : "inbox";
+  // Approvers land on their inbox; pure requesters (empty inbox) land on "My requests". A
+  // ?tab=disputes deep link (from the review-request-submitted notification) wins outright,
+  // but only when the caller actually has the tab (Super Admin).
+  const requestedTab = typeof params.tab === "string" ? params.tab : null;
+  const initialTab: "inbox" | "mine" | "historical" | "disputes" =
+    requestedTab === "disputes" && disputes
+      ? "disputes"
+      : initialModule || initialId || items.length > 0 ? "inbox" : myRequests.length > 0 ? "mine" : "inbox";
 
   return (
     <ActionsWorkspace
@@ -90,6 +104,7 @@ export default async function AdminApprovalsHubPage({
       initialId={initialId}
       callerRole={access.role}
       initialTab={initialTab}
+      disputes={disputes}
     />
   );
 }

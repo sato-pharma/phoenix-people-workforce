@@ -45,7 +45,7 @@ export default async function EmployeePrivateCalendarPage() {
       title="Private Calendar"
     >
       {workspace ? (
-        <PrivateCalendar initialWorkspace={workspace} />
+        <PrivateCalendar initialWorkspace={workspace} viewerHrId={access.hrId} />
       ) : (
         <EmployeePortalEmptyState
           message="We could not load the private calendar right now. Please refresh in a moment."

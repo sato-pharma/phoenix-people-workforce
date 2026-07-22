@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, ClipboardList, Inbox } from "lucide-react";
+import { Clock, ClipboardList, FileSearch, Inbox } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ActionCenterHub } from "@/components/action-center/action-center-hub";
 import { HistoricalApprovalsList } from "@/components/action-center/historical-approvals-list";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
 import type { ActionHubData, ActionHubModule, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
+import { PrivateCalendarDisputesWorkspace, type AdminPrivateCalendarDispute } from "@/components/admin/private-calendar-disputes-workspace";
 
-type ActionsTab = "inbox" | "mine" | "historical";
+type ActionsTab = "inbox" | "mine" | "historical" | "disputes";
 
 type Props = {
   inboxData: ActionHubData;
@@ -22,6 +23,11 @@ type Props = {
   // When rendered inside the employee-portal shell (which supplies its own page header),
   // skip the admin page hero and just render the tabs + content.
   embedded?: boolean;
+  // Present only for Super Admin callers — undefined means "not this caller's tab", so the
+  // tab itself is left out of the array rather than rendered empty. Private-calendar data
+  // disputes are Super-Admin-only end to end (see assertDisputeDecisionActor), so this stays
+  // opt-in instead of a generic module in the shared My Requests/History aggregators.
+  disputes?: AdminPrivateCalendarDispute[] | null;
 };
 
 export function ActionsWorkspace({
@@ -33,6 +39,7 @@ export function ActionsWorkspace({
   callerRole,
   initialTab,
   embedded,
+  disputes,
 }: Props) {
   const [tab, setTab] = useState<ActionsTab>(initialTab);
 
@@ -40,6 +47,7 @@ export function ActionsWorkspace({
     { key: "inbox", label: "Pending approvals", count: inboxData.items.length, icon: Inbox },
     { key: "mine", label: "My requests", count: myRequests.length, icon: ClipboardList },
     { key: "historical", label: "Approval history", count: historicalItems.length, icon: Clock },
+    ...(disputes ? [{ key: "disputes" as const, label: "Disputes Inbox", count: disputes.length, icon: FileSearch }] : []),
   ];
 
   return (
@@ -95,6 +103,8 @@ export function ActionsWorkspace({
         />
       ) : tab === "mine" ? (
         <MyRequestsList items={myRequests} initialModule={initialModule} initialId={initialId} />
+      ) : tab === "disputes" ? (
+        <PrivateCalendarDisputesWorkspace initialDisputes={disputes ?? []} initialError={null} />
       ) : (
         <HistoricalApprovalsList items={historicalItems} />
       )}

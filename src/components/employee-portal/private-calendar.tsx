@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   CalendarDays,
   CalendarX2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -13,6 +14,7 @@ import {
   FileSearch,
   Fingerprint,
   ListFilter,
+  MessageSquareWarning,
   Plane,
   Search,
   ShieldCheck,
@@ -37,6 +39,17 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const allValue = "__all__";
+
+// Where a Super Admin can actually go verify a request-review / no-activity
+// clarification claim — a closed, real list of the systems this app already
+// has, plus an escape hatch for anything else.
+const verificationSourceOptions = [
+  "CRM / iReports360 (Double Visit)",
+  "Fingerprint / Attendance Device",
+  "Manager Confirmation",
+  "HR Records (Vacation / Excuse Approval)",
+  "Other",
+] as const;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -183,9 +196,16 @@ function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitl
 export function PrivateCalendar({
   initialWorkspace,
   surface = "employee",
+  viewerHrId = null,
 }: {
   initialWorkspace: PrivateCalendarWorkspace;
   surface?: PrivateCalendarSurface;
+  // Whoever is actually logged in and looking at this screen — NOT necessarily
+  // the employee whose calendar is displayed (a manager/admin can view someone
+  // else's calendar here too). Flag-day and no-activity-clarification are
+  // self-service actions, so they only render when this matches
+  // selectedEmployee.hrId — viewing your OWN calendar.
+  viewerHrId?: string | null;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -332,6 +352,115 @@ export function PrivateCalendar({
     () => new Set(exceptions.map((ex) => ex.date)).size,
     [exceptions],
   );
+
+  // Flag-this-day / clarify-no-activity are self-service actions — only the
+  // employee whose calendar this is can act on it, never a manager/admin
+  // paging through someone else's calendar from the admin surface.
+  const canActOnOwnDay = viewerHrId != null && privateCalendarHrIdKey(viewerHrId) === privateCalendarHrIdKey(selectedEmployee.hrId);
+  const selectedDayIsNoActivity = selectedExceptions.some((exception) => exception.title === "No Activity Recorded");
+
+  const [disputeFormOpen, setDisputeFormOpen] = useState(false);
+  const [disputeClaimText, setDisputeClaimText] = useState("");
+  const [disputeSourceOptions, setDisputeSourceOptions] = useState<string[]>([]);
+  const [disputeSourceDetail, setDisputeSourceDetail] = useState("");
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeMessage, setDisputeMessage] = useState<string | null>(null);
+
+  const [clarifyFormOpen, setClarifyFormOpen] = useState(false);
+  const [clarifyText, setClarifyText] = useState("");
+  const [clarifySourceOptions, setClarifySourceOptions] = useState<string[]>([]);
+  const [clarifySourceDetail, setClarifySourceDetail] = useState("");
+  const [clarifyConfirmNoActivity, setClarifyConfirmNoActivity] = useState(false);
+  const [clarifySubmitting, setClarifySubmitting] = useState(false);
+  const [clarifyMessage, setClarifyMessage] = useState<string | null>(null);
+
+  async function submitDayDispute() {
+    setDisputeMessage(null);
+    if (!disputeClaimText.trim() || disputeSourceOptions.length === 0) {
+      setDisputeMessage("Tell us what actually happened, and where a Super Admin can verify it.");
+      return;
+    }
+    if (disputeSourceOptions.includes("Other") && !disputeSourceDetail.trim()) {
+      setDisputeMessage("Tell us where a Super Admin can verify this.");
+      return;
+    }
+    setDisputeSubmitting(true);
+    try {
+      const claimSourceText = disputeSourceDetail.trim()
+        ? `${disputeSourceOptions.join(", ")}: ${disputeSourceDetail.trim()}`
+        : disputeSourceOptions.join(", ");
+      const displayedSummary = timelineItems.length > 0
+        ? timelineItems.map((item) => item.title).join(" | ")
+        : selectedExceptions.length > 0
+          ? selectedExceptions.map((exception) => exception.title).join(" | ")
+          : "Nothing was shown for this day.";
+      const response = await fetch("/api/private-calendar/disputes", {
+        body: JSON.stringify({
+          claimSourceText,
+          claimText: disputeClaimText,
+          displayedSummary,
+          disputeDate: selectedDate,
+          employeeName: selectedEmployee.fullName,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to submit this dispute.");
+      setDisputeClaimText("");
+      setDisputeSourceOptions([]);
+      setDisputeSourceDetail("");
+      setDisputeMessage("Request submitted — a Super Admin will review it.");
+    } catch (error) {
+      setDisputeMessage(error instanceof Error ? error.message : "Unable to submit this dispute.");
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  }
+
+  async function submitNoActivityClarification() {
+    setClarifyMessage(null);
+    if (!clarifyText.trim() && !clarifyConfirmNoActivity) {
+      setClarifyMessage("Explain what happened, or confirm that no activity occurred that day.");
+      return;
+    }
+    if (clarifyText.trim() && clarifySourceOptions.length === 0) {
+      setClarifyMessage("Tell us where a Super Admin can verify this.");
+      return;
+    }
+    if (clarifySourceOptions.includes("Other") && !clarifySourceDetail.trim()) {
+      setClarifyMessage("Tell us where a Super Admin can verify this.");
+      return;
+    }
+    setClarifySubmitting(true);
+    try {
+      const sourcePointerText = clarifySourceOptions.length > 0
+        ? (clarifySourceDetail.trim() ? `${clarifySourceOptions.join(", ")}: ${clarifySourceDetail.trim()}` : clarifySourceOptions.join(", "))
+        : null;
+      const response = await fetch("/api/private-calendar/no-activity", {
+        body: JSON.stringify({
+          activityDate: selectedDate,
+          clarificationText: clarifyText || null,
+          confirmedNoActivity: clarifyConfirmNoActivity,
+          employeeName: selectedEmployee.fullName,
+          sourcePointerText,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to submit this clarification.");
+      setClarifyText("");
+      setClarifySourceOptions([]);
+      setClarifySourceDetail("");
+      setClarifyConfirmNoActivity(false);
+      setClarifyMessage("Clarification submitted.");
+    } catch (error) {
+      setClarifyMessage(error instanceof Error ? error.message : "Unable to submit this clarification.");
+    } finally {
+      setClarifySubmitting(false);
+    }
+  }
 
   async function loadWorkspace(
     nextYear: number,
@@ -896,10 +1025,139 @@ export function PrivateCalendar({
               </div>
               <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
-            <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
-              {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+                {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
+              </span>
+              {canActOnOwnDay && selectedDayIsNoActivity ? (
+                <button
+                  className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-700 transition hover:bg-amber-100"
+                  onClick={() => { setClarifyFormOpen((open) => !open); setClarifyMessage(null); }}
+                  type="button"
+                >
+                  <MessageSquareWarning className="h-3.5 w-3.5" />
+                  Clarify this day
+                </button>
+              ) : null}
+              {canActOnOwnDay ? (
+                <button
+                  className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                  onClick={() => { setDisputeFormOpen((open) => !open); setDisputeMessage(null); }}
+                  type="button"
+                >
+                  <FileSearch className="h-3.5 w-3.5" />
+                  Request review
+                </button>
+              ) : null}
+            </div>
           </div>
+
+          {clarifyFormOpen ? (
+            <div className="border-b border-amber-200 bg-amber-50/60 px-6 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-700">Clarify No Activity — {dayLabel(selectedDate)}</p>
+              <p className="mt-1 text-xs font-semibold text-amber-800">
+                Tell us what actually happened this day, and where we can verify it — or confirm that no work activity happened.
+              </p>
+              <textarea
+                className="mt-3 w-full rounded-sm border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none"
+                onChange={(event) => setClarifyText(event.target.value)}
+                placeholder="What actually happened this day..."
+                rows={3}
+                value={clarifyText}
+              />
+              <VerificationSourceMultiSelect
+                borderClass="border-amber-200"
+                focusRingClass="focus:border-amber-400"
+                onChange={setClarifySourceOptions}
+                selected={clarifySourceOptions}
+              />
+              {clarifySourceOptions.length > 0 ? (
+                <input
+                  className="mt-2 w-full rounded-sm border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none"
+                  onChange={(event) => setClarifySourceDetail(event.target.value)}
+                  placeholder={clarifySourceOptions.includes("Other") ? "Describe the source" : "Additional details (optional)"}
+                  type="text"
+                  value={clarifySourceDetail}
+                />
+              ) : null}
+              <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-amber-800">
+                <input
+                  checked={clarifyConfirmNoActivity}
+                  onChange={(event) => setClarifyConfirmNoActivity(event.target.checked)}
+                  type="checkbox"
+                />
+                I confirm no work activity happened this day.
+              </label>
+              {clarifyMessage ? <p className="mt-2 text-xs font-bold text-amber-900">{clarifyMessage}</p> : null}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  className="rounded-sm bg-amber-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-amber-700 disabled:opacity-50"
+                  disabled={clarifySubmitting}
+                  onClick={submitNoActivityClarification}
+                  type="button"
+                >
+                  {clarifySubmitting ? "Submitting…" : "Submit"}
+                </button>
+                <button
+                  className="rounded-sm border border-amber-300 px-4 py-1.5 text-xs font-black text-amber-700 transition hover:bg-amber-100"
+                  onClick={() => setClarifyFormOpen(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {disputeFormOpen ? (
+            <div className="border-b border-sky-200 bg-sky-50/60 px-6 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Request a Review — {dayLabel(selectedDate)}</p>
+              <p className="mt-1 text-xs font-semibold text-sky-800">
+                If something here doesn&apos;t look right, let us know what actually happened and where a Super Admin can check.
+              </p>
+              <textarea
+                className="mt-3 w-full rounded-sm border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none"
+                onChange={(event) => setDisputeClaimText(event.target.value)}
+                placeholder="What actually happened this day..."
+                rows={3}
+                value={disputeClaimText}
+              />
+              <VerificationSourceMultiSelect
+                borderClass="border-sky-200"
+                focusRingClass="focus:border-sky-400"
+                onChange={setDisputeSourceOptions}
+                selected={disputeSourceOptions}
+              />
+              {disputeSourceOptions.length > 0 ? (
+                <input
+                  className="mt-2 w-full rounded-sm border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none"
+                  onChange={(event) => setDisputeSourceDetail(event.target.value)}
+                  placeholder={disputeSourceOptions.includes("Other") ? "Describe the source" : "Additional details (optional)"}
+                  type="text"
+                  value={disputeSourceDetail}
+                />
+              ) : null}
+              {disputeMessage ? <p className="mt-2 text-xs font-bold text-sky-900">{disputeMessage}</p> : null}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  className="rounded-sm bg-sky-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-sky-700 disabled:opacity-50"
+                  disabled={disputeSubmitting}
+                  onClick={submitDayDispute}
+                  type="button"
+                >
+                  {disputeSubmitting ? "Submitting…" : "Submit"}
+                </button>
+                <button
+                  className="rounded-sm border border-sky-300 px-4 py-1.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                  onClick={() => setDisputeFormOpen(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-6 p-6 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             {selectedExceptions.length > 0 ? (
               <section>
@@ -1125,6 +1383,59 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
         ))}
       </div>
     </section>
+  );
+}
+
+// Multi-select "where can a Super Admin verify this" dropdown, shared by the
+// Request Review and Clarify No Activity forms — a day's claim can point to
+// more than one source at once (e.g. both CRM and a manager confirmation).
+function VerificationSourceMultiSelect({
+  borderClass,
+  focusRingClass,
+  onChange,
+  selected,
+}: {
+  borderClass: string;
+  focusRingClass: string;
+  onChange: (next: string[]) => void;
+  selected: string[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  function toggle(option: string) {
+    onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
+  }
+
+  return (
+    <div className="relative mt-2">
+      <button
+        className={["flex w-full items-center justify-between rounded-sm border bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none", borderClass, focusRingClass].join(" ")}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <span className={selected.length > 0 ? "text-slate-900" : "text-slate-400"}>
+          {selected.length > 0 ? selected.join(", ") : "Where can a Super Admin verify this?"}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      </button>
+      {open ? (
+        <div className="absolute z-10 mt-1 w-full rounded-sm border border-slate-200 bg-white p-1.5 shadow-lg">
+          {verificationSourceOptions.map((option) => (
+            <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50" key={option}>
+              <input checked={selected.includes(option)} onChange={() => toggle(option)} type="checkbox" />
+              {option}
+            </label>
+          ))}
+          <button
+            className="mt-1 w-full rounded-sm bg-slate-100 px-2 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-200"
+            onClick={() => setOpen(false)}
+            type="button"
+          >
+            Done
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
