@@ -57,10 +57,16 @@ async function forwardServerErrorToIngestion(
 
 // Captures errors thrown in nested React Server Components / route handlers —
 // forwards to our own error table.
+// Benign client-initiated disconnect codes — the server is not at fault.
+// Forwarding these as errors creates false-positive alerts in the error table.
+const IGNORED_CONNECTION_ERROR_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE"]);
+
 export async function onRequestError(
   error: unknown,
   request: { headers?: Record<string, string | string[] | undefined>; path?: string },
   context: { routeType?: string },
 ) {
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code && IGNORED_CONNECTION_ERROR_CODES.has(code)) return;
   await forwardServerErrorToIngestion(error, request, context);
 }
