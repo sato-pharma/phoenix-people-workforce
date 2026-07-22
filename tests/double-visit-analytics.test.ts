@@ -146,13 +146,65 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.match(
     service,
-    /chipLines: \[`DV with \$\{visitedNames\}`, `\$\{workloadTime\(group\)\} visits`, areaLabel\]/,
+    /`DV with \$\{visitedNames\}`,\s*\n\s*`\$\{workloadTime\(group\)\} visits`,\s*\n\s*areaLabel,/,
     "performed double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
   );
   assert.match(
     service,
     /chipLines: \[`DV with \$\{doubleVisitorNames\}`, `\$\{workloadTime\(group\)\} visits`, areaLabel\]/,
     "received double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
+  );
+  // The private calendar DOES opt into seeing resigned-agent rows — a real double visit
+  // the calendar owner performed stays real proof of field work even when the visited
+  // party's resolved identity is a resigned employee. But it must never trust that
+  // resolved identity for DISPLAY: dbRowFromMirrorVisit substitutes the raw CRM
+  // name/area in that case (see memory crm-resigned-slot-reused-for-new-hire — the CRM
+  // account is frequently just reused for a new hire, not a real visit with someone who
+  // left), and the calendar item says plainly that the identity is unverified.
+  assert.match(
+    service,
+    /getLiveDoubleVisitRows\(start, end, employees, \{ includeResignedAgents: true \}\)/,
+    "the private calendar loader must opt into seeing resigned-agent double-visit rows",
+  );
+  assert.match(
+    service,
+    /const preferRawLabel = visitedStatus === "resigned";/,
+    "a resigned-employee resolution must fall back to the raw CRM label for display, never the resigned employee's own name/area",
+  );
+  assert.match(
+    service,
+    /const identityUnverified = group\.some\(\(row\) => row\.visited_employee_status === "resigned"\);/,
+    "the private calendar must detect an unverified (resigned-resolved) identity from the row's already-computed status",
+  );
+  assert.match(
+    service,
+    /"Name from CRM, unmatched to an employee record"/,
+    "the unverified-identity flag must show inside the same chip/box as the double-visit entry, not as a separate item",
+  );
+  // Hand-verified corrections (owner-confirmed 2026-07-22): a stale resigned-employee
+  // resolution can be overridden to the real, currently-active employee — but only
+  // through this explicit, documented, manually-verified map, never guessed at
+  // runtime from a fuzzy name/area match.
+  assert.match(
+    service,
+    /const CRM_AGENT_ID_HR_ID_CORRECTIONS: Readonly<Record<number, string>> = \{\s*\n\s*1391: "AI-0003",\s*\n\s*1536: "B-164",\s*\n\s*\};/,
+    "the hand-verified CRM identity corrections map must exist with the owner-confirmed entries",
+  );
+  assert.match(
+    service,
+    /const correctedHrId = !resolution && visit\.agent_crm_id != null\s*\n\s*\? CRM_AGENT_ID_HR_ID_CORRECTIONS\[visit\.agent_crm_id\]\s*\n\s*: undefined;/,
+    "a correction must only apply when the same-day chain resolver did not already resolve the row, keyed strictly by agent_crm_id",
+  );
+  assert.match(
+    service,
+    /agent_crm_id, agent_hr_id, agent_name/,
+    "the mirror visit query must select agent_crm_id so corrections can be looked up",
+  );
+  const weeklyDigestSource = readFileSync("src/lib/double-visit-analytics/weekly-digest.ts", "utf8");
+  assert.match(
+    weeklyDigestSource,
+    /getLiveDoubleVisitRows\(cadenceFloor, today, employees\);/,
+    "the weekly digest (coverage/scoring) must keep excluding resigned agents — it must NOT opt into includeResignedAgents",
   );
   assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
   assert.doesNotMatch(service, /DSM Dashboard/i, "module service must not use DSM dashboard naming");

@@ -270,12 +270,25 @@ function withCheckDateColumn(columns: string): string {
  * display order.
  */
 export async function queryVisits<T = CrmVisitRow>(
-  options: CrmVisitFilter & { columns?: string; pageSize?: number },
+  options: CrmVisitFilter & {
+    columns?: string;
+    pageSize?: number;
+    /** Explicit, default-false opt-out of the resigned-agent exclusion. Only for a
+     * caller that will independently re-derive the display name/area from the raw
+     * `agent_name`/`double_name` string rather than trust the resolved employee —
+     * a resolved agent_hr_id pointing at a resigned employee is frequently just a
+     * stale mapping (the CRM account gets reused for that person's replacement
+     * instead of a fresh one — see memory crm-resigned-slot-reused-for-new-hire).
+     * Every other reader must leave this off so departed-agent data stays invisible
+     * everywhere coverage/scoring/reporting depends on that exclusion.
+     */
+    includeResignedAgents?: boolean;
+  },
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
-  const excludedInList = await getEffectiveExcludedInList();
+  const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
   const projection = withIdColumn(options.columns ?? "*");
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const rows: T[] = [];
@@ -329,7 +342,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
  * visit. `visitTypes` defaults to {@link CRM_DOUBLE_VISIT_TYPE_CODES}.
  */
 export async function getDoubleVisitRows<T = CrmVisitRow>(
-  options: Omit<CrmVisitFilter, "doubleOnly"> & { columns?: string; pageSize?: number },
+  options: Omit<CrmVisitFilter, "doubleOnly"> & { columns?: string; includeResignedAgents?: boolean; pageSize?: number },
 ): Promise<T[]> {
   return queryVisits<T>({
     ...options,

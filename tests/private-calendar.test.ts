@@ -183,13 +183,15 @@ export function runPrivateCalendarTests() {
     today: "2026-06-17",
   });
   assert.equal(
-    offSiteExceptions.filter((e) => e.title === "Missing attendance cover" || e.title === "Plan Deviation").length,
+    offSiteExceptions.filter((e) => e.title === "No Activity Recorded").length,
     0,
     "an off-site planned day must never be flagged as missing attendance",
   );
 
-  // A desk plan (Office/Admin) with no punch still flags — but only once
-  // ("plan without attendance"), never also "missing attendance cover".
+  // A desk plan (Office/Admin) with no punch still flags — the employee-facing
+  // calendar hides plan items entirely, so whether a hidden plan existed must not
+  // change the wording: it's the same "No Activity Recorded" as any other
+  // uncovered workday, exactly once (never duplicated).
   const deskPlan = mapPlanRowToPrivateCalendarItem({
     activity_date: "2026-06-17",
     activity_title: "Office",
@@ -214,10 +216,16 @@ export function runPrivateCalendarTests() {
     start: "2026-06-17",
     today: "2026-06-17",
   });
-  const planDeviation = deskExceptions.find((e) => e.title === "Plan Deviation");
-  assert.ok(planDeviation, "a desk plan with no punch flags a Plan Deviation");
-  assert.equal(planDeviation?.description, "Should be: Office · Actually: No attendance recorded.", "plan deviation must contrast the planned activity against the actual (unrecognized) outcome");
-  assert.equal(deskExceptions.some((e) => e.title === "Missing attendance cover"), false, "a desk plan must not double-flag missing cover");
+  assert.equal(
+    deskExceptions.filter((e) => e.title === "No Activity Recorded").length,
+    1,
+    "a desk plan with no punch flags exactly one No Activity Recorded exception, never a plan-specific variant",
+  );
+  assert.equal(
+    deskExceptions[0]?.description,
+    "Employee Two: no CRM double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.",
+    "the description must spell out exactly which sources were checked and came up empty",
+  );
 
   // A half-day vacation (Am/Pm Only) is expected to carry attendance for the other
   // half of the day — that must not be flagged as a conflict. A full-day vacation
@@ -322,8 +330,12 @@ export function runPrivateCalendarTests() {
     today: "2026-06-18",
   });
   assert.ok(exceptions.some((item) => item.title === "Late arrival"), "exceptions must include attendance warning flags");
-  assert.ok(exceptions.some((item) => item.title === "Missing attendance cover"), "exceptions must include uncovered workdays");
+  assert.ok(exceptions.some((item) => item.title === "No Activity Recorded"), "exceptions must include uncovered workdays");
 
+  // Only an uncovered EXPECTED workday is flagged — a non-workday, whichever day
+  // that is per this custom schedule, stays blank when uncovered (no exception at
+  // all, danger or otherwise). A real captured record on any day still shows
+  // normally regardless (items are never exception-gated).
   const customWorkdayExceptions = derivePrivateCalendarExceptions({
     employees: [{
       departmentName: "Administration",
@@ -341,9 +353,31 @@ export function runPrivateCalendarTests() {
     today: "2026-05-06",
   });
   assert.deepEqual(
-    customWorkdayExceptions.filter((item) => item.title === "Missing attendance cover").map((item) => item.date),
+    customWorkdayExceptions.filter((item) => item.title === "No Activity Recorded").map((item) => item.date),
     ["2026-05-04", "2026-05-06"],
-    "private calendar missing-attendance warnings must follow custom employee workdays before June",
+    "private calendar missing-attendance warnings must follow custom employee workdays, and the non-workday (2026-05-05) must stay blank",
+  );
+
+  // Friday is a day off for every role (isFieldWorkforceFriday — unconditional,
+  // no job-title carve-out); Saturday is a day off for every role EXCEPT Medical
+  // Rep / District (Sales) Manager, whose weekend is Friday-only
+  // (isFieldWorkforceFridayOnlyTitle). Using the real default schedule (no
+  // isExpectedWorkday override) over a Fri+Sat pair with nothing recorded:
+  // Medical Rep gets flagged on Saturday (it's their workday) but not Friday;
+  // a Product Manager (both days off) gets flagged on neither.
+  const medicalRep = { departmentName: null, fullName: "Rep One", hrId: "MR-1", jobTitle: "Medical Representative", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" };
+  const productManager = { departmentName: null, fullName: "PM One", hrId: "PM-1", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" };
+  const weekendExceptions = derivePrivateCalendarExceptions({
+    employees: [medicalRep, productManager],
+    end: "2026-07-11",
+    items: [],
+    start: "2026-07-10",
+    today: "2026-07-11",
+  });
+  assert.deepEqual(
+    weekendExceptions.filter((item) => item.title === "No Activity Recorded").map((item) => `${item.employeeHrId}:${item.date}`),
+    ["MR-1:2026-07-11"],
+    "Saturday (2026-07-11) is a real workday for Medical Rep only — Friday stays blank for everyone, Saturday stays blank for the Product Manager too",
   );
 
   const teamSummary = buildPrivateCalendarTeamSummary({
@@ -424,6 +458,11 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
   assert.match(serviceSource, /loadAttendancePolicyGroups/, "service must resolve custom attendance workdays for private calendar exceptions");
+  assert.match(
+    serviceSource,
+    /item\.source !== "attendance" \|\| item\.status === "Complete" \|\| !fieldVisitDates\.has\(item\.startDate\)/,
+    "a genuine Complete attendance punch must never be suppressed on a field-visit date, even when an unrelated/unapproved plan entry also claims field work that day — only problem statuses (Late/Short day/Single punch) get suppressed there",
+  );
   assert.match(serviceSource, /actualOnly/, "service must support an actual-only (plan-hidden) private calendar mode");
   assert.match(
     serviceSource,
@@ -456,6 +495,26 @@ export function runPrivateCalendarTests() {
 
   const privateCalendarUiSource = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
   assert.match(privateCalendarUiSource, /Daily Timeline/, "private calendar UI must include daily timeline view");
+  assert.match(
+    privateCalendarUiSource,
+    /function syncNow\(\) \{/,
+    "the Sync Now button must call a real handler, not just render a static label",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /await loadWorkspace\(year, month, selectedEmployee\.hrId, selectedDate, viewMode\);/,
+    "Sync Now must re-run the exact same live fetch as navigation, for the currently viewed month/employee, not a no-op",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /onClick=\{syncNow\}/,
+    "the Sync Now button must be wired to the real handler",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /setLastSyncedAt\(new Date\(\)\);/,
+    "every successful fetch (nav or Sync Now) must record a fresh synced-at timestamp so the UI never shows a stale claim of freshness",
+  );
   assert.match(privateCalendarUiSource, /Manager Team Calendar/, "private calendar UI must include manager team calendar snapshot");
   assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
   assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
@@ -507,8 +566,23 @@ export function runPrivateCalendarTests() {
   );
   assert.doesNotMatch(
     privateCalendarUiSource,
-    /function sourceTone\(|function exceptionTone\(/,
-    "sourceTone/exceptionTone must not be reintroduced as dead code — they had no callers left once the report table was removed",
+    /function sourceTone\(/,
+    "sourceTone must not be reintroduced as dead code — it had no callers left once the report table was removed",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /function exceptionTone\(/,
+    "exceptionTone (danger/warning/info) must exist to style the never-blank No Activity Recorded exceptions consistently across the grid, agenda, and detail panel",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /const canFilterAcrossEmployees = workspace\.access\.canSelectEmployee;/,
+    "Search\/View\/Employee\/Line\/Department must be gated on whether the viewer can actually see more than one employee",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /\{canFilterAcrossEmployees \? \(\s*\n\s*<>/,
+    "the multi-employee-only filters must be wrapped behind the canFilterAcrossEmployees gate, not always rendered",
   );
 
   const workspacePagesSource = readFileSync("src/components/workspace/admin-shell-employee-pages.tsx", "utf8");

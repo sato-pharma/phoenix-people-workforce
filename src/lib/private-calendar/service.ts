@@ -551,10 +551,13 @@ export async function getPrivateCalendarWorkspace(input: {
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
-  // Suppress FP attendance on days where a Double Visit or any off-site/remote
-  // plan activity exists — that record is the authoritative attendance proof, and
-  // a fingerprint "late/absent" flag is meaningless when the employee was planned
-  // away from the office.
+  // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on days where a
+  // Double Visit or any off-site/remote plan activity exists — a "late/absent"
+  // flag is meaningless when the employee was legitimately away from the office.
+  // A genuine Complete punch is NEVER suppressed here: real proof of presence
+  // always wins, no matter what an unrelated (even unapproved) plan entry claims
+  // for the same date — this used to delete a real, positive attendance record
+  // whenever any field-type plan existed for that day, which is backwards.
   const fieldVisitDates = new Set<string>();
   for (const item of allItems) {
     if (item.source === "double_visit" || (item.source === "plan" && item.planCountsAsAttendance)) {
@@ -562,7 +565,7 @@ export async function getPrivateCalendarWorkspace(input: {
     }
   }
   const items = fieldVisitDates.size > 0
-    ? allItems.filter((item) => item.source !== "attendance" || !fieldVisitDates.has(item.startDate))
+    ? allItems.filter((item) => item.source !== "attendance" || item.status === "Complete" || !fieldVisitDates.has(item.startDate))
     : allItems;
   const mappedScopeEmployees = scopeEmployees.map(mapPrivateCalendarEmployee);
   const exceptions = derivePrivateCalendarExceptions({

@@ -75,15 +75,20 @@ export function runWeeklyPlansRound3FeaturesTests() {
     /Calendar/,
     "XLSX workbook must include a Calendar sheet",
   );
-  assert.match(
+  assert.doesNotMatch(
     privateCalExportSource,
-    /Exceptions/,
-    "XLSX workbook must include an Exceptions sheet",
+    /addWorksheet\("Exceptions"\)/,
+    "exceptions must be folded into the single Calendar table, not a separate Exceptions sheet/table",
   );
   assert.match(
     privateCalExportSource,
     /Summary/,
     "XLSX workbook must include a Summary sheet",
+  );
+  assert.match(
+    privateCalExportSource,
+    /monthDatesFromWeeks/,
+    "export must list every calendar day of the month, not just days with a recognized item",
   );
   assert.match(
     privateCalExportSource,

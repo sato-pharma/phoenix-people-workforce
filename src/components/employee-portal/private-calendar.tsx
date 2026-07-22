@@ -16,6 +16,7 @@ import {
   ListFilter,
   MessageSquareWarning,
   Plane,
+  RefreshCw,
   Search,
   ShieldCheck,
   UserRound,
@@ -53,6 +54,18 @@ const verificationSourceOptions = [
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Cairo local clock time — the app's operating timezone — so "Synced at" reads as
+// the employee's own wall-clock time, not a raw UTC/ISO timestamp.
+function formatSyncedAt(date: Date) {
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    hour12: true,
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).format(date);
 }
 
 function monthLabel(year: number, month: number) {
@@ -127,6 +140,32 @@ function sourceSwatchColor(source: PrivateCalendarSource) {
   if (source === "plan") return "bg-violet-500";
   if (source === "double_visit") return "bg-indigo-500";
   return "bg-teal-500";
+}
+
+// Every private calendar exception is either a real problem (danger) or a
+// lighter warning (e.g. late arrival) — shared tone lookup for the day-cell
+// chip, the actionable strip, the agenda, and the detail panel.
+function exceptionTone(severity: string) {
+  if (severity === "danger") {
+    return {
+      badge: "bg-red-200 text-red-800",
+      border: "border-l-red-500",
+      chip: "bg-red-100 text-red-700",
+      dot: "bg-red-500",
+      panel: "bg-red-50/40",
+      panelStrong: "bg-red-50/80 ring-red-100",
+      text: "text-red-800",
+    };
+  }
+  return {
+    badge: "bg-amber-200 text-amber-800",
+    border: "border-l-amber-400",
+    chip: "bg-amber-100 text-amber-700",
+    dot: "bg-amber-500",
+    panel: "bg-amber-50/30",
+    panelStrong: "bg-amber-50/80 ring-amber-100",
+    text: "text-amber-800",
+  };
 }
 
 function itemSearchText(item: PrivateCalendarItem) {
@@ -220,6 +259,16 @@ export function PrivateCalendar({
   const [hiddenSources, setHiddenSources] = useState<Set<PrivateCalendarSource>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Every source this calendar reads (attendance, CRM double visits, vacation,
+  // excuse) is queried live server-side on every fetch — there is no cache layer
+  // to invalidate. "Sync Now" re-runs that same live fetch on demand instead of
+  // requiring a month/employee change to force a refresh; lastSyncedAt tracks
+  // every successful fetch (nav or explicit sync) so the timestamp is always
+  // honest about how current the data on screen actually is.
+  // Starts null (the initial view came from the server-rendered page load, not a
+  // client fetch, so there is no honest client-side timestamp for it) and is set
+  // the moment any real fetch completes — nav, employee switch, or Sync Now.
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const {
     exceptions,
@@ -237,6 +286,12 @@ export function PrivateCalendar({
   const today = todayIso();
   const isTeamView = viewMode === "team";
   const isWorkspaceSurface = surface === "workspace";
+  // View/Employee/Line/Department/Search only mean anything when the viewer can
+  // actually see more than themselves — a self-scoped viewer (e.g. a regular
+  // employee) has exactly one employee, one line, one department in their data,
+  // so those controls would be dead UI that filters nothing. Source/Status/
+  // Exceptions still filter within one person's own items and stay for everyone.
+  const canFilterAcrossEmployees = workspace.access.canSelectEmployee;
   // The employee-portal surface only ever shows what the system actually recognized
   // (attendance, leave, CRM double visits) — never the employee's own planned/intended
   // activity. Admin/workspace surfaces keep plan vs. actual side-by-side for oversight.
@@ -481,6 +536,24 @@ export function PrivateCalendar({
     if (!response.ok || !payload.success) throw new Error(payload.message ?? "Unable to load private calendar.");
     setWorkspace(payload.data);
     setSelectedDate(nextSelectedDate);
+    setLastSyncedAt(new Date());
+  }
+
+  // Re-runs the exact same live fetch as month/employee navigation, for the
+  // CURRENTLY viewed month/employee — every source it reads (attendance,
+  // vacation, excuse, CRM double visits) is queried straight from Phoenix's own
+  // database with no cache in between, so this always reflects whatever is
+  // currently there. It does not (and cannot) reach out to iReports360 itself —
+  // that external pull is the scheduled cron's job.
+  function syncNow() {
+    setMessage(null);
+    startTransition(async () => {
+      try {
+        await loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, viewMode);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Unable to sync private calendar.");
+      }
+    });
   }
 
   function shiftMonth(delta: number) {
@@ -602,6 +675,9 @@ export function PrivateCalendar({
                   : selectedEmployee.fullName}{" "}
                 {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
               </p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">
+                {isPending ? "Syncing…" : lastSyncedAt ? `Synced at ${formatSyncedAt(lastSyncedAt)}` : null}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex border border-white/20 bg-white/10 p-0.5">
@@ -619,6 +695,16 @@ export function PrivateCalendar({
                   </button>
                 ))}
               </div>
+              <button
+                aria-label="Sync Now — refresh this calendar with whatever is currently recorded in Phoenix"
+                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-50", controlRadiusClass].join(" ")}
+                disabled={isPending}
+                onClick={syncNow}
+                type="button"
+              >
+                <RefreshCw className={["h-3.5 w-3.5", isPending ? "animate-spin" : ""].join(" ")} />
+                Sync Now
+              </button>
               <a
                 className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
                 href={`/api/private-calendar/export?format=xlsx&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}${actualOnly ? "&actualOnly=1" : ""}`}
@@ -690,90 +776,97 @@ export function PrivateCalendar({
         <div className="border-b border-slate-100 px-5 py-3">
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
         </div>
-        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end">
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
-            <span className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                className={searchInputClass}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search calendar…"
-                value={query}
-              />
-            </span>
-          </label>
+        <div className={canFilterAcrossEmployees
+          ? "grid gap-4 p-5 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end"
+          : "grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-[minmax(160px,260px)_auto] lg:items-end"}
+        >
+          {canFilterAcrossEmployees ? (
+            <>
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+                <span className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    className={searchInputClass}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search calendar…"
+                    value={query}
+                  />
+                </span>
+              </label>
 
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
-            <SearchableSelect
-              className={inputClass}
-              disabled={!workspace.access.canSelectEmployee || isPending}
-              onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
-              value={viewMode}
-            >
-              <option value="employee">Employee</option>
-              <option value="team">Team</option>
-            </SearchableSelect>
-          </label>
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
+                <SearchableSelect
+                  className={inputClass}
+                  disabled={isPending}
+                  onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
+                  value={viewMode}
+                >
+                  <option value="employee">Employee</option>
+                  <option value="team">Team</option>
+                </SearchableSelect>
+              </label>
 
-          {!isTeamView ? (
-            <label className="block">
-              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
-              <SearchableSelect
-                className={inputClass}
-                disabled={!workspace.access.canSelectEmployee || isPending}
-                onChange={(event) => changeEmployee(event.target.value)}
-                value={selectedEmployee.hrId}
-              >
-                {visibleEmployees.map((employee) => (
-                  <option key={employee.hrId} value={employee.hrId}>
-                    {employeeOptionLabel(employee)}
-                  </option>
-                ))}
-              </SearchableSelect>
-            </label>
-          ) : (
-            <label className="block">
-              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
-              <SearchableSelect
-                className={inputClass}
-                onChange={(event) => setEmployeeFilter(event.target.value)}
-                value={employeeFilter}
-              >
-                <option value={allValue}>All visible</option>
-                {visibleEmployees.map((employee) => (
-                  <option key={employee.hrId} value={employee.hrId}>
-                    {employee.fullName} ({employee.hrId})
-                  </option>
-                ))}
-              </SearchableSelect>
-            </label>
-          )}
+              {!isTeamView ? (
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <SearchableSelect
+                    className={inputClass}
+                    disabled={isPending}
+                    onChange={(event) => changeEmployee(event.target.value)}
+                    value={selectedEmployee.hrId}
+                  >
+                    {visibleEmployees.map((employee) => (
+                      <option key={employee.hrId} value={employee.hrId}>
+                        {employeeOptionLabel(employee)}
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </label>
+              ) : (
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <SearchableSelect
+                    className={inputClass}
+                    onChange={(event) => setEmployeeFilter(event.target.value)}
+                    value={employeeFilter}
+                  >
+                    <option value={allValue}>All visible</option>
+                    {visibleEmployees.map((employee) => (
+                      <option key={employee.hrId} value={employee.hrId}>
+                        {employee.fullName} ({employee.hrId})
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </label>
+              )}
 
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
-            <SearchableSelect
-              className={inputClass}
-              onChange={(event) => setLineFilter(event.target.value)}
-              value={lineFilter}
-            >
-              <option value={allValue}>All lines</option>
-              {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
-            </SearchableSelect>
-          </label>
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
+                <SearchableSelect
+                  className={inputClass}
+                  onChange={(event) => setLineFilter(event.target.value)}
+                  value={lineFilter}
+                >
+                  <option value={allValue}>All lines</option>
+                  {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
+                </SearchableSelect>
+              </label>
 
-          <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
-            <SearchableSelect
-              className={inputClass}
-              onChange={(event) => setDepartmentFilter(event.target.value)}
-              value={departmentFilter}
-            >
-              <option value={allValue}>All departments</option>
-              {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
-            </SearchableSelect>
-          </label>
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+                <SearchableSelect
+                  className={inputClass}
+                  onChange={(event) => setDepartmentFilter(event.target.value)}
+                  value={departmentFilter}
+                >
+                  <option value={allValue}>All departments</option>
+                  {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+                </SearchableSelect>
+              </label>
+            </>
+          ) : null}
 
           <label className="block">
             <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
@@ -883,15 +976,15 @@ export function PrivateCalendar({
           </div>
           <div className="divide-y divide-slate-100">
             {filteredExceptions.slice(0, 8).map((exception) => {
-              const isDanger = exception.severity === "danger";
+              const tone = exceptionTone(exception.severity);
               return (
                 <button
-                  className={["flex w-full flex-wrap items-center gap-2 px-5 py-3 text-left transition hover:bg-orange-50/40", isDanger ? "bg-red-50/40" : "bg-amber-50/30"].join(" ")}
+                  className={["flex w-full flex-wrap items-center gap-2 px-5 py-3 text-left transition hover:bg-orange-50/40", tone.panel].join(" ")}
                   key={exception.id}
                   onClick={() => focusException(exception.date)}
                   type="button"
                 >
-                  <span className={["inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"].join(" ")}>
+                  <span className={["inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
                     {exception.severity}
                   </span>
                   <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
@@ -1226,13 +1319,13 @@ function PrivateCalendarAgenda({
           </button>
           <div className="divide-y divide-slate-100">
             {dayExceptions.map((exception) => {
-              const isDanger = exception.severity === "danger";
+              const tone = exceptionTone(exception.severity);
               return (
-                <div className={["px-4 py-3", isDanger ? "bg-red-50/40" : "bg-amber-50/30"].join(" ")} key={exception.id}>
+                <div className={["px-4 py-3", tone.panel].join(" ")} key={exception.id}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", isDanger ? "bg-red-500" : "bg-amber-500"].join(" ")} />
+                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", tone.dot].join(" ")} />
                     <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
-                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"].join(" ")}>
+                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
                       Exception
                     </span>
                   </div>
@@ -1440,33 +1533,26 @@ function VerificationSourceMultiSelect({
 }
 
 function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
+  const tone = exceptionTone(exception.severity);
   const isDanger = exception.severity === "danger";
   return (
-    <article className={[
-      "rounded-sm border-l-4 p-4 shadow-sm ring-1",
-      isDanger
-        ? "border-l-red-500 bg-red-50/80 ring-red-100"
-        : "border-l-amber-400 bg-amber-50/80 ring-amber-100",
-    ].join(" ")}>
+    <article className={["rounded-sm border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className={["text-sm font-black", isDanger ? "text-red-900" : "text-amber-900"].join(" ")}>
             {exception.title}
           </h4>
           {exception.employeeName ? (
-            <p className={["mt-1 text-xs font-semibold", isDanger ? "text-red-700" : "text-amber-700"].join(" ")}>
+            <p className={["mt-1 text-xs font-semibold", tone.text].join(" ")}>
               {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
             </p>
           ) : null}
         </div>
-        <span className={[
-          "shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]",
-          isDanger ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800",
-        ].join(" ")}>
+        <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
           {exception.severity}
         </span>
       </div>
-      <p className={["mt-2.5 text-xs font-semibold leading-relaxed", isDanger ? "text-red-800" : "text-amber-800"].join(" ")}>
+      <p className={["mt-2.5 text-xs font-semibold leading-relaxed", tone.text].join(" ")}>
         {exception.description}
       </p>
     </article>
