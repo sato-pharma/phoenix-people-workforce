@@ -9,6 +9,11 @@ Sentry.init({
     process.env.NEXT_PUBLIC_SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // NEXT_PUBLIC_COMMIT_SHA is baked in at build time (see Dockerfile) — matches the
+  // same $SHA_TAG used for next.config.ts's withSentryConfig release + the server/edge
+  // configs' runtime COMMIT_SHA, so all three agree on one release identifier.
+  release: process.env.NEXT_PUBLIC_COMMIT_SHA,
+
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
 

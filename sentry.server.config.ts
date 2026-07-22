@@ -9,6 +9,11 @@ Sentry.init({
     process.env.SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // COMMIT_SHA is set as a runtime env var at deploy time (deploy-cloud-run.yml/
+  // deploy-cloud-run-staging.yml); NEXT_PUBLIC_COMMIT_SHA is the build-time fallback.
+  // Both carry the same $SHA_TAG value from the same workflow run.
+  release: process.env.COMMIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA,
+
   // 100% in dev catches everything locally; 20% in production balances trace coverage
   // against ingest volume/cost. Adjust further with tracesSampler if specific routes
   // need different treatment.

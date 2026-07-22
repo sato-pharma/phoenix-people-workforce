@@ -16,7 +16,11 @@ name: Deploy to Google Cloud Run (Staging)
 # Server-side behavior is unchanged: this workflow still omits --set-env-vars, so
 # the staging service's own runtime env vars (staging Supabase project, staging
 # PHOENIX_AUTH_SECRET, etc.) are carried forward untouched — it ships new code,
-# never new secrets. No STAGING_* GitHub secrets exist or are needed. Known
+# never new secrets. The one exception is --update-env-vars COMMIT_SHA=$SHA_TAG
+# below (added for Sentry/app_error_events release tagging) — --update-env-vars
+# only adds/overwrites the keys named, it never clears the rest, so this doesn't
+# disturb any of staging's existing secrets. No STAGING_* GitHub secrets exist or
+# are needed for this. Known
 # pre-existing limitation: staging's client-side Google Maps stays broken-as-today
 # unless the staging origin is added to the Maps browser key's referrer allowlist
 # (the baked key used to be an empty string; now it is the prod key, which Maps
@@ -183,7 +187,7 @@ jobs:
             --config cloudbuild.yaml \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
-            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.STAGING_IMAGE_PATH }}",_NEXT_PUBLIC_APP_URL=https://phoenix-hr-staging-897559113412.us-central1.run.app,_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=,_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=,_NEXT_PUBLIC_SMI_USE_FACT_TABLES=,_NEXT_PUBLIC_SUPABASE_ANON_KEY=,_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=,_NEXT_PUBLIC_SUPABASE_URL=https://cifwmndunmlxjhyjugxa.supabase.co
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.STAGING_IMAGE_PATH }}",_NEXT_PUBLIC_APP_URL=https://phoenix-hr-staging-897559113412.us-central1.run.app,_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=,_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=,_NEXT_PUBLIC_SMI_USE_FACT_TABLES=,_NEXT_PUBLIC_SUPABASE_ANON_KEY=,_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=,_NEXT_PUBLIC_SUPABASE_URL=https://cifwmndunmlxjhyjugxa.supabase.co,_NEXT_PUBLIC_COMMIT_SHA="$SHA_TAG"
           echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
@@ -205,7 +209,8 @@ jobs:
             --project ${{ env.PROJECT_ID }} \
             --startup-probe httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=12,initialDelaySeconds=0 \
             --no-traffic \
-            --tag "$SHA_TAG"
+            --tag "$SHA_TAG" \
+            --update-env-vars "COMMIT_SHA=$SHA_TAG"
           TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
             | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
           echo "Tag URL: $TAG_URL"

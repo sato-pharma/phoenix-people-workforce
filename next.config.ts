@@ -148,6 +148,13 @@ export default withSentryConfig(nextConfig, {
 
   project: "phx-b9",
 
+  // Ties uploaded source maps to the same release identifier the running app reports
+  // (see instrumentation-client.ts/sentry.server.config.ts/sentry.edge.config.ts) so
+  // Sentry can resolve stack traces and diff issues across releases. NEXT_PUBLIC_COMMIT_SHA
+  // is a build-time value (see Dockerfile) since this webpack-plugin config itself runs
+  // at build time, same lifecycle as the client bundle.
+  release: { name: process.env.NEXT_PUBLIC_COMMIT_SHA },
+
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
 

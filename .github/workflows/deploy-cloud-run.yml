@@ -111,7 +111,7 @@ jobs:
             --config cloudbuild.yaml \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
-            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }},_NEXT_PUBLIC_COMMIT_SHA=${{ steps.preflight.outputs.sha_tag }}
 
       - name: Deploy new revision (no traffic) with a commit-SHA tag
         id: deploy
@@ -151,7 +151,7 @@ jobs:
             --startup-probe httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=5,failureThreshold=12,initialDelaySeconds=0 \
             --no-traffic \
             --tag "$SHA_TAG" \
-            --update-env-vars "^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.europe-west3.run.app,https://phoenix-hr.satopharma.com"
+            --update-env-vars "^@^PHOENIX_ALLOWED_ORIGINS=https://phoenix-hr-897559113412.europe-west3.run.app,https://phoenix-hr.satopharma.com@COMMIT_SHA=$SHA_TAG"
           TAG_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }} --format=json \
             | python3 -c "import sys,json;d=json.load(sys.stdin);print(next((t.get('url','') for t in d.get('status',{}).get('traffic',[]) if t.get('tag')=='$SHA_TAG'),''))")
           echo "Tag URL: $TAG_URL"
