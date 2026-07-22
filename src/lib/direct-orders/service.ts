@@ -1,5 +1,5 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { ceoHrIds } from "@/lib/attendance/digest-recipients";
+import { ceoHrIds } from "@/lib/employees/role-lookup";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { assertPermission, normalizeHrId, systemAccessContext } from "@/lib/auth/permissions";
 import {

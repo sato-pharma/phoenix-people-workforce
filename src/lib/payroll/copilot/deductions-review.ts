@@ -1,6 +1,4 @@
 import { systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
-import { resolveDigestCycle, type DigestCycle } from "@/lib/attendance/digest-cycle";
-import { getDigestSettings } from "@/lib/attendance/digest-recipients";
 import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import { getAttendanceRoster } from "@/lib/attendance/roster";
@@ -13,6 +11,7 @@ import {
 import { logError } from "@/lib/observability/log";
 
 import { compactHrKey, getBaseSalaryMap } from "./feeders.ts";
+import { PAYROLL_CYCLE_ANCHOR_DAY, resolveCycleWindow, type CycleWindow } from "./cycle-window.ts";
 import type { CopilotPeriod } from "./types.ts";
 
 /**
@@ -24,7 +23,7 @@ import type { CopilotPeriod } from "./types.ts";
  *
  * The tricky part: `deduction_candidates.month_key` is stamped by the
  * CALENDAR month of the underlying work date, but the payroll/fingerprint
- * cycle runs day-24 -> day-24 (see attendance/digest-cycle.ts) — a payroll
+ * cycle runs day-24 -> day-24 (see ./cycle-window.ts) — a payroll
  * month's cycle spans two calendar months. So candidates are fetched for
  * BOTH month_keys the cycle touches, then filtered down to rows whose own
  * `dates` actually fall inside the resolved [startIso, endIso] window.
@@ -35,29 +34,20 @@ function pad2(value: number): string {
 }
 
 /** The day-24->24 cycle for a Copilot payroll period (probe day 1, always before any real anchor). */
-export async function resolveCopilotCycleWindow(period: CopilotPeriod): Promise<DigestCycle> {
+export async function resolveCopilotCycleWindow(period: CopilotPeriod): Promise<CycleWindow> {
   const probeDate = `${period.year}-${pad2(period.month)}-01`;
-  try {
-    const settings = await getDigestSettings();
-    return resolveDigestCycle(probeDate, settings.cycleAnchorDay);
-  } catch (error) {
-    logError("Digest settings load failed, using default anchor day 24", {
-      labels: { event: "deductions_review_digest_settings_load_failed", month: period.month, year: period.year },
-      error,
-    });
-    return resolveDigestCycle(probeDate, 24);
-  }
+  return resolveCycleWindow(probeDate, PAYROLL_CYCLE_ANCHOR_DAY);
 }
 
 /** The one or two calendar month_keys a cycle window touches (exported for tests). */
-export function monthKeysForWindow(cycle: DigestCycle): string[] {
+export function monthKeysForWindow(cycle: CycleWindow): string[] {
   const startKey = cycle.startIso.slice(0, 7);
   const endKey = cycle.endIso.slice(0, 7);
   return startKey === endKey ? [startKey] : [startKey, endKey];
 }
 
 /** True when any of a candidate's dates falls inside the cycle window (exported for tests). */
-export function candidateOverlapsWindow(dates: string[], cycle: DigestCycle): boolean {
+export function candidateOverlapsWindow(dates: string[], cycle: CycleWindow): boolean {
   return dates.some((date) => date >= cycle.startIso && date <= cycle.endIso);
 }
 
@@ -89,7 +79,7 @@ async function listCandidatesForSourceModule(
   access: AccessContext,
   period: CopilotPeriod,
   sourceModule: "ATTENDANCE_DEVICE" | "FIELD_WORKFORCE",
-): Promise<{ cycle: DigestCycle; rows: DeductionInboxRow[] }> {
+): Promise<{ cycle: CycleWindow; rows: DeductionInboxRow[] }> {
   const cycle = await resolveCopilotCycleWindow(period);
   const monthKeys = monthKeysForWindow(cycle);
   const perKey = await Promise.all(
@@ -102,15 +92,13 @@ async function listCandidatesForSourceModule(
 /**
  * How many of the attendance roster (device-mapped, head-office employees) are
  * actually "in scope" for the flexible-hours engine during this cycle — i.e.
- * their resolved active policy has `required_minutes` set. Mirrors the exact
- * scoping check `computeSettlementWeekDigests` uses (digest-service.ts:
- * `if (!policy || policy.required_minutes == null) continue;`). Most policies
+ * their resolved active policy has `required_minutes` set. Most policies
  * today only carry the late-arrival side (flex_minutes) with no
- * required_minutes, so this is usually a small subset of the roster — a
- * second, independent reason (besides dry-run) this tab can show zero or very
- * few candidates. Defensive: any failure here must never break the tab.
+ * required_minutes, so this is usually a small subset of the roster — the
+ * reason this tab can show zero or very few candidates. Defensive: any
+ * failure here must never break the tab.
  */
-async function countFlexibleHoursScope(cycle: DigestCycle): Promise<{ rosterCount: number; scopedCount: number }> {
+async function countFlexibleHoursScope(cycle: CycleWindow): Promise<{ rosterCount: number; scopedCount: number }> {
   const [roster, policies] = await Promise.all([
     getAttendanceRoster({ dateFromIso: cycle.startIso, dateToIso: cycle.endIso }),
     loadAttendanceFlexPolicyGroups({ activeOnly: true }),
@@ -130,29 +118,20 @@ async function countFlexibleHoursScope(cycle: DigestCycle): Promise<{ rosterCoun
 
 /**
  * Attendance-device deduction candidates for the resolved fingerprint cycle.
- * Also reports whether the attendance weekly-digest engine is currently in
- * dry-run mode (`attendance_digest_settings.dry_run`) — in dry-run, the
- * settlement flow that would push real rows into `deduction_candidates`
- * intentionally no-ops, so this tab is expected to show zero candidates.
- * `dryRun` lets the UI say that honestly instead of showing a bare "0".
- * `rosterCount`/`scopedCount` additionally surface the (separate, more common)
- * reason this tab under-counts even with dry-run off: most employees on the
- * roster don't have a required_minutes policy configured yet.
+ * `rosterCount`/`scopedCount` surface the reason this tab can under-count:
+ * most employees on the roster don't have a required_minutes policy
+ * configured yet.
  */
 export async function listFingerprintDeductionCandidates(
   access: AccessContext,
   period: CopilotPeriod,
 ): Promise<{
-  cycle: DigestCycle;
+  cycle: CycleWindow;
   rows: DeductionInboxRow[];
-  dryRun: boolean;
   rosterCount: number | null;
   scopedCount: number | null;
 }> {
-  const [{ cycle, rows }, settings] = await Promise.all([
-    listCandidatesForSourceModule(access, period, "ATTENDANCE_DEVICE"),
-    getDigestSettings().catch(() => null),
-  ]);
+  const { cycle, rows } = await listCandidatesForSourceModule(access, period, "ATTENDANCE_DEVICE");
   const scope = await countFlexibleHoursScope(cycle).catch((error) => {
     logError("Flexible-hours scope count failed", {
       labels: { event: "deductions_review_flexible_hours_scope_failed", month: period.month, year: period.year },
@@ -163,7 +142,6 @@ export async function listFingerprintDeductionCandidates(
   return {
     cycle,
     rows,
-    dryRun: settings?.dryRun ?? false,
     rosterCount: scope?.rosterCount ?? null,
     scopedCount: scope?.scopedCount ?? null,
   };
@@ -204,7 +182,7 @@ export async function syncCrmLiveMonthCandidates(period: CopilotPeriod, createdB
 export async function listCrmDeductionCandidates(
   access: AccessContext,
   period: CopilotPeriod,
-): Promise<{ cycle: DigestCycle; rows: DeductionInboxRow[] }> {
+): Promise<{ cycle: CycleWindow; rows: DeductionInboxRow[] }> {
   const { cycle, rows } = await listCandidatesForSourceModule(access, period, "FIELD_WORKFORCE");
   return { cycle, rows: rows.filter((row) => row.deductionType === "no_activity") };
 }

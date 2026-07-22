@@ -4,10 +4,10 @@ import {
   candidateOverlapsWindow,
   monthKeysForWindow,
 } from "../src/lib/payroll/copilot/deductions-review.ts";
-import type { DigestCycle } from "../src/lib/attendance/digest-cycle.ts";
+import type { CycleWindow } from "../src/lib/payroll/copilot/cycle-window.ts";
 
 // The "July" payroll cycle: 24 Jun -> 23 Jul — spans two calendar months.
-const JULY_CYCLE: DigestCycle = {
+const JULY_CYCLE: CycleWindow = {
   cycleKey: "2026-07",
   startIso: "2026-06-24",
   endIso: "2026-07-23",
@@ -21,7 +21,7 @@ export function runPayrollCopilotDeductionsReviewTests() {
 
   // A cycle that happens to align exactly with a calendar month (anchor day 1)
   // only needs one month_key.
-  const alignedCycle: DigestCycle = {
+  const alignedCycle: CycleWindow = {
     cycleKey: "2026-08",
     startIso: "2026-08-01",
     endIso: "2026-08-31",

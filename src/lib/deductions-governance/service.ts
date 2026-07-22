@@ -1362,102 +1362,6 @@ export async function updateDeductionDecision(input: UpdateDeductionDecisionInpu
   return mapDecisionRow(data as DecisionRow);
 }
 
-const systemDecisionReasons = [
-  "Employee confirmed",
-  "Employee did not respond (auto-confirmed)",
-  "Dispute reviewed and rejected",
-] as const;
-export type SystemDecisionReason = (typeof systemDecisionReasons)[number];
-
-/**
- * Records an "Approved for Payroll" decision for a candidate WITHOUT a human
- * governance actor — used exclusively by the attendance weekly-digest
- * settlement flow (src/lib/attendance/settlement-service.ts), where the CEO/
- * COO-approved policy is that a plain employee confirmation (or 48h silence)
- * goes straight to payroll with no further HR review; only a DISPUTE still
- * gets a human decision via updateDeductionDecision above.
- *
- * This deliberately bypasses assertDeductionsGovernanceDecisionActor — there
- * is no user session to gate here (the caller is the employee's own confirm
- * click or an unattended cron job), and gating by a fabricated AccessContext
- * would be security theater, not a real check. The safety boundary is
- * structural instead: this function is NOT exported from any API route, is
- * only reachable from the attendance module's own already-permission-checked
- * settlement service, and every write is stamped with an unmistakable
- * 'system:attendance-settlement' actor so it can never be confused with a
- * human governance decision in the audit trail or the inbox UI.
- *
- * Still reuses every safety property of the human path: the same
- * payroll-column resolution, the same base-salary-driven amount calculation,
- * the same audit log, and a closed decisionReason enum (no free-text here —
- * only "Employee confirmed" or "Employee did not respond (auto-confirmed)").
- */
-export async function recordSystemApprovedAttendanceDecision(input: {
-  candidateId: string;
-  decisionReason: SystemDecisionReason;
-  hrNote?: string;
-}): Promise<DeductionDecision> {
-  if (!systemDecisionReasons.includes(input.decisionReason)) {
-    throw new Error("Invalid system decision reason for attendance settlement.");
-  }
-
-  const candidate = await loadCandidateById(input.candidateId);
-  if (candidate.sourceModule !== "ATTENDANCE_DEVICE") {
-    throw new Error("recordSystemApprovedAttendanceDecision is only valid for ATTENDANCE_DEVICE candidates.");
-  }
-
-  const payrollColumn = payrollColumnForDeduction({
-    deductionType: candidate.deductionType,
-    sourceModule: candidate.sourceModule,
-  });
-  if (!payrollColumn) {
-    throw new Error("This deduction source is not mapped to a payroll column.");
-  }
-
-  const appliedValue = normalizeAppliedValue({
-    candidate,
-    decisionStatus: "Approved for Payroll",
-    requestedValue: null,
-  });
-  const appliedAmount = await calculateAppliedAmount({ appliedValue, candidate });
-  const now = new Date().toISOString();
-  const systemActor = "system:attendance-settlement";
-
-  const payload = {
-    actor_role_at_decision: systemActor,
-    actor_scope_at_decision: "system",
-    applied_amount: appliedAmount,
-    applied_deduction_value: appliedValue,
-    candidate_id: candidate.id,
-    decided_at: now,
-    decided_by: systemActor,
-    decision_reason: input.decisionReason,
-    decision_status: "Approved for Payroll" as const,
-    hr_note: String(input.hrNote ?? "").trim(),
-    payroll_column: payrollColumn,
-    payroll_handoff_status: "Not pushed" as const,
-    resolved_at: null,
-    resolved_by: null,
-  };
-
-  const { data, error } = await getSupabaseAdmin()
-    .from("deduction_decisions")
-    .upsert(payload, { onConflict: "candidate_id" })
-    .select(DECISION_COLUMNS)
-    .single();
-  if (error) throw error;
-
-  await writeAuditLog({
-    actorLoginId: systemActor,
-    entityId: candidate.id,
-    entityType: "deduction_decision",
-    newValues: payload,
-    summary: `Attendance settlement auto-approved for payroll: ${candidate.employeeCode} (${candidate.monthKey}) — ${input.decisionReason}`,
-  });
-
-  return mapDecisionRow(data as DecisionRow);
-}
-
 /**
  * Records an "Approved for Payroll" or "Do Not Take Action" decision made by
  * the CEO/Super Admin from inside the Payroll Copilot's simplified review
@@ -1467,12 +1371,12 @@ export async function recordSystemApprovedAttendanceDecision(input: {
  * of truth regardless of which UI made the call.
  *
  * Deliberately bypasses `assertDeductionsGovernanceDecisionActor` (which is
- * Super-Admin-only) the same way `recordSystemApprovedAttendanceDecision`
- * does — the caller (the Copilot API route) has already asserted CEO/Super
- * Admin access via `assertCopilotAccess`, so gating again here on the HR-only
- * role would just lock the CEO out of a page built for them. Every write is
- * stamped with a `copilot:<actor>` decided_by and a closed reason enum so it
- * is never confused with a human HR-governance decision in the audit trail.
+ * Super-Admin-only) — the caller (the Copilot API route) has already
+ * asserted CEO/Super Admin access via `assertCopilotAccess`, so gating again
+ * here on the HR-only role would just lock the CEO out of a page built for
+ * them. Every write is stamped with a `copilot:<actor>` decided_by and a
+ * closed reason enum so it is never confused with a human HR-governance
+ * decision in the audit trail.
  */
 export async function recordCopilotDeductionDecision(input: {
   candidateId: string;
