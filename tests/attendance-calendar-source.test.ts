@@ -262,6 +262,26 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(fingerprintSource, /resolveActiveAttendancePolicy/);
   assert.match(fingerprintSource, /summarizeFingerprintRows/);
   assert.match(fingerprintSource, /workingDays/);
+  assert.match(
+    fingerprintSource,
+    /loadApprovedHalfDayVacationMap/,
+    "the report must look up approved half-day (Am\/Pm Only) vacations before judging short-day\/deduction status",
+  );
+  assert.match(
+    fingerprintSource,
+    /requiredMinutesForHalfDayVacation\(input\.policy\.required_minutes!, input\.halfDayVacationPart\)/,
+    "the flexible-hours required-minutes window must be halved via the shared pure helper, not re-derived inline",
+  );
+  assert.match(
+    fingerprintSource,
+    /\.eq\("status", "approved"\)\s*\n\s*\.in\("day_part", \["am_only", "pm_only"\]\)/,
+    "the half-day vacation lookup must only trust approved, explicitly half-day (not full-day) vacation rows",
+  );
+  assert.match(
+    fingerprintSource,
+    /halfDayVacationPart: halfDayVacationPart \?\? undefined,/,
+    "the half-day vacation part must be threaded onto the report row so downstream consumers (the private calendar) can label it correctly instead of claiming a full day",
+  );
 
   const mappingSource = readFileSync("src/lib/attendance/device-user-mapping.ts", "utf8");
   assert.match(mappingSource, /resolveDeviceMappingStatus/);

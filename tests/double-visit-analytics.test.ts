@@ -132,6 +132,28 @@ export function runDoubleVisitAnalyticsTests() {
   assert.doesNotMatch(integrityReportType, /recoveredChains/, "DoubleVisitIntegrityReport must not carry recoveredChains any more — that audit moved to Visits Report");
   assert.match(service, /double_visitor_hr_id\) === employeeKey/, "expense workload matching must use Double Visitor HR ID");
   assert.match(service, /loadDoubleVisitPrivateCalendarItems/, "private calendar must receive Double Visit evidence");
+  assert.doesNotMatch(service, /title: "Performed Double Visits"/, "performed double-visit items must show the visit count, visited name(s), and area instead of a generic title");
+  assert.doesNotMatch(service, /title: "Received Double Visit"/, "received double-visit items must show the visit count, double-visitor name(s), and area instead of a generic title");
+  assert.match(
+    service,
+    /title: `Performed \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{visitedNames\} - \$\{areaLabel\}`/,
+    "performed double-visit calendar title must read as 'Performed N visit(s) with <name> - <area>'",
+  );
+  assert.match(
+    service,
+    /title: `Received \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{doubleVisitorNames\} - \$\{areaLabel\}`/,
+    "received double-visit calendar title must read as 'Received N visit(s) with <name> - <area>'",
+  );
+  assert.match(
+    service,
+    /chipLines: \[`DV with \$\{visitedNames\}`, `\$\{workloadTime\(group\)\} visits`, areaLabel\]/,
+    "performed double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
+  );
+  assert.match(
+    service,
+    /chipLines: \[`DV with \$\{doubleVisitorNames\}`, `\$\{workloadTime\(group\)\} visits`, areaLabel\]/,
+    "received double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
+  );
   assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
   assert.doesNotMatch(service, /DSM Dashboard/i, "module service must not use DSM dashboard naming");
 

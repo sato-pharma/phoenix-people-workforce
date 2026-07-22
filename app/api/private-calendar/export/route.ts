@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     const month = Number(searchParams.get("month") ?? new Date().getUTCMonth() + 1);
     const employeeHrId = searchParams.get("employeeHrId") ?? undefined;
     const viewMode = searchParams.get("view") ?? undefined;
+    const actualOnly = searchParams.get("actualOnly") === "1";
 
     if (!["xlsx", "pdf"].includes(format)) {
       return NextResponse.json({ error: "invalid_format", message: "format must be xlsx or pdf.", success: false }, { status: 400 });
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "invalid_month", message: "month must be 1–12.", success: false }, { status: 400 });
     }
 
-    const workspace = await getPrivateCalendarWorkspace({ access, employeeHrId, month, viewMode, year });
+    const workspace = await getPrivateCalendarWorkspace({ access, actualOnly, employeeHrId, month, viewMode, year });
     const generatedAt = new Date();
     const employeeName = workspace.selectedEmployee.fullName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
     const periodLabel = `${year}-${String(month).padStart(2, "0")}`;

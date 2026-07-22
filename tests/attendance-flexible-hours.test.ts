@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import {
   bracketDeductionDays,
   evaluateFlexibleHoursDay,
+  requiredMinutesForHalfDayVacation,
   type DeductionBracket,
   type FlexibleHoursConfig,
 } from "../src/lib/attendance/flexible-hours.ts";
@@ -116,4 +117,33 @@ export function runAttendanceFlexibleHoursTests() {
   });
   assert.equal(tie.deductionDays, 0.5);
   assert.equal(tie.status, "Short hours", "on a tie, the short-hours classification wins");
+
+  // --- requiredMinutesForHalfDayVacation: an approved half-day vacation halves
+  // the required presence instead of judging against the full scheduled day ---
+  assert.equal(requiredMinutesForHalfDayVacation(470, null), 470, "no half-day vacation leaves the full requirement untouched");
+  assert.equal(requiredMinutesForHalfDayVacation(470, "pm_only"), 235, "a Pm-Only vacation halves the required presence (470 -> 235)");
+  assert.equal(requiredMinutesForHalfDayVacation(470, "am_only"), 235, "an Am-Only vacation halves the required presence the same way");
+  assert.equal(requiredMinutesForHalfDayVacation(471, "pm_only"), 236, "an odd requirement rounds rather than silently truncating");
+
+  // --- Reproduces the reported July 2026 false positive: a Pm-Only vacation with
+  // a complete AM punch must read Complete, not "Short day" against the full day ---
+  const halfDayConfig: FlexibleHoursConfig = {
+    ...CONFIG,
+    requiredMinutes: requiredMinutesForHalfDayVacation(CONFIG.requiredMinutes, "pm_only"),
+  };
+  const pmVacationMorningPunch = evaluateFlexibleHoursDay({
+    firstPunchMinutes: at(8, 50),
+    lastPunchMinutes: at(13, 0),
+    visiblePunchCount: 2,
+    config: halfDayConfig,
+    lateBrackets: LATE_BRACKETS,
+    shortBrackets: SHORT_BRACKETS,
+  });
+  assert.equal(pmVacationMorningPunch.status, "Complete", "a Pm-Only vacation plus a full morning punch must not be judged short against the full day");
+  assert.equal(pmVacationMorningPunch.deductionDays, 0, "no deduction once the required window accounts for the approved half-day vacation");
+
+  // Without the half-day adjustment, the SAME punch reproduces the original bug —
+  // confirms the fix is actually load-bearing, not a no-op.
+  const withoutAdjustment = evaluate(at(8, 50), at(13, 0));
+  assert.equal(withoutAdjustment.status, "Short hours", "sanity check: judging the same punch against the full day is exactly the false positive being fixed");
 }

@@ -5,6 +5,7 @@ import {
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
   derivePrivateCalendarExceptions,
+  filterPrivateCalendarActualItems,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
@@ -58,6 +59,30 @@ export function runPrivateCalendarTests() {
   assert.equal(attendance.time, "9:03 AM - 5:04 PM");
   assert.equal(attendance.sourceTable, "attendance_raw_punches");
   assert.ok(attendance.detailLines.some((line) => line.includes("Working hours: 08:01")));
+  assert.equal(attendance.title, "Office 9:03 AM to 5:04 PM - Full day", "a Complete attendance day must render as an Office time range, not a generic status label");
+  assert.deepEqual(attendance.chipLines, ["Office", "From 9:03 AM", "To 5:04 PM", "Full day"], "the month-grid chip must stack Office/From/To/status on separate lines instead of one crammed line");
+
+  // A Complete day judged against a HALVED requirement (an approved Am/Pm-Only
+  // vacation covers the other half) is a normal half working day — it must never
+  // read "Full day", which would misleadingly claim the employee worked the whole day.
+  const halfDayVacationAttendanceItem = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "8:50 AM",
+    actualLastPunch: "1:00 PM",
+    dateIso: "2026-07-09",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    halfDayVacationPart: "pm_only",
+    lateMinutes: "",
+    recommendedAction: "On time and full hours.",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Complete",
+    timeLong: "04:10",
+  });
+  assert.equal(halfDayVacationAttendanceItem.title, "Office 8:50 AM to 1:00 PM - Half day", "a half-day-vacation-adjusted Complete day must read 'Half day', not 'Full day'");
+  assert.deepEqual(halfDayVacationAttendanceItem.chipLines, ["Office", "From 8:50 AM", "To 1:00 PM", "Half day"], "the month-grid chip must also say Half day, not Full day, when a half-day vacation covers the other half");
 
   const lateAttendance = mapAttendanceRowToPrivateCalendarItem({
     actualFirstPunch: "9:45 AM",
@@ -75,6 +100,7 @@ export function runPrivateCalendarTests() {
     timeLong: "07:19",
   });
   assert.ok(lateAttendance.exceptionFlags.includes("Late arrival"), "attendance mapper must highlight late exceptions");
+  assert.equal(lateAttendance.title, "Office 9:45 AM to 5:04 PM - Late", "a non-Complete attendance day must keep its own status label in the Office time range");
 
   const vacation = mapVacationRowToPrivateCalendarItem({
     day_part: "full_day",
@@ -157,7 +183,7 @@ export function runPrivateCalendarTests() {
     today: "2026-06-17",
   });
   assert.equal(
-    offSiteExceptions.filter((e) => e.title === "Missing attendance cover" || e.title === "Plan without attendance").length,
+    offSiteExceptions.filter((e) => e.title === "Missing attendance cover" || e.title === "Plan Deviation").length,
     0,
     "an off-site planned day must never be flagged as missing attendance",
   );
@@ -188,8 +214,97 @@ export function runPrivateCalendarTests() {
     start: "2026-06-17",
     today: "2026-06-17",
   });
-  assert.ok(deskExceptions.some((e) => e.title === "Plan without attendance"), "a desk plan with no punch flags plan-without-attendance");
+  const planDeviation = deskExceptions.find((e) => e.title === "Plan Deviation");
+  assert.ok(planDeviation, "a desk plan with no punch flags a Plan Deviation");
+  assert.equal(planDeviation?.description, "Should be: Office · Actually: No attendance recorded.", "plan deviation must contrast the planned activity against the actual (unrecognized) outcome");
   assert.equal(deskExceptions.some((e) => e.title === "Missing attendance cover"), false, "a desk plan must not double-flag missing cover");
+
+  // A half-day vacation (Am/Pm Only) is expected to carry attendance for the other
+  // half of the day — that must not be flagged as a conflict. A full-day vacation
+  // with attendance still is.
+  const halfDayVacation = mapVacationRowToPrivateCalendarItem({
+    day_part: "pm_only",
+    duration_days: "0.5",
+    employee_hr_id: "E-5",
+    employee_name: "Employee Five",
+    end_date: "2026-07-09",
+    id: "vac-half-1",
+    paid_duration_days: "0.5",
+    payment_status: "paid",
+    start_date: "2026-07-09",
+    status: "approved",
+    vacation_type: "emergency",
+  });
+  const halfDayAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "8:50 AM",
+    actualLastPunch: "1:00 PM",
+    dateIso: "2026-07-09",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-5",
+    employeeName: "Employee Five",
+    lateMinutes: "",
+    recommendedAction: "Morning presence",
+    scheduledEnd: "1:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Complete",
+    timeLong: "04:10",
+  });
+  const halfDayEmployee = { departmentName: null, fullName: "Employee Five", hrId: "E-5", jobTitle: "Medical Rep", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" };
+  const halfDayExceptions = derivePrivateCalendarExceptions({
+    employees: [halfDayEmployee],
+    end: "2026-07-09",
+    isExpectedWorkday: () => true,
+    items: [halfDayVacation, halfDayAttendance],
+    start: "2026-07-09",
+    today: "2026-07-09",
+  });
+  assert.equal(
+    halfDayExceptions.some((e) => e.title === "Attendance during vacation"),
+    false,
+    "attendance during the non-vacation half of a half-day (Am/Pm Only) vacation must not be flagged",
+  );
+
+  const fullDayVacation = mapVacationRowToPrivateCalendarItem({
+    day_part: "full_day",
+    duration_days: "1",
+    employee_hr_id: "E-5",
+    employee_name: "Employee Five",
+    end_date: "2026-07-10",
+    id: "vac-full-1",
+    paid_duration_days: "1",
+    payment_status: "paid",
+    start_date: "2026-07-10",
+    status: "approved",
+    vacation_type: "annual",
+  });
+  const fullDayAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "9:00 AM",
+    actualLastPunch: "5:00 PM",
+    dateIso: "2026-07-10",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-5",
+    employeeName: "Employee Five",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Complete",
+    timeLong: "08:00",
+  });
+  const fullDayExceptions = derivePrivateCalendarExceptions({
+    employees: [halfDayEmployee],
+    end: "2026-07-10",
+    isExpectedWorkday: () => true,
+    items: [fullDayVacation, fullDayAttendance],
+    start: "2026-07-10",
+    today: "2026-07-10",
+  });
+  assert.ok(
+    fullDayExceptions.some((e) => e.title === "Attendance during vacation"),
+    "attendance during a full-day vacation must still be flagged",
+  );
 
   const exceptions = derivePrivateCalendarExceptions({
     employees: [{
@@ -257,6 +372,22 @@ export function runPrivateCalendarTests() {
     vacation: 1,
   });
 
+  const actualOnlyItems = filterPrivateCalendarActualItems([attendance, vacation, excuse, plan]);
+  assert.deepEqual(
+    actualOnlyItems.map((item) => item.source),
+    ["attendance", "vacation", "excuse"],
+    "actual-only filter must drop plan items and keep every other source",
+  );
+  assert.deepEqual(summarizePrivateCalendarItems(actualOnlyItems), {
+    attendance: 1,
+    double_visit: 0,
+    excuse: 1,
+    holiday: 0,
+    plan: 0,
+    total: 3,
+    vacation: 1,
+  });
+
   const serviceSource = readFileSync("src/lib/private-calendar/service.ts", "utf8");
   const excuseLoaderSource = serviceSource.slice(
     serviceSource.indexOf("async function loadExcuseItems"),
@@ -293,10 +424,23 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
   assert.match(serviceSource, /loadAttendancePolicyGroups/, "service must resolve custom attendance workdays for private calendar exceptions");
+  assert.match(serviceSource, /actualOnly/, "service must support an actual-only (plan-hidden) private calendar mode");
+  assert.match(
+    serviceSource,
+    /derivePrivateCalendarExceptions\(\{[\s\S]*?items,\n/,
+    "exceptions must be derived from the full item set (including plan) even in actual-only mode, so field plans keep suppressing false absence flags",
+  );
 
   const apiSource = readFileSync("app/api/private-calendar/route.ts", "utf8");
   assert.match(apiSource, /getPrivateCalendarWorkspace/, "private calendar API must load through the scoped service");
   assert.match(apiSource, /url\.searchParams\.get\("view"\)/, "private calendar API must accept view mode");
+  assert.match(apiSource, /actualOnly/, "private calendar API must accept the actual-only display mode");
+
+  const exportRouteSource = readFileSync("app/api/private-calendar/export/route.ts", "utf8");
+  assert.match(exportRouteSource, /actualOnly/, "private calendar export must honor actual-only mode so downloads match what the employee sees");
+
+  const employeePortalPageSource = readFileSync("app/employee-portals/private-calendar/page.tsx", "utf8");
+  assert.match(employeePortalPageSource, /actualOnly:\s*true/, "employee portal private calendar must request actual-only (no plan items)");
 
   const accessRegistrySource = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(accessRegistrySource, /\/api\/private-calendar/, "private calendar API must be in access registry");
@@ -315,12 +459,57 @@ export function runPrivateCalendarTests() {
   assert.match(privateCalendarUiSource, /Manager Team Calendar/, "private calendar UI must include manager team calendar snapshot");
   assert.match(privateCalendarUiSource, /Source trace/, "private calendar UI must include source traceability");
   assert.match(privateCalendarUiSource, /Exception Warnings/, "private calendar UI must highlight exceptions");
-  assert.match(privateCalendarUiSource, /Calendar Report/, "private calendar UI must include a calendar report table");
-  assert.match(privateCalendarUiSource, /"Date", "Source", "Entry", "Check-in", "Check-out", "Scheduled Time", "Working Hours", "Status", "Full Details"/, "private calendar report must show attendance and calendar detail columns");
-  assert.doesNotMatch(privateCalendarUiSource, /"HR ID", "Full Name", "Job Title", "Line", "Department"/, "private calendar report must not expose static identity columns");
-  assert.match(privateCalendarUiSource, /Report rows mirror all calendar and attendance details/, "private calendar report must explain that rows mirror calendar and attendance entries");
+  // The on-page Calendar Report table was removed — the report now exists only
+  // as the XLSX/PDF export (a separate, already-independent server-side code
+  // path in src/lib/private-calendar/export.ts), never rendered in the browser.
+  assert.doesNotMatch(privateCalendarUiSource, /Calendar Report/, "the calendar report table must no longer render on the page");
+  assert.doesNotMatch(privateCalendarUiSource, /CalendarReportTable/, "the CalendarReportTable component must be fully removed, not just unrendered");
+  assert.doesNotMatch(privateCalendarUiSource, /"Date", "Source", "Entry", "Check-in", "Check-out", "Scheduled Time", "Working Hours", "Status", "Full Details"/, "the report table's column header row must be gone from the frontend");
+  assert.match(privateCalendarUiSource, /XLSX/, "the XLSX export control must remain the only way to get the calendar report");
+  assert.match(privateCalendarUiSource, /\/api\/private-calendar\/export\?format=xlsx/, "XLSX export must still hit the independent server-side export route");
   assert.doesNotMatch(privateCalendarUiSource, /xl:grid-cols-\[minmax\(0,1fr\)_420px\]/, "private calendar must not narrow the month grid with a right-side timeline rail");
   assert.match(privateCalendarUiSource, /lg:grid-cols-2 2xl:grid-cols-3/, "private calendar timeline must render below the calendar as a responsive card grid");
+  assert.match(
+    privateCalendarUiSource,
+    /grid-cols-\[repeat\(5,minmax\(0,1fr\)\)_56px_56px\]/,
+    "the Fri/Sat weekend columns must use a fixed minimal width instead of an equal 1fr share",
+  );
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /<span className="block truncate" key=\{lineIndex\}>\{line\}<\/span>/,
+    "chip lines must not be truncated with an ellipsis — long names should wrap instead",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /line-clamp-2/,
+    "chip lines must wrap onto up to two rows instead of being cut off on one line",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /divide-y divide-black\/10/,
+    "stacked chip lines must be visually separated from the line below them",
+  );
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /source === "double_visit"\) return "bg-blue-100 text-blue-700"/,
+    "double_visit must not share vacation's exact blue chip color",
+  );
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /source === "double_visit"\) return "bg-blue-500"/,
+    "double_visit must not share vacation's exact blue swatch color",
+  );
+  const doubleVisitIndigoMatches = privateCalendarUiSource.match(/source === "double_visit"\) return "[^"]*indigo/g) ?? [];
+  assert.equal(
+    doubleVisitIndigoMatches.length,
+    3,
+    "double_visit must get its own distinct indigo consistently across all remaining source-color helpers (accent, chip, swatch — sourceTone was removed as dead code along with the report table it exclusively served)",
+  );
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /function sourceTone\(|function exceptionTone\(/,
+    "sourceTone/exceptionTone must not be reintroduced as dead code — they had no callers left once the report table was removed",
+  );
 
   const workspacePagesSource = readFileSync("src/components/workspace/admin-shell-employee-pages.tsx", "utf8");
   assert.match(workspacePagesSource, /<PrivateCalendar initialWorkspace=\{workspace\} surface="workspace" \/>/, "workspace private calendar must use the admin-shell surface mode");

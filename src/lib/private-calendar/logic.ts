@@ -57,6 +57,10 @@ export type PrivateCalendarReportDetails = {
 
 export type PrivateCalendarItem = {
   approvalImpact: string | null;
+  // Short, stacked lines for the cramped month-grid day-cell chip (e.g. ["DV with
+  // Omar", "4 AM / 8 PM visits", "Nasr City"]). Falls back to `title` on a single
+  // line when absent — only double-visit and attendance items set this today.
+  chipLines?: string[];
   description: string | null;
   detailLines: string[];
   employeeDepartmentName: string | null;
@@ -131,6 +135,10 @@ export type PrivateCalendarAttendanceRow = {
   earlyLeaveMinutes: string;
   employeeHrId: string;
   employeeName: string;
+  // Set when an approved Am/Pm-Only vacation covered the other half of this
+  // day — a "Complete" status here means the (halved) required presence was
+  // met, not that the employee worked a full day.
+  halfDayVacationPart?: "am_only" | "pm_only";
   hasException?: boolean;
   lateMinutes: string;
   recommendedAction: string;
@@ -289,6 +297,32 @@ function planSlotLabel(startTime: string | null | undefined, endTime: string | n
   return "Full day";
 }
 
+// "Complete" reads as "Full day" (an office-hours label the employee recognizes);
+// every other status keeps its own wording (Late, Short day, Single punch, ...).
+// EXCEPT when an approved half-day vacation covered the other half of the shift —
+// that "Complete" was judged against a halved requirement, so it must read "Half
+// day" (a normal half working day, the other half being a normal half-day
+// vacation), never "Full day" — the employee did not work the full day.
+function attendanceStatusLabel(status: string, halfDayVacationPart?: "am_only" | "pm_only") {
+  if (status === "Complete" && halfDayVacationPart) return "Half day";
+  return status === "Complete" ? "Full day" : status || "Recorded";
+}
+
+function attendanceTitle(status: string, checkIn: string | null, checkOut: string | null, halfDayVacationPart?: "am_only" | "pm_only") {
+  const statusLabel = attendanceStatusLabel(status, halfDayVacationPart);
+  if (checkIn && checkOut) return `Office ${checkIn} to ${checkOut} - ${statusLabel}`;
+  if (checkIn) return `Office from ${checkIn} - ${statusLabel}`;
+  return `Attendance - ${statusLabel}`;
+}
+
+// Stacked chip lines for the month-grid day cell: Office / From ** / To ** / Full day.
+function attendanceChipLines(status: string, checkIn: string | null, checkOut: string | null, halfDayVacationPart?: "am_only" | "pm_only") {
+  const statusLabel = attendanceStatusLabel(status, halfDayVacationPart);
+  if (checkIn && checkOut) return ["Office", `From ${checkIn}`, `To ${checkOut}`, statusLabel];
+  if (checkIn) return ["Office", `From ${checkIn}`, statusLabel];
+  return ["Attendance", statusLabel];
+}
+
 function attendanceSeverity(status: string, hasException?: boolean): PrivateCalendarSeverity {
   if (hasException || status === "Complete") return "success";
   if (/absence|single punch|late|early|short/i.test(status)) return "warning";
@@ -331,6 +365,7 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
   ].filter((value): value is string => Boolean(value));
   return {
     approvalImpact: null,
+    chipLines: attendanceChipLines(row.status, firstPunch || null, lastPunch || null, row.halfDayVacationPart),
     description: row.recommendedAction || null,
     detailLines,
     employeeDepartmentName: null,
@@ -357,7 +392,7 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
     startDate: row.dateIso,
     status: row.status,
     time,
-    title: `Attendance - ${row.status || "Recorded"}`,
+    title: attendanceTitle(row.status, firstPunch || null, lastPunch || null, row.halfDayVacationPart),
   };
 }
 
@@ -502,6 +537,16 @@ export function mapHolidayToPrivateCalendarItem(input: {
 
 export function privateCalendarItemOccursOn(item: PrivateCalendarItem, date: string) {
   return date >= item.startDate && date <= item.endDate;
+}
+
+// When a viewer wants "actual synced activity only" (the employee's own portal
+// view), planned/intended activity must not render as a calendar item — only
+// attendance, leave, and CRM-verified visits are real events. This filter runs
+// AFTER exceptions/FP-suppression are derived from the full item set upstream,
+// since a self-proving field plan must keep preventing false "missing
+// attendance" flags even though the plan card itself stays hidden.
+export function filterPrivateCalendarActualItems(items: PrivateCalendarItem[]): PrivateCalendarItem[] {
+  return items.filter((item) => item.source !== "plan");
 }
 
 export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): PrivateCalendarWorkspace["summary"] {
@@ -661,11 +706,15 @@ export function derivePrivateCalendarExceptions(input: {
         }
       }
 
-      if (attendance.length > 0 && vacations.length > 0) {
+      // A half-day (Am/Pm Only) vacation is expected to carry attendance for the
+      // other half — that is normal, not a conflict. Only flag when every vacation
+      // covering the day is a full day, yet a punch still exists.
+      const allVacationsAreFullDay = vacations.length > 0 && vacations.every((item) => item.time === "Full day");
+      if (attendance.length > 0 && vacations.length > 0 && allVacationsAreFullDay) {
         exceptions.push(createException({
           code: "attendance_during_vacation",
           date,
-          description: `${employee.fullName} has fingerprint attendance while an approved vacation covers the same date.`,
+          description: `${employee.fullName} has fingerprint attendance while an approved full-day vacation covers the same date.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [...attendance, ...vacations].map((item) => item.id),
@@ -681,15 +730,18 @@ export function derivePrivateCalendarExceptions(input: {
       // presence.
       if (isExpectedWorkday(employee, date) && !isCovered) {
         if (hasDeskPlan) {
+          const plannedSummary = Array.from(new Set(
+            plans.filter((item) => !item.planCountsAsAttendance).map((item) => item.title),
+          )).join(", ") || "a desk plan";
           exceptions.push(createException({
-            code: "planned_day_without_attendance",
+            code: "plan_deviation",
             date,
-            description: `${employee.fullName} has a desk plan item but no fingerprint attendance for this date.`,
+            description: `Should be: ${plannedSummary} · Actually: No attendance recorded.`,
             employeeHrId: employee.hrId,
             employeeName: employee.fullName,
             relatedItemIds: plans.map((item) => item.id),
             severity: "warning",
-            title: "Plan without attendance",
+            title: "Plan Deviation",
           }));
         } else {
           exceptions.push(createException({

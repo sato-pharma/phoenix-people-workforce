@@ -17,6 +17,7 @@ import {
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
+  filterPrivateCalendarActualItems,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
@@ -335,6 +336,12 @@ export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
 
 export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
+  // When true, planned/intended activity (source "plan") is loaded and still used
+  // to derive exceptions and suppress false FP-missing flags (a field plan still
+  // self-proves attendance), but is excluded from the items/summary/teamSummary
+  // actually returned. The employee portal uses this so the calendar reflects only
+  // what the system actually recognized that day, not what was merely planned.
+  actualOnly?: boolean;
   employeeHrId?: string | null;
   month: number;
   viewMode?: PrivateCalendarViewMode | string | null;
@@ -419,22 +426,24 @@ export async function getPrivateCalendarWorkspace(input: {
     vacation: vacations.ready,
   };
 
+  const displayItems = input.actualOnly ? filterPrivateCalendarActualItems(items) : items;
+
   return {
     access: {
       canSelectEmployee: visibleEmployees.length > 1,
       isGlobalViewer: isPrivateCalendarGlobalViewer(input.access, globalHrIds),
     },
-    items,
+    items: displayItems,
     month: input.month,
     schemaReady: privateCalendarSources.every((source) => sourceReadiness[source]),
     selectedEmployee: mapPrivateCalendarEmployee(selectedEmployee),
     sourceReadiness,
-    summary: summarizePrivateCalendarItems(items),
+    summary: summarizePrivateCalendarItems(displayItems),
     exceptions,
     teamSummary: buildPrivateCalendarTeamSummary({
       employees: mappedScopeEmployees,
       exceptions,
-      items,
+      items: displayItems,
     }),
     visibleEmployees: resolvePrivateCalendarVisibleEmployees(input.access, employees, globalHrIds),
     viewMode,

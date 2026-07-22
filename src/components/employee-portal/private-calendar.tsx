@@ -22,13 +22,6 @@ import {
 
 
 import {
-  PortalDesktopTable,
-  PortalEmptyState,
-  PortalRecordCard,
-  PortalRecordFields,
-} from "@/components/employee-portal/portal-primitives";
-
-import {
   privateCalendarHrIdKey,
   privateCalendarItemOccursOn,
   privateCalendarSourceLabels,
@@ -87,16 +80,10 @@ function sourceIcon(source: PrivateCalendarSource) {
   return <ShieldCheck className="h-4 w-4" />;
 }
 
-function sourceTone(source: PrivateCalendarSource, severity?: string) {
-  if (severity === "danger") return "border-red-200 bg-red-50 text-red-800";
-  if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-800";
-  if (source === "attendance") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (source === "vacation") return "border-blue-200 bg-blue-50 text-blue-800";
-  if (source === "excuse") return "border-amber-200 bg-amber-50 text-amber-800";
-  if (source === "plan") return "border-violet-200 bg-violet-50 text-violet-800";
-  return "border-teal-200 bg-teal-50 text-teal-800";
-}
-
+// Every source gets its own hue below — double_visit previously fell through to
+// the same blue as vacation in two of these helpers (while the others already
+// defaulted it to teal), so a DV chip and a vacation chip were visually
+// indistinguishable. double_visit now gets a dedicated indigo, consistently.
 function sourceAccentColor(source: PrivateCalendarSource, severity?: string) {
   if (severity === "danger") return "border-l-red-500";
   if (severity === "warning") return "border-l-amber-400";
@@ -104,6 +91,7 @@ function sourceAccentColor(source: PrivateCalendarSource, severity?: string) {
   if (source === "vacation") return "border-l-blue-500";
   if (source === "excuse") return "border-l-amber-500";
   if (source === "plan") return "border-l-violet-500";
+  if (source === "double_visit") return "border-l-indigo-500";
   return "border-l-teal-500";
 }
 
@@ -114,7 +102,7 @@ function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
   if (source === "vacation") return "bg-blue-100 text-blue-700";
   if (source === "excuse") return "bg-amber-100 text-amber-700";
   if (source === "plan") return "bg-violet-100 text-violet-700";
-  if (source === "double_visit") return "bg-blue-100 text-blue-700";
+  if (source === "double_visit") return "bg-indigo-100 text-indigo-700";
   return "bg-teal-100 text-teal-700";
 }
 
@@ -124,13 +112,8 @@ function sourceSwatchColor(source: PrivateCalendarSource) {
   if (source === "vacation") return "bg-blue-500";
   if (source === "excuse") return "bg-amber-500";
   if (source === "plan") return "bg-violet-500";
-  if (source === "double_visit") return "bg-blue-500";
+  if (source === "double_visit") return "bg-indigo-500";
   return "bg-teal-500";
-}
-
-function exceptionTone(severity: string) {
-  if (severity === "danger") return "border-red-200 bg-red-50 text-red-800";
-  return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
 function itemSearchText(item: PrivateCalendarItem) {
@@ -186,112 +169,7 @@ function sortTimelineItems(items: PrivateCalendarItem[]) {
   });
 }
 
-type CalendarReportRow = {
-  checkIn: string | null;
-  checkOut: string | null;
-  date: string;
-  detail: string;
-  id: string;
-  scheduledTime: string | null;
-  severity: string;
-  source: PrivateCalendarSource | "exception";
-  sourceLabel: string;
-  status: string | null;
-  title: string;
-  workingHours: string | null;
-};
-
 type PrivateCalendarSurface = "employee" | "workspace";
-
-function sourceReportLabel(source: CalendarReportRow["source"]) {
-  return source === "exception" ? "Exception" : privateCalendarSourceLabels[source];
-}
-
-function sourceReportTone(source: CalendarReportRow["source"], severity?: string) {
-  if (source === "exception") return exceptionTone(severity ?? "warning");
-  return sourceTone(source, severity);
-}
-
-function reportDetail(item: PrivateCalendarItem) {
-  const details = [
-    ...item.detailLines,
-    item.description,
-    item.approvalImpact,
-  ].filter((value): value is string => Boolean(value));
-  return details.join(" | ") || item.sourceLabel;
-}
-
-function reportDetailFields(item: PrivateCalendarItem) {
-  const attendanceDetails = item.reportDetails ?? null;
-  return {
-    checkIn: attendanceDetails?.checkIn ?? null,
-    checkOut: attendanceDetails?.checkOut ?? null,
-    detail: reportDetail(item),
-    scheduledTime: attendanceDetails?.scheduledTime ?? item.time,
-    workingHours: attendanceDetails?.workingHours ?? null,
-  };
-}
-
-function buildCalendarReportRows(input: {
-  exceptions: PrivateCalendarException[];
-  items: PrivateCalendarItem[];
-  weeks: PrivateCalendarWorkspace["weeks"];
-}) {
-  const monthDates = input.weeks
-    .flatMap((week) => week)
-    .filter((day) => day.date && day.inMonth)
-    .map((day) => day.date as string);
-  const employeeExceptionByDate = new Map<string, PrivateCalendarException[]>();
-
-  for (const exception of input.exceptions) {
-    employeeExceptionByDate.set(exception.date, [...(employeeExceptionByDate.get(exception.date) ?? []), exception]);
-  }
-
-  const rows: CalendarReportRow[] = [];
-  for (const date of monthDates) {
-    const dayItems = input.items.filter((item) => privateCalendarItemOccursOn(item, date));
-    for (const item of dayItems) {
-      const detailFields = reportDetailFields(item);
-      rows.push({
-        checkIn: detailFields.checkIn,
-        checkOut: detailFields.checkOut,
-        date,
-        detail: detailFields.detail,
-        id: `${item.id}-${date}`,
-        scheduledTime: detailFields.scheduledTime,
-        severity: item.severity,
-        source: item.source,
-        sourceLabel: item.sourceLabel,
-        status: item.status,
-        title: item.title,
-        workingHours: detailFields.workingHours,
-      });
-    }
-
-    for (const exception of employeeExceptionByDate.get(date) ?? []) {
-      rows.push({
-        checkIn: null,
-        checkOut: null,
-        date,
-        detail: exception.description,
-        id: exception.id,
-        scheduledTime: null,
-        severity: exception.severity,
-        source: "exception",
-        sourceLabel: exception.code,
-        status: exception.severity,
-        title: exception.title,
-        workingHours: null,
-      });
-    }
-  }
-
-  return rows.sort((left, right) =>
-    `${left.date}-${left.source}-${left.title}`.localeCompare(
-      `${right.date}-${right.source}-${right.title}`,
-    ),
-  );
-}
 
 function chipTitle(item: PrivateCalendarItem, viewMode: PrivateCalendarViewMode) {
   if (viewMode === "team" && item.employeeName) return `${item.employeeName} - ${item.title}`;
@@ -339,6 +217,10 @@ export function PrivateCalendar({
   const today = todayIso();
   const isTeamView = viewMode === "team";
   const isWorkspaceSurface = surface === "workspace";
+  // The employee-portal surface only ever shows what the system actually recognized
+  // (attendance, leave, CRM double visits) — never the employee's own planned/intended
+  // activity. Admin/workspace surfaces keep plan vs. actual side-by-side for oversight.
+  const actualOnly = surface === "employee";
   const panelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
     : "overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60";
@@ -446,14 +328,6 @@ export function PrivateCalendar({
   );
   const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
   const timelineItems = useMemo(() => sortTimelineItems(selectedItems), [selectedItems]);
-  const reportRows = useMemo(
-    () => buildCalendarReportRows({ exceptions: filteredExceptions, items: filteredItems, weeks }),
-    [filteredExceptions, filteredItems, weeks],
-  );
-  const reportWarningCount = useMemo(
-    () => reportRows.filter((row) => row.source === "exception" || row.severity === "danger" || row.severity === "warning").length,
-    [reportRows],
-  );
   const daysWithIssues = useMemo(
     () => new Set(exceptions.map((ex) => ex.date)).size,
     [exceptions],
@@ -471,6 +345,7 @@ export function PrivateCalendar({
       month: String(nextMonth),
       view: nextViewMode,
       year: String(nextYear),
+      ...(actualOnly ? { actualOnly: "1" } : {}),
     });
     const response = await fetch(`/api/private-calendar?${params.toString()}`, { cache: "no-store" });
     const payload = await response.json();
@@ -617,7 +492,7 @@ export function PrivateCalendar({
               </div>
               <a
                 className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
-                href={`/api/private-calendar/export?format=xlsx&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}`}
+                href={`/api/private-calendar/export?format=xlsx&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}${actualOnly ? "&actualOnly=1" : ""}`}
                 download
               >
                 <Download className="h-3.5 w-3.5" />
@@ -625,7 +500,7 @@ export function PrivateCalendar({
               </a>
               <a
                 className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
-                href={`/api/private-calendar/export?format=pdf&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}`}
+                href={`/api/private-calendar/export?format=pdf&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}${actualOnly ? "&actualOnly=1" : ""}`}
                 download
               >
                 <Download className="h-3.5 w-3.5" />
@@ -661,11 +536,13 @@ export function PrivateCalendar({
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-7">
+        <div className={["grid gap-3 p-4 sm:grid-cols-2", actualOnly ? "xl:grid-cols-6" : "xl:grid-cols-7"].join(" ")}>
           <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" />
           <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} color="blue" />
           <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} color="amber" />
-          <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" />
+          {!actualOnly ? (
+            <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" />
+          ) : null}
           <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} color="teal" />
           <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} color="red" tone="warning" />
           <Metric icon={<CalendarX2 className="h-5 w-5" />} label="Days w/ Issues" ready value={daysWithIssues} color="red" tone="warning" />
@@ -777,7 +654,7 @@ export function PrivateCalendar({
               value={sourceFilter}
             >
               <option value={allValue}>All sources</option>
-              {privateCalendarSources.map((source) => (
+              {presentSources.map((source) => (
                 <option key={source} value={source}>{privateCalendarSourceLabels[source]}</option>
               ))}
             </SearchableSelect>
@@ -915,24 +792,33 @@ export function PrivateCalendar({
       <div className="space-y-6">
         {/* ── Calendar Grid ── */}
         <section className={panelClass}>
-          <div className="grid grid-cols-7 bg-slate-950">
+          {/* Fri/Sat are the weekend for this org and stay empty almost every week —
+              give them a fixed minimal width instead of an equal 1fr share so the
+              working days (Sun-Thu) get the room. */}
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] bg-slate-950">
             {weekdays.map((weekday) => (
-              <div key={weekday} className="px-2 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <div key={weekday} className="px-1 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] divide-x divide-y divide-slate-100">
             {weeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
               const dayExceptions = date ? exceptionsByDay.get(date) ?? [] : [];
               const selected = date === selectedDate;
               const isToday = date === today;
+              // Chips now stack their detail (name / count / area, or Office / From / To /
+              // status) across multiple lines instead of one crammed line, so fewer items
+              // fit before overflowing — show fewer per cell and give the cell more height.
+              const visibleExceptionCount = Math.min(dayExceptions.length, 2);
+              const visibleItemCount = Math.min(dayItems.length, dayExceptions.length > 0 ? 1 : 2);
+              const hiddenCount = dayItems.length + dayExceptions.length - visibleExceptionCount - visibleItemCount;
               return (
                 <button
                   className={[
-                    "min-h-[120px] bg-white p-2 text-left align-top transition-colors",
+                    "min-h-[150px] bg-white p-2 text-left align-top transition-colors",
                     day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20",
                     selected ? "ring-2 ring-inset ring-orange-400" : "",
                   ].join(" ")}
@@ -964,7 +850,7 @@ export function PrivateCalendar({
                     </span>
                   </span>
                   <span className="mt-1.5 block space-y-1">
-                    {dayExceptions.slice(0, 2).map((exception) => (
+                    {dayExceptions.slice(0, visibleExceptionCount).map((exception) => (
                       <span
                         className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
                         key={exception.id}
@@ -973,18 +859,24 @@ export function PrivateCalendar({
                         {exception.title}
                       </span>
                     ))}
-                    {dayItems.slice(0, dayExceptions.length > 0 ? 3 : 4).map((item) => (
-                      <span
-                        className={["block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold", sourceChipTone(item.source, item.severity)].join(" ")}
-                        key={item.id}
-                        title={chipTitle(item, viewMode)}
-                      >
-                        {chipTitle(item, viewMode)}
-                      </span>
-                    ))}
-                    {dayItems.length + dayExceptions.length > 5 ? (
+                    {dayItems.slice(0, visibleItemCount).map((item) => {
+                      const baseLines = item.chipLines ?? [item.title];
+                      const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...baseLines] : baseLines;
+                      return (
+                        <span
+                          className={["block divide-y divide-black/10 rounded px-1.5 py-0.5 text-[10px] font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
+                          key={item.id}
+                          title={chipTitle(item, viewMode)}
+                        >
+                          {lines.map((line, lineIndex) => (
+                            <span className="line-clamp-2 py-0.5 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
+                          ))}
+                        </span>
+                      );
+                    })}
+                    {hiddenCount > 0 ? (
                       <span className="block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
-                        + {dayItems.length + dayExceptions.length - 5} more
+                        + {hiddenCount} more
                       </span>
                     ) : null}
                   </span>
@@ -1039,8 +931,6 @@ export function PrivateCalendar({
         </section>
       </div>
       )}
-
-      <CalendarReportTable rows={reportRows} warningCount={reportWarningCount} />
     </div>
   );
 }
@@ -1269,127 +1159,6 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
         {exception.description}
       </p>
     </article>
-  );
-}
-
-function CalendarReportTable({
-  rows,
-  warningCount,
-}: {
-  rows: CalendarReportRow[];
-  warningCount: number;
-}) {
-  return (
-    <section className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-orange-500" />
-            <span className="text-base font-black text-slate-950">Calendar Report</span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-600">{rows.length}</span>
-          </div>
-          <p className="mt-1.5 text-sm font-semibold text-slate-400">
-            Report rows mirror all calendar and attendance details after the current filters.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className={["rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em]", warningCount > 0 ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"].join(" ")}>
-            {warningCount} warning{warningCount === 1 ? "" : "s"}
-          </span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
-            {rows.length} visible
-          </span>
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <PortalEmptyState
-          message="Calendar and attendance rows will appear here after the current filters match activity."
-          title="No private calendar entries match"
-        />
-      ) : (
-        <div className="divide-y divide-slate-100 md:hidden">
-          {rows.map((row) => (
-            <PortalRecordCard
-              accent={row.severity === "warning" ? "rose" : row.source === "vacation" ? "emerald" : "slate"}
-              key={`${row.id}-mobile`}
-              meta={reportDateLabel(row.date)}
-              status={
-                <span className={["inline-flex rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
-                  {sourceReportLabel(row.source)}
-                </span>
-              }
-              title={row.title}
-            >
-              <PortalRecordFields
-                fields={[
-                  { label: "Check-in", value: row.checkIn ?? "-" },
-                  { label: "Check-out", value: row.checkOut ?? "-" },
-                  { label: "Scheduled", value: row.scheduledTime ?? "-" },
-                  { label: "Working", value: row.workingHours ?? "-" },
-                ]}
-              />
-              <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
-                {row.detail || row.sourceLabel}
-              </p>
-            </PortalRecordCard>
-          ))}
-        </div>
-      )}
-      <div>
-        <PortalDesktopTable className="text-xs" minWidth="1160px">
-          <thead>
-            <tr className="bg-slate-950">
-              {["Date", "Source", "Entry", "Check-in", "Check-out", "Scheduled Time", "Working Hours", "Status", "Full Details"].map((column) => (
-                <th
-                  className="border-r border-slate-800 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
-                  key={column}
-                >
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((row) => (
-                <tr className="transition-colors hover:bg-orange-50/40" key={row.id}>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">
-                    {reportDateLabel(row.date)}
-                  </td>
-                  <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
-                      {sourceReportLabel(row.source)}
-                    </span>
-                  </td>
-                  <td className="max-w-[230px] border-r border-slate-100 px-3 py-2.5">
-                    <p className="whitespace-nowrap font-black text-slate-900">{row.title}</p>
-                  </td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
-                    {row.checkIn ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-600">
-                    {row.checkOut ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
-                    {row.scheduledTime ?? "-"}
-                  </td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-500">
-                    {row.workingHours ?? "-"}
-                  </td>
-                  <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={["inline-flex whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceReportTone(row.source, row.severity)].join(" ")}>
-                      {row.status ?? row.sourceLabel}
-                    </span>
-                  </td>
-                  <td className="max-w-[360px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-                    <span className="whitespace-nowrap">{row.detail || row.sourceLabel}</span>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </PortalDesktopTable>
-      </div>
-    </section>
   );
 }
 

@@ -71,6 +71,20 @@ export type FlexibleHoursResult = {
 };
 
 /**
+ * An approved half-day vacation (Am Only / Pm Only) covers exactly one half of
+ * the shift — the other half still expects a punch, but only against HALF the
+ * normal required presence, not the full day. Rounds to the nearest minute so a
+ * requiredMinutes that isn't evenly divisible (e.g. 470 -> 235) never silently
+ * truncates.
+ */
+export function requiredMinutesForHalfDayVacation(
+  fullRequiredMinutes: number,
+  halfDayVacationPart: "am_only" | "pm_only" | null,
+): number {
+  return halfDayVacationPart ? Math.round(fullRequiredMinutes / 2) : fullRequiredMinutes;
+}
+
+/**
  * Returns the deduction (in days) for a minute value against a bracket set.
  * Brackets are inclusive on both bounds; `toMinutes: null` is open-ended.
  * Minutes at or below zero, or falling outside every bracket (e.g. a
