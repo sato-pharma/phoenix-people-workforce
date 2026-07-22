@@ -3,6 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 Sentry.init({
   dsn:
@@ -18,6 +19,13 @@ Sentry.init({
   // against ingest volume/cost. Adjust further with tracesSampler if specific routes
   // need different treatment.
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1 : 0.2,
+
+  // Server-only CPU profiling (payroll runs, report generation are the CPU-cost concern —
+  // no Document-Policy header needed, that's only for browser profiling). Prod-only and
+  // low-rate since profiling isn't free; requires tracing to be sampled for a given
+  // transaction, hence the same 0.2 in prod / 1 in dev split as tracesSampleRate above.
+  integrations: [nodeProfilingIntegration()],
+  profilesSampleRate: process.env.NODE_ENV === "development" ? 1 : 0.1,
 
   // Enable logs to be sent to Sentry
   enableLogs: true,

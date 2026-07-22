@@ -93,6 +93,7 @@
     "@google-cloud/logging": "^11.3.0",
     "@node-projects/excelforge": "3.6.0",
     "@sentry/nextjs": "^10.67.0",
+    "@sentry/profiling-node": "^10.67.0",
     "@supabase/supabase-js": "^2.105.1",
     "@tanstack/react-virtual": "^3.14.7",
     "@types/pdfmake": "^0.3.3",
