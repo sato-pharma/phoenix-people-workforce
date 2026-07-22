@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { CalendarSearch, CheckCircle2, XCircle } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -37,6 +37,7 @@ const OUTCOME_LABEL: Record<EmployeeDayOutcome, string> = {
   late: "Late",
   missing_punch: "Missing punch",
   no_plan_field_day: "Field day (per plan)",
+  not_flex_eligible: "Not on flexible-hours model",
   office_no_show_flag: "Office no-show (flagged)",
   short_hours: "Short hours",
   weekly_off: "Weekly off",
@@ -55,6 +56,7 @@ const OUTCOME_TONE: Record<EmployeeDayOutcome, string> = {
   late: "bg-orange-50 text-orange-700 border-orange-200",
   missing_punch: "bg-amber-50 text-amber-700 border-amber-200",
   no_plan_field_day: "bg-slate-100 text-slate-600 border-slate-200",
+  not_flex_eligible: "bg-slate-50 text-slate-400 border-slate-200",
   office_no_show_flag: "bg-amber-50 text-amber-700 border-amber-200",
   short_hours: "bg-orange-50 text-orange-700 border-orange-200",
   weekly_off: "bg-slate-100 text-slate-600 border-slate-200",
@@ -90,10 +92,15 @@ function initDrafts(days: EmployeeDayReportRow[]): Record<string, Draft> {
   const drafts: Record<string, Draft> = {};
   for (const day of days) {
     if (!ACTIONABLE_OUTCOMES.has(day.outcome)) continue;
+    // A day already confirmed/auto_confirmed has a real, audited, possibly-hand-edited decision
+    // on record — default the editable fields to THAT, never to a same-day recalculation (which
+    // can drift from what was actually settled if base_salary or policy rules changed since).
+    // Otherwise this is a fresh decision, so the live-computed values are the only draft there is.
+    const settled = day.decision && (day.decision.action === "confirmed" || day.decision.action === "auto_confirmed") ? day.decision : null;
     drafts[day.dateIso] = {
-      deductionDays: String(day.deductionDays),
-      deductionValue: String(day.deductionValue),
-      reason: day.reason,
+      deductionDays: String(settled ? settled.storedDeductionDays : day.deductionDays),
+      deductionValue: String(settled ? settled.storedDeductionValue : day.deductionValue),
+      reason: settled ? settled.storedReason : day.reason,
     };
   }
   return drafts;
@@ -116,11 +123,26 @@ export function EmployeeDayReport({
   const [busyDate, setBusyDate] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [isReportPending, startReportTransition] = useTransition();
+
+  // Resync whenever the server sends a new report — after switching employee/date range,
+  // and after router.refresh() following a Confirm/Decline. Without this, drafts stayed
+  // frozen from first mount: the status badge would show the freshly-confirmed decision
+  // while the editable inputs right below it kept showing pre-submission (or a previous
+  // employee's leftover) values. Adjusted during render (not an effect) per React's
+  // guidance for resetting state on a prop change — bails out before committing to the DOM.
+  const [syncedReport, setSyncedReport] = useState(initialReport);
+  if (initialReport !== syncedReport) {
+    setSyncedReport(initialReport);
+    setDrafts(initialReport ? initDrafts(initialReport.days) : {});
+  }
 
   function viewReport() {
     if (!employeeHrId || !dateFrom || !dateTo) return;
     const params = new URLSearchParams({ dateFrom, dateTo, employeeHrId });
-    router.push(`/attendance/employee-day-report?${params.toString()}`);
+    startReportTransition(() => {
+      router.push(`/attendance/employee-day-report?${params.toString()}`);
+    });
   }
 
   function updateDraft(dateIso: string, patch: Partial<Draft>) {
@@ -223,8 +245,8 @@ export function EmployeeDayReport({
             />
           </label>
           <div className="sm:col-span-4">
-            <Button disabled={!employeeHrId || !dateFrom || !dateTo} type="button" onClick={viewReport}>
-              View Report
+            <Button disabled={!employeeHrId || !dateFrom || !dateTo || isReportPending} type="button" onClick={viewReport}>
+              {isReportPending ? "Loading…" : "View Report"}
             </Button>
           </div>
         </div>
