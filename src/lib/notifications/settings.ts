@@ -10,9 +10,16 @@ export type NotificationPreferences = {
   inAppEnabled: boolean;
   modulePreferences: Record<string, unknown>;
   preferredChannel: "in_app" | "email" | "telegram";
+  pushEnabled: boolean;
   quietHoursEnd: string | null;
   quietHoursStart: string | null;
   telegramEnabled: boolean;
+};
+
+export type PushSubscriptionState = {
+  deviceCount: number;
+  desktopCount: number;
+  mobileCount: number;
 };
 
 export type TelegramConnectionState = {
@@ -23,6 +30,7 @@ export type TelegramConnectionState = {
 
 export type NotificationSettings = {
   preferences: NotificationPreferences;
+  push: PushSubscriptionState;
   telegram: TelegramConnectionState;
 };
 
@@ -31,10 +39,13 @@ const defaultPreferences: NotificationPreferences = {
   inAppEnabled: true,
   modulePreferences: {},
   preferredChannel: "email",
+  pushEnabled: true,
   quietHoursEnd: null,
   quietHoursStart: null,
   telegramEnabled: false,
 };
+
+const defaultPushState: PushSubscriptionState = { deviceCount: 0, desktopCount: 0, mobileCount: 0 };
 
 function userIdFromAccess(access: Pick<AccessContext, "hrId" | "loginId">) {
   return access.loginId ?? access.hrId ?? "";
@@ -55,9 +66,19 @@ function mapPreferences(row: Record<string, unknown> | null | undefined): Notifi
     preferredChannel: ["in_app", "email", "telegram"].includes(String(row?.preferred_channel))
       ? row?.preferred_channel as NotificationPreferences["preferredChannel"]
       : "email",
+    pushEnabled: row?.push_enabled !== false,
     quietHoursEnd: typeof row?.quiet_hours_end === "string" ? row.quiet_hours_end : null,
     quietHoursStart: typeof row?.quiet_hours_start === "string" ? row.quiet_hours_start : null,
     telegramEnabled: row?.telegram_enabled === true,
+  };
+}
+
+function mapPushState(rows: Array<Record<string, unknown>> | null | undefined): PushSubscriptionState {
+  const active = (rows ?? []).filter((row) => row.status === "subscribed");
+  return {
+    deviceCount: active.length,
+    desktopCount: active.filter((row) => row.device_type === "desktop").length,
+    mobileCount: active.filter((row) => row.device_type === "mobile").length,
   };
 }
 
@@ -75,11 +96,11 @@ function mapTelegram(row: Record<string, unknown> | null | undefined): TelegramC
 
 export async function getNotificationSettings(access: Pick<AccessContext, "hrId" | "loginId">): Promise<NotificationSettings> {
   const userId = userIdFromAccess(access);
-  if (!userId) return { preferences: defaultPreferences, telegram: mapTelegram(null) };
+  if (!userId) return { preferences: defaultPreferences, push: defaultPushState, telegram: mapTelegram(null) };
 
   try {
     const supabase = getSupabaseAdmin();
-    const [preferences, telegram] = await Promise.all([
+    const [preferences, telegram, push] = await Promise.all([
       supabase.from("notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
       supabase
         .from("telegram_connections")
@@ -88,22 +109,27 @@ export async function getNotificationSettings(access: Pick<AccessContext, "hrId"
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      access.hrId
+        ? supabase.from("push_subscriptions").select("device_type,status").eq("hr_id", access.hrId)
+        : Promise.resolve({ data: [], error: null }),
     ]);
     if (preferences.error) throw preferences.error;
     if (telegram.error) throw telegram.error;
+    if (push.error && !tableMissing(push.error)) throw push.error;
     return {
       preferences: mapPreferences(preferences.data as Record<string, unknown> | null),
+      push: mapPushState(push.data as Array<Record<string, unknown>> | null),
       telegram: mapTelegram(telegram.data as Record<string, unknown> | null),
     };
   } catch (error) {
-    if (tableMissing(error)) return { preferences: defaultPreferences, telegram: mapTelegram(null) };
+    if (tableMissing(error)) return { preferences: defaultPreferences, push: defaultPushState, telegram: mapTelegram(null) };
     throw error;
   }
 }
 
 export async function saveNotificationPreferences(
   access: Pick<AccessContext, "hrId" | "loginId">,
-  input: Partial<Pick<NotificationPreferences, "emailEnabled" | "inAppEnabled" | "preferredChannel" | "quietHoursEnd" | "quietHoursStart" | "telegramEnabled">>,
+  input: Partial<Pick<NotificationPreferences, "emailEnabled" | "inAppEnabled" | "preferredChannel" | "pushEnabled" | "quietHoursEnd" | "quietHoursStart" | "telegramEnabled">>,
 ) {
   const userId = userIdFromAccess(access);
   if (!userId) throw new Error("Authentication is required.");
@@ -113,6 +139,7 @@ export async function saveNotificationPreferences(
     hr_id: access.hrId ?? null,
     in_app_enabled: input.inAppEnabled,
     preferred_channel: input.preferredChannel,
+    push_enabled: input.pushEnabled,
     quiet_hours_end: input.quietHoursEnd || null,
     quiet_hours_start: input.quietHoursStart || null,
     telegram_enabled: input.telegramEnabled,
@@ -378,6 +405,51 @@ export async function disableTelegramForIdentity(input: {
     return { skipped: false as const };
   } catch (error) {
     if (tableMissing(error)) return { reason: "Telegram notification tables unavailable.", skipped: true as const };
+    throw error;
+  }
+}
+
+// Records the current OneSignal Web Push subscription state for one browser/device. Called
+// by the client whenever OneSignal reports a subscription change (granted, revoked, or a
+// fresh page load reporting its current state) — this is the ONLY way Phoenix learns whether
+// a recipient is actually reachable by push, since OneSignal (not Phoenix) owns the
+// subscribe/unsubscribe flow. Keyed on the device's own onesignal_subscription_id so a
+// recipient can have any number of rows (desktop + mobile + multiple browsers).
+export async function upsertPushSubscription(
+  access: Pick<AccessContext, "hrId" | "loginId">,
+  input: {
+    deviceType: "desktop" | "mobile" | "unknown";
+    onesignalSubscriptionId: string;
+    optedIn: boolean;
+    userAgent?: string | null;
+  },
+): Promise<{ skipped: boolean }> {
+  const userId = userIdFromAccess(access);
+  const subscriptionId = input.onesignalSubscriptionId.trim();
+  if (!userId || !subscriptionId) return { skipped: true };
+
+  const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    device_type: input.deviceType,
+    hr_id: access.hrId ?? null,
+    last_seen_at: now,
+    onesignal_subscription_id: subscriptionId,
+    status: input.optedIn ? "subscribed" : "unsubscribed",
+    updated_at: now,
+    user_agent: input.userAgent ?? null,
+    user_id: userId,
+  };
+  if (input.optedIn) payload.subscribed_at = now;
+  else payload.unsubscribed_at = now;
+
+  try {
+    const { error } = await getSupabaseAdmin()
+      .from("push_subscriptions")
+      .upsert(payload, { onConflict: "onesignal_subscription_id" });
+    if (error) throw error;
+    return { skipped: false };
+  } catch (error) {
+    if (tableMissing(error)) return { skipped: true };
     throw error;
   }
 }

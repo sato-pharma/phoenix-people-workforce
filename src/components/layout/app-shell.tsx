@@ -18,6 +18,7 @@ import { RouteTransitionProvider } from "@/components/layout/route-transition-pr
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
+import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 
@@ -71,6 +72,7 @@ export async function AppShell({
     <RouteTransitionProvider>
       <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-[#F8FAFC]"}`}>
         <SessionSecurityGuard />
+        <OneSignalProvider />
         <DocumentTitleSync mode={resolvedNavigationMode} />
         <CommandPalette
           currentRole={access.role}

@@ -187,7 +187,7 @@ jobs:
             --config cloudbuild.yaml \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
-            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.STAGING_IMAGE_PATH }}",_NEXT_PUBLIC_APP_URL=https://phoenix-hr-staging-897559113412.us-central1.run.app,_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=,_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=,_NEXT_PUBLIC_SMI_USE_FACT_TABLES=,_NEXT_PUBLIC_SUPABASE_ANON_KEY=,_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=,_NEXT_PUBLIC_SUPABASE_URL=https://cifwmndunmlxjhyjugxa.supabase.co,_NEXT_PUBLIC_COMMIT_SHA="$SHA_TAG"
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.STAGING_IMAGE_PATH }}",_NEXT_PUBLIC_APP_URL=https://phoenix-hr-staging-897559113412.us-central1.run.app,_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=,_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=,_NEXT_PUBLIC_SMI_USE_FACT_TABLES=,_NEXT_PUBLIC_SUPABASE_ANON_KEY=,_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=,_NEXT_PUBLIC_SUPABASE_URL=https://cifwmndunmlxjhyjugxa.supabase.co,_NEXT_PUBLIC_ONESIGNAL_APP_ID=,_NEXT_PUBLIC_COMMIT_SHA="$SHA_TAG"
           echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 

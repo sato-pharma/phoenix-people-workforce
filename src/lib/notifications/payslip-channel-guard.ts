@@ -6,6 +6,10 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // explicit call-site `channels`, or the Telegram-failure fallbacks that re-enter the notification
 // pipeline with `channels: ["email","in_app"]`.
 //
+// Push is blocked for the same reason and then some: a push notification's title/body renders
+// on a LOCKED device's lock screen with no authentication at all, which is a bigger exposure than
+// email. Never let a payslip notification pick push, however it entered the channel list.
+//
 // Keyed on the payslip *eventType* (not `module: "payroll"`) so genuine payroll-admin emails
 // (e.g. `workflow_updated`, `salary_upload_imported`) keep their email. Kept dependency-free
 // (type-only import) so it stays trivially unit-testable.
@@ -19,5 +23,5 @@ export function enforcePayslipEmailBlock(
   eventType: string | null | undefined,
 ): SystemNotificationChannel[] {
   const deduped = Array.from(new Set(channels));
-  return isPayslipEventType(eventType) ? deduped.filter((channel) => channel !== "email") : deduped;
+  return isPayslipEventType(eventType) ? deduped.filter((channel) => channel !== "email" && channel !== "push") : deduped;
 }

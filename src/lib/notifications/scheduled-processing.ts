@@ -7,7 +7,7 @@ import {
   reapStaleProcessingOutboxRows,
 } from "@/lib/notifications/email";
 import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/lib/notifications/step-runner";
-import { processDeferredDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
+import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { processFeedbackSlaReminders } from "@/lib/probation/intelligence/feedback-sla-reminders";
 import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/probation-emails";
@@ -134,6 +134,19 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       budget,
       { fallback: { attempted: 0, failed: 0, sent: 0, error: "step timed out" } },
     );
+    const push = await runStep(
+      "push",
+      () =>
+        processPushDeliveryRetries(limit).catch((e: unknown) => {
+          logError("Push delivery retry processing step failed", {
+            labels: { event: "cron_step_failed", cron: "notification-process-push" },
+            error: e,
+          });
+          return { attempted: 0, failed: 1, sent: 0, error: String(e) };
+        }),
+      budget,
+      { fallback: { attempted: 0, failed: 0, sent: 0, error: "step timed out" } },
+    );
     // Compute users inactive for 7+ days — logged for now; full alert notifications are a follow-up.
     const inactiveUsers = await runStep("inactive-users", () => getInactiveUsers(7), budget);
     if (inactiveUsers && inactiveUsers.length) {
@@ -156,6 +169,7 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       probationFeedbackSla,
       probationMilestones,
       probationReminders,
+      push,
       reaped,
       reapedVisitsSyncRuns,
       staleSosBatches,
