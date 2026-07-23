@@ -90,8 +90,9 @@ export async function runMarketingPremiumNotificationTests() {
   const registryTokens = new Set(TOKEN_REGISTRY.map((t) => t.token));
   assert.ok(registryTokens.has("productsTable"), "productsTable must be a registered placeholder");
   assert.ok(registryTokens.has("estimatedCost"), "estimatedCost must be a registered placeholder");
+  const htmlBlockTokenSet = new Set<string>(HTML_BLOCK_TOKENS);
   for (const token of ["planTable", "productsTable", "returnCallout", "scoreTable"]) {
-    assert.ok(HTML_BLOCK_TOKENS.includes(token), `${token} must be a raw-HTML block token`);
+    assert.ok(htmlBlockTokenSet.has(token), `${token} must be a raw-HTML block token`);
   }
   const templates = source("src/lib/email-templates/service.ts");
   assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
