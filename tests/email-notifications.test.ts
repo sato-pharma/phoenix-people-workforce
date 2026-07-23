@@ -71,6 +71,10 @@ export function runEmailNotificationTests() {
     "src/lib/direct-orders/approved-email.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
+    // A Super Admin's manual approval of a held item re-sends the EXACT held content,
+    // bypassing the gate for that one already-reviewed send. See approveHeldNotification
+    // in src/lib/notifications/confidence-gate.ts.
+    "src/lib/notifications/confidence-gate.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
     // Offers use a fixed premium renderer + attachments (offer-letter PDF), so they send

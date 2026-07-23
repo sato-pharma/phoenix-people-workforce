@@ -137,6 +137,7 @@ export async function buildAndEmailSosBiReport(input: {
   });
 
   const result = await sendPhoenixEmail({
+    origin: { eventType: "sos_monthly_closing_report", module: "sales" },
     attachments: [
       {
         content: buffer.toString("base64"),

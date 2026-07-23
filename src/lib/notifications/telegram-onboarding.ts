@@ -154,6 +154,7 @@ export async function sendTelegramConnectInvite(input: {
     const sendResult = await sendPhoenixEmail({
       html,
       idempotencyKey: `telegram-onboard:${input.userId}:${created.token.slice(0, 12)}`,
+      origin: { eventType: "telegram_onboarding_link", module: "telegram", recipientHrId: input.hrId ?? null },
       subject: `Connect Telegram to ${systemIdentity.appName} notifications`,
       text,
       to: [email],
