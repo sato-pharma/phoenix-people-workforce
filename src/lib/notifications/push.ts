@@ -67,18 +67,13 @@ function isNotSubscribedMessage(message: string) {
   return /not subscribed/i.test(message);
 }
 
-// The modern api.onesignal.com/notifications response for an External ID with no live
-// subscription is HTTP 200 with BOTH `recipients: 0` AND an `errors.invalid_aliases` (or
-// `invalid_external_user_ids`) object — a normal "not subscribed yet" outcome, not a
-// failure. This must be checked before the generic error branch, or it gets misclassified
-// as a hard failure (and the object-shaped `errors` value produces an unreadable message).
-function isNotSubscribedPayload(payload: { errors?: unknown; recipients?: number } | null) {
+// A recipient with zero reachable devices returns HTTP 200 with an `errors` array like
+// ["All included players are not subscribed"] — a normal "not subscribed yet" outcome,
+// not a failure. Checked before the generic error branch, or it gets misclassified as a
+// hard failure.
+function isNotSubscribedPayload(payload: { errors?: unknown } | null) {
   if (!payload) return false;
-  if (typeof payload.recipients === "number" && payload.recipients === 0) return true;
   const errors = payload.errors;
-  if (errors && typeof errors === "object" && !Array.isArray(errors)) {
-    if ("invalid_aliases" in errors || "invalid_external_user_ids" in errors) return true;
-  }
   if (Array.isArray(errors) && errors.some((entry) => isNotSubscribedMessage(String(entry)))) return true;
   return false;
 }
@@ -87,6 +82,16 @@ function isNotSubscribedPayload(payload: { errors?: unknown; recipients?: number
 // Phoenix HR_ID, set client-side via OneSignal.login()) rather than a stored player/device
 // id — OneSignal fans this out to every device (desktop + mobile browser) the recipient has
 // ever opted in on, so Phoenix never needs to track individual subscription ids to send.
+//
+// Uses the legacy /api/v1/notifications endpoint (include_external_user_ids) rather than
+// the newer api.onesignal.com/notifications alias-based endpoint (include_aliases). Verified
+// live against production 2026-07-23: for a recipient whose OneSignal history mixes
+// subscribed and unsubscribed devices (e.g. re-enabled push after a prior failed browser
+// registration — an expected, common pattern given the AbortError issue some browsers hit),
+// the alias-based endpoint spuriously reports the whole alias as `invalid_aliases` and
+// delivers nothing, even though the still-subscribed devices are perfectly reachable. The
+// legacy endpoint delivered correctly to those same devices in the same test. Do not switch
+// back to include_aliases without re-confirming that quirk is gone.
 export async function sendPushNotification(input: PushSendInput): Promise<PushSendResult> {
   const appId = onesignalAppId();
   const apiKey = onesignalRestApiKey();
@@ -101,13 +106,13 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
   const timeout = setTimeout(() => controller.abort(), onesignalTimeoutMs());
   let response: Response;
   try {
-    response = await fetch("https://api.onesignal.com/notifications", {
+    response = await fetch("https://onesignal.com/api/v1/notifications", {
       body: JSON.stringify({
         app_id: appId,
+        channel_for_external_user_ids: "push",
         contents: { en: message || title },
         headings: { en: title || "Phoenix Workforce" },
-        include_aliases: { external_id: [input.externalId.trim()] },
-        target_channel: "push",
+        include_external_user_ids: [input.externalId.trim()],
         ...(input.actionUrl ? { url: input.actionUrl } : {}),
       }),
       headers: {
@@ -126,7 +131,7 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
     clearTimeout(timeout);
   }
 
-  const payload = await response.json().catch(() => null) as { errors?: unknown; id?: string; recipients?: number } | null;
+  const payload = await response.json().catch(() => null) as { errors?: unknown; id?: string } | null;
 
   if (isNotSubscribedPayload(payload)) {
     return { reason: "No active push subscription for recipient.", skipped: true };
