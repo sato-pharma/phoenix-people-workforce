@@ -283,7 +283,7 @@ async function loadNoActivityClarificationStatuses(
 }
 
 // Employee-visible status/history for no-activity clarifications: only
-// surfaced once the employee (or the system, via the day-after clarify
+// surfaced once the employee (or the system, via the 3-days-later clarify
 // prompt) or an admin has actually acted — an untouched "No Activity
 // Recorded" day already gets that label from derivePrivateCalendarExceptions,
 // so a pending row with no clarification yet would just be a duplicate of

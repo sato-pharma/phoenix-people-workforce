@@ -22,7 +22,6 @@ import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
 import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
-import { runNoActivityDayFirstNotifications } from "@/lib/private-calendar/no-activity-clarifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +68,6 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     activityRetention,
     sosMonthlyReportCheck,
-    noActivityDayFirstNotifications,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-birthday" } });
@@ -160,10 +158,6 @@ async function runDailyNotifications(request: Request) {
       logError("SoS monthly-closing report check failed", { labels: { event: "cron_failed", job: "sos-monthly-report-check" }, error: e });
       return { checkedPeriods: [] as string[], sentPeriods: [] as string[], errors: [{ period: "unknown", error: String(e) }] };
     }),
-    runNoActivityDayFirstNotifications().catch((e: unknown) => {
-      logError("No-activity day first notifications failed", { labels: { event: "cron_failed", job: "private-calendar-no-activity-first-notice" }, error: e });
-      return { checked: 0, errors: 1, notified: 0 };
-    }),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -180,7 +174,6 @@ async function runDailyNotifications(request: Request) {
     fieldWorkforceComplianceDigest,
     holidayConfirmation,
     marketingSla,
-    noActivityDayFirstNotifications,
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
