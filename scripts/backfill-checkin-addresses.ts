@@ -18,7 +18,8 @@
  *     scripts/backfill-checkin-addresses.ts <dateFrom YYYY-MM-DD> [dateTo YYYY-MM-DD]
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { googleReverseGeocode, hasGoogleServerKey } from "@/lib/google-maps/server";
+import { hasGoogleServerKey } from "@/lib/google-maps/server";
+import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geocode";
 import { CRM_CHECKINS_TABLE } from "@/lib/crm/tables";
 
 const dateFrom = process.argv[2];
@@ -28,8 +29,8 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(d
   console.error("Usage: backfill-checkin-addresses <dateFrom YYYY-MM-DD> [dateTo YYYY-MM-DD]");
   process.exit(1);
 }
-if (!hasGoogleServerKey()) {
-  console.error("[backfill] GOOGLE_MAPS_SERVER_KEY is not configured in this environment — nothing to do.");
+if (!hasLocationIqKey() && !hasGoogleServerKey()) {
+  console.error("[backfill] Neither LOCATIONIQ_API_KEY nor GOOGLE_MAPS_SERVER_KEY is configured in this environment — nothing to do.");
   process.exit(1);
 }
 
@@ -76,8 +77,7 @@ async function main() {
       while (cursor < candidates.length) {
         const row = candidates[cursor++];
         try {
-          const result = await googleReverseGeocode({ lat: row.lat as number, lng: row.lon as number });
-          const label = result?.formattedAddress ?? [result?.area, result?.city].filter(Boolean).join(", ");
+          const label = await resolveCheckinAddress(row.lat as number, row.lon as number);
           if (label) {
             const { error } = await supabase.from(CRM_CHECKINS_TABLE).update({ address: label }).eq("id", row.id);
             if (error) throw new Error(error.message);
