@@ -45,6 +45,11 @@ export function detectDeviceType(): "desktop" | "mobile" | "unknown" {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
 }
 
+export type EnablePushResult = {
+  optedIn: boolean;
+  permission: boolean;
+};
+
 // Activates push for this browser. Must be called from a user gesture (button click) —
 // browsers silently ignore or auto-block a permission request that fires without one.
 //
@@ -57,15 +62,34 @@ export function detectDeviceType(): "desktop" | "mobile" | "unknown" {
 // subscription at all (confirmed in production: browser permission "Allowed", zero rows
 // in push_subscriptions). Do not swap this back to requestPermission() without solving
 // that gap some other way.
-export function requestOneSignalPermission(): Promise<void> {
+//
+// optIn() itself resolves whether or not the user actually grants permission — a denied
+// or already-blocked prompt does NOT reject the promise. Callers MUST check the returned
+// `optedIn`/`permission` state rather than assuming success just because this resolved,
+// or a denied user gets told "push enabled" when nothing was actually turned on.
+export function requestOneSignalPermission(): Promise<EnablePushResult> {
   return new Promise((resolve, reject) => {
     withOneSignal(async (OneSignal) => {
       try {
         await OneSignal.User.PushSubscription.optIn();
-        resolve();
+        resolve({
+          optedIn: OneSignal.User.PushSubscription.optedIn,
+          permission: OneSignal.Notifications.permission,
+        });
       } catch (error) {
         reject(error instanceof Error ? error : new Error("Unable to enable push notifications."));
       }
+    });
+  });
+}
+
+// Unbinds this browser from the signed-out user's OneSignal identity so a shared device
+// doesn't keep receiving that person's pushes after someone else signs in. Best-effort —
+// a failure here must never block sign-out itself.
+export function logoutOneSignal(): void {
+  withOneSignal((OneSignal) => {
+    OneSignal.logout().catch(() => {
+      // Best-effort — sign-out proceeds regardless.
     });
   });
 }

@@ -10,6 +10,7 @@ import { InAppNotificationsBell } from "@/components/layout/in-app-notifications
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { systemAssets, systemUiText } from "@/config/system-settings";
+import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
@@ -35,6 +36,10 @@ export function Topbar({
   const isAdminMode = navigationMode === "admin";
   const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
   const handleLogout = async () => {
+    // Unbind this browser from the signed-out user's OneSignal identity first — best
+    // effort, never blocks sign-out — so a shared device doesn't keep receiving their
+    // pushes after someone else signs in.
+    logoutOneSignal();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
