@@ -100,7 +100,7 @@ export async function createInterview(
   return interview;
 }
 
-async function getInterviewRow(id: string): Promise<Interview> {
+export async function getInterviewRow(id: string): Promise<Interview> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("recruitment_interviews")

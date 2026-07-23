@@ -392,6 +392,14 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/offer-letter/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/salary-summary/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
+  // Deliberately gated on the narrow `hiring_interviews` resource, not `recruitment`/
+  // `candidates` (both hard-boundary-locked to HR authority roles) — so a hiring-manager-type
+  // role like District Manager can view/act on only their own assigned candidate's CV,
+  // interview, and outcome, without a broader recruitment grant. See
+  // src/lib/recruitment/hiring-manager-view.ts for the full rationale and per-record scoping.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
+  sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),

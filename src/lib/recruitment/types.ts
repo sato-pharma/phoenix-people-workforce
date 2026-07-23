@@ -178,6 +178,7 @@ export type Candidate = {
   nationalId: string | null;
   email: string | null;
   phone: string | null;
+  address: string | null;
   governorate: string | null;
   currentEmployer: string | null;
   yearsExperience: number | null;
@@ -187,6 +188,13 @@ export type Candidate = {
   cvReferenceName: string | null;
   cvExternalUrl: string | null;
   notes: string | null;
+  faculty: string | null;
+  university: string | null;
+  hasPriorWorkExperience: boolean | null;
+  hasMedicalRepExperience: boolean | null;
+  medicalRepEmployer: string | null;
+  medicalRepExperienceFrom: string | null;
+  medicalRepExperienceTo: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -278,6 +286,7 @@ export type CreateCandidateInput = {
   nationalId?: string | null;
   email?: string | null;
   phone?: string | null;
+  address?: string | null;
   governorate?: string | null;
   currentEmployer?: string | null;
   yearsExperience?: number | null;
@@ -287,4 +296,34 @@ export type CreateCandidateInput = {
   cvReferenceName?: string | null;
   cvExternalUrl?: string | null;
   notes?: string | null;
+  faculty?: string | null;
+  university?: string | null;
+  hasPriorWorkExperience?: boolean | null;
+  hasMedicalRepExperience?: boolean | null;
+  medicalRepEmployer?: string | null;
+  medicalRepExperienceFrom?: string | null;
+  medicalRepExperienceTo?: string | null;
 };
+
+// Partial edit of an existing candidate — an omitted key leaves that column
+// untouched; an explicit `null` clears it. Used by the CV-extraction review UI.
+export type UpdateCandidateInput = Partial<CreateCandidateInput>;
+
+// The Medical Rep CV-extraction field set (phase 1 — one position type only,
+// per the "avoid over-engineering" instruction; a second position gets its own
+// field set + migration when it's actually needed, not a generic schema now).
+export const cvExtractableCandidateFields = [
+  "fullName",
+  "email",
+  "phone",
+  "address",
+  "governorate",
+  "hasPriorWorkExperience",
+  "hasMedicalRepExperience",
+  "medicalRepEmployer",
+  "medicalRepExperienceFrom",
+  "medicalRepExperienceTo",
+  "faculty",
+  "university",
+] as const;
+export type CvExtractableCandidateField = (typeof cvExtractableCandidateFields)[number];
