@@ -20,6 +20,7 @@ import {
   toMarketingRequestWorkflowStatus,
 } from "@/lib/marketing-requests/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
+import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import type {
   MarketingDistributor,
@@ -1874,6 +1875,13 @@ export async function runMarketingSlaDaily(): Promise<{
   let overdue = 0;
   let escalations = 0;
   let scanned = 0;
+  // True master-off: recipients here are always the specific request's assigned approver and
+  // requester, resolved per-request further below — not a role broadcast list — so this admin
+  // "enabled" switch (see "marketing_sla_reminder" in role-recipients.ts) is the only real toggle
+  // for this reminder, checked before any request is even scanned.
+  if (!(await resolveNotificationRoleEnabled("marketing_sla_reminder"))) {
+    return { errors, escalations, overdue, reminders, runDate: today, scanned };
+  }
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase

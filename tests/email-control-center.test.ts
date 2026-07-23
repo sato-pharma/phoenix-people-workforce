@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { notificationRoleKeys } from "../src/lib/notifications/role-recipients.ts";
+import { emailNotificationTypes } from "../src/lib/notifications/email.ts";
+import { emailTemplateKeys } from "../src/lib/email-templates/service.ts";
+
+export function runEmailControlCenterTests() {
+  const aggregatorSource = readFileSync("src/lib/notifications/email-control-center.ts", "utf8");
+  const dailyRouteSource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const probationEmailsSource = readFileSync("src/lib/probation/intelligence/probation-emails.ts", "utf8");
+  const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
+  const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
+
+  assert.equal(notificationRoleKeys.length, 13, "expected 13 role-recipients keys (12 original + marketing_sla_reminder)");
+  assert.equal(emailNotificationTypes.length, 8, "expected 8 email-notification policy types");
+  assert.ok(emailTemplateKeys.length > 0, "expected at least one email template key");
+
+  // Every role-recipients key and email-notification type must have an explicit module-mapping
+  // entry in the aggregator, so it lands in a real dashboard group instead of "undefined". Both
+  // maps are typed as exhaustive Records (a missing key is a compile error), but this
+  // test-runner type-strips rather than type-checks (see tests/alias-loader.mjs), so this loop
+  // is the real enforcement for `pnpm run test` specifically.
+  for (const key of notificationRoleKeys) {
+    assert.match(
+      aggregatorSource,
+      new RegExp(`\\b${key}:\\s*(?:"[^"]+"|SYSTEM_HEALTH_MODULE)`),
+      `email-control-center.ts is missing a module mapping for role-recipients key "${key}"`,
+    );
+  }
+  for (const type of emailNotificationTypes) {
+    assert.match(
+      aggregatorSource,
+      new RegExp(`\\b${type}:\\s*"[^"]+"`),
+      `email-control-center.ts is missing a module mapping for email-notification type "${type}"`,
+    );
+  }
+
+  // The 3 digests disabled 2026-07-22 (335437cc) must be restored as real calls, not stubs.
+  assert.doesNotMatch(dailyRouteSource, /Disabled 2026-07-22/, "the 3 owner-disabled digests must be restored, not still stubbed");
+  assert.match(dailyRouteSource, /runMarketingSlaDaily\(\)/, "daily route must call the real marketing SLA function");
+  assert.match(dailyRouteSource, /processProbationWeeklyDigest\(\)/, "daily route must call the real probation weekly digest function");
+  assert.match(dailyRouteSource, /runOutstationSlaDaily\(\)/, "daily route must call the real outstation SLA function");
+
+  // Each restored digest's master "enabled" switch must be checked before any data is scanned —
+  // for probation_weekly_dv_digest and marketing_sla_reminder this is the ONLY thing that
+  // achieves a true off (see the hybrid-recipient / per-request-routing notes in role-recipients.ts
+  // and email-control-center.ts); for outstation_sla_reminder it's a redundant-but-cheap
+  // perf/consistency win since an empty roles array already no-ops it correctly.
+  assert.match(
+    probationEmailsSource,
+    /resolveNotificationRoleEnabled\("probation_weekly_dv_digest"\)/,
+    "probation weekly digest must check its own enabled flag before scanning any data (hybrid mandatory-recipient gap)",
+  );
+  assert.match(
+    marketingServiceSource,
+    /resolveNotificationRoleEnabled\("marketing_sla_reminder"\)/,
+    "marketing SLA reminder must check its own enabled flag before scanning any data (recipients are per-request, not role-configurable)",
+  );
+  assert.match(
+    outstationServiceSource,
+    /resolveNotificationRoleEnabled\("outstation_sla_reminder"\)/,
+    "outstation SLA reminder should short-circuit on the enabled flag before scanning any data",
+  );
+}

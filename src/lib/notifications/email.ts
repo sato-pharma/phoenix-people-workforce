@@ -16,6 +16,7 @@ import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -498,6 +499,8 @@ export async function saveEmailNotificationPolicy(
   const fallback = defaultPolicyForType(type);
   if (!fallback) throw new Error("Unsupported email notification type.");
 
+  const before = (await getEmailNotificationPolicy(type)) ?? fallback;
+
   const policy: EmailNotificationPolicy = {
     ...fallback,
     enabled: input.enabled,
@@ -538,6 +541,16 @@ export async function saveEmailNotificationPolicy(
     );
 
   if (error) throw error;
+
+  await writeAuditLog({
+    actorLoginId: actor ?? null,
+    entityId: type,
+    entityType: "notification",
+    newValues: { enabled: policy.enabled, recipientModes: policy.recipientModes, targetLines: policy.targetLines, targetTitles: policy.targetTitles },
+    oldValues: { enabled: before.enabled, recipientModes: before.recipientModes, targetLines: before.targetLines, targetTitles: before.targetTitles },
+    summary: `${actor ?? "admin"} changed the "${policy.label}" email notification policy.`,
+  });
+
   return policy;
 }
 

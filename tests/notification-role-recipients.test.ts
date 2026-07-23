@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { phoenixRoles } from "../src/lib/auth/permissions.ts";
 import { DEFAULT_NOTIFICATION_ROLE_POLICIES, notificationRoleKeys } from "../src/lib/notifications/role-recipients.ts";
 
-// Regression guard: today's exact production role values for the 12 hardcoded arrays this
-// feature replaced (confirmed file:line during implementation). If this drifts from
+// Regression guard: today's exact production role + enabled values for the 13 keys this
+// feature governs (confirmed file:line during implementation). If this drifts from
 // DEFAULT_NOTIFICATION_ROLE_POLICIES, either the default changed without updating this test's
 // expectation, or a real behavior change slipped in unintentionally — both worth a hard stop.
 // Note: 4 of these (telegram_daily_hr_digest, probation_weekly_dv_digest,
@@ -13,27 +13,33 @@ import { DEFAULT_NOTIFICATION_ROLE_POLICIES, notificationRoleKeys } from "../src
 // confirmed zero app_auth_users rows ever had that role value, so it always silently matched
 // nobody. Omitted here to match the REAL effective default (also enforced below: every listed
 // role must be a genuine phoenixRoles member, which "HR Manager" is not).
-const EXPECTED: Record<string, string[]> = {
-  holiday_confirmation_reminder: ["Super Admin"],
-  vacation_sla_hr_escalation: ["Super Admin"],
-  telegram_daily_hr_digest: ["Super Admin"],
-  weekly_system_health_digest: ["Super Admin"],
-  probation_weekly_dv_digest: ["CEO", "Super Admin", "SFE Manager", "Training Manager"],
-  field_workforce_compliance_digest: ["Super Admin"],
-  outstation_sla_reminder: ["Super Admin", "Finance Manager", "CEO"],
-  resignation_sla_reminder: ["Super Admin"],
-  weekly_plans_drift_alert: ["Super Admin"],
-  excuse_drift_alert: ["Super Admin"],
-  ireports360_sync_notify: ["Super Admin"],
-  attendance_ingestion_alert: ["Super Admin"],
+// `probation_weekly_dv_digest` and `outstation_sla_reminder` are `enabled: false` because they
+// were hard-disabled in code on 2026-07-22 (335437cc) and restored 2026-07-23 behind this real
+// toggle, still defaulting off until a Super Admin explicitly re-enables them. `marketing_sla_reminder`
+// is a new 13th key, also seeded `enabled: false` for the same reason, with an intentionally empty
+// `roles` (its recipients are per-request, not role-configurable — see role-recipients.ts).
+const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
+  holiday_confirmation_reminder: { roles: ["Super Admin"], enabled: true },
+  vacation_sla_hr_escalation: { roles: ["Super Admin"], enabled: true },
+  telegram_daily_hr_digest: { roles: ["Super Admin"], enabled: true },
+  weekly_system_health_digest: { roles: ["Super Admin"], enabled: true },
+  probation_weekly_dv_digest: { roles: ["CEO", "Super Admin", "SFE Manager", "Training Manager"], enabled: false },
+  field_workforce_compliance_digest: { roles: ["Super Admin"], enabled: true },
+  outstation_sla_reminder: { roles: ["Super Admin", "Finance Manager", "CEO"], enabled: false },
+  resignation_sla_reminder: { roles: ["Super Admin"], enabled: true },
+  weekly_plans_drift_alert: { roles: ["Super Admin"], enabled: true },
+  excuse_drift_alert: { roles: ["Super Admin"], enabled: true },
+  ireports360_sync_notify: { roles: ["Super Admin"], enabled: true },
+  attendance_ingestion_alert: { roles: ["Super Admin"], enabled: true },
+  marketing_sla_reminder: { roles: [], enabled: false },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 12, "expected exactly the 12 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 13, "expected exactly the 13 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 12 keys",
+    "notificationRoleKeys set does not match the confirmed 13 keys",
   );
 
   for (const key of notificationRoleKeys) {
@@ -45,9 +51,10 @@ export function runNotificationRoleRecipientsTests() {
 
     assert.deepEqual(
       policy.roles.slice().sort(),
-      EXPECTED[key].slice().sort(),
+      EXPECTED[key].roles.slice().sort(),
       `"${key}" default roles drifted from confirmed production behavior`,
     );
+    assert.equal(policy.enabled, EXPECTED[key].enabled, `"${key}" default enabled state drifted from confirmed production behavior`);
 
     for (const role of policy.roles) {
       assert.ok(
