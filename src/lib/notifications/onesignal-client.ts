@@ -15,6 +15,7 @@ export type OneSignalSdk = {
       addEventListener: (event: "change", handler: (event: OneSignalPushSubscriptionChangeEvent) => void) => void;
       id: string | null;
       optedIn: boolean;
+      optIn: () => Promise<void>;
     };
   };
 };
@@ -44,17 +45,26 @@ export function detectDeviceType(): "desktop" | "mobile" | "unknown" {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
 }
 
-// Triggers the native browser permission prompt. Must be called from a user gesture
-// (button click) — browsers silently ignore or auto-block a permission request that
-// fires without one.
+// Activates push for this browser. Must be called from a user gesture (button click) —
+// browsers silently ignore or auto-block a permission request that fires without one.
+//
+// PushSubscription.optIn() (not Notifications.requestPermission()) is the correct call
+// here: per OneSignal's docs, optIn() shows the native permission prompt itself when
+// there's no valid push token yet, AND marks the subscription "subscribed" on OneSignal's
+// side once granted. requestPermission() only resolves the BROWSER-level permission — it
+// never flips OneSignal's own subscription status, so a user could show as
+// Notification.permission === "granted" in their browser while OneSignal never creates a
+// subscription at all (confirmed in production: browser permission "Allowed", zero rows
+// in push_subscriptions). Do not swap this back to requestPermission() without solving
+// that gap some other way.
 export function requestOneSignalPermission(): Promise<void> {
   return new Promise((resolve, reject) => {
     withOneSignal(async (OneSignal) => {
       try {
-        await OneSignal.Notifications.requestPermission();
+        await OneSignal.User.PushSubscription.optIn();
         resolve();
       } catch (error) {
-        reject(error instanceof Error ? error : new Error("Unable to request push permission."));
+        reject(error instanceof Error ? error : new Error("Unable to enable push notifications."));
       }
     });
   });
