@@ -1156,6 +1156,14 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "communication" }],
   },
   {
+    href: "/admin/notification-confidence",
+    icon: ShieldAlert,
+    label: "Notification Confidence Center",
+    description: "Every automated email's pre-send validation checks, confidence score, and any held for review.",
+    permissions: [{ resource: "communication" }],
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/notifications/telegram/templates",
     icon: MessageSquareText,
     label: "Telegram Templates",

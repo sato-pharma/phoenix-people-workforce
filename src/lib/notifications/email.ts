@@ -67,6 +67,10 @@ export type NotificationEmailInput = {
   cc?: string[];
   ctaHref?: string;
   ctaLabel?: string;
+  /** The originating CreateSystemNotificationInput.eventType — threaded through purely so the
+   * Notification Confidence Gate (send-phoenix-email.ts) can group its fan-out anomaly check
+   * by (module, eventType) instead of just module. */
+  eventType?: string | null;
   employeeHrId?: string | null;
   identityError?: string | null;
   identityGuard?: NotificationEmailIdentityGuard;
@@ -1425,6 +1429,16 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   const requestId = notificationDedupeKey(inputWithCc);
   const migratedTemplateKey = migratedTemplateKeyForNotification(input);
 
+  const origin = {
+    employeeHrId: input.employeeHrId ?? null,
+    eventType: input.eventType ?? null,
+    identityStatus: input.identityStatus ?? null,
+    module: input.module ?? null,
+    notificationType: input.notificationType ?? null,
+    recipientHrId: input.recipientHrId ?? null,
+    templateKey: input.templateKey ?? null,
+  };
+
   if (migratedTemplateKey) {
     const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, inputWithCc, delivery.recipients);
     return sendTemplatedEmail({
@@ -1461,6 +1475,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       employeeHrId: input.employeeHrId,
       fallbackTo: delivery.recipients,
       from,
+      origin,
       overrides,
       templateKey: migratedTemplateKey,
     });
@@ -1477,6 +1492,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     headers: listUnsubscribeHeaders(input.notificationType, fanout ? undefined : delivery.recipients[0]),
     html: renderHtml(input, delivery.policy),
     idempotencyKey: requestId,
+    origin,
     subject: notificationSubject(input, delivery.policy),
     text: renderText(input, delivery.policy),
     to: delivery.recipients,

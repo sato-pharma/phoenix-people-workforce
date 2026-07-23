@@ -106,6 +106,7 @@ export async function sendJobOfferEmail(input: JobOfferEmailInput): Promise<Send
   return sendPhoenixEmail({
     to: [input.candidateEmail],
     from,
+    origin: { eventType: "job_offer_sent", module: "offers" },
     // Candidate replies to a job offer must reach the HR inbox (a real receiving mailbox),
     // not the outbound sending address. Reply-To needs no SPF/DKIM, so hr@satopharma.com is
     // safe here even though sends go out via the verified send.satopharma.com domain.

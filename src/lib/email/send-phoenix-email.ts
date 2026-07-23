@@ -7,6 +7,11 @@ import {
   sendPreparedEmailWithFailover,
   type PreparedEmail,
 } from "@/lib/email/email-providers";
+import {
+  evaluateAndRecordNotificationSend,
+  markNotificationSendDelivered,
+  type NotificationOrigin,
+} from "@/lib/notifications/confidence-gate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Re-exported for back-compat: existing callers/tests import these from this module.
@@ -22,6 +27,12 @@ export type SendPhoenixEmailAttachment = {
 export type SendPhoenixEmailInput = {
   attachments?: SendPhoenixEmailAttachment[];
   bcc?: string[];
+  /**
+   * Internal use only, set exclusively by confidence-gate.ts's approveHeldNotification when
+   * a Super Admin manually approves a held item — never set this from domain code. Skips the
+   * Notification Confidence Gate for this one already-human-reviewed send.
+   */
+  bypassConfidenceGate?: boolean;
   cc?: string[];
   /**
    * When true and the resolved `to` has more than one recipient, move them to BCC behind
@@ -31,6 +42,13 @@ export type SendPhoenixEmailInput = {
   fanoutToBcc?: boolean;
   from?: string;
   headers?: Record<string, string>;
+  /**
+   * Best-effort identifying context (module/eventType/recipient) for the Notification
+   * Confidence Gate — powers the fan-out anomaly check and the /admin/notification-confidence
+   * dashboard. The gate still runs and still records the send when this is omitted; it's just
+   * bucketed as "unknown" and the fan-out check becomes not-applicable for that send.
+   */
+  origin?: NotificationOrigin | null;
   /**
    * Per-send Reply-To override. When unset, falls back to NOTIFICATION_REPLY_TO / the
    * system default reply-to. Lets a specific email type (e.g. job offers) route replies
@@ -257,9 +275,38 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     to: finalTo,
   };
 
+  // Notification Confidence Gate: every automated email passes through here — this is the
+  // one function every send path (createSystemNotification, sendTemplatedEmail, and every
+  // domain module that calls sendPhoenixEmail directly) ends up calling, with zero exceptions
+  // found when tracing the full call graph. A failing check holds the send outright instead of
+  // dispatching it; see confidence-gate.ts for the checks and /admin/notification-confidence
+  // for the review queue. bypassConfidenceGate is set only by a Super Admin's manual approval
+  // of an already-held, already-reviewed item — never by domain code.
+  let reviewId: string | null = null;
+  if (!input.bypassConfidenceGate) {
+    const gate = await evaluateAndRecordNotificationSend({
+      bcc: prepared.bcc,
+      cc: prepared.cc,
+      html: prepared.html,
+      idempotencyKey: prepared.idempotencyKey,
+      origin: input.origin ?? null,
+      subject: prepared.subject,
+      text: prepared.text,
+      to: prepared.to,
+    });
+    reviewId = gate.reviewId;
+    if (gate.decision === "hold") {
+      return {
+        reason: `Held for Super Admin review (${gate.confidencePercent}% confidence) — see /admin/notification-confidence.`,
+        skipped: true,
+      };
+    }
+  }
+
   // Dispatch through the provider-failover layer: Resend primary, plus an optional independent
   // backup (Brevo) used ONLY when Resend deterministically did not send (quota/auth). Ambiguous
   // errors never cross providers, so a send can never be duplicated. See email-providers.ts.
   const delivered = await sendPreparedEmailWithFailover(prepared);
+  await markNotificationSendDelivered(reviewId, delivered.id);
   return { id: delivered.id, skipped: false };
 }
