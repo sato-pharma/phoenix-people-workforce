@@ -173,9 +173,16 @@ export function NotificationSettingsPanel() {
     setError(null);
     setMessage(null);
     try {
-      await requestOneSignalPermission();
-      setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
-      window.setTimeout(() => void loadSettings(), 2000);
+      const result = await requestOneSignalPermission();
+      // optIn() resolves regardless of the actual outcome — a denied or already-blocked
+      // prompt does NOT throw. Check the real state before claiming success, or a denied
+      // user gets told "enabled" when nothing was actually turned on.
+      if (result.optedIn) {
+        setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
+        window.setTimeout(() => void loadSettings(), 2000);
+      } else {
+        setError("Your browser didn't grant notification permission, so push wasn't enabled on this device. Check your browser's site settings for phoenix-hr.satopharma.com and allow notifications, then try again.");
+      }
     } catch (permissionError) {
       setError(permissionError instanceof Error ? permissionError.message : "Unable to enable push notifications on this device.");
     } finally {

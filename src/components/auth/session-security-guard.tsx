@@ -9,9 +9,13 @@ import {
   phoenixSessionTimeoutReason,
   readSessionActivityAt,
 } from "@/lib/auth/client-session";
+import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 
 async function logoutForTimeout() {
   markSessionInvalidated("client_idle_timeout");
+  // Unbind this browser from OneSignal's identity for the same reason a manual logout
+  // does — an idle-timeout logout is still a real sign-out.
+  logoutOneSignal();
   try {
     await fetch("/api/auth/logout", { method: "POST" });
   } catch {
@@ -42,6 +46,7 @@ export function SessionSecurityGuard({
           markSessionInvalidated("heartbeat_401");
           if (!loggingOutRef.current) {
             loggingOutRef.current = true;
+            logoutOneSignal();
             clearSessionActivity();
             window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
           }

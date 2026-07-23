@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -17,7 +19,12 @@ export async function POST(request: Request) {
       channels: ["push", "in_app"],
       eventType: "push_test",
       message: "Phoenix push notifications are connected.",
-      metadata: { test: true },
+      // eventKeyFor() hashes stable fields (recipient/eventType/module/title) into a
+      // deterministic idempotency key when none is given, so every click without a
+      // unique key here would collapse onto the SAME event and silently no-op after the
+      // first send ("Delivery already sent."). A fresh key per click is what makes a
+      // Test Push button actually re-testable.
+      metadata: { idempotencyKey: `push-test:${randomUUID()}`, test: true },
       module: "system",
       priority: "normal",
       recipientHrId: access.hrId,
