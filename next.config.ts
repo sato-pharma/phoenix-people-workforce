@@ -26,7 +26,13 @@ const frameAncestorsPolicy = isBuilderPreviewEnabled
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
+  // api.onesignal.com is required HERE (script-src), not just connect-src: the SDK loads
+  // a JSONP-style sync script directly from https://api.onesignal.com/sync/<appId>/web —
+  // a <script> tag, not a fetch/XHR. Omitting it from script-src silently blocks that load,
+  // which hangs OneSignal.init() until it times out — confirmed in production 2026-07-23
+  // (console: "Loading the script '.../sync/.../web' violates ... script-src"), which meant
+  // push never worked at all, on any device, despite every other piece being correctly wired.
+  `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com https://api.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
