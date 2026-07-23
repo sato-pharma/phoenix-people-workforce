@@ -69,7 +69,7 @@ import { runProbationReportTests } from "./probation-report.test.ts";
 import { runProbationDashboardTests } from "./probation-dashboard.test.ts";
 import { runProbationEmailsTests } from "./probation-emails.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
-import { runEmailRenderHarnessTests } from "./email-render-harness.test.ts";
+import { runEmailRenderHarnessTests, runTokenRegistryConsistencyTests } from "./email-render-harness.test.ts";
 import { runProbationDecisionTests } from "./probation-decision.test.ts";
 import { runProbationCompletionReportTests } from "./probation-completion-report.test.ts";
 import { runProbationEnhancementsPrereqTests } from "./probation-enhancements-prereq.test.ts";
@@ -506,6 +506,7 @@ await runTest("probation CEO dashboard (P8 risk classification + exception flags
 await runTest("probation emails (P9 template registration + confirmed recipients + dedup)", runProbationEmailsTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
 await runTest("email render harness (functional contextVariables → interpolate + all-module token coverage)", runEmailRenderHarnessTests);
+await runTest("token registry consistency (placeholderHints/variableCatalog/contextVariables/htmlBlockTokens all derive from TOKEN_REGISTRY)", runTokenRegistryConsistencyTests);
 await runTest("probation decision (P10 authority + idempotent side effects + no-extend + lock)", runProbationDecisionTests);
 await runTest("probation completion report (P11 acceptance-criteria matrix + migrations)", runProbationCompletionReportTests);
 await runTest("probation enhancements prereq (PF-1 registry gates + PF-2 config select)", runProbationEnhancementsPrereqTests);

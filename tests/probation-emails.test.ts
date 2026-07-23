@@ -7,6 +7,8 @@ import {
   PROBATION_EMAIL_FRESH_START_ISO,
 } from "../src/lib/probation/intelligence/email-fresh-start.ts";
 import { phoenixRoles } from "../src/lib/auth/permissions.ts";
+import { getTemplatePlaceholderHints } from "../src/lib/email-templates/service.ts";
+import { contextVariables } from "../src/lib/email-templates/render-core.ts";
 
 function src(p: string) { return readFileSync(p, "utf8"); }
 
@@ -35,10 +37,14 @@ export function runProbationEmailsTests() {
   // (1) EmailTemplateContext type, (2) placeholderHints (editor validation allowlist), and CRUCIALLY
   // (3) contextVariables() — the render map that interpolate() reads. Missing (3) is what shipped the
   // blank DV date / evaluator / score / risk / day emails (the first hotfix only fixed (2)).
-  const renderCore = src("src/lib/email-templates/render-core.ts");
+  // (2) and (3) now derive from TOKEN_REGISTRY (2026-07-23 consolidation — see token-registry.ts),
+  // so this checks the real runtime behavior of getTemplatePlaceholderHints()/contextVariables()
+  // rather than scanning for the specific hand-listed source patterns that no longer exist.
+  const placeholderHints = new Set(getTemplatePlaceholderHints());
+  const renderedKeys = new Set(Object.keys(contextVariables({}, "Team")));
   for (const token of ["probationDay", "dvDate", "evaluatorName", "evaluatorRole", "visitCount", "dvProgress", "riskStatus", "provisionalScore", "daysRemaining", "milestoneDay"]) {
-    assert.ok(engine.includes(`"${token}"`), `${token} is in the placeholderHints allowlist`);
-    assert.ok(renderCore.includes(`${token}: text(input.${token})`), `${token} is mapped in contextVariables() render map (render-core.ts)`);
+    assert.ok(placeholderHints.has(token), `${token} is in the placeholderHints allowlist`);
+    assert.ok(renderedKeys.has(token), `${token} is mapped in contextVariables() render map`);
   }
 
   const emails = src("src/lib/probation/intelligence/probation-emails.ts");
