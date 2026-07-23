@@ -112,7 +112,7 @@ const nextConfig: NextConfig = {
   // paths break (Next tries to resolve them as bundled "vendor-chunks" that don't exist).
   // Marking them external makes API routes `require()` them natively from node_modules
   // instead, so the on-disk .afm lookups keep working.
-  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core"],
+  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth"],
   experimental: {
     serverActions: {
       allowedOrigins: [

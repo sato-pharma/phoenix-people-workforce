@@ -19,7 +19,9 @@ import {
   type OfferLifecycleInput,
 } from "@/lib/offers/service";
 import { assertOfferWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
+import { hrIdsMatch } from "@/lib/hr-id";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
+import { createSystemNotification } from "@/lib/notifications/system";
 import {
   canCastOfferApproval,
   computeRequiredApprovers,
@@ -254,6 +256,27 @@ export async function createApplication(
 
   // Move straight into the searchable pool (Stage 5).
   await runApplicationTransition(application.id, "app_add", access);
+
+  // Best-effort: let the requisition's hiring manager (e.g. a District Manager) know a
+  // candidate has been assigned to their open seat — never blocks the assignment itself.
+  if (requisition.hiringManagerHrId && !hrIdsMatch(access.hrId, requisition.hiringManagerHrId)) {
+    try {
+      const candidate = await getCandidate(candidateId);
+      await createSystemNotification({
+        actionUrl: "/employee-portals/recruitment-candidates",
+        channels: ["in_app", "email"],
+        eventType: "candidate_assigned",
+        message: `${candidate?.fullName ?? "A candidate"} has been assigned to your ${requisition.jobTitle} position.`,
+        module: "recruitment",
+        priority: "normal",
+        recipientHrId: requisition.hiringManagerHrId,
+        title: "New candidate assigned",
+      });
+    } catch {
+      // Notifications are best-effort; the assignment must still succeed.
+    }
+  }
+
   const refreshed = await getApplication(access, application.id);
   if (!refreshed) throw new Error("Application could not be reloaded after creation.");
   return refreshed;

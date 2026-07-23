@@ -51,6 +51,7 @@ import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-m
 import { runRecruitmentCandidateMatchingTests } from "./recruitment-candidate-matching.test.ts";
 import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-state-machine.test.ts";
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
+import { runRecruitmentCvExtractionTests } from "./recruitment-cv-extraction.test.ts";
 import { runOfferApprovalChainTests } from "./offer-approval-chain.test.ts";
 import { runOfferPipelineStateMachineTests } from "./offer-pipeline-state-machine.test.ts";
 import { runProbationProvisioningTests } from "./probation-provisioning.test.ts";
@@ -492,6 +493,7 @@ await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsT
 await runTest("recruitment candidate matching", runRecruitmentCandidateMatchingTests);
 await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateMachineTests);
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
+await runTest("recruitment cv extraction", runRecruitmentCvExtractionTests);
 await runTest("offer approval chain", runOfferApprovalChainTests);
 await runTest("offer pipeline state machine", runOfferPipelineStateMachineTests);
 await runTest("probation provisioning", runProbationProvisioningTests);

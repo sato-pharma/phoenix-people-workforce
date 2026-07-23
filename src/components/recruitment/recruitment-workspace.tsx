@@ -27,10 +27,17 @@ import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Recruit
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
-import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding";
+import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding-checklist";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
+import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
+import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
+import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
+import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -1523,6 +1530,11 @@ function CandidatesTab({
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
+  const [retryExtraction, setRetryExtraction] = useState<{ fields: ExtractedCandidateFields; extractionId: string | null } | null>(
+    null,
+  );
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const q = query.trim().toLowerCase();
   const visibleCandidates = q
@@ -1536,6 +1548,8 @@ function CandidatesTab({
   const openProfile = async (id: string) => {
     setProfile(null);
     setError(null);
+    setRetryExtraction(null);
+    setRetryError(null);
     try {
       const res = await fetch(`/api/recruitment/candidates/${id}`);
       const data = (await res.json().catch(() => ({}))) as { profile?: CandidateProfile; message?: string };
@@ -1544,6 +1558,46 @@ function CandidatesTab({
       setStatusDraft(data.profile.candidate.status);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
+    }
+  };
+
+  // Re-run AI extraction on a candidate that already has a CV on file — for one manually
+  // created, or where the first extraction pass wasn't saved as-is. Reuses the same
+  // cv-extract endpoint and drag-and-drop review board as the "create from CV" flow.
+  const startRetryExtraction = async (candidateId: string) => {
+    setRetryBusy(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}/cv-extract`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "AI CV extraction failed.");
+      const fields = data.fields as ExtractedCandidateFields | undefined;
+      if (!fields) throw new Error("The AI did not return any fields.");
+      setRetryExtraction({ extractionId: typeof data.extractionId === "string" ? data.extractionId : null, fields });
+    } catch (caught) {
+      setRetryError(caught instanceof Error ? caught.message : "AI CV extraction failed.");
+    } finally {
+      setRetryBusy(false);
+    }
+  };
+
+  const saveRetryExtraction = async (candidateId: string, values: Record<string, unknown>) => {
+    setRetryBusy(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}`, {
+        body: JSON.stringify({ ...values, extractionId: retryExtraction?.extractionId }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to save the candidate.");
+      setRetryExtraction(null);
+      await openProfile(candidateId);
+    } catch (caught) {
+      setRetryError(caught instanceof Error ? caught.message : "Failed to save the candidate.");
+    } finally {
+      setRetryBusy(false);
     }
   };
 
@@ -1612,6 +1666,29 @@ function CandidatesTab({
                 </>
               ) : null}
             </div>
+          </div>
+          <div className="border-t border-slate-100 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Or let AI read a Medical Rep CV
+            </p>
+            <CvExtractionPanel
+              onCreated={(id) => {
+                setNotice("Candidate saved from CV.");
+                router.refresh();
+                void openProfile(id);
+              }}
+            />
+          </div>
+          <div className="border-t border-slate-100 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Or process a batch of CVs at once
+            </p>
+            <BulkCvExtractionPanel
+              onCreated={() => {
+                setNotice("Candidate saved from CV.");
+                router.refresh();
+              }}
+            />
           </div>
         </AdminTableShell>
       ) : null}
@@ -1723,10 +1800,47 @@ function CandidatesTab({
                 {profile.candidate.email ?? "—"} · {profile.candidate.phone ?? "—"} · Source: {profile.candidate.source ?? "—"}
               </p>
             </div>
-            <Button variant="ghost" onClick={() => setProfile(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setProfile(null);
+                setRetryExtraction(null);
+                setRetryError(null);
+              }}
+            >
               Close
             </Button>
           </div>
+
+          {canManage && profile.files.some((file) => file.kind === "cv") ? (
+            <div className="space-y-2">
+              {!retryExtraction ? (
+                <Button
+                  disabled={retryBusy}
+                  onClick={() => void startRetryExtraction(profile.candidate.id)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {retryBusy ? "Reading CV…" : "AI extract from CV"}
+                </Button>
+              ) : null}
+              {retryError && !retryExtraction ? <p className="text-xs text-rose-600">{retryError}</p> : null}
+              {retryExtraction ? (
+                <CvExtractionReviewBoard
+                  busy={retryBusy}
+                  error={retryError}
+                  fields={retryExtraction.fields}
+                  onCancel={() => {
+                    setRetryExtraction(null);
+                    setRetryError(null);
+                  }}
+                  onSave={(values) => saveRetryExtraction(profile.candidate.id, values)}
+                  saveLabel="Save extracted fields"
+                  schema={getCvPositionSchema(defaultCvPositionKey)!}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
           {canManage ? (
             <div className="flex gap-2">
@@ -2213,6 +2327,7 @@ function FilesSection({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<RecruitmentFile | null>(null);
 
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
@@ -2251,16 +2366,32 @@ function FilesSection({
               <span>
                 {file.fileName} <span className="text-slate-400">({file.kind})</span>
               </span>
-              <Button
-                variant="secondary"
-                onClick={() => window.open(`/api/recruitment/files/${file.id}/download`, "_blank")}
-              >
-                Download
-              </Button>
+              <span className="flex items-center gap-2">
+                {detectCvFileKind(file.mimeType ?? "", file.fileName) !== "unsupported" ? (
+                  <Button variant="secondary" onClick={() => setPreviewFile(file)}>
+                    Preview
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => window.open(`/api/recruitment/files/${file.id}/download`, "_blank")}
+                >
+                  Download
+                </Button>
+              </span>
             </li>
           ))}
         </ul>
       )}
+      {previewFile ? (
+        <CvPreviewModal
+          downloadUrl={`/api/recruitment/files/${previewFile.id}/download`}
+          fileName={previewFile.fileName}
+          mimeType={previewFile.mimeType}
+          onClose={() => setPreviewFile(null)}
+          previewTextUrl={`/api/recruitment/files/${previewFile.id}/preview-text`}
+        />
+      ) : null}
       {canUpload ? (
         filesEnabled ? (
           <div className="flex items-center gap-2">
