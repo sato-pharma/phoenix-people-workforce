@@ -26,11 +26,14 @@ const frameAncestorsPolicy = isBuilderPreviewEnabled
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com${isProduction ? "" : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com",
+  // cdn.onesignal.com / api.onesignal.com / onesignal.com: the Web Push SDK (script,
+  // its own REST calls, and its permission-prompt UI). If the browser console ever shows
+  // a CSP violation for a different OneSignal subdomain, add it here too.
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://cdn.onesignal.com https://api.onesignal.com https://onesignal.com",
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
   "object-src 'none'",

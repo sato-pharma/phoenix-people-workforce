@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
+import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
@@ -573,6 +574,7 @@ export function EmployeePortalTopNav({
   return (
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
+      <OneSignalProvider />
       <header className="fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl">
         <div className="mx-auto flex h-[56px] w-full max-w-[1560px] items-center gap-1.5 px-2 sm:gap-2.5 sm:px-4 lg:h-[64px] lg:px-8">
           <button

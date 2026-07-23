@@ -28,6 +28,7 @@ export async function PATCH(request: Request) {
       emailEnabled: body.emailEnabled,
       inAppEnabled: body.inAppEnabled,
       preferredChannel: body.preferredChannel,
+      pushEnabled: body.pushEnabled,
       quietHoursEnd: body.quietHoursEnd,
       quietHoursStart: body.quietHoursStart,
       telegramEnabled: body.telegramEnabled,
