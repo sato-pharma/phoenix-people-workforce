@@ -1376,17 +1376,6 @@ export function classifyOutboxSkip(
 
 const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
 
-// Owner request (2026-07-22): CC this address on every automated notification email so
-// there is always one standing copy of outbound HR/workflow mail. Excluded from
-// password-reset/account-setup links (transactionalEmailTypes) — those carry a one-time
-// auth secret for a specific person and must never be copied to a third-party inbox.
-const alwaysCcEmailAddress = "omar.anwar@satopharma.com";
-
-function alwaysCcRecipients(notificationType: EmailNotificationType | undefined): string[] {
-  if (!notificationType || transactionalEmailTypes.has(notificationType)) return [];
-  return [alwaysCcEmailAddress];
-}
-
 function listUnsubscribeHeaders(
   notificationType: EmailNotificationType | undefined,
   primaryRecipient?: string,
@@ -1427,12 +1416,10 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (!from) return { reason: "NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
   if (delivery.skipped) return delivery;
 
-  // Merge in the standing CC address, but never alongside a "to" recipient it already is
-  // (avoid a redundant header entry when the always-cc'd person is also the addressee).
-  const cc = cleanEmailList([
-    ...(input.cc ?? []),
-    ...alwaysCcRecipients(input.notificationType),
-  ]).filter((address) => !delivery.recipients.includes(address));
+  // Never CC a caller-supplied address alongside a "to" recipient it already is (avoid a
+  // redundant header entry). The standing BCC copy (omar.anwar@satopharma.com) is applied
+  // unconditionally further down the pipeline in sendPhoenixEmail, not here.
+  const cc = cleanEmailList(input.cc ?? []).filter((address) => !delivery.recipients.includes(address));
   const inputWithCc: NotificationEmailInput = { ...input, cc };
 
   const requestId = notificationDedupeKey(inputWithCc);
