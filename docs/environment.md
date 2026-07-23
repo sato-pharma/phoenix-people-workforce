@@ -42,6 +42,12 @@ All environment variables are listed in `.env.example` at the repository root. C
 | NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY | Browser-side Maps API key |
 | NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID | Google Maps style/map ID |
 
+## LocationIQ (Optional)
+
+| Variable | Description |
+|---|---|
+| LOCATIONIQ_API_KEY | Server-side key for `src/lib/geocoding/locationiq.ts` — first-choice (free-tier) geocoder for CRM check-in addresses and the sales normalizer's pharmacy/brick geocoding ONLY. Google (`GOOGLE_MAPS_SERVER_KEY`) is still required as the accuracy fallback for low-confidence LocationIQ matches; outstation, marketing-requests, and Routes/Directions always use Google directly and never read this key. |
+
 ## Google Calendar (Optional)
 
 | Variable | Description |

@@ -192,8 +192,8 @@ export function runVisitsReportSyncTests() {
   );
   assert.match(
     service,
-    /if \(!hasGoogleServerKey\(\)\) return;/,
-    "the backfill must no-op entirely when no Google Maps server key is configured, never throw",
+    /if \(!hasLocationIqKey\(\) && !hasGoogleServerKey\(\)\) return;/,
+    "the backfill must no-op entirely when neither LocationIQ nor Google is configured, never throw",
   );
 
   // ── resolveWideReconciliationSlice: stateless weekly slice rotation (2026-07-06 timeout fix) ──

@@ -1,4 +1,10 @@
 import { googleGeocodeComponents, hasGoogleServerKey } from "@/lib/google-maps/server";
+import {
+  hasLocationIqKey,
+  locationIqForwardGeocode,
+  LOCATIONIQ_CONFIDENCE_THRESHOLD,
+  scoreForwardConfidence,
+} from "@/lib/geocoding/locationiq";
 import { foldCustomerNameText, normalizeCustomerNameKey } from "@/lib/sales/normalizer/customer-normalize";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -44,6 +50,38 @@ type CacheRow = {
   geocode_provider: string;
 };
 
+/**
+ * LocationIQ first (free), accepted only when its match is precise enough (see
+ * LOCATIONIQ_CONFIDENCE_THRESHOLD) — a pharmacy geocoded to a whole city/governorate is worse
+ * than no geocode, so a low-confidence hit falls through to Google exactly like a miss would.
+ * No independent domain check exists here (unlike brick-centroids.ts's region gate), so the
+ * confidence score is the sole accuracy gate.
+ */
+async function resolvePharmacyGeoComponents(
+  searchText: string,
+): Promise<{ geo: PharmacyGeo; provider: "locationiq" | "google" } | null> {
+  const locationIqResult = await locationIqForwardGeocode(searchText);
+  if (
+    scoreForwardConfidence(locationIqResult) >= LOCATIONIQ_CONFIDENCE_THRESHOLD &&
+    locationIqResult?.lat &&
+    locationIqResult?.lon
+  ) {
+    return {
+      geo: {
+        governorate: locationIqResult.address?.state ?? null,
+        lat: Number(locationIqResult.lat),
+        lng: Number(locationIqResult.lon),
+        markaz: locationIqResult.address?.state_district ?? locationIqResult.address?.county ?? locationIqResult.address?.city ?? null,
+      },
+      provider: "locationiq",
+    };
+  }
+
+  if (!hasGoogleServerKey()) return null;
+  const geo = await googleGeocodeComponents(searchText);
+  return geo ? { geo, provider: "google" } : null;
+}
+
 // Resolve geo info for a batch of pharmacies. Input entries carry the raw name/address; the
 // result map is keyed by pharmacyGeoKey(name, address).
 export async function resolvePharmacyGeo(
@@ -88,7 +126,7 @@ export async function resolvePharmacyGeo(
     // geo_locations unavailable — continue with live geocoding only.
   }
 
-  if (!hasGoogleServerKey()) return result;
+  if (!hasLocationIqKey() && !hasGoogleServerKey()) return result;
 
   // 2. Live pass for misses, capped.
   const misses = distinct.filter((key) => !cachedKeys.has(key)).slice(0, MAX_LIVE_GEOCODES_PER_CALL);
@@ -99,23 +137,24 @@ export async function resolvePharmacyGeo(
         const source = byKey.get(key);
         const searchText = [source?.name, source?.address].map((s) => String(s ?? "").trim()).filter(Boolean).join(" ");
         try {
-          return { key, geo: await googleGeocodeComponents(searchText) };
+          return { key, resolved: await resolvePharmacyGeoComponents(searchText) };
         } catch {
-          return { key, geo: null };
+          return { key, resolved: null };
         }
       }),
     );
 
     const toCache: CacheRow[] = [];
-    geocoded.forEach(({ key, geo }) => {
-      if (!geo) return; // never cache failures
+    geocoded.forEach(({ key, resolved }) => {
+      if (!resolved) return; // never cache failures
+      const { geo, provider } = resolved;
       result.set(key, { governorate: geo.governorate, lat: geo.lat, lng: geo.lng, markaz: geo.markaz });
       const source = byKey.get(key);
       toCache.push({
         address_text: String(source?.address ?? "").trim() || null,
         area: geo.markaz,
         city: geo.governorate,
-        geocode_provider: "google",
+        geocode_provider: provider,
         geocode_status: "success",
         label: String(source?.name ?? "").trim().slice(0, 300) || key,
         latitude: geo.lat,
