@@ -43,7 +43,10 @@ export async function renderHtmlToPdf(html: string): Promise<Uint8Array> {
   try {
     const page = await browser.newPage();
     await page.emulateMediaType("print");
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // puppeteer-core 25+ moved to the BiDi protocol, which dropped the CDP-only
+    // "networkidle0"/"networkidle2" wait states — "load" (waits for images/fonts too) is the
+    // closest supported equivalent for ensuring the letter's branding assets are painted.
+    await page.setContent(html, { waitUntil: "load" });
     return await page.pdf({
       format: "A4",
       printBackground: true,
