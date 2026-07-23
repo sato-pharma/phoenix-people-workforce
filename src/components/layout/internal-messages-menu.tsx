@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
+import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
 
@@ -73,6 +74,7 @@ function emailStatusText(status: InternalEmailStatus, error: string | null) {
 }
 
 export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<InternalMessageView[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -109,6 +111,8 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
     const timeoutId = window.setTimeout(() => void loadMessages(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [loadMessages, open]);
+
+  useDismissOnOutsideInteraction(containerRef, open, setOpen);
 
   useEffect(() => {
     if (!open || recipientQuery.trim().length < 2) {
@@ -173,7 +177,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         aria-expanded={open}
         aria-label="Messages"

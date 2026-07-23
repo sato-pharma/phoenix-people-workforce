@@ -3,7 +3,7 @@
 import { ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -14,6 +14,7 @@ import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
+import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
 export function Topbar({
   navigationMode = "admin",
@@ -33,6 +34,8 @@ export function Topbar({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutsideInteraction(userMenuRef, userMenuOpen, setUserMenuOpen);
   const isAdminMode = navigationMode === "admin";
   const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
   const handleLogout = async () => {
@@ -110,7 +113,7 @@ export function Topbar({
           </button>
           <InAppNotificationsBell isAdminMode={isAdminMode} />
           <InternalMessagesMenu isAdminMode={isAdminMode} />
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
