@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Bell, CheckCircle2, Link2, Mail, Send, Smartphone, Unplug } from "lucide-react";
+import { AlertCircle, Bell, BellRing, CheckCircle2, Link2, Mail, Send, Smartphone, Unplug } from "lucide-react";
 
 import { useHydrated } from "@/hooks/use-hydrated";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
 
 
 type NotificationSettings = {
@@ -12,9 +13,15 @@ type NotificationSettings = {
     emailEnabled: boolean;
     inAppEnabled: boolean;
     preferredChannel: "in_app" | "email" | "telegram";
+    pushEnabled: boolean;
     quietHoursEnd: string | null;
     quietHoursStart: string | null;
     telegramEnabled: boolean;
+  };
+  push: {
+    deviceCount: number;
+    desktopCount: number;
+    mobileCount: number;
   };
   telegram: {
     connectedAt: string | null;
@@ -28,10 +35,12 @@ const emptySettings: NotificationSettings = {
     emailEnabled: true,
     inAppEnabled: true,
     preferredChannel: "email",
+    pushEnabled: true,
     quietHoursEnd: null,
     quietHoursStart: null,
     telegramEnabled: false,
   },
+  push: { deviceCount: 0, desktopCount: 0, mobileCount: 0 },
   telegram: null,
 };
 
@@ -159,6 +168,21 @@ export function NotificationSettingsPanel() {
     }
   }
 
+  async function enablePushOnThisDevice() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await requestOneSignalPermission();
+      setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
+      window.setTimeout(() => void loadSettings(), 2000);
+    } catch (permissionError) {
+      setError(permissionError instanceof Error ? permissionError.message : "Unable to enable push notifications on this device.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function sendTest() {
     setSaving(true);
     setError(null);
@@ -176,10 +200,28 @@ export function NotificationSettingsPanel() {
     }
   }
 
+  async function sendPushTest() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notifications/push/test", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(errorMessageFor(response, payload, "Unable to send push test notification."));
+      const pushDelivery = payload.data?.deliveries?.find((delivery: { channel: string }) => delivery.channel === "push");
+      setMessage(pushDelivery?.status === "sent" ? "Push test notification sent." : pushDelivery?.reason ?? "Test notification was recorded.");
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : "Unable to send push test notification.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const preferences = settings.preferences;
   const telegramConnected = settings.telegram?.status === "connected";
   const settingsLoading = !hydrated || loading;
   const controlsDisabled = settingsLoading || saving;
+  const pushSupported = hydrated && Boolean(onesignalAppId());
 
   return (
     <section className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
@@ -197,11 +239,12 @@ export function NotificationSettingsPanel() {
         </span>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { checked: preferences.inAppEnabled, icon: Bell, key: "inAppEnabled", label: "In-app" },
           { checked: preferences.emailEnabled, icon: Mail, key: "emailEnabled", label: "Email" },
           { checked: preferences.telegramEnabled, icon: Smartphone, key: "telegramEnabled", label: "Telegram" },
+          ...(pushSupported ? [{ checked: preferences.pushEnabled, icon: BellRing, key: "pushEnabled", label: "Push" }] : []),
         ].map((item) => {
           const Icon = item.icon;
           return (
@@ -286,7 +329,37 @@ export function NotificationSettingsPanel() {
           <Unplug className="h-4 w-4" />
           Disconnect
         </button>
+        {pushSupported ? (
+          <button
+            className="inline-flex items-center gap-2 rounded border border-orange-200 bg-white px-3.5 py-2 text-sm font-semibold text-orange-700 disabled:opacity-60"
+            disabled={controlsDisabled}
+            onClick={enablePushOnThisDevice}
+            type="button"
+          >
+            <BellRing className="h-4 w-4" />
+            Enable push on this device
+          </button>
+        ) : null}
+        {pushSupported ? (
+          <button
+            className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+            disabled={controlsDisabled || settings.push.deviceCount === 0}
+            onClick={sendPushTest}
+            type="button"
+          >
+            <Send className="h-4 w-4" />
+            Test Push
+          </button>
+        ) : null}
       </div>
+
+      {pushSupported ? (
+        <p className="mt-3 text-xs font-medium text-slate-500">
+          {settings.push.deviceCount > 0
+            ? `Push is enabled on ${settings.push.deviceCount} device${settings.push.deviceCount === 1 ? "" : "s"} (${settings.push.desktopCount} desktop, ${settings.push.mobileCount} mobile).`
+            : "Push is not yet enabled on any device — click \"Enable push on this device\" and allow notifications when your browser asks."}
+        </p>
+      ) : null}
 
       {connectLink ? (
         <div className="mt-3 rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">

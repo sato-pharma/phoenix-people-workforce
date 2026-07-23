@@ -24,6 +24,15 @@ export const metadata: Metadata = {
       { type: "image/png", sizes: "512x512", url: "/icon.png?v=phoenix-transparent-3" },
     ],
   },
+  // manifest.json + appleWebApp: iOS Safari only supports Web Push (16.4+) for a site
+  // the user has added to their Home Screen as an installed web app — these are what
+  // make that "Add to Home Screen" install a real PWA instead of a plain bookmark.
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: systemIdentity.appName,
+  },
 };
 
 // viewport-fit=cover is required for env(safe-area-inset-*) to resolve to real

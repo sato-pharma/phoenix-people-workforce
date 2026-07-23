@@ -21,6 +21,7 @@ import { renderNotificationTemplate } from "@/lib/notifications/templates";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
 import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
+import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
@@ -29,7 +30,7 @@ import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type SystemNotificationChannel = "in_app" | "email" | "telegram";
+export type SystemNotificationChannel = "in_app" | "email" | "telegram" | "push";
 export type SystemNotificationPriority = "low" | "normal" | "high" | "critical";
 
 export type CreateSystemNotificationInput = {
@@ -92,6 +93,7 @@ type NotificationPreferenceRow = {
   in_app_enabled?: boolean | null;
   module_preferences?: Record<string, unknown> | null;
   preferred_channel?: SystemNotificationChannel | null;
+  push_enabled?: boolean | null;
   quiet_hours_end?: string | null;
   quiet_hours_start?: string | null;
   telegram_enabled?: boolean | null;
@@ -107,6 +109,7 @@ type LoadedPreferences = {
   in_app_enabled: boolean;
   module_preferences: Record<string, unknown>;
   preferred_channel: SystemNotificationChannel;
+  push_enabled: boolean;
   quiet_hours_end: string | null;
   quiet_hours_start: string | null;
   telegram_enabled: boolean;
@@ -507,6 +510,7 @@ async function loadPreferences(input: CreateSystemNotificationInput): Promise<Lo
     in_app_enabled: true,
     module_preferences: {} as Record<string, unknown>,
     preferred_channel: "email" as SystemNotificationChannel,
+    push_enabled: true,
     quiet_hours_end: null,
     quiet_hours_start: null,
     telegram_enabled: false,
@@ -515,7 +519,7 @@ async function loadPreferences(input: CreateSystemNotificationInput): Promise<Lo
   try {
     let query = getSupabaseAdmin()
       .from("notification_preferences")
-      .select("email_enabled,in_app_enabled,telegram_enabled,preferred_channel,module_preferences,quiet_hours_start,quiet_hours_end")
+      .select("email_enabled,in_app_enabled,telegram_enabled,push_enabled,preferred_channel,module_preferences,quiet_hours_start,quiet_hours_end")
       .limit(1);
     if (userId) query = query.ilike("user_id", userId);
     else if (hrId) query = query.eq("hr_id", hrId);
@@ -531,6 +535,7 @@ async function loadPreferences(input: CreateSystemNotificationInput): Promise<Lo
         ? row.module_preferences
         : defaults.module_preferences,
       preferred_channel: row?.preferred_channel ?? defaults.preferred_channel,
+      push_enabled: row?.push_enabled ?? defaults.push_enabled,
       quiet_hours_end: row?.quiet_hours_end ?? defaults.quiet_hours_end,
       quiet_hours_start: row?.quiet_hours_start ?? defaults.quiet_hours_start,
       telegram_enabled: row?.telegram_enabled ?? defaults.telegram_enabled,
@@ -538,6 +543,29 @@ async function loadPreferences(input: CreateSystemNotificationInput): Promise<Lo
   } catch (error) {
     if (!schemaMissing(error, "notification_preferences")) throw error;
     return defaults;
+  }
+}
+
+// A recipient's push "connection" is simply: does at least one browser/device currently
+// report an active OneSignal subscription for them? Unlike Telegram there is no bot-link
+// dance — the browser subscribes itself once permission is granted — so this is a read-only
+// existence check, not a stateful connection record.
+async function hasActivePushSubscription(input: CreateSystemNotificationInput): Promise<boolean> {
+  const hrId = cleanHrId(input.recipientHrId);
+  if (!hrId) return false;
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("push_subscriptions")
+      .select("id")
+      .eq("hr_id", hrId)
+      .eq("status", "subscribed")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  } catch (error) {
+    if (!schemaMissing(error, "push_subscriptions")) throw error;
+    return false;
   }
 }
 
@@ -893,6 +921,14 @@ function nextTelegramRetryAt(attempt: number) {
   return next.toISOString();
 }
 
+function nextPushRetryAt(attempt: number) {
+  const base = telegramRetryDelayMinutes(attempt);
+  const jittered = base * (0.8 + Math.random() * 0.4);
+  const next = new Date();
+  next.setMinutes(next.getMinutes() + Math.max(1, Math.round(jittered)));
+  return next.toISOString();
+}
+
 /**
  * Drain quiet-hours-deferred EMAIL deliveries from notification_deliveries. These rows
  * are written `pending` when a recipient is inside their quiet-hours window; before this
@@ -1143,6 +1179,101 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   return { attempted, failed, sent };
 }
 
+// Mirrors processTelegramDeliveryRetries: drains both genuine send failures AND
+// quiet-hours-deferred push rows (both are written with channel="push",
+// status in (pending/failed/retrying) — see the deferred branch above). Unlike
+// Telegram there is no "connection" to flag for re-link on permanent failure — a
+// push with zero matching subscribers is a terminal skip (sendPushNotification
+// already returns skipped:true for that case, never throws), so every thrown
+// error here is a genuine transient failure worth retrying.
+export async function processPushDeliveryRetries(limit = 10) {
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("notification_deliveries")
+    .select("id,attempts,max_attempts,metadata,recipient_hr_id,recipient_user_id")
+    .eq("channel", "push")
+    .in("status", ["failed", "pending", "retrying"])
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    .order("created_at", { ascending: true })
+    .limit(Math.max(1, Math.min(limit, 50)));
+
+  if (error) {
+    if (schemaMissing(error, "notification_deliveries")) return { attempted: 0, failed: 0, sent: 0 };
+    throw error;
+  }
+
+  let attempted = 0;
+  let failed = 0;
+  let sent = 0;
+
+  for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
+    const attempts = Number(row.attempts ?? 0);
+    const maxAttempts = Number(row.max_attempts ?? 5);
+    if (attempts >= maxAttempts) continue;
+    const push = row.metadata?.push as Partial<PushRetryPayload> | undefined;
+    if (!push?.externalId || !push?.title || !push?.message) continue;
+
+    attempted += 1;
+    try {
+      // Re-check the live preference + subscription (mirrors Telegram's re-check): a user
+      // who disabled push or unsubscribed after the original failure must not receive it.
+      const preferences = await loadPreferences({
+        eventType: push.eventType ?? "push_retry",
+        message: String(push.message),
+        module: push.module ?? "system",
+        recipientHrId: row.recipient_hr_id ?? null,
+        recipientUserId: row.recipient_user_id ?? null,
+        title: String(push.title),
+      });
+      if (!preferences.push_enabled) {
+        await supabase
+          .from("notification_deliveries")
+          .update({ attempts, last_error: "Push disabled by user preference.", next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        continue;
+      }
+
+      const result = await sendPushNotification({
+        actionUrl: push.actionUrl ?? null,
+        externalId: push.externalId,
+        message: String(push.message),
+        title: String(push.title),
+      });
+      if (result.skipped) throw new Error(result.reason);
+      await supabase
+        .from("notification_deliveries")
+        .update({
+          attempts: attempts + 1,
+          last_error: null,
+          next_attempt_at: null,
+          provider_message_id: result.providerMessageId ?? null,
+          sent_at: new Date().toISOString(),
+          status: "sent",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      sent += 1;
+    } catch (retryError) {
+      const nextAttempts = attempts + 1;
+      const terminal = nextAttempts >= maxAttempts;
+      await supabase
+        .from("notification_deliveries")
+        .update({
+          attempts: nextAttempts,
+          last_error: retryError instanceof Error ? retryError.message : "Push retry failed.",
+          next_attempt_at: terminal ? null : nextPushRetryAt(nextAttempts),
+          status: terminal ? "failed" : "retrying",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      failed += 1;
+    }
+  }
+
+  return { attempted, failed, sent };
+}
+
 export async function retryTelegramDeliveryById(id: string): Promise<SystemNotificationDeliveryResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -1297,6 +1428,15 @@ type TelegramRetryPayload = {
   title: string;
 };
 
+type PushRetryPayload = {
+  actionUrl?: string | null;
+  eventType?: string | null;
+  externalId: string;
+  message: string;
+  module?: string | null;
+  title: string;
+};
+
 // Shared logger for best-effort/fire-and-forget notification sends that must never
 // throw into their caller. Console + Sentry so a swallowed failure still leaves a trace.
 export function logNotificationSendFailure(context: string, error: unknown) {
@@ -1422,6 +1562,24 @@ async function buildDeferredTelegramPayload(
   };
 }
 
+async function buildDeferredPushPayload(
+  input: CreateSystemNotificationInput,
+  recipient: RecipientProfile,
+  preferences: LoadedPreferences,
+): Promise<PushRetryPayload | null> {
+  if (!preferences.push_enabled || !recipient.hrId) return null;
+  if (!(await hasActivePushSubscription({ ...input, recipientHrId: recipient.hrId, recipientUserId: recipient.userId }))) return null;
+  const content = await renderChannelContent(input, "push");
+  return {
+    actionUrl: input.actionUrl ?? null,
+    eventType: input.eventType,
+    externalId: recipient.hrId,
+    message: content.message,
+    module: input.module,
+    title: content.title,
+  };
+}
+
 async function createSystemNotificationForRecipient(input: CreateSystemNotificationInput): Promise<SystemNotificationResult> {
   const eventKey = eventKeyFor(input);
   const policy = resolveNotificationPolicy(input);
@@ -1504,6 +1662,13 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           await audit("delivery skipped", input, eventId, { channel, error: message, reason: "telegram_template_governance" });
           deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
           continue;
+        }
+      }
+      if (channel === "push") {
+        const pushPayload = await buildDeferredPushPayload(input, recipient, preferences);
+        if (pushPayload) {
+          deferredMetadata.push = pushPayload;
+          deferredMetadata.retry = true;
         }
       }
       await upsertDelivery({
@@ -1736,6 +1901,72 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           });
           deliveries.push(...fallback.deliveries);
         }
+      }
+    }
+
+    if (channel === "push") {
+      const externalId = recipient.hrId;
+      if (!preferences.push_enabled) {
+        await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "Push disabled by preference.", recipient, status: "skipped" });
+        deliveries.push({ channel, idempotencyKey, reason: "Push notifications are disabled for this user.", status: "skipped" });
+        continue;
+      }
+      if (!externalId || !(await hasActivePushSubscription({ ...input, recipientHrId: externalId, recipientUserId: recipient.userId }))) {
+        await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "No active push subscription for recipient.", recipient, status: "skipped" });
+        deliveries.push({ channel, idempotencyKey, reason: "No active push subscription for recipient.", status: "skipped" });
+        continue;
+      }
+
+      let pushContent: Awaited<ReturnType<typeof renderChannelContent>> | null = null;
+      try {
+        pushContent = await renderChannelContent(input, "push");
+        const result = await sendPushNotification({
+          actionUrl: input.actionUrl ?? null,
+          externalId,
+          message: pushContent.message,
+          title: pushContent.title,
+        });
+        const status = result.skipped ? "skipped" : "sent";
+        const reason = result.skipped ? result.reason : undefined;
+        await upsertDelivery({
+          channel,
+          eventId,
+          idempotencyKey,
+          lastError: reason ?? null,
+          provider: "onesignal",
+          providerMessageId: result.skipped ? null : result.providerMessageId,
+          recipient,
+          recipientAddress: externalId,
+          status,
+        });
+        await audit(status === "sent" ? "delivery sent" : "delivery skipped", input, eventId, { channel, reason });
+        deliveries.push({ channel, idempotencyKey, reason, status });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Push delivery failed.";
+        await upsertDelivery({
+          channel,
+          eventId,
+          idempotencyKey,
+          lastError: message,
+          metadata: {
+            push: {
+              actionUrl: input.actionUrl ?? null,
+              eventType: input.eventType,
+              externalId,
+              message: pushContent?.message ?? input.message,
+              module: input.module,
+              title: pushContent?.title ?? input.title,
+            },
+            retry: true,
+          },
+          provider: "onesignal",
+          recipient,
+          recipientAddress: externalId,
+          nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          status: "failed",
+        });
+        await audit("delivery failed", input, eventId, { channel, error: message });
+        deliveries.push({ channel, error: message, idempotencyKey, status: "failed" });
       }
     }
   }
