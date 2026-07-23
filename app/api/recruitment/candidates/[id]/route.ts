@@ -65,6 +65,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (has("medicalRepEmployer")) input.medicalRepEmployer = str(body.medicalRepEmployer);
     if (has("medicalRepExperienceFrom")) input.medicalRepExperienceFrom = str(body.medicalRepExperienceFrom);
     if (has("medicalRepExperienceTo")) input.medicalRepExperienceTo = str(body.medicalRepExperienceTo);
+    if (has("positionSpecificFields")) {
+      const raw = body.positionSpecificFields;
+      input.positionSpecificFields = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    }
 
     const candidate = await updateCandidate(id, input);
 

@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
+import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import type { Interview } from "@/lib/recruitment/types";
 
 type Props = { initialApplications: ApplicationWithContext[] };
 
-type CandidateFileSummary = { id: string; fileName: string; kind: string };
+type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
 
 async function getJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(url);
@@ -83,6 +85,7 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [scheduledAt, setScheduledAt] = useState("");
   const [location, setLocation] = useState("");
@@ -210,16 +213,33 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
       </div>
 
       {loaded && cvFile ? (
-        <a
-          className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-          href={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
-          rel="noreferrer"
-          target="_blank"
-        >
-          View CV — {cvFile.fileName}
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            href={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View CV — {cvFile.fileName}
+          </a>
+          {detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) !== "unsupported" ? (
+            <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
+              Preview
+            </Button>
+          ) : null}
+        </div>
       ) : loaded ? (
         <p className="text-xs text-slate-400">No CV file on record.</p>
+      ) : null}
+
+      {previewOpen && cvFile ? (
+        <CvPreviewModal
+          downloadUrl={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
+          fileName={cvFile.fileName}
+          mimeType={cvFile.mimeType}
+          onClose={() => setPreviewOpen(false)}
+          previewTextUrl={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}/preview-text`}
+        />
       ) : null}
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}

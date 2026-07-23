@@ -140,6 +140,10 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     medicalRepEmployer: textOrNull(row.medical_rep_employer),
     medicalRepExperienceFrom: textOrNull(row.medical_rep_experience_from),
     medicalRepExperienceTo: textOrNull(row.medical_rep_experience_to),
+    positionSpecificFields:
+      row.position_specific_fields && typeof row.position_specific_fields === "object"
+        ? (row.position_specific_fields as Record<string, unknown>)
+        : {},
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
