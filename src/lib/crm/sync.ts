@@ -14,6 +14,7 @@ import {
   type IReports360Visit,
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
+import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geocode";
 import {
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
@@ -24,7 +25,7 @@ import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { googleReverseGeocode, hasGoogleServerKey } from "@/lib/google-maps/server";
+import { hasGoogleServerKey } from "@/lib/google-maps/server";
 import type { VisitsSyncTrigger } from "@/lib/visits-report/types";
 
 const visitsTable = CRM_VISITS_TABLE;
@@ -193,16 +194,17 @@ export function selectCheckinsToGeocode(
  *
  * Looks up each crm_checkin_id missing an address against what's already stored (so a check-in
  * only ever gets geocoded once, ever — see selectCheckinsToGeocode), then runs a bounded-
- * concurrency batch of fresh Geocoding API calls for the rest, capped per run. Any failure mode
- * (no key configured, lookup error, API error, over the cap) just leaves `address` as whatever
- * the vendor sent — best-effort, never fails the sync, matching check-ins' existing posture (a
- * GPS overlay, never required for the sync to succeed).
+ * concurrency batch of fresh Geocoding API calls for the rest, capped per run — LocationIQ first
+ * (free tier), Google as a fallback (see resolveCheckinAddress in crm/checkin-geocode.ts). Any
+ * failure mode (no key configured, lookup error, API error, over the cap) just leaves `address`
+ * as whatever the vendor sent — best-effort, never fails the sync, matching check-ins' existing
+ * posture (a GPS overlay, never required for the sync to succeed).
  */
 async function backfillMissingCheckinAddresses(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rows: CheckinDraftRow[],
 ): Promise<void> {
-  if (!hasGoogleServerKey()) return;
+  if (!hasLocationIqKey() && !hasGoogleServerKey()) return;
 
   const candidateIds = rows.filter(checkinNeedsAddress).map((row) => row.crm_checkin_id);
   if (candidateIds.length === 0) return;
@@ -231,8 +233,7 @@ async function backfillMissingCheckinAddresses(
       while (cursor < toGeocode.length) {
         const row = toGeocode[cursor++];
         try {
-          const result = await googleReverseGeocode({ lat: row.lat as number, lng: row.lon as number });
-          const label = result?.formattedAddress ?? [result?.area, result?.city].filter(Boolean).join(", ");
+          const label = await resolveCheckinAddress(row.lat as number, row.lon as number);
           if (label) row.address = label;
         } catch {
           // best-effort — leave this row's address as the vendor sent it (null)
