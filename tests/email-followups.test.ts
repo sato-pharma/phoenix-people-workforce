@@ -42,5 +42,5 @@ export function runEmailFollowupsTests() {
   assert.match(marketing, /export function classifyMarketingSla/, "SLA classifier is exported");
   assert.match(marketing, /logError/, "marketing notify failures are surfaced (no longer silent)");
   const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
-  assert.doesNotMatch(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA reminder/escalation is intentionally disabled in the daily cron");
+  assert.match(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA reminder/escalation is restored behind a real admin toggle (see marketing_sla_reminder in role-recipients.ts), not stubbed out");
 }

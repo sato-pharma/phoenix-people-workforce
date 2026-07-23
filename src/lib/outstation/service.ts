@@ -25,7 +25,7 @@ import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
-import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
 import {
@@ -2682,6 +2682,8 @@ export async function deleteOutstationRequestAsAdmin(
 
 
 export async function runOutstationSlaDaily(): Promise<{ processed: number; errors: number }> {
+  if (!(await resolveNotificationRoleEnabled("outstation_sla_reminder"))) return { processed: 0, errors: 0 };
+
   const today = new Date().toISOString().slice(0, 10);
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
