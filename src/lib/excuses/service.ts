@@ -413,6 +413,9 @@ async function notifyManagerOfExcuse(input: {
       includeHrInbox: true,
       metrics: [
         { label: "Employee", value: `${input.employee.displayName} (${input.request.employeeHrId})` },
+        { label: "Job Title", value: input.employee.jobTitle ?? "—" },
+        { label: "Line", value: input.request.lineName ?? input.employee.lineName ?? "—" },
+        { label: "Area", value: input.employee.areaName ?? "—" },
         { label: "Excuse type", value: typeLabel },
         { label: "Date", value: input.request.excuseDate },
         { label: "Duration", value: `${input.request.durationHours} hours` },

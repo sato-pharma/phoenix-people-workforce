@@ -120,6 +120,9 @@ export async function runContractRenewalNotifications(request: Request) {
           employeeHrId: row.hr_id,
           metrics: [
             { label: "Employee", value: `${employee.displayName} (${row.hr_id})` },
+            { label: "Job Title", value: employee.jobTitle ?? "" },
+            { label: "Area", value: employee.areaName ?? "" },
+            { label: "Line", value: employee.lineName ?? row.line ?? "" },
             { label: "Renewal date", value: row.contract_renewal_date },
             { label: "Reminder", value: dueText },
             { label: "Run date", value: runDate },

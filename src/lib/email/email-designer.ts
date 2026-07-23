@@ -96,6 +96,7 @@ const variableCatalog: EmailDesignerVariable[] = [
   { category: "Company", label: "Excuse Date", sampleValue: "2026-06-12", token: "excuseDate", allowedTemplateTypes: ["excuse_request", "excuse_decision"] },
   { category: "Company", label: "Details Table", sampleValue: "(a premium zebra-striped label/value summary table)", token: "detailsTable", allowedTemplateTypes: allTemplateTypes },
   { category: "Company", label: "Digest Table", sampleValue: "(a weekly digest summary table)", token: "digestTable", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"] },
+  { category: "Company", label: "No Activity Table", sampleValue: "(a table of unresolved no-activity days)", token: "noActivityTable", allowedTemplateTypes: ["no_activity_weekly_reminder"] },
   { category: "Company", label: "Week Label", sampleValue: "2026-06-08 to 2026-06-14", token: "weekLabel", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"] },
   { category: "Company", label: "Score Table", sampleValue: "(the coaching score breakdown table)", token: "scoreTable", allowedTemplateTypes: ["coaching_report"] },
   { category: "Payroll", label: "Estimated Cost", sampleValue: "50,000 EGP", token: "estimatedCost", allowedTemplateTypes: ["marketing_request"] },
