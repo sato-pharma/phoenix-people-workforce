@@ -649,13 +649,18 @@ async function recommendResignations(
   return rows;
 }
 
-/** Aggregate day-based deduction candidates per employee → { days, value }. */
-function aggregateDeductionRows(
+/** Aggregate day-based deduction candidates per employee → { days, value }. Exported for tests. */
+export function aggregateDeductionRows(
   candidates: DeductionInboxRow[],
   sources: Map<string, PayrollSalarySource>,
 ): Map<string, { days: number; value: number }> {
   const totals = new Map<string, { days: number; value: number }>();
   for (const candidate of candidates) {
+    // A rejected candidate must not fall back to the original system-flagged value —
+    // resolveDayBasedDeductionAmount only looks at appliedAmount/appliedDeductionValue
+    // (both null on rejection) and would otherwise re-apply the un-rejected estimate.
+    // Mirrors the same guard Payroll Copilot's CRM aggregation already uses.
+    if (candidate.decision?.decisionStatus === "Do Not Take Action") continue;
     const compact = compactHrKey(candidate.employeeHrIdCompact || candidate.employeeCode);
     if (!compact) continue;
     const source = lookupSource(sources, candidate.employeeCode);

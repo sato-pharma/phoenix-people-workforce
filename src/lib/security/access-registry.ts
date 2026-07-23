@@ -367,6 +367,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/part2/confirm", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance/download", permission: null, guard: "domain-helper" }),
+  // Fingerprint Deductions — standalone month/year review page feeding Automated Payroll's
+  // Part 1 fingerprint step. Same HR-actor gate as Automated Payroll (assertAutomatedPayrollHrActor).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/fingerprint-deductions", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/fingerprint-deductions", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/fingerprint-deductions/sync", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Probation Decision Intelligence routes are gated at probation:read at the middleware; each
   // route enforces its exact permission / row-level ownership / decision-role check in-handler
   // (findAccessRegistryEntry picks the longest matching pattern, so these override the blanket

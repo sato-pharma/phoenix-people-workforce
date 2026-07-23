@@ -1371,18 +1371,20 @@ export async function updateDeductionDecision(input: UpdateDeductionDecisionInpu
  * of truth regardless of which UI made the call.
  *
  * Deliberately bypasses `assertDeductionsGovernanceDecisionActor` (which is
- * Super-Admin-only) — the caller (the Copilot API route) has already
- * asserted CEO/Super Admin access via `assertCopilotAccess`, so gating again
- * here on the HR-only role would just lock the CEO out of a page built for
- * them. Every write is stamped with a `copilot:<actor>` decided_by and a
- * closed reason enum so it is never confused with a human HR-governance
- * decision in the audit trail.
+ * Super-Admin-only) — every caller of this function already asserts its own
+ * CEO/Super Admin gate before reaching here, so gating again on the HR-only
+ * role would just lock the CEO out of a page built for them. Every write is
+ * stamped with a `<source.key>:<actor>` decided_by and a closed reason label
+ * (defaulting to Payroll Copilot) so it is never confused with a human
+ * HR-governance decision in the audit trail, and stays traceable to the
+ * specific simplified-review surface that made the call.
  */
 export async function recordCopilotDeductionDecision(input: {
   candidateId: string;
   decisionStatus: "Approved for Payroll" | "Do Not Take Action";
   appliedDeductionValue?: number | null;
   actorLoginId: string;
+  source?: { key: string; label: string };
 }): Promise<DeductionDecision> {
   const candidate = await loadCandidateById(input.candidateId);
   if (candidate.sourceModule !== "ATTENDANCE_DEVICE" && candidate.sourceModule !== "FIELD_WORKFORCE") {
@@ -1403,15 +1405,16 @@ export async function recordCopilotDeductionDecision(input: {
     requestedValue: input.appliedDeductionValue ?? null,
   });
   const appliedAmount = await calculateAppliedAmount({ appliedValue, candidate });
-  const actor = `copilot:${input.actorLoginId || "unknown"}`;
+  const source = input.source ?? { key: "copilot", label: "Payroll Copilot" };
+  const actor = `${source.key}:${input.actorLoginId || "unknown"}`;
   const now = new Date().toISOString();
   const decisionReason =
     input.decisionStatus === "Approved for Payroll"
-      ? "Approved via Payroll Copilot"
-      : "Rejected via Payroll Copilot";
+      ? `Approved via ${source.label}`
+      : `Rejected via ${source.label}`;
 
   const payload = {
-    actor_role_at_decision: "CEO/Super Admin (Payroll Copilot)",
+    actor_role_at_decision: `CEO/Super Admin (${source.label})`,
     actor_scope_at_decision: "system",
     applied_amount: appliedAmount,
     applied_deduction_value: appliedValue,
@@ -1439,7 +1442,7 @@ export async function recordCopilotDeductionDecision(input: {
     entityId: candidate.id,
     entityType: "deduction_decision",
     newValues: payload,
-    summary: `Payroll Copilot decision for ${candidate.employeeCode} (${candidate.monthKey}): ${decisionReason}.`,
+    summary: `${source.label} decision for ${candidate.employeeCode} (${candidate.monthKey}): ${decisionReason}.`,
   });
 
   return mapDecisionRow(data as DecisionRow);
