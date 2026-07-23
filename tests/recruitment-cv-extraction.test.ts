@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  detectCvFileKind,
+  buildExtractionTextFormat,
   parseAiJson,
   readBoolField,
   readStringField,
 } from "../src/lib/recruitment/cv-extraction.ts";
-import { cvExtractableCandidateFields } from "../src/lib/recruitment/types.ts";
+import { cvPositionSchemas, getCvPositionSchema } from "../src/lib/recruitment/cv-field-schemas.ts";
+import { detectCvFileKind } from "../src/lib/recruitment/cv-file-kind.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
@@ -65,9 +66,9 @@ export function runRecruitmentCvExtractionTests() {
     value: null,
   }, "a string 'true' is not coerced to boolean — only a real boolean is trusted");
 
-  // --- Medical Rep field set (phase 1 hard-codes this list; see cv-extraction.ts) --
+  // --- Medical Rep field set (schema registry; see cv-field-schemas.ts) -----------
   assert.deepEqual(
-    [...cvExtractableCandidateFields].sort(),
+    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
     [
       "address",
       "email",
@@ -83,6 +84,44 @@ export function runRecruitmentCvExtractionTests() {
       "university",
     ].sort(),
   );
+  assert.equal(getCvPositionSchema("medical_rep")?.label, "Medical Rep");
+  assert.equal(getCvPositionSchema("unknown_position"), null);
+  for (const field of cvPositionSchemas.medical_rep.fields) {
+    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
+  }
+
+  // --- Dynamically-built OpenAI JSON schema (buildExtractionTextFormat) must match the
+  //     previously-hardcoded medical_rep schema exactly — schema-driven refactor must not
+  //     silently change what's asked of the AI model ---------------------------------------
+  const textFormat = buildExtractionTextFormat(cvPositionSchemas.medical_rep);
+  assert.equal(textFormat.format.name, "phoenix_medical_rep_cv_extraction");
+  assert.equal(textFormat.format.strict, true);
+  assert.equal(textFormat.format.type, "json_schema");
+  const jsonSchema = textFormat.format.schema as unknown as {
+    additionalProperties: boolean;
+    properties: Record<string, { properties: { confidence: { enum: string[] }; value: { description: string; type: string[] } }; required: string[] }>;
+    required: string[];
+    type: string;
+  };
+  assert.equal(jsonSchema.type, "object");
+  assert.equal(jsonSchema.additionalProperties, false);
+  assert.deepEqual(
+    [...jsonSchema.required].sort(),
+    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
+    "every field must be required in the AI response — no optional fields",
+  );
+  for (const field of cvPositionSchemas.medical_rep.fields) {
+    const property = jsonSchema.properties[field.key];
+    assert.ok(property, `missing JSON schema property for ${field.key}`);
+    assert.deepEqual(property.required, ["value", "confidence"]);
+    assert.deepEqual(property.properties.confidence.enum, ["high", "low"]);
+    assert.equal(property.properties.value.description, field.aiDescription);
+    assert.deepEqual(
+      property.properties.value.type,
+      field.type === "boolean" ? ["boolean", "null"] : ["string", "null"],
+      `${field.key} (${field.type}) has the wrong AI response value type`,
+    );
+  }
 
   // --- Migration ------------------------------------------------------------
   const migration = read("supabase/migrations/20260723160000_recruitment_candidate_cv_extraction.sql");
@@ -105,6 +144,21 @@ export function runRecruitmentCvExtractionTests() {
   assert.match(migration, /notify pgrst, 'reload schema'/);
   // Duration is derived, never stored (see plan rationale — avoids drift vs from/to dates).
   assert.doesNotMatch(migration, /medical_rep_experience_duration/);
+
+  // --- Position-schema-framework migration (additive only — no existing Medical Rep
+  //     column is touched) ------------------------------------------------------------
+  const positionSchemaMigration = read(
+    "supabase/migrations/20260723200000_recruitment_position_schema_framework.sql",
+  );
+  assert.match(
+    positionSchemaMigration,
+    /alter table public\.recruitment_candidates\s+add column if not exists position_specific_fields jsonb/,
+  );
+  assert.match(
+    positionSchemaMigration,
+    /alter table public\.recruitment_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
+  );
+  assert.match(positionSchemaMigration, /notify pgrst, 'reload schema'/);
 
   // --- Permission model: `hiring_interviews` is narrow and NOT hard-boundary-capped,
   //     while `recruitment`/`candidates` stay locked to HR authority roles ---------

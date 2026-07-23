@@ -1,12 +1,14 @@
-// Recruitment / ATS — AI CV field extraction (Medical Rep field set, phase 1).
+// Recruitment / ATS — AI CV field extraction (schema-driven, per position).
 //
 // Reads an already-uploaded CV (PDF/DOCX, text-based only — no OCR in this phase),
-// extracts its raw text locally, then asks OpenAI to propose the Medical Rep candidate
-// fields with a per-field confidence rating, following the same structured-output
-// pattern as src/lib/email/ai-assist.ts. This module never writes to
-// recruitment_candidates itself — the caller reviews/corrects the proposal and saves it
-// via updateCandidate(); recordAppliedExtractionFields() only updates this module's own
-// audit-trail row (a correction log for future prompt tuning, not a training pipeline).
+// extracts its raw text locally, then asks OpenAI to propose that position's candidate
+// fields (src/lib/recruitment/cv-field-schemas.ts) with a per-field confidence rating,
+// following the same structured-output pattern as src/lib/email/ai-assist.ts. This module
+// never writes to recruitment_candidates itself — the caller reviews/corrects the proposal
+// and saves it via updateCandidate(); recordAppliedExtractionFields() only updates this
+// module's own audit-trail row (a correction log for future prompt tuning, not a training
+// pipeline). Medical Rep is the only position with a real field set today; a second
+// position is a new entry in cv-field-schemas.ts, not a change here.
 
 import { PDFParse } from "pdf-parse";
 import * as mammoth from "mammoth";
@@ -20,9 +22,10 @@ import {
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
 import { getCandidate } from "@/lib/recruitment/candidates";
+import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
-import { cvExtractableCandidateFields } from "@/lib/recruitment/types";
 
 export class CvExtractionError extends Error {
   code: "ai_failed" | "ai_not_configured" | "ai_rate_limited" | "unsupported_file" | "no_cv_file";
@@ -37,24 +40,15 @@ export class CvExtractionError extends Error {
 export type ExtractedFieldConfidence = "high" | "low";
 export type ExtractedField<T> = { value: T; confidence: ExtractedFieldConfidence };
 
-export type ExtractedCandidateFields = {
-  fullName: ExtractedField<string | null>;
-  email: ExtractedField<string | null>;
-  phone: ExtractedField<string | null>;
-  address: ExtractedField<string | null>;
-  governorate: ExtractedField<string | null>;
-  hasPriorWorkExperience: ExtractedField<boolean | null>;
-  hasMedicalRepExperience: ExtractedField<boolean | null>;
-  medicalRepEmployer: ExtractedField<string | null>;
-  medicalRepExperienceFrom: ExtractedField<string | null>;
-  medicalRepExperienceTo: ExtractedField<string | null>;
-  faculty: ExtractedField<string | null>;
-  university: ExtractedField<string | null>;
-};
+// Generic (keyed by whatever the position's schema declares) rather than a fixed 12-key
+// type — a value is a string field's text or a boolean field's judgment; readStringField/
+// readBoolField below are the only code that needs to know which is which per key.
+export type ExtractedCandidateFields = Record<string, ExtractedField<string | boolean | null>>;
 
 export type CvExtractionResult = {
   extractionId: string;
   model: string;
+  positionKey: string;
   fields: ExtractedCandidateFields;
 };
 
@@ -63,96 +57,52 @@ export type CvExtractionResult = {
 const MAX_CV_TEXT_CHARS = 20_000;
 
 // ---------------------------------------------------------------------------
-// Structured-output schema (same "text: json_schema, strict: true" shape as
-// src/lib/email/ai-assist.ts's emailDraftTextFormat).
+// Structured-output schema, built dynamically from a CvPositionSchema (same
+// "text: json_schema, strict: true" shape as src/lib/email/ai-assist.ts's
+// emailDraftTextFormat — only the property list now comes from the schema registry
+// instead of being hand-written per field).
 // ---------------------------------------------------------------------------
 
-const stringField = (description: string) =>
-  ({
+function fieldSchemaProperty(field: CvFieldDefinition) {
+  return {
     additionalProperties: false,
     properties: {
       confidence: { enum: ["high", "low"], type: "string" },
-      value: { description, type: ["string", "null"] },
-    },
-    required: ["value", "confidence"],
-    type: "object",
-  }) as const;
-
-const boolField = (description: string) =>
-  ({
-    additionalProperties: false,
-    properties: {
-      confidence: { enum: ["high", "low"], type: "string" },
-      value: { description, type: ["boolean", "null"] },
-    },
-    required: ["value", "confidence"],
-    type: "object",
-  }) as const;
-
-const cvExtractionTextFormat = {
-  format: {
-    name: "phoenix_medical_rep_cv_extraction",
-    schema: {
-      additionalProperties: false,
-      properties: {
-        address: stringField("Candidate's street/detailed address, distinct from governorate."),
-        email: stringField("Candidate's email address."),
-        faculty: stringField("Faculty/college within the candidate's university, e.g. Faculty of Pharmacy."),
-        fullName: stringField("Candidate's full name."),
-        governorate: stringField("The single Egyptian governorate the candidate lives in (e.g. Cairo, Giza, Alexandria) — not a full street address."),
-        hasMedicalRepExperience: boolField(
-          "Whether the candidate has previously worked specifically as a Medical Rep / in medical sales promotion or detailing.",
-        ),
-        hasPriorWorkExperience: boolField("Whether the candidate has any prior work experience at all, in any field."),
-        medicalRepEmployer: stringField(
-          "Company where the candidate worked as a Medical Rep, only when hasMedicalRepExperience is true.",
-        ),
-        medicalRepExperienceFrom: stringField(
-          "Start date (YYYY-MM-DD) of the candidate's Medical Rep tenure, only when hasMedicalRepExperience is true.",
-        ),
-        medicalRepExperienceTo: stringField(
-          "End date (YYYY-MM-DD) of the candidate's Medical Rep tenure, only when hasMedicalRepExperience is true.",
-        ),
-        phone: stringField("Candidate's phone number, digits as written on the CV."),
-        university: stringField("Name of the university the candidate graduated from."),
+      value: {
+        description: field.aiDescription,
+        type: field.type === "boolean" ? (["boolean", "null"] as const) : (["string", "null"] as const),
       },
-      required: Array.from(cvExtractableCandidateFields),
-      type: "object",
     },
-    strict: true,
-    type: "json_schema",
-  },
-} as const;
+    required: ["value", "confidence"],
+    type: "object",
+  } as const;
+}
 
-const cvExtractionInstructions = [
-  "You extract structured candidate fields from a Medical Rep job applicant's CV for an Egyptian pharma company's HR system.",
-  "Read the raw CV text given to you and fill every field in the schema.",
-  "STRICT RULES:",
-  "1. Only extract information that is actually present or clearly inferable in the CV text — never invent a value.",
-  '2. If a field is not present in the CV, set value to null and confidence to "low".',
-  '3. confidence is "high" only when you are confident the value is correct and unambiguous; use "low" whenever the CV text is unclear, abbreviated, contradictory, or you had to infer/guess.',
-  "4. hasMedicalRepExperience means specifically prior experience as a Medical Rep or in medical sales promotion/detailing — general sales experience in an unrelated field does not count as true (it still counts toward hasPriorWorkExperience).",
-  "5. Only fill medicalRepEmployer/medicalRepExperienceFrom/medicalRepExperienceTo when hasMedicalRepExperience is true; otherwise set them to null.",
-  "6. Dates must be formatted YYYY-MM-DD. If only a month/year is given, use day 01.",
-].join("\n\n");
+export function buildExtractionTextFormat(schema: CvPositionSchema) {
+  const properties: Record<string, ReturnType<typeof fieldSchemaProperty>> = {};
+  for (const field of schema.fields) {
+    properties[field.key] = fieldSchemaProperty(field);
+  }
+  return {
+    format: {
+      name: `phoenix_${schema.positionKey}_cv_extraction`,
+      schema: {
+        additionalProperties: false,
+        properties,
+        required: schema.fields.map((field) => field.key),
+        type: "object" as const,
+      },
+      strict: true as const,
+      type: "json_schema" as const,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Raw text extraction (local — PDF via pdf-parse, DOCX via mammoth).
 // ---------------------------------------------------------------------------
 
-// Pure (no I/O) so it can be unit-tested without a real file — the parsing itself is
-// exercised via extractRawTextFromFile / the manual browser verification pass instead.
-export function detectCvFileKind(mimeType: string, fileName: string): "pdf" | "docx" | "unsupported" {
-  const normalizedMime = (mimeType || "").toLowerCase();
-  const lowerName = (fileName || "").toLowerCase();
-  if (normalizedMime.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
-  if (normalizedMime.includes("wordprocessingml") || normalizedMime.includes("msword") || lowerName.endsWith(".docx")) {
-    return "docx";
-  }
-  return "unsupported";
-}
-
-async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
+export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
   const kind = detectCvFileKind(mimeType, fileName);
 
   if (kind === "pdf") {
@@ -246,7 +196,12 @@ function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionErr
 export async function extractCandidateFieldsFromCv(
   candidateId: string,
   access: AccessContext,
+  positionKey: string = defaultCvPositionKey,
 ): Promise<CvExtractionResult> {
+  const schema = getCvPositionSchema(positionKey);
+  if (!schema) {
+    throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${positionKey}".`);
+  }
   if (!hasOpenAiApiKey()) {
     throw new CvExtractionError(
       "ai_not_configured",
@@ -285,12 +240,12 @@ export async function extractCandidateFieldsFromCv(
   try {
     const response = await createOpenAiResponseText({
       input: `CV text:\n\n${cleanedText}`,
-      instructions: cvExtractionInstructions,
+      instructions: schema.instructions,
       maxOutputTokens: 2_000,
       model: OPENAI_COPILOT_DEFAULT_MODEL,
       purpose: "recruitment-cv-extraction",
       reasoning: { effort: "medium" },
-      text: cvExtractionTextFormat,
+      text: buildExtractionTextFormat(schema),
       timeoutMs: OPENAI_ROUTE_BUDGET_MS,
     });
     outputText = response.outputText;
@@ -306,20 +261,10 @@ export async function extractCandidateFieldsFromCv(
   }
 
   const parsed = parseAiJson(outputText);
-  const fields: ExtractedCandidateFields = {
-    address: readStringField(parsed, "address"),
-    email: readStringField(parsed, "email"),
-    faculty: readStringField(parsed, "faculty"),
-    fullName: readStringField(parsed, "fullName"),
-    governorate: readStringField(parsed, "governorate"),
-    hasMedicalRepExperience: readBoolField(parsed, "hasMedicalRepExperience"),
-    hasPriorWorkExperience: readBoolField(parsed, "hasPriorWorkExperience"),
-    medicalRepEmployer: readStringField(parsed, "medicalRepEmployer"),
-    medicalRepExperienceFrom: readStringField(parsed, "medicalRepExperienceFrom"),
-    medicalRepExperienceTo: readStringField(parsed, "medicalRepExperienceTo"),
-    phone: readStringField(parsed, "phone"),
-    university: readStringField(parsed, "university"),
-  };
+  const fields: ExtractedCandidateFields = {};
+  for (const field of schema.fields) {
+    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
+  }
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -330,12 +275,13 @@ export async function extractCandidateFieldsFromCv(
       created_by: access.hrId ?? access.loginId ?? null,
       extracted_fields: fields,
       file_id: cvFile.id,
+      position_key: schema.positionKey,
     })
     .select("id")
     .single();
   if (error) throw error;
 
-  return { extractionId: String((data as { id: unknown }).id), fields, model };
+  return { extractionId: String((data as { id: unknown }).id), fields, model, positionKey: schema.positionKey };
 }
 
 // Called once Talent Acquisition saves the reviewed/corrected fields onto the candidate,

@@ -195,6 +195,9 @@ export type Candidate = {
   medicalRepEmployer: string | null;
   medicalRepExperienceFrom: string | null;
   medicalRepExperienceTo: string | null;
+  // Generic storage for any CV-extraction position other than Medical Rep — see
+  // src/lib/recruitment/cv-field-schemas.ts. Keyed by that position's field keys.
+  positionSpecificFields: Record<string, unknown>;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -303,27 +306,9 @@ export type CreateCandidateInput = {
   medicalRepEmployer?: string | null;
   medicalRepExperienceFrom?: string | null;
   medicalRepExperienceTo?: string | null;
+  positionSpecificFields?: Record<string, unknown> | null;
 };
 
 // Partial edit of an existing candidate — an omitted key leaves that column
 // untouched; an explicit `null` clears it. Used by the CV-extraction review UI.
 export type UpdateCandidateInput = Partial<CreateCandidateInput>;
-
-// The Medical Rep CV-extraction field set (phase 1 — one position type only,
-// per the "avoid over-engineering" instruction; a second position gets its own
-// field set + migration when it's actually needed, not a generic schema now).
-export const cvExtractableCandidateFields = [
-  "fullName",
-  "email",
-  "phone",
-  "address",
-  "governorate",
-  "hasPriorWorkExperience",
-  "hasMedicalRepExperience",
-  "medicalRepEmployer",
-  "medicalRepExperienceFrom",
-  "medicalRepExperienceTo",
-  "faculty",
-  "university",
-] as const;
-export type CvExtractableCandidateField = (typeof cvExtractableCandidateFields)[number];

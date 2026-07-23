@@ -7,67 +7,36 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import {
+  documentsComplete,
+  onboardingDocumentItems,
+  onboardingItemCategories,
+  onboardingItemStatuses,
+  onboardingJoiningItems,
+  type OnboardingItem,
+  type OnboardingItemCategory,
+  type OnboardingItemStatus,
+  type UpdateOnboardingItemInput,
+} from "@/lib/recruitment/onboarding-checklist";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 
-export const onboardingDocumentItems = [
-  { key: "national_id", label: "National ID" },
-  { key: "military_certificate", label: "Military Certificate" },
-  { key: "graduation_certificate", label: "Graduation Certificate" },
-  { key: "personal_photo", label: "Personal Photo" },
-  { key: "insurance_documents", label: "Insurance Documents" },
-] as const;
-
-export const onboardingJoiningItems = [
-  { key: "employee_id", label: "Employee ID" },
-  { key: "email_creation", label: "Email Creation" },
-  { key: "system_access", label: "System Access" },
-  { key: "payroll_setup", label: "Payroll Setup" },
-  { key: "manager_notification", label: "Manager Notification" },
-  { key: "orientation", label: "Orientation" },
-  { key: "policy_acknowledgment", label: "Policy Acknowledgment" },
-  { key: "team_introduction", label: "Team Introduction" },
-  { key: "training_assignment", label: "Training Assignment" },
-] as const;
-
-export const onboardingItemStatuses = [
-  "pending",
-  "missing",
-  "submitted",
-  "approved",
-  "rejected",
-  "waived",
-  "completed",
-] as const;
-export type OnboardingItemStatus = (typeof onboardingItemStatuses)[number];
-
-export const onboardingItemCategories = ["document", "joining"] as const;
-export type OnboardingItemCategory = (typeof onboardingItemCategories)[number];
+// Re-exported for existing server-side callers (API routes, applications.ts) — the actual
+// definitions live in onboarding-checklist.ts (see that file for why: a pure module so
+// client components can use documentsComplete()/OnboardingItem without pulling in this
+// module's DB-touching functions and their node:crypto-requiring import chain).
+export {
+  documentsComplete,
+  onboardingDocumentItems,
+  onboardingItemCategories,
+  onboardingItemStatuses,
+  onboardingJoiningItems,
+  type OnboardingItem,
+  type OnboardingItemCategory,
+  type OnboardingItemStatus,
+  type UpdateOnboardingItemInput,
+};
 
 const terminalStatuses: readonly string[] = ["approved", "rejected", "waived", "completed"];
-
-export type OnboardingItem = {
-  id: string;
-  applicationId: string;
-  category: OnboardingItemCategory;
-  itemKey: string;
-  label: string;
-  status: OnboardingItemStatus;
-  fileId: string | null;
-  notes: string | null;
-  completedBy: string | null;
-  completedAt: string | null;
-};
-
-export type UpdateOnboardingItemInput = {
-  status?: string | null;
-  fileId?: string | null;
-  notes?: string | null;
-};
-
-// Pure: required documents are complete when every document item is approved or waived.
-export function documentsComplete(statuses: readonly string[]): boolean {
-  return statuses.length > 0 && statuses.every((status) => status === "approved" || status === "waived");
-}
 
 function mapItem(row: Record<string, unknown>): OnboardingItem {
   return {

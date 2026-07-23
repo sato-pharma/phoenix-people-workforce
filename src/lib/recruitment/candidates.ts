@@ -7,6 +7,7 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
+import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
   findMatchingCandidate,
@@ -75,8 +76,26 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     medical_rep_employer: textOrNull(input.medicalRepEmployer),
     medical_rep_experience_from: textOrNull(input.medicalRepExperienceFrom),
     medical_rep_experience_to: textOrNull(input.medicalRepExperienceTo),
+    position_specific_fields: input.positionSpecificFields ?? {},
     created_by: access.hrId ?? access.loginId ?? null,
   };
+}
+
+// Merges a position's "jsonb"-storage field values into whatever's already stored on the
+// candidate, leaving other keys untouched. Unexercised today — Medical Rep's fields are all
+// storage:"column" — this is the write path a future position's schema (cv-field-schemas.ts)
+// would use instead.
+export function applyPositionSpecificFields(
+  schema: CvPositionSchema,
+  existing: Record<string, unknown>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...existing };
+  for (const field of schema.fields) {
+    if (field.storage !== "jsonb") continue;
+    if (field.key in values) merged[field.key] = values[field.key];
+  }
+  return merged;
 }
 
 async function loadMatchKeys(): Promise<MatchableCandidate[]> {
@@ -205,6 +224,9 @@ function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unk
   }
   if (input.medicalRepExperienceTo !== undefined) {
     payload.medical_rep_experience_to = textOrNull(input.medicalRepExperienceTo);
+  }
+  if (input.positionSpecificFields !== undefined) {
+    payload.position_specific_fields = input.positionSpecificFields ?? {};
   }
   return payload;
 }
