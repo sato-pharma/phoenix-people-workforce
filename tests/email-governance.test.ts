@@ -85,12 +85,12 @@ export async function runEmailGovernanceTests() {
 
     const requestBody = requestBodies[0];
     assert.ok(requestBody);
-    assert.equal(requestBody?.model, "gpt-5.4-nano");
+    assert.equal(requestBody?.model, "gpt-5.4");
     assert.equal(requestBody?.store, false);
     assert.equal(requestBody?.text?.format?.type, "json_schema");
     assert.equal(requestBody?.text?.format?.strict, true);
     assert.equal(requestBody?.text?.format?.schema?.additionalProperties, false);
-    assert.match(String(requestBody?.instructions ?? ""), /Return all five fields/);
+    assert.match(String(requestBody?.instructions ?? ""), /Return all five content fields/);
     assert.match(String(requestBody?.input ?? ""), /User request:/);
     assert.match(aiDraft.draft.subject, /\{\{employeeName\}\}/);
     assert.doesNotMatch(aiDraft.draft.subject, /inventedToken/);

@@ -2,6 +2,8 @@ import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
+  renderPhoenixMetadataTable,
+  renderPhoenixMetadataTableText,
   type PhoenixEmailAction,
   type PhoenixEmailMetadataRow,
 } from "@/emails/phoenix-email-layout";
@@ -254,10 +256,19 @@ export async function sendVacationManagerStepResultEmail(
   const heading = approved
     ? `${input.managerName} approved your ${vacationTypeLabel(input.request.vacationType)} request. ${input.nextStep}`
     : `${input.managerName} rejected your ${vacationTypeLabel(input.request.vacationType)} request.${input.managerDecisionComment ? ` Reason: ${input.managerDecisionComment}` : ""}`;
+  const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Type", value: vacationTypeLabel(input.request.vacationType) },
+    { label: "Period", value: `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}` },
+    { label: "Manager", value: input.managerName },
+    { label: "Decision", value: approved ? "Approved" : "Rejected" },
+    ...(!approved && input.managerDecisionComment ? [{ label: "Reason", value: input.managerDecisionComment }] : []),
+  ];
   const templated = await sendTemplatedEmail({
     context: {
       ctaLabel: "Open in Phoenix Workforce",
       ctaUrl: systemDeployment.productionUrl,
+      detailsTable: renderPhoenixMetadataTable(detailsRows),
+      detailsTableText: renderPhoenixMetadataTableText(detailsRows),
       duration: formatDays(input.request.durationDays),
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,

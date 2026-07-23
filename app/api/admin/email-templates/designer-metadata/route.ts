@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
-import { getEmailTemplateCategoryOptions, getEmailTemplateDesignerCatalog, getEmailTemplateRoutingOptions } from "@/lib/email-templates/service";
+import { EMPLOYEE_VARIABLE_SOURCES, listEmailCustomVariables } from "@/lib/email-templates/custom-variables";
+import { emailTemplateKeys, getEmailTemplateCategoryOptions, getEmailTemplateDesignerCatalog, getEmailTemplateRoutingOptions } from "@/lib/email-templates/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,15 +13,35 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "communication", "read");
-    const [templates, routingOptions] = await Promise.all([
+    const [templates, routingOptions, customVariables] = await Promise.all([
       getEmailTemplateDesignerCatalog(),
       getEmailTemplateRoutingOptions(),
+      listEmailCustomVariables(),
     ]);
 
+    const sampleByColumn = new Map(EMPLOYEE_VARIABLE_SOURCES.map((source) => [source.column, source.sample]));
+    const baseMetadata = getEmailDesignerMetadata();
+
     return NextResponse.json({
-      ...getEmailDesignerMetadata(),
+      ...baseMetadata,
       categories: getEmailTemplateCategoryOptions(),
+      customVariables,
       routingOptions,
+      // Admin-defined custom variables appear as chips alongside the built-ins. Invalid rows
+      // (source_column fell off the allowlist after being saved, e.g. via a future allowlist
+      // narrowing) are excluded here — still visible in the dedicated manager as "invalid".
+      variables: [
+        ...baseMetadata.variables,
+        ...customVariables
+          .filter((variable) => variable.sourceAllowed)
+          .map((variable) => ({
+            allowedTemplateTypes: [...emailTemplateKeys],
+            category: "Company" as const,
+            label: variable.label,
+            sampleValue: sampleByColumn.get(variable.sourceColumn) ?? "(custom field)",
+            token: variable.token,
+          })),
+      ],
       templates: templates.map((template) => ({
         category: template.category,
         description: template.description,

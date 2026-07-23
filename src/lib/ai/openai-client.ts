@@ -145,14 +145,14 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
   return new PhoenixOpenAiError("failed", messageFrom(error), { requestId, status });
 }
 
-function openAiClient(apiKey = process.env.OPENAI_API_KEY?.trim()) {
+function openAiClient(apiKey = process.env.OPENAI_API_KEY?.trim(), timeoutMs = OPENAI_EMAIL_TIMEOUT_MS) {
   if (!apiKey) {
     throw new PhoenixOpenAiError("not_configured", "OPENAI_API_KEY is not configured.");
   }
   return new OpenAI({
     apiKey,
     maxRetries: OPENAI_MAX_RETRIES,
-    timeout: OPENAI_EMAIL_TIMEOUT_MS,
+    timeout: timeoutMs,
   });
 }
 
@@ -164,6 +164,15 @@ export async function createOpenAiResponseText(params: {
   purpose: string;
   reasoning?: ResponseCreateInput["reasoning"];
   text: NonNullable<ResponseCreateInput["text"]>;
+  /**
+   * Overrides the default (email-nano-tier) request timeout — OPENAI_EMAIL_TIMEOUT_MS (25s)
+   * is calibrated for the fast/cheap default model and a "high" effort gpt-5.4 call routinely
+   * exceeds it (owner report, 2026-07-22: the email-template AI Assist's first real call
+   * timed out after the model upgrade). Any caller passing a stronger model + higher
+   * reasoning effort should pass a longer timeout explicitly (e.g. OPENAI_ROUTE_BUDGET_MS,
+   * previously declared but never actually wired into a client timeout anywhere).
+   */
+  timeoutMs?: number;
 }) {
   const model = params.model?.trim() || resolveOpenAiEmailModel();
   const startedAt = Date.now();
@@ -178,7 +187,7 @@ export async function createOpenAiResponseText(params: {
       store: false,
       text: params.text,
     } satisfies ResponseCreateInput;
-    const { data, request_id: requestId } = await openAiClient().responses.create(request).withResponse();
+    const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs).responses.create(request).withResponse();
 
     recordAiCall({
       component: "openai_client",
