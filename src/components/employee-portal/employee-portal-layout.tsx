@@ -48,6 +48,7 @@ import {
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
@@ -557,6 +558,10 @@ export function EmployeePortalTopNav({
   }, [mobileMenuOpen]);
 
   const handleLogout = async () => {
+    // Unbind this browser from the signed-out user's OneSignal identity first — best
+    // effort, never blocks sign-out — so a shared device doesn't keep receiving their
+    // pushes after someone else signs in.
+    logoutOneSignal();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
@@ -824,6 +829,10 @@ export function EmployeePortalSidebar({
   };
 
   const handleLogout = async () => {
+    // Unbind this browser from the signed-out user's OneSignal identity first — best
+    // effort, never blocks sign-out — so a shared device doesn't keep receiving their
+    // pushes after someone else signs in.
+    logoutOneSignal();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
