@@ -1273,6 +1273,14 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     roles: ["CEO", "Super Admin"],
   },
   {
+    href: "/admin/attendance/fingerprint-deductions",
+    icon: ClipboardCheck,
+    label: "Fingerprint Deductions",
+    description: "Review and confirm this month's fingerprint attendance deductions before they reach Automated Payroll.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
     href: "/attendance/employee-day-report",
     icon: Fingerprint,
     label: "Employee Day-by-Day Report",

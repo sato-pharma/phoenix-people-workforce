@@ -421,6 +421,7 @@ import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resigna
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
+import { runAutomatedPayrollFingerprintAggregationTests } from "./automated-payroll-fingerprint-aggregation.test.ts";
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
@@ -473,6 +474,7 @@ await runTest("notification config drift guard", runConfigDriftTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
+await runTest("automated payroll fingerprint aggregation (rejected candidates excluded)", runAutomatedPayrollFingerprintAggregationTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
 await runTest("payroll engine hardening", runPayrollEngineHardeningTests);
 await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);
