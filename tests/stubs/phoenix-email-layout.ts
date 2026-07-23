@@ -45,6 +45,21 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
   return `<h1>${escapeEmailHtml(input.title)}</h1>${input.bodyHtml}`;
 }
 
+export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | undefined) {
+  const cleanRows = (rows ?? []).filter((row) => String(row.value ?? "").trim());
+  if (cleanRows.length === 0) return "";
+  return `<table>${cleanRows
+    .map((row) => `<tr><td>${escapeEmailHtml(row.label)}</td><td>${escapeEmailHtml(row.value)}</td></tr>`)
+    .join("")}</table>`;
+}
+
+export function renderPhoenixMetadataTableText(rows: PhoenixEmailMetadataRow[] | undefined) {
+  return (rows ?? [])
+    .filter((row) => String(row.value ?? "").trim())
+    .map((row) => `${row.label}: ${row.value}`)
+    .join("\n");
+}
+
 export function renderPhoenixEmailText(input: PhoenixEmailLayoutProps & { bodyText?: string }) {
   return `${input.title}\n\n${input.bodyText ?? input.previewText}`;
 }

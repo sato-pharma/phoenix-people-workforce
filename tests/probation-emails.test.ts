@@ -16,8 +16,9 @@ export function runProbationEmailsTests() {
   // ── P9-T01 templates registered in the admin email-template engine (not hardcoded) ──
   for (const key of ["probation_dv_snapshot", "probation_weekly_digest", "probation_day30", "probation_day60", "probation_day75"]) {
     assert.ok(engine.includes(`"${key}"`), `${key} registered in the email-template engine`);
-    // Category assigned.
-    assert.match(engine, new RegExp(`${key}: "Employee Lifecycle"`), `${key} has a category`);
+    // Category assigned. (Reassigned from "Employee Lifecycle" to the finer-grained
+    // "Probation" module category — 2026-07-22 admin email-templates page regrouping.)
+    assert.match(engine, new RegExp(`${key}: "Probation"`), `${key} has a category`);
     // Default recipient rules present.
     assert.match(engine, new RegExp(`${key}: emptyRules\\(`), `${key} has default recipient rules`);
   }
@@ -68,7 +69,7 @@ export function runProbationEmailsTests() {
   // Owner report: one probation email fired on EVERY validated Double-Visit day flooded ~8
   // stakeholders' inboxes. Replaced by a single weekly digest per probationer, to the line
   // management chain, greeting "Dear Line {Line} Managers".
-  assert.match(engine, /probation_weekly_digest: "Employee Lifecycle"/, "weekly digest has a category");
+  assert.match(engine, /probation_weekly_digest: "Probation"/, "weekly digest has a category");
   assert.match(engine, /greeting: "Dear Line \{\{line\}\} Managers,"/,
     'weekly digest greets the line management chain by line name ("Dear Line Pedia Managers,")');
   assert.match(emails, /export async function processProbationWeeklyDigest/, "weekly digest sweep exists");

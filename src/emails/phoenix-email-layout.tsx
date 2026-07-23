@@ -110,6 +110,15 @@ export function renderPhoenixMetadataTable(rows: PhoenixEmailMetadataRow[] | und
     </table>`;
 }
 
+/** Plain-text projection of renderPhoenixMetadataTable, for the text part of an email (or a
+ * {{...Text}} template token standing in for a {{...}} pre-rendered HTML table token). */
+export function renderPhoenixMetadataTableText(rows: PhoenixEmailMetadataRow[] | undefined) {
+  return (rows ?? [])
+    .filter((row) => String(row.value ?? "").trim())
+    .map((row) => `${row.label}: ${row.value}`)
+    .join("\n");
+}
+
 function renderPhoenixAction(action: PhoenixEmailAction | undefined) {
   if (!action) return "";
 

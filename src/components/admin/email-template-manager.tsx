@@ -25,6 +25,28 @@ import { Switch } from "@/components/ui/switch";
 import type { EmailTemplateRecipientRole, EmailTemplateRow } from "@/lib/email-templates/service";
 import { cn } from "@/lib/utils";
 
+// Mirrors the server-side `emailTemplateCategories` order in
+// src/lib/email-templates/service.ts (a plain string list, kept separate rather than
+// imported, so this client component never pulls that module's server-only runtime code —
+// Supabase admin client, etc. — into the browser bundle).
+const CATEGORY_DISPLAY_ORDER = [
+  "Account Access",
+  "Leave Management",
+  "Excuses",
+  "Probation",
+  "Recruitment",
+  "Contracts",
+  "Resignations",
+  "Outstation & Expenses",
+  "Marketing Requests",
+  "Weekly & Monthly Plans",
+  "Attendance",
+  "Coaching",
+  "Payroll",
+  "Birthdays",
+  "General",
+];
+
 type RoutingOptions = {
   lines: string[];
   recipientRoles: Array<{ label: string; value: EmailTemplateRecipientRole }>;
@@ -44,6 +66,21 @@ type DesignerPreset = {
   key: string;
   label: string;
   role: EmailTemplateRecipientRole;
+};
+
+type CustomVariable = {
+  createdAt: string;
+  description: string | null;
+  label: string;
+  sourceAllowed: boolean;
+  sourceColumn: string;
+  token: string;
+};
+
+type CustomVariableSource = {
+  column: string;
+  label: string;
+  sample: string;
 };
 
 type ValidationIssue = {
@@ -194,7 +231,9 @@ export function EmailTemplateManager({
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [changeReason, setChangeReason] = useState("");
   const [restoreReason, setRestoreReason] = useState("");
-  const [testEmail, setTestEmail] = useState("");
+  // Owner-designated standing test inbox (2026-07-22) — defaults every template's "Send
+  // Test" to it so a real, fully-rendered send is one click away; still editable per-send.
+  const [testEmail, setTestEmail] = useState("achieverrr303@gmail.com");
   const [sampleEmployeeHrId, setSampleEmployeeHrId] = useState("");
   const [sampleCandidateEmail, setSampleCandidateEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -202,6 +241,17 @@ export function EmailTemplateManager({
   const [aiInstruction, setAiInstruction] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [isPending, startTransition] = useTransition();
+  // Admin-defined custom variables (owner request, 2026-07-22): a {{token}} bound to a
+  // safe employees column, no code change required. See src/lib/email-templates/custom-variables.ts.
+  const [showCustomVariables, setShowCustomVariables] = useState(false);
+  const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+  const [customVariableSources, setCustomVariableSources] = useState<CustomVariableSource[]>([]);
+  const [customVariablesLoaded, setCustomVariablesLoaded] = useState(false);
+  const [newVariableLabel, setNewVariableLabel] = useState("");
+  const [newVariableToken, setNewVariableToken] = useState("");
+  const [newVariableSourceColumn, setNewVariableSourceColumn] = useState("");
+  const [customVariableBusy, setCustomVariableBusy] = useState(false);
+  const [customVariableError, setCustomVariableError] = useState<string | null>(null);
 
   const templateVariables = useMemo(() => {
     if (!draft) return variables;
@@ -217,6 +267,23 @@ export function EmailTemplateManager({
     () => categoryFilter === "All" ? templates : templates.filter((template) => template.category === categoryFilter),
     [categoryFilter, templates],
   );
+  // Section the visible templates by module (Leave Management, Probation, Recruitment,
+  // ...) instead of one flat card grid — every template must be traceable to the module
+  // whose event actually fires it, so admins can find/audit the full set for a module at
+  // a glance (owner request 2026-07-22).
+  const groupedTemplates = useMemo(() => {
+    const byCategory = new Map<string, EmailTemplateRow[]>();
+    for (const template of visibleTemplates) {
+      const list = byCategory.get(template.category) ?? [];
+      list.push(template);
+      byCategory.set(template.category, list);
+    }
+    const orderedKnown = CATEGORY_DISPLAY_ORDER.filter((category) => byCategory.has(category));
+    // Any category not in the hand-maintained display order still renders (fail-open),
+    // just appended at the end rather than silently dropped.
+    const remaining = Array.from(byCategory.keys()).filter((category) => !CATEGORY_DISPLAY_ORDER.includes(category));
+    return [...orderedKnown, ...remaining].map((category) => ({ category, templates: byCategory.get(category) ?? [] }));
+  }, [visibleTemplates]);
 
   function loadDesignerMetadata() {
     if (metadataLoaded) return;
@@ -230,6 +297,78 @@ export function EmailTemplateManager({
       setVariables(payload.variables ?? fallbackVariables);
       setPresets(payload.recipientPresets ?? []);
       setMetadataLoaded(true);
+    });
+  }
+
+  function loadCustomVariables() {
+    startTransition(async () => {
+      const response = await fetch("/api/admin/email-templates/custom-variables");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setCustomVariableError(payload?.message ?? "Custom variables failed to load.");
+        return;
+      }
+      setCustomVariables(payload.variables ?? []);
+      setCustomVariableSources(payload.availableSources ?? []);
+      setCustomVariablesLoaded(true);
+    });
+  }
+
+  function toggleCustomVariablesPanel() {
+    setShowCustomVariables((current) => !current);
+    if (!customVariablesLoaded) loadCustomVariables();
+  }
+
+  function saveCustomVariable() {
+    if (!newVariableLabel.trim() || !newVariableSourceColumn) {
+      setCustomVariableError("Give the variable a name and pick an employee field.");
+      return;
+    }
+    setCustomVariableBusy(true);
+    setCustomVariableError(null);
+    startTransition(async () => {
+      const response = await fetch("/api/admin/email-templates/custom-variables", {
+        body: JSON.stringify({
+          label: newVariableLabel.trim(),
+          sourceColumn: newVariableSourceColumn,
+          token: newVariableToken.trim(),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+      setCustomVariableBusy(false);
+      if (!response.ok) {
+        setCustomVariableError(payload?.message ?? "Could not save the variable.");
+        return;
+      }
+      setCustomVariables((current) => [
+        ...current.filter((variable) => variable.token !== payload.variable.token),
+        payload.variable,
+      ].sort((left, right) => left.token.localeCompare(right.token)));
+      setNewVariableLabel("");
+      setNewVariableToken("");
+      setNewVariableSourceColumn("");
+      // The new token is now usable in every template's editor - refresh the chip list.
+      setMetadataLoaded(false);
+      loadDesignerMetadata();
+    });
+  }
+
+  function deleteCustomVariableRow(token: string) {
+    setCustomVariableBusy(true);
+    setCustomVariableError(null);
+    startTransition(async () => {
+      const response = await fetch(`/api/admin/email-templates/custom-variables/${encodeURIComponent(token)}`, { method: "DELETE" });
+      const payload = await response.json().catch(() => null);
+      setCustomVariableBusy(false);
+      if (!response.ok) {
+        setCustomVariableError(payload?.message ?? "Could not delete the variable.");
+        return;
+      }
+      setCustomVariables((current) => current.filter((variable) => variable.token !== token));
+      setMetadataLoaded(false);
+      loadDesignerMetadata();
     });
   }
 
@@ -274,8 +413,10 @@ export function EmailTemplateManager({
             closingText: draft.closingText,
             greeting: draft.greeting,
             previewText: draft.previewText,
+            rules: draft.rules,
             subject: draft.subject,
           },
+          healthIssues: draft.health.issues.map((issue) => issue.message),
           instruction,
           mode: "email_template",
           templateKey: draft.templateKey,
@@ -300,6 +441,8 @@ export function EmailTemplateManager({
         setError("The AI returned an empty draft. Try again.");
         return;
       }
+      const aiRules = payload?.result?.rules as EmailTemplateRow["rules"] | null | undefined;
+      const explanation: string = payload?.result?.explanation ?? "";
       const warnings: string[] = payload?.result?.warnings ?? [];
       // The reply can land up to 60s later - never apply it to a different template the
       // admin switched to in the meantime.
@@ -310,12 +453,16 @@ export function EmailTemplateManager({
       // Blur first so the body editor's caret guard does not suppress pulling the new
       // bodyHtml into the canvas if the admin happens to be typing in it right now.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      setDraft((current) => current && current.templateKey === requestedTemplateKey ? { ...current, ...aiDraft } : current);
+      setDraft((current) => current && current.templateKey === requestedTemplateKey
+        ? { ...current, ...aiDraft, ...(aiRules ? { rules: aiRules } : {}) }
+        : current);
       setValidation(null);
       setMessage(
-        warnings.length > 0
-          ? `AI draft applied. ${warnings.join(" ")}`
-          : "AI draft applied - review it in the canvas, then validate and save.",
+        [
+          explanation || (warnings.length > 0 ? "AI draft applied." : "AI draft applied - review it in the canvas, then validate and save."),
+          aiRules ? "Recipient routing was also updated - review Choose Recipients before saving." : "",
+          warnings.length > 0 ? warnings.join(" ") : "",
+        ].filter(Boolean).join(" "),
       );
     } catch {
       setError("Could not reach the AI assistant. Check your connection and try again.");
@@ -506,6 +653,10 @@ export function EmailTemplateManager({
                 <Send className="h-4 w-4" />
                 Publish
               </Button>
+              <Button className="gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2.5 font-black text-[#0F172A]" onClick={toggleCustomVariablesPanel} type="button" variant="secondary">
+                <Sparkles className="h-4 w-4" />
+                Custom Variables
+              </Button>
             </>
           }
           badges={
@@ -523,6 +674,75 @@ export function EmailTemplateManager({
 
         {message ? <AdminCallout tone="success"><Check className="mt-0.5 h-4 w-4" />{message}</AdminCallout> : null}
         {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
+
+        {showCustomVariables ? (
+          <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Custom Variables</p>
+              <h2 className="mt-1 text-lg font-black text-[#0F172A]">Add a new {"{{token}}"} without touching code</h2>
+              <p className="mt-1 text-sm leading-6 text-[#64748B]">
+                Bind a new variable to an approved employee field. It becomes usable as a chip in every template&apos;s editor immediately.
+                Salary, national ID, bank, insurance and personal contact fields are never offered — they can never be turned into an email variable.
+              </p>
+            </div>
+            {customVariableError ? <AdminCallout tone="danger">{customVariableError}</AdminCallout> : null}
+            <div className="grid gap-3 md:grid-cols-4">
+              <Field label="Variable name (shown as a chip)">
+                <Input
+                  onChange={(event) => {
+                    setNewVariableLabel(event.target.value);
+                    // Auto-suggest a token from the label; the admin can still override it.
+                    setNewVariableToken((current) => {
+                      const pascal = event.target.value.trim().replace(/[^a-zA-Z0-9]+(.)?/g, (_m, c: string | undefined) => (c ? c.toUpperCase() : ""));
+                      const auto = pascal.charAt(0).toLowerCase() + pascal.slice(1);
+                      return current === "" || current === newVariableToken ? auto : current;
+                    });
+                  }}
+                  placeholder="Team name"
+                  value={newVariableLabel}
+                />
+              </Field>
+              <Field label="Employee field">
+                <select
+                  className="h-10 w-full rounded-xl border border-[#CBD5E1] bg-white px-3 text-sm font-bold text-[#0F172A]"
+                  onChange={(event) => setNewVariableSourceColumn(event.target.value)}
+                  value={newVariableSourceColumn}
+                >
+                  <option value="">Choose a field...</option>
+                  {customVariableSources.map((source) => (
+                    <option key={source.column} value={source.column}>{source.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={`Token — {{${newVariableToken || "..."}}}`}>
+                <Input onChange={(event) => setNewVariableToken(event.target.value)} placeholder="teamName" value={newVariableToken} />
+              </Field>
+              <div className="flex items-end">
+                <Button className="h-10 w-full rounded-xl bg-[#0F172A] text-white" disabled={customVariableBusy} onClick={saveCustomVariable} type="button">
+                  Add Variable
+                </Button>
+              </div>
+            </div>
+            {customVariables.length > 0 ? (
+              <div className="grid gap-2">
+                {customVariables.map((variable) => (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3" key={variable.token}>
+                    <div>
+                      <span className="font-black text-[#0F172A]">{`{{${variable.token}}}`}</span>
+                      <span className="ml-2 text-sm font-bold text-[#64748B]">{variable.label} — {variable.sourceColumn}</span>
+                      {!variable.sourceAllowed ? <span className="ml-2 text-xs font-black text-[#991B1B]">Invalid field, will not resolve</span> : null}
+                    </div>
+                    <Button className="rounded-lg border border-[#FCA5A5] bg-white px-3 py-1.5 text-xs font-black text-[#991B1B]" disabled={customVariableBusy} onClick={() => deleteCustomVariableRow(variable.token)} type="button" variant="secondary">
+                      Delete
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm font-bold text-[#94A3B8]">No custom variables yet.</p>
+            )}
+          </Card>
+        ) : null}
 
         <Card className={cn(adminPanelClassName, "p-4")}>
           <div className="grid gap-2 md:grid-cols-4">
@@ -564,34 +784,52 @@ export function EmailTemplateManager({
                 ))}
               </div>
             </Card>
-            <div className="grid gap-4 lg:grid-cols-3">
-            {visibleTemplates.map((template) => {
-              const healthTone = template.health.status === "good" ? "bg-[#DCFCE7] text-[#166534]" : template.health.status === "broken" ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-[#FFF7ED] text-[#9A3412]";
-              return (
-                <Card className={cn(adminPanelClassName, "p-5")} key={template.templateKey}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-black text-[#0F172A]">{template.templateName}</h2>
-                      <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{template.category}</p>
-                      <p className="mt-2 text-sm leading-6 text-[#64748B]">{template.description}</p>
-                    </div>
-                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", healthTone)}>
-                      {template.health.label} {template.health.score}%
-                    </span>
-                  </div>
-                  <div className="mt-4 grid gap-2 text-xs font-bold text-[#64748B]">
-                    <span>{publicationLabel(template.publicationState)}</span>
-                    {template.health.issues[0] ? <span className="text-[#9A3412]">{template.health.issues[0].message}</span> : <span className="text-[#166534]">Ready for admin review.</span>}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString()}</span>
-                    <Button className="rounded-xl bg-[#0F172A] text-white" onClick={() => selectTemplate(template)} type="button">
-                      Edit
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
+            <div className="space-y-6">
+            {groupedTemplates.map((group) => (
+              <div key={group.category}>
+                <div className="mb-2 flex items-baseline gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#0F172A]">{group.category}</h3>
+                  <span className="text-xs font-bold text-[#64748B]">({group.templates.length})</span>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                {group.templates.map((template) => {
+                  const healthTone = template.health.status === "good" ? "bg-[#DCFCE7] text-[#166534]" : template.health.status === "broken" ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-[#FFF7ED] text-[#9A3412]";
+                  return (
+                    <Card className={cn(adminPanelClassName, "p-5")} key={template.templateKey}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-lg font-black text-[#0F172A]">{template.templateName}</h2>
+                          <p className="mt-2 text-sm leading-6 text-[#64748B]">{template.description}</p>
+                        </div>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", healthTone)}>
+                          {template.health.label} {template.health.score}%
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2 text-xs font-bold text-[#64748B]">
+                        <span>{publicationLabel(template.publicationState)}</span>
+                        {template.health.issues[0] ? <span className="text-[#9A3412]">{template.health.issues[0].message}</span> : <span className="text-[#166534]">Ready for admin review.</span>}
+                      </div>
+                      <div className={cn("mt-4 flex items-center gap-2 rounded-lg px-3 py-2", template.sentCount > 0 ? "bg-[#F0FDF4]" : "bg-[#F8FAFC]")}>
+                        <Send className={cn("h-3.5 w-3.5", template.sentCount > 0 ? "text-[#166534]" : "text-[#94A3B8]")} />
+                        <span className={cn("text-xs font-black", template.sentCount > 0 ? "text-[#166534]" : "text-[#64748B]")}>
+                          {template.sentCount.toLocaleString()} fired
+                        </span>
+                        {template.lastSentAt ? (
+                          <span className="text-xs font-bold text-[#94A3B8]">· last {new Date(template.lastSentAt).toLocaleDateString()}</span>
+                        ) : null}
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString()}</span>
+                        <Button className="rounded-xl bg-[#0F172A] text-white" onClick={() => selectTemplate(template)} type="button">
+                          Edit
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+                </div>
+              </div>
+            ))}
             </div>
           </div>
         ) : null}
@@ -606,6 +844,12 @@ export function EmailTemplateManager({
                   <p className="mt-1 text-sm font-bold text-[#64748B]">{draft.category} - {publicationLabel(draft.publicationState)}</p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex items-center gap-2 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2">
+                    <Send className="h-3.5 w-3.5 text-[#166534]" />
+                    <span className="text-xs font-black text-[#166534]">
+                      {draft.sentCount.toLocaleString()} fired{draft.lastSentAt ? ` · last ${new Date(draft.lastSentAt).toLocaleDateString()}` : ""}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
                     <span className="text-xs font-bold text-[#475569]">{draft.isActive ? "Active" : "Inactive"}</span>
                     <Switch checked={draft.isActive} label="Template active status" onChange={(checked) => updateDraft("isActive", checked)} />

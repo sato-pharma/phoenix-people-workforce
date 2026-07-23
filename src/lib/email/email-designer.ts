@@ -8,7 +8,9 @@ import {
   type EmailTemplateRecipientRole,
   type EmailTemplateRecipientRules,
 } from "@/lib/email-templates/service";
+import { listEmailCustomVariables } from "@/lib/email-templates/custom-variables";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
 
 export type EmailDesignerVariable = {
   allowedTemplateTypes: EmailTemplateKey[];
@@ -82,6 +84,40 @@ const variableCatalog: EmailDesignerVariable[] = [
   { category: "Company", label: "Summary", sampleValue: "A workflow update needs review.", token: "summary", allowedTemplateTypes: allTemplateTypes },
   { category: "Company", label: "Submitted Plan Table", sampleValue: "(the submitted plan days as a table)", token: "planTable", allowedTemplateTypes: ["weekly_plans"] },
   { category: "Company", label: "Vacation Type", sampleValue: "Annual Leave", token: "vacationType", allowedTemplateTypes: ["leave_request", "leave_approval", "leave_rejection"] },
+  // Everything below closes a gap between this designer's own token catalog and the
+  // authoritative allowlist (placeholderHints/EmailTemplateContext in email-templates/service.ts)
+  // — validateEmailTemplateDraft checks {{tokens}} against ONLY this file's variableCatalog, so a
+  // token declared there but missing here always failed "Run backend review" with a false
+  // "Unknown variable" error, even though the real send-time renderer resolves it correctly.
+  { category: "Company", label: "Honorific", sampleValue: "Dr. ", token: "honorific", allowedTemplateTypes: allTemplateTypes },
+  { category: "Payroll", label: "Amount", sampleValue: "1,250 EGP", token: "amount", allowedTemplateTypes: allTemplateTypes },
+  { category: "Company", label: "Destination", sampleValue: "Alexandria, Egypt", token: "destination", allowedTemplateTypes: ["outstation"] },
+  { category: "Company", label: "Excuse Type", sampleValue: "Morning excuse", token: "excuseType", allowedTemplateTypes: ["excuse_request", "excuse_decision"] },
+  { category: "Company", label: "Excuse Date", sampleValue: "2026-06-12", token: "excuseDate", allowedTemplateTypes: ["excuse_request", "excuse_decision"] },
+  { category: "Company", label: "Details Table", sampleValue: "(a premium zebra-striped label/value summary table)", token: "detailsTable", allowedTemplateTypes: allTemplateTypes },
+  { category: "Company", label: "Digest Table", sampleValue: "(a weekly digest summary table)", token: "digestTable", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"] },
+  { category: "Company", label: "Week Label", sampleValue: "2026-06-08 to 2026-06-14", token: "weekLabel", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"] },
+  { category: "Company", label: "Score Table", sampleValue: "(the coaching score breakdown table)", token: "scoreTable", allowedTemplateTypes: ["coaching_report"] },
+  { category: "Payroll", label: "Estimated Cost", sampleValue: "50,000 EGP", token: "estimatedCost", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Payroll", label: "Required ROI", sampleValue: "3.5x", token: "requiredRoi", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "ROI Window", sampleValue: "90 days", token: "roiWindow", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Payroll", label: "Pay Date", sampleValue: "2026-06-30", token: "payDate", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Customer Name", sampleValue: "El Ezaby Pharmacy", token: "customerName", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Current Step", sampleValue: "Regional Manager review", token: "currentStep", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Request Code", sampleValue: "REQ-0208", token: "requestCode", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Requester Name", sampleValue: "Youssef Ahmed", token: "requesterName", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Products Table", sampleValue: "(the requested products/financials table)", token: "productsTable", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Company", label: "Return Callout", sampleValue: "(the return/rejection reason callout)", token: "returnCallout", allowedTemplateTypes: ["marketing_request"] },
+  { category: "Employee", label: "Probation Day", sampleValue: "45", token: "probationDay", allowedTemplateTypes: ["probation_dv_snapshot", "probation_day30", "probation_day60", "probation_day75"] },
+  { category: "Employee", label: "DV Date", sampleValue: "2026-06-10", token: "dvDate", allowedTemplateTypes: ["probation_dv_snapshot"] },
+  { category: "Employee", label: "Evaluator Name", sampleValue: "Nour Samir", token: "evaluatorName", allowedTemplateTypes: ["probation_dv_snapshot"] },
+  { category: "Employee", label: "Evaluator Role", sampleValue: "District Manager", token: "evaluatorRole", allowedTemplateTypes: ["probation_dv_snapshot"] },
+  { category: "Employee", label: "Visit Count", sampleValue: "4", token: "visitCount", allowedTemplateTypes: ["probation_dv_snapshot"] },
+  { category: "Employee", label: "DV Progress", sampleValue: "DM 2/3 · TM 1/1 · Total 3/4", token: "dvProgress", allowedTemplateTypes: ["probation_dv_snapshot"] },
+  { category: "Employee", label: "Risk Status", sampleValue: "Action Required", token: "riskStatus", allowedTemplateTypes: ["probation_dv_snapshot", "probation_day30", "probation_day60", "probation_day75"] },
+  { category: "Employee", label: "Provisional Score", sampleValue: "6.85 / 10", token: "provisionalScore", allowedTemplateTypes: ["probation_dv_snapshot", "probation_day30", "probation_day60", "probation_day75"] },
+  { category: "Employee", label: "Days Remaining", sampleValue: "12", token: "daysRemaining", allowedTemplateTypes: ["probation_dv_snapshot", "probation_day30", "probation_day60", "probation_day75"] },
+  { category: "Employee", label: "Milestone Day", sampleValue: "60", token: "milestoneDay", allowedTemplateTypes: ["probation_day30", "probation_day60", "probation_day75"] },
 ];
 
 const recipientPresets: EmailRecipientPreset[] = [
@@ -138,7 +174,7 @@ function fieldsToValidate(template: EmailTemplatePayload) {
   ] as const;
 }
 
-function unknownVariables(template: EmailTemplatePayload) {
+function unknownVariables(template: EmailTemplatePayload, extraAllowedTokens: ReadonlySet<string>) {
   const issues: EmailDraftValidationIssue[] = [];
   for (const [field, value] of fieldsToValidate(template)) {
     const text = String(value ?? "");
@@ -147,7 +183,7 @@ function unknownVariables(template: EmailTemplatePayload) {
       issues.push({ field, message: "A variable is incomplete. Use the format {{Employee Name}} from the chips.", severity: "error" });
     }
     for (const match of text.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)) {
-      if (!allowedTokenSet.has(match[1])) {
+      if (!allowedTokenSet.has(match[1]) && !extraAllowedTokens.has(match[1])) {
         issues.push({
           field,
           message: `Unknown variable {{${match[1]}}}. Use a variable chip so the backend can render it safely.`,
@@ -173,11 +209,13 @@ export async function validateEmailTemplateDraft(input: {
     bodyHtml: sanitizeEmailTemplateHtml(String(input.template.bodyHtml ?? "")),
     rules,
   };
-  const payloadValidation = validateEmailTemplatePayload(template);
+  const customVariables = await listEmailCustomVariables();
+  const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
+  const payloadValidation = validateEmailTemplatePayload(template, customTokens);
   const issues: EmailDraftValidationIssue[] = [
     ...payloadValidation.issues.map((issue) => ({ ...issue, severity: "error" as const })),
     ...payloadValidation.warnings.map((issue) => ({ ...issue, severity: "warning" as const })),
-    ...unknownVariables(template),
+    ...unknownVariables(template, customTokens),
   ];
   const simulation = await simulateTemplateRecipients({
     candidateEmail: input.candidateEmail,
@@ -209,18 +247,36 @@ export async function validateEmailTemplateDraft(input: {
   };
 }
 
+const sampleDetailsRows = [
+  { label: "Type", value: "Annual Leave" },
+  { label: "Period", value: "2026-08-01 to 2026-08-05" },
+  { label: "Manager", value: "Omar Nabil" },
+  { label: "Decision", value: "Approved" },
+];
+
 export function sampleTemplateContext() {
   return {
+    amount: "1,250 EGP",
     area: "Cairo",
     candidateName: "Ahmed Hassan",
     ctaLabel: "Open in Phoenix Workforce",
     ctaUrl: "https://phoenix.example.com/action",
     date: "2026-05-31",
+    // Trusted-HTML-block sample so the Review & Publish preview shows a real rendered
+    // zebra table instead of silently resolving {{detailsTable}} to an empty string.
+    detailsTable: renderPhoenixMetadataTable(sampleDetailsRows),
+    detailsTableText: renderPhoenixMetadataTableText(sampleDetailsRows),
+    destination: "Alexandria, Egypt",
     employeeHrId: "PHX-1024",
     employeeName: "Mariam Adel",
     endDate: "2026-06-05",
+    excuseDate: "2026-06-12",
+    excuseType: "Morning excuse",
     feedback: "Strong role alignment and positive interview discussion.",
     hireDate: "2026-06-01",
+    // "Dr. " for manager-facing greetings; sample as empty so {{honorific}}{{recipientName}}
+    // reads naturally as "Ahmed" rather than presupposing a title.
+    honorific: "",
     interviewDate: "2026-06-10",
     interviewLocation: "Phoenix Workforce Cairo Office",
     interviewerName: "Nour Samir",

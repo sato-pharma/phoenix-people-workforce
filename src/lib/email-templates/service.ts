@@ -5,15 +5,19 @@ import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
+  renderPhoenixMetadataTable,
+  renderPhoenixMetadataTableText,
 } from "@/emails/phoenix-email-layout";
 import { systemEmail } from "@/config/system-settings";
 import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import { listEmailCustomVariables, resolveEmailCustomVariables, sampleEmailCustomVariables } from "./custom-variables";
 import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const emailTemplateKeys = [
@@ -158,6 +162,15 @@ export type EmailTemplateContext = {
   managerName?: string | null;
   meetingUrl?: string | null;
   nextStep?: string | null;
+  /**
+   * Pre-rendered premium zebra-striped details table (renderPhoenixMetadataTable) for any
+   * template that wants a document-grade label/value summary instead of plain paragraphs —
+   * e.g. leave_manager_step_decision's Type/Period/Manager/Decision block. Sanitized, not
+   * escaped, in bodyHtml.
+   */
+  detailsTable?: string | null;
+  /** Plain-text projection used wherever {{detailsTable}} appears in text fields. */
+  detailsTableText?: string | null;
   /** Pre-rendered HTML table (e.g. submitted plan rows); sanitized, not escaped, in bodyHtml. */
   planTable?: string | null;
   /** Plain-text projection used wherever {{planTable}} appears in text fields. */
@@ -246,6 +259,9 @@ export type EmailTemplateRow = EmailTemplateDefinition & {
   publishedIsActive: boolean;
   publishedUpdatedAt: string;
   rules: EmailTemplateRecipientRules;
+  /** Live "times fired" counters (email_template_send_stats) — real automated sends only, never test sends. */
+  lastSentAt: string | null;
+  sentCount: number;
   updatedAt: string;
 };
 
@@ -271,10 +287,20 @@ export type EmailTemplateHistoryEntry = {
 
 export type EmailTemplateCategory =
   | "Account Access"
-  | "Employee Lifecycle"
+  | "Attendance"
+  | "Birthdays"
+  | "Coaching"
+  | "Contracts"
+  | "Excuses"
   | "General"
   | "Leave Management"
-  | "Recruitment";
+  | "Marketing Requests"
+  | "Outstation & Expenses"
+  | "Payroll"
+  | "Probation"
+  | "Recruitment"
+  | "Resignations"
+  | "Weekly & Monthly Plans";
 
 export type EmailTemplatePublicationState = "draft_changes" | "draft_unpublished" | "inactive" | "published";
 
@@ -433,6 +459,9 @@ const placeholderHints = [
   "weekLabel",
   // Coaching score table for the coaching_report template.
   "scoreTable",
+  // Premium zebra-striped details table (renderPhoenixMetadataTable) — any template can use
+  // this for a document-grade label/value summary instead of plain paragraphs.
+  "detailsTable",
   // Marketing-request editable tokens. Scalars fill per request; productsTable + returnCallout
   // are pre-rendered HTML blocks (raw in bodyHtml, empty/text projection elsewhere).
   "estimatedCost",
@@ -785,8 +814,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Leave Returned for Revision",
   },
   leave_manager_step_decision: {
-    bodyHtml: "<p>{{summary}}</p><p><strong>Type:</strong> {{vacationType}}</p><p><strong>Period:</strong> {{startDate}} to {{endDate}}</p><p><strong>Manager:</strong> {{managerName}}</p><p><strong>Decision:</strong> {{status}}</p><p>{{nextStep}}</p>",
-    bodyText: "{{summary}}\n\nType: {{vacationType}}\nPeriod: {{startDate}} to {{endDate}}\nManager: {{managerName}}\nDecision: {{status}}\n\n{{nextStep}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{nextStep}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{nextStep}}",
     closingText: "Open Phoenix Workforce to track the status of your leave request.",
     description: "Notifies the employee (CC: HR) after an intermediate manager approves or rejects their leave request, before the final HR step.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -1026,19 +1055,14 @@ const aliases: Record<string, EmailTemplateKey> = {
 };
 
 const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
-  birthday: "Employee Lifecycle",
-  contract_renewal: "Employee Lifecycle",
+  attendance_workflow: "Attendance",
+  birthday: "Birthdays",
+  coaching_report: "Coaching",
+  contract_renewal: "Contracts",
+  dv_planner_weekly: "Probation",
+  excuse_decision: "Excuses",
+  excuse_request: "Excuses",
   general: "General",
-  marketing_request: "General",
-  excuse_request: "Leave Management",
-  excuse_decision: "Leave Management",
-  offer_status: "Recruitment",
-  recruitment_update: "Recruitment",
-  coaching_report: "Employee Lifecycle",
-  payroll_update: "General",
-  attendance_workflow: "General",
-  weekly_plans: "General",
-  outstation: "General",
   interview_feedback: "Recruitment",
   interview_invitation: "Recruitment",
   leave_approval: "Leave Management",
@@ -1048,28 +1072,43 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   leave_resubmit_confirmation: "Leave Management",
   leave_returned: "Leave Management",
   leave_submission_confirmation: "Leave Management",
-  vacation_balance_settlement: "Leave Management",
+  marketing_request: "Marketing Requests",
   offer: "Recruitment",
+  offer_status: "Recruitment",
+  outstation: "Outstation & Expenses",
   password_reset: "Account Access",
   password_setup: "Account Access",
-  probation_reminder: "Employee Lifecycle",
-  probation_workflow: "Employee Lifecycle",
-  probation_dv_snapshot: "Employee Lifecycle",
-  probation_weekly_digest: "Employee Lifecycle",
-  dv_planner_weekly: "General",
-  probation_day30: "Employee Lifecycle",
-  probation_day60: "Employee Lifecycle",
-  probation_day75: "Employee Lifecycle",
-  resignation_workflow: "Employee Lifecycle",
+  payroll_update: "Payroll",
+  probation_day30: "Probation",
+  probation_day60: "Probation",
+  probation_day75: "Probation",
+  probation_dv_snapshot: "Probation",
+  probation_reminder: "Probation",
+  probation_weekly_digest: "Probation",
+  probation_workflow: "Probation",
+  recruitment_update: "Recruitment",
+  resignation_workflow: "Resignations",
   user_created: "Account Access",
+  vacation_balance_settlement: "Leave Management",
+  weekly_plans: "Weekly & Monthly Plans",
 };
 
 export const emailTemplateCategories = [
   "All",
-  "Recruitment",
-  "Employee Lifecycle",
-  "Leave Management",
   "Account Access",
+  "Leave Management",
+  "Excuses",
+  "Probation",
+  "Recruitment",
+  "Contracts",
+  "Resignations",
+  "Outstation & Expenses",
+  "Marketing Requests",
+  "Weekly & Monthly Plans",
+  "Attendance",
+  "Coaching",
+  "Payroll",
+  "Birthdays",
   "General",
 ] as const;
 
@@ -1144,7 +1183,7 @@ function extractPlaceholders(value: unknown) {
   return { malformed, tokens };
 }
 
-export function validateEmailTemplatePayload(payload: EmailTemplatePayload) {
+export function validateEmailTemplatePayload(payload: EmailTemplatePayload, extraAllowedTokens: ReadonlySet<string> = new Set()) {
   const issues: EmailTemplateValidationIssue[] = [];
   const warnings: EmailTemplateValidationIssue[] = [];
   const fields: Array<[keyof EmailTemplatePayload, string]> = [
@@ -1174,7 +1213,7 @@ export function validateEmailTemplatePayload(payload: EmailTemplatePayload) {
       });
     }
     for (const token of tokens) {
-      if (!allowedPlaceholderSet.has(token)) {
+      if (!allowedPlaceholderSet.has(token) && !extraAllowedTokens.has(token)) {
         issues.push({
           field,
           message: `Unknown variable {{${token}}}. Choose one from Available Variables.`,
@@ -1251,8 +1290,12 @@ function hasAnyRecipientRule(rules: EmailTemplateRecipientRules) {
   ].some((values) => values.length > 0);
 }
 
-export function getEmailTemplateHealth(template: EmailTemplateDefinition, rules: EmailTemplateRecipientRules): EmailTemplateHealth {
-  const validation = validateEmailTemplatePayload({ ...template, rules });
+export function getEmailTemplateHealth(
+  template: EmailTemplateDefinition,
+  rules: EmailTemplateRecipientRules,
+  extraAllowedTokens: ReadonlySet<string> = new Set(),
+): EmailTemplateHealth {
+  const validation = validateEmailTemplatePayload({ ...template, rules }, extraAllowedTokens);
   const issues: EmailTemplateHealth["issues"] = [];
   let score = 100;
 
@@ -1343,6 +1386,8 @@ function toTemplateRow(
   row?: TemplateTableRow | null,
   rules?: RulesTableRow | null,
   draftRow?: DraftTableRow | null,
+  stats?: { lastSentAt: string | null; sentCount: number } | null,
+  customTokens: ReadonlySet<string> = new Set(),
 ): EmailTemplateRow {
   const liveRules = mapRules(rules, template.templateKey);
   const draft = mapDraft(draftRow, template.templateKey);
@@ -1367,11 +1412,13 @@ function toTemplateRow(
     draftEditedAt,
     draftEditedBy: draft?.editedBy ?? null,
     hasDraftChanges,
-    health: getEmailTemplateHealth(displayTemplate, displayRules),
+    health: getEmailTemplateHealth(displayTemplate, displayRules, customTokens),
+    lastSentAt: stats?.lastSentAt ?? null,
     publicationState,
     publishedIsActive,
     publishedUpdatedAt,
     rules: displayRules,
+    sentCount: stats?.sentCount ?? 0,
     updatedAt: draftIsNewer ? (draftEditedAt as string) : publishedUpdatedAt,
   };
 }
@@ -1410,16 +1457,19 @@ async function readTemplateDrafts() {
 
 export async function getEmailTemplateCatalog(options: { includeDrafts?: boolean } = {}): Promise<EmailTemplateRow[]> {
   try {
-    const [{ templates, rules }, drafts] = await Promise.all([
+    const [{ templates, rules }, drafts, sendStats, customVariables] = await Promise.all([
       readTemplateTables(),
       options.includeDrafts ? readTemplateDrafts() : Promise.resolve([] as DraftTableRow[]),
+      getEmailTemplateSendStats(),
+      listEmailCustomVariables(),
     ]);
+    const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
     return emailTemplateKeys
       .map((key) => {
         const templateRow = templates.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
         const rulesRow = rules.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
         const draftRow = drafts.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-        return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, draftRow);
+        return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, draftRow, sendStats[key] ?? null, customTokens);
       })
       .sort((left, right) => left.templateName.localeCompare(right.templateName));
   } catch (error) {
@@ -1455,10 +1505,15 @@ export async function getEmailTemplate(templateKey: string): Promise<EmailTempla
   if (!key) return null;
 
   try {
-    const { templates, rules } = await readTemplateTables();
+    const [{ templates, rules }, sendStats, customVariables] = await Promise.all([
+      readTemplateTables(),
+      getEmailTemplateSendStats(),
+      listEmailCustomVariables(),
+    ]);
+    const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
     const templateRow = templates.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
     const rulesRow = rules.find((row) => normalizeTemplateKey(row.template_key) === key) ?? null;
-    return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow);
+    return toTemplateRow(mapTemplate(templateRow, key), templateRow, rulesRow, null, sendStats[key] ?? null, customTokens);
   } catch (error) {
     if (!tableMissing(error)) throw error;
     return toTemplateRow(templateDefaults[key], null, null);
@@ -1675,7 +1730,9 @@ export async function saveEmailTemplate(
 ) {
   const key = normalizeTemplateKey(templateKey);
   if (!key) throw new Error("Unsupported email template.");
-  const validation = validateEmailTemplatePayload(payload);
+  const customVariables = await listEmailCustomVariables();
+  const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
+  const validation = validateEmailTemplatePayload(payload, customTokens);
   if (!validation.isValid) throw new EmailTemplateValidationError(validation.issues);
   const action = options.action ?? (payload.isActive ? "publish" : "save");
   const reason = text(options.reason ?? payload.changeReason);
@@ -2083,13 +2140,22 @@ export function renderEmailTemplate(
   template: EmailTemplateDefinition,
   context: Partial<EmailTemplateContext> = {},
   recipients: Recipient[] = [],
+  customVariables: Record<string, string> = {},
 ) {
-  const variables = contextVariables(context, recipientNameForGreeting(recipients, context));
+  // Admin-defined custom tokens are spread FIRST so a built-in of the same name always wins.
+  // A custom token can therefore never shadow/hijack a system token (e.g. redefining
+  // {{employeeName}} to point at some other column) — saveEmailCustomVariable also rejects
+  // reserved names up front, this is the render-time backstop.
+  const variables = {
+    ...customVariables,
+    ...contextVariables(context, recipientNameForGreeting(recipients, context)),
+  };
   // {{planTable}} is a body-only block: the plain body gets its text projection, while
   // single-line fields (subject, greeting, closing, preview) resolve it to "" so a
   // misplaced token can never dump multi-line employee text into a header-like field.
   const bodyTextVariables = {
     ...variables,
+    detailsTable: variables.detailsTableText,
     planTable: variables.planTableText,
     digestTable: variables.digestTableText,
     scoreTable: variables.scoreTableText,
@@ -2098,6 +2164,7 @@ export function renderEmailTemplate(
   };
   const inlineVariables = {
     ...variables,
+    detailsTable: "",
     planTable: "",
     digestTable: "",
     productsTable: "",
@@ -2275,7 +2342,12 @@ export async function previewTemplate(templateKey: string, input: {
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY && !text(input.context?.digestTable).includes("<table")) {
     context = { ...sampleDvPlannerDigestContext(), ...input.context };
   }
-  const rendered = renderEmailTemplate(draft, context, recipients);
+  // Use the real employee's values when the admin supplied a sample HR ID, otherwise show
+  // representative samples so a custom token never previews as a blank gap.
+  const customVariables = text(context?.employeeHrId)
+    ? await resolveEmailCustomVariables(context?.employeeHrId)
+    : await sampleEmailCustomVariables();
+  const rendered = renderEmailTemplate(draft, context, recipients, customVariables);
   return {
     html: rendered.html,
     previewText: rendered.previewText,
@@ -2336,7 +2408,11 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
 
   if (to.length === 0) return { reason: "No TO recipients resolved for email template.", skipped: true };
 
-  const rendered = renderEmailTemplate(template, context, to);
+  // Admin-defined custom variables resolve from the SUBJECT employee's record (not the
+  // recipient's) — the email is about that person, so a custom token must describe them
+  // even when it lands in a manager's or HR's inbox.
+  const customVariables = await resolveEmailCustomVariables(context.employeeHrId);
+  const rendered = renderEmailTemplate(template, context, to, customVariables);
   const requestId = crypto
     .createHash("sha256")
     .update(JSON.stringify({ key, subject: rendered.subject, to: to.map((recipient) => recipient.email), context }))
@@ -2361,7 +2437,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     };
   })();
 
-  return sendPhoenixEmail({
+  const result = await sendPhoenixEmail({
     bcc: bcc.map((recipient) => recipient.email),
     cc: cc.map((recipient) => recipient.email),
     // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
@@ -2376,7 +2452,66 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     text: rendered.text,
     to: to.map((recipient) => recipient.email),
   });
+  // Best-effort live "times fired" counter (owner request, 2026-07-22) — a real automated
+  // send, never a "Send Test" click (sendTemplateTestEmail does not call this path). Must
+  // never fail/delay the actual send; a counter miss is cosmetic, a dropped email is not.
+  // Awaited (not fire-and-forget): this runs on Cloud Run, but a detached promise still
+  // risks losing the write if the request completes and the runtime reclaims the
+  // container before it flushes. The upsert itself is cheap enough not to matter.
+  if (!result.skipped) await incrementEmailTemplateSentCount(key);
+  return result;
 }
+
+async function incrementEmailTemplateSentCount(key: EmailTemplateKey) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const now = new Date().toISOString();
+    const { data: existing, error: readError } = await supabase
+      .from("email_template_send_stats")
+      .select("sent_count")
+      .eq("template_key", key)
+      .maybeSingle();
+    if (readError) throw readError;
+    const { error: writeError } = await supabase
+      .from("email_template_send_stats")
+      .upsert(
+        { template_key: key, sent_count: (existing?.sent_count ?? 0) + 1, last_sent_at: now, updated_at: now },
+        { onConflict: "template_key" },
+      );
+    if (writeError) throw writeError;
+  } catch (error) {
+    if (!tableMissing(error)) {
+      logError("Email template send-count increment failed", {
+        labels: { event: "email_template_send_count_increment_failed", template_key: key },
+        error,
+      });
+    }
+  }
+}
+
+export async function getEmailTemplateSendStats(): Promise<Record<string, { sentCount: number; lastSentAt: string | null }>> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("email_template_send_stats")
+      .select("template_key,sent_count,last_sent_at");
+    if (error) throw error;
+    const rows = (data ?? []) as Array<{ template_key: string; sent_count: number; last_sent_at: string | null }>;
+    return Object.fromEntries(
+      rows.map((row) => [row.template_key, { sentCount: row.sent_count, lastSentAt: row.last_sent_at }]),
+    );
+  } catch (error) {
+    if (!tableMissing(error)) throw error;
+    return {};
+  }
+}
+
+const testDetailsRows = [
+  { label: "Type", value: "Annual Leave" },
+  { label: "Period", value: "2026-08-01 to 2026-08-05" },
+  { label: "Manager", value: "Omar Nabil" },
+  { label: "Decision", value: "Approved" },
+];
 
 export async function sendTemplateTestEmail(input: {
   context?: Partial<EmailTemplateContext>;
@@ -2396,7 +2531,9 @@ export async function sendTemplateTestEmail(input: {
     }]);
   }
 
-  const validation = validateEmailTemplatePayload(input.template ?? {});
+  const customVariablesList = await listEmailCustomVariables();
+  const customTokens = new Set(customVariablesList.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
+  const validation = validateEmailTemplatePayload(input.template ?? {}, customTokens);
   if (!validation.isValid) throw new EmailTemplateValidationError(validation.issues);
 
   const current = await getEmailTemplate(key);
@@ -2419,10 +2556,16 @@ export async function sendTemplateTestEmail(input: {
     candidateName: "Ahmed Hassan",
     ctaLabel: "Open in Phoenix Workforce",
     ctaUrl: "https://phoenix.example.com/action",
+    // Trusted-HTML-block sample (mirrors sampleTemplateContext in email-designer.ts) so a
+    // test send of any template using {{detailsTable}} shows the real zebra table, not a
+    // blank gap where it silently resolved to "".
+    detailsTable: renderPhoenixMetadataTable(testDetailsRows),
+    detailsTableText: renderPhoenixMetadataTableText(testDetailsRows),
     employeeHrId: "PHX-1024",
     employeeName: "Mariam Adel",
     endDate: "2026-06-05",
     feedback: "Strong technical discussion and positive role alignment.",
+    honorific: "",
     interviewDate: "2026-06-10",
     interviewLocation: "Phoenix Workforce Cairo Office",
     interviewerName: "Nour Samir",
@@ -2446,7 +2589,10 @@ export async function sendTemplateTestEmail(input: {
     ...(key === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY ? buildSampleDvPlannerDigestTable() : {}),
     ...(input.context ?? {}),
   };
-  const rendered = renderEmailTemplate(draft, context, [{ email: to, name: context.recipientName }]);
+  const customVariables = text(context.employeeHrId)
+    ? await resolveEmailCustomVariables(context.employeeHrId)
+    : await sampleEmailCustomVariables();
+  const rendered = renderEmailTemplate(draft, context, [{ email: to, name: context.recipientName }], customVariables);
   const requestId = crypto
     .createHash("sha256")
     .update(JSON.stringify({ key, subject: rendered.subject, testTo: to, at: Date.now() }))

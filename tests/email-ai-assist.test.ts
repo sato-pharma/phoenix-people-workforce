@@ -171,9 +171,9 @@ export async function runEmailAiAssistTests() {
       const call = fetchMock.calls[0];
       assert.ok(call, "OpenAI should be called once");
       assert.match(call.url, /\/responses$/);
-      assert.equal(call.body.model, "gpt-5.4-nano");
-      assert.equal(call.body.max_output_tokens, 4096);
-      assert.deepEqual(call.body.reasoning, { effort: "low" });
+      assert.equal(call.body.model, "gpt-5.4");
+      assert.equal(call.body.max_output_tokens, 8_000);
+      assert.deepEqual(call.body.reasoning, { effort: "medium" });
       assert.equal((call.body.text as { format?: { strict?: boolean; type?: string } }).format?.type, "json_schema");
       assert.equal((call.body.text as { format?: { strict?: boolean } }).format?.strict, true);
       assert.match(String(call.body.instructions), /STRICT RULES/);
