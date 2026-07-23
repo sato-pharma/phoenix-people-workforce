@@ -14,6 +14,7 @@ import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { listEmailCustomVariables, resolveEmailCustomVariables, sampleEmailCustomVariables } from "./custom-variables";
 import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
+import { buildNoActivityDigestTable } from "@/lib/private-calendar/no-activity-clarifications";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -56,6 +57,7 @@ export const emailTemplateKeys = [
   "coaching_report",
   "payroll_update",
   "attendance_workflow",
+  "no_activity_weekly_reminder",
   "general",
 ] as const;
 
@@ -79,6 +81,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   LEAVE_SUBMISSION_CONFIRMATION: "leave_submission_confirmation",
   VACATION_BALANCE_SETTLEMENT: "vacation_balance_settlement",
   MARKETING_REQUEST: "marketing_request",
+  NO_ACTIVITY_WEEKLY_REMINDER: "no_activity_weekly_reminder",
   OFFER_STATUS: "offer_status",
   OUTSTATION: "outstation",
   PASSWORD_SETUP: "password_setup",
@@ -134,6 +137,10 @@ export type EmailTemplateContext = {
   digestTableText?: string | null;
   /** Formatted date range label for a digest-style template, e.g. "2026-06-24 to 2026-06-30". */
   weekLabel?: string | null;
+  /** Pre-rendered HTML/text list of a Private Calendar "No Activity Recorded" day(s) for the
+   *  no_activity_weekly_reminder template — see buildNoActivityDigestTable. */
+  noActivityTable?: string | null;
+  noActivityTableText?: string | null;
   candidateName?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
@@ -457,6 +464,8 @@ const placeholderHints = [
   // Pre-rendered HTML summary table + date-range label for digest-style templates.
   "digestTable",
   "weekLabel",
+  // Pre-rendered HTML list of unresolved No Activity Recorded day(s) (no_activity_weekly_reminder only).
+  "noActivityTable",
   // Coaching score table for the coaching_report template.
   "scoreTable",
   // Premium zebra-striped details table (renderPhoenixMetadataTable) — any template can use
@@ -504,6 +513,10 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
   payroll_update: emptyRules(["admin"], ["finance"]),
   attendance_workflow: emptyRules(["employee"], ["hr_manager", "admin"]),
+  // Recipient is the affected employee; HR/Super Admin is CC'd — both resolved explicitly at
+  // emit time (src/lib/private-calendar/no-activity-clarifications.ts), this rule entry documents
+  // the intended audience for the admin UI.
+  no_activity_weekly_reminder: emptyRules(["employee"], ["hr_manager", "admin"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
@@ -1032,6 +1045,29 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "attendance_workflow",
     templateName: "Attendance Workflow",
   },
+  no_activity_weekly_reminder: {
+    bodyHtml:
+      "<p>This is a Phoenix System Notice.</p>" +
+      "<p>Our records show no recorded activity for you on the following day(s):</p>" +
+      "{{noActivityTable}}" +
+      "<p>Phoenix tracks this to help protect your KPIs. Please review these days, and " +
+      "if anything needs to be adjusted, contact HR for support.</p>",
+    bodyText:
+      "This is a Phoenix System Notice.\n\n" +
+      "Our records show no recorded activity for you on the following day(s):\n\n" +
+      "{{noActivityTableText}}\n\n" +
+      "Phoenix tracks this to help protect your KPIs. Please review these days, and " +
+      "if anything needs to be adjusted, contact HR for support.",
+    closingText: "Contact HR if you need support.",
+    description:
+      "Weekly reminder listing any Private Calendar \"No Activity Recorded\" day(s) still unresolved for an employee — sent Fridays, only to employees who have at least one, never accusatory in tone.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Your weekly No Activity Recorded days summary.",
+    subject: "Phoenix System Notice — No Activity Days",
+    templateKey: "no_activity_weekly_reminder",
+    templateName: "No Activity Weekly Reminder",
+  },
   user_created: {
     bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to complete account setup.</p>",
     bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to complete account setup.",
@@ -1073,6 +1109,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   leave_returned: "Leave Management",
   leave_submission_confirmation: "Leave Management",
   marketing_request: "Marketing Requests",
+  no_activity_weekly_reminder: "Attendance",
   offer: "Recruitment",
   offer_status: "Recruitment",
   outstation: "Outstation & Expenses",
@@ -2289,6 +2326,13 @@ function buildSampleDvPlannerDigestTable(): { digestTable: string; digestTableTe
   return { digestTable: rendered.html, digestTableText: rendered.text };
 }
 
+// Reuses the real digest builder (not a hand-rolled duplicate table) so the admin preview shows
+// exactly the same markup a real send produces.
+function buildSampleNoActivityDigestTable(): { noActivityTable: string; noActivityTableText: string } {
+  const rendered = buildNoActivityDigestTable(["2026-07-06", "2026-07-08", "2026-07-13"]);
+  return { noActivityTable: rendered.html, noActivityTableText: rendered.text };
+}
+
 function buildSamplePlanTable(): { planTable: string; planTableText: string } {
   const cell = "border:1px solid #E5E7EB;padding:8px 10px;font-size:13px;text-align:left";
   const head = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:8px 10px;font-size:12px;text-align:left";
@@ -2341,6 +2385,8 @@ export async function previewTemplate(templateKey: string, input: {
     context = { ...sampleMarketingContext(), ...input.context };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY && !text(input.context?.digestTable).includes("<table")) {
     context = { ...sampleDvPlannerDigestContext(), ...input.context };
+  } else if (templateKey === EMAIL_TEMPLATE_KEYS.NO_ACTIVITY_WEEKLY_REMINDER && !text(input.context?.noActivityTable).includes("<table")) {
+    context = { ...buildSampleNoActivityDigestTable(), ...input.context };
   }
   // Use the real employee's values when the admin supplied a sample HR ID, otherwise show
   // representative samples so a custom token never previews as a blank gap.
@@ -2587,6 +2633,7 @@ export async function sendTemplateTestEmail(input: {
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.COACHING_REPORT ? buildSampleCoachingScoreTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY ? buildSampleDvPlannerDigestTable() : {}),
+    ...(key === EMAIL_TEMPLATE_KEYS.NO_ACTIVITY_WEEKLY_REMINDER ? buildSampleNoActivityDigestTable() : {}),
     ...(input.context ?? {}),
   };
   const customVariables = text(context.employeeHrId)

@@ -27,7 +27,7 @@ function escapeHtml(value: unknown) {
  * table). They bypass per-value escaping in bodyHtml; the whole interpolated body still goes through
  * sanitizeEmailTemplateHtml afterwards. In text fields these tokens resolve to their text projection.
  */
-export const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable", "digestTable", "detailsTable"]);
+export const htmlBlockTokens: ReadonlySet<string> = new Set(["planTable", "productsTable", "returnCallout", "scoreTable", "digestTable", "detailsTable", "noActivityTable"]);
 
 export function interpolate(
   template: string,
@@ -77,6 +77,8 @@ export function contextVariables(input: Partial<EmailTemplateContext>, recipient
     digestTable: text(input.digestTable),
     digestTableText: text(input.digestTableText),
     weekLabel: text(input.weekLabel),
+    noActivityTable: text(input.noActivityTable),
+    noActivityTableText: text(input.noActivityTableText),
     scoreTable: text(input.scoreTable),
     scoreTableText: text(input.scoreTableText),
     recipientName,

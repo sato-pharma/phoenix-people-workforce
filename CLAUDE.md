@@ -164,7 +164,12 @@ deferred/Telegram delivery retries faster than once a day via
 (Fridays 3:00 AM), which drains queued admin-requested exports; and
 `/api/cron/ireports360-visits-sync` (9:07/12:07/19:07) /
 `/api/cron/ireports360-visits-reconcile` (Sundays 4:24 AM), which sync and
-periodically wide-reconcile iReports360 CRM visit data. Every cron carries an
+periodically wide-reconcile iReports360 CRM visit data; and
+`/api/notifications/no-activity-weekly` (Fridays 19:15 Cairo), a separate
+trigger from the 6:36 AM daily batch (its schedule is materially different)
+that sends the Private Calendar weekly "No Activity Recorded" reminder —
+`runNoActivityWeeklyReminder` in `src/lib/private-calendar/no-activity-clarifications.ts`.
+Every cron carries an
 explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat (see
 `docs/observability.md`). The in-app `/admin/cron-control` dashboard can
 view/pause/resume/run/reschedule these live, but does not update
