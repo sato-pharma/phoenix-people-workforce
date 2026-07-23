@@ -68,10 +68,13 @@ export function runProbationEmailsTests() {
   // ── MOD-1 (2026-07-17): WEEKLY digest replaces the per-DV-day snapshot email ──
   // Owner report: one probation email fired on EVERY validated Double-Visit day flooded ~8
   // stakeholders' inboxes. Replaced by a single weekly digest per probationer, to the line
-  // management chain, greeting "Dear Line {Line} Managers".
+  // management chain. Owner directive (2026-07-23): every automated email must greet the
+  // real individual recipient, never a generic group salutation like "Dear Line X Managers" —
+  // each governed recipient still gets their own copy, so {{recipientName}} resolves to a
+  // real person even though the digest logically covers the whole line.
   assert.match(engine, /probation_weekly_digest: "Probation"/, "weekly digest has a category");
-  assert.match(engine, /greeting: "Dear Line \{\{line\}\} Managers,"/,
-    'weekly digest greets the line management chain by line name ("Dear Line Pedia Managers,")');
+  assert.match(engine, /greeting: "Dear \{\{honorific\}\}\{\{recipientName\}\},"/,
+    "weekly digest greets the actual recipient by name, not a generic line-wide salutation");
   assert.match(emails, /export async function processProbationWeeklyDigest/, "weekly digest sweep exists");
   assert.match(emails, /cairoWeekday\(now\) !== WEEKLY_DIGEST_WEEKDAY/, "weekly digest self-gates to one Cairo weekday (safe to call daily)");
   assert.match(emails, /templateKey: "probation_weekly_digest"/, "digest emits via the registered weekly template");
