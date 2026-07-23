@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
+import { Switch } from "@/components/ui/switch";
 import { phoenixRoles, type PhoenixRole } from "@/lib/auth/permissions";
 import type { NotificationRoleKey } from "@/lib/notifications/role-recipients";
 
@@ -13,6 +14,13 @@ type NotificationRolePolicyView = {
   label: string;
   description: string;
   roles: PhoenixRole[];
+  enabled: boolean;
+};
+
+// Recipients here are computed per-request (assigned approver / requester), not a role
+// broadcast list — `roles` is always empty and this key's card only shows the master switch.
+const NOT_ROLE_CONFIGURABLE: Partial<Record<NotificationRoleKey, string>> = {
+  marketing_sla_reminder: "Recipients are always the specific request's assigned approver and requester — not role-configurable. This switch only turns the reminder on or off.",
 };
 
 const ROLE_OPTIONS = phoenixRoles.map((role) => ({ code: role, label: role }));
@@ -37,8 +45,8 @@ export function NotificationRoleRecipientsCenter({ initialPolicies }: { initialP
   const [savingKey, setSavingKey] = useState<NotificationRoleKey | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  function updatePolicy(key: NotificationRoleKey, roles: PhoenixRole[]) {
-    setPolicies((current) => current.map((policy) => (policy.key === key ? { ...policy, roles } : policy)));
+  function updatePolicy(key: NotificationRoleKey, patch: Partial<Pick<NotificationRolePolicyView, "roles" | "enabled">>) {
+    setPolicies((current) => current.map((policy) => (policy.key === key ? { ...policy, ...patch } : policy)));
   }
 
   async function savePolicy(policy: NotificationRolePolicyView) {
@@ -46,7 +54,7 @@ export function NotificationRoleRecipientsCenter({ initialPolicies }: { initialP
     setMessage(null);
     try {
       const response = await fetch(`/api/admin/notification-recipients/${policy.key}`, {
-        body: JSON.stringify({ roles: policy.roles }),
+        body: JSON.stringify({ roles: policy.roles, enabled: policy.enabled }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -54,8 +62,8 @@ export function NotificationRoleRecipientsCenter({ initialPolicies }: { initialP
       if (!response.ok || !payload?.ok || !payload.policy) {
         throw new Error(payload?.message ?? `Request failed (${response.status})`);
       }
-      updatePolicy(policy.key, payload.policy.roles);
-      setMessage(`${policy.label} recipients saved.`);
+      updatePolicy(policy.key, { roles: payload.policy.roles, enabled: payload.policy.enabled });
+      setMessage(`${policy.label} settings saved.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to save notification recipients.");
     } finally {
@@ -78,7 +86,8 @@ export function NotificationRoleRecipientsCenter({ initialPolicies }: { initialP
         {policies.map((policy) => (
           <NotificationPolicyCard
             key={policy.key}
-            onRolesChange={(roles) => updatePolicy(policy.key, roles)}
+            onEnabledChange={(enabled) => updatePolicy(policy.key, { enabled })}
+            onRolesChange={(roles) => updatePolicy(policy.key, { roles })}
             onSave={() => savePolicy(policy)}
             policy={policy}
             saving={savingKey === policy.key}
@@ -92,16 +101,19 @@ export function NotificationRoleRecipientsCenter({ initialPolicies }: { initialP
 function NotificationPolicyCard({
   policy,
   saving,
+  onEnabledChange,
   onRolesChange,
   onSave,
 }: {
   policy: NotificationRolePolicyView;
   saving: boolean;
+  onEnabledChange: (enabled: boolean) => void;
   onRolesChange: (roles: PhoenixRole[]) => void;
   onSave: () => void;
 }) {
   const triggeredBy = TRIGGERED_BY[policy.key];
   const hybridNotice = HYBRID_NOTICE[policy.key];
+  const notRoleConfigurable = NOT_ROLE_CONFIGURABLE[policy.key];
   const isEmpty = policy.roles.length === 0;
 
   return (
@@ -115,6 +127,10 @@ function NotificationPolicyCard({
           <p className="mt-1 max-w-2xl text-sm text-[#64748B]">{policy.description}</p>
           {triggeredBy ? <p className="mt-1 text-xs font-semibold text-[#94A3B8]">Triggered by: {triggeredBy}</p> : null}
         </div>
+        <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+          <span className="text-xs font-bold text-[#475569]">{policy.enabled ? "Enabled" : "Disabled"}</span>
+          <Switch checked={policy.enabled} label={`${policy.label} enabled`} onChange={onEnabledChange} />
+        </div>
       </div>
 
       {hybridNotice ? (
@@ -124,18 +140,27 @@ function NotificationPolicyCard({
         </div>
       ) : null}
 
+      {notRoleConfigurable ? (
+        <div className="mt-3 flex items-start gap-1.5 rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{notRoleConfigurable}</span>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-wrap items-end gap-3">
-        <MultiSelectFilter
-          allLabel="Nobody (disabled)"
-          label="Recipient roles"
-          mode="include"
-          onModeChange={() => {
-            /* Exclude mode doesn't apply to a recipient list — always "include". */
-          }}
-          onSelectedChange={(next) => onRolesChange(next as PhoenixRole[])}
-          options={ROLE_OPTIONS}
-          selected={policy.roles}
-        />
+        {notRoleConfigurable ? null : (
+          <MultiSelectFilter
+            allLabel="Nobody (disabled)"
+            label="Recipient roles"
+            mode="include"
+            onModeChange={() => {
+              /* Exclude mode doesn't apply to a recipient list — always "include". */
+            }}
+            onSelectedChange={(next) => onRolesChange(next as PhoenixRole[])}
+            options={ROLE_OPTIONS}
+            selected={policy.roles}
+          />
+        )}
         <button
           className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-[11px] font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
           disabled={saving}
@@ -147,7 +172,7 @@ function NotificationPolicyCard({
         </button>
       </div>
 
-      {isEmpty ? (
+      {!notRoleConfigurable && isEmpty ? (
         <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-700">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>No roles selected — nobody will receive this notification.</span>

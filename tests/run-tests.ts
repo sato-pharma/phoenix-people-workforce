@@ -316,6 +316,7 @@ import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runCronControlExpressionTests } from "./cron-control-expression.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
+import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
 import { runApprovalsHubTests } from "./approvals-hub.test.ts";
@@ -754,6 +755,7 @@ await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("cron control registry (job-registry <-> access-registry cross-reference)", runCronControlRegistryTests);
 await runTest("cron control expression (validate/reject, next-run computation, collisions)", runCronControlExpressionTests);
 await runTest("notification role recipients (default-policy drift guard)", runNotificationRoleRecipientsTests);
+await runTest("email control center (aggregator module mapping + restored digests)", runEmailControlCenterTests);
 await runTest("workflow registry", runWorkflowRegistryTests);
 await runTest("workflow registry enforcement", runWorkflowRegistryEnforcementTests);
 await runTest("approvals hub (vacation + excuse)", runApprovalsHubTests);

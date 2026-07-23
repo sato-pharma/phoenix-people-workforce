@@ -11,11 +11,14 @@ import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
+import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
+import { processProbationWeeklyDigest } from "@/lib/probation/intelligence/probation-emails";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
+import { runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -85,8 +88,13 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-vacation-sla" } });
       return { success: false, error: String(e) };
     }),
-    // Disabled 2026-07-22 at owner request — marketing SLA reminder/escalation emails stopped.
-    Promise.resolve({ errors: [], escalations: 0, overdue: 0, reminders: 0, runDate: "", scanned: 0, disabled: true }),
+    // Restored 2026-07-23 behind a real admin toggle (see "marketing_sla_reminder" in
+    // role-recipients.ts) — the 2026-07-22 disable is now an enabled=false default, not a
+    // code-level stub, so a Super Admin can re-enable it from the Email Control Center.
+    runMarketingSlaDaily().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "daily-marketing-sla" } });
+      return { success: false, error: String(e) };
+    }),
     runRecruitmentDailyNotifications().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-recruitment-notifications" } });
       return { success: false, error: String(e) };
@@ -99,8 +107,13 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "weekly-system-health-digest" } });
       return { delivered: 0, skipped: true, error: String(e), sourceWarnings: [] };
     }),
-    // Disabled 2026-07-22 at owner request — probation weekly Double-Visit digest stopped.
-    Promise.resolve({ scanned: 0, sent: 0, disabled: true }),
+    // Restored 2026-07-23 behind a real admin toggle (see "probation_weekly_dv_digest" in
+    // role-recipients.ts) — self-gates to one Cairo weekday, replacing the per-DV-day snapshot
+    // email; safe to call daily, a non-digest day or a disabled toggle is both a clean no-op.
+    processProbationWeeklyDigest().catch((e: unknown) => {
+      console.error(e, { tags: { cron: "probation-weekly-digest" } });
+      return { scanned: 0, sent: 0, error: String(e) };
+    }),
     runOutstationGeocodeWarmup().catch((e: unknown) => {
       console.error(e, { tags: { cron: "daily-outstation-geocode-warmup" } });
       return { success: false, error: String(e) };
@@ -117,8 +130,12 @@ async function runDailyNotifications(request: Request) {
       console.error(e, { tags: { cron: "daily-excuse-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
     }),
-    // Disabled 2026-07-22 at owner request — outstation SLA reminder emails stopped.
-    Promise.resolve({ processed: 0, errors: 0, disabled: true }),
+    // Restored 2026-07-23 behind a real admin toggle (see "outstation_sla_reminder" in
+    // role-recipients.ts).
+    runOutstationSlaDaily().catch((e) => {
+      console.error(e, { tags: { cron: "daily-outstation-sla" } });
+      return { processed: 0, errors: 1, detail: String(e) };
+    }),
     runResignationSlaDaily().catch((e) => {
       console.error(e, { tags: { cron: "daily-resignation-sla" } });
       return { processed: 0, errors: 1, detail: String(e) };
