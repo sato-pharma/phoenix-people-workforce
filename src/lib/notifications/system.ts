@@ -327,7 +327,12 @@ function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferr
   const policy = resolveNotificationPolicy(input);
   if (policy.channels.length > 0) {
     const channels = isSensitivePayroll(input) && !policy.telegramGenericOnly
-      ? policy.channels.filter((channel) => channel !== "telegram")
+      // push renders on a locked screen with no auth — same lock-screen exposure as
+      // telegram, strip it alongside telegram here for defense-in-depth. No current
+      // payroll/payslip policy row includes push (and enforcePayslipEmailBlock separately
+      // hard-blocks payslip-eventType pushes below), but this path is the ONLY guard for
+      // any other isSensitivePayroll() event that isn't payslip-named.
+      ? policy.channels.filter((channel) => channel !== "telegram" && channel !== "push")
       : policy.channels;
     return dedupeChannels(channels.length > 0 ? channels : ["in_app", preferred]);
   }
@@ -1240,7 +1245,16 @@ export async function processPushDeliveryRetries(limit = 10) {
         message: String(push.message),
         title: String(push.title),
       });
-      if (result.skipped) throw new Error(result.reason);
+      if (result.skipped) {
+        // A terminal "not subscribed"/"not configured" outcome is a normal skip, not a
+        // failure — throwing here would count it as a failed attempt and retry it up to
+        // maxAttempts times for a state that will never change on its own.
+        await supabase
+          .from("notification_deliveries")
+          .update({ attempts, last_error: result.reason, next_attempt_at: null, status: "skipped", updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        continue;
+      }
       await supabase
         .from("notification_deliveries")
         .update({
@@ -1669,6 +1683,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         if (pushPayload) {
           deferredMetadata.push = pushPayload;
           deferredMetadata.retry = true;
+        } else {
+          // No active subscription (or push disabled) — skip terminally rather than
+          // writing a payload-less "pending" row. processPushDeliveryRetries can never
+          // resend a row with no push payload, so it would otherwise sit in the queue
+          // forever, re-selected on every cron run (and, once numerous, crowd out
+          // genuinely retryable rows under the drain's row limit).
+          await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "No active push subscription for recipient.", recipient, status: "skipped" });
+          deliveries.push({ channel, idempotencyKey, reason: "No active push subscription for recipient.", status: "skipped" });
+          continue;
         }
       }
       await upsertDelivery({
