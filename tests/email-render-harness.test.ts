@@ -6,7 +6,10 @@ import { readFileSync } from "node:fs";
 // which has no JSX imports so it loads under the type-stripping runner) and asserts token VALUES
 // appear in the output. It also enforces, for EVERY module, that each {{token}} used in a template
 // body is resolvable by the render map — the systemic guard against "declared but not rendered".
-import { contextVariables, interpolate } from "../src/lib/email-templates/render-core.ts";
+import { contextVariables, htmlBlockTokens, interpolate } from "../src/lib/email-templates/render-core.ts";
+import { TOKEN_REGISTRY } from "../src/lib/email-templates/token-registry.ts";
+import { getTemplatePlaceholderHints } from "../src/lib/email-templates/service.ts";
+import { getEmailDesignerMetadata } from "../src/lib/email/email-designer.ts";
 
 export function runEmailRenderHarnessTests() {
   // ── 1) The render map resolves each probation token to its input value (the exact bug) ──
@@ -38,4 +41,38 @@ export function runEmailRenderHarnessTests() {
   const mappedKeys = new Set(Object.keys(contextVariables({}, "Team")));
   const unmapped = [...usedTokens].filter((t) => !mappedKeys.has(t)).sort();
   assert.deepEqual(unmapped, [], `every {{token}} used in a template body must be mapped in contextVariables(); unmapped: ${unmapped.join(", ")}`);
+}
+
+/**
+ * Guards the token-registry consolidation (owner request, 2026-07-23): placeholderHints,
+ * variableCatalog, htmlBlockTokens, and contextVariables() all now DERIVE from TOKEN_REGISTRY
+ * instead of independently hand-listing tokens — the exact drift pattern that shipped the
+ * detailsTable/noActivityTable bugs earlier this session. Assertions #1/#2/#4 below are true BY
+ * CONSTRUCTION post-refactor (placeholderHints/variableCatalog/htmlBlockTokens are now one-line
+ * derivations with no independent data left to drift) — kept as cheap insurance against a future
+ * edit reintroducing a hand-list. #3 is the one doing real work: contextVariables() still has
+ * genuine hand-written special-case logic (ctaLabel/date defaults, recipientName, the html-block
+ * ...Text siblings) layered on top of the generated base, and it's the function responsible for
+ * every real production incident referenced in this file.
+ */
+export function runTokenRegistryConsistencyTests() {
+  const registryTokens = new Set(TOKEN_REGISTRY.map((t) => t.token));
+  const htmlBlockTokenSet = new Set(TOKEN_REGISTRY.filter((t) => t.isHtmlBlock).map((t) => t.token));
+
+  // ── 1) placeholderHints (save/publish validation gate) must equal the registry's token set ──
+  assert.deepEqual(new Set(getTemplatePlaceholderHints()), registryTokens);
+
+  // ── 2) variableCatalog (designer chip picker) must expose exactly the registry's token set ──
+  const catalogTokens = new Set(getEmailDesignerMetadata().variables.map((v) => v.token));
+  assert.deepEqual(catalogTokens, registryTokens);
+
+  // ── 3) contextVariables() must resolve every registry token, PLUS the html-block Text
+  //        siblings, PLUS recipientName (function-param special case) — no more, no less ──
+  const expectedRenderKeys = new Set([...registryTokens, ...[...htmlBlockTokenSet].map((t) => `${t}Text`), "recipientName"]);
+  const actualRenderKeys = new Set(Object.keys(contextVariables({}, "Team")));
+  assert.deepEqual(actualRenderKeys, expectedRenderKeys);
+
+  // ── 4) htmlBlockTokens (render-core.ts) must equal the registry's isHtmlBlock flag set —
+  //        guards against someone hand-editing render-core.ts back into an independent list ──
+  assert.deepEqual(htmlBlockTokens, htmlBlockTokenSet);
 }

@@ -13,6 +13,7 @@ import { summarizeEmailTemplateReadiness } from "@/lib/communication/metrics";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { listEmailCustomVariables, resolveEmailCustomVariables, sampleEmailCustomVariables } from "./custom-variables";
 import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
+import { TOKEN_REGISTRY } from "./token-registry";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
 import { buildNoActivityDigestTable } from "@/lib/private-calendar/no-activity-clarifications";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
@@ -419,86 +420,10 @@ const emailTemplatesTable = "email_templates";
 const emailTemplateDraftsTable = "email_template_drafts";
 const emailTemplateHistoryTable = "email_template_history";
 const recipientRulesTable = "email_template_recipient_rules";
-const placeholderHints = [
-  "employeeName",
-  "employeeHrId",
-  "candidateName",
-  "jobTitle",
-  "managerName",
-  "line",
-  "area",
-  "amount",
-  "destination",
-  "approvalFlow",
-  "status",
-  "date",
-  "duration",
-  // Excuse-decision tokens (employee-facing approval/rejection notice).
-  "excuseType",
-  "excuseDate",
-  "startDate",
-  "endDate",
-  "hireDate",
-  "expiryText",
-  "interviewDate",
-  "interviewTime",
-  "interviewLocation",
-  "interviewerName",
-  "meetingUrl",
-  "feedback",
-  "nextStep",
-  "ctaUrl",
-  "ctaLabel",
-  "recipientName",
-  // "Dr. " for manager roles, "" for others — pair with {{recipientName}} in greeting fields.
-  "honorific",
-  "vacationBalance",
-  // These three were always offered as designer chips and filled by contextVariables, but
-  // missing here - so templates using them (general, weekly_plans, leave_*) failed
-  // validation and showed "Broken" health even with their shipped defaults.
-  "subject",
-  "summary",
-  "vacationType",
-  // Pre-rendered HTML table of submitted weekly/monthly plan rows (weekly_plans only).
-  "planTable",
-  // Pre-rendered HTML summary table + date-range label for digest-style templates.
-  "digestTable",
-  "weekLabel",
-  // Pre-rendered HTML list of unresolved No Activity Recorded day(s) (no_activity_weekly_reminder only).
-  "noActivityTable",
-  // Coaching score table for the coaching_report template.
-  "scoreTable",
-  // Premium zebra-striped details table (renderPhoenixMetadataTable) — any template can use
-  // this for a document-grade label/value summary instead of plain paragraphs.
-  "detailsTable",
-  // Marketing-request editable tokens. Scalars fill per request; productsTable + returnCallout
-  // are pre-rendered HTML blocks (raw in bodyHtml, empty/text projection elsewhere).
-  "estimatedCost",
-  "requiredRoi",
-  "roiWindow",
-  "payDate",
-  "customerName",
-  "currentStep",
-  "requestCode",
-  "requesterName",
-  "productsTable",
-  "returnCallout",
-  // Probation DV-snapshot / milestone tokens (probation_dv_snapshot, probation_day30/60/75). These
-  // are declared on EmailTemplateContext and used by the shipped default bodies, but were missing
-  // here — so the renderer stripped them to empty and the emails went out with blank DV date /
-  // evaluator / visits / progress / score / risk / day-number. (area, status, employeeName,
-  // employeeHrId, summary are already allowed above.)
-  "probationDay",
-  "dvDate",
-  "evaluatorName",
-  "evaluatorRole",
-  "visitCount",
-  "dvProgress",
-  "riskStatus",
-  "provisionalScore",
-  "daysRemaining",
-  "milestoneDay",
-] as const;
+// Derived from TOKEN_REGISTRY (the single source of truth — see token-registry.ts's header) so
+// this can never independently drift from what actually renders (contextVariables), what the
+// designer offers as chips (variableCatalog), or what htmlBlockTokens treats as pre-rendered HTML.
+const placeholderHints = TOKEN_REGISTRY.map((t) => t.token);
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
 const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
@@ -2183,32 +2108,26 @@ export function renderEmailTemplate(
   // A custom token can therefore never shadow/hijack a system token (e.g. redefining
   // {{employeeName}} to point at some other column) — saveEmailCustomVariable also rejects
   // reserved names up front, this is the render-time backstop.
-  const variables = {
+  const variables: Record<string, string> = {
     ...customVariables,
     ...contextVariables(context, recipientNameForGreeting(recipients, context)),
   };
   // {{planTable}} is a body-only block: the plain body gets its text projection, while
   // single-line fields (subject, greeting, closing, preview) resolve it to "" so a
   // misplaced token can never dump multi-line employee text into a header-like field.
+  // Generated from TOKEN_REGISTRY's isHtmlBlock flag — the exact site responsible for this
+  // session's noActivityTable bug (present in htmlBlockTokens, missing from these two hand-built
+  // maps). Deriving both from the same flag that drives htmlBlockTokens closes that class of bug.
+  const htmlBlockTextEntries = TOKEN_REGISTRY.filter((t) => t.isHtmlBlock).map(
+    (t) => [t.token, variables[`${t.token}Text`]] as const,
+  );
   const bodyTextVariables = {
     ...variables,
-    detailsTable: variables.detailsTableText,
-    planTable: variables.planTableText,
-    digestTable: variables.digestTableText,
-    scoreTable: variables.scoreTableText,
-    productsTable: variables.productsTableText,
-    returnCallout: variables.returnCalloutText,
-    noActivityTable: variables.noActivityTableText,
+    ...Object.fromEntries(htmlBlockTextEntries),
   };
   const inlineVariables = {
     ...variables,
-    detailsTable: "",
-    planTable: "",
-    digestTable: "",
-    productsTable: "",
-    returnCallout: "",
-    scoreTable: "",
-    noActivityTable: "",
+    ...Object.fromEntries(TOKEN_REGISTRY.filter((t) => t.isHtmlBlock).map((t) => [t.token, ""])),
   };
   const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
   const greeting = interpolate(template.greeting, inlineVariables, false);
@@ -2600,36 +2519,20 @@ export async function sendTemplateTestEmail(input: {
     templateName: text(input.template?.templateName ?? current.templateName),
   };
   const context = {
-    area: "Cairo",
-    candidateName: "Ahmed Hassan",
-    ctaLabel: "Open in Phoenix Workforce",
-    ctaUrl: "https://phoenix.example.com/action",
+    // Generated from TOKEN_REGISTRY — was previously a hand-listed object that had already
+    // drifted to omit every probation DV/milestone token and every marketing_request token,
+    // meaning "Send Test" on those templates shipped a real email with blank cells.
+    ...Object.fromEntries(TOKEN_REGISTRY.filter((t) => !t.isHtmlBlock).map((t) => [t.token, t.sampleValue])),
     // Trusted-HTML-block sample (mirrors sampleTemplateContext in email-designer.ts) so a
     // test send of any template using {{detailsTable}} shows the real zebra table, not a
     // blank gap where it silently resolved to "".
     detailsTable: renderPhoenixMetadataTable(testDetailsRows),
     detailsTableText: renderPhoenixMetadataTableText(testDetailsRows),
-    employeeHrId: "PHX-1024",
-    employeeName: "Mariam Adel",
-    endDate: "2026-06-05",
-    feedback: "Strong technical discussion and positive role alignment.",
-    honorific: "",
-    interviewDate: "2026-06-10",
-    interviewLocation: "Phoenix Workforce Cairo Office",
-    interviewerName: "Nour Samir",
-    interviewTime: "10:30 AM",
-    jobTitle: "Medical Rep",
-    line: "Cardio Line",
-    managerName: "Omar Nabil",
-    meetingUrl: "https://meet.example.com/phoenix-interview",
-    nextStep: "Share final feedback with HR and confirm the next interview round.",
+    // Deliberately test-flavored overrides — signal to whoever receives it that this is a test
+    // send, not a real notification, rather than the generic registry sample.
     recipientName: "Test Recipient",
-    startDate: "2026-06-01",
-    status: "Sample status",
     subject: "Phoenix Workforce test email",
     summary: "This is a test email rendered from the current template draft.",
-    vacationType: "Annual Leave",
-    weekLabel: "2026-06-24 to 2026-06-30",
     // Test sends have no real plan submission - the demo table shows what {{planTable}}
     // renders as (mirrors previewTemplate).
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),

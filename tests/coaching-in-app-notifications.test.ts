@@ -13,6 +13,12 @@ const templateServiceSource = readFileSync(
   new URL("../src/lib/email-templates/service.ts", import.meta.url),
   "utf8",
 );
+// placeholderHints now derives from token-registry.ts (2026-07-23 consolidation) rather than
+// hand-listing each token's string literal in service.ts itself.
+const tokenRegistrySource = readFileSync(
+  new URL("../src/lib/email-templates/token-registry.ts", import.meta.url),
+  "utf8",
+);
 const coachingEmailMigrationSource = readFileSync(
   new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260619153900_coaching_report_email_score_table.sql", import.meta.url),
   "utf8",
@@ -60,7 +66,7 @@ export function runCoachingInAppNotificationTests() {
     "Coaching notification email table must include Metric and Score columns.",
   );
   assert.match(
-    templateServiceSource,
+    tokenRegistrySource,
     /"scoreTable"/,
     "Coaching score table must be registered as an email template placeholder.",
   );
