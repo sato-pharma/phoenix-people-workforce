@@ -277,6 +277,19 @@ html:has(.admin-shell)::-webkit-scrollbar-button:single-button:vertical:incremen
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20fill='%23F97316'%20d='M4%205.6%201.4%202.4%206.6%202.4z'/%3E%3C/svg%3E");
 }
 
+/* Scroll clearance for the sticky admin topbar (position: sticky, top: 0,
+   ~80-88px tall — src/components/layout/topbar.tsx). Native scrollIntoView()
+   (used by Playwright's actionability checks, keyboard/tab focus, and
+   hash/anchor navigation) has no idea that height is visually reserved, so it
+   can scroll a target to the very top of the viewport — landing it behind the
+   sticky topbar, which then intercepts the click meant for it. scroll-padding-top
+   on the scrolling box reserves that clearance for any such scroll, for any
+   target element, without touching the topbar's own markup or visual design.
+   Mirrors the employee portal's equivalent fix (see enterprise-shell.tsx). */
+html:has(.admin-shell) {
+  scroll-padding-top: 96px;
+}
+
 .phoenix-employee-sidebar-scroll {
   scrollbar-color: rgba(240, 90, 26, 0.72) rgba(255, 241, 230, 0.42);
   scrollbar-gutter: stable;
