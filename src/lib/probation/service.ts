@@ -584,6 +584,10 @@ async function notifyProbationWorkflow(
           employeeHrId: record.employeeHrId,
           metrics: [
             { label: "Employee", value: `${employeeDisplayName} (${record.employeeHrId})` },
+            { label: "Job Title", value: record.jobTitle ?? "—" },
+            { label: "Line", value: record.lineName ?? "—" },
+            { label: "Area", value: record.areaName ?? "—" },
+            { label: "Probation end date", value: record.probationEndDate ?? "—" },
             { label: "Status", value: record.status },
             { label: "Decision", value: record.decision ?? "Pending" },
           ],
@@ -941,7 +945,11 @@ export async function processDueProbationReminderEvents(limit = 25) {
         employeeHrId: employee.hrId,
         metrics: [
           { label: "Employee", value: `${employee.displayName} (${employee.hrId})` },
+          { label: "Job Title", value: employee.jobTitle ?? "-" },
+          { label: "Line", value: employee.lineName ?? "-" },
+          { label: "Area", value: employee.areaName ?? "-" },
           { label: "Hire date", value: employee.hireDate ?? "-" },
+          { label: "Probation end date", value: row.probation_end_date ?? "-" },
           { label: "Days remaining", value: String(daysRemainingValue) },
         ],
         notificationType: "probation",

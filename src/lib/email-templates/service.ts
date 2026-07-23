@@ -572,11 +572,11 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Birthday Wishes",
   },
   contract_renewal: {
-    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Renewal date: {{endDate}}.</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nRenewal date: {{endDate}}.\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Please review and process the renewal action.",
     description: "Contract renewal workflow updates.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce contract renewal update.",
     subject: "{{subject}}",
@@ -607,8 +607,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Marketing Request",
   },
   excuse_request: {
-    bodyHtml: "<p>{{summary}}</p><p><strong>Date:</strong> {{date}}</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\nDate: {{date}}\n\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Open Phoenix Workforce to review the excuse request.",
     description: "Excuse (late arrival / early leave) updates: submission to the manager and the decision back to the employee.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -702,7 +702,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyText: "{{summary}}\n\n{{status}}",
     closingText: "Please review and act accordingly.",
     description: "General HR communication used for standard updates.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce HR notification.",
     subject: "{{subject}}",
@@ -740,7 +740,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyText: "Interview feedback has been submitted for {{candidateName}}.\n\nRole: {{jobTitle}}.\nStatus: {{status}}.\nFeedback: {{feedback}}\nNext step: {{nextStep}}",
     closingText: "Please review the feedback and complete the next recruiting step.",
     description: "Internal interview feedback follow-up for HR and hiring stakeholders.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce interview feedback update.",
     subject: "Interview feedback: {{candidateName}} - {{jobTitle}}",
@@ -760,8 +760,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Interview Invitation",
   },
   leave_approval: {
-    bodyHtml: "<p>Your leave request has been approved.</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Period: {{startDate}} - {{endDate}}.</p><p>{{status}}</p>",
-    bodyText: "Your leave request has been approved. Employee: {{employeeName}} ({{employeeHrId}}). Period: {{startDate}} - {{endDate}}. {{status}}",
+    bodyHtml: "<p>Your leave request has been <strong>approved</strong>.</p>{{detailsTable}}",
+    bodyText: "Your leave request has been approved.\n\n{{detailsTable}}",
     closingText: "Please archive the request if no further action is required.",
     description: "Leave request approval confirmation.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -772,8 +772,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Leave Approval",
   },
   leave_rejection: {
-    bodyHtml: "<p>Your leave request has been rejected.</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Period: {{startDate}} - {{endDate}}.</p><p>{{status}}</p>",
-    bodyText: "Your leave request has been rejected. Employee: {{employeeName}} ({{employeeHrId}}). Period: {{startDate}} - {{endDate}}. {{status}}",
+    bodyHtml: "<p>Your leave request has been rejected.</p>{{detailsTable}}",
+    bodyText: "Your leave request has been rejected.\n\n{{detailsTable}}",
     closingText: "Please contact HR for clarification before submitting a revised request.",
     description: "Leave request rejection confirmation.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -784,11 +784,11 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Leave Rejection",
   },
   leave_request: {
-    bodyHtml: "<p>{{employeeName}} submitted a {{vacationType}} request.</p><p>Duration: {{startDate}} to {{endDate}}.</p><p>{{status}}</p>",
-    bodyText: "{{employeeName}} submitted a {{vacationType}} request from {{startDate}} to {{endDate}}. {{status}}",
+    bodyHtml: "<p>{{employeeName}} submitted a {{vacationType}} request.</p>{{detailsTable}}",
+    bodyText: "{{employeeName}} submitted a {{vacationType}} request.\n\n{{detailsTable}}",
     closingText: "Please review and complete the manager decision workflow.",
     description: "Leave request submission and manager action.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "A leave request requires action in Phoenix Workforce.",
     subject: "Leave request from {{employeeName}}",
@@ -892,11 +892,11 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Password Setup",
   },
   probation_reminder: {
-    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Hire date: {{startDate}}.</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nHire date: {{startDate}}.\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Please submit the required feedback before the probation checkpoint closes.",
     description: "Scheduled probation reminders for manager and HR follow-up.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce probation reminder.",
     subject: "{{subject}}",
@@ -904,11 +904,11 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Probation Reminder",
   },
   probation_workflow: {
-    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Please review and continue the required workflow.",
     description: "Probation tracker updates.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce probation workflow update.",
     subject: "{{subject}}",
@@ -928,7 +928,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "Open the live report for full detail.",
     closingText: "Open the live consolidated report for the full picture.",
     description: "Sent to stakeholders after each validated Double-Visit Day (management snapshot + link to the live report).",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "A validated double-visit day for {{employeeName}}.",
     subject: "Probation DV snapshot — {{employeeName}} ({{dvProgress}})",
@@ -943,12 +943,12 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "<p>Open the live report for the full picture.</p>",
     bodyText:
       "This week's Double-Visit summary for {{employeeName}} ({{employeeHrId}}), probation day {{probationDay}}.\n" +
-      "{{digestTableText}}\n" +
+      "{{digestTable}}\n" +
       "Overall progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n" +
       "Open the live report for the full picture.",
     closingText: "Open the live consolidated report for the full picture.",
     description: "Weekly roll-up of a probationer's Double-Visit activity, sent once per week to the line management chain (replaces the per-DV-day snapshot).",
-    greeting: "Dear Line {{line}} Managers,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "This week's Double-Visit summary for {{employeeName}}.",
     subject: "Probation weekly summary — {{employeeName}} ({{weekLabel}})",
@@ -961,7 +961,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "{{digestTable}}" +
       "<p>Open DV Planner for the full roster and visit history.</p>",
     bodyText:
-      "Your Double-Visit week ({{weekLabel}}).\n\n{{digestTableText}}\n\nOpen DV Planner for the full roster and visit history.",
+      "Your Double-Visit week ({{weekLabel}}).\n\n{{digestTable}}\n\nOpen DV Planner for the full roster and visit history.",
     closingText: "Open DV Planner any time to check your live coverage.",
     description: "Weekly review of a manager's own Double-Visit coverage — a positive summary, not an escalation, sent every week regardless of how the week went.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -982,7 +982,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "Confirm who has completed a DV day and flag early gaps.",
     closingText: "Open the live report to review early progress.",
     description: "Day-30 milestone: early progress review (who has completed a DV day, early gaps and risks).",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Day 30 early progress for {{employeeName}}.",
     subject: "Probation Day 30 — {{employeeName}} (early progress)",
@@ -1000,7 +1000,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "Schedule remaining DV days + HR/SFE input before Day 75; resolve overdue feedback.",
     closingText: "Open the live report to plan completion before Day 75.",
     description: "Day-60 milestone: escalation and completion planning (remaining requirements, overdue feedback, decision-readiness gaps).",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Day 60 completion planning for {{employeeName}}.",
     subject: "Probation Day 60 — {{employeeName}} (plan to Day 75)",
@@ -1018,7 +1018,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
       "Review the consolidated evidence + contradictions before the decision. No automatic decision is made.",
     closingText: "Open the live report to review decision readiness.",
     description: "Day-75 milestone: decision-readiness status (completeness, blockers, consolidated position). Never auto-decides.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Day 75 decision readiness for {{employeeName}}.",
     subject: "Probation Day 75 — {{employeeName}} (decision readiness)",
@@ -1026,11 +1026,11 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Probation Day 75",
   },
   resignation_workflow: {
-    bodyHtml: "<p>{{summary}}</p><p>Employee: {{employeeName}} ({{employeeHrId}}).</p><p>Effective date: {{date}}.</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\nEmployee: {{employeeName}} ({{employeeHrId}}).\nEffective date: {{date}}.\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Please route this according to HR procedure.",
     description: "Resignation workflow updates.",
-    greeting: "Dear Team,",
+    greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "Phoenix Workforce resignation workflow update.",
     subject: "{{subject}}",
@@ -1060,7 +1060,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyText:
       "This is a Phoenix System Notice.\n\n" +
       "Our records show no recorded activity for you on the following day(s):\n\n" +
-      "{{noActivityTableText}}\n\n" +
+      "{{noActivityTable}}\n\n" +
       "Phoenix tracks this to help protect your KPIs. Please review these days, and " +
       "if anything needs to be adjusted, contact HR for support.",
     closingText: "Contact HR if you need support.",
@@ -2203,6 +2203,7 @@ export function renderEmailTemplate(
     scoreTable: variables.scoreTableText,
     productsTable: variables.productsTableText,
     returnCallout: variables.returnCalloutText,
+    noActivityTable: variables.noActivityTableText,
   };
   const inlineVariables = {
     ...variables,
@@ -2212,6 +2213,7 @@ export function renderEmailTemplate(
     productsTable: "",
     returnCallout: "",
     scoreTable: "",
+    noActivityTable: "",
   };
   const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
   const greeting = interpolate(template.greeting, inlineVariables, false);

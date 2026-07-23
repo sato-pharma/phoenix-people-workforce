@@ -12,6 +12,7 @@ import {
   systemNotificationEmailText,
 } from "@/config/system-settings";
 import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail, type EmailTemplateContext } from "@/lib/email-templates/service";
+import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -1454,11 +1455,17 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
 
   if (migratedTemplateKey) {
     const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, inputWithCc, delivery.recipients);
+    // Every caller that passes `metrics` (the label/value pairs already shown in the in-app
+    // notification and, historically, hand-rolled into each template's own inline HTML table)
+    // gets a premium zebra-striped table for free via {{detailsTable}} - no per-template
+    // sender changes needed. Callers with no metrics simply render an empty string.
     return sendTemplatedEmail({
       candidateEmail: input.candidateEmail,
       context: {
         ctaLabel: input.ctaLabel ?? systemNotificationEmailText.openInAppCtaLabel,
         ctaUrl: input.ctaHref ? dashboardUrl(input.ctaHref) : "",
+        detailsTable: renderPhoenixMetadataTable(input.metrics),
+        detailsTableText: renderPhoenixMetadataTableText(input.metrics),
         amount: metricValue(input, "Amount"),
         candidateName: metricValue(input, "Candidate") || metricValue(input, "Candidate Name"),
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
