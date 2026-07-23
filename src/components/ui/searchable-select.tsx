@@ -6,6 +6,14 @@ import { Check, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+const emptySubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function useMounted() {
+  return React.useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
+}
+
 type SearchableSelectProps = Omit<React.ComponentPropsWithoutRef<"select">, "children" | "onChange"> & {
   children?: React.ReactNode;
   maxResults?: number;
@@ -128,6 +136,7 @@ export function SearchableSelect({
     if (firstEnabled) return firstEnabled.value;
     return options[0].value;
   }, [defaultValue, options]);
+  const mounted = useMounted();
   const [internalValue, setInternalValue] = React.useState<string>(() => uncontrolledDefaultValue);
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
@@ -301,7 +310,7 @@ export function SearchableSelect({
         <Search className="h-4 w-4" />
       </span>
 
-      {open && menuRect
+      {mounted && open && menuRect
         ? createPortal(
             <div
               ref={dropdownRef}
