@@ -59,9 +59,12 @@ export function runOfferVacancyMatchingTests() {
   );
   assert.equal(pickDepartmentSafeVacancy([], SALES), undefined, "no candidates -> nothing to close");
 
-  // -- Wiring: offers service threads department and clears replacement on fill.
+  // -- Wiring: the vacancies module threads department and clears replacement on fill.
+  // (closeVacancyForOffer lives in offers/vacancies.ts, split out of offers/service.ts
+  // so employee-directory.ts never pulls that file's dynamic offer-letter-pdf.ts import
+  // into a client bundle — see vacancies.ts's header comment.)
   const offerSource = readFileSync(
-    new URL("../src/lib/offers/service.ts", import.meta.url),
+    new URL("../src/lib/offers/vacancies.ts", import.meta.url),
     "utf8",
   );
   assert.match(offerSource, /department_id\?: number \| null;/, "closeVacancyForOffer input must accept department_id");

@@ -126,7 +126,7 @@ import {
   getOpenMedicalRepVacancies,
   getOpenWorkforceVacancies,
   type VacancyLookupRow,
-} from "@/lib/offers/service";
+} from "@/lib/offers/vacancies";
 
 export type EmployeeLookupOption = {
   id?: number;

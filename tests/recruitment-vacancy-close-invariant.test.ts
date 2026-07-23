@@ -44,6 +44,8 @@ export function runRecruitmentVacancyCloseInvariantTests() {
   assert.doesNotMatch(launch, /\.from\(\s*["']position_vacancies["']\s*\)/, "launchOfferFromApplication must not touch position_vacancies");
   assert.doesNotMatch(launch, /status:\s*["']filled["']/, "launchOfferFromApplication must not set a vacancy filled");
 
-  // Positive anchor: the real closer exists and is reused by the hire paths.
-  assert.match(offers, /function closeVacancyForOffer/, "closeVacancyForOffer (the real closer) must exist");
+  // Positive anchor: the real closer exists (in the dedicated vacancies module,
+  // kept apart from service.ts's dynamic offer-letter-pdf.ts import) and is reused by the hire paths.
+  const vacancies = read("src/lib/offers/vacancies.ts");
+  assert.match(vacancies, /function closeVacancyForOffer/, "closeVacancyForOffer (the real closer) must exist");
 }
