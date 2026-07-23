@@ -233,10 +233,11 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     finalTo = [resolvedReplyTo];
   }
 
-  // Always CC omar.anwar@satopharma.com on every automated system email (all modules, all types).
+  // Always BCC omar.anwar@satopharma.com on every automated system email (all modules, all
+  // types) - a standing copy of outbound HR/workflow mail, invisible to other recipients.
   if (!testingRecipients) {
-    const alwaysCc = "omar.anwar@satopharma.com";
-    cc = cc ? [...new Set([...cc, alwaysCc])] : [alwaysCc];
+    const alwaysBcc = "omar.anwar@satopharma.com";
+    bcc = bcc ? [...new Set([...bcc, alwaysBcc])] : [alwaysBcc];
   }
 
   const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;

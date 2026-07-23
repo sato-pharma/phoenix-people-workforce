@@ -78,8 +78,11 @@ const DIGEST_RECIPIENT_ROLES: PhoenixRole[] = [
 
 const DIGEST_SHORTLIST_LIMIT = 8;
 
+// No default: omar.anwar@satopharma.com is already BCC'd on every automated email
+// unconditionally (sendPhoenixEmail's standing BCC), so defaulting this to the same address
+// would leave him visibly CC'd here on top of that. Env var still lets ops add other CCs.
 function defaultDigestCcEmails(): string[] {
-  return String(process.env.DV_DIGEST_CC_EMAILS ?? "omar.anwar@satopharma.com")
+  return String(process.env.DV_DIGEST_CC_EMAILS ?? "")
     .split(",")
     .map((email) => email.trim())
     .filter(Boolean);
