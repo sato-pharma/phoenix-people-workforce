@@ -44,6 +44,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Stethoscope,
   Tags,
@@ -1041,6 +1042,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: CalendarClock,
     label: "Cron Control",
     description: "View, pause/resume, run now, and reschedule the GCP Cloud Scheduler jobs behind this system's automation.",
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/email-control-center",
+    icon: SlidersHorizontal,
+    label: "Email Control Center",
+    description: "Every automated email in one place: turn any one off, or fine-tune exactly which roles receive it. Viewing is Super Admin + CEO; changes are Super Admin only.",
     roles: ["Super Admin", "CEO"],
   },
   {

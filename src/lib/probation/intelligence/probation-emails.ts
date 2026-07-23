@@ -10,7 +10,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { normalizeHrId, type PhoenixRole } from "@/lib/auth/permissions";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemDeployment } from "@/config/system-settings";
 
@@ -328,6 +328,12 @@ function buildWeeklyDigestTable(rows: Array<{ dv_date: string; evaluator_role: s
 export async function processProbationWeeklyDigest(nowIso: string = new Date().toISOString()): Promise<{ scanned: number; sent: number; skipped?: string }> {
   const now = new Date(nowIso);
   if (cairoWeekday(now) !== WEEKLY_DIGEST_WEEKDAY) return { scanned: 0, sent: 0, skipped: "not the weekly digest day" };
+  // True master-off: broadcastRoleOverride alone can't stop this digest (resolveStakeholders
+  // always adds the probationer's own manager/NSM chain/line-matched PM-GPM regardless), so the
+  // admin "enabled" switch is checked explicitly here, before any data is even scanned.
+  if (!(await resolveNotificationRoleEnabled("probation_weekly_dv_digest"))) {
+    return { scanned: 0, sent: 0, skipped: "disabled by admin" };
+  }
 
   const today = cairoDate(now);
   const weekStart = cairoDate(new Date(now.getTime() - 6 * 86_400_000)); // inclusive 7-day window

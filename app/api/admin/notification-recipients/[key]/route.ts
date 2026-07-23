@@ -38,13 +38,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ke
       return NextResponse.json({ message: `"${key}" is not a recognized notification.` }, { status: 404 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as { roles?: unknown };
-    const roles = sanitizeRolesInput(body.roles);
-    if (!roles) {
+    const body = (await request.json().catch(() => ({}))) as { roles?: unknown; enabled?: unknown };
+    const roles = body.roles === undefined ? undefined : sanitizeRolesInput(body.roles);
+    if (body.roles !== undefined && !roles) {
       return NextResponse.json({ message: "roles must be an array of valid role names." }, { status: 400 });
     }
+    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+      return NextResponse.json({ message: "enabled must be a boolean." }, { status: 400 });
+    }
 
-    const policy = await updateNotificationRolePolicy(key, roles, access);
+    const policy = await updateNotificationRolePolicy(key, { roles: roles ?? undefined, enabled: body.enabled as boolean | undefined }, access);
     return NextResponse.json({ ok: true, policy });
   } catch (error) {
     if (isApiRateLimitError(error)) {
