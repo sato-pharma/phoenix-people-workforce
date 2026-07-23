@@ -1,5 +1,5 @@
 import type { AuditEntityType } from "@/lib/admin/audit";
-import { OFFICIAL_LINE_VALUES } from "@/lib/sales/access-scope";
+import { OFFICIAL_LINE_VALUES } from "@/lib/sales/official-lines";
 
 /**
  * Config-driven definitions for the Source of Sales "Database Mapping" console.
