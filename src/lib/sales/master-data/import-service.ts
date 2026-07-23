@@ -134,6 +134,50 @@ async function preloadKeyed(table: string, keyColumn: string) {
   return map;
 }
 
+/**
+ * Resolves + FK-validates a row's parent code columns against preloaded parent maps, returning the
+ * real CODE columns to copy onto the row (e.g. bricks.area_code/region_code from the parent block).
+ * Shared by addSingleMasterRow and updateSingleMasterRow so the cascade logic (and its edge cases —
+ * optional parents, composite copyCodes) lives in one place instead of drifting across call sites.
+ */
+function resolveParentValues(
+  def: MasterDefinition,
+  effective: Record<string, string>,
+  parentMaps: Map<MasterKey, Map<string, Record<string, unknown>>>,
+): { parentValues: Record<string, string | null> } | { error: string } {
+  const parentValues: Record<string, string | null> = {};
+  for (const parent of def.parents) {
+    const code = normalizeCode(effective[parent.codeColumn]);
+    const copyCodes = parent.copyCodes ?? {};
+    if (!code) {
+      if (parent.optional) {
+        for (const targetColumn of Object.values(copyCodes)) parentValues[targetColumn] = null;
+        continue;
+      }
+      return { error: `${columnLabel(def, parent.codeColumn)} is required.` };
+    }
+    const parentRow = parentMaps.get(parent.parentMaster)?.get(code);
+    if (!parentRow) {
+      return { error: `${columnLabel(def, parent.codeColumn)} "${code}" is not in ${MASTER_DEFINITIONS[parent.parentMaster].label}.` };
+    }
+    for (const [parentColumn, targetColumn] of Object.entries(copyCodes)) {
+      parentValues[targetColumn] = normalizeCode(parentRow[parentColumn]);
+    }
+  }
+  return { parentValues };
+}
+
+async function preloadParentMaps(def: MasterDefinition) {
+  const parentMaps = new Map<MasterKey, Map<string, Record<string, unknown>>>();
+  for (const parent of def.parents) {
+    if (!parentMaps.has(parent.parentMaster)) {
+      const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
+      parentMaps.set(parent.parentMaster, await preloadKeyed(parentDef.table, parentDef.keyColumn));
+    }
+  }
+  return parentMaps;
+}
+
 export async function importMasterWorkbook(input: {
   actorLoginId: string;
   file: File;
@@ -398,13 +442,7 @@ export async function addSingleMasterRow(input: {
 }): Promise<{ success: boolean; error?: string; inserted?: boolean }> {
   const def = MASTER_DEFINITIONS[input.master];
   const existing = await preloadKeyed(def.table, def.keyColumn);
-  const parentMaps = new Map<MasterKey, Map<string, Record<string, unknown>>>();
-  for (const parent of def.parents) {
-    if (!parentMaps.has(parent.parentMaster)) {
-      const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
-      parentMaps.set(parent.parentMaster, await preloadKeyed(parentDef.table, parentDef.keyColumn));
-    }
-  }
+  const parentMaps = await preloadParentMaps(def);
   const supabase = getSupabaseAdmin();
 
   const key = normalizeCode(input.row[def.keyColumn] ?? "");
@@ -415,26 +453,11 @@ export async function addSingleMasterRow(input: {
     return { success: false, error: `${columnLabel(def, def.keyColumn)} "${key}" already exists.` };
   }
 
-  // Resolve parents
-  const parentValues: Record<string, string | null> = {};
-  for (const parent of def.parents) {
-    const code = normalizeCode(input.row[parent.codeColumn]);
-    const copyCodes = parent.copyCodes ?? {};
-    if (!code) {
-      if (parent.optional) {
-        for (const targetColumn of Object.values(copyCodes)) parentValues[targetColumn] = null;
-        continue;
-      }
-      return { success: false, error: `${columnLabel(def, parent.codeColumn)} is required.` };
-    }
-    const parentRow = parentMaps.get(parent.parentMaster)?.get(code);
-    if (!parentRow) {
-      return { success: false, error: `${columnLabel(def, parent.codeColumn)} "${code}" is not in ${MASTER_DEFINITIONS[parent.parentMaster].label}.` };
-    }
-    for (const [parentColumn, targetColumn] of Object.entries(copyCodes)) {
-      parentValues[targetColumn] = normalizeCode(parentRow[parentColumn]);
-    }
+  const resolvedParents = resolveParentValues(def, input.row, parentMaps);
+  if ("error" in resolvedParents) {
+    return { success: false, error: resolvedParents.error };
   }
+  const { parentValues } = resolvedParents;
 
   const derived = def.derive(input.row);
   const payload: Record<string, unknown> = { ...parentValues, ...derived };
@@ -492,6 +515,298 @@ export async function addSingleMasterRow(input: {
   });
 
   return { success: true, inserted: true };
+}
+
+/** Edits the editable columns of one existing row (locked columns — key + name — are never
+ *  writable here; the key identifies the row and columns like brick_name are match-only, exactly
+ *  as in bulk import). Re-validates + re-cascades parent FK columns the same way add/import do. */
+export async function updateSingleMasterRow(input: {
+  actorLoginId: string;
+  master: MasterKey;
+  key: string;
+  patch: Record<string, string>;
+}): Promise<{ success: boolean; error?: string }> {
+  const def = MASTER_DEFINITIONS[input.master];
+  const key = String(input.key ?? "").trim();
+  if (!key) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} is required.` };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: existingRow, error: fetchError } = await supabase
+    .from(def.table)
+    .select("*")
+    .eq(def.keyColumn, key)
+    .maybeSingle();
+  if (fetchError) return { success: false, error: fetchError.message };
+  if (!existingRow) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} "${key}" was not found.` };
+  }
+
+  const editable = editableColumns(def);
+  if (editable.length === 0) {
+    return { success: false, error: `${def.label} has no editable columns (add-only master).` };
+  }
+
+  // Effective row: existing values overlaid with any patched editable columns — same overlay
+  // pattern importMasterWorkbook uses so parent-FK re-resolution sees the post-edit state.
+  const existing = existingRow as Record<string, unknown>;
+  const effective: Record<string, string> = {};
+  for (const column of def.columns) {
+    const edited = !column.locked && Object.prototype.hasOwnProperty.call(input.patch, column.key);
+    effective[column.key] = edited ? (input.patch[column.key] ?? "") : normalizeDisplay(existing[column.key]);
+  }
+
+  const parentMaps = await preloadParentMaps(def);
+  const resolvedParents = resolveParentValues(def, effective, parentMaps);
+  if ("error" in resolvedParents) {
+    return { success: false, error: resolvedParents.error };
+  }
+
+  const derived = def.derive(effective);
+  const updatePayload: Record<string, unknown> = {
+    ...resolvedParents.parentValues,
+    ...derived,
+    updated_at: new Date().toISOString(),
+  };
+  let changedColumns = 0;
+  for (const column of editable) {
+    if (!Object.prototype.hasOwnProperty.call(input.patch, column.key)) continue;
+    const value = typeValue(column, effective[column.key]);
+    if (column.type === "number" && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+      return { success: false, error: `${column.label} must be a non-negative number.` };
+    }
+    if (column.required && (value === "" || value === null)) {
+      return { success: false, error: `${column.label} is required.` };
+    }
+    if (column.allowedValues && typeof value === "string" && value !== "") {
+      const canonical = matchAllowedValue(column, value);
+      if (!canonical) {
+        return {
+          success: false,
+          error: `${column.label} "${value}" is not a recognized value. Use one of: ${column.allowedValues.join(", ")}.`,
+        };
+      }
+      updatePayload[column.key] = canonical;
+    } else {
+      updatePayload[column.key] = value;
+    }
+    changedColumns += 1;
+  }
+  if (changedColumns === 0) {
+    return { success: false, error: "No editable fields were changed." };
+  }
+
+  const { error } = await supabase.from(def.table).update(updatePayload).eq(def.keyColumn, key);
+  if (error) return { success: false, error: error.message };
+
+  // Product Master factory_price drives the stored weekly-sales value — resync it, same as bulk
+  // import does. Best-effort: dashboards/exports recompute from the live price at read time anyway.
+  if (def.master === "products" && Object.prototype.hasOwnProperty.call(updatePayload, "factory_price")) {
+    try {
+      await supabase.rpc("phx_recompute_weekly_sales_value" as never);
+    } catch {
+      // best-effort resync only
+    }
+  }
+
+  const oldValues: Record<string, unknown> = { active: existing.active };
+  for (const columnKey of Object.keys(updatePayload)) {
+    if (columnKey === "updated_at") continue;
+    oldValues[columnKey] = existing[columnKey] ?? null;
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: key,
+    entityType: def.auditEntityType,
+    newValues: { ...updatePayload, master: def.master, source: "database_mapping_single_edit" },
+    oldValues,
+    summary: `Database Mapping single edit — ${def.label}: ${key} updated.`,
+  });
+
+  return { success: true };
+}
+
+/** Soft delete / restore for a single master row — flips `active` rather than issuing a real
+ *  DELETE. Master tables are referenced (as plain denormalized codes, not live FKs) from years of
+ *  historical Source of Sales data; a hard delete would either be blocked by the block/area/region
+ *  hierarchy's ON DELETE RESTRICT foreign keys or silently orphan that history. `active = false`
+ *  already drives the authenticated-read RLS policy on every master table, so deactivating a row
+ *  removes it from all live pickers/joins immediately without touching anything historical. */
+export async function setMasterRowActive(input: {
+  actorLoginId: string;
+  master: MasterKey;
+  key: string;
+  active: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const def = MASTER_DEFINITIONS[input.master];
+  const key = String(input.key ?? "").trim();
+  if (!key) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} is required.` };
+  }
+
+  if (
+    input.master === "distributors" &&
+    !input.active &&
+    SYSTEM_DISTRIBUTORS.some((channel) => channel.distributor_code.toLowerCase() === key.toLowerCase())
+  ) {
+    return {
+      success: false,
+      error: `"${key}" is a system channel required for sales imports and cannot be deactivated.`,
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: existingRow, error: fetchError } = await supabase
+    .from(def.table)
+    .select("*")
+    .eq(def.keyColumn, key)
+    .maybeSingle();
+  if (fetchError) return { success: false, error: fetchError.message };
+  if (!existingRow) {
+    return { success: false, error: `${columnLabel(def, def.keyColumn)} "${key}" was not found.` };
+  }
+  const wasActive = (existingRow as Record<string, unknown>).active !== false;
+  if (wasActive === input.active) {
+    return { success: true }; // already in the requested state
+  }
+
+  const { error } = await supabase
+    .from(def.table)
+    .update({ active: input.active, updated_at: new Date().toISOString() })
+    .eq(def.keyColumn, key);
+  if (error) return { success: false, error: error.message };
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: key,
+    entityType: def.auditEntityType,
+    newValues: { active: input.active, master: def.master, source: "database_mapping_single_toggle_active" },
+    oldValues: { active: wasActive },
+    summary: `Database Mapping row ${input.active ? "reactivated" : "deactivated"} — ${def.label}: ${key}.`,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Moves a brick to a different block by creating a fresh "{newBlockCode}-{n}" brick and
+ * deactivating the old one, rather than editing block_code on the existing row in place.
+ *
+ * Why not a plain in-place edit (which updateSingleMasterRow already supports generically): this
+ * dataset's brick IDs consistently encode their block as a display convention (e.g. "B1-2" under
+ * block "B1" — verified 100% consistent across all 439 live bricks on 2026-07-23), even though
+ * nothing in the app parses that string to derive geography (block_code is what actually drives
+ * area/region everywhere). Owner preference (2026-07-23): moving a brick should keep that
+ * convention intact rather than leave a brick's ID visually mismatched with its block, so relocate
+ * spawns a new correctly-prefixed ID and retires the old one (soft — same as setMasterRowActive,
+ * so historical Source of Sales rows that already reference the old brick_id keep resolving).
+ */
+export async function relocateBrick(input: {
+  actorLoginId: string;
+  brickId: string;
+  newBlockCode: string;
+}): Promise<{ error?: string; newBrickId?: string; success: boolean }> {
+  const def = MASTER_DEFINITIONS.bricks;
+  const brickId = String(input.brickId ?? "").trim();
+  const newBlockCode = normalizeCode(input.newBlockCode);
+  if (!brickId) return { success: false, error: "Brick ID is required." };
+  if (!newBlockCode) return { success: false, error: "Block Code is required." };
+
+  const supabase = getSupabaseAdmin();
+
+  const { data: existingRow, error: fetchError } = await supabase
+    .from(def.table)
+    .select("*")
+    .eq(def.keyColumn, brickId)
+    .maybeSingle();
+  if (fetchError) return { success: false, error: fetchError.message };
+  if (!existingRow) return { success: false, error: `Brick ID "${brickId}" was not found.` };
+  const existing = existingRow as Record<string, unknown>;
+  if (existing.active === false) {
+    return { success: false, error: `Brick "${brickId}" is inactive — reactivate it before relocating.` };
+  }
+  const currentBlockCode = normalizeCode(existing.block_code);
+  if (currentBlockCode === newBlockCode) {
+    return { success: false, error: `"${brickId}" is already in block "${newBlockCode}".` };
+  }
+
+  const blocksDef = MASTER_DEFINITIONS.blocks;
+  const { data: blockRow, error: blockError } = await supabase
+    .from(blocksDef.table)
+    .select("*")
+    .eq(blocksDef.keyColumn, newBlockCode)
+    .maybeSingle();
+  if (blockError) return { success: false, error: blockError.message };
+  if (!blockRow) return { success: false, error: `Block Code "${newBlockCode}" is not in ${blocksDef.label}.` };
+  const block = blockRow as Record<string, unknown>;
+  if (block.active === false) {
+    return { success: false, error: `Block "${newBlockCode}" is inactive — reactivate it before moving a brick there.` };
+  }
+
+  // Allocate the next "{block}-{n}" id under the target block — purely cosmetic (see comment
+  // above); collisions are still caught below by the table's primary key on insert.
+  const prefix = `${newBlockCode}-`;
+  const { data: siblings, error: siblingsError } = await supabase.from(def.table).select("brick_id").ilike("brick_id", `${prefix}%`);
+  if (siblingsError) return { success: false, error: siblingsError.message };
+  let nextSeq = 1;
+  for (const row of (siblings ?? []) as Array<{ brick_id: string }>) {
+    const parsed = Number(row.brick_id.slice(prefix.length));
+    if (Number.isInteger(parsed) && parsed >= nextSeq) nextSeq = parsed + 1;
+  }
+  const newBrickId = `${prefix}${nextSeq}`;
+
+  const derived = def.derive({ brick_name: String(existing.brick_name ?? "") });
+  const newRow: Record<string, unknown> = {
+    active: true,
+    area_code: normalizeCode(block.area_code),
+    block_code: newBlockCode,
+    brick_id: newBrickId,
+    brick_name: existing.brick_name,
+    description: existing.description ?? "",
+    normalized_description: existing.normalized_description ?? "",
+    region_code: normalizeCode(block.region_code),
+    ...derived,
+  };
+
+  const { error: insertError } = await supabase.from(def.table).insert(newRow);
+  if (insertError) {
+    const reason = insertError.code === "23505" ? `Brick ID "${newBrickId}" already exists.` : insertError.message;
+    return { success: false, error: reason };
+  }
+
+  const { error: deactivateError } = await supabase
+    .from(def.table)
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq(def.keyColumn, brickId);
+  if (deactivateError) {
+    // The move only half-happened — remove the new row rather than leave two active bricks
+    // representing the same territory.
+    await supabase.from(def.table).delete().eq(def.keyColumn, newBrickId);
+    return {
+      success: false,
+      error: `Created "${newBrickId}" but failed to deactivate "${brickId}": ${deactivateError.message}`,
+    };
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: brickId,
+    entityType: def.auditEntityType,
+    newValues: { active: false, master: "bricks", relocatedTo: newBrickId, source: "database_mapping_brick_relocate" },
+    oldValues: { active: true, block_code: currentBlockCode },
+    summary: `Database Mapping brick relocated — ${brickId} (block ${currentBlockCode}) deactivated, replaced by ${newBrickId} (block ${newBlockCode}).`,
+  });
+  await writeAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: newBrickId,
+    entityType: def.auditEntityType,
+    newValues: { ...newRow, master: "bricks", relocatedFrom: brickId, source: "database_mapping_brick_relocate" },
+    summary: `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode}, replacing ${brickId}.`,
+  });
+
+  return { newBrickId, success: true };
 }
 
 function columnLabel(def: MasterDefinition, key: string) {

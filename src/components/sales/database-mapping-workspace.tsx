@@ -11,9 +11,12 @@ import {
   Map as MapIcon,
   MapPin,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
+  Trash2,
   Truck,
   UploadCloud,
 } from "lucide-react";
@@ -33,8 +36,10 @@ import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import {
   MASTER_DEFINITIONS,
   MASTER_ORDER,
+  editableColumns,
   normalizeCode,
   normalizeDisplay,
+  type MasterColumn,
   type MasterColumnType,
   type MasterDefinition,
   type MasterKey,
@@ -91,6 +96,44 @@ function displayCell(column: { key: string; type: MasterColumnType }, row: Maste
   return String(value);
 }
 
+/** Renders one column's input for both the Add form and inline row editing: a parent picker for
+ *  FK code columns (options limited to active parents, so a new/edited row can't be silently
+ *  re-parented onto a row that was just deactivated), a plain input otherwise. */
+function ColumnField({
+  allRows,
+  column,
+  def,
+  disabled,
+  onChange,
+  value,
+}: {
+  allRows: Record<MasterKey, MasterRowRecord[]>;
+  column: MasterColumn;
+  def: MasterDefinition;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const parent = def.parents.find((p) => p.codeColumn === column.key);
+  if (parent) {
+    const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
+    const parentOptions = (allRows[parent.parentMaster] ?? [])
+      .filter((row) => row.active !== false)
+      .map((row) => ({ code: String(row[parentDef.keyColumn]), name: String(row[parentDef.keyColumn]) }));
+    return <MappingCombobox onChange={onChange} options={parentOptions} placeholder={`Select ${parentDef.label}`} value={value} />;
+  }
+  return (
+    <input
+      className={cn(fieldInputClass, "w-48")}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={column.label}
+      type={column.type === "number" ? "number" : "text"}
+      value={value}
+    />
+  );
+}
+
 function MasterTab({
   allRows,
   def,
@@ -110,7 +153,13 @@ function MasterTab({
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
   const [addFormValues, setAddFormValues] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [activeKeyBusy, setActiveKeyBusy] = useState<string | null>(null);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
 
+  const editable = editableColumns(def);
   const editableLabels = def.columns.filter((column) => !column.locked).map((column) => column.label);
   const showHierarchyHint = def.parents.length > 0;
   const lookups = def.displayLookups;
@@ -226,6 +275,82 @@ function MasterTab({
     }
   }
 
+  function startEdit(row: MasterRowRecord) {
+    const initial: Record<string, string> = {};
+    for (const column of editable) {
+      const value = row[column.key];
+      initial[column.key] = value === null || value === undefined ? "" : String(value);
+    }
+    setEditingKey(String(row[def.keyColumn]));
+    setEditValues(initial);
+    setConfirmDeleteKey(null);
+    setMessage(null);
+  }
+
+  function cancelEdit() {
+    setEditingKey(null);
+    setEditValues({});
+  }
+
+  async function handleSaveEdit(rowKey: string) {
+    setSavingEdit(true);
+    setMessage(null);
+    try {
+      // Bricks: block_code is the only editable column, so "editing a brick" always means moving
+      // it — relocate spawns a fresh block-prefixed ID and deactivates rowKey, rather than editing
+      // block_code on the same row in place (owner preference, 2026-07-23; see relocateBrick).
+      const isBrickRelocate = def.master === "bricks";
+      const response = await fetch(
+        isBrickRelocate
+          ? `/api/sales/database-mapping/bricks/${encodeURIComponent(rowKey)}/relocate`
+          : `/api/sales/database-mapping/${def.master}/${encodeURIComponent(rowKey)}`,
+        {
+          method: isBrickRelocate ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: isBrickRelocate ? JSON.stringify({ newBlockCode: editValues.block_code }) : JSON.stringify(editValues),
+        },
+      );
+      const payload = await readJson<{ success: boolean; message?: string; error?: string }>(response);
+      if (payload.success) {
+        setMessage({ type: "success", text: payload.message ?? "Row updated successfully." });
+        setEditingKey(null);
+        setEditValues({});
+        await refresh();
+      } else {
+        setMessage({ type: "error", text: payload.error ?? "Update failed." });
+      }
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "Update failed." });
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleSetActive(rowKey: string, active: boolean) {
+    setActiveKeyBusy(rowKey);
+    setMessage(null);
+    try {
+      const url = `/api/sales/database-mapping/${def.master}/${encodeURIComponent(rowKey)}`;
+      const response = await fetch(url, {
+        method: active ? "PATCH" : "DELETE",
+        headers: active ? { "Content-Type": "application/json" } : undefined,
+        body: active ? JSON.stringify({ active: true }) : undefined,
+      });
+      const payload = await readJson<{ success: boolean; message?: string; error?: string }>(response);
+      if (payload.success) {
+        setMessage({ type: "success", text: payload.message ?? (active ? "Row reactivated." : "Row deactivated.") });
+        setConfirmDeleteKey(null);
+        await refresh();
+      } else {
+        setMessage({ type: "error", text: payload.error ?? "Update failed." });
+      }
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "Update failed." });
+    } finally {
+      setActiveKeyBusy(null);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <AdminTableShell
@@ -335,41 +460,18 @@ function MasterTab({
         <div className="space-y-3">
           <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Add Single Row</p>
           <div className="flex flex-wrap items-end gap-2">
-            {def.columns.map((column) => {
-              // Check if this column is a parent code column
-              const isParentCode = def.parents.some((p) => p.codeColumn === column.key);
-              if (isParentCode) {
-                // Find the parent master
-                const parent = def.parents.find((p) => p.codeColumn === column.key)!;
-                const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
-                const parentOptions = allRows[parent.parentMaster].map((row) => ({
-                  code: String(row[parentDef.keyColumn]),
-                  name: String(row[parentDef.keyColumn]),
-                }));
-                return (
-                  <Field key={column.key} label={column.label}>
-                    <MappingCombobox
-                      value={addFormValues[column.key] || ""}
-                      onChange={(code) => setAddFormValues((prev) => ({ ...prev, [column.key]: code }))}
-                      options={parentOptions}
-                      placeholder={`Select ${parentDef.label}`}
-                    />
-                  </Field>
-                );
-              }
-              return (
-                <Field key={column.key} label={column.label}>
-                  <input
-                    className={cn(fieldInputClass, "w-48")}
-                    disabled={adding}
-                    onChange={(e) => setAddFormValues((prev) => ({ ...prev, [column.key]: e.target.value }))}
-                    placeholder={column.label}
-                    type={column.type === "number" ? "number" : "text"}
-                    value={addFormValues[column.key] || ""}
-                  />
-                </Field>
-              );
-            })}
+            {def.columns.map((column) => (
+              <Field key={column.key} label={column.label}>
+                <ColumnField
+                  allRows={allRows}
+                  column={column}
+                  def={def}
+                  disabled={adding}
+                  onChange={(value) => setAddFormValues((prev) => ({ ...prev, [column.key]: value }))}
+                  value={addFormValues[column.key] || ""}
+                />
+              </Field>
+            ))}
             <Button
               className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
               disabled={adding}
@@ -401,41 +503,117 @@ function MasterTab({
                   ))}
                   <th className={tableHeaderClassName}>Active</th>
                   <th className={tableHeaderClassName}>Updated</th>
+                  <th className={tableHeaderClassName}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {rows.map((row) => (
-                  <tr className="text-[#64748B]" key={String(row[def.keyColumn])}>
-                    {def.columns.map((column, columnIndex) => (
-                      <td
-                        className={cn("px-4 py-2.5 align-top", columnIndex === 0 ? "font-semibold text-[#0F172A]" : "")}
-                        key={column.key}
-                      >
-                        {displayCell(column, row)}
+                {rows.map((row) => {
+                  const rowKey = String(row[def.keyColumn]);
+                  const isEditing = editingKey === rowKey;
+                  const isActive = row.active !== false;
+                  const isBusy = activeKeyBusy === rowKey;
+                  const isConfirmingDelete = confirmDeleteKey === rowKey;
+                  return (
+                    <tr className="text-[#64748B]" key={rowKey}>
+                      {def.columns.map((column, columnIndex) => (
+                        <td
+                          className={cn("px-4 py-2.5 align-top", columnIndex === 0 ? "font-semibold text-[#0F172A]" : "")}
+                          key={column.key}
+                        >
+                          {isEditing && !column.locked ? (
+                            <ColumnField
+                              allRows={allRows}
+                              column={column}
+                              def={def}
+                              disabled={savingEdit}
+                              onChange={(value) => setEditValues((prev) => ({ ...prev, [column.key]: value }))}
+                              value={editValues[column.key] ?? ""}
+                            />
+                          ) : (
+                            displayCell(column, row)
+                          )}
+                        </td>
+                      ))}
+                      {lookups.map((column) => (
+                        <td className="px-4 py-2.5 align-top text-[#475569]" key={column.key}>
+                          {resolveLookup(row, column)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2.5">
+                        <Badge variant={row.active === false ? "neutral" : "success"}>
+                          {row.active === false ? "Inactive" : "Active"}
+                        </Badge>
                       </td>
-                    ))}
-                    {lookups.map((column) => (
-                      <td className="px-4 py-2.5 align-top text-[#475569]" key={column.key}>
-                        {resolveLookup(row, column)}
+                      <td className="px-4 py-2.5">
+                        {row.updated_at
+                          ? new Date(String(row.updated_at)).toLocaleString("en-GB", {
+                              timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+                            })
+                          : "-"}
                       </td>
-                    ))}
-                    <td className="px-4 py-2.5">
-                      <Badge variant={row.active === false ? "neutral" : "success"}>
-                        {row.active === false ? "Inactive" : "Active"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {row.updated_at
-                        ? new Date(String(row.updated_at)).toLocaleString("en-GB", {
-                            timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-                          })
-                        : "-"}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-4 py-2.5">
+                        {isEditing ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button disabled={savingEdit} onClick={() => void handleSaveEdit(rowKey)} size="sm">
+                                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {def.master === "bricks" ? "Move" : "Save"}
+                              </Button>
+                              <Button disabled={savingEdit} onClick={cancelEdit} size="sm" variant="secondary">
+                                Cancel
+                              </Button>
+                            </div>
+                            {def.master === "bricks" ? (
+                              <p className="max-w-[220px] text-[10px] font-semibold leading-tight text-[#94A3B8]">
+                                Creates a new brick ID in the target block and deactivates this one.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : isConfirmingDelete ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button disabled={isBusy} onClick={() => void handleSetActive(rowKey, false)} size="sm" variant="destructive">
+                              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Confirm
+                            </Button>
+                            <Button disabled={isBusy} onClick={() => setConfirmDeleteKey(null)} size="sm" variant="secondary">
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {editableLabels.length > 0 ? (
+                              <Button onClick={() => startEdit(row)} size="icon-sm" title="Edit this row" variant="secondary">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : null}
+                            {isActive ? (
+                              <Button
+                                onClick={() => setConfirmDeleteKey(rowKey)}
+                                size="icon-sm"
+                                title="Deactivate — hides this row everywhere immediately; reversible, keeps history."
+                                variant="destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <Button
+                                className="gap-1"
+                                disabled={isBusy}
+                                onClick={() => void handleSetActive(rowKey, true)}
+                                size="sm"
+                                title="Reactivate this row"
+                                variant="secondary"
+                              >
+                                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Reactivate
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={def.columns.length + lookups.length + 2}>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={def.columns.length + lookups.length + 3}>
                       No rows yet. Export the template, fill it in, then import.
                     </td>
                   </tr>
@@ -521,7 +699,8 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
               <h1 className="text-3xl font-black tracking-tight text-slate-950">Database Mapping</h1>
               <p className="mt-1 max-w-3xl text-sm text-slate-500">
                 Export, edit and import the master tables that drive all Source of Sales mapping. Key and name columns are
-                locked; import adds and updates rows but never deletes.
+                locked. Bulk import adds and updates rows but never deletes; use the row actions to edit a single row or
+                deactivate it (a reversible soft delete — hides it everywhere immediately, keeps history).
               </p>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
