@@ -1,4 +1,5 @@
-import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import type { EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
