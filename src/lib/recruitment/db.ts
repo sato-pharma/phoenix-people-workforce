@@ -41,6 +41,18 @@ export function numberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export function boolOrNull(value: unknown): boolean | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "yes", "1"].includes(normalized)) return true;
+    if (["false", "no", "0"].includes(normalized)) return false;
+    return null;
+  }
+  return Boolean(value);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
@@ -111,6 +123,7 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     nationalId: textOrNull(row.national_id),
     email: textOrNull(row.email),
     phone: textOrNull(row.phone),
+    address: textOrNull(row.address),
     governorate: textOrNull(row.governorate),
     currentEmployer: textOrNull(row.current_employer),
     yearsExperience: numberOrNull(row.years_experience),
@@ -120,6 +133,17 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     cvReferenceName: textOrNull(row.cv_reference_name),
     cvExternalUrl: textOrNull(row.cv_external_url),
     notes: textOrNull(row.notes),
+    faculty: textOrNull(row.faculty),
+    university: textOrNull(row.university),
+    hasPriorWorkExperience: boolOrNull(row.has_prior_work_experience),
+    hasMedicalRepExperience: boolOrNull(row.has_medical_rep_experience),
+    medicalRepEmployer: textOrNull(row.medical_rep_employer),
+    medicalRepExperienceFrom: textOrNull(row.medical_rep_experience_from),
+    medicalRepExperienceTo: textOrNull(row.medical_rep_experience_to),
+    positionSpecificFields:
+      row.position_specific_fields && typeof row.position_specific_fields === "object"
+        ? (row.position_specific_fields as Record<string, unknown>)
+        : {},
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
