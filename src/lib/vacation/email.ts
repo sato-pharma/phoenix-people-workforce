@@ -127,6 +127,14 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     ? "Annual vacation requests require Manager Review followed by HR Final Review."
     : "This vacation request requires manager review and HR final review.";
 
+  const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Employee", value: `${input.request.employeeName} (${input.request.employeeHrId})` },
+    { label: "Hiring date", value: hireDate },
+    { label: "Available balance", value: formatDays(input.request.balanceBeforeDays) },
+    { label: "Period", value: period },
+    { label: "Duration", value: duration },
+    { label: "Approval flow", value: approvalFlow },
+  ];
   const templated = await sendTemplatedEmail({
     context: {
       approvalFlow,
@@ -134,6 +142,8 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
       ctaUrl: input.reviewUrl,
       // The leave_request template renders the hiring date via {{date}}.
       date: hireDate,
+      detailsTable: renderPhoenixMetadataTable(detailsRows),
+      detailsTableText: renderPhoenixMetadataTableText(detailsRows),
       duration,
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
@@ -184,6 +194,12 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
   const statusLine = approved
     ? "Your vacation request has been approved by the vacation approval workflow."
     : `Your vacation request has been rejected by the vacation approval workflow.${input.request.hrDecisionComment ? ` Reason: ${input.request.hrDecisionComment}` : ""}`;
+  const detailsRows: PhoenixEmailMetadataRow[] = [
+    { label: "Leave type", value: vacationTypeLabel(input.request.vacationType) },
+    { label: "Period", value: `${formatDate(input.request.startDate)} to ${formatDate(input.request.endDate)}` },
+    { label: "Duration", value: formatDays(input.request.durationDays) },
+    ...(approved ? [] : [{ label: "Rejection reason", value: input.request.hrDecisionComment ?? "—" }]),
+  ];
   const templated = await sendTemplatedEmail({
     context: {
       // CTA + duration are used by both decision templates; the rejection template also uses
@@ -191,6 +207,8 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
       // Without these the admin-edited leave_approval/leave_rejection emails render blank cells.
       ctaLabel: "Open in Phoenix Workforce",
       ctaUrl: systemDeployment.productionUrl,
+      detailsTable: renderPhoenixMetadataTable(detailsRows),
+      detailsTableText: renderPhoenixMetadataTableText(detailsRows),
       duration: formatDays(input.request.durationDays),
       employeeHrId: input.request.employeeHrId,
       employeeName: input.request.employeeName,
