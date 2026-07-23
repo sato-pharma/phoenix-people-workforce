@@ -40,7 +40,7 @@ export function runProbationEmailsTests() {
   // (2) and (3) now derive from TOKEN_REGISTRY (2026-07-23 consolidation — see token-registry.ts),
   // so this checks the real runtime behavior of getTemplatePlaceholderHints()/contextVariables()
   // rather than scanning for the specific hand-listed source patterns that no longer exist.
-  const placeholderHints = new Set(getTemplatePlaceholderHints());
+  const placeholderHints = new Set<string>(getTemplatePlaceholderHints());
   const renderedKeys = new Set(Object.keys(contextVariables({}, "Team")));
   for (const token of ["probationDay", "dvDate", "evaluatorName", "evaluatorRole", "visitCount", "dvProgress", "riskStatus", "provisionalScore", "daysRemaining", "milestoneDay"]) {
     assert.ok(placeholderHints.has(token), `${token} is in the placeholderHints allowlist`);
