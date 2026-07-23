@@ -20,21 +20,31 @@ export async function POST(request: Request, context: RouteContext) {
     await assertPermission(access, "sales", "update");
 
     const { key } = await context.params;
-    const body = (await request.json()) as { newBlockCode?: unknown };
+    const body = (await request.json()) as { newBlockCode?: unknown; brickName?: unknown };
     if (typeof body.newBlockCode !== "string" || !body.newBlockCode.trim()) {
       return NextResponse.json({ success: false, error: "newBlockCode is required." }, { status: 400 });
     }
 
     const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await relocateBrick({ actorLoginId, brickId: key, newBlockCode: body.newBlockCode });
+    const result = await relocateBrick({
+      actorLoginId,
+      brickId: key,
+      newBlockCode: body.newBlockCode,
+      newBrickName: typeof body.brickName === "string" ? body.brickName : undefined,
+    });
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
+    const customerNote = result.customersCascadeError
+      ? ` Customer mappings did NOT update automatically (${result.customersCascadeError}) — fix manually before the next import.`
+      : result.customersCascaded
+        ? ` ${result.customersCascaded} customer mapping${result.customersCascaded === 1 ? "" : "s"} moved to the new brick.`
+        : "";
     return NextResponse.json({
       success: true,
       newBrickId: result.newBrickId,
-      message: `Moved to block ${body.newBlockCode.trim().toUpperCase()} as new brick ${result.newBrickId} ("${key}" deactivated).`,
+      message: `Moved to block ${body.newBlockCode.trim().toUpperCase()} as new brick ${result.newBrickId} ("${key}" deactivated).${customerNote}`,
     });
   } catch (error) {
     if (isForbiddenError(error)) {
