@@ -174,7 +174,7 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /allow_return:\s*input\.step\.allowReturn/, "approval-step snapshots must preserve allow_return governance");
   assert.match(serviceSource, /marketingTelegramButtons/, "marketing Telegram buttons must be generated centrally");
   assert.doesNotMatch(serviceSource, /sendTelegramNotification|api\.telegram\.org/, "marketing module must never call Telegram directly");
-  assert.match(policySource, /"marketing_requests\.request_assigned":[\s\S]*channels:\s*\["in_app",\s*"email",\s*"telegram"\]/, "request_assigned must use in-app, email, and Telegram");
+  assert.match(policySource, /"marketing_requests\.request_assigned":[\s\S]*channels:\s*\["in_app",\s*"email",\s*"telegram",\s*"push"\]/, "request_assigned must use in-app, email, Telegram, and push");
   assert.match(policySource, /"marketing_requests\.request_submitted":[\s\S]*recipientStrategy:\s*\["workflow_step_approver"\]/, "request_submitted must stay scoped to workflow approver");
   assert.match(telegramTemplatesSource, /templateKey:\s*"marketing_requests"/, "Template Studio must expose marketing request Telegram template");
   assert.match(telegramPlaceholderSource, /\/employee-portals\/marketing-requests\/decision\//, "approve/reject labels must only be allowed for Phoenix marketing confirmation URLs");

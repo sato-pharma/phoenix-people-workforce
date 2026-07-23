@@ -315,6 +315,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/connect", permission: { resource: "employee_profile", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/disconnect", permission: { resource: "employee_profile", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/test", permission: { resource: "employee_profile", action: "update" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/notifications/push/context", permission: { resource: "employee_profile", action: "read" } }),
+  // No audit classification: this fires on every authenticated page load and every
+  // browser subscription-change event, not a deliberate user action like Telegram
+  // connect/disconnect — an audit-log row per ping would just be noise.
+  sessionApi({ methods: ["POST"], pattern: "/api/notifications/push/register", permission: { resource: "employee_profile", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/test", permission: { resource: "employee_profile", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/offers/**", permission: { resource: "offers", action: "read" } }),
