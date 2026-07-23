@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { buildMarketingEmailContext } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestProduct } from "@/lib/marketing-requests/types";
+import { HTML_BLOCK_TOKENS, TOKEN_REGISTRY } from "@/lib/email-templates/token-registry";
 
 function source(relPath: string): string {
   return readFileSync(relPath, "utf8");
@@ -83,15 +84,17 @@ export async function runMarketingPremiumNotificationTests() {
   assert.match(String(injected.returnCallout), /&lt;script&gt;/);
 
   // ── Engine: tokens registered + the two raw-HTML blocks ──
-  const templates = source("src/lib/email-templates/service.ts");
-  assert.match(templates, /"productsTable"/, "productsTable must be a registered placeholder");
-  assert.match(templates, /"estimatedCost"/, "estimatedCost must be a registered placeholder");
-  // htmlBlockTokens now lives in the extracted pure render core (render-core.ts), imported by service.ts.
-  const renderCore = source("src/lib/email-templates/render-core.ts");
-  const htmlBlockTokensLine = renderCore.match(/htmlBlockTokens: ReadonlySet<string> = new Set\(\[([^\]]+)\]\);/)?.[1] ?? "";
+  // Token registration now derives from TOKEN_REGISTRY (2026-07-23 consolidation), so this
+  // checks the real registry/export rather than scanning service.ts's source for a literal
+  // string or render-core.ts for a hand-listed array that no longer exists.
+  const registryTokens = new Set(TOKEN_REGISTRY.map((t) => t.token));
+  assert.ok(registryTokens.has("productsTable"), "productsTable must be a registered placeholder");
+  assert.ok(registryTokens.has("estimatedCost"), "estimatedCost must be a registered placeholder");
+  const htmlBlockTokenSet = new Set<string>(HTML_BLOCK_TOKENS);
   for (const token of ["planTable", "productsTable", "returnCallout", "scoreTable"]) {
-    assert.ok(htmlBlockTokensLine.includes(`"${token}"`), `${token} must be a raw-HTML block token`);
+    assert.ok(htmlBlockTokenSet.has(token), `${token} must be a raw-HTML block token`);
   }
+  const templates = source("src/lib/email-templates/service.ts");
   assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
   assert.match(templates, /\{\{estimatedCost\}\}/, "marketing_request body must render {{estimatedCost}}");
 
