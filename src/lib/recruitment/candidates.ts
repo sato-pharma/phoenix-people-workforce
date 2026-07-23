@@ -10,9 +10,13 @@ import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import {
   candidateMatchKeys,
   findMatchingCandidate,
+  normalizeEmail,
+  normalizeNationalId,
+  normalizePhone,
   type MatchableCandidate,
 } from "@/lib/recruitment/candidate-matching";
 import {
+  boolOrNull,
   mapApplication,
   mapApplicationEvent,
   mapCandidate,
@@ -35,6 +39,7 @@ import type {
   CreateCandidateInput,
   Interview,
   RecruitmentFile,
+  UpdateCandidateInput,
 } from "@/lib/recruitment/types";
 
 export type CandidateUpsertResult = {
@@ -53,6 +58,7 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     email_norm: keys.emailNorm,
     phone: textOrNull(input.phone),
     phone_norm: keys.phoneNorm,
+    address: textOrNull(input.address),
     governorate: textOrNull(input.governorate),
     current_employer: textOrNull(input.currentEmployer),
     years_experience: numberOrNull(input.yearsExperience),
@@ -62,6 +68,13 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     cv_reference_name: textOrNull(input.cvReferenceName),
     cv_external_url: textOrNull(input.cvExternalUrl),
     notes: textOrNull(input.notes),
+    faculty: textOrNull(input.faculty),
+    university: textOrNull(input.university),
+    has_prior_work_experience: boolOrNull(input.hasPriorWorkExperience),
+    has_medical_rep_experience: boolOrNull(input.hasMedicalRepExperience),
+    medical_rep_employer: textOrNull(input.medicalRepEmployer),
+    medical_rep_experience_from: textOrNull(input.medicalRepExperienceFrom),
+    medical_rep_experience_to: textOrNull(input.medicalRepExperienceTo),
     created_by: access.hrId ?? access.loginId ?? null,
   };
 }
@@ -145,6 +158,76 @@ export async function updateCandidateStatus(id: string, status: string): Promise
     .select("*")
     .single();
   if (error) throw error;
+  return mapCandidate(data as CandidateDbRow);
+}
+
+// Partial edit of a candidate's own fields (not status — see updateCandidateStatus).
+// An omitted key leaves that column untouched; an explicit `null` clears it. The
+// identity-match columns (national_id_norm/email_norm/phone_norm) are only recomputed
+// for whichever of nationalId/email/phone is actually present in this call, so editing
+// one identity field never wipes the norm of an untouched one.
+function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.fullName !== undefined) payload.full_name = String(input.fullName ?? "").trim();
+  if (input.nationalId !== undefined) {
+    payload.national_id = textOrNull(input.nationalId);
+    payload.national_id_norm = normalizeNationalId(input.nationalId);
+  }
+  if (input.email !== undefined) {
+    payload.email = textOrNull(input.email);
+    payload.email_norm = normalizeEmail(input.email);
+  }
+  if (input.phone !== undefined) {
+    payload.phone = textOrNull(input.phone);
+    payload.phone_norm = normalizePhone(input.phone);
+  }
+  if (input.address !== undefined) payload.address = textOrNull(input.address);
+  if (input.governorate !== undefined) payload.governorate = textOrNull(input.governorate);
+  if (input.currentEmployer !== undefined) payload.current_employer = textOrNull(input.currentEmployer);
+  if (input.yearsExperience !== undefined) payload.years_experience = numberOrNull(input.yearsExperience);
+  if (input.expectedSalary !== undefined) payload.expected_salary = numberOrNull(input.expectedSalary);
+  if (input.noticePeriod !== undefined) payload.notice_period = textOrNull(input.noticePeriod);
+  if (input.source !== undefined) payload.source = textOrNull(input.source);
+  if (input.cvReferenceName !== undefined) payload.cv_reference_name = textOrNull(input.cvReferenceName);
+  if (input.cvExternalUrl !== undefined) payload.cv_external_url = textOrNull(input.cvExternalUrl);
+  if (input.notes !== undefined) payload.notes = textOrNull(input.notes);
+  if (input.faculty !== undefined) payload.faculty = textOrNull(input.faculty);
+  if (input.university !== undefined) payload.university = textOrNull(input.university);
+  if (input.hasPriorWorkExperience !== undefined) {
+    payload.has_prior_work_experience = boolOrNull(input.hasPriorWorkExperience);
+  }
+  if (input.hasMedicalRepExperience !== undefined) {
+    payload.has_medical_rep_experience = boolOrNull(input.hasMedicalRepExperience);
+  }
+  if (input.medicalRepEmployer !== undefined) payload.medical_rep_employer = textOrNull(input.medicalRepEmployer);
+  if (input.medicalRepExperienceFrom !== undefined) {
+    payload.medical_rep_experience_from = textOrNull(input.medicalRepExperienceFrom);
+  }
+  if (input.medicalRepExperienceTo !== undefined) {
+    payload.medical_rep_experience_to = textOrNull(input.medicalRepExperienceTo);
+  }
+  return payload;
+}
+
+export async function updateCandidate(id: string, input: UpdateCandidateInput): Promise<Candidate> {
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+  if (input.fullName !== undefined && !String(input.fullName ?? "").trim()) {
+    throw new Error("Candidate full name is required.");
+  }
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("recruitment_candidates")
+    .update(updateCandidatePayload(input))
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error("Another candidate already has that National ID, email, or phone.");
+    }
+    throw error;
+  }
   return mapCandidate(data as CandidateDbRow);
 }
 

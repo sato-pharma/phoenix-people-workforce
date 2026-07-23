@@ -31,6 +31,7 @@ import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboar
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 
 
 type ManagerOption = { hrId: string; fullName: string };
@@ -1612,6 +1613,18 @@ function CandidatesTab({
                 </>
               ) : null}
             </div>
+          </div>
+          <div className="border-t border-slate-100 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Or let AI read a Medical Rep CV
+            </p>
+            <CvExtractionPanel
+              onCreated={(id) => {
+                setNotice("Candidate saved from CV.");
+                router.refresh();
+                void openProfile(id);
+              }}
+            />
           </div>
         </AdminTableShell>
       ) : null}
