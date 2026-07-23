@@ -16,6 +16,7 @@ import { contextVariables, htmlBlockTokens, interpolate } from "./render-core";
 import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
 import { buildNoActivityDigestTable } from "@/lib/private-calendar/no-activity-clarifications";
 import { sendPhoenixEmail, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
+import type { NotificationOrigin } from "@/lib/notifications/confidence-gate";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
@@ -325,6 +326,10 @@ export type SendTemplatedEmailInput = {
   fallbackTo?: string[] | null;
   from?: string | null;
   replyTo?: string | null;
+  /** Best-effort identifying context for the Notification Confidence Gate — see
+   *  SendPhoenixEmailInput.origin in send-phoenix-email.ts. Falls back to deriving `module`
+   *  from the template's category when the caller doesn't supply one. */
+  origin?: NotificationOrigin | null;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -2494,6 +2499,15 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     headers: unsubscribeHeaders,
     html: rendered.html,
     idempotencyKey: `template-${key}-${requestId}`,
+    // Fall back to the template's own category (e.g. "Attendance") as `module` when the
+    // caller didn't supply origin — every one of the ~30 template keys has a category, so
+    // this send is never bucketed as fully unknown on the confidence dashboard.
+    origin: {
+      employeeHrId: context.employeeHrId ?? null,
+      module: templateCategories[key] ?? null,
+      templateKey: key,
+      ...(input.origin ?? {}),
+    },
     subject: rendered.subject,
     text: rendered.text,
     to: to.map((recipient) => recipient.email),

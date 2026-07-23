@@ -1362,6 +1362,7 @@ async function buildChannelEmailInput(
     ctaHref,
     ctaLabel: input.email?.ctaLabel ?? "Open in Phoenix",
     employeeHrId: identity.employeeHrId,
+    eventType: input.eventType,
     includeHrInbox: input.email?.includeHrInbox,
     identityError: identity.error,
     identityGuard: identity.guard,

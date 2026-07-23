@@ -135,6 +135,7 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
       html,
       text,
       idempotencyKey: `direct-order-approved:${row.id}`,
+      origin: { eventType: "direct_order_approved", module: "direct_orders" },
     });
     const outcome = sendResult.skipped ? `skipped (${sendResult.reason})` : `sent (${sendResult.id ?? "ok"})`;
     console.info(`[direct-orders] approved-email for ${row.id} → to=${DIRECT_ORDER_APPROVED_TO} cc=${cc.length}: ${outcome}`);
