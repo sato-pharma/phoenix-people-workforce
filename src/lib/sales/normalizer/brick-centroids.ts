@@ -1,4 +1,10 @@
 import { googleGeocodeComponents, hasGoogleServerKey } from "@/lib/google-maps/server";
+import {
+  hasLocationIqKey,
+  locationIqForwardGeocode,
+  LOCATIONIQ_CONFIDENCE_THRESHOLD,
+  scoreForwardConfidence,
+} from "@/lib/geocoding/locationiq";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { GOVERNORATE_TO_REGION, AMBIGUOUS_GOVERNORATES, type BrickCentroid } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -45,6 +51,49 @@ function centroidPassesRegionGate(governorate: string | null, brickRegionCode: s
   if (!key) return false;
   if (AMBIGUOUS_GOVERNORATES.has(key)) return brickRegionCode === "D2" || brickRegionCode === "D3";
   return GOVERNORATE_TO_REGION[key] === brickRegionCode;
+}
+
+type BrickGeoComponents = { governorate: string | null; lat: number; lng: number; markaz: string | null };
+
+/**
+ * LocationIQ first (free), Google as a fallback — but for a brick centroid, the region gate
+ * (centroidPassesRegionGate, above) is the authoritative accuracy signal, stronger than the
+ * generic confidence score: we already know which governorate the brick belongs to, so "does the
+ * geocoded governorate match" is ground truth, not a heuristic. A LocationIQ result must clear
+ * BOTH the confidence threshold AND the region gate to be accepted; otherwise Google is tried,
+ * and whichever provider's result passes the region gate wins. If neither passes, the better of
+ * the two (preferring Google, the stronger general geocoder) is still stored as
+ * geocode_status='region_mismatch' — a visible diagnostic, matching the pre-existing behavior,
+ * never used for distance-based confidence.
+ */
+async function resolveBrickGeo(
+  searchText: string,
+  brickRegionCode: string,
+): Promise<{ geo: BrickGeoComponents; passesGate: boolean; provider: "locationiq" | "google" } | null> {
+  const locationIqResult = await locationIqForwardGeocode(searchText);
+  if (scoreForwardConfidence(locationIqResult) >= LOCATIONIQ_CONFIDENCE_THRESHOLD && locationIqResult?.lat && locationIqResult?.lon) {
+    const geo: BrickGeoComponents = {
+      governorate: locationIqResult.address?.state ?? null,
+      lat: Number(locationIqResult.lat),
+      lng: Number(locationIqResult.lon),
+      markaz: locationIqResult.address?.state_district ?? locationIqResult.address?.county ?? locationIqResult.address?.city ?? null,
+    };
+    if (centroidPassesRegionGate(geo.governorate, brickRegionCode)) {
+      return { geo, passesGate: true, provider: "locationiq" };
+    }
+    if (!hasGoogleServerKey()) return { geo, passesGate: false, provider: "locationiq" };
+    const googleGeo = await googleGeocodeComponents(searchText);
+    if (googleGeo && centroidPassesRegionGate(googleGeo.governorate, brickRegionCode)) {
+      return { geo: googleGeo, passesGate: true, provider: "google" };
+    }
+    // Neither passes — prefer Google's read as the stored mismatch diagnostic when available.
+    return googleGeo ? { geo: googleGeo, passesGate: false, provider: "google" } : { geo, passesGate: false, provider: "locationiq" };
+  }
+
+  if (!hasGoogleServerKey()) return null;
+  const googleGeo = await googleGeocodeComponents(searchText);
+  if (!googleGeo) return null;
+  return { geo: googleGeo, passesGate: centroidPassesRegionGate(googleGeo.governorate, brickRegionCode), provider: "google" };
 }
 
 async function pageAll<T>(fetchPage: (from: number, to: number) => Promise<T[] | null>): Promise<T[]> {
@@ -218,8 +267,9 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
     } catch { /* best-effort */ }
   }
 
-  // Pass 2 — google geocode for bricks still without any cached centroid.
-  if (!hasGoogleServerKey()) {
+  // Pass 2 — geocode (LocationIQ first, region-gated; Google as fallback) for bricks still
+  // without any cached centroid.
+  if (!hasLocationIqKey() && !hasGoogleServerKey()) {
     summary.remaining = bricks.filter((b) => !existing.has(b.brickId) && !fieldGps.has(b.brickId)).length;
     return summary;
   }
@@ -233,29 +283,29 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
       batch.map(async (brick) => {
         const searchText = [brick.brickName, brick.areaName].map((s) => String(s ?? "").trim()).filter(Boolean).join(", ");
         try {
-          return { brick, geo: await googleGeocodeComponents(searchText) };
+          return { brick, resolved: await resolveBrickGeo(searchText, brick.regionCode) };
         } catch {
-          return { brick, geo: null };
+          return { brick, resolved: null };
         }
       }),
     );
     const upserts: Record<string, unknown>[] = [];
-    for (const { brick, geo } of geocoded) {
-      if (!geo) continue; // failures retry on the next build run
-      const passes = centroidPassesRegionGate(geo.governorate, brick.regionCode);
+    for (const { brick, resolved } of geocoded) {
+      if (!resolved) continue; // failures retry on the next build run
+      const { geo, passesGate, provider } = resolved;
       upserts.push({
         address_text: null,
         area: geo.markaz,
         city: geo.governorate,
-        geocode_provider: "google",
-        geocode_status: passes ? "success" : "region_mismatch",
+        geocode_provider: provider,
+        geocode_status: passesGate ? "success" : "region_mismatch",
         label: brick.brickName || brick.brickId,
         latitude: geo.lat,
         longitude: geo.lng,
         source_key: brick.brickId,
         source_type: SOURCE_TYPE,
       });
-      if (passes) summary.geocoded += 1;
+      if (passesGate) summary.geocoded += 1;
       else summary.mismatched += 1;
     }
     if (upserts.length > 0) {
