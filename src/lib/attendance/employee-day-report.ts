@@ -36,6 +36,11 @@ import { validationError } from "@/lib/http/api-errors";
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
 import { getAttendanceRoster } from "@/lib/attendance/roster";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
+import { buildDeductionCandidateKey } from "@/lib/deductions-governance/candidate-key.ts";
+import { insertDeductionCandidateDrafts, listDeductionCandidates, recordCopilotDeductionDecision } from "@/lib/deductions-governance/service.ts";
+import type { DeductionCandidateDraft, DeductionDecision, DeductionType } from "@/lib/deductions-governance/types.ts";
+import { systemAccessContext } from "@/lib/auth/permissions";
+import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 export type FlexEligibleEmployeeOption = { hrId: string; employeeName: string; jobTitle: string };
 
@@ -113,6 +118,10 @@ export type EmployeeDayByDayReport = {
   employeeHrId: string;
   employeeName: string;
   jobTitle: string;
+  /** For live-recalculating a day's EGP value client-side as its deduction days are edited —
+   * same base/30 x days formula the server always re-derives on Approve, so an edited display
+   * value can never drift from what actually gets saved. */
+  baseSalary: number | null;
   /** Null when this employee isn't on the flexible-hours model (required_minutes unset) — the
    * same "excepted" population the digest engine skips entirely. */
   tier: AttendanceJudgmentMode | null;
@@ -326,7 +335,16 @@ export async function getEmployeeDayByDayReport(input: {
   // flexible-hours model" case the caller already handles. A range that's flex-eligible for
   // only part of its span still returns a real tier plus a per-day mix of judged rows and
   // not_flex_eligible rows for the rest.
-  return { dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, days, employeeHrId: hrId, employeeName, jobTitle, tier: reportTier };
+  return {
+    baseSalary: employee.base_salary ?? null,
+    dateFromIso: input.dateFromIso,
+    dateToIso: input.dateToIso,
+    days,
+    employeeHrId: hrId,
+    employeeName,
+    jobTitle,
+    tier: reportTier,
+  };
 }
 
 function dayRow(
@@ -351,5 +369,285 @@ function dayRow(
     weekday: weekdayName(dateIso),
     workedMinutes: firstPunchMinutes != null && lastPunchMinutes != null ? Math.max(0, lastPunchMinutes - firstPunchMinutes) : 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Deduction decisions — this report is the ONE place an admin confirms/rejects
+// a day's fingerprint deduction (the standalone Fingerprint Deductions page
+// was retired in favor of deciding right here, per owner direction 2026-07-24).
+// Reuses the SAME deduction_candidates/deduction_decisions rows and
+// ATTENDANCE_DEVICE source module Automated Payroll's Part 1 step already
+// reads via listFingerprintDeductionCandidates — a candidate created here is
+// created on demand (this report never bulk-syncs), keyed identically to the
+// old connector's format so it's indistinguishable to any downstream reader.
+// ---------------------------------------------------------------------------
+
+const DAY_DEDUCTION_TYPE: Partial<Record<EmployeeDayOutcome, DeductionType>> = {
+  late: "late_arrival",
+  short_hours: "short_hours",
+  missing_punch: "missing_punch",
+};
+
+export type EmployeeDayDecisionInfo = {
+  candidateId: string;
+  decisionStatus: string;
+  appliedDeductionValue: number | null;
+  appliedAmount: number | null;
+};
+
+/** Existing ATTENDANCE_DEVICE decisions for this employee within the range, keyed by dateIso. */
+export async function getEmployeeDayDeductionDecisions(input: {
+  employeeHrId: string;
+  dateFromIso: string;
+  dateToIso: string;
+}): Promise<Map<string, EmployeeDayDecisionInfo>> {
+  const hrId = normalizeAttendanceHrId(input.employeeHrId);
+  const compact = compactHrKey(hrId ?? "");
+  const map = new Map<string, EmployeeDayDecisionInfo>();
+  if (!hrId || !compact) return map;
+
+  const monthKeys = new Set<string>();
+  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) monthKeys.add(dateIso.slice(0, 7));
+
+  for (const monthKey of monthKeys) {
+    let page = 1;
+    for (;;) {
+      const result = await listDeductionCandidates({
+        access: systemAccessContext,
+        filters: { monthKey, sourceModule: "ATTENDANCE_DEVICE" },
+        page,
+        pageSize: 100,
+      });
+      for (const row of result.rows) {
+        if (row.employeeHrIdCompact !== compact) continue;
+        for (const dateIso of row.dates) {
+          if (dateIso < input.dateFromIso || dateIso > input.dateToIso) continue;
+          map.set(dateIso, {
+            candidateId: row.id,
+            decisionStatus: row.decision?.decisionStatus ?? "Pending",
+            appliedDeductionValue: row.decision?.appliedDeductionValue ?? null,
+            appliedAmount: row.decision?.appliedAmount ?? null,
+          });
+        }
+      }
+      if (result.rows.length === 0 || page * 100 >= result.total) break;
+      page += 1;
+    }
+  }
+  return map;
+}
+
+export type EmployeeDeductionSummaryRow = {
+  employeeHrId: string;
+  employeeName: string;
+  days: number;
+  amount: number;
+  count: number;
+};
+
+/** Every employee with at least one CONFIRMED fingerprint deduction in the range — no employee
+ * picked, company-wide. Same source table as the per-employee decisions above, just grouped.
+ * Resolves real names from `employees` directly rather than trusting the candidate's own stored
+ * employee_name, which is null on many older rows (pre-dating this page) and falls back to the
+ * HR_ID code otherwise — this page's whole point is showing names, not codes. */
+export async function getAllEmployeesFingerprintDeductionsSummary(input: {
+  dateFromIso: string;
+  dateToIso: string;
+}): Promise<EmployeeDeductionSummaryRow[]> {
+  const monthKeys = new Set<string>();
+  for (const dateIso of listIsoDatesInRange(input.dateFromIso, input.dateToIso)) monthKeys.add(dateIso.slice(0, 7));
+
+  const [names] = await Promise.all([loadEmployeeNameMap()]);
+
+  const rows = new Map<string, EmployeeDeductionSummaryRow>();
+  for (const monthKey of monthKeys) {
+    let page = 1;
+    for (;;) {
+      const result = await listDeductionCandidates({
+        access: systemAccessContext,
+        filters: { monthKey, sourceModule: "ATTENDANCE_DEVICE", decisionStatus: "Approved for Payroll" },
+        page,
+        pageSize: 100,
+      });
+      for (const row of result.rows) {
+        if (!row.decision || row.decision.decisionStatus !== "Approved for Payroll") continue;
+        const overlaps = row.dates.some((dateIso) => dateIso >= input.dateFromIso && dateIso <= input.dateToIso);
+        if (!overlaps) continue;
+        const key = row.employeeHrIdCompact;
+        const existing = rows.get(key) ?? {
+          employeeHrId: row.employeeCode,
+          employeeName: names.get(key) ?? row.employeeName ?? row.employeeCode,
+          days: 0,
+          amount: 0,
+          count: 0,
+        };
+        existing.days += row.decision.appliedDeductionValue ?? 0;
+        existing.amount += row.decision.appliedAmount ?? 0;
+        existing.count += 1;
+        rows.set(key, existing);
+      }
+      if (result.rows.length === 0 || page * 100 >= result.total) break;
+      page += 1;
+    }
+  }
+  return Array.from(rows.values()).sort((a, b) => b.amount - a.amount);
+}
+
+async function loadEmployeeNameMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name");
+  if (error) throw error;
+  for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
+    const key = compactHrKey(row.hr_id);
+    if (key && row.full_name?.trim()) map.set(key, row.full_name.trim());
+  }
+  return map;
+}
+
+/**
+ * Confirm or reject ONE day's deduction. Creates the ATTENDANCE_DEVICE candidate
+ * on demand (idempotent — matches the deterministic candidate key if one already
+ * exists from any source) using this report's own freshly-recomputed values for
+ * that single day, then records the decision on it.
+ */
+export async function upsertAndDecideEmployeeDayDeduction(input: {
+  employeeHrId: string;
+  dateIso: string;
+  decisionStatus: "Approved for Payroll" | "Do Not Take Action";
+  /** The day fraction to decide on — the system's own value for a flagged day (late/short/missing
+   * punch), or a Super-Admin-entered value for ANY other day (manual deduction the system didn't
+   * flag itself, e.g. a "Complete" or "Weekly off" day the admin still wants to dock). Required
+   * to approve; ignored on reject. */
+  days: number;
+  actorLoginId: string;
+}): Promise<DeductionDecision> {
+  const hrId = normalizeAttendanceHrId(input.employeeHrId);
+  if (!hrId) throw validationError("Invalid employee HR id.");
+  const compact = compactHrKey(hrId);
+
+  const dayReport = await getEmployeeDayByDayReport({
+    employeeHrId: hrId,
+    dateFromIso: input.dateIso,
+    dateToIso: input.dateIso,
+  });
+  const day = dayReport.days[0];
+  if (!day) throw validationError("No attendance detail found for this day.");
+
+  const days = Number(input.days);
+  if (input.decisionStatus === "Approved for Payroll" && (!Number.isFinite(days) || days <= 0)) {
+    throw validationError("Enter a deduction value greater than zero to approve this day.");
+  }
+
+  // A system-flagged day (late/short/missing punch) keeps its own detected value as the ceiling
+  // an admin may only edit DOWN from (existing safety guard in recordCopilotDeductionDecision).
+  // Any other day has no system value at all -- a Super Admin's own entry becomes both the
+  // candidate's flagged value and the applied value, i.e. a from-scratch manual deduction.
+  const isManualDeduction = day.deductionDays <= 0;
+  const systemDays = isManualDeduction ? days : day.deductionDays;
+  const deductionType: DeductionType = DAY_DEDUCTION_TYPE[day.outcome] ?? "manual_deduction";
+  const monthKey = input.dateIso.slice(0, 7);
+
+  // Reuse ANY existing non-superseded ATTENDANCE_DEVICE candidate that already covers this exact
+  // employee + day, regardless of which surface created it -- the older Deductions Governance
+  // Center "Sync All" connector stamps a differently-cased, differently-typed sourceRecordId for
+  // the same real-world day, so an exact candidate-key match alone would miss it and create a
+  // duplicate candidate for the same violation instead of deciding the one that already exists.
+  let candidateId: string | null = null;
+  const existingForDay = await listDeductionCandidates({
+    access: systemAccessContext,
+    filters: { monthKey, sourceModule: "ATTENDANCE_DEVICE" },
+    page: 1,
+    pageSize: 200,
+  });
+  const existingMatch = existingForDay.rows.find(
+    (row) => row.employeeHrIdCompact === compact && row.dates.includes(input.dateIso),
+  );
+  if (existingMatch) candidateId = existingMatch.id;
+
+  if (candidateId && isManualDeduction) {
+    // Manual deductions have no system-detected value to protect as a ceiling -- keep the stored
+    // ceiling in sync with the admin's latest entry so a later increase isn't rejected against
+    // whatever was typed the very first time this day was decided.
+    const estimatedAmount =
+      dayReport.baseSalary != null
+        ? (calculateDeductionAmountFromBaseSalary({ baseSalary: dayReport.baseSalary, deductionDays: systemDays }) ?? null)
+        : null;
+    const { error: updateError } = await getSupabaseAdmin()
+      .from("deduction_candidates")
+      .update({ deduction_value: Math.round(systemDays * 100) / 100, estimated_amount: estimatedAmount })
+      .eq("id", candidateId);
+    if (updateError) throw updateError;
+  }
+
+  if (!candidateId) {
+    const draft: DeductionCandidateDraft = {
+      sourceModule: "ATTENDANCE_DEVICE",
+      sourceRecordId: `fingerprint:${input.dateIso}:${hrId}:${day.outcome}`,
+      employeeCode: hrId,
+      employeeName: dayReport.employeeName,
+      monthKey,
+      month: Number(monthKey.slice(5, 7)),
+      year: Number(monthKey.slice(0, 4)),
+      deductionType,
+      deductionUnit: "days",
+      deductionValue: Math.round(systemDays * 100) / 100,
+      estimatedAmount:
+        dayReport.baseSalary != null
+          ? (calculateDeductionAmountFromBaseSalary({ baseSalary: dayReport.baseSalary, deductionDays: systemDays }) ?? null)
+          : null,
+      calculationStatus: "calculated",
+      severity: "Medium",
+      reason:
+        deductionType === "manual_deduction"
+          ? "Manual deduction entered via Employee Day-by-Day Report"
+          : "Employee Day-by-Day Report attendance review",
+      evidence: {
+        firstPunchMinutes: day.firstPunchMinutes,
+        lastPunchMinutes: day.lastPunchMinutes,
+        lateMinutes: day.lateMinutes,
+        shortMinutes: day.shortMinutes,
+        outcome: day.outcome,
+        reasonText: day.reason,
+      },
+      dates: [input.dateIso],
+      hierarchySnapshot: { jobTitle: dayReport.jobTitle },
+    };
+
+    await insertDeductionCandidateDrafts({
+      createdBy: input.actorLoginId,
+      drafts: [draft],
+      sourceLabel: "Employee Day Report",
+    });
+
+    const candidateKey = buildDeductionCandidateKey({
+      sourceModule: draft.sourceModule,
+      sourceRecordId: draft.sourceRecordId,
+      employeeCode: draft.employeeCode,
+      monthKey: draft.monthKey,
+      deductionType: draft.deductionType,
+      dates: draft.dates,
+    });
+
+    const { data, error } = await getSupabaseAdmin()
+      .from("deduction_candidates")
+      .select("id")
+      .eq("source_module", "ATTENDANCE_DEVICE")
+      .eq("candidate_key", candidateKey)
+      .is("superseded_at", null)
+      .limit(1)
+      .single();
+    if (error || !data) {
+      throw new Error("Failed to resolve the deduction candidate for this day after creating it.");
+    }
+    candidateId = (data as { id: string }).id;
+  }
+
+  return recordCopilotDeductionDecision({
+    candidateId,
+    decisionStatus: input.decisionStatus,
+    appliedDeductionValue: input.decisionStatus === "Approved for Payroll" ? days : null,
+    actorLoginId: input.actorLoginId,
+    source: { key: "employee-day-report", label: "Employee Day Report" },
+  });
 }
 

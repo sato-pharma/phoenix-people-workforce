@@ -1,15 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { CalendarSearch } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   EmployeeDayByDayReport,
+  EmployeeDayDecisionInfo,
   EmployeeDayOutcome,
+  EmployeeDeductionSummaryRow,
   FlexEligibleEmployeeOption,
 } from "@/lib/attendance/employee-day-report";
 
@@ -18,6 +21,7 @@ type Props = {
   employeesError: string | null;
   initialDateFrom: string;
   initialDateTo: string;
+  initialDecisions: Record<string, EmployeeDayDecisionInfo>;
   initialEmployeeHrId: string;
   initialError: string | null;
   initialReport: EmployeeDayByDayReport | null;
@@ -75,11 +79,35 @@ function formatDuration(minutes: number): string {
   return `${hours}h ${remainder}m`;
 }
 
+/** Live EGP value from a (possibly just-edited) day count — base salary / 30 x days, the exact
+ * formula the server re-derives on Approve, so the displayed number never lies about what will
+ * actually be saved. Falls back to the report's own precomputed value when nothing's been edited. */
+function liveValue(days: number, editedValue: string | undefined, baseSalary: number | null, fallback: number): number {
+  const parsedDays = editedValue?.trim() ? Number(editedValue) : days;
+  if (Number.isFinite(parsedDays) && baseSalary != null) {
+    return Math.round((baseSalary / 30) * parsedDays * 100) / 100;
+  }
+  return fallback;
+}
+
+async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Request failed.");
+  return data;
+}
+
 export function EmployeeDayReport({
   employees,
   employeesError,
   initialDateFrom,
   initialDateTo,
+  initialDecisions,
   initialEmployeeHrId,
   initialError,
   initialReport,
@@ -89,6 +117,36 @@ export function EmployeeDayReport({
   const [dateFrom, setDateFrom] = useState(initialDateFrom);
   const [dateTo, setDateTo] = useState(initialDateTo);
   const [isReportPending, startReportTransition] = useTransition();
+  const [decisions, setDecisions] = useState<Record<string, EmployeeDayDecisionInfo>>(initialDecisions);
+  const [busyDate, setBusyDate] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [editedDays, setEditedDays] = useState<Record<string, string>>({});
+  const [tab, setTab] = useState<"detail" | "summary" | "all">("detail");
+  const [allSummary, setAllSummary] = useState<EmployeeDeductionSummaryRow[] | null>(null);
+  const [allSummaryLoading, setAllSummaryLoading] = useState(false);
+  const [allSummaryError, setAllSummaryError] = useState<string | null>(null);
+
+  const loadAllSummary = useCallback(async () => {
+    if (!dateFrom || !dateTo) {
+      setAllSummaryError("Pick a From and To date above first.");
+      return;
+    }
+    setAllSummaryLoading(true);
+    setAllSummaryError(null);
+    try {
+      const res = await fetch(
+        `/api/attendance/employee-day-report/all-summary?dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        { credentials: "same-origin" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { rows?: EmployeeDeductionSummaryRow[]; message?: string };
+      if (!res.ok) throw new Error(data.message ?? "Failed to load.");
+      setAllSummary(data.rows ?? []);
+    } catch (err) {
+      setAllSummaryError(err instanceof Error ? err.message : "Failed to load.");
+    } finally {
+      setAllSummaryLoading(false);
+    }
+  }, [dateFrom, dateTo]);
 
   function viewReport() {
     if (!employeeHrId || !dateFrom || !dateTo) return;
@@ -97,6 +155,40 @@ export function EmployeeDayReport({
       router.push(`/attendance/employee-day-report?${params.toString()}`);
     });
   }
+
+  const decide = useCallback(
+    async (dateIso: string, decisionStatus: "Approved for Payroll" | "Do Not Take Action", days: number) => {
+      setBusyDate(dateIso);
+      setDecisionError(null);
+      try {
+        const data = await postJson("/api/attendance/employee-day-report/decisions", {
+          employeeHrId,
+          dateIso,
+          decisionStatus,
+          days,
+        });
+        const decision = data.decision as
+          | { candidateId: string; decisionStatus: string; appliedDeductionValue: number | null; appliedAmount: number | null }
+          | undefined;
+        if (decision) {
+          setDecisions((prev) => ({
+            ...prev,
+            [dateIso]: {
+              candidateId: decision.candidateId,
+              decisionStatus: decision.decisionStatus,
+              appliedDeductionValue: decision.appliedDeductionValue,
+              appliedAmount: decision.appliedAmount,
+            },
+          }));
+        }
+      } catch (err) {
+        setDecisionError(err instanceof Error ? err.message : "Failed to save the decision.");
+      } finally {
+        setBusyDate(null);
+      }
+    },
+    [employeeHrId],
+  );
 
   const totals = initialReport
     ? initialReport.days.reduce(
@@ -108,11 +200,27 @@ export function EmployeeDayReport({
       )
     : null;
 
+  // Live because it's derived straight from `decisions` state, which updates the instant a
+  // decide() call succeeds — no separate refetch needed for this to reflect a fresh confirm.
+  const confirmed = useMemo(() => {
+    if (!initialReport) return [];
+    return initialReport.days
+      .map((day) => ({ day, decision: decisions[day.dateIso] }))
+      .filter((entry) => entry.decision?.decisionStatus === "Approved for Payroll");
+  }, [initialReport, decisions]);
+  const confirmedTotals = confirmed.reduce(
+    (acc, entry) => ({
+      days: acc.days + (entry.decision?.appliedDeductionValue ?? 0),
+      value: acc.value + (entry.decision?.appliedAmount ?? 0),
+    }),
+    { days: 0, value: 0 },
+  );
+
   return (
     <div className="space-y-5">
       <AdminPageHero
         badges={initialReport ? <AdminInsightChip tone="orange">{initialReport.days.length} day(s) shown</AdminInsightChip> : null}
-        description="Pick one employee and a date range — every calendar day in that range is listed with its full attendance detail."
+        description="Pick one employee and a date range — every calendar day in that range is listed with its full attendance detail. Confirm or reject that day's fingerprint deduction right here, on any day."
         eyebrow="Attendance"
         icon={<CalendarSearch className="h-3.5 w-3.5" />}
         title="Employee Day-by-Day Report"
@@ -120,6 +228,7 @@ export function EmployeeDayReport({
 
       {employeesError ? <AdminCallout tone="danger">{employeesError}</AdminCallout> : null}
       {initialError ? <AdminCallout tone="danger">{initialError}</AdminCallout> : null}
+      {decisionError ? <AdminCallout tone="danger">{decisionError}</AdminCallout> : null}
 
       <AdminTableShell description="Only employees on the flexible-hours model appear here." title="Filters">
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-4">
@@ -165,61 +274,238 @@ export function EmployeeDayReport({
         </div>
       </AdminTableShell>
 
-      {initialReport ? (
-        initialReport.tier === null ? (
-          <AdminCallout tone="warning">
-            {initialReport.employeeName} isn&apos;t on the flexible-hours model (no required-minutes policy) — this report has no
-            detail to show for them.
-          </AdminCallout>
-        ) : (
-          <AdminTableShell
-            description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · ${initialReport.jobTitle} · ${initialReport.dateFromIso} to ${initialReport.dateToIso} · ${totals?.deductionDays ?? 0} day(s) · ${(totals?.deductionValue ?? 0).toFixed(2)} EGP total`}
-            title="Day-by-Day Detail"
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] text-left text-sm">
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setTab("detail")}
+          className={`px-3 py-2 text-sm font-semibold ${
+            tab === "detail" ? "border-b-2 border-orange-500 text-slate-900" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Day-by-Day Detail
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("summary")}
+          className={`px-3 py-2 text-sm font-semibold ${
+            tab === "summary" ? "border-b-2 border-orange-500 text-slate-900" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          FP Deductions Summary ({confirmed.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTab("all");
+            if (allSummary === null) void loadAllSummary();
+          }}
+          className={`px-3 py-2 text-sm font-semibold ${
+            tab === "all" ? "border-b-2 border-orange-500 text-slate-900" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          All Employees Summary
+        </button>
+      </div>
+
+      {tab === "all" ? (
+        <AdminTableShell
+          description={`Every employee with a confirmed fingerprint deduction, ${dateFrom || "…"} to ${dateTo || "…"} — no employee needs to be picked above.`}
+          title="All Employees — Confirmed Fingerprint Deductions"
+        >
+          <div className="flex items-center justify-between gap-3 px-4 pt-4">
+            <span className="text-xs text-slate-500">{allSummary ? `${allSummary.length} employee(s)` : ""}</span>
+            <Button variant="outline" size="sm" disabled={allSummaryLoading} onClick={() => void loadAllSummary()}>
+              {allSummaryLoading ? "Loading…" : "Refresh"}
+            </Button>
+          </div>
+          {allSummaryError ? <div className="px-4 pt-2"><AdminCallout tone="danger">{allSummaryError}</AdminCallout></div> : null}
+          {allSummary === null ? (
+            <p className="px-4 py-6 text-sm text-slate-500">{allSummaryLoading ? "Loading…" : "Click Refresh to load."}</p>
+          ) : allSummary.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-slate-500">No confirmed fingerprint deductions in this range.</p>
+          ) : (
+            <div className="overflow-x-auto p-4 pt-2">
+              <table className="w-full min-w-[520px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Outcome</th>
-                    <th className="px-3 py-2">Check-in</th>
-                    <th className="px-3 py-2">Check-out</th>
-                    <th className="px-3 py-2">Worked</th>
-                    <th className="px-3 py-2">Late</th>
-                    <th className="px-3 py-2">Short</th>
-                    <th className="px-3 py-2">Days</th>
-                    <th className="px-3 py-2">Value (EGP)</th>
-                    <th className="px-3 py-2">Reason</th>
+                    <th className="px-3 py-2">Employee</th>
+                    <th className="px-3 py-2">Days confirmed</th>
+                    <th className="px-3 py-2">Total days</th>
+                    <th className="px-3 py-2">Total value (EGP)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {initialReport.days.map((day) => (
-                    <tr className="align-top" key={day.dateIso}>
+                  {allSummary.map((row) => (
+                    <tr key={row.employeeHrId}>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                        {day.dateIso}
-                        <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                        {row.employeeName}
+                        <div className="text-[11px] font-medium text-slate-400">{row.employeeHrId}</div>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
-                          {OUTCOME_LABEL[day.outcome]}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.firstPunchMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.lastPunchMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDuration(day.workedMinutes)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.lateMinutes > 0 ? `${day.lateMinutes} min` : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.shortMinutes > 0 ? `${day.shortMinutes} min` : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionDays > 0 ? day.deductionDays : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{day.deductionValue > 0 ? day.deductionValue.toFixed(2) : "—"}</td>
-                      <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
+                      <td className="px-3 py-2 text-slate-700">{row.count}</td>
+                      <td className="px-3 py-2 font-bold text-slate-900">{row.days.toFixed(2)}</td>
+                      <td className="px-3 py-2 font-bold text-slate-900">{row.amount.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 font-black text-slate-900">
+                    <td className="px-3 py-2">Total</td>
+                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.count, 0)}</td>
+                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.days, 0).toFixed(2)}</td>
+                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.amount, 0).toFixed(2)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
-          </AdminTableShell>
-        )
-      ) : null}
+          )}
+        </AdminTableShell>
+      ) : !initialReport ? (
+        <AdminCallout tone="warning">Pick an employee above and click View Report to see day-by-day detail.</AdminCallout>
+      ) : initialReport.tier === null ? (
+        <AdminCallout tone="warning">
+          {initialReport.employeeName} isn&apos;t on the flexible-hours model (no required-minutes policy) — this report has no
+          detail to show for them.
+        </AdminCallout>
+      ) : (
+        <>
+            {tab === "detail" ? (
+              <AdminTableShell
+                description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · ${initialReport.jobTitle} · ${initialReport.dateFromIso} to ${initialReport.dateToIso} · ${totals?.deductionDays ?? 0} day(s) flagged · ${(totals?.deductionValue ?? 0).toFixed(2)} EGP flagged`}
+                title="Day-by-Day Detail"
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1280px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Outcome</th>
+                        <th className="px-3 py-2">Check-in</th>
+                        <th className="px-3 py-2">Check-out</th>
+                        <th className="px-3 py-2">Worked</th>
+                        <th className="px-3 py-2">Late</th>
+                        <th className="px-3 py-2">Short</th>
+                        <th className="px-3 py-2">Days</th>
+                        <th className="px-3 py-2">Value (EGP)</th>
+                        <th className="px-3 py-2 text-center">Approve</th>
+                        <th className="px-3 py-2">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {initialReport.days.map((day) => {
+                        const decision = decisions[day.dateIso];
+                        const approved = decision?.decisionStatus === "Approved for Payroll";
+                        const rejected = decision?.decisionStatus === "Do Not Take Action";
+                        const defaultDays = decision?.appliedDeductionValue ?? (day.deductionDays > 0 ? day.deductionDays : 0);
+                        return (
+                          <tr className="align-top" key={day.dateIso}>
+                            <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                              {day.dateIso}
+                              <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                                {OUTCOME_LABEL[day.outcome]}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.firstPunchMinutes)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.lastPunchMinutes)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDuration(day.workedMinutes)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.lateMinutes > 0 ? `${day.lateMinutes} min` : "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.shortMinutes > 0 ? `${day.shortMinutes} min` : "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
+                              <Input
+                                key={`${day.dateIso}:${defaultDays}`}
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                defaultValue={defaultDays}
+                                disabled={busyDate === day.dateIso}
+                                onChange={(event) => setEditedDays((prev) => ({ ...prev, [day.dateIso]: event.target.value }))}
+                                className="h-8 w-20"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
+                              {(() => {
+                                const value = liveValue(defaultDays, editedDays[day.dateIso], initialReport.baseSalary, decision?.appliedAmount ?? day.deductionValue);
+                                return value > 0 ? value.toFixed(2) : "—";
+                              })()}
+                            </td>
+                            <td className="px-3 py-2 text-center align-top">
+                              <input
+                                type="checkbox"
+                                checked={approved}
+                                disabled={busyDate === day.dateIso}
+                                onChange={(event) => {
+                                  const editedValue = editedDays[day.dateIso];
+                                  const days = editedValue?.trim() ? Number(editedValue) : defaultDays;
+                                  void decide(day.dateIso, event.target.checked ? "Approved for Payroll" : "Do Not Take Action", days);
+                                }}
+                                className="h-5 w-5 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              />
+                              {rejected ? <div className="text-[10px] font-semibold text-rose-600">Rejected</div> : null}
+                            </td>
+                            <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </AdminTableShell>
+            ) : (
+              <AdminTableShell
+                description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · confirmed for payroll · ${confirmedTotals.days.toFixed(2)} day(s) · ${confirmedTotals.value.toFixed(2)} EGP total`}
+                title="FP Deductions Summary"
+              >
+                {confirmed.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-slate-500">No days confirmed yet for this employee in this range.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Outcome</th>
+                          <th className="px-3 py-2">Days</th>
+                          <th className="px-3 py-2">Value (EGP)</th>
+                          <th className="px-3 py-2">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {confirmed.map(({ day, decision }) => (
+                          <tr key={day.dateIso}>
+                            <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                              {day.dateIso}
+                              <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                                {OUTCOME_LABEL[day.outcome]}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{decision?.appliedDeductionValue ?? "—"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{(decision?.appliedAmount ?? 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-300 font-black text-slate-900">
+                          <td className="px-3 py-2" colSpan={2}>
+                            Total
+                          </td>
+                          <td className="px-3 py-2">{confirmedTotals.days.toFixed(2)}</td>
+                          <td className="px-3 py-2">{confirmedTotals.value.toFixed(2)}</td>
+                          <td className="px-3 py-2" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </AdminTableShell>
+            )}
+        </>
+      )}
     </div>
   );
 }
