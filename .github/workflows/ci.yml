@@ -75,6 +75,9 @@ jobs:
         run: pnpm run check:no-stale-domains
 
       - name: Dependency audit (fail on high+ vulnerabilities)
+        # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
+        # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
+        # exploitable).
         run: pnpm audit --audit-level=high --prod
 
       - name: Restore .next build cache
