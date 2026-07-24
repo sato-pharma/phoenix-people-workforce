@@ -5,11 +5,9 @@ import {
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
   derivePrivateCalendarExceptions,
-  filterPrivateCalendarActualItems,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
-  mapPlanRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
   summarizePrivateCalendarItems,
 } from "../src/lib/private-calendar/logic.ts";
@@ -134,95 +132,26 @@ export function runPrivateCalendarTests() {
   assert.equal(excuse.time, "Afternoon (2h)");
   assert.equal(excuse.sourceTable, "v2_excuse_requests");
 
-  const plan = mapPlanRowToPrivateCalendarItem({
-    activity_date: "2026-06-23",
-    activity_title: "Field",
-    activity_type: "Field",
-    area: "Munufia 2",
-    employee_hr_id: "E-1",
-    employee_name: "Employee One",
-    end_time: null,
-    id: "plan-1",
-    location_text: "Delta 2",
-    notes: "Day note",
-    plan_kind: "weekly",
-    start_time: null,
-    status: "submitted",
-  });
-  assert.equal(plan.source, "plan");
-  assert.equal(plan.title, "Single Visit - Munufia 2");
-  assert.equal(plan.sourceTable, "employee_plan_items");
-  assert.equal(plan.planCountsAsAttendance, true, "a Field/Single Visit plan self-proves attendance");
-
-  // An off-site planned activity (Meeting/Training/Travel/Double Visit/Coaching) —
-  // not just the literal "Single Visit" — must self-prove attendance, even while
-  // the plan is returned for edit. Otherwise a routine manager action re-flags the
-  // employee as absent (the reported bug).
-  const offSitePlan = mapPlanRowToPrivateCalendarItem({
-    activity_date: "2026-06-17",
-    activity_title: "Meeting",
-    activity_type: "Meeting",
-    area: null,
-    employee_hr_id: "E-1",
-    employee_name: "Employee One",
-    end_time: null,
-    id: "plan-mtg-1",
-    location_text: null,
-    notes: null,
-    plan_kind: "weekly",
-    start_time: null,
-    status: "manager_returned",
-  });
-  assert.equal(offSitePlan.planCountsAsAttendance, true, "an off-site plan activity self-proves attendance");
-  const offSiteExceptions = derivePrivateCalendarExceptions({
-    employees: [{ departmentName: null, fullName: "Employee One", hrId: "E-1", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
-    end: "2026-06-17",
-    isExpectedWorkday: () => true,
-    items: [offSitePlan],
-    start: "2026-06-17",
-    today: "2026-06-17",
-  });
-  assert.equal(
-    offSiteExceptions.filter((e) => e.title === "No Activity Recorded").length,
-    0,
-    "an off-site planned day must never be flagged as missing attendance",
-  );
-
-  // A desk plan (Office/Admin) with no punch still flags — the employee-facing
-  // calendar hides plan items entirely, so whether a hidden plan existed must not
-  // change the wording: it's the same "No Activity Recorded" as any other
-  // uncovered workday, exactly once (never duplicated).
-  const deskPlan = mapPlanRowToPrivateCalendarItem({
-    activity_date: "2026-06-17",
-    activity_title: "Office",
-    activity_type: "Office",
-    area: null,
-    employee_hr_id: "E-2",
-    employee_name: "Employee Two",
-    end_time: null,
-    id: "plan-office-1",
-    location_text: null,
-    notes: null,
-    plan_kind: "weekly",
-    start_time: null,
-    status: "submitted",
-  });
-  assert.equal(deskPlan.planCountsAsAttendance, false, "a desk plan still requires a punch");
-  const deskExceptions = derivePrivateCalendarExceptions({
+  // Planning Calendar ("plan") activity is not a private-calendar source at all —
+  // it must never suppress or otherwise affect the "No Activity Recorded" check.
+  // An employee with zero real items (no punch, no vacation, no excuse, no CRM
+  // double visit) on an expected workday flags exactly once, with a description
+  // that spells out exactly which sources were checked and came up empty.
+  const noItemsExceptions = derivePrivateCalendarExceptions({
     employees: [{ departmentName: null, fullName: "Employee Two", hrId: "E-2", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
     end: "2026-06-17",
     isExpectedWorkday: () => true,
-    items: [deskPlan],
+    items: [],
     start: "2026-06-17",
     today: "2026-06-17",
   });
   assert.equal(
-    deskExceptions.filter((e) => e.title === "No Activity Recorded").length,
+    noItemsExceptions.filter((e) => e.title === "No Activity Recorded").length,
     1,
-    "a desk plan with no punch flags exactly one No Activity Recorded exception, never a plan-specific variant",
+    "an uncovered workday with no real items flags exactly one No Activity Recorded exception",
   );
   assert.equal(
-    deskExceptions[0]?.description,
+    noItemsExceptions[0]?.description,
     "Employee Two: no CRM double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
@@ -391,33 +320,16 @@ export function runPrivateCalendarTests() {
       managerName: "Manager One",
     }],
     exceptions,
-    items: [attendance, vacation, excuse, plan],
+    items: [attendance, vacation, excuse],
   });
   assert.equal(teamSummary[0]?.sourceCounts.attendance, 1);
   assert.ok((teamSummary[0]?.exceptionCount ?? 0) >= 1, "team summary must count exceptions per employee");
 
-  assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse, plan]), {
+  assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse]), {
     attendance: 1,
     double_visit: 0,
     excuse: 1,
     holiday: 0,
-    plan: 1,
-    total: 4,
-    vacation: 1,
-  });
-
-  const actualOnlyItems = filterPrivateCalendarActualItems([attendance, vacation, excuse, plan]);
-  assert.deepEqual(
-    actualOnlyItems.map((item) => item.source),
-    ["attendance", "vacation", "excuse"],
-    "actual-only filter must drop plan items and keep every other source",
-  );
-  assert.deepEqual(summarizePrivateCalendarItems(actualOnlyItems), {
-    attendance: 1,
-    double_visit: 0,
-    excuse: 1,
-    holiday: 0,
-    plan: 0,
     total: 3,
     vacation: 1,
   });
@@ -425,7 +337,7 @@ export function runPrivateCalendarTests() {
   const serviceSource = readFileSync("src/lib/private-calendar/service.ts", "utf8");
   const excuseLoaderSource = serviceSource.slice(
     serviceSource.indexOf("async function loadExcuseItems"),
-    serviceSource.indexOf("async function loadPlanItems"),
+    serviceSource.indexOf("export function canUsePrivateCalendarAdminSurface"),
   );
   assert.match(
     serviceSource,
@@ -438,13 +350,13 @@ export function runPrivateCalendarTests() {
     "private calendar must expand employee HR_ID filters into known casing dialects",
   );
   assert.equal(
-    serviceSource.match(/for \(const \w+ of chunk\(employeeHrKeys\)\)/g)?.length,
-    4,
-    "vacation, excuse, plan, and no-activity-status private-calendar loaders must batch over expanded employee HR_ID keys",
+    serviceSource.match(/\.in\("employee_hr_id", employeeHrKeys\)/g)?.length,
+    3,
+    "vacation, excuse, and no-activity-status private-calendar loaders must use expanded employee HR_ID keys",
   );
   assert.match(
     excuseLoaderSource,
-    /for \(const \w+ of chunk\(employeeHrKeys\)\)[\s\S]*?\.in\("employee_hr_id", \w+\)/,
+    /\.in\("employee_hr_id", employeeHrKeys\)/,
     "approved excuse calendar reads must match A-8/a-8/canonical HR_ID dialects",
   );
   assert.doesNotMatch(
@@ -453,7 +365,7 @@ export function runPrivateCalendarTests() {
     "approved excuse calendar reads must not use uppercase-only HR_ID matching",
   );
   assert.match(serviceSource, /\.eq\("status", "approved"\)/, "vacation and excuse loaders must only read approved rows");
-  assert.match(serviceSource, /privateCalendarPlanStatuses/, "plan loader must use the review-proof private-calendar plan statuses (submitted through returned/approved)");
+  assert.doesNotMatch(serviceSource, /loadPlanItems|privateCalendarPlanStatuses|mapPlanRowToPrivateCalendarItem/, "the Planning Calendar (plan) source must never sync into the private calendar again");
   assert.match(serviceSource, /canReadPrivateCalendarEmployee/, "service must enforce server-side employee scope");
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
@@ -461,13 +373,12 @@ export function runPrivateCalendarTests() {
   assert.match(
     serviceSource,
     /item\.source !== "attendance" \|\| item\.status === "Complete" \|\| !fieldVisitDates\.has\(item\.startDate\)/,
-    "a genuine Complete attendance punch must never be suppressed on a field-visit date, even when an unrelated/unapproved plan entry also claims field work that day — only problem statuses (Late/Short day/Single punch) get suppressed there",
+    "a genuine Complete attendance punch must never be suppressed on a field-visit date — only problem statuses (Late/Short day/Single punch) get suppressed there",
   );
-  assert.match(serviceSource, /actualOnly/, "service must support an actual-only (plan-hidden) private calendar mode");
   assert.match(
     serviceSource,
     /derivePrivateCalendarExceptions\(\{[\s\S]*?items,\n/,
-    "exceptions must be derived from the full item set (including plan) even in actual-only mode, so field plans keep suppressing false absence flags",
+    "exceptions must be derived from the full recorded/verified item set",
   );
 
   const apiSource = readFileSync("app/api/private-calendar/route.ts", "utf8");
@@ -479,7 +390,7 @@ export function runPrivateCalendarTests() {
   assert.match(exportRouteSource, /actualOnly/, "private calendar export must honor actual-only mode so downloads match what the employee sees");
 
   const employeePortalPageSource = readFileSync("app/employee-portals/private-calendar/page.tsx", "utf8");
-  assert.match(employeePortalPageSource, /actualOnly:\s*true/, "employee portal private calendar must request actual-only (no plan items)");
+  assert.match(employeePortalPageSource, /actualOnly:\s*true/, "employee portal private calendar must keep requesting actual-only display mode");
 
   const accessRegistrySource = readFileSync("src/lib/security/access-registry.ts", "utf8");
   assert.match(accessRegistrySource, /\/api\/private-calendar/, "private calendar API must be in access registry");
@@ -538,31 +449,42 @@ export function runPrivateCalendarTests() {
     /<span className="block truncate" key=\{lineIndex\}>\{line\}<\/span>/,
     "chip lines must not be truncated with an ellipsis — long names should wrap instead",
   );
-  assert.match(
+  assert.doesNotMatch(
     privateCalendarUiSource,
-    /line-clamp-2/,
-    "chip lines must wrap onto up to two rows instead of being cut off on one line",
+    /line-clamp-\d/,
+    "chip lines must never be capped at N rows — every word must stay fully visible, no matter how many lines it takes",
   );
   assert.match(
     privateCalendarUiSource,
-    /divide-y divide-black\/10/,
-    "stacked chip lines must be visually separated from the line below them",
+    /<span className="block py-1 \[overflow-wrap:anywhere\]" key=\{lineIndex\}>\{line\}<\/span>/,
+    "each chip line must render as its own block-level row, fully unclamped, so the day cell grows to fit every word",
+  );
+  assert.match(
+    privateCalendarUiSource,
+    /divide-y divide-black\/15/,
+    "stacked chip lines (each 'sentence' — DV partner / AM-PM count / area) must be visually separated from the line below them",
   );
   assert.doesNotMatch(
     privateCalendarUiSource,
-    /source === "double_visit"\) return "bg-blue-100 text-blue-700"/,
-    "double_visit must not share vacation's exact blue chip color",
+    /source === "double_visit"\) return "[^"]*(blue|indigo)/,
+    "double_visit must not use blue or indigo — both read too close to vacation's blue at chip size",
   );
-  assert.doesNotMatch(
-    privateCalendarUiSource,
-    /source === "double_visit"\) return "bg-blue-500"/,
-    "double_visit must not share vacation's exact blue swatch color",
-  );
-  const doubleVisitIndigoMatches = privateCalendarUiSource.match(/source === "double_visit"\) return "[^"]*indigo/g) ?? [];
+  const doubleVisitFuchsiaMatches = privateCalendarUiSource.match(/source === "double_visit"\) return "[^"]*fuchsia/g) ?? [];
   assert.equal(
-    doubleVisitIndigoMatches.length,
+    doubleVisitFuchsiaMatches.length,
     3,
-    "double_visit must get its own distinct indigo consistently across all remaining source-color helpers (accent, chip, swatch — sourceTone was removed as dead code along with the report table it exclusively served)",
+    "double_visit must get its own distinct fuchsia consistently across all remaining source-color helpers (accent, chip, swatch)",
+  );
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /return "[^"]*teal/,
+    "holiday (the source-color fallback) must not use teal — it read too close to attendance's emerald green at chip size",
+  );
+  const holidayVioletMatches = privateCalendarUiSource.match(/return "[^"]*violet/g) ?? [];
+  assert.equal(
+    holidayVioletMatches.length,
+    3,
+    "holiday (the source-color fallback) must get its own distinct violet consistently across accent, chip, and swatch",
   );
   assert.doesNotMatch(
     privateCalendarUiSource,
