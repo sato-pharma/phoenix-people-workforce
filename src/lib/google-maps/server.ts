@@ -1,3 +1,9 @@
+// server-only: this module dynamically imports node:https and calls Google's Routes API
+// with a server-side API key. A client component that imports it (even transitively)
+// fails the webpack build with a clear error instead of a cryptic "node:https is not
+// handled" crash — same defense-in-depth guard as employee-photo.ts (2026-07-25).
+import "server-only";
+
 type LatLng = { lat: number; lng: number };
 
 export type GoogleRoutesApiRoute = {
