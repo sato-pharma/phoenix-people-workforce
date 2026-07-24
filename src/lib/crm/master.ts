@@ -688,19 +688,16 @@ async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> 
     if (rows.length === 0) return map;
 
     const brickIds = Array.from(new Set(rows.map((r) => r.brick_id).filter((v): v is string => Boolean(v))));
-    // PostgREST folds every .in() value into the request URL; batch defensively since this is
-    // bounded only by "distinct CRM region count, ~300" — already near the risk threshold.
-    const brickRows: Array<{ area_code: string | null; brick_id: string; region_code: string | null }> = [];
-    for (let i = 0; i < brickIds.length; i += 100) {
-      const batch = brickIds.slice(i, i + 100);
-      const { data: bricks, error: bricksError } = await supabase
-        .from("source_of_sales_bricks")
-        .select("brick_id, area_code, region_code")
-        .in("brick_id", batch);
-      if (bricksError) return map;
-      brickRows.push(...((bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>));
-    }
-    const brickById = new Map(brickRows.map((b) => [b.brick_id, b]));
+    const { data: bricks, error: bricksError } = await supabase
+      .from("source_of_sales_bricks")
+      .select("brick_id, area_code, region_code")
+      .in("brick_id", brickIds);
+    if (bricksError) return map;
+    const brickById = new Map(
+      ((bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>).map(
+        (b) => [b.brick_id, b],
+      ),
+    );
 
     for (const row of rows) {
       if (!row.brick_id) continue;
@@ -782,11 +779,17 @@ async function resolveAllowedHrIds(opts: {
 /** In-memory filters for the computed tabs (vacations, triples) — their rows aren't produced by the
  * DB query path, so the advanced filters are applied here: agent-HR-id substring, free-text search,
  * a line/hiring-date allow-set (by hr id), and (vacations) minimum Duration + half-days-only.
- * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples). */
+ * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples)
+ * and is what the Line/Hiring-Date allow-set filter is scoped to (deliberately: those filters mean
+ * "the REP is in this line / hired in this range", not any of the three triple positions).
+ * `agentHrIdFields` is the (possibly wider) set of hr-id columns the free-text Agent HR ID box
+ * searches — defaults to just `hrIdField` — so on the triples tab, searching one employee's hr id
+ * finds every triple they appear in (rep, middle manager, OR top manager), not only as the base rep. */
 function filterComputedRows(
   rows: CrmMasterRow[],
   opts: {
     agentHrId: string | null;
+    agentHrIdFields?: readonly string[];
     allowed: Set<string> | null;
     halfDaysOnly: boolean;
     hrIdField: string;
@@ -796,13 +799,20 @@ function filterComputedRows(
 ): CrmMasterRow[] {
   const agentNeedle = opts.agentHrId ? opts.agentHrId.trim().toLowerCase() : null;
   const searchNeedle = opts.search ? opts.search.trim().toLowerCase() : null;
+  const agentHrIdFields = opts.agentHrIdFields ?? [opts.hrIdField];
   return rows.filter((row) => {
     const hrRaw = typeof row[opts.hrIdField] === "string" ? (row[opts.hrIdField] as string) : null;
     if (opts.allowed) {
       const k = canonicalHrIdKey(hrRaw);
       if (!k || !opts.allowed.has(k)) return false;
     }
-    if (agentNeedle && !(hrRaw && hrRaw.toLowerCase().includes(agentNeedle))) return false;
+    if (agentNeedle) {
+      const matchesAny = agentHrIdFields.some((field) => {
+        const raw = typeof row[field] === "string" ? (row[field] as string) : null;
+        return raw != null && raw.toLowerCase().includes(agentNeedle);
+      });
+      if (!matchesAny) return false;
+    }
     if (searchNeedle) {
       const hay = [row.agent_name, row.base_name, row.mid_name, row.top_name, row.contact_name, row.comment]
         .filter((v): v is string => typeof v === "string")
@@ -1050,10 +1060,19 @@ function applyMasterFilters(
     q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
 
-  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
+  // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
+  // either so filtering by one employee surfaces EVERY record they appear in — as the primary
+  // agent OR as the double/accompanying partner. Managers/Training staff frequently have no
+  // primary-agent visits of their own at all (their whole CRM footprint is double-visit rides
+  // along a rep's route), so an agent_hr_id-only filter silently showed zero rows for them —
+  // including on the Double Visits tab, whose entire purpose is this exact record type.
   if (agentHrId) {
     const escaped = sanitizeSearch(agentHrId);
-    if (escaped) q = q.ilike("agent_hr_id", `%${escaped}%`);
+    if (escaped) {
+      q = isVisits
+        ? q.or(`agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%`)
+        : q.ilike("agent_hr_id", `%${escaped}%`);
+    }
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
   if (isVisits && visitType) {
@@ -1195,7 +1214,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       loadAgentMetaByHrId(),
     ]);
     // Advanced filters apply to the rep (base) of each triple; Duration/half are vacation-only.
-    const filtered = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const filtered = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     const start = (page - 1) * pageSize;
     const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
@@ -1299,7 +1318,7 @@ export async function getCrmMasterExportRows(
       computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
-    const rows = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const rows = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
     return { columns, dataset, rows, truncated };
   }
