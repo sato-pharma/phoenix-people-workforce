@@ -6,7 +6,7 @@
 // candidate-matching.ts, untouched), upload the CV (uploadCandidateFile, untouched), run AI
 // extraction targeted at the just-uploaded file (extractCandidateFieldsFromCv's fileId option),
 // and notify Talent Acquisition. Every attempt — including ones that never produce a candidate —
-// is logged to recruitment_cv_intake_events so two brand-new external integrations stay
+// is logged to ats_cv_intake_events so two brand-new external integrations stay
 // debuggable instead of opaque.
 //
 // The (channel, provider_message_id) unique index on that table is also the idempotency claim:
@@ -14,9 +14,8 @@
 // a retried webhook delivery or a re-run cron poll can never create a second candidate for the
 // same inbound message.
 //
-// Runs as systemAccessContext (the same no-login pattern src/lib/recruitment/postings.ts already
-// uses for public careers-page submissions) — there is no logged-in user behind an inbound
-// email or WhatsApp message.
+// Runs as systemAccessContext — there is no logged-in user behind an inbound email or
+// WhatsApp message.
 
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { createCandidate } from "@/lib/recruitment/candidates";
@@ -78,7 +77,7 @@ function maxInboundCvBytes(): number {
 async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_cv_intake_events")
+    .from("ats_cv_intake_events")
     .insert({
       channel: input.channel,
       mailbox_label: input.mailboxLabel ?? null,
@@ -111,7 +110,7 @@ async function finalizeIntakeEvent(
 ): Promise<void> {
   const supabase = recruitmentDb();
   const { error } = await supabase
-    .from("recruitment_cv_intake_events")
+    .from("ats_cv_intake_events")
     .update({
       candidate_id: patch.candidateId ?? null,
       error_message: patch.errorMessage ?? null,

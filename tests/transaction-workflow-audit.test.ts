@@ -74,11 +74,6 @@ export function runTransactionWorkflowAuditTests() {
   assert.match(vacationDecision, /stepKey: step\.stepKey/);
   assert.match(vacationDecision, /writeRequiredAuditLog\(\{[\s\S]*entityType: "vacation_request"/);
 
-  const offersService = source("src/lib/offers/service.ts");
-  const offerApprovalRoute = source("app/api/offers/[offerRef]/approve/route.ts");
-  assert.match(offersService, /phx_approve_accepted_offer/);
-  assert.match(offerApprovalRoute, /provisionNewHireAccess/);
-
   const manualEmployeeRoute = source("app/api/employees/route.ts");
   const bulkEmployeeRoute = source("app/api/imports/employees/confirm/route.ts");
   assert.match(manualEmployeeRoute, /provisionNewHireAccess/);

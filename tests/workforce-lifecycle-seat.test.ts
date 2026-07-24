@@ -109,7 +109,7 @@ export function runWorkforceLifecycleSeatTests() {
   );
 
   const employeeDirectorySource = readFileSync("src/lib/employees/employee-directory.ts", "utf8");
-  assert.match(employeeDirectorySource, /closeVacancyForOffer/);
+  assert.match(employeeDirectorySource, /closeVacancyOnHire/);
   assert.match(employeeDirectorySource, /reassignLiveManagerOwnership/);
 
   const bulkImportSource = readFileSync("app/api/imports/employees/confirm/route.ts", "utf8");
@@ -117,18 +117,11 @@ export function runWorkforceLifecycleSeatTests() {
   assert.match(bulkImportSource, /shouldCloseVacancyForHire/);
   assert.match(bulkImportSource, /closedVacancies/);
 
-  const offerSource = readFileSync("src/lib/offers/service.ts", "utf8");
-  assert.match(offerSource, /phx_approve_accepted_offer/);
-  assert.doesNotMatch(offerSource, /await closeVacancyForOffer\(\{[\s\S]*vacancy_id: offer\.vacancy_id/);
-  // closeVacancyForOffer lives in offers/vacancies.ts (split out of offers/service.ts so
-  // employee-directory.ts never pulls service.ts's dynamic offer-letter-pdf.ts import into
-  // a client bundle) — check the actual closer's manager-matching logic there.
-  const vacanciesSource = readFileSync("src/lib/offers/vacancies.ts", "utf8");
-  assert.match(vacanciesSource, /manager_name\?: string \| null/);
-  assert.match(vacanciesSource, /normalizeManagerName\(vacancy\.manager_name\) === resolvedManagerName/);
-  const offerHardeningMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql", "utf8");
-  assert.match(offerHardeningMigration, /filled_by_hr_id = v_employee_hr_id/);
-  assert.match(offerHardeningMigration, /replacement_for_hr_id = null/);
+  // closeVacancyOnHire lives in its own module (env-bound Supabase client, apart from
+  // the recruitment/offers domain) — check the department/manager-matching logic there.
+  const vacancyCloserSource = readFileSync("src/lib/employees/vacancy-closer.ts", "utf8");
+  assert.match(vacancyCloserSource, /manager_name\?: string \| null/);
+  assert.match(vacancyCloserSource, /normalizeManagerName\(vacancy\.manager_name\) === resolvedManagerName/);
 
   const resignationsSource = readFileSync("src/lib/resignations/service.ts", "utf8");
   assert.match(resignationsSource, /phx_resign_employee_and_open_vacancy/);

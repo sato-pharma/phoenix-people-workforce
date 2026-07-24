@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createInterview, listInterviewsForApplication } from "@/lib/recruitment/interviews";
+import { hiringManagerInterviewType } from "@/lib/recruitment/access";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -25,9 +26,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-// Interview type is always "hiring_manager" here regardless of the request body — the
+// Interview type is derived from the caller's own role, never the request body — the
 // phone/hr/cv screening stages belong to Talent Acquisition's own workspace, not this
-// narrow hiring-manager surface.
+// narrow hiring-manager surface. District Manager stays "hiring_manager"; Regional
+// Manager/National Sales Manager/CEO each get their own round type.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const csrf = assertSameOriginMutation(request);
@@ -36,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const body = await readJsonObject(request);
     const interview = await createInterview(access, id, {
-      interviewType: "hiring_manager",
+      interviewType: hiringManagerInterviewType(access.role),
       scheduledAt: str(body.scheduledAt),
       location: str(body.location),
       meetingLink: str(body.meetingLink),

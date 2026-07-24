@@ -1,12 +1,12 @@
 // Recruitment / ATS — IMAP polling for inbound CV email intake.
 //
-// Deliberately a persisted UID cursor (recruitment_email_intake_cursors table), never the IMAP
+// Deliberately a persisted UID cursor (ats_email_intake_cursors table), never the IMAP
 // \Seen flag: careers@/hr@ are shared, human-monitored mailboxes — flipping \Seen on
 // bot-processed messages would pollute what HR staff see as unread, and an UNSEEN-filtered poll
 // would race with a human opening a message first. This poller only ever reads (getMailboxLock
 // with readOnly: true) and never mutates mailbox state. A UIDVALIDITY change (rare — happens if
 // the mailbox is rebuilt server-side) resets the cursor to 0 for that mailbox; the
-// (channel, provider_message_id) claim in recruitment_cv_intake_events is the safety net against
+// (channel, provider_message_id) claim in ats_cv_intake_events is the safety net against
 // reprocessing in that edge case.
 //
 // Processes mailboxes, and messages within a mailbox, sequentially — bounds concurrent IMAP
@@ -29,7 +29,7 @@ type CursorRow = { imap_uidvalidity: string | number | null; last_processed_uid:
 async function loadCursor(mailboxLabel: string): Promise<{ uidValidity: bigint | null; lastProcessedUid: number }> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_email_intake_cursors")
+    .from("ats_email_intake_cursors")
     .select("imap_uidvalidity,last_processed_uid")
     .eq("mailbox_label", mailboxLabel)
     .maybeSingle();
@@ -44,7 +44,7 @@ async function loadCursor(mailboxLabel: string): Promise<{ uidValidity: bigint |
 
 async function saveCursor(mailboxLabel: string, uidValidity: bigint, lastProcessedUid: number): Promise<void> {
   const supabase = recruitmentDb();
-  const { error } = await supabase.from("recruitment_email_intake_cursors").upsert(
+  const { error } = await supabase.from("ats_email_intake_cursors").upsert(
     {
       imap_uidvalidity: uidValidity.toString(),
       last_processed_uid: lastProcessedUid,

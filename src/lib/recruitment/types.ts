@@ -122,7 +122,7 @@ export type HeadcountType = (typeof headcountTypes)[number];
 export const requisitionPriorities = ["low", "normal", "high", "urgent"] as const;
 export type RequisitionPriority = (typeof requisitionPriorities)[number];
 
-export const interviewTypes = ["phone", "hr", "hiring_manager", "cv"] as const;
+export const interviewTypes = ["phone", "hr", "hiring_manager", "cv", "rm_interview", "nsm_interview", "ceo_interview"] as const;
 export type InterviewType = (typeof interviewTypes)[number];
 
 // Rule 5/6 — screening outcomes that drive the pipeline from the screening forms.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BriefcaseBusiness,
@@ -25,10 +25,6 @@ import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
-import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
-import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
-import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding-checklist";
-import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
@@ -127,365 +123,6 @@ async function deleteRequest(url: string): Promise<Record<string, unknown>> {
   return data;
 }
 
-function OfferSalaryPreview({ baseSalary, jobTitle }: { baseSalary: string; jobTitle: string | null | undefined }) {
-  const base = Number(baseSalary);
-  if (!Number.isFinite(base) || base <= 0) return null;
-  const allowances = resolveStandardSalaryAllowances({ jobTitle: jobTitle ?? null });
-  const fixed = resolveFixedSalaryAmounts({
-    baseSalary: base,
-    extraCostOfLiving: allowances.extraCostOfLiving,
-    fuelAllowance: allowances.fuelAllowance,
-  });
-  const rows: Array<[string, number]> = [
-    ["Base salary", fixed.baseSalary],
-    ["Basic salary", fixed.basicSalary],
-    ["Extra cost of living", allowances.extraCostOfLiving],
-    ["Fuel allowance", allowances.fuelAllowance],
-    ["Net salary", fixed.netSalary],
-  ];
-  return (
-    <div className="border border-slate-200 bg-slate-50 p-2 text-xs">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex justify-between">
-          <span className="text-slate-500">{label}</span>
-          <span className="font-semibold text-slate-900">{value.toLocaleString()}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-type OfferApprovalStep = {
-  id: string;
-  sequence: number;
-  approverKind: string;
-  approverRole: string | null;
-  approverHrId: string | null;
-  required: boolean;
-  decision: string;
-  canAct: boolean;
-  reason: string | null;
-};
-
-function approverLabel(step: OfferApprovalStep): string {
-  if (step.approverKind === "person") {
-    return `Department Head${step.approverHrId ? ` (${step.approverHrId})` : ""}`;
-  }
-  if (step.approverRole === "Super Admin") return "HR Manager";
-  if (step.approverRole === "Finance Manager") return "Finance";
-  return step.approverRole ?? "Approver";
-}
-
-// Staged offer pipeline: prepare -> approval chain -> generate -> send, plus the
-// negotiation re-prepare loop. Self-contained (own busy/notice state + chain fetch).
-function OfferPipelinePanel({ application, canManage }: { application: ApplicationWithContext; canManage: boolean }) {
-  const router = useRouter();
-  const appId = application.id;
-  const stage = application.stage;
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [baseSalary, setBaseSalary] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState("7");
-  const [probationMonths, setProbationMonths] = useState("3");
-  const [benefitsText, setBenefitsText] = useState("");
-  const [reason, setReason] = useState("");
-  const [steps, setSteps] = useState<OfferApprovalStep[]>([]);
-  const offerAttachmentsRef = useRef<HTMLInputElement>(null);
-
-  const reloadChain = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/recruitment/applications/${appId}/offer/approval`);
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      setSteps(Array.isArray(data.steps) ? (data.steps as OfferApprovalStep[]) : []);
-    } catch {
-      setSteps([]);
-    }
-  }, [appId]);
-
-  useEffect(() => {
-    if (stage !== "offer_pending_approval") return;
-    let active = true;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/recruitment/applications/${appId}/offer/approval`);
-        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-        if (active) setSteps(Array.isArray(data.steps) ? (data.steps as OfferApprovalStep[]) : []);
-      } catch {
-        if (active) setSteps([]);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [stage, appId]);
-
-  const offerStages = [
-    "offer_initiated",
-    "offer_draft",
-    "offer_pending_approval",
-    "offer_approved",
-    "offer_generated",
-    "offer_negotiation",
-  ];
-  if (!canManage || !offerStages.includes(stage)) return null;
-
-  const act = (work: () => Promise<string>) => {
-    setBusy(true);
-    setErr(null);
-    setNote(null);
-    void (async () => {
-      try {
-        const message = await work();
-        setNote(message);
-        router.refresh();
-      } catch (caught) {
-        setErr(caught instanceof Error ? caught.message : "Request failed.");
-      } finally {
-        setBusy(false);
-      }
-    })();
-  };
-
-  const benefitsPayload = () =>
-    benefitsText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const idx = line.indexOf(":");
-        return idx >= 0
-          ? { label: line.slice(0, idx).trim(), detail: line.slice(idx + 1).trim() }
-          : { label: line, detail: "" };
-      })
-      .filter((benefit) => benefit.label);
-
-  return (
-    <div className="space-y-2 border-t border-slate-200 pt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer pipeline</p>
-      {note ? <p className="text-xs text-emerald-600">{note}</p> : null}
-      {err ? <p className="text-xs text-rose-600">{err}</p> : null}
-
-      {stage === "offer_initiated" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">
-            From requisition: {application.requisition?.jobTitle ?? "—"} · Manager{" "}
-            {application.requisition?.hiringManagerHrId ?? "—"}
-          </p>
-          <Input placeholder="Base salary" type="number" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} />
-          <Input placeholder="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <Input placeholder="Probation (months)" type="number" value={probationMonths} onChange={(e) => setProbationMonths(e.target.value)} />
-          <Input placeholder="Expires in days" type="number" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
-          <textarea
-            className={fieldClass}
-            placeholder="Benefits — one per line as 'Label: detail'"
-            value={benefitsText}
-            onChange={(e) => setBenefitsText(e.target.value)}
-          />
-          <OfferSalaryPreview baseSalary={baseSalary} jobTitle={application.requisition?.jobTitle} />
-          <Button
-            disabled={busy || !baseSalary}
-            onClick={() =>
-              act(async () => {
-                await postJson(`/api/recruitment/applications/${appId}/offer/prepare`, {
-                  baseSalary: Number(baseSalary),
-                  startDate: startDate || undefined,
-                  expiresInDays: Number(expiresInDays) || 7,
-                  probationPeriodMonths: Number(probationMonths) || 3,
-                  benefits: benefitsPayload(),
-                });
-                return "Offer draft prepared.";
-              })
-            }
-          >
-            Prepare offer draft
-          </Button>
-        </div>
-      ) : null}
-
-      {stage === "offer_draft" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">Offer draft ready. Submit it to start the approval chain.</p>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                await postJson(`/api/recruitment/applications/${appId}/offer/submit-approval`, {});
-                return "Submitted for approval.";
-              })
-            }
-          >
-            Submit for approval
-          </Button>
-        </div>
-      ) : null}
-
-      {stage === "offer_pending_approval" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">Approval chain</p>
-          {steps.length === 0 ? (
-            <p className="text-xs text-slate-500">Loading…</p>
-          ) : (
-            <ul className="space-y-2 text-xs">
-              {steps.map((step) => (
-                <li key={step.id} className="border border-slate-200 p-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">{approverLabel(step)}</span>
-                    <span
-                      className={
-                        step.decision === "approved"
-                          ? "text-emerald-600"
-                          : step.decision === "rejected"
-                            ? "text-rose-600"
-                            : "text-slate-500"
-                      }
-                    >
-                      {titleCase(step.decision)}
-                    </span>
-                  </div>
-                  {step.canAct ? (
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        disabled={busy}
-                        onClick={() =>
-                          act(async () => {
-                            await postJson(`/api/recruitment/applications/${appId}/offer/approval`, {
-                              stepId: step.id,
-                              decision: "approved",
-                            });
-                            await reloadChain();
-                            return "Approval recorded.";
-                          })
-                        }
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        disabled={busy || !reason.trim()}
-                        onClick={() =>
-                          act(async () => {
-                            await postJson(`/api/recruitment/applications/${appId}/offer/approval`, {
-                              stepId: step.id,
-                              decision: "rejected",
-                              reason: reason.trim(),
-                            });
-                            await reloadChain();
-                            setReason("");
-                            return "Rejection recorded.";
-                          })
-                        }
-                      >
-                        Reject
-                      </Button>
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          <textarea
-            className={fieldClass}
-            placeholder="Reason (required to reject)"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-        </div>
-      ) : null}
-
-      {stage === "offer_approved" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">Approved. Generate the offer letter + salary summary.</p>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                const data = await postJson(`/api/recruitment/applications/${appId}/offer/generate`, {});
-                return `Documents generated${typeof data.version === "number" ? ` (V${data.version})` : ""}.`;
-              })
-            }
-          >
-            Generate documents
-          </Button>
-        </div>
-      ) : null}
-
-      {stage === "offer_generated" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">
-            Documents generated. The offer-letter PDF is attached automatically — add any extra files (signed
-            contract, etc.) below, then send.
-          </p>
-          <input
-            ref={offerAttachmentsRef}
-            type="file"
-            multiple
-            className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700 hover:file:bg-slate-200"
-          />
-          <Button
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                const files = Array.from(offerAttachmentsRef.current?.files ?? []);
-                // Mirror the server caps so HR gets an immediate error instead of a partial
-                // send (the route hard-rejects >6 files or an oversized total).
-                if (files.length > 6) {
-                  throw new Error("You can attach at most 6 files. Remove some and try again.");
-                }
-                const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-                if (totalBytes > 25 * 1024 * 1024) {
-                  throw new Error("Attachments exceed the 25 MB total limit.");
-                }
-                if (files.length > 0) {
-                  const form = new FormData();
-                  for (const file of files) form.append("attachments", file);
-                  const res = await fetch(`/api/recruitment/applications/${appId}/offer/send`, {
-                    method: "POST",
-                    body: form,
-                  });
-                  if (!res.ok) {
-                    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-                    throw new Error(
-                      (typeof data.message === "string" && data.message) ||
-                        (typeof data.error === "string" && data.error) ||
-                        "Failed to send the prepared offer.",
-                    );
-                  }
-                } else {
-                  await postJson(`/api/recruitment/applications/${appId}/offer/send`, {});
-                }
-                if (offerAttachmentsRef.current) offerAttachmentsRef.current.value = "";
-                return files.length > 0
-                  ? `Offer sent with the PDF + ${files.length} attachment${files.length === 1 ? "" : "s"}.`
-                  : "Offer sent to the candidate (with offer-letter PDF).";
-              })
-            }
-          >
-            Send offer
-          </Button>
-        </div>
-      ) : null}
-
-      {stage === "offer_negotiation" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">Candidate requested negotiation. Re-prepare a new version.</p>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                await postJson(`/api/recruitment/applications/${appId}/offer/renegotiate`, {});
-                return "Offer returned to draft for a new version.";
-              })
-            }
-          >
-            Re-prepare (new version)
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function ScreeningCard({
   application,
@@ -885,13 +522,11 @@ function PipelineTab({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [manualHrId, setManualHrId] = useState("");
+  const [employeeHrId, setEmployeeHrId] = useState("");
+  const [hireStartDate, setHireStartDate] = useState("");
+  const [hireProbationMonths, setHireProbationMonths] = useState("3");
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
-  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
-  const [onboardingError, setOnboardingError] = useState<string | null>(null);
-  const [offerLetters, setOfferLetters] = useState<OfferLetterVersion[]>([]);
-  const [offerLettersError, setOfferLettersError] = useState<string | null>(null);
   const [candidateFiles, setCandidateFiles] = useState<RecruitmentFile[]>([]);
   const [candidateFilesError, setCandidateFilesError] = useState<string | null>(null);
 
@@ -905,32 +540,6 @@ function PipelineTab({
     } catch (caught) {
       setInterviews([]);
       setInterviewsError(caught instanceof Error ? caught.message : "Failed to load interviews.");
-    }
-  };
-
-  const loadOnboarding = async (appId: string) => {
-    try {
-      const res = await fetch(`/api/recruitment/applications/${appId}/onboarding`);
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load onboarding.");
-      setOnboardingItems(Array.isArray(data.items) ? (data.items as OnboardingItem[]) : []);
-      setOnboardingError(null);
-    } catch (caught) {
-      setOnboardingItems([]);
-      setOnboardingError(caught instanceof Error ? caught.message : "Failed to load onboarding.");
-    }
-  };
-
-  const loadOfferLetters = async (offerId: string) => {
-    try {
-      const res = await fetch(`/api/recruitment/offers/${offerId}/letter`);
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to load offer letters.");
-      setOfferLetters(Array.isArray(data.versions) ? (data.versions as OfferLetterVersion[]) : []);
-      setOfferLettersError(null);
-    } catch (caught) {
-      setOfferLetters([]);
-      setOfferLettersError(caught instanceof Error ? caught.message : "Failed to load offer letters.");
     }
   };
 
@@ -950,10 +559,7 @@ function PipelineTab({
   const selectApplication = (appId: string) => {
     setSelectedId(appId);
     void loadInterviews(appId);
-    void loadOnboarding(appId);
     const application = applications.find((row) => row.id === appId);
-    if (application?.offerId) void loadOfferLetters(application.offerId);
-    else setOfferLetters([]);
     if (canViewCandidates && application?.candidateId) void loadCandidateFiles(application.candidateId);
     else setCandidateFiles([]);
   };
@@ -1100,45 +706,37 @@ function PipelineTab({
               </div>
             ) : null}
 
-            <OfferPipelinePanel application={selected} canManage={canManage} />
-
-            {selected.stage === "offer_sent" ? (
-              <p className="text-xs text-slate-500">Waiting on the candidate&apos;s decision (synced from the offer link).</p>
-            ) : null}
-
-            {canApprove && (selected.stage === "offer_accepted" || selected.stage === "pre_boarding") ? (
+            {canApprove && (selected.stage === "offer_initiated" || selected.stage === "pre_boarding") ? (
               <div className="space-y-2 border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approve &amp; hire</p>
-                {selected.seniorApprovalStatus === "approved" ? (
-                  <p className="text-xs text-emerald-600">Senior sign-off complete.</p>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    disabled={pending}
-                    onClick={() =>
-                      run(async () => {
-                        await postJson(`/api/recruitment/applications/${selected.id}/senior-approval`, {});
-                        return "Senior sign-off recorded.";
-                      })
-                    }
-                  >
-                    Senior sign-off (Super Admin)
-                  </Button>
-                )}
-                <Input placeholder="Manual HR ID (optional)" value={manualHrId} onChange={(e) => setManualHrId(e.target.value)} />
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mark as hired</p>
+                <p className="text-xs text-slate-500">
+                  Create the employee record first via the normal HR &quot;Add Employee&quot; flow (it also closes
+                  the matching vacancy), then enter their HR_ID here to link this application.
+                </p>
+                <Input placeholder="Employee HR_ID" value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} />
+                <Input placeholder="Start date (optional)" type="date" value={hireStartDate} onChange={(e) => setHireStartDate(e.target.value)} />
+                <Input
+                  placeholder="Probation (months, optional)"
+                  type="number"
+                  value={hireProbationMonths}
+                  onChange={(e) => setHireProbationMonths(e.target.value)}
+                />
                 <Button
-                  disabled={pending}
+                  disabled={pending || !employeeHrId.trim()}
                   onClick={() =>
                     run(async () => {
                       const data = await postJson(`/api/recruitment/applications/${selected.id}/convert`, {
-                        manualHrId: manualHrId.trim() || undefined,
+                        employeeHrId: employeeHrId.trim(),
+                        startDate: hireStartDate || undefined,
+                        probationMonths: Number(hireProbationMonths) || undefined,
                       });
-                      setManualHrId("");
-                      return `Hired as ${typeof data.employeeHrId === "string" ? data.employeeHrId : "a new employee"}.`;
+                      setEmployeeHrId("");
+                      setHireStartDate("");
+                      return `Hired as ${typeof data.employeeHrId === "string" ? data.employeeHrId : employeeHrId.trim()}.`;
                     })
                   }
                 >
-                  Approve &amp; hire
+                  Mark as hired
                 </Button>
               </div>
             ) : null}
@@ -1196,25 +794,6 @@ function PipelineTab({
               managers={managers}
               onReload={() => loadInterviews(selected.id)}
             />
-
-            <OnboardingSection
-              canManage={canManage}
-              error={onboardingError}
-              items={onboardingItems}
-              onReload={() => loadOnboarding(selected.id)}
-            />
-
-            {selected.offerId ? (
-              <OfferLetterSection
-                canManage={canManage}
-                error={offerLettersError}
-                offerId={selected.offerId}
-                onReload={() => {
-                  if (selected.offerId) void loadOfferLetters(selected.offerId);
-                }}
-                versions={offerLetters}
-              />
-            ) : null}
 
             {canViewCandidates && selected.candidateId ? (
               <FilesSection
@@ -2129,202 +1708,6 @@ function InterviewsSection({
             Schedule interview
           </Button>
         </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OnboardingSection({
-  canManage,
-  error,
-  items,
-  onReload,
-}: {
-  canManage: boolean;
-  error: string | null;
-  items: OnboardingItem[];
-  onReload: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const patch = async (itemId: string, body: Record<string, unknown>) => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await fetch(`/api/recruitment/onboarding/${itemId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Update failed.");
-      onReload();
-    } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : "Update failed.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (items.length === 0) {
-    return (
-      <div className="space-y-1 border-t border-slate-200 pt-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Onboarding</p>
-        <p className="text-xs text-slate-500">Move the candidate to pre-boarding to start the document checklist.</p>
-      </div>
-    );
-  }
-
-  const documents = items.filter((item) => item.category === "document");
-  const joining = items.filter((item) => item.category === "joining");
-
-  return (
-    <div className="space-y-2 border-t border-slate-200 pt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Onboarding</p>
-      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
-
-      {documents.length > 0 ? (
-        <div className="space-y-1">
-          <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-            Documents
-            {documentsComplete(documents.map((item) => item.status)) ? (
-              <span className="bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">Documents Verified</span>
-            ) : (
-              <span className="bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Documents Pending</span>
-            )}
-          </p>
-          <ul className="space-y-1">
-            {documents.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
-                <span>{item.label}</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="text-slate-500">{titleCase(item.status)}</span>
-                  {canManage ? (
-                    <>
-                      <Button variant="secondary" disabled={busy} onClick={() => void patch(item.id, { status: "approved" })}>
-                        Approve
-                      </Button>
-                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "rejected" })}>
-                        Reject
-                      </Button>
-                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "waived" })}>
-                        Waive
-                      </Button>
-                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "missing" })}>
-                        Missing
-                      </Button>
-                    </>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {joining.length > 0 ? (
-        <div className="space-y-1">
-          <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-            Joining tasks
-            <span className="bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">Joining Scheduled</span>
-          </p>
-          <ul className="space-y-1">
-            {joining.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
-                <span>{item.label}</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="text-slate-500">{titleCase(item.status)}</span>
-                  {canManage ? (
-                    item.status === "completed" ? (
-                      <Button variant="ghost" disabled={busy} onClick={() => void patch(item.id, { status: "pending" })}>
-                        Reset
-                      </Button>
-                    ) : (
-                      <Button variant="secondary" disabled={busy} onClick={() => void patch(item.id, { status: "completed" })}>
-                        Mark done
-                      </Button>
-                    )
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OfferLetterSection({
-  canManage,
-  error,
-  offerId,
-  onReload,
-  versions,
-}: {
-  canManage: boolean;
-  error: string | null;
-  offerId: string;
-  onReload: () => void;
-  versions: OfferLetterVersion[];
-}) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const generate = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await fetch(`/api/recruitment/offers/${offerId}/letter`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to generate letter.");
-      onReload();
-    } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : "Failed to generate letter.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2 border-t border-slate-200 pt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer letter</p>
-      {(error ?? err) ? <p className="text-xs text-rose-600">{error ?? err}</p> : null}
-      {versions.length === 0 ? (
-        <p className="text-xs text-slate-500">No letter generated yet.</p>
-      ) : (
-        <ul className="space-y-1 text-xs">
-          {versions.map((versionItem) => (
-            <li key={versionItem.id} className="flex items-center justify-between gap-2">
-              <span>
-                V{versionItem.version} · {versionItem.kind === "salary_summary" ? "Salary summary" : "Offer letter"}
-              </span>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  window.open(
-                    versionItem.kind === "salary_summary"
-                      ? `/api/recruitment/salary-summary/${versionItem.id}`
-                      : `/api/recruitment/offer-letter/${versionItem.id}`,
-                    "_blank",
-                  )
-                }
-              >
-                Open / Save PDF
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {canManage ? (
-        <Button disabled={busy} onClick={() => void generate()}>
-          Generate letter
-        </Button>
       ) : null}
     </div>
   );

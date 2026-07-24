@@ -101,7 +101,7 @@ export function applyPositionSpecificFields(
 async function loadMatchKeys(): Promise<MatchableCandidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("id,national_id_norm,email_norm,phone_norm");
   if (error) throw error;
   return ((data ?? []) as CandidateDbRow[]).map((row) => ({
@@ -115,7 +115,7 @@ async function loadMatchKeys(): Promise<MatchableCandidate[]> {
 export async function listCandidates(): Promise<Candidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -125,7 +125,7 @@ export async function listCandidates(): Promise<Candidate[]> {
 export async function getCandidate(id: string): Promise<Candidate | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("*")
     .eq("id", id)
     .maybeSingle();
@@ -147,7 +147,7 @@ export type CandidateSearchFilters = { q?: string | null; status?: string | null
 
 export async function searchCandidates(filters: CandidateSearchFilters = {}): Promise<Candidate[]> {
   const supabase = recruitmentDb();
-  let query = supabase.from("recruitment_candidates").select("*").order("created_at", { ascending: false });
+  let query = supabase.from("ats_candidates").select("*").order("created_at", { ascending: false });
   const status = textOrNull(filters.status);
   const source = textOrNull(filters.source);
   if (status) query = query.eq("status", status);
@@ -171,7 +171,7 @@ export async function updateCandidateStatus(id: string, status: string): Promise
   if (!existing) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .update({ status: clean, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select("*")
@@ -239,7 +239,7 @@ export async function updateCandidate(id: string, input: UpdateCandidateInput): 
   }
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .update(updateCandidatePayload(input))
     .eq("id", id)
     .select("*")
@@ -268,8 +268,8 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   const supabase = recruitmentDb();
 
   const [{ data: appRows, error: appError }, { data: fileRows, error: fileError }] = await Promise.all([
-    supabase.from("recruitment_applications").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
-    supabase.from("recruitment_files").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    supabase.from("ats_applications").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    supabase.from("ats_files").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
   ]);
   if (appError) throw appError;
   if (fileError) throw fileError;
@@ -282,7 +282,7 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   const jobTitleById = new Map<string, string>();
   if (reqIds.length > 0) {
     const { data: reqRows, error: reqError } = await supabase
-      .from("recruitment_requisitions")
+      .from("ats_requisitions")
       .select("id,job_title")
       .in("id", reqIds);
     if (reqError) throw reqError;
@@ -295,8 +295,8 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   let events: ApplicationEvent[] = [];
   if (appIds.length > 0) {
     const [{ data: intRows, error: intError }, { data: evtRows, error: evtError }] = await Promise.all([
-      supabase.from("recruitment_interviews").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
-      supabase.from("recruitment_application_events").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+      supabase.from("ats_interviews").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+      supabase.from("ats_application_events").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
     ]);
     if (intError) throw intError;
     if (evtError) throw evtError;
@@ -334,7 +334,7 @@ export async function deleteCandidate(access: AccessContext, id: string): Promis
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
-  const { error } = await supabase.from("recruitment_candidates").delete().eq("id", id);
+  const { error } = await supabase.from("ats_candidates").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -358,7 +358,7 @@ async function matchOrInsertCandidate(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .insert(candidatePayload(input, access))
     .select("*")
     .single();
@@ -446,7 +446,7 @@ export async function importCandidatesWorkbook(
   const summary: CandidateImportSummary = { total: 0, created: 0, matched: 0, failed: 0, errors: [] };
 
   // Load the dedup key list ONCE for the whole batch (was previously reloaded — a full
-  // recruitment_candidates scan — inside createCandidate on every single row). Mutated in place
+  // ats_candidates scan — inside createCandidate on every single row). Mutated in place
   // by matchOrInsertCandidate as rows are created, so a later row in this same file can still
   // match an earlier row in the same file.
   const existingKeys = await loadMatchKeys();

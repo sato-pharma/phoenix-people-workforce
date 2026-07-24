@@ -256,7 +256,7 @@ export async function writeApplicationEvent(input: {
   details?: Record<string, unknown>;
 }): Promise<void> {
   const supabase = recruitmentDb();
-  await supabase.from("recruitment_application_events").insert({
+  await supabase.from("ats_application_events").insert({
     application_id: input.applicationId,
     from_stage: input.fromStage,
     to_stage: input.toStage,

@@ -480,6 +480,10 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
     recruitment: ["read"],
     candidates: ["read"],
+    // NSM/RM/CEO candidate tracking: CEO's own hiring round (District Manager -> HR/RM
+    // -> National Sales Manager -> CEO for a District Manager candidate). Deliberately NOT
+    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect.
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
   },
   "Talent Acquisition": {

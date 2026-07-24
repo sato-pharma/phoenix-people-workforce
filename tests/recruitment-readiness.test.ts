@@ -9,7 +9,6 @@ import {
   recruitmentActionKeys,
   requisitionStatuses,
 } from "../src/lib/recruitment/types.ts";
-import { onboardingItemStatuses } from "../src/lib/recruitment/onboarding.ts";
 
 function read(relativePath: string): string {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -30,7 +29,6 @@ export function runRecruitmentReadinessTests() {
     assert.match(schema, new RegExp(`alter table public\\.${table} enable row level security`), `${table} RLS`);
     assert.match(schema, new RegExp(`revoke all on public\\.${table} from anon, authenticated`), `${table} revoke`);
   }
-  assert.match(schema, /alter table public\.job_offers\s+add column if not exists application_id uuid null/);
   assert.match(schema, /recruitment_candidates_national_id_norm_uidx/);
   assert.match(schema, /recruitment_applications_active_uidx/);
   assert.match(schema, /notify pgrst, 'reload schema'/);
@@ -94,11 +92,9 @@ export function runRecruitmentReadinessTests() {
   assert.ok(permissionMatrix["Talent Acquisition"].payslips?.includes("read"));
   assert.deepEqual(permissionMatrix.CEO.recruitment, undefined);
   assert.deepEqual(permissionMatrix.CEO.candidates, undefined);
-  assert.deepEqual(permissionMatrix.CEO.offers, undefined);
   assert.deepEqual(permissionMatrix["District Manager"].recruitment, undefined);
   assert.equal(permissionMatrix["District Manager"].candidates, undefined, "managers get no candidate PII");
   assert.equal(permissionMatrix["Marketing Manager"].recruitment, undefined, "Marketing Manager gets no recruitment access");
-  assert.equal(permissionMatrix["Marketing Manager"].offers, undefined, "Marketing Manager gets no offer lifecycle access");
   assert.equal(permissionMatrix.Employee.recruitment, undefined, "employees get no recruitment access");
 
   // --- Access registry ---------------------------------------------------
@@ -114,91 +110,14 @@ export function runRecruitmentReadinessTests() {
   assert.ok(templateEntry?.audit.required, "candidate template download must require audit classification");
   const interviewEntry = findAccessRegistryEntry("/api/recruitment/interviews/x", "PATCH");
   assert.ok(interviewEntry?.csrf.required, "interview record route must require CSRF");
-  const onboardingEntry = findAccessRegistryEntry("/api/recruitment/onboarding/x", "PATCH");
-  assert.ok(onboardingEntry?.csrf.required, "onboarding update route must require CSRF");
 
-  // --- Offer-engine reuse (do not rewrite the engine) --------------------
+  // --- Direct hire (no formal offer/approval-chain/PDF pipeline) --------
   const applications = read("src/lib/recruitment/applications.ts");
-  assert.match(applications, /createOffer\(/, "must reuse createOffer");
-  assert.match(applications, /approveAcceptedOffer\(/, "must reuse approveAcceptedOffer for convert");
-  assert.match(applications, /\.from\("job_offers"\)[\s\S]*application_id/, "must link offer back to application");
-  assert.match(applications, /reconcileOfferStatuses/, "must reconcile candidate decisions");
-  assert.match(applications, /ensureOnboardingChecklist/, "pre-boarding must seed the onboarding checklist");
-  assert.match(applications, /areRequiredDocumentsApproved/, "hire must gate on approved documents");
-
-  // --- Offer pipeline (Preparation -> Approval -> Generation -> Sent -> Negotiation)
-  const offerColumns = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605093656_20260606090000_offer_pipeline_columns.sql");
-  for (const col of [
-    "probation_period_months", "benefits", "approved_at", "generated_at", "sent_at", "sent_by_hr_id", "sent_version", "expiry_date",
-  ]) {
-    assert.ok(offerColumns.includes(col), `offer columns migration missing ${col}`);
-  }
-  for (const status of ["pending_approval", "approved", "approval_rejected", "generated", "negotiation_in_progress"]) {
-    assert.ok(offerColumns.includes(`'${status}'`), `offer status CHECK missing ${status}`);
-  }
-  const approvalStepsMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605093724_20260606090500_offer_approval_steps.sql");
-  assert.match(approvalStepsMigration, /create table if not exists public\.offer_approval_steps/);
-  assert.match(approvalStepsMigration, /revoke all on public\.offer_approval_steps from anon, authenticated/);
-  const approvalReturnMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260619172818_widen_offer_approval_decision_returned.sql");
-  assert.match(approvalReturnMigration, /DROP CONSTRAINT IF EXISTS offer_approval_steps_decision_check/);
-  assert.match(approvalReturnMigration, /'returned'/, "offer approval decision check must allow returned");
-  const offersRegistry = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605093807_20260606091000_offers_registry_pipeline.sql");
-  for (const action of [
-    "offer_submit_approval", "offer_chain_approve", "offer_chain_reject", "offer_generate", "offer_send", "offer_candidate_negotiate", "offer_renegotiate_prepare",
-  ]) {
-    assert.ok(offersRegistry.includes(`"${action}"`), `offers registry missing action ${action}`);
-  }
-  const offerLetterKind = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605093951_20260606092000_offer_letter_kind.sql");
-  assert.match(offerLetterKind, /add column if not exists kind text/);
-  assert.match(offerLetterKind, /unique \(offer_id, version, kind\)/);
-
-  // Routes registered (offer sub-routes ride the applications/** entry).
-  for (const sub of ["prepare", "submit-approval", "approval", "generate", "send", "renegotiate"]) {
-    assert.ok(
-      findAccessRegistryEntry(`/api/recruitment/applications/abc/offer/${sub}`, "POST"),
-      `offer ${sub} route must be registered`,
-    );
-  }
-  const negotiateOfferEntry = findAccessRegistryEntry("/api/offers/o1/negotiate", "POST");
-  assert.ok(negotiateOfferEntry, "candidate negotiate route must be registered");
-  assert.equal(negotiateOfferEntry?.authMode, "public-token", "candidate negotiate must be a token route");
-  assert.ok(findAccessRegistryEntry("/api/recruitment/salary-summary/v1", "GET"), "salary summary route must be registered");
-
-  // Service reuse — staged functions + the offer engine send.
-  assert.match(applications, /prepareOffer/, "must expose prepareOffer");
-  assert.match(applications, /submitOfferForApproval/, "must expose the approval chain");
-  assert.match(applications, /sendOffer\(/, "must reuse the offer engine sendOffer");
-
-  const onboardingMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
-  assert.match(onboardingMigration, /create table if not exists public\.recruitment_onboarding_items/);
-  assert.match(onboardingMigration, /revoke all on public\.recruitment_onboarding_items from anon, authenticated/);
-  const onboardingMissing = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605104050_20260606093000_onboarding_missing_status.sql");
-  assert.match(onboardingMissing, /recruitment_onboarding_items_status_check[\s\S]*'missing'/, "M6 adds the missing status");
-  assert.ok((onboardingItemStatuses as readonly string[]).includes("missing"), "missing onboarding status registered");
-
-  // --- Public application funnel (Phase 4) ------------------------------
-  const applyEntry = findAccessRegistryEntry("/api/recruitment/apply/sometoken", "POST");
-  assert.ok(applyEntry, "public apply route must be registered");
-  assert.equal(applyEntry?.authMode, "public-token", "public apply must be a token route, not a session route");
-  assert.equal(applyEntry?.csrf.required, false, "public apply is token-protected (no CSRF), matching the offer token routes");
-
-  const postingsMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
-  assert.match(postingsMigration, /create table if not exists public\.recruitment_job_postings/);
-  assert.match(postingsMigration, /add column if not exists submitted_ip_hash/);
-  assert.match(postingsMigration, /revoke all on public\.recruitment_job_postings from anon, authenticated/);
-
-  const postings = read("src/lib/recruitment/postings.ts");
-  assert.match(postings, /systemAccessContext/, "public submit must run under a system context");
-  assert.match(postings, /submitted_ip_hash/, "public submit must record a hashed IP for rate limiting");
-
-  // --- Offer letters (Phase 4c) -----------------------------------------
-  const offerLetterEntry = findAccessRegistryEntry("/api/recruitment/offers/o1/letter", "POST");
-  assert.ok(offerLetterEntry, "offer-letter generate route must be registered");
-  const offerLetterDocEntry = findAccessRegistryEntry("/api/recruitment/offer-letter/v1", "GET");
-  assert.ok(offerLetterDocEntry, "offer-letter document route must be registered");
-  const offerLettersMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
-  assert.match(offerLettersMigration, /create table if not exists public\.recruitment_offer_letters/);
-  assert.match(offerLettersMigration, /revoke all on public\.recruitment_offer_letters from anon, authenticated/);
+  assert.match(applications, /markApplicationHired\(/, "must expose the direct-hire action");
+  assert.match(applications, /markRequisitionFilled\(/, "hire must close the requisition");
+  assert.match(applications, /createInitialProbationRecord\(/, "hire must auto-create probation");
+  const convertEntry = findAccessRegistryEntry("/api/recruitment/applications/abc/convert", "POST");
+  assert.ok(convertEntry, "convert (mark hired) route must be registered");
 
   // --- Candidate files / Google Drive (dependency-free, dormant) --------
   const filesEntry = findAccessRegistryEntry("/api/recruitment/files/abc/download", "GET");
@@ -218,13 +137,6 @@ export function runRecruitmentReadinessTests() {
   assert.match(supabaseStorage, /getSupabaseAdmin/, "Supabase adapter must use the service-role client");
   const fileStorage = read("src/lib/recruitment/file-storage.ts");
   assert.match(fileStorage, /isSupabaseStorageConfigured/, "file storage must prefer Supabase Storage");
-
-  // --- Threshold offer approval (Phase 4b) ------------------------------
-  const seniorEntry = findAccessRegistryEntry("/api/recruitment/applications/abc/senior-approval", "POST");
-  assert.ok(seniorEntry, "senior-approval route must be registered");
-  const seniorMigration = read("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014515_recruitment_onboarding_postings_letters_approval_files.sql");
-  assert.match(seniorMigration, /senior_approval_status/);
-  assert.match(applications, /requiresSeniorApproval/, "convert must gate above-band offers on Super Admin sign-off");
 
   // --- Daily cron composition (no new Vercel cron) -----------------------
   const daily = read("app/api/notifications/daily/route.ts");

@@ -60,7 +60,6 @@ const MODULE_RULES: ModuleRule[] = [
   // ── Recruitment & hiring ──────────────────────────────────────────────────
   { prefix: "/recruitment", key: "recruitment", label: "Recruitment" },
   { prefix: "/cv-database", key: "cv_database", label: "CV Database" },
-  { prefix: "/offers", key: "offers", label: "Offer Lifecycle" },
   { prefix: "/hiring-documents", key: "hiring_documents", label: "Hiring Documents" },
 
   // ── Attendance & calendar ─────────────────────────────────────────────────

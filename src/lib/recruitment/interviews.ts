@@ -55,7 +55,7 @@ export async function listInterviewsForApplication(
   if (!application) return [];
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_interviews")
+    .from("ats_interviews")
     .select("*")
     .eq("application_id", applicationId)
     .order("created_at", { ascending: false });
@@ -76,7 +76,7 @@ export async function createInterview(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_interviews")
+    .from("ats_interviews")
     .insert({
       application_id: applicationId,
       interview_type: input.interviewType,
@@ -103,7 +103,7 @@ export async function createInterview(
 export async function getInterviewRow(id: string): Promise<Interview> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_interviews")
+    .from("ats_interviews")
     .select("*")
     .eq("id", id)
     .maybeSingle();
@@ -147,7 +147,7 @@ export async function recordInterviewOutcome(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_interviews")
+    .from("ats_interviews")
     .update(patch)
     .eq("id", interviewId)
     .select("*")
@@ -183,7 +183,7 @@ export async function deleteInterview(access: AccessContext, id: string): Promis
   // Rule 7 — cancelling notifies all parties before the row is removed.
   await notifyInterview(application, interview, "cancelled");
   const supabase = recruitmentDb();
-  const { error } = await supabase.from("recruitment_interviews").delete().eq("id", id);
+  const { error } = await supabase.from("ats_interviews").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -199,7 +199,7 @@ export type InterviewReminder = {
 export async function listInterviewsDueForReminder(fromIso: string, toIso: string): Promise<InterviewReminder[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_interviews")
+    .from("ats_interviews")
     .select("id,application_id,interview_type,interviewer_hr_id,scheduled_at,outcome")
     .gte("scheduled_at", fromIso)
     .lt("scheduled_at", toIso)

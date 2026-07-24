@@ -560,7 +560,6 @@ export function AdminCommandCenter({
   const isHrSpecialistWorkspace = !showAdminModules && !showFinancialModules;
   const showSalesModules = !isHrSpecialistWorkspace;
   const salesAchievement = o.sales.achievementRate * 100;
-  const offerAcceptance = o.recruitment.acceptanceRate * 100;
   const pendingRisk = o.risk.expiringContracts + o.risk.probationEndings;
   const attendanceAgent = o.attendanceAgent;
   // ModuleCard's health style names are inverted vs. severity: "attention" renders
@@ -581,7 +580,6 @@ export function AdminCommandCenter({
   const salesDown = isUnavailable("sales");
   const expensesDown = isUnavailable("expense");
   const healthDown = isUnavailable("health");
-  const recruitmentDown = isUnavailable("recruitment");
   const leaveDown = isUnavailable("leave");
   const riskDown = isUnavailable("risk") || isUnavailable("lifecycle");
 
@@ -590,9 +588,6 @@ export function AdminCommandCenter({
   const actionItems: ActionItem[] = [];
   if (showFinancialModules && !payrollDown && o.payroll.flags > 0) {
     actionItems.push({ count: o.payroll.flags, href: "/payroll", icon: FileSpreadsheet, label: "Payroll flags", sub: "Resolve salary exceptions", tone: "rose" });
-  }
-  if (!recruitmentDown && o.recruitment.pendingOffers > 0) {
-    actionItems.push({ count: o.recruitment.pendingOffers, href: "/offers", icon: Briefcase, label: "Pending offers", sub: "Awaiting candidate response", tone: "violet" });
   }
   if (!leaveDown && o.leave.pendingRequests > 0) {
     actionItems.push({ count: o.leave.pendingRequests, href: "/leave-management/vacation-report", icon: CalendarCheck, label: "Pending vacations", sub: "Leave requests to review", tone: "blue" });
@@ -664,7 +659,7 @@ export function AdminCommandCenter({
                 <QuickAction href="/employees" icon={Users} label="Employees" />
                 {showFinancialModules ? <QuickAction href="/payroll" icon={Wallet} label="Payroll" /> : null}
                 {showSalesModules ? <QuickAction href="/sales" icon={TrendingUp} label="Sales" /> : null}
-                {isHrSpecialistWorkspace ? <QuickAction href="/offers" icon={Briefcase} label="Offers" /> : null}
+                {isHrSpecialistWorkspace ? <QuickAction href="/recruitment" icon={Briefcase} label="Recruitment" /> : null}
                 {isHrSpecialistWorkspace ? <QuickAction href="/leave-management/vacation-report" icon={CalendarCheck} label="Vacations" /> : null}
                 {isHrSpecialistWorkspace ? <QuickAction href="/coaching/analytics" icon={Activity} label="Coaching" /> : null}
                 {showAdminModules ? <QuickAction href="/admin/access" icon={ShieldCheck} label="Access" /> : null}
@@ -752,7 +747,6 @@ export function AdminCommandCenter({
               <span>{n(o.hr.vacantPositions)} vacant</span>
               <span>{pendingRisk} pending risks</span>
               {showFinancialModules ? <span>{n(o.payroll.flags)} payroll flags</span> : null}
-              {isHrSpecialistWorkspace ? <span>{n(o.recruitment.pendingOffers)} pending offers</span> : null}
               {isHrSpecialistWorkspace ? <span>{n(o.leave.pendingRequests)} pending vacations</span> : null}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -778,7 +772,6 @@ export function AdminCommandCenter({
             {isHrSpecialistWorkspace ? (
               <>
                 <KpiCard icon={CheckCircle2} label="Active Employees" primary sub={`of ${n(o.hr.totalStructure)} structure`} trend="up" value={orDash(workforceDown, n(o.hr.activeEmployees))} />
-                <KpiCard accent icon={Briefcase} label="Hiring Pipeline" primary sub={`${n(o.recruitment.pendingOffers)} pending offers`} value={orDash(recruitmentDown, n(o.recruitment.totalOffers))} />
                 <KpiCard icon={Hourglass} label="Lifecycle Follow-up" sub={`${n(o.risk.probationEndings)} probation / ${n(o.risk.expiringContracts)} contracts`} value={orDash(riskDown, n(pendingRisk))} warn={!riskDown && pendingRisk > 0} />
                 <KpiCard icon={CalendarCheck} label="Vacation Requests" sub={`${n(o.leave.pendingRequests)} pending`} value={orDash(leaveDown, n(o.leave.totalRequests))} />
               </>
@@ -849,14 +842,12 @@ export function AdminCommandCenter({
                 />
                 <ModuleCard
                   accentColor="violet"
-                  description="Offers, vacancies, CV database, and hiring document workflow."
-                  health={offerAcceptance >= 70 ? "healthy" : "attention"}
-                  href="/offers"
+                  description="Requisitions, candidates, vacancies, and CV database."
+                  health={o.hr.vacantPositions > 0 ? "attention" : "healthy"}
+                  href="/recruitment"
                   icon={Briefcase}
                   lastSync="Live"
                   metrics={[
-                    { label: "Offers", value: n(o.recruitment.totalOffers) },
-                    { label: "Pending", value: n(o.recruitment.pendingOffers) },
                     { label: "Vacant", value: n(o.hr.vacantPositions) },
                   ]}
                   title="Hiring Pipeline"
@@ -1004,17 +995,15 @@ export function AdminCommandCenter({
             ) : null}
             <ModuleCard
               accentColor="violet"
-              description="Offer lifecycle management, acceptance tracking, and pipeline overview."
-              health={offerAcceptance >= 70 ? "healthy" : "attention"}
-              href="/offers"
+              description="Requisitions, candidates, interviews, and pipeline overview."
+              health={o.hr.vacantPositions > 0 ? "attention" : "healthy"}
+              href="/recruitment"
               icon={Briefcase}
               lastSync="Live"
               metrics={[
-                { label: "Total", value: n(o.recruitment.totalOffers) },
-                { label: "Pending", value: n(o.recruitment.pendingOffers) },
-                { label: "Accept", ok: offerAcceptance >= 70, value: pct(offerAcceptance) },
+                { label: "Vacant", value: n(o.hr.vacantPositions) },
               ]}
-              title="Job Offers"
+              title="Recruitment"
             />
             {showAdminModules ? (
               <ModuleCard

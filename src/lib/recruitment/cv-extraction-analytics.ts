@@ -1,6 +1,6 @@
 // Recruitment / ATS — read-only CV-extraction accuracy analytics.
 //
-// For every reviewed AI extraction (a recruitment_candidate_cv_extractions row where
+// For every reviewed AI extraction (an ats_candidate_cv_extractions row where
 // Talent Acquisition has actually saved a review — applied_fields is not null), diffs the
 // AI's per-field proposal (extracted_fields) against what was actually kept (applied_fields).
 // A field TA never had to correct means the AI is doing well on it; a high correction rate
@@ -114,7 +114,7 @@ export async function getCvExtractionAccuracyAnalytics(): Promise<
 > {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("recruitment_candidate_cv_extractions")
+    .from("ats_candidate_cv_extractions")
     .select("position_key, extracted_fields, applied_fields")
     .not("applied_fields", "is", null);
   if (error) throw error;

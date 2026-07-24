@@ -201,6 +201,13 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Company Calendar",
   },
+  {
+    id: "ceo-recruitment-candidates",
+    items: [
+      { href: "/recruitment/candidates", icon: BriefcaseBusiness, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Hiring",
+  },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
   // field visits, campaign-vs-regular balance, and GPS check-in timing. Gated by
@@ -1525,14 +1532,6 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     label: "CV Database",
     description: "Browse and search the candidate CV database.",
     permissions: [{ resource: "vacancies" }],
-    roles: hrAuthorityNavigationRoles,
-  },
-  {
-    href: "/offers",
-    icon: IdCard,
-    label: "Offer Lifecycle",
-    description: "Track job offers from draft through acceptance.",
-    permissions: [{ resource: "offers" }],
     roles: hrAuthorityNavigationRoles,
   },
   {

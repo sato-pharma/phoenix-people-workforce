@@ -173,8 +173,10 @@ export function runRecruitmentCvExtractionTests() {
     );
   }
 
-  // --- Migration ------------------------------------------------------------
-  const migration = read("supabase/migrations/20260723160000_recruitment_candidate_cv_extraction.sql");
+  // --- Migration (Phase 1 re-platform onto ats_ tables folded the original
+  //     recruitment_candidate_cv_extraction + recruitment_position_schema_framework
+  //     migrations in, since neither had reached production yet) --------------------
+  const migration = read("supabase/migrations/20260724130000_ats_replatform_phase1.sql");
   for (const column of [
     "address",
     "faculty",
@@ -187,28 +189,18 @@ export function runRecruitmentCvExtractionTests() {
   ]) {
     assert.match(migration, new RegExp(`add column if not exists ${column}\\b`), `missing column ${column}`);
   }
-  assert.match(migration, /create table if not exists public\.recruitment_candidate_cv_extractions/);
-  assert.match(migration, /alter table public\.recruitment_candidate_cv_extractions enable row level security/);
-  assert.match(migration, /phx_recruitment_candidate_cv_extractions_service_role/);
-  assert.match(migration, /grant all on table public\.recruitment_candidate_cv_extractions to service_role/);
+  assert.match(migration, /create table public\.ats_candidate_cv_extractions/);
+  assert.match(migration, /alter table public\.ats_candidate_cv_extractions enable row level security/);
+  assert.match(migration, /phx_ats_candidate_cv_extractions_service_role/);
+  assert.match(migration, /grant all on table public\.ats_candidate_cv_extractions to service_role/);
   assert.match(migration, /notify pgrst, 'reload schema'/);
   // Duration is derived, never stored (see plan rationale — avoids drift vs from/to dates).
   assert.doesNotMatch(migration, /medical_rep_experience_duration/);
-
-  // --- Position-schema-framework migration (additive only — no existing Medical Rep
-  //     column is touched) ------------------------------------------------------------
-  const positionSchemaMigration = read(
-    "supabase/migrations/20260723200000_recruitment_position_schema_framework.sql",
-  );
+  assert.match(migration, /add column if not exists position_specific_fields jsonb/);
   assert.match(
-    positionSchemaMigration,
-    /alter table public\.recruitment_candidates\s+add column if not exists position_specific_fields jsonb/,
+    migration,
+    /alter table public\.ats_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
   );
-  assert.match(
-    positionSchemaMigration,
-    /alter table public\.recruitment_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
-  );
-  assert.match(positionSchemaMigration, /notify pgrst, 'reload schema'/);
 
   // --- Permission model: `hiring_interviews` is narrow and NOT hard-boundary-capped,
   //     while `recruitment`/`candidates` stay locked to HR authority roles ---------

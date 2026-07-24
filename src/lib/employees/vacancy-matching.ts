@@ -1,6 +1,6 @@
 /**
  * Pure, dependency-light vacancy selection used when auto-closing a position
- * vacancy after a hire. Kept separate from offers/service.ts (which is env-bound
+ * vacancy after a hire. Kept separate from vacancy-closer.ts (which is env-bound
  * via the Supabase client) so the department-safety rule is unit-testable.
  */
 
