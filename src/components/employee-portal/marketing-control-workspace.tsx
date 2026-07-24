@@ -71,12 +71,15 @@ function SelectField({
 function Toggle({
   checked,
   onChange,
+  label,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
+  label: string;
 }) {
   return (
     <button
+      aria-label={label}
       aria-pressed={checked}
       className={`relative h-7 w-12 rounded border transition ${
         checked ? "border-orange-500 bg-orange-500" : "border-slate-300 bg-slate-200"
@@ -327,6 +330,7 @@ export function MarketingControlWorkspace() {
                       Other description
                       <Toggle
                         checked={draft.requiresDescription}
+                        label={`Require description for ${draft.name}`}
                         onChange={(checked) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, requiresDescription: checked },
@@ -337,6 +341,7 @@ export function MarketingControlWorkspace() {
                       Active
                       <Toggle
                         checked={draft.active}
+                        label={`Active status for ${draft.name}`}
                         onChange={(checked) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, active: checked },
@@ -420,6 +425,7 @@ export function MarketingControlWorkspace() {
                     <td className="px-4 py-3">
                       <Toggle
                         checked={draft.requiresDescription}
+                        label={`Require description for ${type.name}`}
                         onChange={(checked) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, requiresDescription: checked },
@@ -429,6 +435,7 @@ export function MarketingControlWorkspace() {
                     <td className="px-4 py-3">
                       <Toggle
                         checked={draft.active}
+                        label={`Active status for ${type.name}`}
                         onChange={(checked) => setRequestTypeDrafts((current) => ({
                           ...current,
                           [type.id]: { ...draft, active: checked },
@@ -548,6 +555,7 @@ export function MarketingControlWorkspace() {
                       Required
                       <Toggle
                         checked={draft.required}
+                        label={`Required for ${draft.stepName}`}
                         onChange={(checked) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, required: checked },
@@ -558,6 +566,7 @@ export function MarketingControlWorkspace() {
                       Active
                       <Toggle
                         checked={draft.active}
+                        label={`Active status for ${draft.stepName}`}
                         onChange={(checked) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, active: checked },
@@ -672,6 +681,7 @@ export function MarketingControlWorkspace() {
                     <td className="px-4 py-3">
                       <Toggle
                         checked={draft.required}
+                        label={`Required for ${step.stepName}`}
                         onChange={(checked) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, required: checked },
@@ -681,6 +691,7 @@ export function MarketingControlWorkspace() {
                     <td className="px-4 py-3">
                       <Toggle
                         checked={draft.active}
+                        label={`Active status for ${step.stepName}`}
                         onChange={(checked) => setWorkflowDrafts((current) => ({
                           ...current,
                           [step.id]: { ...draft, active: checked },
@@ -794,6 +805,7 @@ export function MarketingControlWorkspace() {
                 </div>
                 <Toggle
                   checked={validationDrafts[setting.key] ?? settingBoolean(setting, "required", true)}
+                  label={setting.label}
                   onChange={(checked) => setValidationDrafts((current) => ({
                     ...current,
                     [setting.key]: checked,
