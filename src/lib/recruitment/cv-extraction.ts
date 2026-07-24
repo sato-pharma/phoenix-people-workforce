@@ -11,6 +11,8 @@
 // updateCandidate(); recordAppliedExtractionFields() only updates this module's own
 // audit-trail row (a correction log for future prompt tuning, not a training pipeline).
 
+import "@/lib/recruitment/pdf-dommatrix-polyfill";
+
 import { PDFParse } from "pdf-parse";
 import * as mammoth from "mammoth";
 
