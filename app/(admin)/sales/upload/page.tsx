@@ -13,6 +13,7 @@ import {
   listSourceOfSalesUploadBatches,
   type SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
+import { hasAiKey } from "@/lib/sales/normalizer/ai-suggest";
 import { listMappingReferences } from "@/lib/sales/normalizer/service";
 
 export const dynamic = "force-dynamic";
@@ -47,5 +48,5 @@ export default async function SalesUploadPage() {
     // Render the shell with whatever loaded; the workspace surfaces per-action errors + gating.
   }
 
-  return <SalesUploadWorkspace batches={batches} bricks={bricks} distributors={distributors} products={products} summaries={summaries} />;
+  return <SalesUploadWorkspace aiEnabled={hasAiKey()} batches={batches} bricks={bricks} distributors={distributors} products={products} summaries={summaries} />;
 }
