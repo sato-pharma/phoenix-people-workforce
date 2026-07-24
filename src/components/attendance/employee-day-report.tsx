@@ -361,13 +361,20 @@ export function EmployeeDayReport({
         </AdminTableShell>
       ) : !initialReport ? (
         <AdminCallout tone="warning">Pick an employee above and click View Report to see day-by-day detail.</AdminCallout>
-      ) : initialReport.tier === null ? (
+      ) : initialReport.tier === null && Object.keys(initialDecisions).length === 0 ? (
         <AdminCallout tone="warning">
           {initialReport.employeeName} isn&apos;t on the flexible-hours model (no required-minutes policy) — this report has no
           detail to show for them.
         </AdminCallout>
       ) : (
         <>
+          {initialReport.tier === null ? (
+            <AdminCallout tone="warning">
+              {initialReport.employeeName} isn&apos;t on the flexible-hours model (no required-minutes policy) — the system
+              can&apos;t judge any day for them. The row(s) below with an existing recorded deduction are shown so you can
+              still confirm or reject it; every other day just shows &quot;Not on flexible-hours model&quot;.
+            </AdminCallout>
+          ) : null}
             {tab === "detail" ? (
               <AdminTableShell
                 description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · ${initialReport.jobTitle} · ${initialReport.dateFromIso} to ${initialReport.dateToIso} · ${totals?.deductionDays ?? 0} day(s) flagged · ${(totals?.deductionValue ?? 0).toFixed(2)} EGP flagged`}
@@ -509,3 +516,4 @@ export function EmployeeDayReport({
     </div>
   );
 }
+

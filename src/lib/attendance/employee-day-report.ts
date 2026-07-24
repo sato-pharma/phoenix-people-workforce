@@ -44,28 +44,70 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 export type FlexEligibleEmployeeOption = { hrId: string; employeeName: string; jobTitle: string };
 
+/** Every employee carrying at least one live (non-superseded) ATTENDANCE_DEVICE deduction
+ * candidate, regardless of their CURRENT attendance-policy resolution. Confirmed real case
+ * 2026-07-24: an employee can have an always-active per-employee policy override
+ * (required_minutes: null) that predates a deduction candidate the now-retired weekly digest
+ * created for them anyway — once that override is in place, listFlexEligibleEmployees's normal
+ * roster/policy scan can never resolve them again, so without this union that candidate becomes
+ * permanently unreachable from this report (no way to open, confirm, or reject it) even though
+ * it may already be "Approved for Payroll". Independent of the roster/date-range scan above; a
+ * small table, so this is a cheap full scan rather than trying to thread a date range through it. */
+async function listEmployeesWithOutstandingAttendanceCandidates(): Promise<FlexEligibleEmployeeOption[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: candidateRows, error: candidateError } = await supabase
+    .from("deduction_candidates")
+    .select("employee_code")
+    .eq("source_module", "ATTENDANCE_DEVICE")
+    .is("superseded_at", null);
+  if (candidateError) throw candidateError;
+  const wanted = new Set(
+    ((candidateRows ?? []) as Array<{ employee_code: string | null }>)
+      .map((row) => normalizeAttendanceHrId(row.employee_code))
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (wanted.size === 0) return [];
+
+  const { data: employeeRows, error: employeeError } = await supabase.from("employees").select("hr_id,full_name,job_title");
+  if (employeeError) throw employeeError;
+  const result: FlexEligibleEmployeeOption[] = [];
+  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null }>) {
+    const hrId = normalizeAttendanceHrId(row.hr_id);
+    if (!hrId || !wanted.has(hrId)) continue;
+    result.push({ employeeName: row.full_name?.trim() || hrId, hrId, jobTitle: row.job_title?.trim() ?? "" });
+  }
+  return result;
+}
+
 /** The dropdown source for the day-by-day report — everyone flex-eligible (resolved policy has
  * required_minutes set) at some point across the given range, not the whole attendance-tracked
  * roster. Defaults to today/today so the dropdown is still populated before an admin has picked
  * a range — but once they have, callers should pass THAT range: an employee who resigned, or
  * whose policy moved off the flexible-hours model, since the period being reviewed must still be
- * selectable, or the historical review this report exists for is impossible for exactly them. */
+ * selectable, or the historical review this report exists for is impossible for exactly them.
+ * ALSO always includes anyone with an outstanding ATTENDANCE_DEVICE candidate (see
+ * listEmployeesWithOutstandingAttendanceCandidates) so an already-created deduction is never
+ * stranded behind a policy change that excludes them from the roster/policy scan. */
 export async function listFlexEligibleEmployees(range?: { dateFromIso: string; dateToIso: string }): Promise<FlexEligibleEmployeeOption[]> {
   const today = cairoTodayIso();
   const dateFromIso = range?.dateFromIso ?? today;
   const dateToIso = range?.dateToIso ?? today;
-  const [roster, flexPolicies] = await Promise.all([
+  const [roster, flexPolicies, outstanding] = await Promise.all([
     getAttendanceRoster({ dateFromIso, dateToIso }),
     loadAttendanceFlexPolicyGroups({ activeOnly: true }),
+    listEmployeesWithOutstandingAttendanceCandidates(),
   ]);
-  const eligible: FlexEligibleEmployeeOption[] = [];
+  const eligible = new Map<string, FlexEligibleEmployeeOption>();
   for (const employee of roster) {
     const policy = resolveActiveAttendancePolicy({ hr_id: employee.hrId, job_title: employee.jobTitle }, flexPolicies, dateFromIso, dateToIso);
     if (policy && policy.required_minutes != null) {
-      eligible.push({ employeeName: employee.employeeName, hrId: employee.hrId, jobTitle: employee.jobTitle });
+      eligible.set(employee.hrId, { employeeName: employee.employeeName, hrId: employee.hrId, jobTitle: employee.jobTitle });
     }
   }
-  return eligible.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+  for (const employee of outstanding) {
+    if (!eligible.has(employee.hrId)) eligible.set(employee.hrId, employee);
+  }
+  return Array.from(eligible.values()).sort((left, right) => left.employeeName.localeCompare(right.employeeName));
 }
 
 function timeToMinutes(value: string | null | undefined): number | null {
@@ -217,6 +259,7 @@ export async function getEmployeeDayByDayReport(input: {
   const punches = punchMap.get(hrId) ?? new Map<string, { firstPunchMinutes: number | null; lastPunchMinutes: number | null; visiblePunchCount: number }>();
   const crmLeaveDates = crmActivity.leaveMap.get(hrId) ?? new Set<string>();
   const crmFieldVisitDates = crmActivity.fieldVisitMap.get(hrId) ?? new Set<string>();
+  const crmDetailDates = crmActivity.detailMap.get(hrId) ?? new Map<string, string>();
 
   const days: EmployeeDayReportRow[] = [];
   let reportTier: AttendanceJudgmentMode | null = null;
@@ -282,7 +325,12 @@ export async function getEmployeeDayByDayReport(input: {
                   : hasOutageToday
                     ? "device_outage"
                     : "no_plan_field_day"; // remaining office_days_only skip branches (field-per-plan / no-plan-designated)
-      days.push(dayRow(dateIso, outcome, decision.reason, firstPunchMinutes, lastPunchMinutes, visiblePunchCount));
+      // For a CRM-covered day, surface WHAT was logged (visit type + comment/customer) rather than
+      // just the generic gating text — otherwise "CRM field visit" reads as an opaque boolean and
+      // an admin reviewing the day has no way to see the actual meeting/visit that covered it.
+      const crmDetail = outcome === "crm_field_visit" || outcome === "crm_leave" ? crmDetailDates.get(dateIso) : null;
+      const reason = crmDetail ? `${decision.reason} — ${crmDetail}` : decision.reason;
+      days.push(dayRow(dateIso, outcome, reason, firstPunchMinutes, lastPunchMinutes, visiblePunchCount));
       continue;
     }
 
