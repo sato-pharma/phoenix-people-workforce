@@ -98,24 +98,31 @@ async function scanDepartedAgentCrmIds(departedHrIds: readonly string[]): Promis
   const supabase = getSupabaseAdmin();
   const ids = new Set<number>();
   const pageSize = 2000;
-  let cursor: string | null = null;
-  for (;;) {
-    let query = supabase
-      .from(CRM_VISITS_TABLE)
-      .select("id, agent_crm_id")
-      .in("agent_hr_id", keys)
-      .order("id", { ascending: true })
-      .limit(pageSize);
-    if (cursor) query = query.gt("id", cursor);
-    const { data, error } = await query;
-    if (error) {
-      if (isCrmSchemaMissingError(error)) break;
-      throw new Error(error.message);
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — `keys` spans every departed employee company-wide, tripled by casing
+  // variants, so batch it (nested inside the existing result-row cursor pagination).
+  for (let i = 0; i < keys.length; i += 100) {
+    const keyBatch = keys.slice(i, i + 100);
+    let cursor: string | null = null;
+    for (;;) {
+      let query = supabase
+        .from(CRM_VISITS_TABLE)
+        .select("id, agent_crm_id")
+        .in("agent_hr_id", keyBatch)
+        .order("id", { ascending: true })
+        .limit(pageSize);
+      if (cursor) query = query.gt("id", cursor);
+      const { data, error } = await query;
+      if (error) {
+        if (isCrmSchemaMissingError(error)) break;
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as Array<{ id: string; agent_crm_id: number | null }>;
+      for (const row of page) if (row.agent_crm_id != null) ids.add(Number(row.agent_crm_id));
+      if (page.length < pageSize) break;
+      cursor = page[page.length - 1].id;
     }
-    const page = (data ?? []) as Array<{ id: string; agent_crm_id: number | null }>;
-    for (const row of page) if (row.agent_crm_id != null) ids.add(Number(row.agent_crm_id));
-    if (page.length < pageSize) break;
-    cursor = page[page.length - 1].id;
   }
   return Array.from(ids);
 }

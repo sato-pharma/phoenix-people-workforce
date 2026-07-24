@@ -296,15 +296,23 @@ export async function upsertWeeklyPosRegionMappings(input: {
   if (payload.length === 0) return { inserted: 0, updated: 0, skipped, blockedRows };
 
   const firstRow = payload[0];
-  const existing = await supabase
-    .from("weekly_sales_pos_region_mappings")
-    .select("distributor_code, map_type, normalized_column_name")
-    .eq("distributor_code", firstRow.distributor_code)
-    .eq("map_type", firstRow.map_type)
-    .in("normalized_column_name", payload.map((row) => row.normalized_column_name));
-  if (existing.error) throw existing.error;
+  const normalizedColumnNames = payload.map((row) => row.normalized_column_name);
+  const existingRows: Array<{ distributor_code?: string | null; map_type?: string | null; normalized_column_name?: string | null }> = [];
+  // PostgREST folds every .in() value into the request URL; an uploaded workbook can have an
+  // unbounded number of column rows, so batch this lookup.
+  for (let i = 0; i < normalizedColumnNames.length; i += 100) {
+    const batch = normalizedColumnNames.slice(i, i + 100);
+    const existing = await supabase
+      .from("weekly_sales_pos_region_mappings")
+      .select("distributor_code, map_type, normalized_column_name")
+      .eq("distributor_code", firstRow.distributor_code)
+      .eq("map_type", firstRow.map_type)
+      .in("normalized_column_name", batch);
+    if (existing.error) throw existing.error;
+    existingRows.push(...(existing.data ?? []));
+  }
   const existingKeys = new Set(
-    (existing.data ?? []).map(
+    existingRows.map(
       (row) => `${String(row.distributor_code ?? "")}:${String(row.map_type ?? "combined")}:${String(row.normalized_column_name ?? "")}`,
     ),
   );

@@ -203,13 +203,20 @@ export async function importDeviceMappingsFromWorkbook(file: File): Promise<Devi
   }
 
   if (employeeHrIds.size > 0) {
-    const { data, error } = await supabase
-      .from("employees")
-      .select("hr_id")
-      .in("hr_id", Array.from(employeeHrIds));
+    // PostgREST folds every .in() value into the request URL; batch since a full company-wide
+    // device-mapping import can have hundreds of distinct employee_hr_id rows.
+    const existing = new Set<string>();
+    const idBatches = Array.from(employeeHrIds);
+    for (let i = 0; i < idBatches.length; i += 100) {
+      const batch = idBatches.slice(i, i + 100);
+      const { data, error } = await supabase
+        .from("employees")
+        .select("hr_id")
+        .in("hr_id", batch);
 
-    if (error) throw error;
-    const existing = new Set(((data ?? []) as Array<{ hr_id: string }>).map((row) => row.hr_id.toUpperCase()));
+      if (error) throw error;
+      for (const row of (data ?? []) as Array<{ hr_id: string }>) existing.add(row.hr_id.toUpperCase());
+    }
     for (const row of rows) {
       if (row.employeeHrId && !existing.has(row.employeeHrId)) {
         failures.push({ row: row.rowNumber, message: `Employee HR_ID ${row.employeeHrId} does not exist.` });

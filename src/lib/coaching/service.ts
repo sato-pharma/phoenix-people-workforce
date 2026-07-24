@@ -729,24 +729,40 @@ export async function getCoachingReportById(id: string, access: AccessContext): 
 export async function getCoachingReportsByIds(ids: string[], access: AccessContext): Promise<CoachingReportDetail[]> {
   if (ids.length === 0) return [];
   const supabase = getSupabaseAdmin();
-  const [reportsResult, scoresResult, summariesResult, directory] = await Promise.all([
-    supabase.from("coaching_reports").select("*").in("id", ids),
-    supabase.from("coaching_score_items").select("*").in("report_id", ids).order("display_order", { ascending: true }),
-    supabase.from("coaching_reports_summary").select("*").in("report_id", ids),
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — coachingRange() allows up to 1000 ids here, so batch every .in().
+  const reportRows: CoachingReportRow[] = [];
+  const scoreRows: CoachingScoreItemRow[] = [];
+  const summaryRows: CoachingSummaryDbRow[] = [];
+  const [, directory] = await Promise.all([
+    (async () => {
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        const [reportsResult, scoresResult, summariesResult] = await Promise.all([
+          supabase.from("coaching_reports").select("*").in("id", batch),
+          supabase.from("coaching_score_items").select("*").in("report_id", batch).order("display_order", { ascending: true }),
+          supabase.from("coaching_reports_summary").select("*").in("report_id", batch),
+        ]);
+        if (reportsResult.error) throw reportsResult.error;
+        if (scoresResult.error) throw scoresResult.error;
+        if (summariesResult.error) throw summariesResult.error;
+        reportRows.push(...((reportsResult.data ?? []) as CoachingReportRow[]));
+        scoreRows.push(...((scoresResult.data ?? []) as CoachingScoreItemRow[]));
+        summaryRows.push(...((summariesResult.data ?? []) as CoachingSummaryDbRow[]));
+      }
+    })(),
     getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
-  if (reportsResult.error) throw reportsResult.error;
-  if (scoresResult.error) throw scoresResult.error;
-  if (summariesResult.error) throw summariesResult.error;
 
-  const reportsById = new Map((reportsResult.data as CoachingReportRow[]).map((row) => [row.id, row]));
+  const reportsById = new Map(reportRows.map((row) => [row.id, row]));
   const scoresByReportId = new Map<string, CoachingScoreItemRow[]>();
-  for (const row of (scoresResult.data ?? []) as CoachingScoreItemRow[]) {
+  for (const row of scoreRows) {
     const list = scoresByReportId.get(row.report_id) ?? [];
     list.push(row);
     scoresByReportId.set(row.report_id, list);
   }
-  const summaryByReportId = new Map((summariesResult.data as CoachingSummaryDbRow[]).map((row) => [row.report_id, row]));
+  const summaryByReportId = new Map(summaryRows.map((row) => [row.report_id, row]));
 
   return ids.map((id) => {
     const report = reportsById.get(id);
@@ -857,12 +873,18 @@ export async function getCoachingScoreAnalyticsForReports(
 
   if (reportIds.length === 0) return emptyCoachingScoreAnalytics;
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("coaching_score_items")
-    .select("report_id,parameter_category,score_item_key,score_item_label,score")
-    .in("report_id", reportIds);
+  // PostgREST folds every .in() value into the request URL; batch since reportIds can reach the
+  // same coachingRange()-capped scale as getCoachingReportsByIds above.
+  const rows: CoachingScoreAnalyticsInputRow[] = [];
+  for (let i = 0; i < reportIds.length; i += 100) {
+    const batch = reportIds.slice(i, i + 100);
+    const { data, error } = await getSupabaseAdmin()
+      .from("coaching_score_items")
+      .select("report_id,parameter_category,score_item_key,score_item_label,score")
+      .in("report_id", batch);
+    if (error) throw error;
+    rows.push(...((data ?? []) as CoachingScoreAnalyticsInputRow[]));
+  }
 
-  if (error) throw error;
-
-  return buildCoachingScoreAnalytics((data ?? []) as CoachingScoreAnalyticsInputRow[]);
+  return buildCoachingScoreAnalytics(rows);
 }

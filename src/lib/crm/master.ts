@@ -688,16 +688,19 @@ async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> 
     if (rows.length === 0) return map;
 
     const brickIds = Array.from(new Set(rows.map((r) => r.brick_id).filter((v): v is string => Boolean(v))));
-    const { data: bricks, error: bricksError } = await supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, area_code, region_code")
-      .in("brick_id", brickIds);
-    if (bricksError) return map;
-    const brickById = new Map(
-      ((bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>).map(
-        (b) => [b.brick_id, b],
-      ),
-    );
+    // PostgREST folds every .in() value into the request URL; batch defensively since this is
+    // bounded only by "distinct CRM region count, ~300" — already near the risk threshold.
+    const brickRows: Array<{ area_code: string | null; brick_id: string; region_code: string | null }> = [];
+    for (let i = 0; i < brickIds.length; i += 100) {
+      const batch = brickIds.slice(i, i + 100);
+      const { data: bricks, error: bricksError } = await supabase
+        .from("source_of_sales_bricks")
+        .select("brick_id, area_code, region_code")
+        .in("brick_id", batch);
+      if (bricksError) return map;
+      brickRows.push(...((bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>));
+    }
+    const brickById = new Map(brickRows.map((b) => [b.brick_id, b]));
 
     for (const row of rows) {
       if (!row.brick_id) continue;

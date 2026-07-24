@@ -184,24 +184,39 @@ export async function getApprovedLeaveDayMap(input: {
   if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) return leaveByEmployee;
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("v2_vacation_requests")
-    .select("employee_hr_id,start_date,end_date")
-    .eq("status", "approved")
-    .lte("start_date", input.dateToIso)
-    .gte("end_date", input.dateFromIso);
-
   const normalizedFilter = (input.employeeHrIds ?? [])
     .map((value) => normalizeAttendanceHrId(value))
     .filter((value): value is string => Boolean(value));
+
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — callers pass company/site-wide rosters here, so batch when filtered.
+  const rows: ApprovedLeaveRow[] = [];
   if (normalizedFilter.length > 0) {
-    query = query.in("employee_hr_id", normalizedFilter);
+    for (let i = 0; i < normalizedFilter.length; i += 100) {
+      const batch = normalizedFilter.slice(i, i + 100);
+      const { data, error } = await supabase
+        .from("v2_vacation_requests")
+        .select("employee_hr_id,start_date,end_date")
+        .eq("status", "approved")
+        .lte("start_date", input.dateToIso)
+        .gte("end_date", input.dateFromIso)
+        .in("employee_hr_id", batch);
+      if (error) throw new Error(`Approved leave lookup failed: ${error.message}`);
+      rows.push(...((data ?? []) as ApprovedLeaveRow[]));
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("v2_vacation_requests")
+      .select("employee_hr_id,start_date,end_date")
+      .eq("status", "approved")
+      .lte("start_date", input.dateToIso)
+      .gte("end_date", input.dateFromIso);
+    if (error) throw new Error(`Approved leave lookup failed: ${error.message}`);
+    rows.push(...((data ?? []) as ApprovedLeaveRow[]));
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(`Approved leave lookup failed: ${error.message}`);
-
-  for (const row of (data ?? []) as ApprovedLeaveRow[]) {
+  for (const row of rows) {
     const hrId = normalizeAttendanceHrId(row.employee_hr_id);
     if (!hrId || !isIsoDate(row.start_date) || !isIsoDate(row.end_date)) continue;
     const clampedFrom = row.start_date > input.dateFromIso ? row.start_date : input.dateFromIso;

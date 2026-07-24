@@ -438,13 +438,13 @@ export function runPrivateCalendarTests() {
     "private calendar must expand employee HR_ID filters into known casing dialects",
   );
   assert.equal(
-    serviceSource.match(/\.in\("employee_hr_id", employeeHrKeys\)/g)?.length,
+    serviceSource.match(/for \(const \w+ of chunk\(employeeHrKeys\)\)/g)?.length,
     4,
-    "vacation, excuse, plan, and no-activity-status private-calendar loaders must use expanded employee HR_ID keys",
+    "vacation, excuse, plan, and no-activity-status private-calendar loaders must batch over expanded employee HR_ID keys",
   );
   assert.match(
     excuseLoaderSource,
-    /\.in\("employee_hr_id", employeeHrKeys\)/,
+    /for \(const \w+ of chunk\(employeeHrKeys\)\)[\s\S]*?\.in\("employee_hr_id", \w+\)/,
     "approved excuse calendar reads must match A-8/a-8/canonical HR_ID dialects",
   );
   assert.doesNotMatch(
