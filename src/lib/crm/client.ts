@@ -20,6 +20,11 @@ export type IReports360Visit = {
   comment: string | null;
   contactID: number | null;
   contactName: string | null;
+  // Added by the vendor 2026-07-24: the visited contact's commercial potential grade
+  // (A+/A/B/C — A highest). Sent with inconsistent casing/whitespace ("b", " A", "B   ") — the
+  // sync engine normalizes it (see normalizeContactGrade in sync.ts) before storing. Same
+  // customer-visits-only population pattern as region/speciality below.
+  contactGrade: string | null;
   customerName: string | null;
   doubleID: number | null;
   doubleName: string | null;

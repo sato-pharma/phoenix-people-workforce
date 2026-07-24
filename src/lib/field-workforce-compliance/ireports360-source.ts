@@ -664,6 +664,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     comment: row.comment ?? null,
     contactID: row.contact_crm_id ?? null,
     contactName: row.contact_name ?? null,
+    contactGrade: null,
     customerName: null,
     doubleHrId: row.double_hr_id ?? null,
     doubleID: row.double_crm_id,
