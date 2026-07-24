@@ -4,6 +4,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type WorkflowRegistryStatus = {
@@ -320,7 +321,26 @@ export async function listWorkflowRegistryModules() {
     throw error;
   }
 
-  return ((data ?? []) as WorkflowRegistryDbRow[]).map(toModule);
+  // One malformed row must never take down every OTHER module's workflow
+  // transitions: a bad record here previously threw synchronously out of the
+  // shared .map(), which blocked resolveWorkflowRegistryTransition for every
+  // module in the app (payroll, resignations, probation, contracts,
+  // outstation, offers, marketing requests), not just the broken one. A
+  // module that fails validation is skipped (and loudly logged) instead,
+  // which surfaces to callers as the existing "workflow_module_not_found"
+  // failure mode for that module only.
+  const modules: WorkflowRegistryModule[] = [];
+  for (const row of (data ?? []) as WorkflowRegistryDbRow[]) {
+    try {
+      modules.push(toModule(row));
+    } catch (validationError) {
+      logError(`Workflow registry module "${row.module_key}" failed validation and was skipped`, {
+        error: validationError,
+        labels: { event: "workflow_registry_module_invalid", moduleKey: row.module_key },
+      });
+    }
+  }
+  return modules;
 }
 
 export async function getWorkflowRegistryDashboard(): Promise<WorkflowRegistryDashboard> {
