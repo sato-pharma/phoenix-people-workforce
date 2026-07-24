@@ -23,6 +23,15 @@ import {
 
 const CALENDAR_HEADER_LIMIT = 1000;
 const CALENDAR_ITEM_LIMIT = 5000;
+
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 const ALLOWED_CALENDAR_OWNER_ROLES = new Set([
   "national sales manager",
   "product manager",
@@ -281,18 +290,24 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     };
   }
 
-  const { data: rawRows, error } = await supabase
-    .from("employee_plan_items")
-    .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,double_visit_medical_rep_hr_id,double_visit_medical_rep_name,notes,sort_order")
-    .in("plan_id", planIds)
-    .gte("activity_date", start)
-    .lte("activity_date", end)
-    .order("activity_date", { ascending: true })
-    .order("sort_order", { ascending: true })
-    .limit(CALENDAR_ITEM_LIMIT + 1);
-  if (error) throw error;
-
-  const loadedRows = (rawRows ?? []) as PlanCalendarItemRow[];
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — planIds can reach CALENDAR_HEADER_LIMIT (1000), so batch it.
+  const loadedRows: PlanCalendarItemRow[] = [];
+  for (const planIdBatch of chunk(planIds, 100)) {
+    const { data: rawRows, error } = await supabase
+      .from("employee_plan_items")
+      .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,double_visit_medical_rep_hr_id,double_visit_medical_rep_name,notes,sort_order")
+      .in("plan_id", planIdBatch)
+      .gte("activity_date", start)
+      .lte("activity_date", end)
+      .order("activity_date", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .limit(CALENDAR_ITEM_LIMIT + 1);
+    if (error) throw error;
+    loadedRows.push(...((rawRows ?? []) as PlanCalendarItemRow[]));
+  }
+  loadedRows.sort((left, right) => left.activity_date.localeCompare(right.activity_date) || (left.sort_order ?? 0) - (right.sort_order ?? 0));
   const hasMoreItems = loadedRows.length > CALENDAR_ITEM_LIMIT;
   const rows = loadedRows.slice(0, CALENDAR_ITEM_LIMIT);
 

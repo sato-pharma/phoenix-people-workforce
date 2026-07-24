@@ -210,27 +210,38 @@ export async function getCompanyNoActivityReport(
   const monthKeys = Array.from(new Set(days.map((day) => day.date.slice(0, 7))));
   const compactIds = new Set(employeeHrIds.map(compactDeductionHrId).filter((value): value is string => Boolean(value)));
 
-  const { data: clarRows, error: clarError } = await supabase
-    .from("private_calendar_no_activity_clarifications")
-    .select(CLARIFICATION_COLUMNS)
-    .in("employee_hr_id", employeeHrIds)
-    .gte("activity_date", input.start)
-    .lte("activity_date", input.end);
-  if (clarError) throw clarError;
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — employeeHrIds is company-wide here (every employee with a "No Activity
+  // Recorded" day in the range), so batch.
+  const clarRows: ClarificationRow[] = [];
+  const disputeRows: Array<{ claim_text: string; dispute_date: string; employee_hr_id: string; id: string; status: PrivateCalendarDisputeStatus }> = [];
+  for (let i = 0; i < employeeHrIds.length; i += 100) {
+    const batch = employeeHrIds.slice(i, i + 100);
+    const [clarResult, disputeResult] = await Promise.all([
+      supabase
+        .from("private_calendar_no_activity_clarifications")
+        .select(CLARIFICATION_COLUMNS)
+        .in("employee_hr_id", batch)
+        .gte("activity_date", input.start)
+        .lte("activity_date", input.end),
+      supabase
+        .from("private_calendar_data_disputes")
+        .select("id,employee_hr_id,dispute_date,claim_text,status")
+        .in("employee_hr_id", batch)
+        .gte("dispute_date", input.start)
+        .lte("dispute_date", input.end),
+    ]);
+    if (clarResult.error) throw clarResult.error;
+    if (disputeResult.error) throw disputeResult.error;
+    clarRows.push(...((clarResult.data ?? []) as ClarificationRow[]));
+    disputeRows.push(...((disputeResult.data ?? []) as Array<{ claim_text: string; dispute_date: string; employee_hr_id: string; id: string; status: PrivateCalendarDisputeStatus }>));
+  }
   const clarByKey = new Map(
-    ((clarRows ?? []) as ClarificationRow[]).map((row) => [clarificationKey(row.employee_hr_id, row.activity_date), mapClarificationRow(row)]),
+    clarRows.map((row) => [clarificationKey(row.employee_hr_id, row.activity_date), mapClarificationRow(row)]),
   );
-
-  const { data: disputeRows, error: disputeError } = await supabase
-    .from("private_calendar_data_disputes")
-    .select("id,employee_hr_id,dispute_date,claim_text,status")
-    .in("employee_hr_id", employeeHrIds)
-    .gte("dispute_date", input.start)
-    .lte("dispute_date", input.end);
-  if (disputeError) throw disputeError;
   const disputeByKey = new Map(
-    ((disputeRows ?? []) as Array<{ claim_text: string; dispute_date: string; employee_hr_id: string; id: string; status: PrivateCalendarDisputeStatus }>)
-      .map((row) => [clarificationKey(row.employee_hr_id, row.dispute_date), { claimText: row.claim_text, id: row.id, status: row.status }]),
+    disputeRows.map((row) => [clarificationKey(row.employee_hr_id, row.dispute_date), { claimText: row.claim_text, id: row.id, status: row.status }]),
   );
 
   const { data: candRows, error: candError } = await supabase
@@ -248,12 +259,15 @@ export async function getCompanyNoActivityReport(
   }>).filter((row) => compactIds.has(row.employee_hr_id_compact));
 
   const candidateIds = relevantCandidates.map((row) => row.id);
-  const { data: decRows, error: decError } = candidateIds.length > 0
-    ? await supabase.from("deduction_decisions").select("candidate_id,decision_status").in("candidate_id", candidateIds)
-    : { data: [] as unknown[], error: null };
-  if (decError) throw decError;
+  const decRows: Array<{ candidate_id: string; decision_status: string }> = [];
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const batch = candidateIds.slice(i, i + 100);
+    const { data, error: decError } = await supabase.from("deduction_decisions").select("candidate_id,decision_status").in("candidate_id", batch);
+    if (decError) throw decError;
+    decRows.push(...((data ?? []) as Array<{ candidate_id: string; decision_status: string }>));
+  }
   const decisionByCandidateId = new Map(
-    ((decRows ?? []) as Array<{ candidate_id: string; decision_status: string }>).map((row) => [row.candidate_id, row.decision_status]),
+    decRows.map((row) => [row.candidate_id, row.decision_status]),
   );
 
   const existingByKey = new Map<string, { decisionStatus: string; sourceModule: string }>();

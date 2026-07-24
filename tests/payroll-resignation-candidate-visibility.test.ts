@@ -79,7 +79,12 @@ export function runPayrollResignationCandidateVisibilityTests() {
   );
   assert.match(
     payrollServiceSource,
-    /\.in\("hr_id",\s*batchHrIds\)/,
+    /for \(let i = 0; i < batchHrIds\.length; i \+= 100\)/,
+    "getPayrollDashboard must batch the registry lookup to avoid a PostgREST header-overflow crash (see src/lib/email/engagement.ts).",
+  );
+  assert.match(
+    payrollServiceSource,
+    /\.in\("hr_id",\s*batch\)/,
     "getPayrollDashboard must scope the registry lookup to the batch's HR IDs.",
   );
   assert.match(
