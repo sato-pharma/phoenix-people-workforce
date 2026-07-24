@@ -14,9 +14,31 @@ import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  SUPPORT_REQUEST_STATUSES,
+  type CreateSupportRequestInput,
+  type CreateSupportRequestResult,
+  type SupportNotificationStatus,
+  type SupportRequestAttachment,
+  type SupportRequestListFilter,
+  type SupportRequestRow,
+  type SupportRequestStatus,
+} from "@/lib/support-requests/types";
 
-export const SUPPORT_REQUEST_STATUSES = ["Pending", "In Progress", "Resolved", "Closed"] as const;
-export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
+// Re-exported for existing consumers (API routes, portal pages) — the canonical
+// definitions now live in types.ts, a dependency-free sibling that client components
+// (SupportRequestsWorkspace) import directly so they never pull this file's server-only
+// notifications/email-templates -> employee-directory chain into the browser bundle.
+export { SUPPORT_REQUEST_STATUSES };
+export type {
+  CreateSupportRequestInput,
+  CreateSupportRequestResult,
+  SupportNotificationStatus,
+  SupportRequestAttachment,
+  SupportRequestListFilter,
+  SupportRequestRow,
+  SupportRequestStatus,
+};
 
 const SUPPORT_ADMIN_REVIEW_URL = "/admin/notifications";
 
@@ -84,12 +106,6 @@ async function resolveSuperAdminFallbackRecipients(): Promise<HrRecipient[]> {
     userId: row.login_id ?? null,
   }));
 }
-
-export type SupportNotificationStatus = {
-  errored: boolean;
-  fellBackToSuperAdmin: boolean;
-  recipientCount: number;
-};
 
 /**
  * Alert the HR team (in-app + email + Telegram) that a new support ticket was opened.
@@ -201,35 +217,6 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
   }
 }
 
-export type SupportRequestAttachment = {
-  name: string;
-  size: number;
-  type: string;
-};
-
-export type SupportRequestRow = {
-  attachments: SupportRequestAttachment[];
-  category: string;
-  createdAt: string;
-  description: string;
-  employeeName: string;
-  hrId: string;
-  id: string;
-  status: "Pending" | "In Progress" | "Resolved" | "Closed";
-  subcategory: string | null;
-  subject: string;
-};
-
-export type CreateSupportRequestInput = {
-  attachments?: SupportRequestAttachment[];
-  category: string;
-  description: string;
-  employeeName: string;
-  hrId: string;
-  subcategory?: string | null;
-  subject: string;
-};
-
 const tableName = "employee_support_requests";
 
 function isMissingTable(error: unknown): boolean {
@@ -297,11 +284,6 @@ export async function listSupportRequestsForViewer(
   return (data ?? []).map((row) => rowToView(row as Record<string, unknown>));
 }
 
-export type SupportRequestListFilter = {
-  limit?: number;
-  status?: SupportRequestStatus | "all";
-};
-
 /**
  * HR/admin view: list every employee's support tickets (most-recent first),
  * optionally filtered by status. Enforces support_requests:read on the server —
@@ -367,11 +349,6 @@ export async function updateSupportRequestStatus(
   if (!data) throw new Error("Support request not found.");
   return rowToView(data as Record<string, unknown>);
 }
-
-export type CreateSupportRequestResult = {
-  notification: SupportNotificationStatus;
-  row: SupportRequestRow;
-};
 
 /**
  * Create a new support request. The hr_id is taken from the access context

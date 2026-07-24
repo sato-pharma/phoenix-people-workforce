@@ -8,7 +8,7 @@ import {
   SUPPORT_REQUEST_STATUSES,
   type SupportRequestRow,
   type SupportRequestStatus,
-} from "@/lib/support-requests/service";
+} from "@/lib/support-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
