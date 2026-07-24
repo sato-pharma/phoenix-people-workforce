@@ -51,6 +51,7 @@ import {
   Target,
   TriangleAlert,
   Trash2,
+  UserCog,
   UsersRound,
   Wrench,
 } from "lucide-react";
@@ -1126,6 +1127,14 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     label: "Email Activity",
     description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
     permissions: [{ resource: "communication" }],
+  },
+  {
+    href: "/admin/dev-preview",
+    icon: UserCog,
+    label: "Dev Preview (Real Data)",
+    description:
+      "Pick a role and line, auto-select a real active employee, and browse the app as them with their genuine data. Local development only — not available in this environment.",
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
