@@ -96,7 +96,8 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     access.role === "Marketing Manager" ||
-    access.role === "Training Manager"
+    access.role === "Training Manager" ||
+    access.role === "Talent Acquisition"
   );
 }
 
@@ -115,8 +116,9 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
   );
 }
 
-// Talent Acquisition holds `vacancies` permission for company-wide recruiting but is not
-// an organogram-visibility role, so it sits outside canAccessCompanyOrganogram.
+// Talent Acquisition is now also a canAccessCompanyOrganogram role (2026-07-24), so the
+// explicit OR below is redundant but kept — it documents that vacancies visibility for her
+// must never regress even if organogram scope changes again independently in the future.
 export function canAccessCompanyVacancies(access: AccessContext) {
   return canAccessCompanyOrganogram(access) || access.role === "Talent Acquisition";
 }

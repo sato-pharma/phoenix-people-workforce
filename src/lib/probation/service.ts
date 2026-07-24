@@ -139,15 +139,16 @@ export function isProbationAdministrator(access: Pick<AccessContext, "role" | "s
 }
 
 // View/export probation access follows the same Super Admin governance boundary as
-// administration; Talent Acquisition stays scoped to recruitment workflows. Training Manager and
-// Marketing Manager additionally have company-wide probation VIEW/EXPORT as part of their org-wide
-// oversight — but deliberately NOT administrator powers (manager_feedback/pass/terminate stay
-// gated by isProbationAdministrator), so their oversight is strictly read-only.
+// administration. Training Manager, Marketing Manager, and (owner-requested 2026-07-24)
+// Talent Acquisition additionally have company-wide probation VIEW/EXPORT as part of their
+// org-wide oversight — but deliberately NOT administrator powers (manager_feedback/pass/
+// terminate stay gated by isProbationAdministrator), so their oversight is strictly read-only.
 export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope">) {
   return (
     isProbationAdministrator(access) ||
     access.role === "Training Manager" ||
-    access.role === "Marketing Manager"
+    access.role === "Marketing Manager" ||
+    access.role === "Talent Acquisition"
   );
 }
 

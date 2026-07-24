@@ -9,6 +9,7 @@ const portalLandingRoleNames = new Set([
   "marketing manager",
   "training manager",
   "manager",
+  "talent acquisition",
 ]);
 
 export function resolveLandingPathForRole(role: string | null | undefined) {

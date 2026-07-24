@@ -79,7 +79,10 @@ export default async function EmployeePortalProbationPage({
     access.role === "Training Manager" ||
     access.role === "Product Manager" ||
     access.role === "Group Product Manager" ||
-    access.role === "Manager";
+    access.role === "Manager" ||
+    // Owner-requested 2026-07-24: she submits feedback alongside HR (Super Admin), not
+    // instead of it — case decisions (pass/terminate) stay isProbationAdministrator-only.
+    access.role === "Talent Acquisition";
 
   const canManageDvCheckboxes = access.role === "Super Admin";
 

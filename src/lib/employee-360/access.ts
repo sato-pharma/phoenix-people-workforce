@@ -33,7 +33,7 @@ import {
 } from "@/lib/workforce/hierarchy-resolver";
 
 /** Roles that see the WHOLE company in Employee 360. */
-const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin"]);
+const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin", "Talent Acquisition"]);
 
 /** The subset of an employee row the 360 scope check needs. */
 export type Employee360SubjectRow = Pick<

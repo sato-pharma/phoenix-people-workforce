@@ -9,6 +9,8 @@ export type EmployeePortalNavVisibility = {
   showExcusesTab?: boolean;
   showExpenseActionTab?: boolean;
   showExpenseDashboardTab?: boolean;
+  showMyVisitsTab?: boolean;
+  showDeductionsTab?: boolean;
   showIncentiveTab?: boolean;
   showMarketingRequestsTab?: boolean;
   showMarketingInboxTab?: boolean;
@@ -31,6 +33,22 @@ export type EmployeePortalNavVisibility = {
   showOrganogramTab?: boolean;
   showPlansTab?: boolean;
   showSupportTab?: boolean;
+  // Recruitment & Hiring group (Recruitment, CV Database, Hiring Documents) plus HR
+  // Support Requests (which lives in the "HR Support" section) — Talent Acquisition's
+  // portal mirror of the admin-shell hrAuthorityNavigationRoles tools. See
+  // employee-portal-layout.tsx. Vacation Control has a page but is deliberately unlinked
+  // (owner-requested removal, 2026-07-24).
+  showRecruitmentHiringTab?: boolean;
+  // People Management group (Employees, Contract Renewal, Resignations, Vacancies
+  // Report) — Talent Acquisition's company-wide HR tooling, separate from the
+  // Recruitment & Hiring group above. See employee-portal-layout.tsx.
+  showPeopleManagementTab?: boolean;
+  // Private Calendar is deliberately hidden from every portal role's nav by default
+  // (owner decision — see app/employee-portals/private-calendar/page.tsx, which has no
+  // role gate). This flag is a scoped, Talent-Acquisition-only exception to that default.
+  showPrivateCalendarTab?: boolean;
+  // Narrow account activate/deactivate tool — see src/lib/recruitment/account-activation.ts.
+  showAccountActivationTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
   showTrainingManagerCreateCoachingTab?: boolean;
@@ -209,6 +227,7 @@ export function resolveEmployeePortalNavVisibility(
   const isGroupProductManager = resolvedRole === "Group Product Manager";
   const isMarketingManager = resolvedRole === "Marketing Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
+  const isTalentAcquisition = resolvedRole === "Talent Acquisition";
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
@@ -220,8 +239,14 @@ export function resolveEmployeePortalNavVisibility(
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
-  const showExpenseActionTab = !isMedicalRep;
-  const showExpenseDashboardTab = !isMedicalRep;
+  // Talent Acquisition is HR staff processing outstation expenses, not a field claimant —
+  // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
+  const showExpenseActionTab = !isMedicalRep && !isTalentAcquisition;
+  const showExpenseDashboardTab = !isMedicalRep && !isTalentAcquisition;
+  // "My Visits" (CRM field visits) and Deductions are owner-requested exclusions for
+  // Talent Acquisition specifically — she is HR/office staff, not a field employee.
+  const showMyVisitsTab = !isTalentAcquisition;
+  const showDeductionsTab = !isTalentAcquisition;
   // Marketing Requests and Contact HR Support are full modules: their tabs are visible
   // without the launch flag. Marketing role checks still apply, so Marketing visibility
   // never extends to an unauthorized role. Contact HR Support is available to every
@@ -243,9 +268,10 @@ export function resolveEmployeePortalNavVisibility(
     "Super Admin",
     "Manager",
     "Regional Manager",
+    "Talent Acquisition",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager;
+  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager && !isTalentAcquisition;
   // Product / Group Product Managers (and their line manager, Marketing Manager) get the
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
@@ -268,7 +294,8 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager ||
-      isTrainingManager,
+      isTrainingManager ||
+      isTalentAcquisition,
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
@@ -285,11 +312,15 @@ export function resolveEmployeePortalNavVisibility(
     showReportItTab: isA3Account,
     showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
     showOrganogramTab:
-      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
+      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
     showPlansTab: isA3Account || showPlansTab,
     showProbationTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
+      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
     showSupportTab: true,
+    showRecruitmentHiringTab: isTalentAcquisition,
+    showPeopleManagementTab: isTalentAcquisition,
+    showPrivateCalendarTab: isTalentAcquisition,
+    showAccountActivationTab: isTalentAcquisition,
     showTeamCoachingTab,
     // Team Expenses was an NSM-only surface. It is retired from the portal nav:
     // the NSM's single expense destination is now the Expense Dashboard, whose
@@ -348,7 +379,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Training Manager",
-    showActionsTab: !isTrainingManager && !isMedicalRep,
+    // Other Approvals ("Approvals Hub") — Talent Acquisition has no approval authority
+    // (governance restricts that to Super Admin / HR Manager, see hard-boundary notes in
+    // permissions.ts), so the whole hub is hidden for her even though the other flags
+    // above already evaluate false for her role.
+    showActionsTab: !isTrainingManager && !isMedicalRep && !isTalentAcquisition,
+    showMyVisitsTab,
+    showDeductionsTab,
     showDirectOrdersTab,
     showDirectOrdersReportTab: showDirectOrdersTab,
     showDirectOrdersApprovalsTab: isDirectOrderApprovalRung,

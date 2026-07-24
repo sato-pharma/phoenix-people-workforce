@@ -632,6 +632,22 @@ const employeePortalNavigationSectionSeeds = [
     ],
     label: "Payroll",
   },
+  // ── Recruitment & Hiring: Talent Acquisition's portal-side mirror of the
+  // admin-shell hrAuthorityNavigationRoles tools (app/(admin)/recruitment,
+  // /cv-database, /hiring-documents, /leave-management/vacation-control,
+  // /admin/support-requests). Super Admin never sees this — resolveNavigationMode
+  // keeps Super Admin on the admin shell, where the originals still live.
+  {
+    id: "recruitment-hiring",
+    items: [
+      { href: "/employee-portals/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests", action: "read" }], roles: ["Talent Acquisition"] },
+    ],
+    label: "Recruitment & Hiring",
+  },
   {
     id: "sales-operations",
     items: [

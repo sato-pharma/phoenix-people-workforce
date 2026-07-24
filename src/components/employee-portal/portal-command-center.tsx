@@ -1041,6 +1041,13 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const barColor =
     pct === null ? "bg-orange-500" : pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : "bg-orange-500";
 
+  // Talent Acquisition is HR/office staff, not a field employee — she has no approval
+  // authority (Approvals Hub is hidden from her sidebar entirely, see navigation.ts's
+  // showActionsTab) and no outstation expenses of her own, so both quick-access surfaces
+  // are dropped here too, matching the sidebar. Every other StandardCommandCenter role
+  // (Employee, Manager, Training Manager, …) is unaffected.
+  const isTalentAcquisition = role === "Talent Acquisition";
+
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
       <IdentityCard data={shell} />
@@ -1060,13 +1067,17 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
                 },
               ]
             : []),
-          {
-            icon: CalendarX2,
-            value: String(totalPending),
-            label: totalPending === 1 ? "pending request" : "pending requests",
-            href: "/employee-portals/approvals-hub",
-            urgent: totalPending > 0,
-          },
+          ...(isTalentAcquisition
+            ? []
+            : [
+                {
+                  icon: CalendarX2,
+                  value: String(totalPending),
+                  label: totalPending === 1 ? "pending request" : "pending requests",
+                  href: "/employee-portals/approvals-hub",
+                  urgent: totalPending > 0,
+                },
+              ]),
           {
             icon: CalendarDays,
             value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
@@ -1085,11 +1096,11 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         actions={[
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
           { href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" },
-          { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
+          ...(isTalentAcquisition ? [] : [{ href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" }]),
           { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
         ]}
       />
-      {totalPending > 0 && (
+      {!isTalentAcquisition && totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
@@ -1127,12 +1138,14 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
           <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
-          <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
+          {!isTalentAcquisition && (
+            <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
+          )}
           <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
         </div>
       </div>
 
-      {totalPending > 0 ? (
+      {!isTalentAcquisition && totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
