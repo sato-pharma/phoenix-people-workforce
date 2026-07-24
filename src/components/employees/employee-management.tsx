@@ -236,10 +236,9 @@ const genderOptions = [
 ];
 
 const contractTypeOptions = [
-  { label: "Full Time", value: "full_time" },
-  { label: "Part Time", value: "part_time" },
-  { label: "Temporary", value: "temporary" },
-  { label: "Contractor", value: "contractor" },
+  { label: "Full time", value: "full time" },
+  { label: "Semi-full time", value: "semi-full time" },
+  { label: "Part time", value: "part time" },
 ];
 
 const yesNoOptions = [

@@ -89,7 +89,7 @@ const fieldPriority: EmployeeImportField[] = [
 
 const activeImportStatuses = new Set(["", "active", "on_leave"]);
 const genderValues = new Set(["male", "female", "other", "not specified", "prefer not to say"]);
-const contractValues = new Set(["permanent", "fixed-term", "fixed term", "temporary", "consultant", "internship", "not specified"]);
+const contractValues = new Set(["full time", "full-time", "semi-full time", "semi full time", "part time", "part-time"]);
 const paymentModeValues = new Set(["two_parts", "one_part", "two parts", "one part"]);
 const yesNoValues = new Set(["yes", "no"]);
 const enrollmentStatusValues = new Set(["yes", "no", "pending"]);
@@ -840,7 +840,7 @@ export function validateEmployeeImportRows(
         rowNumber: record.rowNumber,
         field: "contractType",
         code: "invalid_contract_type",
-        message: "Contract Type must be Permanent, Fixed-term, Temporary, Consultant, Internship, Not specified, or blank.",
+        message: "Contract Type must be Full time, Semi-full time, Part time, or blank.",
       });
     }
 
