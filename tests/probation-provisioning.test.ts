@@ -17,7 +17,7 @@ export function runProbationProvisioningTests() {
 
   // Hire conversion auto-creates probation, non-blocking, without touching the RPC.
   const applications = source("src/lib/recruitment/applications.ts");
-  assert.match(applications, /createInitialProbationRecord\(/, "approveAndConvert must auto-create probation");
+  assert.match(applications, /createInitialProbationRecord\(/, "markApplicationHired must auto-create probation");
   assert.match(applications, /catch \(probationError\)/, "probation create must be non-blocking (try/catch)");
 
   // Provisioning module: idempotent insert into employee_probation + mirror to employees.

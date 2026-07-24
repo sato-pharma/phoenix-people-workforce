@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getInterviewRow, recordInterviewOutcome, type RecordInterviewInput } from "@/lib/recruitment/interviews";
+import { hiringManagerInterviewType } from "@/lib/recruitment/access";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -13,8 +14,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Gated on `hiring_interviews` (not `recruitment`) — see hiring-manager-view.ts. Restricted to
-// interviewType "hiring_manager" so this narrow surface can never touch a phone/hr/cv-screening
-// record Talent Acquisition owns, even for a candidate already in the caller's own scope.
+// the interviewType the caller's own role would have created (hiring_manager for District
+// Manager, rm_interview/nsm_interview/ceo_interview for Regional Manager/National Sales
+// Manager/CEO) so this narrow surface can never touch a phone/hr/cv-screening record Talent
+// Acquisition owns, or another role's own round, even for a candidate already in scope.
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const csrf = assertSameOriginMutation(request);
@@ -23,9 +26,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
 
     const existing = await getInterviewRow(id);
-    if (existing.interviewType !== "hiring_manager") {
+    if (existing.interviewType !== hiringManagerInterviewType(access.role)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Only your own hiring-manager interview can be recorded here.", success: false },
+        { error: "forbidden", message: "Only your own interview round can be recorded here.", success: false },
         { status: 403 },
       );
     }

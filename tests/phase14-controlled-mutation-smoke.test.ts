@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 
 export function runPhase14ControlledMutationSmokeTests() {
   const employeeRoute = readFileSync("app/api/employees/route.ts", "utf8");
-  const offerApproveRoute = readFileSync("app/api/offers/[offerRef]/approve/route.ts", "utf8");
   const resignationRoute = readFileSync("app/api/employees/[hrId]/resign/route.ts", "utf8");
   const outstationSubmitRoute = readFileSync("app/api/outstation/submit/route.ts", "utf8");
   const smokeScript = readFileSync("scripts/phase14-controlled-mutation-smoke.mjs", "utf8");
@@ -12,11 +11,6 @@ export function runPhase14ControlledMutationSmokeTests() {
   assert.match(employeeRoute, /status: 400/);
   assert.match(employeeRoute, /message\.includes\("was not found"\)/);
   assert.match(employeeRoute, /status: 404/);
-
-  assert.match(offerApproveRoute, /offer not found/);
-  assert.match(offerApproveRoute, /status: 404/);
-  assert.match(offerApproveRoute, /only accepted offers/);
-  assert.match(offerApproveRoute, /status: 400/);
 
   assert.match(resignationRoute, /not found/);
   assert.match(resignationRoute, /status: 404/);

@@ -4,9 +4,31 @@
 // helpers add row-level scoping so hiring-manager roles only see/act on the
 // requisitions they own, while Super Admin / Talent Acquisition / CEO see everything.
 // Candidate PII is gated separately (the `candidates` resource) at the route.
+//
+// District Manager relies on the exact hrIdsMatch check below (their own requisitions
+// only). Regional Manager and National Sales Manager additionally get org-scoped
+// visibility — HIERARCHY for RM, LINE for NSM — resolved once per request via
+// resolveHiringManagerScopeHrIds() and threaded through as an optional allow-list.
 
 import { hrIdsMatch, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
-import type { Application, Requisition } from "@/lib/recruitment/types";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import type { Application, InterviewType, Requisition } from "@/lib/recruitment/types";
+
+/**
+ * The interview_type a hiring-manager-family round is recorded under, derived from the
+ * caller's own role (never the request body) — District Manager stays "hiring_manager"
+ * (unchanged, this is the pre-existing behavior other code/tests key off of), Regional
+ * Manager/National Sales Manager/CEO get their own dedicated types so each role's round
+ * is attributed correctly and stays editable only by that same role.
+ */
+export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
+  if (role === "Regional Manager") return "rm_interview";
+  if (role === "National Sales Manager") return "nsm_interview";
+  if (role === "CEO") return "ceo_interview";
+  return "hiring_manager";
+}
 
 // Roles that manage the pipeline end to end.
 export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "Talent Acquisition"];
@@ -28,34 +50,103 @@ export function canViewCvExtractionAnalytics(access: Pick<AccessContext, "role" 
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
-export function canSeeRequisition(access: AccessContext, requisition: Requisition): boolean {
+// Roles whose hiring-manager visibility extends beyond their own requisitions to an
+// org-scoped set (resolved via resolveHiringManagerScopeHrIds). Every other role
+// (District Manager included) stays on the exact hrIdsMatch check only.
+const orgScopedHiringManagerRoles: readonly PhoenixRole[] = ["Regional Manager", "National Sales Manager"];
+
+/**
+ * Org-scoped hiring-manager HR_IDs for Regional Manager (HIERARCHY — their full downward
+ * management chain) and National Sales Manager (LINE — everyone on their line). Returns
+ * null for roles that don't get org-scoped visibility (canSeeRequisition falls back to
+ * exact hrIdsMatch in that case) and for company-wide roles (no filtering needed).
+ * Resolve ONCE per request/list call and pass the result through — the directory load
+ * is TTL-cached, but there's no reason to re-derive the set per row.
+ */
+export async function resolveHiringManagerScopeHrIds(access: AccessContext): Promise<ReadonlySet<string> | null> {
+  if (canSeeAllRecruitment(access)) return null;
+  if (!orgScopedHiringManagerRoles.includes(access.role)) return null;
+
+  const viewerKey = canonicalHrIdKey(access.hrId);
+  if (!viewerKey) return new Set();
+
+  const directory = await getEmployeeDirectory();
+  const byCanonicalHrId = new Map(
+    directory.employees
+      .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
+      .filter((entry): entry is [string, (typeof directory.employees)[number]] => entry[0] !== null),
+  );
+
+  const allowed = new Set<string>();
+  const viewer = byCanonicalHrId.get(viewerKey);
+
+  if (access.role === "Regional Manager") {
+    for (const employee of directory.employees) {
+      if (isWithinManagerHierarchy({ employee, byCanonicalHrId, viewerCanonicalHrId: viewerKey, canonicalize: canonicalHrIdKey })) {
+        const key = canonicalHrIdKey(employee.hrId);
+        if (key) allowed.add(key);
+      }
+    }
+    return allowed;
+  }
+
+  // National Sales Manager — LINE scope. Fails closed (empty set) when the viewer's
+  // own line can't be resolved, matching the sales-module LINE-scope precedent.
+  if (viewer && (viewer.lineId != null || viewer.lineName)) {
+    for (const employee of directory.employees) {
+      if (sameWorkforceLine(viewer, employee)) {
+        const key = canonicalHrIdKey(employee.hrId);
+        if (key) allowed.add(key);
+      }
+    }
+  }
+  return allowed;
+}
+
+export function canSeeRequisition(
+  access: AccessContext,
+  requisition: Requisition,
+  scopeHrIds?: ReadonlySet<string> | null,
+): boolean {
   if (canSeeAllRecruitment(access)) return true;
-  return (
+  if (
     hrIdsMatch(access.hrId, requisition.hiringManagerHrId) ||
     hrIdsMatch(access.hrId, requisition.recruitmentOwnerHrId)
-  );
+  ) {
+    return true;
+  }
+  if (!scopeHrIds) return false;
+  const managerKey = canonicalHrIdKey(requisition.hiringManagerHrId);
+  const ownerKey = canonicalHrIdKey(requisition.recruitmentOwnerHrId);
+  return Boolean((managerKey && scopeHrIds.has(managerKey)) || (ownerKey && scopeHrIds.has(ownerKey)));
 }
 
 export function filterRequisitionsForAccess(
   access: AccessContext,
   requisitions: readonly Requisition[],
+  scopeHrIds?: ReadonlySet<string> | null,
 ): Requisition[] {
   if (canSeeAllRecruitment(access)) return [...requisitions];
-  return requisitions.filter((requisition) => canSeeRequisition(access, requisition));
+  return requisitions.filter((requisition) => canSeeRequisition(access, requisition, scopeHrIds));
 }
 
 export function canSeeApplication(
   access: AccessContext,
   application: Application,
   requisitionsById: Map<string, Requisition>,
+  scopeHrIds?: ReadonlySet<string> | null,
 ): boolean {
   if (canSeeAllRecruitment(access)) return true;
   const requisition = requisitionsById.get(application.requisitionId);
-  return requisition ? canSeeRequisition(access, requisition) : false;
+  return requisition ? canSeeRequisition(access, requisition, scopeHrIds) : false;
 }
 
-export function assertCanSeeRequisition(access: AccessContext, requisition: Requisition): void {
-  if (!canSeeRequisition(access, requisition)) {
+export function assertCanSeeRequisition(
+  access: AccessContext,
+  requisition: Requisition,
+  scopeHrIds?: ReadonlySet<string> | null,
+): void {
+  if (!canSeeRequisition(access, requisition, scopeHrIds)) {
     throw new Error("Forbidden: requisition is outside your recruitment scope.");
   }
 }

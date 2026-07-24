@@ -44,17 +44,14 @@ export function runHrIdAliasNormalizationTests() {
     "two seats whose managerHrId differs only by the legacy alias are still recognized as the same seat",
   );
 
-  // ── contracts/service.ts, offers/service.ts, probation/service.ts, hiring-documents/service.ts ──
-  // These four are DB-backed and not directly unit-testable without a live/mocked Supabase client
-  // (matching the existing test convention for these files — see contract-renewal-hardening.test.ts,
-  // offer-lifecycle-hardening.test.ts). Source-text assertions confirm each now routes through the
-  // canonical helper instead of a raw .toUpperCase()/.toLowerCase() comparison.
+  // ── contracts/service.ts, probation/service.ts, hiring-documents/service.ts ──
+  // These are DB-backed and not directly unit-testable without a live/mocked Supabase client
+  // (matching the existing test convention for these files — see contract-renewal-hardening.test.ts).
+  // Source-text assertions confirm each now routes through the canonical helper instead of a
+  // raw .toUpperCase()/.toLowerCase() comparison.
   const contractsSource = readFileSync("src/lib/contracts/service.ts", "utf8");
   assert.match(contractsSource, /function cleanHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "cleanHrId delegates to the canonical alias-aware helper");
   assert.doesNotMatch(contractsSource, /employee\.hrId\.toUpperCase\(\)/, "no remaining raw .toUpperCase() HR_ID comparison against the contract/request maps");
-
-  const offersSource = readFileSync("src/lib/offers/service.ts", "utf8");
-  assert.match(offersSource, /!hrIdsMatch\(selectedManager, vacancyManager\)/, "the offer/vacancy manager match uses the alias-aware hrIdsMatch helper");
 
   const probationSource = readFileSync("src/lib/probation/service.ts", "utf8");
   assert.match(probationSource, /const employee = employees\.find\(\(row\) => normalizeHrId\(row\.hrId\) === employeeHrId\)/, "probation evaluation employee lookup uses the alias-aware normalizeHrId helper");

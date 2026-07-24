@@ -1,6 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
-import { runOfferEmailPremiumTests } from "./offer-email-premium.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
@@ -52,8 +51,6 @@ import { runRecruitmentCandidateMatchingTests } from "./recruitment-candidate-ma
 import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-state-machine.test.ts";
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
 import { runRecruitmentCvExtractionTests } from "./recruitment-cv-extraction.test.ts";
-import { runOfferApprovalChainTests } from "./offer-approval-chain.test.ts";
-import { runOfferPipelineStateMachineTests } from "./offer-pipeline-state-machine.test.ts";
 import { runProbationProvisioningTests } from "./probation-provisioning.test.ts";
 import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
@@ -86,12 +83,10 @@ import { runProbationAuditFixesTests } from "./probation-audit-fixes.test.ts";
 import { runProbationAuditFixesRound2Tests } from "./probation-audit-fixes-round2.test.ts";
 import { runProbationLegacyWritesToCasesTests } from "./probation-legacy-writes-to-cases.test.ts";
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
-import { runRecruitmentOnboardingTests } from "./recruitment-onboarding.test.ts";
-import { runRecruitmentOfferLetterTests } from "./recruitment-offer-letter.test.ts";
 import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.test.ts";
-import { runRecruitmentSeniorApprovalTests } from "./recruitment-senior-approval.test.ts";
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
+import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
 import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extraction-analytics.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
@@ -269,7 +264,6 @@ import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-cont
 import { runHrIdAliasNormalizationTests } from "./hrid-alias-normalization.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
-import { runOfferLifecycleHardeningTests } from "./offer-lifecycle-hardening.test.ts";
 import { runNotificationRecipientIsolationTests } from "./notification-recipient-isolation.test.ts";
 import { runWorkflowControlTests } from "./workflow-control.test.ts";
 import { runWorkflowControlGovernanceTests } from "./workflow-control-governance.test.ts";
@@ -499,8 +493,6 @@ await runTest("recruitment candidate matching", runRecruitmentCandidateMatchingT
 await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateMachineTests);
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
 await runTest("recruitment cv extraction", runRecruitmentCvExtractionTests);
-await runTest("offer approval chain", runOfferApprovalChainTests);
-await runTest("offer pipeline state machine", runOfferPipelineStateMachineTests);
 await runTest("probation provisioning", runProbationProvisioningTests);
 await runTest("probation date (hire+90 canonical, edge cases)", runProbationDateTests);
 await runTest("probation case provisioning (idempotent ensureCase + hire trigger + backfill dry-run)", runProbationCaseProvisioningTests);
@@ -534,12 +526,10 @@ await runTest("probation audit fixes (F1–F13 pre-merge hardening)", runProbati
 await runTest("probation audit fixes round 2 (R1–R10 deep hardening)", runProbationAuditFixesRound2Tests);
 await runTest("probation legacy decision write-through to cases (dashboard/email desync fix)", runProbationLegacyWritesToCasesTests);
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
-await runTest("recruitment onboarding", runRecruitmentOnboardingTests);
-await runTest("recruitment offer letter", runRecruitmentOfferLetterTests);
 await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
-await runTest("recruitment senior approval", runRecruitmentSeniorApprovalTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
+await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy/line scope wiring)", runRecruitmentNsmRmCeoScopingTests);
 await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionAnalyticsTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
@@ -722,7 +712,6 @@ await runTest("HR_ID alias normalization (legacy AAA -> AA)", runHrIdAliasNormal
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
-await runTest("offer lifecycle hardening", runOfferLifecycleHardeningTests);
 await runTest("notification recipient isolation", runNotificationRecipientIsolationTests);
 await runTest("workflow control center", runWorkflowControlTests);
 await runTest("workflow control governance", runWorkflowControlGovernanceTests);
@@ -873,7 +862,6 @@ await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)"
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
-await runTest("premium offer email (no salary in body + zebra details table)", runOfferEmailPremiumTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
 await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);

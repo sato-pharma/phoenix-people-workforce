@@ -3,7 +3,7 @@
 // A pure, isomorphic registry (no DB/AI/Node imports — safe to import from both server code
 // like cv-extraction.ts and client components like the review board). Adding a second position
 // is data, not a redesign: define its CvPositionSchema entry here with storage: "jsonb" fields
-// (persisted into recruitment_candidates.position_specific_fields) — the fixed dedicated
+// (persisted into ats_candidates.position_specific_fields) — the fixed dedicated
 // columns below are Medical Rep's alone and stay untouched by any future position.
 
 export type CvFieldType = "string" | "boolean";
@@ -13,7 +13,7 @@ export type CvFieldDefinition = {
   label: string;
   type: CvFieldType;
   aiDescription: string;
-  // "column" = an existing dedicated recruitment_candidates column (Medical Rep's 8 fields
+  // "column" = an existing dedicated ats_candidates column (Medical Rep's 8 fields
   // plus the shared fullName/email/phone/governorate). "jsonb" = merged into the generic
   // position_specific_fields column — the storage path a future position's fields would use.
   storage: "column" | "jsonb";
@@ -135,7 +135,7 @@ export const cvPositionSchemas: Record<string, CvPositionSchema> = {
   district_manager: {
     // Same field list as Medical Rep, by design — District Managers here are typically
     // promoted from Medical Rep, so the same background questions apply. All still
-    // storage:"column": these 12 fields already have dedicated recruitment_candidates
+    // storage:"column": these 12 fields already have dedicated ats_candidates
     // columns from the original Medical Rep migration, so reusing them needs no new
     // migration and no position_specific_fields/jsonb involvement.
     fields: medicalRepFields,

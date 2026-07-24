@@ -1,7 +1,7 @@
 // Recruitment / ATS — CV / phone / hiring-manager screening orchestration
 // (Rules 5, 6 & 8).
 //
-// A screening or interview result is recorded as a recruitment_interviews row
+// A screening or interview result is recorded as a ats_interviews row
 // (reusing the scorecard machinery), then the chosen outcome drives a pipeline
 // transition. Phone screening also confirms a few candidate fields (current
 // employer, expected salary, notice period) onto the candidate record.
@@ -93,7 +93,7 @@ export async function recordScreeningOutcome(
     if (input.noticePeriod !== undefined) patch.notice_period = textOrNull(input.noticePeriod);
     if (Object.keys(patch).length > 0) {
       patch.updated_at = new Date().toISOString();
-      await recruitmentDb().from("recruitment_candidates").update(patch).eq("id", application.candidateId);
+      await recruitmentDb().from("ats_candidates").update(patch).eq("id", application.candidateId);
     }
   }
 

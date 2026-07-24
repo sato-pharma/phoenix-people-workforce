@@ -7,7 +7,7 @@
 // same schema-driven structured-output call proposes that position's candidate fields
 // (src/lib/recruitment/cv-field-schemas.ts) with a per-field confidence rating, following the
 // same structured-output pattern as src/lib/email/ai-assist.ts. This module never writes to
-// recruitment_candidates itself — the caller reviews/corrects the proposal and saves it via
+// ats_candidates itself — the caller reviews/corrects the proposal and saves it via
 // updateCandidate(); recordAppliedExtractionFields() only updates this module's own
 // audit-trail row (a correction log for future prompt tuning, not a training pipeline).
 
@@ -315,7 +315,7 @@ export async function extractCandidateFieldsFromCv(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidate_cv_extractions")
+    .from("ats_candidate_cv_extractions")
     .insert({
       ai_model: model,
       candidate_id: candidateId,
@@ -339,7 +339,7 @@ export async function recordAppliedExtractionFields(
 ): Promise<void> {
   const supabase = recruitmentDb();
   const { error } = await supabase
-    .from("recruitment_candidate_cv_extractions")
+    .from("ats_candidate_cv_extractions")
     .update({ applied_fields: appliedFields })
     .eq("id", extractionId);
   if (error) throw error;

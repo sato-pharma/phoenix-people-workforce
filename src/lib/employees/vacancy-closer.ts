@@ -1,15 +1,14 @@
 import { cache } from "react";
 
 import { getRequiredEnv } from "@/lib/env";
-import { pickDepartmentSafeVacancy } from "@/lib/offers/vacancy-matching";
+import { pickDepartmentSafeVacancy } from "@/lib/employees/vacancy-matching";
 
 // Open-vacancy lookups and the hire-time vacancy closer used by
-// src/lib/employees/employee-directory.ts. Kept in a module separate from
-// offers/service.ts — which dynamically imports the puppeteer-based
-// src/lib/recruitment/offer-letter-pdf.ts to build offer-letter PDF
-// attachments — so that employee-directory.ts (reachable from client-bundled
-// sales code via src/lib/sales/access-scope.ts) never pulls Node-only PDF
-// tooling into a client bundle.
+// src/lib/employees/employee-directory.ts. Kept in its own module (talks to
+// `position_vacancies`/`employees` directly via the Supabase REST API, not the
+// recruitment/offers domain — it never depended on those tables) so
+// employee-directory.ts (reachable from client-bundled sales code via
+// src/lib/sales/access-scope.ts) never pulls in anything Node-only.
 
 export type VacancyLookupRow = {
   areaId: number | null;
@@ -32,7 +31,7 @@ const databaseQueryTimeoutMs = 15000;
 const databaseQueryRetryMs = 30000;
 const databaseQueryMaxAttempts = 2;
 
-function offerErrorMessage(error: unknown) {
+function vacancyErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -97,7 +96,7 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
       return payload as T;
     } catch (error) {
       lastError = error;
-      const message = offerErrorMessage(error).toLowerCase();
+      const message = vacancyErrorMessage(error).toLowerCase();
       const isTimeout =
         error instanceof Error &&
         (error.name === "AbortError" || message.includes("timed out"));
@@ -140,9 +139,9 @@ async function loadEmployeeFullName(hrId: string | null) {
 }
 
 // Memoized per-request (React cache()): getOpenWorkforceVacancies()/getOpenMedicalRepVacancies()
-// and getOfferLookups() are all reached independently from the same /overview + command-center
-// request paths (via getEmployeeDirectory()'s internal vacancy calls and getRecruitmentMetrics()),
-// so without this a single page load issued this same position_vacancies query up to 3 times.
+// are reached independently from the same /overview + command-center request paths (via
+// getEmployeeDirectory()'s internal vacancy calls), so without this a single page load issued
+// this same position_vacancies query multiple times.
 const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
   try {
     const loadRows = (includeReplacement: boolean) => {
@@ -189,7 +188,7 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
     try {
       vacancies = await loadRows(true);
     } catch (error) {
-      const message = offerErrorMessage(error).toLowerCase();
+      const message = vacancyErrorMessage(error).toLowerCase();
       if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
         throw error;
       }
@@ -216,7 +215,7 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
       };
     });
   } catch (error) {
-    const message = offerErrorMessage(error).toLowerCase();
+    const message = vacancyErrorMessage(error).toLowerCase();
     if (
       message.includes("timed out") ||
       message.includes("relationship") ||
@@ -247,7 +246,7 @@ export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> 
   });
 }
 
-export async function closeVacancyForOffer(input: {
+export async function closeVacancyOnHire(input: {
   area_id?: number | null;
   department_id?: number | null;
   filled_by_hr_id?: string | null;
@@ -286,7 +285,7 @@ export async function closeVacancyForOffer(input: {
     });
 
   // Department-safe selection is delegated to the pure helper in
-  // src/lib/offers/vacancy-matching.ts (see pickDepartmentSafeVacancy below).
+  // src/lib/employees/vacancy-matching.ts (see pickDepartmentSafeVacancy below).
 
   const findMatches = async (params: URLSearchParams) => {
     try {
@@ -294,7 +293,7 @@ export async function closeVacancyForOffer(input: {
         `position_vacancies?${params}`,
       );
     } catch (error) {
-      const message = offerErrorMessage(error).toLowerCase();
+      const message = vacancyErrorMessage(error).toLowerCase();
       if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
         throw error;
       }
@@ -369,7 +368,7 @@ export async function closeVacancyForOffer(input: {
       method: "PATCH",
     });
   } catch (error) {
-    const message = offerErrorMessage(error).toLowerCase();
+    const message = vacancyErrorMessage(error).toLowerCase();
     if (
       !message.includes("filled_by_hr_id") &&
       !message.includes("filled_at") &&

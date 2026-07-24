@@ -24,11 +24,6 @@ export function runPhase15DisposableFixtureSmokeTests() {
   );
   assert.match(
     phase15SmokeSource,
-    /approveAcceptedOffer/,
-    "Phase 15 smoke must use the existing accepted-offer approval service.",
-  );
-  assert.match(
-    phase15SmokeSource,
     /updateSalesBatchStatus/,
     "Phase 15 smoke must use the existing sales import workflow service.",
   );
