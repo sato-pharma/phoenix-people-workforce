@@ -8,6 +8,13 @@
 //
 // The cached photo map lets any server surface decide "does this HR ID have an
 // uploaded photo?" with a single small query (mirrors the role-override cache).
+//
+// server-only: this module uses node:crypto and the service-role Supabase client.
+// A client component that imports it (even transitively) fails the webpack build
+// with a clear error instead of a cryptic "node:crypto is not handled" crash —
+// see the recruitment-workspace.tsx/support-requests-workspace.tsx incident this
+// guards against (2026-07-25).
+import "server-only";
 
 import crypto from "node:crypto";
 
