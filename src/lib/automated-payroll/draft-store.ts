@@ -85,6 +85,21 @@ function mapDraftRow(row: RunRow): DraftRow {
     crm: numeric(row.crm),
     manualOtherDeductions: numeric(row.manual_other_deductions),
     manualReason: (row.manual_reason as string | null) ?? null,
+    p1odCrmDays: numeric(row.p1od_crm_days),
+    p1odCrmValue: numeric(row.p1od_crm_value),
+    p1odCrmReason: (row.p1od_crm_reason as string | null) ?? null,
+    p1odVacationDays: numeric(row.p1od_vacation_days),
+    p1odVacationValue: numeric(row.p1od_vacation_value),
+    p1odVacationReason: (row.p1od_vacation_reason as string | null) ?? null,
+    p1odNoRecordDays: numeric(row.p1od_no_record_days),
+    p1odNoRecordValue: numeric(row.p1od_no_record_value),
+    p1odNoRecordReason: (row.p1od_no_record_reason as string | null) ?? null,
+    p1odLoanDays: numeric(row.p1od_loan_days),
+    p1odLoanValue: numeric(row.p1od_loan_value),
+    p1odLoanReason: (row.p1od_loan_reason as string | null) ?? null,
+    p1odOtherDays: numeric(row.p1od_other_days),
+    p1odOtherValue: numeric(row.p1od_other_value),
+    p1odOtherReason: (row.p1od_other_reason as string | null) ?? null,
     firstPartFrozen: numeric(row.first_part_frozen),
     onHold: Boolean(row.on_hold),
     holdReason: (row.hold_reason as string | null) ?? null,
@@ -102,6 +117,21 @@ export async function findActiveRun(month: number, year: number): Promise<Monthl
     .eq("month", month)
     .eq("year", year)
     .in("phase", ["part1", "part2", "ready"])
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapRun(data as RunRow) : null;
+}
+
+/** The published run for a period, if any (for the Salary Changes comparison tab). */
+export async function findPublishedRun(month: number, year: number): Promise<MonthlySalaryRun | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(RUNS)
+    .select("*")
+    .eq("month", month)
+    .eq("year", year)
+    .eq("phase", "published")
+    .order("published_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data ? mapRun(data as RunRow) : null;
@@ -241,8 +271,23 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("unpaidVacations", "unpaid_vacations");
   num("crm", "crm");
   num("manualOtherDeductions", "manual_other_deductions");
+  num("p1odCrmDays", "p1od_crm_days");
+  num("p1odCrmValue", "p1od_crm_value");
+  num("p1odVacationDays", "p1od_vacation_days");
+  num("p1odVacationValue", "p1od_vacation_value");
+  num("p1odNoRecordDays", "p1od_no_record_days");
+  num("p1odNoRecordValue", "p1od_no_record_value");
+  num("p1odLoanDays", "p1od_loan_days");
+  num("p1odLoanValue", "p1od_loan_value");
+  num("p1odOtherDays", "p1od_other_days");
+  num("p1odOtherValue", "p1od_other_value");
   num("firstPartFrozen", "first_part_frozen");
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
+  if (patch.p1odCrmReason !== undefined) db.p1od_crm_reason = patch.p1odCrmReason;
+  if (patch.p1odVacationReason !== undefined) db.p1od_vacation_reason = patch.p1odVacationReason;
+  if (patch.p1odNoRecordReason !== undefined) db.p1od_no_record_reason = patch.p1odNoRecordReason;
+  if (patch.p1odLoanReason !== undefined) db.p1od_loan_reason = patch.p1odLoanReason;
+  if (patch.p1odOtherReason !== undefined) db.p1od_other_reason = patch.p1odOtherReason;
   if (patch.onHold !== undefined) db.on_hold = patch.onHold;
   if (patch.holdReason !== undefined) db.hold_reason = patch.holdReason;
   if (patch.source !== undefined) db.source = patch.source;

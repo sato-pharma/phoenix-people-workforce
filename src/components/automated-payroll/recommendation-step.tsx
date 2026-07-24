@@ -61,6 +61,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
     return rows.map((row) => ({
       hrId: row.hrId,
       values: row.values,
+      reasons: row.reasons,
       reason: row.reason,
       onHold: row.onHold,
     }));
@@ -70,6 +71,31 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
     setRows((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], values: { ...next[index].values, [field]: value } };
+      return next;
+    });
+    setDirty(true);
+  };
+
+  /** Editing a "days" field auto-calculates its paired money field via Base Salary/30 × days. */
+  const setDaysValue = (index: number, field: string, autoCalcMoneyKey: string | undefined, days: number) => {
+    setRows((prev) => {
+      const next = [...prev];
+      const row = next[index];
+      const values = { ...row.values, [field]: days };
+      if (autoCalcMoneyKey) {
+        const baseSalary = Number(row.context["Base Salary"] ?? 0);
+        values[autoCalcMoneyKey] = Math.round(((baseSalary / 30) * days + Number.EPSILON) * 100) / 100;
+      }
+      next[index] = { ...row, values };
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const setFieldReason = (index: number, field: string, value: string) => {
+    setRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], reasons: { ...next[index].reasons, [field]: value } };
       return next;
     });
     setDirty(true);
@@ -156,7 +182,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   };
 
   const totalPrimary = useMemo(() => {
-    const field = definition.fields[0]?.key;
+    const field = (definition.fields.find((f) => f.kind === "money") ?? definition.fields[0])?.key;
     if (!field) return null;
     return rows.reduce((sum, row) => sum + (row.values[field] ?? 0), 0);
   }, [rows, definition.fields]);
@@ -277,17 +303,33 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     )}
                   </td>
                 ) : null}
-                {definition.fields.map((field) => (
-                  <td key={field.key} className="px-3 py-1.5 text-right">
-                    <Input
-                      type="number"
-                      value={String(row.values[field.key] ?? 0)}
-                      disabled={locked}
-                      onChange={(event) => setValue(index, field.key, Number(event.target.value) || 0)}
-                      className="h-8 w-28 text-right"
-                    />
-                  </td>
-                ))}
+                {definition.fields.map((field) =>
+                  field.kind === "text" ? (
+                    <td key={field.key} className="px-3 py-1.5">
+                      <Input
+                        value={row.reasons?.[field.key] ?? ""}
+                        disabled={locked}
+                        placeholder="Reason (optional)"
+                        onChange={(event) => setFieldReason(index, field.key, event.target.value)}
+                        className="h-8 w-40"
+                      />
+                    </td>
+                  ) : (
+                    <td key={field.key} className="px-3 py-1.5 text-right">
+                      <Input
+                        type="number"
+                        value={String(row.values[field.key] ?? 0)}
+                        disabled={locked}
+                        onChange={(event) =>
+                          field.kind === "days"
+                            ? setDaysValue(index, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
+                            : setValue(index, field.key, Number(event.target.value) || 0)
+                        }
+                        className="h-8 w-28 text-right"
+                      />
+                    </td>
+                  ),
+                )}
                 {definition.hasReason ? (
                   <td className="px-3 py-1.5">
                     <Input
