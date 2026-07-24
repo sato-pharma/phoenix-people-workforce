@@ -158,10 +158,11 @@ const BLOCKS: MasterDefinition = {
   label: "Block Master",
   sheetName: "Block Master",
   title: "Block Master",
-  description: "Blocks mapped to their parent area (region is derived from the area). Edit Area Code to re-parent.",
+  description: "Blocks mapped to their parent area (region is derived from the area). Edit Area Code to re-parent, Description to rename.",
   columns: [
     { key: "block_code", label: "Block Code", locked: true, required: true, type: "code" },
     { key: "area_code", label: "Area Code", locked: false, required: true, type: "code" },
+    { key: "description", label: "Description", locked: false, required: false, type: "text" },
   ],
   parents: [
     {
@@ -174,7 +175,7 @@ const BLOCKS: MasterDefinition = {
   displayLookups: [
     { key: "area_name", label: "Area Name", type: "text", viaCodeColumn: "area_code", lookupMaster: "areas", lookupColumn: "area_name" },
   ],
-  derive: () => ({}),
+  derive: (row) => ({ normalized_description: normalizeKey(row.description ?? "") }),
   auditEntityType: "source_of_sales_block",
 };
 
@@ -185,10 +186,10 @@ const BRICKS: MasterDefinition = {
   label: "Brick Master",
   sheetName: "Brick Master",
   title: "Brick Master",
-  description: "Bricks belong to a block; area and region follow the block automatically (enforced by the database). Edit Block Code to move a brick.",
+  description: "Bricks belong to a block; area and region follow the block automatically (enforced by the database). Edit Block Code to move a brick (spawns a new ID), Brick Name to rename it in place.",
   columns: [
     { key: "brick_id", label: "Brick ID", locked: true, required: true, type: "code" },
-    { key: "brick_name", label: "Brick Name", locked: true, required: true, type: "text" },
+    { key: "brick_name", label: "Brick Name", locked: false, required: true, type: "text" },
     { key: "block_code", label: "Block Code", locked: false, required: true, type: "code" },
   ],
   // Composite FK (block_code, area_code, region_code) -> blocks: area + region

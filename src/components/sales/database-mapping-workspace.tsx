@@ -296,10 +296,12 @@ function MasterTab({
     setSavingEdit(true);
     setMessage(null);
     try {
-      // Bricks: block_code is the only editable column, so "editing a brick" always means moving
-      // it — relocate spawns a fresh block-prefixed ID and deactivates rowKey, rather than editing
-      // block_code on the same row in place (owner preference, 2026-07-23; see relocateBrick).
-      const isBrickRelocate = def.master === "bricks";
+      // Bricks: only a block_code CHANGE means "move" (relocate spawns a fresh block-prefixed ID
+      // and deactivates rowKey — owner preference, 2026-07-23; see relocateBrick). Editing brick_name
+      // alone (a rename) is a plain in-place PATCH on the same row, same as every other master.
+      const originalRow = rows.find((row) => String(row[def.keyColumn]) === rowKey);
+      const originalBlockCode = originalRow ? String(originalRow.block_code ?? "") : "";
+      const isBrickRelocate = def.master === "bricks" && (editValues.block_code ?? "") !== originalBlockCode;
       const response = await fetch(
         isBrickRelocate
           ? `/api/sales/database-mapping/bricks/${encodeURIComponent(rowKey)}/relocate`
@@ -307,7 +309,9 @@ function MasterTab({
         {
           method: isBrickRelocate ? "POST" : "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: isBrickRelocate ? JSON.stringify({ newBlockCode: editValues.block_code }) : JSON.stringify(editValues),
+          body: isBrickRelocate
+            ? JSON.stringify({ brickName: editValues.brick_name, newBlockCode: editValues.block_code })
+            : JSON.stringify(editValues),
         },
       );
       const payload = await readJson<{ success: boolean; message?: string; error?: string }>(response);
@@ -513,6 +517,8 @@ function MasterTab({
                   const isActive = row.active !== false;
                   const isBusy = activeKeyBusy === rowKey;
                   const isConfirmingDelete = confirmDeleteKey === rowKey;
+                  const isRelocatingEdit =
+                    isEditing && def.master === "bricks" && (editValues.block_code ?? "") !== String(row.block_code ?? "");
                   return (
                     <tr className="text-[#64748B]" key={rowKey}>
                       {def.columns.map((column, columnIndex) => (
@@ -556,13 +562,13 @@ function MasterTab({
                           <div className="flex flex-col gap-1">
                             <div className="flex flex-wrap gap-1.5">
                               <Button disabled={savingEdit} onClick={() => void handleSaveEdit(rowKey)} size="sm">
-                                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {def.master === "bricks" ? "Move" : "Save"}
+                                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {isRelocatingEdit ? "Move" : "Save"}
                               </Button>
                               <Button disabled={savingEdit} onClick={cancelEdit} size="sm" variant="secondary">
                                 Cancel
                               </Button>
                             </div>
-                            {def.master === "bricks" ? (
+                            {isRelocatingEdit ? (
                               <p className="max-w-[220px] text-[10px] font-semibold leading-tight text-[#94A3B8]">
                                 Creates a new brick ID in the target block and deactivates this one.
                               </p>
