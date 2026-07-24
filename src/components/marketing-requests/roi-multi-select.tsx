@@ -46,12 +46,13 @@ export function RoiMultiSelect({
 
       <div className="absolute left-0 top-full z-30 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-[#E2E8F0] bg-white shadow-lg">
         <div className="flex items-center justify-end gap-2 border-b border-[#E2E8F0] p-2 text-[11px] font-black">
-          <button type="button" className="text-[#64748B] transition hover:text-[#F97316]" onClick={() => onChange(options.map((option) => option.value))}>
+          <button type="button" aria-label={`Select all ${label}`} className="text-[#64748B] transition hover:text-[#F97316]" onClick={() => onChange(options.map((option) => option.value))}>
             All
           </button>
           <span className="text-[#E2E8F0]">|</span>
           <button
             type="button"
+            aria-label={`Clear ${label} selection`}
             className="text-[#64748B] transition hover:text-[#F97316] disabled:opacity-40"
             disabled={selected.length === 0}
             onClick={() => onChange([])}
@@ -64,6 +65,7 @@ export function RoiMultiSelect({
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
             <input
               type="text"
+              aria-label={`Search ${label.toLowerCase()}`}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${label.toLowerCase()}…`}
@@ -82,7 +84,7 @@ export function RoiMultiSelect({
           ) : (
             visible.map((option) => (
               <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-[#0F172A] transition hover:bg-[#F8FAFC]">
-                <input type="checkbox" className="h-4 w-4 accent-[#F97316]" checked={selectedSet.has(option.value)} onChange={() => toggle(option.value)} />
+                <input type="checkbox" aria-label={option.label} className="h-4 w-4 accent-[#F97316]" checked={selectedSet.has(option.value)} onChange={() => toggle(option.value)} />
                 <span className="flex-1 truncate">{option.label}</span>
                 {typeof option.count === "number" ? <span className="shrink-0 text-[11px] font-bold text-[#94A3B8]">{option.count}</span> : null}
               </label>

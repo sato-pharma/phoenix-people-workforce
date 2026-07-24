@@ -100,6 +100,11 @@ type DashboardResponse = {
 const panelClassName =
   "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
+// The dashboard's By Brick / By Product breakdowns are unpaginated and can run into the hundreds of
+// rows. Rendering all of them at once made this the heaviest page in the app (a single "dashboard" tab
+// mount of six full tables), slow enough to stall the very first click after load. Cap the default DOM
+// to a manageable slice; full data stays one click (or an Export XLSX) away.
+const SUMMARY_TABLE_ROW_CAP = 50;
 
 function numberWithDecimals(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -409,6 +414,9 @@ function SummaryTable({
     initialSort: null,
   });
   const exportFilteredRows = table.rows.map((entry) => entry.raw).filter((row): row is ExportRow => row !== null);
+  const [showAll, setShowAll] = useState(false);
+  const visibleRows = showAll ? table.rows : table.rows.slice(0, SUMMARY_TABLE_ROW_CAP);
+  const hiddenCount = table.rows.length - visibleRows.length;
 
   return (
     <div className="space-y-0 p-4 md:p-5">
@@ -459,21 +467,38 @@ function SummaryTable({
                     {table.isFiltered ? "No rows match the filter." : "No data."}
                   </td>
                 </tr>
-              ) : table.rows.map((entry) => (
-                <tr className="text-[#64748B]" key={`${entry.display.join(":")}:${entry.index}`}>
-                  {entry.display.map((cell, cellIndex) => (
-                    <td
-                      className={cn(
-                        "px-4 py-2.5 align-top",
-                        cellIndex === 0 ? "font-semibold text-[#0F172A]" : "",
-                      )}
-                      key={`${cell}:${cellIndex}`}
-                    >
-                      {cell}
-                    </td>
+              ) : (
+                <>
+                  {visibleRows.map((entry) => (
+                    <tr className="text-[#64748B]" key={`${entry.display.join(":")}:${entry.index}`}>
+                      {entry.display.map((cell, cellIndex) => (
+                        <td
+                          className={cn(
+                            "px-4 py-2.5 align-top",
+                            cellIndex === 0 ? "font-semibold text-[#0F172A]" : "",
+                          )}
+                          key={`${cell}:${cellIndex}`}
+                        >
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
+                  {hiddenCount > 0 && (
+                    <tr>
+                      <td className="px-4 py-3 text-center" colSpan={columns.length}>
+                        <button
+                          className="text-sm font-semibold text-[#F97316] hover:underline"
+                          onClick={() => setShowAll(true)}
+                          type="button"
+                        >
+                          Show all {table.rows.length} rows ({hiddenCount} more)
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )}
             </tbody>
           </table>
         </div>
