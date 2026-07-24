@@ -624,6 +624,7 @@ async function recommendResignations(
 
     const row = baseRow(member);
     row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
       "Last Working Date": member.lastWorkingDate,
       Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
       "Days Worked": settlement.daysWorked,
@@ -696,7 +697,7 @@ async function recommendFingerprint(
     const row = baseRow(member);
     const days = roundCurrency(total.days);
     const value = roundCurrency(total.value);
-    row.context = {};
+    row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.recommended = { fingerprintDays: days, fingerprintValue: value };
     row.values = {
       fingerprintDays: pick(draft?.fingerprintDays, days),
@@ -723,6 +724,7 @@ async function recommendExpenses(
     const draft = drafts.get(compact);
     const value = roundCurrency(amount);
     const row = baseRow(member);
+    row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.recommended = { expenses: value };
     row.values = { expenses: pick(draft?.expenses, value) };
     rows.push(row);
@@ -924,6 +926,7 @@ async function recommendVacation(
     const amount = roundCurrency(total.v2Amount + total.crmAmount);
     const row = baseRow(member);
     row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
       "Unpaid Days (Phoenix)": roundCurrency(total.v2Days),
       "CRM Leave Days": roundCurrency(total.crmDays),
       "CRM Unpaid (no balance)": roundCurrency(total.crmUnpaidDays),
@@ -1002,7 +1005,11 @@ async function recommendCrm(
     const draft = drafts.get(compact);
     const value = roundCurrency(total.value);
     const row = baseRow(member);
-    row.context = { "No-Activity Days": roundCurrency(total.days), "Office (punched)": total.officeExcluded };
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      "No-Activity Days": roundCurrency(total.days),
+      "Office (punched)": total.officeExcluded,
+    };
     row.recommended = { crm: value };
     row.values = { crm: pick(draft?.crm, value) };
     rows.push(row);
@@ -1014,6 +1021,7 @@ function recommendAdditions(members: PopulationMember[], drafts: Map<string, Dra
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
+    row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.recommended = { incentive: 0, bonus: 0, overtime: 0 };
     row.values = {
       incentive: pick(draft?.incentive, 0),
@@ -1028,9 +1036,65 @@ function recommendManualDeductions(members: PopulationMember[], drafts: Map<stri
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
+    row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.recommended = { manualOtherDeductions: 0 };
     row.values = { manualOtherDeductions: pick(draft?.manualOtherDeductions, 0) };
     row.reason = draft?.manualReason ?? null;
+    return row;
+  });
+}
+
+/**
+ * Part 1's manual "Other deductions" step: 5 selectable categories per employee
+ * (CRM, Unpaid Vacation, Day Without Record, Loan, Other), each with its own
+ * days/value/reason. Pure manual entry (no automatic feeder) — HR fills in
+ * whichever categories apply; the rest stay at 0/blank. Reduces Part 1 for
+ * every employee once confirmed (see split.ts freezeFirstPart).
+ */
+function recommendOtherDeductionsPart1(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  return members.map((member) => {
+    const draft = drafts.get(member.compact);
+    const source = lookupSource(sources, member.employee.hrId);
+    const row = baseRow(member);
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+    };
+    row.recommended = {
+      p1odCrmDays: 0,
+      p1odCrmValue: 0,
+      p1odVacationDays: 0,
+      p1odVacationValue: 0,
+      p1odNoRecordDays: 0,
+      p1odNoRecordValue: 0,
+      p1odLoanDays: 0,
+      p1odLoanValue: 0,
+      p1odOtherDays: 0,
+      p1odOtherValue: 0,
+    };
+    row.values = {
+      p1odCrmDays: pick(draft?.p1odCrmDays, 0),
+      p1odCrmValue: pick(draft?.p1odCrmValue, 0),
+      p1odVacationDays: pick(draft?.p1odVacationDays, 0),
+      p1odVacationValue: pick(draft?.p1odVacationValue, 0),
+      p1odNoRecordDays: pick(draft?.p1odNoRecordDays, 0),
+      p1odNoRecordValue: pick(draft?.p1odNoRecordValue, 0),
+      p1odLoanDays: pick(draft?.p1odLoanDays, 0),
+      p1odLoanValue: pick(draft?.p1odLoanValue, 0),
+      p1odOtherDays: pick(draft?.p1odOtherDays, 0),
+      p1odOtherValue: pick(draft?.p1odOtherValue, 0),
+    };
+    row.reasons = {
+      p1odCrmReason: draft?.p1odCrmReason ?? "",
+      p1odVacationReason: draft?.p1odVacationReason ?? "",
+      p1odNoRecordReason: draft?.p1odNoRecordReason ?? "",
+      p1odLoanReason: draft?.p1odLoanReason ?? "",
+      p1odOtherReason: draft?.p1odOtherReason ?? "",
+    };
     return row;
   });
 }
@@ -1039,6 +1103,7 @@ function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRo
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
+    row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.onHold = draft?.onHold ?? false;
     row.reason = draft?.holdReason ?? null;
     return row;
@@ -1062,6 +1127,8 @@ export async function recommendStep(input: {
       return recommendResignations(input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
+    case "p1_other_deductions":
+      return recommendOtherDeductionsPart1(input.members, input.sources, drafts);
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts);
     case "p2_vacation":

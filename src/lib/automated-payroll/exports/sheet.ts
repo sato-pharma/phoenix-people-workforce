@@ -22,11 +22,18 @@ import {
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun } from "../types.ts";
+import { sortForExport } from "./export-order.ts";
 
 const HELD_FILL = "FFFEE2E2";
 const HELD_TEXT = "FF991B1B";
+/** The First Part is the amount HR/finance actually executes (pays out) this Part-1 run. */
+const EXECUTION_FILL = "FFDCFCE7";
+const EXECUTION_HEADER_FILL = "FF166534";
 
-/** The Part-1 sheet's focused column subset (first installment). */
+/**
+ * The Part-1 sheet's focused column subset (first installment). "First Part" is
+ * the execution/payout column — highlighted distinctly by writePayrollWorksheet.
+ */
 export const PART1_HEADERS: PayrollSheetHeader[] = [
   "#",
   "Month",
@@ -41,13 +48,31 @@ export const PART1_HEADERS: PayrollSheetHeader[] = [
   "Base Salary",
   "Gross Salary",
   "Net Salary",
+  "Extra Cost of Living",
+  "Fuel Allowance",
   "Finger Print",
+  "Medical Insurance",
+  "Total Deductions",
+  "Month Salary",
   "First Part",
   "Payment Group",
   "Policy Comment",
 ];
 
-export type ExtraColumn = { label: string; kind: "money" | "text" };
+/** Columns appended after `headers`, computed from the row (bank details) or left blank for manual fill-in (Finance Edit). */
+export type ExtraColumn = {
+  label: string;
+  kind: "money" | "text";
+  value?: (entry: AssembledRow) => string | number | null;
+};
+
+/** Bank details for wire execution — not part of the canonical SalaryValidationRow, computed per row. */
+export function bankExtraColumns(): ExtraColumn[] {
+  return [
+    { label: "Bank Name", kind: "text", value: (entry) => entry.bankName ?? "" },
+    { label: "Bank Account", kind: "text", value: (entry) => entry.bankAccount ?? "" },
+  ];
+}
 
 /** SalaryValidationRow → the SalaryRecord shape payrollSheetValue reads (batchId/id unused here). */
 function toSheetRecord(entry: AssembledRow): SalaryRecord {
@@ -73,10 +98,13 @@ export async function writePayrollWorksheet(
     protect?: boolean;
   },
 ): Promise<void> {
-  const { run, rows, headers } = options;
+  const { run, headers } = options;
+  // Owner-fixed HR-ID execution order (2026-07-24) — every downloaded sheet.
+  const rows = sortForExport(options.rows, (entry) => entry.row.hrId);
   const extraColumns = options.extraColumns ?? [];
   const labels = [...headers, ...extraColumns.map((column) => column.label)];
   const colCount = labels.length;
+  const executionColumnIndex = headers.indexOf("First Part");
 
   const sheet = workbook.addWorksheet(options.sheetName);
   bandHeader(sheet, colCount, options.title, options.subtitle);
@@ -88,7 +116,13 @@ export async function writePayrollWorksheet(
     cell.value = label;
     cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    // The execution column (First Part — the amount actually paid this run) gets
+    // its own header color so it stands out from every other column at a glance.
+    cell.fill = {
+      fgColor: { argb: index === executionColumnIndex ? EXECUTION_HEADER_FILL : BLACK },
+      pattern: "solid",
+      type: "pattern",
+    };
     cell.border = gridBorder();
     if (options.protect) cell.protection = { locked: true };
   });
@@ -114,13 +148,16 @@ export async function writePayrollWorksheet(
       cell.alignment = { horizontal: payrollMoneyHeaders.has(header) ? "right" : "left", vertical: "middle" };
       cell.border = gridBorder();
       if (entry.onHold) cell.fill = { fgColor: { argb: HELD_FILL }, pattern: "solid", type: "pattern" };
-      else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      else if (ci === executionColumnIndex) {
+        cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
+        cell.font = { ...cell.font, bold: true };
+      } else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
       if (options.protect) cell.protection = { locked: true };
     });
 
     extraColumns.forEach((column, ei) => {
       const cell = excelRow.getCell(headers.length + ei + 1);
-      cell.value = "";
+      cell.value = column.value ? (column.value(entry) ?? "") : "";
       if (column.kind === "money") cell.numFmt = VALUE_FMT;
       cell.border = gridBorder();
       cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
@@ -221,10 +258,87 @@ export async function buildFullSheetWorkbook(input: {
   return toBuffer(workbook);
 }
 
+const INCREASE_FILL = "FFDCFCE7";
+const INCREASE_TEXT = "FF166534";
+const DECREASE_FILL = "FFFEE2E2";
+const DECREASE_TEXT = "FF991B1B";
+
+/**
+ * Appends a "Salary Changes" tab listing only employees whose Net Salary this
+ * run differs from their Net Salary on the previous month's published run —
+ * green for an increase, red for a decrease. Employees with no prior baseline
+ * (new hires) or no change are omitted. No-op if there is no previous data.
+ */
+function addSalaryChangesSheet(
+  workbook: ExcelJS.Workbook,
+  input: { run: MonthlySalaryRun; rows: AssembledRow[]; previousNetByHrIdCompact: Map<string, number> },
+): void {
+  if (input.previousNetByHrIdCompact.size === 0) return;
+
+  type ChangeEntry = { hrId: string; fullName: string; previousNet: number; currentNet: number; delta: number };
+  const changes: ChangeEntry[] = [];
+  for (const entry of input.rows) {
+    const compact = entry.compact;
+    const previousNet = input.previousNetByHrIdCompact.get(compact);
+    if (previousNet === undefined) continue;
+    const currentNet = entry.row.netSalary;
+    const delta = Math.round((currentNet - previousNet) * 100) / 100;
+    if (Math.abs(delta) < 0.01) continue;
+    changes.push({ currentNet, delta, fullName: entry.row.fullName, hrId: entry.row.hrId, previousNet });
+  }
+  if (changes.length === 0) return;
+  const sorted = sortForExport(changes, (change) => change.hrId);
+
+  const sheet = workbook.addWorksheet("Salary Changes");
+  const title = "Salary Changes vs. Previous Month";
+  const subtitle = `${monthLabel(input.run.month, input.run.year)} · green = increase, red = decrease`;
+  bandHeader(sheet, 5, title, subtitle);
+
+  const headerRowNumber = 5;
+  const labels = ["HR_ID", "Full Name", "Previous Net Salary", "Current Net Salary", "Change"];
+  const headerRow = sheet.getRow(headerRowNumber);
+  labels.forEach((label, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+  });
+  headerRow.height = 26;
+
+  sorted.forEach((change, index) => {
+    const rowNumber = headerRowNumber + 1 + index;
+    const excelRow = sheet.getRow(rowNumber);
+    const increase = change.delta > 0;
+    const fill = increase ? INCREASE_FILL : DECREASE_FILL;
+    const text = increase ? INCREASE_TEXT : DECREASE_TEXT;
+    const values = [change.hrId, change.fullName, change.previousNet, change.currentNet, change.delta];
+    values.forEach((value, ci) => {
+      const cell = excelRow.getCell(ci + 1);
+      cell.value = value as ExcelJS.CellValue;
+      if (ci >= 2) cell.numFmt = VALUE_FMT;
+      cell.font = { color: { argb: text }, bold: ci === 4, name: "Calibri", size: 10 };
+      cell.alignment = { horizontal: ci >= 2 ? "right" : "left", vertical: "middle" };
+      cell.border = gridBorder();
+      cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
+    });
+  });
+
+  labels.forEach((label, index) => {
+    const column = sheet.getColumn(index + 1);
+    column.width = Math.max(column.width ?? 9, Math.min(28, Math.max(14, label.length + 2)));
+  });
+  sheet.getColumn(2).width = 26;
+  sheet.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowNumber, showGridLines: false }];
+}
+
 /** The Part-1 focused sheet (first installment). */
 export async function buildPart1SheetWorkbook(input: {
   run: MonthlySalaryRun;
   rows: AssembledRow[];
+  /** Net Salary per employee (keyed by compact HR id) from the previous month's published run, if any. */
+  previousNetByHrIdCompact?: Map<string, number>;
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -240,6 +354,12 @@ export async function buildPart1SheetWorkbook(input: {
     run: input.run,
     rows: input.rows,
     headers: PART1_HEADERS,
+    extraColumns: bankExtraColumns(),
+  });
+  addSalaryChangesSheet(workbook, {
+    run: input.run,
+    rows: input.rows,
+    previousNetByHrIdCompact: input.previousNetByHrIdCompact ?? new Map(),
   });
   return toBuffer(workbook);
 }

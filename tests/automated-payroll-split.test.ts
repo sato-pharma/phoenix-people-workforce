@@ -247,4 +247,76 @@ export function runAutomatedPayrollSplitTests() {
   assert.equal(overpaid.secondPart, 0);
   assert.equal(overpaid.overpaidResidual, 14500);
   assert.equal(overpaid.monthSalary, 21000);
+
+  // ---- owner rule 2026-07-24: one-part medical insurance comes out of Part 1 -
+  // (they have no Second Part to net it against). Two-part employees are unaffected
+  // — medical insurance stays netted against Second Part only, exactly as before.
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "one_part",
+      fingerprint: 0,
+      medicalInsurance: 400,
+    }),
+    31100, // 31500 (full net) − 400
+  );
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      medicalInsurance: 400,
+    }),
+    BASIC, // unchanged — medical insurance ignored for two-part First Part
+  );
+
+  // ---- Part-1 "Other deductions" step total reduces First Part for EVERYONE -
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      otherPart1Deductions: 1500,
+    }),
+    19500, // 21000 − 1500
+  );
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "one_part",
+      fingerprint: 0,
+      otherPart1Deductions: 1500,
+      medicalInsurance: 400,
+    }),
+    29600, // 31500 − 1500 − 400
+  );
+
+  // ---- reconciliation: First+Second still equals Total when the Part-1 "Other
+  // deductions" amount is also included in the whole-month deduction sum (the
+  // same double-bookkeeping pattern fingerprint already uses) ------------------
+  const onePartFrozenWithMedical = freezeFirstPart({
+    effective: regular,
+    fullBaseSalary: BASE,
+    paymentMode: "one_part",
+    fingerprint: 0,
+    otherPart1Deductions: 1500,
+    medicalInsurance: 400,
+  }); // 29600
+  const onePartWithMedical = assembleParts({
+    effective: regular,
+    paymentMode: "one_part",
+    firstPartFrozen: onePartFrozenWithMedical,
+    additions: { ...noAdditions },
+    deductions: { ...noDeductions, medicalInsurance: 400, otherDeductions: 1500 },
+  });
+  // totalPayable = 31500 − 400 − 1500 = 29600 → equals the frozen First Part exactly.
+  assert.equal(onePartWithMedical.totalPayable, 29600);
+  assert.equal(onePartWithMedical.firstPart, 29600);
+  assert.equal(onePartWithMedical.secondPart, 0);
+  assert.equal(onePartWithMedical.overpaidResidual, 0);
+  assert.equal(onePartWithMedical.firstPart + onePartWithMedical.secondPart, onePartWithMedical.monthSalary);
 }
