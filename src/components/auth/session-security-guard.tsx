@@ -4,29 +4,20 @@ import { useEffect, useRef } from "react";
 
 import {
   clearSessionActivity,
-  markSessionActivity,
   markSessionInvalidated,
   phoenixSessionTimeoutReason,
-  readSessionActivityAt,
 } from "@/lib/auth/client-session";
+import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 
-async function logoutForTimeout() {
-  markSessionInvalidated("client_idle_timeout");
-  try {
-    await fetch("/api/auth/logout", { method: "POST" });
-  } catch {
-    // Redirect even if the logout request fails; expired cookies will be cleared on next login.
-  } finally {
-    clearSessionActivity();
-    window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
-  }
-}
-
-export function SessionSecurityGuard({
-  idleTimeoutMs = 15 * 60 * 1000,
-}: {
-  idleTimeoutMs?: number;
-}) {
+// No client-side inactivity clock (owner decision 2026-07-23): a session used to be
+// force-logged-out after 15 minutes of no clicks/keys/scrolls on this tab, purely on a
+// local timer — which meant opening a push notification (or anything else) more than
+// 15 minutes after last touching the app landed on /login even though the server-side
+// session was still fine. The heartbeat below remains the real source of truth: it
+// reports to the server on activity/resume, and a 401 response (session actually
+// revoked, absolute-expired, or role changed) is still an authoritative, immediate
+// logout — that check is unaffected by this change.
+export function SessionSecurityGuard() {
   const loggingOutRef = useRef(false);
   const lastHeartbeatRef = useRef(0);
 
@@ -42,54 +33,16 @@ export function SessionSecurityGuard({
           markSessionInvalidated("heartbeat_401");
           if (!loggingOutRef.current) {
             loggingOutRef.current = true;
+            logoutOneSignal();
             clearSessionActivity();
             window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
           }
         }
       } catch {
-        // Keep client-side timeout enforcement active when the heartbeat is temporarily unavailable.
+        // Transient network hiccup — the next activity/resume event will retry.
       }
     };
 
-    const markActivity = () => {
-      markSessionActivity();
-    };
-
-    const enforceTimeout = () => {
-      if (loggingOutRef.current) return;
-
-      const lastActivity = readSessionActivityAt();
-      if (!lastActivity) {
-        markActivity();
-        return;
-      }
-
-      if (Date.now() - lastActivity >= idleTimeoutMs) {
-        loggingOutRef.current = true;
-        void logoutForTimeout();
-      }
-    };
-
-    const handleUserActivity = () => {
-      enforceTimeout();
-      if (!loggingOutRef.current) {
-        markActivity();
-        void sendHeartbeat();
-      }
-    };
-
-    const handleResume = () => {
-      enforceTimeout();
-      if (!loggingOutRef.current) {
-        void sendHeartbeat();
-      }
-    };
-
-    if (readSessionActivityAt()) {
-      enforceTimeout();
-    } else {
-      markActivity();
-    }
     void sendHeartbeat();
 
     const activityEvents: Array<keyof WindowEventMap> = [
@@ -100,22 +53,19 @@ export function SessionSecurityGuard({
       "touchstart",
     ];
     activityEvents.forEach((eventName) => {
-      window.addEventListener(eventName, handleUserActivity, { passive: true });
+      window.addEventListener(eventName, sendHeartbeat, { passive: true });
     });
-    window.addEventListener("focus", handleResume);
-    document.addEventListener("visibilitychange", handleResume);
-
-    const interval = window.setInterval(enforceTimeout, 60 * 1000);
+    window.addEventListener("focus", sendHeartbeat);
+    document.addEventListener("visibilitychange", sendHeartbeat);
 
     return () => {
       activityEvents.forEach((eventName) => {
-        window.removeEventListener(eventName, handleUserActivity);
+        window.removeEventListener(eventName, sendHeartbeat);
       });
-      window.removeEventListener("focus", handleResume);
-      document.removeEventListener("visibilitychange", handleResume);
-      window.clearInterval(interval);
+      window.removeEventListener("focus", sendHeartbeat);
+      document.removeEventListener("visibilitychange", sendHeartbeat);
     };
-  }, [idleTimeoutMs]);
+  }, []);
 
   return null;
 }

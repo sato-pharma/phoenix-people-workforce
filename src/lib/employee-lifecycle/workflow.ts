@@ -1,7 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import type { ContractRenewalAction, ContractRenewalStatus } from "@/lib/contracts/types";
-import type { OfferStatus } from "@/lib/offers/service";
 import type { ProbationWorkflowAction } from "@/lib/probation/types";
 import type { ResignationStatus, ResignationWorkflowAction } from "@/lib/resignations/types";
 import { assertWorkflowRegistryRuntimeTransition } from "@/lib/workflow-registry/runtime";
@@ -9,7 +8,6 @@ import { assertWorkflowRegistryRuntimeTransition } from "@/lib/workflow-registry
 export const resignationWorkflowRegistryModuleKey = "resignations";
 export const probationWorkflowRegistryModuleKey = "probation";
 export const contractWorkflowRegistryModuleKey = "contracts";
-export const offerWorkflowRegistryModuleKey = "offers";
 
 type LifecycleAccess = Pick<AccessContext, "role">;
 
@@ -88,48 +86,5 @@ export async function assertContractWorkflowTransition(input: {
     expectedNextStatus: input.expectedNextStatus,
     moduleKey: contractWorkflowRegistryModuleKey,
     status: input.action === "create" ? "contract_new" : toContractWorkflowStatus(input.status),
-  });
-}
-
-export function toOfferWorkflowStatus(input: {
-  onboardingStatus?: string | null;
-  status?: OfferStatus | string | null;
-}) {
-  const status = String(input.status ?? "draft").trim().toLowerCase();
-  const onboardingStatus = String(input.onboardingStatus ?? "").trim().toLowerCase();
-  if (status === "accepted" && ["employee_created", "hired", "active"].includes(onboardingStatus)) {
-    return "offer_hired";
-  }
-  return `offer_${status || "draft"}`;
-}
-
-export async function assertOfferWorkflowTransition(input: {
-  access?: LifecycleAccess;
-  action:
-    | "candidate_accept"
-    | "candidate_reject"
-    | "create"
-    | "expire"
-    | "hire_approve"
-    // Offer pipeline actions (prepare → approval chain → generate → send → negotiate).
-    | "submit_approval"
-    | "chain_approve"
-    | "chain_reject"
-    | "generate"
-    | "send"
-    | "candidate_negotiate"
-    | "renegotiate_prepare";
-  expectedNextStatus?: string;
-  onboardingStatus?: string | null;
-  status: OfferStatus | string | null | undefined;
-}) {
-  return assertWorkflowRegistryRuntimeTransition({
-    access: input.access ?? systemAccessContext,
-    actionKey: `offer_${input.action}`,
-    expectedNextStatus: input.expectedNextStatus,
-    moduleKey: offerWorkflowRegistryModuleKey,
-    status: input.action === "create"
-      ? "offer_draft"
-      : toOfferWorkflowStatus({ onboardingStatus: input.onboardingStatus, status: input.status }),
   });
 }

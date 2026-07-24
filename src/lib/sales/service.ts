@@ -572,7 +572,7 @@ function chainForBatch(history: SalesHistoryRow[], batchId: string) {
   return chain;
 }
 
-async function readAllSupabaseRows(
+async function readAllSupabaseRowsOneBatch(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
   options?: {
@@ -602,6 +602,34 @@ async function readAllSupabaseRows(
     from += pageSize;
   }
 
+  return rows;
+}
+
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+// values can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. When an inFilter's values array is large (e.g. every sales_import_batches
+// id, unbounded over the table's full history), chunk it and merge pages across chunks.
+async function readAllSupabaseRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  table: string,
+  options?: {
+    ascending?: boolean;
+    inFilters?: Array<{ column: string; values: unknown[] }>;
+    orderBy?: string;
+    select?: string;
+  }
+) {
+  const inFilters = options?.inFilters ?? [];
+  const chunkIndex = inFilters.findIndex((filter) => filter.values.length > 100);
+  if (chunkIndex === -1) return readAllSupabaseRowsOneBatch(supabase, table, options);
+
+  const targetFilter = inFilters[chunkIndex];
+  const rows: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < targetFilter.values.length; i += 100) {
+    const batchValues = targetFilter.values.slice(i, i + 100);
+    const batchFilters = inFilters.map((filter, idx) => (idx === chunkIndex ? { ...filter, values: batchValues } : filter));
+    rows.push(...await readAllSupabaseRowsOneBatch(supabase, table, { ...options, inFilters: batchFilters }));
+  }
   return rows;
 }
 
@@ -655,20 +683,26 @@ async function readDashboardSalesRecordRows(
 ) {
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
-  let from = 0;
-
-  while (true) {
-    let query = supabase
-      .from("sales_records")
-      .select(SALES_DASHBOARD_RECORD_SELECT)
-      .in("batch_id", activeBatchIds);
-    query = applyDashboardRecordFilters(query, filters);
-    const result = await query.range(from, from + pageSize - 1);
-    if (result.error) throw result.error;
-    const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
-    rows.push(...page);
-    if (page.length < pageSize) break;
-    from += pageSize;
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — activeBatchIds is unbounded over the batch table's full history, so
+  // chunk it (nested inside the existing result-row pagination).
+  for (let b = 0; b < activeBatchIds.length; b += 100) {
+    const batchIdBatch = activeBatchIds.slice(b, b + 100);
+    let from = 0;
+    while (true) {
+      let query = supabase
+        .from("sales_records")
+        .select(SALES_DASHBOARD_RECORD_SELECT)
+        .in("batch_id", batchIdBatch);
+      query = applyDashboardRecordFilters(query, filters);
+      const result = await query.range(from, from + pageSize - 1);
+      if (result.error) throw result.error;
+      const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
   }
 
   return rows;

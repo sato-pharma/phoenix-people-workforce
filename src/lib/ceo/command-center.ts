@@ -140,6 +140,16 @@ async function getCeoProbationCounts(_access: AccessContext): Promise<{ overdue:
   return { overdue, dueSoon };
 }
 
+async function getCeoRecentHiresCount(): Promise<number> {
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const { count, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id", { count: "exact", head: true })
+    .gte("hire_date", since);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 async function getCeoPendingPlansCount(): Promise<number> {
   const { count, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
@@ -165,6 +175,7 @@ function buildCeoTrends(
   platformMetrics: PlatformMetrics | null,
   sos: CeoCommandCenterData["sos"] | null,
   departuresLast30d: number,
+  hiresLast30d = 0,
 ): CeoCommandCenterData["trends"] {
   const salesValue = sos?.totalValue ?? platformMetrics?.sales.salesValue ?? 0;
   const targetValue = platformMetrics?.sales.targetValue ?? 0;
@@ -181,10 +192,10 @@ function buildCeoTrends(
     financial: salesValue > 0 || payrollCost > 0
       ? [{ label: payrollLabel, revenue: salesValue, cost: payrollCost }]
       : [],
-    hireExit: departuresLast30d > 0 || (platformMetrics?.recruitment.acceptedToEmployeeConversions ?? 0) > 0
+    hireExit: departuresLast30d > 0 || hiresLast30d > 0
       ? [{
           label: "Current",
-          hires: platformMetrics?.recruitment.acceptedToEmployeeConversions ?? 0,
+          hires: hiresLast30d,
           exits: departuresLast30d,
         }]
       : [],
@@ -309,10 +320,11 @@ async function getCeoAdminSignals(
       getCeoProbationCounts(access),
       getCoachingReports({}, access).then(buildCoachingReportAnalytics),
       getSalaryFlags(),
+      getCeoRecentHiresCount(),
     ]),
     platformMetrics ?? getPlatformMetrics(access),
   ]);
-  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR] = signalResults;
+  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR, recentHiresR] = signalResults;
   const dataUnavailable: string[] = [];
   if (resignationsR.status === "rejected") dataUnavailable.push("Resignation risk signals");
   if (leavePendingR.status === "rejected") dataUnavailable.push("Leave SLA risk signals");
@@ -355,6 +367,7 @@ async function getCeoAdminSignals(
       : 0;
   const unresolvedSalaryFlags =
     flagsR.status === "fulfilled" ? flagsR.value.unresolvedCount : resolvedPlatformMetrics.payroll.flags;
+  const hiresLast30d = recentHiresR.status === "fulfilled" ? recentHiresR.value : 0;
 
   const signalAttention: CeoAttentionItem[] = [];
   if (expiringContracts > 0) {
@@ -380,7 +393,7 @@ async function getCeoAdminSignals(
   }
 
   const health = buildCeoHealth(resolvedPlatformMetrics, resolvedPlatformMetrics.sales.dataQualityRate);
-  const trends = buildCeoTrends(resolvedPlatformMetrics, null, departuresLast30d);
+  const trends = buildCeoTrends(resolvedPlatformMetrics, null, departuresLast30d, hiresLast30d);
   const payroll = resolvedPlatformMetrics.payroll;
 
   return {

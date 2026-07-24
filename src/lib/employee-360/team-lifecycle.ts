@@ -140,20 +140,27 @@ async function fetchPlanCompliance(
   const submitted = new Set<string>();
   const approved = new Set<string>();
   try {
-    const { data } = await getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .select("employee_hr_id, status")
-      .eq("plan_kind", "weekly")
-      .in("employee_hr_id", repHrIdsUpper)
-      .gte("period_start_date", window.from.slice(0, 10))
-      .lte("period_start_date", window.to.slice(0, 10));
-    for (const row of data ?? []) {
-      const r = row as Record<string, unknown>;
-      const key = canonicalHrIdKey(String(r.employee_hr_id ?? ""));
-      const status = String(r.status ?? "");
-      if (!key) continue;
-      if (status !== "draft" && status !== "cancelled") submitted.add(key);
-      if (APPROVED_PLAN_STATUSES.has(status)) approved.add(key);
+    // PostgREST folds every .in() value into the request URL; an unbatched array of a few
+    // hundred ids can push the URL past undici's ~16KB header limit and throw
+    // "TypeError: fetch failed" / HeadersOverflowError — teamHrIds can be a manager's whole
+    // org subtree (e.g. an NSM's line), so batch it.
+    for (let i = 0; i < repHrIdsUpper.length; i += 100) {
+      const batch = repHrIdsUpper.slice(i, i + 100);
+      const { data } = await getSupabaseAdmin()
+        .from("employee_plan_headers")
+        .select("employee_hr_id, status")
+        .eq("plan_kind", "weekly")
+        .in("employee_hr_id", batch)
+        .gte("period_start_date", window.from.slice(0, 10))
+        .lte("period_start_date", window.to.slice(0, 10));
+      for (const row of data ?? []) {
+        const r = row as Record<string, unknown>;
+        const key = canonicalHrIdKey(String(r.employee_hr_id ?? ""));
+        const status = String(r.status ?? "");
+        if (!key) continue;
+        if (status !== "draft" && status !== "cancelled") submitted.add(key);
+        if (APPROVED_PLAN_STATUSES.has(status)) approved.add(key);
+      }
     }
   } catch {
     // employee_plan_headers unavailable — leave empty.
@@ -170,22 +177,27 @@ async function fetchFieldDiscipline(
     return { hasData: false, flaggedReps: 0, noActivityDays: 0 };
   }
   try {
-    const { data } = await getSupabaseAdmin()
-      .from("deduction_candidates")
-      .select("employee_hr_id_compact, deduction_type, dates")
-      .eq("source_module", "FIELD_WORKFORCE")
-      .is("superseded_at", null)
-      .in("employee_hr_id_compact", compactKeys)
-      .in("month_key", monthKeys);
+    // PostgREST folds every .in() value into the request URL; batch compactKeys since it can
+    // span a manager's whole org subtree (see the header-overflow reasoning above).
     let noActivityDays = 0;
     const flagged = new Set<string>();
-    for (const row of data ?? []) {
-      const r = row as Record<string, unknown>;
-      const key = compactToKey.get(String(r.employee_hr_id_compact ?? ""));
-      if (!key) continue;
-      flagged.add(key);
-      if (String(r.deduction_type ?? "") === "no_activity") {
-        noActivityDays += Array.isArray(r.dates) ? Math.max(1, r.dates.length) : 1;
+    for (let i = 0; i < compactKeys.length; i += 100) {
+      const batch = compactKeys.slice(i, i + 100);
+      const { data } = await getSupabaseAdmin()
+        .from("deduction_candidates")
+        .select("employee_hr_id_compact, deduction_type, dates")
+        .eq("source_module", "FIELD_WORKFORCE")
+        .is("superseded_at", null)
+        .in("employee_hr_id_compact", batch)
+        .in("month_key", monthKeys);
+      for (const row of data ?? []) {
+        const r = row as Record<string, unknown>;
+        const key = compactToKey.get(String(r.employee_hr_id_compact ?? ""));
+        if (!key) continue;
+        flagged.add(key);
+        if (String(r.deduction_type ?? "") === "no_activity") {
+          noActivityDays += Array.isArray(r.dates) ? Math.max(1, r.dates.length) : 1;
+        }
       }
     }
     return { hasData: true, flaggedReps: flagged.size, noActivityDays };

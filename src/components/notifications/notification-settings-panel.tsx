@@ -173,9 +173,26 @@ export function NotificationSettingsPanel() {
     setError(null);
     setMessage(null);
     try {
-      await requestOneSignalPermission();
-      setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
-      window.setTimeout(() => void loadSettings(), 2000);
+      const result = await requestOneSignalPermission();
+      // optIn() resolves regardless of the actual outcome — a denied or already-blocked
+      // prompt does NOT throw. Check the real state before claiming success, or a denied
+      // user gets told "enabled" when nothing was actually turned on.
+      //
+      // `permission` and `optedIn` are DIFFERENT states and must not be collapsed into one
+      // branch: `permission` is only the browser-level Notification grant; `optedIn` is
+      // whether OneSignal actually completed a working push subscription. A browser can
+      // grant permission (permission: true) while the underlying push service registration
+      // still fails (optedIn: false) — e.g. a network/firewall/VPN blocking Google's push
+      // infrastructure. Telling that user "your browser didn't grant permission" sends them
+      // to check a setting that's already correct.
+      if (result.optedIn) {
+        setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
+        window.setTimeout(() => void loadSettings(), 2000);
+      } else if (!result.permission) {
+        setError("Your browser didn't grant notification permission, so push wasn't enabled on this device. Check your browser's site settings for phoenix-hr.satopharma.com and allow notifications, then try again.");
+      } else {
+        setError("Your browser allowed notifications, but couldn't finish registering with the push service, so this device isn't enabled yet. This usually means a network, firewall, or VPN is blocking the connection to Google's/your browser's push service — try a different network (e.g. a phone hotspot) or an incognito/private window with no VPN, then try again.");
+      }
     } catch (permissionError) {
       setError(permissionError instanceof Error ? permissionError.message : "Unable to enable push notifications on this device.");
     } finally {

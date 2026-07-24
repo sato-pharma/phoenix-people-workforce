@@ -90,7 +90,7 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "phx_area_id", kind: "text", label: "PHX Area ID", note: "The mapped brick's Phoenix area code (source_of_sales_bricks.area_code)." },
   { key: "phx_region_id", kind: "text", label: "PHX Region ID", note: "The mapped brick's Phoenix region code (source_of_sales_bricks.region_code)." },
   { key: "speciality", kind: "text", label: "Speciality", note: "The visited contact's medical specialty from iReports360 (vendor field: speciality, added 2026-07-22). Null on non-customer visit types." },
-  { key: "grade", kind: "text", label: "Grade", note: "Reserved — iReports360 does not currently send a customer/doctor grade field (checked 2026-07-22: not present on /visits or /checkins, no sibling endpoint exists). Shows '—' until a real data source is identified." },
+  { key: "crm_contact_grade", kind: "text", label: "Grade", note: "The visited contact's (doctor/hospital/pharmacy) commercial potential grade from iReports360 (vendor field: contactGrade, added 2026-07-24) — A+/A highest potential down to C lowest. Normalized to uppercase/trimmed at sync time (the vendor sends inconsistent casing/whitespace). Null on non-customer visit types." },
   { key: "visit_type", kind: "number", label: "Visit Type" },
   { key: "visit_type_description", kind: "text", label: "Visit Type Description" },
   { key: "effective_type", kind: "text", label: "Effective Type", note: "How the system counts this visit. A Regular visit with NO matching GPS check-in is counted as Campaign — always shown here (flagged), never silently recounted." },
@@ -236,8 +236,9 @@ function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[
 
 const VISIT_SELECT =
   "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
-  "contact_crm_id, contact_name, crm_region_id, crm_region_name, crm_save_date, customer_name, double_crm_id, " +
-  "double_hr_id, double_name, speciality, visit_date, visit_type, visit_type_description, synced_at, raw_payload";
+  "contact_crm_id, contact_name, crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, " +
+  "customer_name, double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type, " +
+  "visit_type_description, synced_at, raw_payload";
 
 const CHECKIN_SELECT =
   "id, crm_checkin_id, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, " +
@@ -714,9 +715,9 @@ async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> 
   return map;
 }
 
-/** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id from its crm_region_id, and grade
- * to null (rendered as "—" — reserved column, see CRM_VISIT_COLUMNS note; no data source exists
- * yet). Unmapped/unset regions correctly show "—" throughout. */
+/** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id from its crm_region_id. Unmapped/
+ * unset regions correctly show "—" throughout (crm_contact_grade comes straight from the SELECT
+ * now — see VISIT_SELECT — so it needs no synthesized placeholder here). */
 function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, BrickMapping>): void {
   for (const row of rows) {
     const regionId = typeof row.crm_region_id === "number" ? row.crm_region_id : null;
@@ -724,7 +725,6 @@ function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, Bri
     row.phx_brick_id = mapping?.brickId ?? null;
     row.phx_area_id = mapping?.areaId ?? null;
     row.phx_region_id = mapping?.regionId ?? null;
-    row.grade = null;
   }
 }
 
@@ -779,11 +779,17 @@ async function resolveAllowedHrIds(opts: {
 /** In-memory filters for the computed tabs (vacations, triples) — their rows aren't produced by the
  * DB query path, so the advanced filters are applied here: agent-HR-id substring, free-text search,
  * a line/hiring-date allow-set (by hr id), and (vacations) minimum Duration + half-days-only.
- * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples). */
+ * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples)
+ * and is what the Line/Hiring-Date allow-set filter is scoped to (deliberately: those filters mean
+ * "the REP is in this line / hired in this range", not any of the three triple positions).
+ * `agentHrIdFields` is the (possibly wider) set of hr-id columns the free-text Agent HR ID box
+ * searches — defaults to just `hrIdField` — so on the triples tab, searching one employee's hr id
+ * finds every triple they appear in (rep, middle manager, OR top manager), not only as the base rep. */
 function filterComputedRows(
   rows: CrmMasterRow[],
   opts: {
     agentHrId: string | null;
+    agentHrIdFields?: readonly string[];
     allowed: Set<string> | null;
     halfDaysOnly: boolean;
     hrIdField: string;
@@ -793,13 +799,20 @@ function filterComputedRows(
 ): CrmMasterRow[] {
   const agentNeedle = opts.agentHrId ? opts.agentHrId.trim().toLowerCase() : null;
   const searchNeedle = opts.search ? opts.search.trim().toLowerCase() : null;
+  const agentHrIdFields = opts.agentHrIdFields ?? [opts.hrIdField];
   return rows.filter((row) => {
     const hrRaw = typeof row[opts.hrIdField] === "string" ? (row[opts.hrIdField] as string) : null;
     if (opts.allowed) {
       const k = canonicalHrIdKey(hrRaw);
       if (!k || !opts.allowed.has(k)) return false;
     }
-    if (agentNeedle && !(hrRaw && hrRaw.toLowerCase().includes(agentNeedle))) return false;
+    if (agentNeedle) {
+      const matchesAny = agentHrIdFields.some((field) => {
+        const raw = typeof row[field] === "string" ? (row[field] as string) : null;
+        return raw != null && raw.toLowerCase().includes(agentNeedle);
+      });
+      if (!matchesAny) return false;
+    }
     if (searchNeedle) {
       const hay = [row.agent_name, row.base_name, row.mid_name, row.top_name, row.contact_name, row.comment]
         .filter((v): v is string => typeof v === "string")
@@ -1047,10 +1060,19 @@ function applyMasterFilters(
     q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
 
-  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
+  // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
+  // either so filtering by one employee surfaces EVERY record they appear in — as the primary
+  // agent OR as the double/accompanying partner. Managers/Training staff frequently have no
+  // primary-agent visits of their own at all (their whole CRM footprint is double-visit rides
+  // along a rep's route), so an agent_hr_id-only filter silently showed zero rows for them —
+  // including on the Double Visits tab, whose entire purpose is this exact record type.
   if (agentHrId) {
     const escaped = sanitizeSearch(agentHrId);
-    if (escaped) q = q.ilike("agent_hr_id", `%${escaped}%`);
+    if (escaped) {
+      q = isVisits
+        ? q.or(`agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%`)
+        : q.ilike("agent_hr_id", `%${escaped}%`);
+    }
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
   if (isVisits && visitType) {
@@ -1192,7 +1214,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       loadAgentMetaByHrId(),
     ]);
     // Advanced filters apply to the rep (base) of each triple; Duration/half are vacation-only.
-    const filtered = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const filtered = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     const start = (page - 1) * pageSize;
     const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
@@ -1296,7 +1318,7 @@ export async function getCrmMasterExportRows(
       computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
-    const rows = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const rows = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
     return { columns, dataset, rows, truncated };
   }

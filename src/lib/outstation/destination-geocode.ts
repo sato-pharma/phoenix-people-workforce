@@ -42,24 +42,31 @@ export async function resolveDestinationCoords(destinations: string[]): Promise<
   // 1. Load whatever is already cached (success OR previously-failed).
   const cachedKeys = new Set<string>();
   try {
-    const { data, error } = await supabase
-      .from("geo_locations")
-      .select("source_key, latitude, longitude")
-      .eq("source_type", SOURCE_TYPE)
-      .in("source_key", distinct);
-    if (!error) {
-      (data ?? []).forEach((row) => {
-        const key = String((row as { source_key?: unknown }).source_key ?? "");
-        if (!key) return;
-        const lat = (row as { latitude?: number | null }).latitude;
-        const lng = (row as { longitude?: number | null }).longitude;
-        // Only a row with real coords counts as cached; any previously-"failed" row
-        // falls back into the miss set so it re-geocodes (no permanent poisoning).
-        if (lat != null && lng != null) {
-          result.set(key, { lat: Number(lat), lng: Number(lng) });
-          cachedKeys.add(key);
-        }
-      });
+    // PostgREST folds every .in() value into the request URL; an unbatched array of a few
+    // hundred ids can push the URL past undici's ~16KB header limit and throw
+    // "TypeError: fetch failed" / HeadersOverflowError — `distinct` scans every free-text
+    // destination string in the company's full outstation history, so batch it.
+    for (let i = 0; i < distinct.length; i += 100) {
+      const batch = distinct.slice(i, i + 100);
+      const { data, error } = await supabase
+        .from("geo_locations")
+        .select("source_key, latitude, longitude")
+        .eq("source_type", SOURCE_TYPE)
+        .in("source_key", batch);
+      if (!error) {
+        (data ?? []).forEach((row) => {
+          const key = String((row as { source_key?: unknown }).source_key ?? "");
+          if (!key) return;
+          const lat = (row as { latitude?: number | null }).latitude;
+          const lng = (row as { longitude?: number | null }).longitude;
+          // Only a row with real coords counts as cached; any previously-"failed" row
+          // falls back into the miss set so it re-geocodes (no permanent poisoning).
+          if (lat != null && lng != null) {
+            result.set(key, { lat: Number(lat), lng: Number(lng) });
+            cachedKeys.add(key);
+          }
+        });
+      }
     }
   } catch {
     // geo_locations missing — proceed with live geocoding only (no persistent cache).

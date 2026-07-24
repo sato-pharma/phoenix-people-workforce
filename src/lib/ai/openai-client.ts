@@ -157,7 +157,12 @@ function openAiClient(apiKey = process.env.OPENAI_API_KEY?.trim(), timeoutMs = O
 }
 
 export async function createOpenAiResponseText(params: {
-  input: string;
+  // A plain string (the common case — text-only prompts) or a structured content-parts
+  // array (role + input_text/input_image parts) for multimodal calls, e.g. CV extraction's
+  // scanned-image path (src/lib/recruitment/cv-extraction.ts). Reuses the SDK's own type
+  // rather than hand-rolling one, so it never drifts from what the installed `openai`
+  // package actually accepts.
+  input: ResponseCreateInput["input"];
   instructions: string;
   maxOutputTokens?: number;
   model?: string;

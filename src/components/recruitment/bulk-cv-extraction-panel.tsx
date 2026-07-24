@@ -12,7 +12,7 @@ import { useRef, useState } from "react";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { Button } from "@/components/ui/button";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
-import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 
 type QueueItemStatus = "pending" | "processing" | "done" | "error";
 
@@ -27,7 +27,7 @@ type QueueItem = {
   saved?: boolean;
 };
 
-const schema = getCvPositionSchema(defaultCvPositionKey)!;
+const positionOptions = listCvPositionSchemas();
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(url, {
@@ -54,6 +54,8 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [positionKey, setPositionKey] = useState(defaultCvPositionKey);
+  const schema = getCvPositionSchema(positionKey)!;
 
   const updateItem = (id: string, patch: Partial<QueueItem>) =>
     setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -82,7 +84,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
         const uploadData = (await uploadRes.json().catch(() => ({}))) as Record<string, unknown>;
         if (!uploadRes.ok) throw new Error(typeof uploadData.message === "string" ? uploadData.message : "CV upload failed.");
 
-        const extraction = await postJson(`/api/recruitment/candidates/${candidate.id}/cv-extract`, {});
+        const extraction = await postJson(`/api/recruitment/candidates/${candidate.id}/cv-extract`, { positionKey });
         const fields = extraction.fields as ExtractedCandidateFields | undefined;
         if (!fields) throw new Error("The AI did not return any fields.");
 
@@ -126,7 +128,19 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={fileRef} accept=".pdf,.doc,.docx" className="text-sm" multiple type="file" />
+        <select
+          className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+          disabled={running}
+          onChange={(event) => setPositionKey(event.target.value)}
+          value={positionKey}
+        >
+          {positionOptions.map((option) => (
+            <option key={option.positionKey} value={option.positionKey}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" multiple type="file" />
         <Button disabled={running} onClick={() => void startBatch()} variant="secondary">
           {running ? "Processing batch…" : "Create from CVs (AI, bulk)"}
         </Button>

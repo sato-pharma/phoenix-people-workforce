@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 
 import { EmployeeDayReport } from "@/components/attendance/employee-day-report";
-import { getEmployeeDayByDayReport, listFlexEligibleEmployees } from "@/lib/attendance/employee-day-report";
+import {
+  getEmployeeDayByDayReport,
+  getEmployeeDayDeductionDecisions,
+  listFlexEligibleEmployees,
+  type EmployeeDayDecisionInfo,
+} from "@/lib/attendance/employee-day-report";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -39,14 +44,24 @@ export default async function EmployeeDayReportPage({ searchParams }: PageProps)
   }
 
   let initialReport: Awaited<ReturnType<typeof getEmployeeDayByDayReport>> | null = null;
+  let initialDecisions: Record<string, EmployeeDayDecisionInfo> = {};
   let initialError: string | null = null;
   if (filters?.employeeHrId && filters?.dateFrom && filters?.dateTo) {
     try {
-      initialReport = await getEmployeeDayByDayReport({
-        dateFromIso: filters.dateFrom,
-        dateToIso: filters.dateTo,
-        employeeHrId: filters.employeeHrId,
-      });
+      const [report, decisions] = await Promise.all([
+        getEmployeeDayByDayReport({
+          dateFromIso: filters.dateFrom,
+          dateToIso: filters.dateTo,
+          employeeHrId: filters.employeeHrId,
+        }),
+        getEmployeeDayDeductionDecisions({
+          dateFromIso: filters.dateFrom,
+          dateToIso: filters.dateTo,
+          employeeHrId: filters.employeeHrId,
+        }),
+      ]);
+      initialReport = report;
+      initialDecisions = Object.fromEntries(decisions);
     } catch (error) {
       initialError = error instanceof Error ? error.message : "Day-by-day report failed to load.";
     }
@@ -54,10 +69,16 @@ export default async function EmployeeDayReportPage({ searchParams }: PageProps)
 
   return (
     <EmployeeDayReport
+      // Remount on any employee/range change -- this component's decisions/editedDays state is
+      // keyed by dateIso only, so without a fresh instance a `router.push` to a different
+      // employee (same component, new props) would leak the previous employee's edited values
+      // and confirm/reject checkmarks onto the new employee's matching calendar dates.
+      key={`${filters?.employeeHrId ?? ""}:${filters?.dateFrom ?? ""}:${filters?.dateTo ?? ""}`}
       employees={employees}
       employeesError={employeesError}
       initialDateFrom={filters?.dateFrom ?? ""}
       initialDateTo={filters?.dateTo ?? ""}
+      initialDecisions={initialDecisions}
       initialEmployeeHrId={filters?.employeeHrId ?? ""}
       initialError={initialError}
       initialReport={initialReport}

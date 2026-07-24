@@ -553,20 +553,29 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("outstation_expense_reports")
-    .select("*")
-    .in("id", Array.from(visibleReportIds))
-    .order("created_at", { ascending: false });
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — a national manager's hierarchy chain can reach that scale.
+  const reportIds = Array.from(visibleReportIds);
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < reportIds.length; i += 100) {
+    const batch = reportIds.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("outstation_expense_reports")
+      .select("*")
+      .in("id", batch);
 
-  if (error) {
-    if (isPayrollExpensesSchemaMissing(error)) return [];
-    throw error;
+    if (error) {
+      if (isPayrollExpensesSchemaMissing(error)) return [];
+      throw error;
+    }
+    rows.push(...((data ?? []) as Record<string, unknown>[]));
   }
+  rows.sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
 
-  return (data ?? [])
-    .filter((row) => !isDisposableExpenseReportRow(row as Record<string, unknown>))
-    .map((row) => mapExpenseReport(row as Record<string, unknown>));
+  return rows
+    .filter((row) => !isDisposableExpenseReportRow(row))
+    .map((row) => mapExpenseReport(row));
 }
 
 export async function listPayrollExpenses(

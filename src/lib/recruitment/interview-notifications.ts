@@ -35,6 +35,9 @@ export function interviewTypeLabel(type: string): string {
   if (type === "hiring_manager") return "Hiring manager";
   if (type === "hr") return "HR";
   if (type === "phone") return "Phone";
+  if (type === "rm_interview") return "Regional Manager";
+  if (type === "nsm_interview") return "National Sales Manager";
+  if (type === "ceo_interview") return "CEO";
   return type.replace(/_/g, " ");
 }
 

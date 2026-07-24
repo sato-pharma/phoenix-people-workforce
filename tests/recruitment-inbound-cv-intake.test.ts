@@ -53,10 +53,11 @@ export function runRecruitmentInboundCvIntakeTests() {
   );
   assert.equal(selectCvFile([]), null, "no files at all yields null");
 
-  // --- Migration: recruitment_cv_intake_events + recruitment_email_intake_cursors ------------
-  const migration = read("supabase/migrations/20260724100000_recruitment_inbound_cv_intake.sql");
+  // --- Migration: ats_cv_intake_events + ats_email_intake_cursors (folded into the
+  //     Phase 1 re-platform migration, since neither table had reached production yet) ------
+  const migration = read("supabase/migrations/20260724130000_ats_replatform_phase1.sql");
 
-  assert.match(migration, /create table if not exists public\.recruitment_cv_intake_events/);
+  assert.match(migration, /create table if not exists public\.ats_cv_intake_events/);
   assert.match(migration, /check \(channel in \('email', 'whatsapp'\)\)/);
   assert.match(
     migration,
@@ -77,29 +78,29 @@ export function runRecruitmentInboundCvIntakeTests() {
     "error_message",
     "raw_metadata",
   ]) {
-    assert.match(migration, new RegExp(`\\b${column}\\b`), `missing column ${column} on recruitment_cv_intake_events`);
+    assert.match(migration, new RegExp(`\\b${column}\\b`), `missing column ${column} on ats_cv_intake_events`);
   }
   assert.match(
     migration,
-    /create unique index if not exists recruitment_cv_intake_events_channel_msg_uniq\s+on public\.recruitment_cv_intake_events using btree \(channel, provider_message_id\)\s+where provider_message_id is not null/,
+    /create unique index if not exists ats_cv_intake_events_channel_msg_uniq\s+on public\.ats_cv_intake_events using btree \(channel, provider_message_id\)\s+where provider_message_id is not null/,
     "the (channel, provider_message_id) unique index is the idempotency claim key — must be a partial index (where provider_message_id is not null), not a plain unique constraint",
   );
   assert.match(
     migration,
-    /candidate_id[\s\S]*references public\.recruitment_candidates\(id\) on update cascade on delete set null/,
+    /candidate_id[\s\S]*references public\.ats_candidates\(id\) on update cascade on delete set null/,
   );
-  assert.match(migration, /file_id[\s\S]*references public\.recruitment_files\(id\) on update cascade on delete set null/);
+  assert.match(migration, /file_id[\s\S]*references public\.ats_files\(id\) on update cascade on delete set null/);
 
-  assert.match(migration, /create table if not exists public\.recruitment_email_intake_cursors/);
+  assert.match(migration, /create table if not exists public\.ats_email_intake_cursors/);
   assert.match(migration, /mailbox_label text not null/);
   assert.match(migration, /last_processed_uid bigint not null default 0/);
-  assert.match(migration, /constraint recruitment_email_intake_cursors_pkey primary key \(mailbox_label\)/);
+  assert.match(migration, /constraint ats_email_intake_cursors_pkey primary key \(mailbox_label\)/);
 
-  assert.match(migration, /alter table public\.recruitment_cv_intake_events enable row level security/);
-  assert.match(migration, /alter table public\.recruitment_email_intake_cursors enable row level security/);
-  assert.match(migration, /phx_recruitment_cv_intake_events_service_role/);
-  assert.match(migration, /phx_recruitment_email_intake_cursors_service_role/);
-  assert.match(migration, /grant all on table public\.recruitment_cv_intake_events to service_role/);
-  assert.match(migration, /grant all on table public\.recruitment_email_intake_cursors to service_role/);
+  assert.match(migration, /alter table public\.ats_cv_intake_events enable row level security/);
+  assert.match(migration, /alter table public\.ats_email_intake_cursors enable row level security/);
+  assert.match(migration, /phx_ats_cv_intake_events_service_role/);
+  assert.match(migration, /phx_ats_email_intake_cursors_service_role/);
+  assert.match(migration, /grant all on table public\.ats_cv_intake_events to service_role/);
+  assert.match(migration, /grant all on table public\.ats_email_intake_cursors to service_role/);
   assert.match(migration, /notify pgrst, 'reload schema'/);
 }

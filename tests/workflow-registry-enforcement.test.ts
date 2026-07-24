@@ -97,11 +97,9 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(lifecycleWorkflow, /resignationWorkflowRegistryModuleKey = "resignations"/);
   assert.match(lifecycleWorkflow, /probationWorkflowRegistryModuleKey = "probation"/);
   assert.match(lifecycleWorkflow, /contractWorkflowRegistryModuleKey = "contracts"/);
-  assert.match(lifecycleWorkflow, /offerWorkflowRegistryModuleKey = "offers"/);
   assert.match(lifecycleWorkflow, /assertResignationWorkflowTransition/);
   assert.match(lifecycleWorkflow, /assertProbationWorkflowTransition/);
   assert.match(lifecycleWorkflow, /assertContractWorkflowTransition/);
-  assert.match(lifecycleWorkflow, /assertOfferWorkflowTransition/);
 
   const resignationService = source("src/lib/resignations/service.ts");
   assert.match(resignationService, /assertResignationWorkflowTransition\(\{[\s\S]*action: "submit"/);
@@ -112,10 +110,6 @@ export function runWorkflowRegistryEnforcementTests() {
   const contractService = source("src/lib/contracts/service.ts");
   assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*action: "create"/);
   assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*expectedNextStatus: expectedNextStatusByAction\[action\]/);
-  const offerService = source("src/lib/offers/service.ts");
-  assert.match(offerService, /assertOfferWorkflowTransition\(\{[\s\S]*action: "create"/);
-  assert.match(offerService, /action: decision === "accepted" \? "candidate_accept" : "candidate_reject"/);
-  assert.match(offerService, /action: "hire_approve"/);
 
   const marketingWorkflow = source("src/lib/marketing-requests/workflow.ts");
   assert.match(marketingWorkflow, /marketingWorkflowRegistryModuleKey = "marketing_requests"/);

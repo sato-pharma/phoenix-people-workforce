@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, CheckCheck, ChevronRight, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
 
 type InAppNotificationView = {
@@ -56,6 +57,7 @@ function isActionRequired(notification: InAppNotificationView) {
 }
 
 export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<InAppNotificationView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,8 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
       window.clearInterval(interval);
     };
   }, [loadNotifications]);
+
+  useDismissOnOutsideInteraction(containerRef, open, setOpen);
 
   const hasNotifications = notifications.length > 0;
   const moduleOptions = Array.from(new Set(notifications.map((notification) => notification.module || notification.category).filter(Boolean))).sort();
@@ -144,7 +148,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   };
 
   return (
-    <div className="relative block">
+    <div className="relative block" ref={containerRef}>
       <button
         aria-label="Notifications"
         className={cn(

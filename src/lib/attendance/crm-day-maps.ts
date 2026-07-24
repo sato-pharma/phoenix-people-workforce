@@ -38,9 +38,27 @@ const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([-1, -2, -8, -9, -11, -12]);
 type CrmDayVisitRow = {
   visit_date: string | null;
   visit_type: number | null;
+  visit_type_description: string | null;
+  comment: string | null;
+  customer_name: string | null;
   agent_hr_id: string | null;
   double_hr_id: string | null;
 };
+
+/** Short human-readable label for the CRM entry that won a day (regular > CP > AV, same
+ * precedence as the classification loop below) — so a consumer showing "CRM field visit" can
+ * also show WHAT it was (e.g. "Meeting: Digital marketing meeting") instead of a bare boolean. */
+function describeCrmDay(rows: CrmDayVisitRow[]): string | null {
+  const regular = rows.find((row) => Number(row.visit_type ?? 0) === 0);
+  const campaign = rows.find((row) => CRM_CAMPAIGN_VISIT_TYPES.has(Number(row.visit_type ?? 0)));
+  const leave = rows.find((row) => CRM_LEAVE_VISIT_TYPES.has(Number(row.visit_type ?? 0)));
+  const winner = regular ?? campaign ?? leave;
+  if (!winner) return null;
+  const label = winner.visit_type_description?.trim() || (regular ? "Visit" : null);
+  const detail = (winner.customer_name?.trim() || winner.comment?.trim() || "").slice(0, 120);
+  if (!label) return detail || null;
+  return detail ? `${label}: ${detail}` : label;
+}
 
 async function scanCompanyVisitsByEmployee(input: {
   dateFromIso: string;
@@ -58,7 +76,7 @@ async function scanCompanyVisitsByEmployee(input: {
   const visits = await scanVisitsForRange<CrmDayVisitRow>({
     dateFrom: input.dateFromIso,
     dateTo: input.dateToIso,
-    columns: "visit_date,visit_type,agent_hr_id,double_hr_id",
+    columns: "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id",
   });
 
   for (const visit of visits) {
@@ -85,6 +103,9 @@ export type CrmActivityDayMaps = {
   /** Map<employeeHrId, Set<dateIso>> of days with a real CRM field visit — a regular visit or a
    * CP-type activity (universal cancel in reconcileDay). */
   fieldVisitMap: Map<string, Set<string>>;
+  /** Map<employeeHrId, Map<dateIso, string>> — a short label describing the winning CRM entry for
+   * every date present in leaveMap/fieldVisitMap, for display only (never a branching key). */
+  detailMap: Map<string, Map<string, string>>;
 };
 
 /**
@@ -104,10 +125,12 @@ export async function getCrmActivityDayMaps(input: {
   const byEmployee = await scanCompanyVisitsByEmployee(input);
   const leaveMap = new Map<string, Set<string>>();
   const fieldVisitMap = new Map<string, Set<string>>();
+  const detailMap = new Map<string, Map<string, string>>();
 
   for (const [hrId, byDate] of byEmployee) {
     const leaveDates = new Set<string>();
     const fieldDates = new Set<string>();
+    const dayDetails = new Map<string, string>();
     for (const [dateIso, rows] of byDate) {
       let regularCount = 0;
       let hasCampaignType = false;
@@ -120,10 +143,14 @@ export async function getCrmActivityDayMaps(input: {
       }
       if (regularCount > 0 || hasCampaignType) fieldDates.add(dateIso);
       else if (hasLeaveType) leaveDates.add(dateIso);
+      else continue;
+      const detail = describeCrmDay(rows);
+      if (detail) dayDetails.set(dateIso, detail);
     }
     if (leaveDates.size > 0) leaveMap.set(hrId, leaveDates);
     if (fieldDates.size > 0) fieldVisitMap.set(hrId, fieldDates);
+    if (dayDetails.size > 0) detailMap.set(hrId, dayDetails);
   }
 
-  return { leaveMap, fieldVisitMap };
+  return { detailMap, fieldVisitMap, leaveMap };
 }

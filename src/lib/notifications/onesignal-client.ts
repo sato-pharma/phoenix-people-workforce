@@ -15,6 +15,7 @@ export type OneSignalSdk = {
       addEventListener: (event: "change", handler: (event: OneSignalPushSubscriptionChangeEvent) => void) => void;
       id: string | null;
       optedIn: boolean;
+      optIn: () => Promise<void>;
     };
   };
 };
@@ -44,18 +45,72 @@ export function detectDeviceType(): "desktop" | "mobile" | "unknown" {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
 }
 
-// Triggers the native browser permission prompt. Must be called from a user gesture
-// (button click) — browsers silently ignore or auto-block a permission request that
-// fires without one.
-export function requestOneSignalPermission(): Promise<void> {
+export type EnablePushResult = {
+  optedIn: boolean;
+  permission: boolean;
+};
+
+// Activates push for this browser. Must be called from a user gesture (button click) —
+// browsers silently ignore or auto-block a permission request that fires without one.
+//
+// PushSubscription.optIn() (not Notifications.requestPermission()) is the correct call
+// here: per OneSignal's docs, optIn() shows the native permission prompt itself when
+// there's no valid push token yet, AND marks the subscription "subscribed" on OneSignal's
+// side once granted. requestPermission() only resolves the BROWSER-level permission — it
+// never flips OneSignal's own subscription status, so a user could show as
+// Notification.permission === "granted" in their browser while OneSignal never creates a
+// subscription at all (confirmed in production: browser permission "Allowed", zero rows
+// in push_subscriptions). Do not swap this back to requestPermission() without solving
+// that gap some other way.
+//
+// optIn() itself resolves whether or not the user actually grants permission — a denied
+// or already-blocked prompt does NOT reject the promise. Callers MUST check the returned
+// `optedIn`/`permission` state rather than assuming success just because this resolved,
+// or a denied user gets told "push enabled" when nothing was actually turned on.
+
+// Waits for the OneSignal service worker registration to have an active worker, or
+// resolves after `timeoutMs` regardless. This prevents the "Registration does not have
+// an active worker" TypeError on Safari (and occasionally other browsers) where
+// optIn() internally calls showNotification() before the SW has fully activated.
+// navigator.serviceWorker.ready resolves with the first registration that has an active
+// worker at the current scope — which is the OneSignalSDKWorker registered at "/".
+function waitForServiceWorkerReady(timeoutMs = 10_000): Promise<void> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return Promise.resolve();
+  }
+  const ready = navigator.serviceWorker.ready.then(() => undefined);
+  const timeout = new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs));
+  return Promise.race([ready, timeout]);
+}
+
+export function requestOneSignalPermission(): Promise<EnablePushResult> {
   return new Promise((resolve, reject) => {
     withOneSignal(async (OneSignal) => {
       try {
-        await OneSignal.Notifications.requestPermission();
-        resolve();
+        // Wait for the service worker to reach "active" state before calling optIn().
+        // On Safari the SW lifecycle is stricter: optIn() triggers showNotification()
+        // internally, which throws "Registration does not have an active worker" when
+        // called against a registration that is still in the installing/waiting phase.
+        await waitForServiceWorkerReady();
+        await OneSignal.User.PushSubscription.optIn();
+        resolve({
+          optedIn: OneSignal.User.PushSubscription.optedIn,
+          permission: OneSignal.Notifications.permission,
+        });
       } catch (error) {
-        reject(error instanceof Error ? error : new Error("Unable to request push permission."));
+        reject(error instanceof Error ? error : new Error("Unable to enable push notifications."));
       }
+    });
+  });
+}
+
+// Unbinds this browser from the signed-out user's OneSignal identity so a shared device
+// doesn't keep receiving that person's pushes after someone else signs in. Best-effort —
+// a failure here must never block sign-out itself.
+export function logoutOneSignal(): void {
+  withOneSignal((OneSignal) => {
+    OneSignal.logout().catch(() => {
+      // Best-effort — sign-out proceeds regardless.
     });
   });
 }

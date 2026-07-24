@@ -7,6 +7,7 @@ function source(path: string) {
 
 export function runSupportRequestsNotificationsTests() {
   const service = source("src/lib/support-requests/service.ts");
+  const types = source("src/lib/support-requests/types.ts");
   const governance = source("src/lib/notifications/telegram-governance.ts");
   const navigation = source("src/lib/employee-portal/navigation.ts");
 
@@ -66,10 +67,19 @@ export function runSupportRequestsNotificationsTests() {
     /resolveSuperAdminFallbackRecipients\(\)/,
     "notifyHrOfSupportRequest must invoke the Super Admin fallback when the primary lookup yields no recipients",
   );
+  // SupportNotificationStatus lives in the dependency-free types.ts sibling (not service.ts)
+  // so client components can import SUPPORT_REQUEST_STATUSES without pulling service.ts's
+  // server-only notifications/email-templates -> employee-directory chain into the browser
+  // bundle; service.ts re-exports it for existing server-side consumers.
   assert.match(
-    service,
+    types,
     /export type SupportNotificationStatus = \{[\s\S]*?errored: boolean;[\s\S]*?fellBackToSuperAdmin: boolean;[\s\S]*?recipientCount: number;[\s\S]*?\};/,
     "SupportNotificationStatus must expose errored / fellBackToSuperAdmin / recipientCount to the API surface",
+  );
+  assert.match(
+    service,
+    /export type \{[\s\S]*?SupportNotificationStatus[\s\S]*?\}/,
+    "service.ts must re-export SupportNotificationStatus for existing server-side consumers",
   );
   assert.match(
     service,

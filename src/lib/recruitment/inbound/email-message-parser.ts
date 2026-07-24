@@ -21,7 +21,14 @@ function pickCvAttachment(
   attachments: ParsedMail["attachments"] | undefined,
 ): { attachment: InboundCvAttachment | null; ignoredAttachmentCount: number } {
   const list = attachments ?? [];
-  const usable = list.filter((entry) => detectCvFileKind(entry.contentType ?? "", entry.filename ?? "") !== "unsupported");
+  const usable = list.filter((entry) => {
+    // Now that scanned/photographed CVs (image kind) are genuinely supported (OpenAI vision),
+    // an inline/embedded image — mailparser's `related: true`, e.g. an email signature logo
+    // referenced via cid: in the HTML body — must be excluded explicitly, or every email with
+    // a signature logo would be mistaken for a photographed CV.
+    if (entry.related) return false;
+    return detectCvFileKind(entry.contentType ?? "", entry.filename ?? "") !== "unsupported";
+  });
   if (usable.length === 0) {
     return { attachment: null, ignoredAttachmentCount: list.length };
   }

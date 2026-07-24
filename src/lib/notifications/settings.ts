@@ -109,8 +109,10 @@ export async function getNotificationSettings(access: Pick<AccessContext, "hrId"
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      // Uppercased to match how upsertPushSubscription stores hr_id — see that function's
+      // comment for why the casing must be kept identical everywhere.
       access.hrId
-        ? supabase.from("push_subscriptions").select("device_type,status").eq("hr_id", access.hrId)
+        ? supabase.from("push_subscriptions").select("device_type,status").eq("hr_id", access.hrId.trim().toUpperCase())
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (preferences.error) throw preferences.error;
@@ -429,9 +431,14 @@ export async function upsertPushSubscription(
   if (!userId || !subscriptionId) return { skipped: true };
 
   const now = new Date().toISOString();
+  // Uppercased to match system.ts's cleanHrId() convention (the form used for
+  // include_aliases.external_id / hasActivePushSubscription's query) — must stay
+  // identical to what /api/notifications/push/context hands the client for
+  // OneSignal.login(), or this row silently never matches a real send/lookup.
+  const normalizedHrId = access.hrId ? access.hrId.trim().toUpperCase() : null;
   const payload: Record<string, unknown> = {
     device_type: input.deviceType,
-    hr_id: access.hrId ?? null,
+    hr_id: normalizedHrId,
     last_seen_at: now,
     onesignal_subscription_id: subscriptionId,
     status: input.optedIn ? "subscribed" : "unsubscribed",

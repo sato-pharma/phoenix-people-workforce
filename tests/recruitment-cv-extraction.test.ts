@@ -4,11 +4,12 @@ import path from "node:path";
 
 import {
   buildExtractionTextFormat,
+  buildVisionInput,
   parseAiJson,
   readBoolField,
   readStringField,
 } from "../src/lib/recruitment/cv-extraction.ts";
-import { cvPositionSchemas, getCvPositionSchema } from "../src/lib/recruitment/cv-field-schemas.ts";
+import { cvPositionSchemas, getCvPositionSchema, listCvPositionSchemas } from "../src/lib/recruitment/cv-field-schemas.ts";
 import { detectCvFileKind } from "../src/lib/recruitment/cv-file-kind.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
@@ -26,8 +27,25 @@ export function runRecruitmentCvExtractionTests() {
     "docx",
   );
   assert.equal(detectCvFileKind("application/msword", ""), "docx");
-  assert.equal(detectCvFileKind("image/png", "scanned-cv.png"), "unsupported", "scanned images are not supported this phase");
+  assert.equal(detectCvFileKind("image/png", "scanned-cv.png"), "image", "scanned/photographed CVs are read via OpenAI vision");
+  assert.equal(detectCvFileKind("image/jpeg", "photo.jpg"), "image");
+  assert.equal(detectCvFileKind("", "photo.JPEG"), "image", "extension fallback is case-insensitive for images too");
+  assert.equal(detectCvFileKind("application/zip", "cv.zip"), "unsupported", "a genuinely unsupported type stays unsupported");
   assert.equal(detectCvFileKind("", ""), "unsupported");
+
+  // --- buildVisionInput (scanned/photographed CV -> OpenAI content-parts input) --------------
+  const visionInput = buildVisionInput(Buffer.from("fake-image-bytes"), "image/png");
+  assert.equal(visionInput.length, 1);
+  assert.equal(visionInput[0].role, "user");
+  assert.equal(visionInput[0].content.length, 2);
+  assert.equal(visionInput[0].content[0].type, "input_text");
+  assert.equal(visionInput[0].content[1].type, "input_image");
+  assert.equal(visionInput[0].content[1].detail, "high");
+  assert.equal(
+    visionInput[0].content[1].image_url,
+    `data:image/png;base64,${Buffer.from("fake-image-bytes").toString("base64")}`,
+    "the image is embedded as a base64 data URL carrying its real mime type",
+  );
 
   // --- parseAiJson ---------------------------------------------------------
   assert.deepEqual(parseAiJson('{"a":1}'), { a: 1 });
@@ -90,6 +108,38 @@ export function runRecruitmentCvExtractionTests() {
     assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
   }
 
+  // --- District Manager field set — same fields as Medical Rep by design (District
+  //     Managers here are typically promoted from Medical Rep), reusing the same dedicated
+  //     columns rather than jsonb since those columns already exist ------------------------
+  assert.equal(getCvPositionSchema("district_manager")?.label, "District Manager");
+  assert.deepEqual(
+    cvPositionSchemas.district_manager.fields.map((field) => field.key).sort(),
+    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
+    "District Manager's field set must be identical to Medical Rep's",
+  );
+  assert.equal(
+    cvPositionSchemas.district_manager.fields,
+    cvPositionSchemas.medical_rep.fields,
+    "District Manager reuses the exact same field array (not a duplicated copy) to guarantee zero drift",
+  );
+  for (const field of cvPositionSchemas.district_manager.fields) {
+    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
+  }
+  assert.notEqual(
+    cvPositionSchemas.district_manager.instructions,
+    cvPositionSchemas.medical_rep.instructions,
+    "instructions should be reworded for District Manager hiring context, not byte-identical",
+  );
+  assert.match(cvPositionSchemas.district_manager.instructions, /District Manager/);
+
+  // --- listCvPositionSchemas / getCvPositionSchema now surface both positions ------------
+  assert.deepEqual(
+    listCvPositionSchemas()
+      .map((schema) => schema.positionKey)
+      .sort(),
+    ["district_manager", "medical_rep"],
+  );
+
   // --- Dynamically-built OpenAI JSON schema (buildExtractionTextFormat) must match the
   //     previously-hardcoded medical_rep schema exactly — schema-driven refactor must not
   //     silently change what's asked of the AI model ---------------------------------------
@@ -123,8 +173,10 @@ export function runRecruitmentCvExtractionTests() {
     );
   }
 
-  // --- Migration ------------------------------------------------------------
-  const migration = read("supabase/migrations/20260723160000_recruitment_candidate_cv_extraction.sql");
+  // --- Migration (Phase 1 re-platform onto ats_ tables folded the original
+  //     recruitment_candidate_cv_extraction + recruitment_position_schema_framework
+  //     migrations in, since neither had reached production yet) --------------------
+  const migration = read("supabase/migrations/20260724130000_ats_replatform_phase1.sql");
   for (const column of [
     "address",
     "faculty",
@@ -137,28 +189,18 @@ export function runRecruitmentCvExtractionTests() {
   ]) {
     assert.match(migration, new RegExp(`add column if not exists ${column}\\b`), `missing column ${column}`);
   }
-  assert.match(migration, /create table if not exists public\.recruitment_candidate_cv_extractions/);
-  assert.match(migration, /alter table public\.recruitment_candidate_cv_extractions enable row level security/);
-  assert.match(migration, /phx_recruitment_candidate_cv_extractions_service_role/);
-  assert.match(migration, /grant all on table public\.recruitment_candidate_cv_extractions to service_role/);
+  assert.match(migration, /create table public\.ats_candidate_cv_extractions/);
+  assert.match(migration, /alter table public\.ats_candidate_cv_extractions enable row level security/);
+  assert.match(migration, /phx_ats_candidate_cv_extractions_service_role/);
+  assert.match(migration, /grant all on table public\.ats_candidate_cv_extractions to service_role/);
   assert.match(migration, /notify pgrst, 'reload schema'/);
   // Duration is derived, never stored (see plan rationale — avoids drift vs from/to dates).
   assert.doesNotMatch(migration, /medical_rep_experience_duration/);
-
-  // --- Position-schema-framework migration (additive only — no existing Medical Rep
-  //     column is touched) ------------------------------------------------------------
-  const positionSchemaMigration = read(
-    "supabase/migrations/20260723200000_recruitment_position_schema_framework.sql",
-  );
+  assert.match(migration, /add column if not exists position_specific_fields jsonb/);
   assert.match(
-    positionSchemaMigration,
-    /alter table public\.recruitment_candidates\s+add column if not exists position_specific_fields jsonb/,
+    migration,
+    /alter table public\.ats_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
   );
-  assert.match(
-    positionSchemaMigration,
-    /alter table public\.recruitment_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
-  );
-  assert.match(positionSchemaMigration, /notify pgrst, 'reload schema'/);
 
   // --- Permission model: `hiring_interviews` is narrow and NOT hard-boundary-capped,
   //     while `recruitment`/`candidates` stay locked to HR authority roles ---------

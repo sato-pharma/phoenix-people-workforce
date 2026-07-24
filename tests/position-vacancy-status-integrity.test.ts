@@ -44,23 +44,16 @@ export function runPositionVacancyStatusIntegrityTests() {
   // We assert this at source-text level. A clean grep across src/ + app/ for the
   // string literal "closed" inside a position_vacancies write context catches
   // future regressions (the audit confirmed no current writer; this is a guard).
-  const offersService = source("src/lib/offers/service.ts");
-  // closeVacancyForOffer lives in offers/vacancies.ts (split out of offers/service.ts
-  // so employee-directory.ts never pulls service.ts's dynamic offer-letter-pdf.ts
-  // import into a client bundle) — check the actual writer there.
-  const vacanciesService = source("src/lib/offers/vacancies.ts");
+  // closeVacancyOnHire lives in its own module, apart from the recruitment/offers
+  // domain — check the actual writer there.
+  const vacancyCloser = source("src/lib/employees/vacancy-closer.ts");
   assert.match(
-    vacanciesService,
+    vacancyCloser,
     /status: "filled"/,
-    "closeVacancyForOffer must write 'filled', never 'closed'",
+    "closeVacancyOnHire must write 'filled', never 'closed'",
   );
   assert.doesNotMatch(
-    offersService,
-    /position_vacancies[\s\S]{0,200}status: "closed"/i,
-    "no TypeScript writer may set position_vacancies.status to 'closed'",
-  );
-  assert.doesNotMatch(
-    vacanciesService,
+    vacancyCloser,
     /position_vacancies[\s\S]{0,200}status: "closed"/i,
     "no TypeScript writer may set position_vacancies.status to 'closed'",
   );

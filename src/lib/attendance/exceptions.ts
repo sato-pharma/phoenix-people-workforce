@@ -35,6 +35,16 @@ type EmployeeNameRow = {
   hr_id: string;
 };
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. getAttendanceExceptionMap is called with a full company roster for
+// monthly/fingerprint reports, so it must be batched.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 function toException(row: ExceptionDbRow, nameMap: Map<string, string>): AttendanceException {
   const hrId = normalizeAttendanceHrId(row.employee_hr_id) ?? row.employee_hr_id;
   return {
@@ -88,11 +98,11 @@ export async function getAttendanceExceptions(
   const hrIds = [...new Set(rows.map((r) => normalizeAttendanceHrId(r.employee_hr_id) ?? r.employee_hr_id))];
   const nameMap = new Map<string, string>();
 
-  if (hrIds.length > 0) {
+  for (const batch of chunk(hrIds)) {
     const { data: empData } = await supabase
       .from("employees")
       .select("hr_id,full_name")
-      .in("hr_id", hrIds);
+      .in("hr_id", batch);
     for (const emp of (empData ?? []) as EmployeeNameRow[]) {
       const normalized = normalizeAttendanceHrId(emp.hr_id) ?? emp.hr_id;
       if (emp.full_name) nameMap.set(normalized, emp.full_name.trim());
@@ -110,25 +120,24 @@ export async function getAttendanceExceptionMap(
   const supabase = getSupabaseAdmin();
   const normalized = employeeHrIds.map((id) => normalizeAttendanceHrId(id) ?? id);
 
-  let query = supabase
-    .from("attendance_exceptions")
-    .select("id,employee_hr_id,exception_date,reason,status,requested_by,reviewed_by,reviewed_at,notes,created_at")
-    .gte("exception_date", dateFrom)
-    .lte("exception_date", dateTo);
-
-  if (normalized.length > 0) {
-    query = query.in("employee_hr_id", normalized);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-
   const map = new Map<string, AttendanceException>();
-  for (const row of (data ?? []) as ExceptionDbRow[]) {
-    const hrId = normalizeAttendanceHrId(row.employee_hr_id) ?? row.employee_hr_id;
-    const key = `${hrId}|${row.exception_date}`;
-    map.set(key, toException(row, new Map()));
+  if (normalized.length === 0) return map;
+
+  for (const batch of chunk(normalized)) {
+    const { data, error } = await supabase
+      .from("attendance_exceptions")
+      .select("id,employee_hr_id,exception_date,reason,status,requested_by,reviewed_by,reviewed_at,notes,created_at")
+      .gte("exception_date", dateFrom)
+      .lte("exception_date", dateTo)
+      .in("employee_hr_id", batch);
+
+    if (error) throw error;
+
+    for (const row of (data ?? []) as ExceptionDbRow[]) {
+      const hrId = normalizeAttendanceHrId(row.employee_hr_id) ?? row.employee_hr_id;
+      const key = `${hrId}|${row.exception_date}`;
+      map.set(key, toException(row, new Map()));
+    }
   }
   return map;
 }

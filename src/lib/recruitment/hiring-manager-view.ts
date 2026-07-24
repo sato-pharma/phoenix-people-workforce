@@ -30,7 +30,7 @@ async function assertCandidateInHiringManagerScope(access: AccessContext, candid
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_applications")
+    .from("ats_applications")
     .select("requisition_id")
     .eq("candidate_id", candidateId);
   if (error) throw error;

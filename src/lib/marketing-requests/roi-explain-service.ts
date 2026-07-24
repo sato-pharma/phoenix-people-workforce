@@ -11,6 +11,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { restrictedProductNameSet } from "@/lib/sales/access-scope";
 import { roundMarketingMoney } from "@/lib/marketing-requests/roi";
 import {
+  chunk,
   getMarketingRequestViewSales,
   isRestrictedMarketingProduct,
   monthAdd,
@@ -199,18 +200,23 @@ export async function explainMarketingRequestRoi(
   //    distributors within the window? Filtered to the target codes so the scan stays small.
   const foundCodes = new Set<string>();
   if (targetCodes.length > 0 && rolledUpSosCodes.size > 0 && windowPeriods.length > 0 && validatedBatchIds.length > 0) {
-    const presence = await supabase
-      .from("source_of_sales_import_rows")
-      .select("client_code")
-      .in("distributor_code", Array.from(rolledUpSosCodes))
-      .in("invoice_period", windowPeriods)
-      .in("batch_id", validatedBatchIds)
-      .eq("validation_state", "valid")
-      .in("client_code", targetCodes);
-    if (presence.error) throw presence.error;
-    for (const row of (presence.data ?? []) as Array<{ client_code?: string | null }>) {
-      const normalized = normalizePharmacyCode(row.client_code);
-      if (normalized) foundCodes.add(normalized);
+    // PostgREST folds every .in() value into the request URL — validatedBatchIds spans EVERY
+    // validated import batch ever, so batch it (mirrors loadLatestValidatedPeriod's chunk(...,200)
+    // in roi-report-service.ts for the same query).
+    for (const batchIdPart of chunk(validatedBatchIds, 200)) {
+      const presence = await supabase
+        .from("source_of_sales_import_rows")
+        .select("client_code")
+        .in("distributor_code", Array.from(rolledUpSosCodes))
+        .in("invoice_period", windowPeriods)
+        .in("batch_id", batchIdPart)
+        .eq("validation_state", "valid")
+        .in("client_code", targetCodes);
+      if (presence.error) throw presence.error;
+      for (const row of (presence.data ?? []) as Array<{ client_code?: string | null }>) {
+        const normalized = normalizePharmacyCode(row.client_code);
+        if (normalized) foundCodes.add(normalized);
+      }
     }
   }
 
@@ -249,17 +255,8 @@ export async function explainMarketingRequestRoi(
     // Filtering by the target pharmacy codes bounds the scan to this request's rows (tiny). If it
     // ever hits the cap we treat it as unsafe (possibly truncated) and keep the RPC fallback.
     const LEDGER_ROW_CAP = 5000;
-    const ledgerScan = await supabase
-      .from("source_of_sales_import_rows")
-      .select("id, distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
-      .in("distributor_code", Array.from(rolledUpSosCodes))
-      .in("invoice_period", windowPeriods)
-      .in("batch_id", validatedBatchIds)
-      .eq("validation_state", "valid")
-      .in("client_code", targetCodes)
-      .limit(LEDGER_ROW_CAP + 1);
-    if (ledgerScan.error) throw ledgerScan.error;
-    const scanRows = (ledgerScan.data ?? []) as Array<{
+    // Same header-overflow reasoning as the presence probe above — batch validatedBatchIds.
+    const scanRows: Array<{
       id: number | string;
       distributor_code?: string | null;
       client_code?: string | null;
@@ -269,7 +266,20 @@ export async function explainMarketingRequestRoi(
       discount?: unknown;
       is_direct?: unknown;
       value?: unknown;
-    }>;
+    }> = [];
+    for (const batchIdPart of chunk(validatedBatchIds, 200)) {
+      const ledgerScan = await supabase
+        .from("source_of_sales_import_rows")
+        .select("id, distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
+        .in("distributor_code", Array.from(rolledUpSosCodes))
+        .in("invoice_period", windowPeriods)
+        .in("batch_id", batchIdPart)
+        .eq("validation_state", "valid")
+        .in("client_code", targetCodes)
+        .limit(LEDGER_ROW_CAP + 1);
+      if (ledgerScan.error) throw ledgerScan.error;
+      scanRows.push(...((ledgerScan.data ?? []) as typeof scanRows));
+    }
     if (scanRows.length <= LEDGER_ROW_CAP) {
       const seenRowIds = new Set<string>();
       const rebuilt: RoiExplainLedgerRow[] = [];

@@ -51,7 +51,15 @@ function cleanErrorText(value: unknown) {
 function errorMessageFromPayload(payload: { errors?: unknown } | null, status: number) {
   const errors = payload?.errors;
   if (Array.isArray(errors)) return cleanErrorText(errors.join("; ")) ?? `OneSignal request failed with ${status}.`;
-  if (errors && typeof errors === "object") return cleanErrorText(Object.values(errors).flat().join("; ")) ?? `OneSignal request failed with ${status}.`;
+  if (errors && typeof errors === "object") {
+    // Object.values(...).flat().join(...) previously produced the literal string
+    // "[object Object]" for nested error shapes like { invalid_aliases: { external_id: [...] } }
+    // — this walks one level of nesting so a genuine error still logs something readable.
+    const flattened = Object.entries(errors)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(",") : typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+      .join("; ");
+    return cleanErrorText(flattened) ?? `OneSignal request failed with ${status}.`;
+  }
   return `OneSignal request failed with ${status}.`;
 }
 
@@ -59,10 +67,31 @@ function isNotSubscribedMessage(message: string) {
   return /not subscribed/i.test(message);
 }
 
+// A recipient with zero reachable devices returns HTTP 200 with an `errors` array like
+// ["All included players are not subscribed"] — a normal "not subscribed yet" outcome,
+// not a failure. Checked before the generic error branch, or it gets misclassified as a
+// hard failure.
+function isNotSubscribedPayload(payload: { errors?: unknown } | null) {
+  if (!payload) return false;
+  const errors = payload.errors;
+  if (Array.isArray(errors) && errors.some((entry) => isNotSubscribedMessage(String(entry)))) return true;
+  return false;
+}
+
 // Send a web push via OneSignal's REST API, targeting the recipient by External ID (the
 // Phoenix HR_ID, set client-side via OneSignal.login()) rather than a stored player/device
 // id — OneSignal fans this out to every device (desktop + mobile browser) the recipient has
 // ever opted in on, so Phoenix never needs to track individual subscription ids to send.
+//
+// Uses the legacy /api/v1/notifications endpoint (include_external_user_ids) rather than
+// the newer api.onesignal.com/notifications alias-based endpoint (include_aliases). Verified
+// live against production 2026-07-23: for a recipient whose OneSignal history mixes
+// subscribed and unsubscribed devices (e.g. re-enabled push after a prior failed browser
+// registration — an expected, common pattern given the AbortError issue some browsers hit),
+// the alias-based endpoint spuriously reports the whole alias as `invalid_aliases` and
+// delivers nothing, even though the still-subscribed devices are perfectly reachable. The
+// legacy endpoint delivered correctly to those same devices in the same test. Do not switch
+// back to include_aliases without re-confirming that quirk is gone.
 export async function sendPushNotification(input: PushSendInput): Promise<PushSendResult> {
   const appId = onesignalAppId();
   const apiKey = onesignalRestApiKey();
@@ -77,13 +106,13 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
   const timeout = setTimeout(() => controller.abort(), onesignalTimeoutMs());
   let response: Response;
   try {
-    response = await fetch("https://api.onesignal.com/notifications", {
+    response = await fetch("https://onesignal.com/api/v1/notifications", {
       body: JSON.stringify({
         app_id: appId,
+        channel_for_external_user_ids: "push",
         contents: { en: message || title },
         headings: { en: title || "Phoenix Workforce" },
-        include_aliases: { external_id: [input.externalId.trim()] },
-        target_channel: "push",
+        include_external_user_ids: [input.externalId.trim()],
         ...(input.actionUrl ? { url: input.actionUrl } : {}),
       }),
       headers: {
@@ -102,20 +131,13 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
     clearTimeout(timeout);
   }
 
-  const payload = await response.json().catch(() => null) as { errors?: unknown; id?: string; recipients?: number } | null;
+  const payload = await response.json().catch(() => null) as { errors?: unknown; id?: string } | null;
 
-  if (!response.ok) {
-    const message = errorMessageFromPayload(payload, response.status);
-    if (isNotSubscribedMessage(message)) return { reason: "No active push subscription for recipient.", skipped: true };
-    throw new Error(message);
-  }
-  if (payload?.errors) {
-    const message = errorMessageFromPayload(payload, response.status);
-    if (isNotSubscribedMessage(message)) return { reason: "No active push subscription for recipient.", skipped: true };
-    throw new Error(message);
-  }
-  if (typeof payload?.recipients === "number" && payload.recipients === 0) {
+  if (isNotSubscribedPayload(payload)) {
     return { reason: "No active push subscription for recipient.", skipped: true };
+  }
+  if (!response.ok || payload?.errors) {
+    throw new Error(errorMessageFromPayload(payload, response.status));
   }
 
   return { providerMessageId: payload?.id || undefined };

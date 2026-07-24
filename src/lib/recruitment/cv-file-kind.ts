@@ -3,12 +3,22 @@
 // preview modal, which needs to know whether to render an iframe or fetch extracted text —
 // can use it without pulling server-only document-parsing packages into the browser bundle.
 
-export function detectCvFileKind(mimeType: string, fileName: string): "pdf" | "docx" | "unsupported" {
+export function detectCvFileKind(mimeType: string, fileName: string): "pdf" | "docx" | "image" | "unsupported" {
   const normalizedMime = (mimeType || "").toLowerCase();
   const lowerName = (fileName || "").toLowerCase();
   if (normalizedMime.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
   if (normalizedMime.includes("wordprocessingml") || normalizedMime.includes("msword") || lowerName.endsWith(".docx")) {
     return "docx";
+  }
+  // Scanned/photographed CVs — no local text extraction, read directly via OpenAI vision
+  // (see cv-extraction.ts's "image" branch).
+  if (
+    normalizedMime.startsWith("image/") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".png")
+  ) {
+    return "image";
   }
   return "unsupported";
 }

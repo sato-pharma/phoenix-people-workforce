@@ -18,22 +18,18 @@ import {
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
-  filterPrivateCalendarActualItems,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
   mapHolidayToPrivateCalendarItem,
-  mapPlanRowToPrivateCalendarItem,
   mapPrivateCalendarEmployee,
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
-  privateCalendarPlanStatuses,
   privateCalendarSources,
   resolvePrivateCalendarVisibleEmployees,
   summarizePrivateCalendarItems,
   type PrivateCalendarException,
   type PrivateCalendarItem,
-  type PrivateCalendarPlanRow,
   type PrivateCalendarSource,
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
@@ -64,28 +60,6 @@ type ExcuseCalendarRow = {
   id: string;
   manager_decision_comment: string | null;
   status: string | null;
-};
-
-type PlanHeaderRow = {
-  employee_hr_id: string;
-  employee_name: string;
-  id: string;
-  plan_kind: string;
-  status: string;
-};
-
-type PlanItemRow = {
-  activity_date: string;
-  activity_title: string | null;
-  activity_type: string | null;
-  area: string | null;
-  end_time: string | null;
-  id: string;
-  location_text: string | null;
-  notes: string | null;
-  plan_id: string;
-  sort_order: number | null;
-  start_time: string | null;
 };
 
 function schemaMissing(error: unknown, ...names: string[]) {
@@ -436,78 +410,17 @@ async function loadExcuseItems(employeeHrIds: string[], start: string, end: stri
   }
 }
 
-async function loadPlanItems(employeeHrIds: string[], start: string, end: string) {
-  try {
-    const supabase = getSupabaseAdmin();
-    const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
-    const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
-    if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let headersQuery = supabase
-      .from("employee_plan_headers")
-      .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
-      .in("status", [...privateCalendarPlanStatuses])
-      .lte("period_start_date", end)
-      .gte("period_end_date", start)
-      .order("period_start_date", { ascending: true })
-      .limit(1000);
-    headersQuery = headersQuery.in("employee_hr_id", employeeHrKeys);
-    const { data: headersData, error: headersError } = await headersQuery;
-    if (headersError) throw headersError;
-
-    const headers = (headersData ?? []) as PlanHeaderRow[];
-    const headerById = new Map(headers.map((header) => [header.id, header]));
-    const planIds = headers.map((header) => header.id);
-    if (planIds.length === 0) return { items: [], ready: true };
-
-    const { data: itemsData, error: itemsError } = await supabase
-      .from("employee_plan_items")
-      .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,notes,sort_order")
-      .in("plan_id", planIds)
-      .gte("activity_date", start)
-      .lte("activity_date", end)
-      .order("activity_date", { ascending: true })
-      .order("sort_order", { ascending: true })
-      .limit(5000);
-    if (itemsError) throw itemsError;
-
-    const items = ((itemsData ?? []) as PlanItemRow[]).flatMap((item) => {
-      const header = headerById.get(item.plan_id);
-      if (!header) return [];
-      const row: PrivateCalendarPlanRow = {
-        activity_date: item.activity_date,
-        activity_title: item.activity_title,
-        activity_type: item.activity_type,
-        area: item.area,
-        employee_hr_id: header.employee_hr_id,
-        employee_name: header.employee_name,
-        end_time: item.end_time,
-        id: item.id,
-        location_text: item.location_text,
-        notes: item.notes,
-        plan_kind: header.plan_kind,
-        start_time: item.start_time,
-        status: header.status,
-      };
-      return [mapPlanRowToPrivateCalendarItem(row)];
-    });
-    return { items, ready: true };
-  } catch (error) {
-    if (schemaMissing(error, "employee_plan_headers", "employee_plan_items")) return { items: [], ready: false };
-    throw error;
-  }
-}
-
 export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
   return isPrivateCalendarGlobalViewer(access);
 }
 
 export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
-  // When true, planned/intended activity (source "plan") is loaded and still used
-  // to derive exceptions and suppress false FP-missing flags (a field plan still
-  // self-proves attendance), but is excluded from the items/summary/teamSummary
-  // actually returned. The employee portal uses this so the calendar reflects only
-  // what the system actually recognized that day, not what was merely planned.
+  // Historically distinguished "what actually happened" from planned/intended
+  // activity (the Planning Calendar), which is no longer a private-calendar
+  // source at all — every source returned here is already an actually
+  // recorded/verified event, so this flag currently has no effect. Kept on the
+  // API surface for backward compatibility with existing callers.
   actualOnly?: boolean;
   employeeHrId?: string | null;
   month: number;
@@ -531,11 +444,10 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, plans, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
+  const [attendance, vacations, excuses, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
     loadAttendanceItems(scopeHrIds, start, end),
     loadVacationItems(scopeHrIds, start, end),
     loadExcuseItems(scopeHrIds, start, end),
-    loadPlanItems(scopeHrIds, start, end),
     loadHolidayItems(input.year, input.month, start, end),
     loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
     loadAttendancePolicyScheduleRows(),
@@ -545,22 +457,18 @@ export async function getPrivateCalendarWorkspace(input: {
     ...attendance.items,
     ...vacations.items,
     ...excuses.items,
-    ...plans.items,
     ...holidays,
     ...doubleVisits.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
-  // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on days where a
-  // Double Visit or any off-site/remote plan activity exists — a "late/absent"
-  // flag is meaningless when the employee was legitimately away from the office.
-  // A genuine Complete punch is NEVER suppressed here: real proof of presence
-  // always wins, no matter what an unrelated (even unapproved) plan entry claims
-  // for the same date — this used to delete a real, positive attendance record
-  // whenever any field-type plan existed for that day, which is backwards.
+  // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on a Double
+  // Visit day — a "late/absent" flag is meaningless when the employee was
+  // legitimately away from the office on a CRM-verified visit. A genuine
+  // Complete punch is NEVER suppressed here: real proof of presence always wins.
   const fieldVisitDates = new Set<string>();
   for (const item of allItems) {
-    if (item.source === "double_visit" || (item.source === "plan" && item.planCountsAsAttendance)) {
+    if (item.source === "double_visit") {
       fieldVisitDates.add(item.startDate);
     }
   }
@@ -592,7 +500,6 @@ export async function getPrivateCalendarWorkspace(input: {
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
     holiday: true,
-    plan: plans.ready,
     vacation: vacations.ready,
   };
 
@@ -609,7 +516,7 @@ export async function getPrivateCalendarWorkspace(input: {
     noActivityStatusRows,
   );
 
-  const displayItems = input.actualOnly ? filterPrivateCalendarActualItems(itemsWithCorrections) : itemsWithCorrections;
+  const displayItems = itemsWithCorrections;
 
   return {
     access: {

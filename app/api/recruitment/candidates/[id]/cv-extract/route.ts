@@ -26,7 +26,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       windowMs: 60_000,
     });
     const { id } = await params;
-    const result = await extractCandidateFieldsFromCv(id, access);
+    const body = (await request.json().catch(() => ({}))) as { positionKey?: unknown };
+    const positionKey = typeof body.positionKey === "string" && body.positionKey ? body.positionKey : undefined;
+    const result = await extractCandidateFieldsFromCv(id, access, positionKey);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (isForbiddenError(error)) {

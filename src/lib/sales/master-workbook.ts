@@ -35,12 +35,12 @@ function gridBorder(): ExcelJS.Borders {
 
 // ── live readers (all paginated past PostgREST's 1000-row cap) ──
 
-async function selectAll(
+async function selectAllOneBatch(
   supabase: SupabaseAdmin,
   table: string,
   columns: string,
-  order?: string,
-  inFilter?: { column: string; values: string[] },
+  order: string | undefined,
+  inFilter: { column: string; values: string[] } | undefined,
 ): Promise<Row[]> {
   const pageSize = 1000;
   // One exact-count head request, then fetch all pages CONCURRENTLY (bounded) — far faster than the
@@ -69,6 +69,26 @@ async function selectAll(
     fetched.forEach((page, j) => { pages[i + j] = page; });
   }
   return pages.flat();
+}
+
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+// values can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError — inFilter.values (e.g. every validated import batch id) has no small fixed
+// cap, so batch it and merge.
+async function selectAll(
+  supabase: SupabaseAdmin,
+  table: string,
+  columns: string,
+  order?: string,
+  inFilter?: { column: string; values: string[] },
+): Promise<Row[]> {
+  if (!inFilter || inFilter.values.length === 0) return selectAllOneBatch(supabase, table, columns, order, inFilter);
+  const rows: Row[] = [];
+  for (let i = 0; i < inFilter.values.length; i += 100) {
+    const batchValues = inFilter.values.slice(i, i + 100);
+    rows.push(...await selectAllOneBatch(supabase, table, columns, order, { column: inFilter.column, values: batchValues }));
+  }
+  return rows;
 }
 
 // Module-level cache for alias maps — these are structurally stable (same column headers appear in

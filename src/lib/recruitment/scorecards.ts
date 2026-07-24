@@ -37,6 +37,10 @@ export const interviewScorecardCriteria: Record<InterviewType, ScorecardCriterio
     { key: "salary_expectation", label: "Salary Expectation" },
     { key: "stability", label: "Stability" },
   ],
+  // NSM/RM/CEO tracking rounds — deliberately no numeric scorecard, free-text notes only.
+  rm_interview: [],
+  nsm_interview: [],
+  ceo_interview: [],
 };
 
 export const interviewOutcomes = [
