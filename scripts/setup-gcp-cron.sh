@@ -109,4 +109,16 @@ gcloud scheduler jobs create http phoenix-no-activity-weekly \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
+# 8. Recruitment Email-Intake Poll (every 10 min, :04/:14/.../:54 Cairo — minute offset 4 avoids
+# every other job). Polls the configured careers@/hr@ mailboxes (RECRUITMENT_EMAIL_INBOXES_JSON)
+# for candidate CVs via IMAP; a clean no-op if that env var is unset. Added 2026-07-24.
+gcloud scheduler jobs create http phoenix-recruitment-email-intake \
+    --schedule="4-59/10 * * * *" \
+    --uri="${SERVICE_URL}/api/cron/recruitment-email-intake" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --time-zone="Africa/Cairo" \
+    --location="${SCHEDULER_LOCATION}" \
+    --project="${PROJECT_ID}"
+
 echo "All cron jobs successfully created!"

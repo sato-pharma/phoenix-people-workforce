@@ -26,6 +26,7 @@ import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
+import type { RecruitmentFile } from "@/lib/recruitment/types";
 
 export class CvExtractionError extends Error {
   code: "ai_failed" | "ai_not_configured" | "ai_rate_limited" | "unsupported_file" | "no_cv_file";
@@ -189,6 +190,19 @@ function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionErr
   }
 }
 
+// Pure: picks which of a candidate's files to run extraction against. With no fileId, the
+// first cv-kind file (the existing single-CV-per-candidate assumption most callers rely on).
+// With a fileId (used by inbound CV intake, where a matched candidate may already have an
+// older CV on record and extraction must target the just-uploaded one, not the first), only
+// that specific cv-kind file counts — a fileId that doesn't match anything yields null rather
+// than silently falling back to the first file.
+export function selectCvFile(files: readonly RecruitmentFile[], fileId?: string): RecruitmentFile | null {
+  if (fileId) {
+    return files.find((file) => file.id === fileId && file.kind === "cv") ?? null;
+  }
+  return files.find((file) => file.kind === "cv") ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Public API.
 // ---------------------------------------------------------------------------
@@ -197,6 +211,7 @@ export async function extractCandidateFieldsFromCv(
   candidateId: string,
   access: AccessContext,
   positionKey: string = defaultCvPositionKey,
+  options?: { fileId?: string },
 ): Promise<CvExtractionResult> {
   const schema = getCvPositionSchema(positionKey);
   if (!schema) {
@@ -213,9 +228,14 @@ export async function extractCandidateFieldsFromCv(
   if (!candidate) throw new Error("Candidate not found.");
 
   const files = await listCandidateFiles(candidateId);
-  const cvFile = files.find((file) => file.kind === "cv");
+  const cvFile = selectCvFile(files, options?.fileId);
   if (!cvFile) {
-    throw new CvExtractionError("no_cv_file", "Upload a CV file for this candidate before running AI extraction.");
+    throw new CvExtractionError(
+      "no_cv_file",
+      options?.fileId
+        ? "The specified CV file was not found for this candidate."
+        : "Upload a CV file for this candidate before running AI extraction.",
+    );
   }
 
   const downloaded = await getFileForDownload(cvFile.id);
