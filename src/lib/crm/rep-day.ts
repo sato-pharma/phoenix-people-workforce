@@ -133,6 +133,7 @@ type RepDayVisitMirrorRow = {
   comment: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
+  crm_contact_grade: string | null;
   crm_region_id: number | null;
   crm_region_name: string | null;
   crm_save_date: string | null;
@@ -158,6 +159,7 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): IReports360Visit {
     comment: row.comment,
     contactID: row.contact_crm_id,
     contactName: row.contact_name,
+    contactGrade: row.crm_contact_grade,
     customerName: row.customer_name,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
@@ -261,8 +263,8 @@ async function fetchRepDayFromMirror(
     .from(CRM_VISITS_TABLE)
     .select(
       "agent_crm_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
-        "crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, double_crm_id, double_name, " +
-        "speciality, visit_date, visit_type, visit_type_description",
+        "crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, " +
+        "double_crm_id, double_name, speciality, visit_date, visit_type, visit_type_description",
     )
     .eq("visit_date", day)
     .or(`agent_crm_id.eq.${agentId},double_crm_id.eq.${agentId}`);

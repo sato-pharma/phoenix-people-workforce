@@ -28,6 +28,7 @@ function visit(
     comment: null,
     contactID: null,
     contactName: null,
+    contactGrade: null,
     customerName: null,
     doubleID,
     doubleName: doubleID != null ? "Double.Partner" : null,
@@ -182,6 +183,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     comment: null,
     contactID: null,
     contactName: null,
+    contactGrade: null,
     customerName: null,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
@@ -250,8 +252,8 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   // --- Tier 0.1/0.2: deterministic crm_id -> hr_id resolution + confidence, NO fuzzy names ---
   const baseVisit = (agentID: number, agentName: string | null): FieldWorkforceMatrixVisit => ({
     agentID, agentName, ampm: null, attendance: null, callType: null, comment: null, contactID: null,
-    contactName: null, customerName: null, doubleID: null, doubleName: null, id: 0, region: null,
-    regionID: null, saveDate: null, speciality: null,
+    contactName: null, contactGrade: null, customerName: null, doubleID: null, doubleName: null, id: 0,
+    region: null, regionID: null, saveDate: null, speciality: null,
     visitDate: "2026-05-06", visitType: 0, visitTypeDescription: null,
   });
   const identityEmployees: FieldWorkforceEmployeeInput[] = [
@@ -471,7 +473,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     ampm: "AM" | "PM" | null = null,
   ): FieldWorkforceMatrixVisit => ({
     agentID, agentName: "x", ampm, attendance: null, callType: null, comment: null,
-    contactID, contactName, customerName: null, doubleID: null, doubleName: null, id: 0,
+    contactID, contactName, contactGrade: null, customerName: null, doubleID: null, doubleName: null, id: 0,
     region: null, regionID: null, saveDate: null, speciality: null,
     visitDate, visitType: 0, visitTypeDescription: null,
   });

@@ -54,6 +54,7 @@ function visit(overrides: Partial<IReports360Visit> = {}): IReports360Visit {
     comment: null,
     contactID: null,
     contactName: null,
+    contactGrade: null,
     customerName: null,
     doubleID: null,
     doubleName: null,
