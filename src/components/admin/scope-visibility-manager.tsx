@@ -299,6 +299,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
           <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
+              aria-label="Search by name, login ID, or HR ID"
               className="pl-9"
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, login ID, HR ID…"
@@ -306,6 +307,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
             />
           </div>
           <select
+            aria-label="Filter by line"
             className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
             onChange={(e) => setFilterLine(e.target.value)}
             value={filterLine}
@@ -318,6 +320,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
             ))}
           </select>
           <select
+            aria-label="Filter by role"
             className="rounded border border-slate-200 bg-white px-2 py-2 text-sm text-slate-600 outline-none focus:border-orange-300"
             onChange={(e) => setFilterRole(e.target.value)}
             value={filterRole}
@@ -329,7 +332,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
               </option>
             ))}
           </select>
-          <Button disabled={loading} onClick={refresh} size="sm" variant="outline">
+          <Button aria-label="Refresh" disabled={loading} onClick={refresh} size="sm" variant="outline">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -395,6 +398,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                         </td>
                         <td className="py-3 pr-4">
                           <select
+                            aria-label={`Sales scope override for ${row.displayName ?? row.fullName ?? row.loginId}`}
                             className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-orange-300"
                             onChange={(e) =>
                               setEditState({ ...editState, salesScopeOverride: e.target.value })
@@ -411,6 +415,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                         <td className="py-3">
                           <div className="flex items-center gap-1">
                             <Button
+                              aria-label={`Save scope changes for ${row.displayName ?? row.fullName ?? row.loginId}`}
                               className="h-7 px-2"
                               disabled={saving}
                               onClick={saveEdit}
@@ -425,6 +430,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                               )}
                             </Button>
                             <Button
+                              aria-label={`Cancel editing scope for ${row.displayName ?? row.fullName ?? row.loginId}`}
                               className="h-7 px-2"
                               disabled={saving}
                               onClick={cancelEdit}
@@ -482,6 +488,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                         </td>
                         <td className="py-3">
                           <Button
+                            aria-label={`Edit scope for ${row.displayName ?? row.fullName ?? row.loginId}`}
                             className="h-7 px-2"
                             onClick={() => startEdit(row)}
                             size="sm"
