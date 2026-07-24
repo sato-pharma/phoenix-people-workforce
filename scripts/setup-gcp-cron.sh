@@ -97,19 +97,7 @@ gcloud scheduler jobs create http phoenix-ireports360-live-sync \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
-# 7. No-Activity Weekly Reminder (Friday 19:15 Cairo — evening, separate from the 6:36 AM daily
-# batch; minute 15 avoids the */5 drain and the 19:07 iReports360 sync). Sends the Private
-# Calendar weekly "No Activity Recorded" reminder to employees who still have an unresolved day.
-gcloud scheduler jobs create http phoenix-no-activity-weekly \
-    --schedule="15 19 * * 5" \
-    --uri="${SERVICE_URL}/api/notifications/no-activity-weekly" \
-    --http-method=GET \
-    --headers="Authorization=Bearer ${CRON_SECRET}" \
-    --time-zone="Africa/Cairo" \
-    --location="${SCHEDULER_LOCATION}" \
-    --project="${PROJECT_ID}"
-
-# 8. Recruitment Email-Intake Poll (every 10 min, :04/:14/.../:54 Cairo — minute offset 4 avoids
+# 7. Recruitment Email-Intake Poll (every 10 min, :04/:14/.../:54 Cairo — minute offset 4 avoids
 # every other job). Polls the configured careers@/hr@ mailboxes (RECRUITMENT_EMAIL_INBOXES_JSON)
 # for candidate CVs via IMAP; a clean no-op if that env var is unset. Added 2026-07-24.
 gcloud scheduler jobs create http phoenix-recruitment-email-intake \

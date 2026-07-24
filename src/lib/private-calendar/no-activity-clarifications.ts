@@ -2,7 +2,6 @@ import {
   assertPermission,
   normalizeHrId,
   resolveEmployeeIdentityId,
-  systemAccessContext,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -15,7 +14,6 @@ import {
 } from "@/lib/deductions-governance/service";
 import { conflictError } from "@/lib/http/api-errors";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { logError, logInfo } from "@/lib/observability/log";
 import type { PrivateCalendarDisputeStatus } from "@/lib/private-calendar/disputes";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import { getCompanyNoActivityDays, type CompanyNoActivityDay } from "@/lib/private-calendar/service";
@@ -474,30 +472,14 @@ export async function decideNoActivityDaysBulk(
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Weekly cron: supportive "No Activity Recorded" reminder. Wired into a
-// dedicated Friday-evening trigger (see app/api/notifications/no-activity-weekly/route.ts)
-// rather than the 6:36 AM daily cron, since "after 7 PM Cairo, Fridays" is a
-// materially different schedule.
-// ---------------------------------------------------------------------------
-
-function cairoDateOffsetIso(days: number): string {
-  const cairoToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-  const shifted = new Date(`${cairoToday}T00:00:00Z`);
-  shifted.setUTCDate(shifted.getUTCDate() + days);
-  return shifted.toISOString().slice(0, 10);
-}
-
-export type NoActivityNotificationRunResult = { checked: number; errors: number; notified: number };
-
 const NO_ACTIVITY_DIGEST_CELL_STYLE = "border:1px solid #E5E7EB;padding:8px 10px;font-size:13px;text-align:left";
 const NO_ACTIVITY_DIGEST_HEAD_STYLE = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:8px 10px;font-size:12px;text-align:left";
 
 /**
  * Renders the "Day # / Date" HTML+text table used by the no_activity_weekly_reminder email
- * template — the single source of truth for both the real weekly send and the admin
- * preview/test-send sample data (src/lib/email-templates/service.ts), so an admin editing the
- * template always sees exactly what a real send produces.
+ * template's admin preview/test-send sample data (src/lib/email-templates/service.ts). The
+ * automated weekly reminder that used to call this directly has been removed; this now only
+ * backs the preview.
  */
 export function buildNoActivityDigestTable(activityDates: string[]): { html: string; text: string } {
   const rows = activityDates.map((iso, index) => {
@@ -516,149 +498,4 @@ export function buildNoActivityDigestTable(activityDates: string[]): { html: str
   ].join("");
   const text = rows.map((row) => `Day #${row.day}: ${row.label}`).join("\n");
   return { html, text };
-}
-
-/**
- * Runs once weekly (Fridays after 7 PM Cairo). Reminds every employee who
- * still has an unresolved "No Activity Recorded" day — freshly detected in
- * the last 7 days, PLUS any older day that was never clarified/confirmed and
- * never decided by a Super Admin, so a persistent problem keeps surfacing
- * weekly rather than aging out after one missed notice. One email per
- * employee lists every such day together ("Day #1 ... Day #2 ...").
- *
- * Before sending, the no-activity detection is re-run a second time
- * (getCompanyNoActivityDays is a live, uncached query against the same
- * exception engine the employee's own calendar uses — see service.ts), and
- * each individual day's tracking row is re-checked immediately before being
- * included in the email, so a day that got a late-arriving record or was
- * clarified/resolved between detection and send time is silently dropped
- * rather than emailed as still-unresolved.
- */
-export async function runNoActivityWeeklyReminder(): Promise<NoActivityNotificationRunResult> {
-  const result: NoActivityNotificationRunResult = { checked: 0, errors: 0, notified: 0 };
-  try {
-    const windowStart = cairoDateOffsetIso(-7);
-    const windowEnd = cairoDateOffsetIso(0);
-    const supabase = getSupabaseAdmin();
-
-    const firstPass = await getCompanyNoActivityDays({ access: systemAccessContext, end: windowEnd, start: windowStart });
-    const recheck = await getCompanyNoActivityDays({ access: systemAccessContext, end: windowEnd, start: windowStart });
-    const stillNoActivity = new Set(recheck.map((day) => `${day.employeeHrId}|${day.date}`));
-    const freshDays = firstPass.filter((day) => stillNoActivity.has(`${day.employeeHrId}|${day.date}`));
-    const recoveredCount = firstPass.length - freshDays.length;
-    if (recoveredCount > 0) {
-      logInfo(`${recoveredCount} day(s) had a record land between the first check and the re-check — skipped, not notified`, {
-        labels: { event: "private_calendar_no_activity_weekly_reminder_recheck_recovered", windowEnd, windowStart },
-      });
-    }
-
-    const byEmployee = new Map<string, { dates: Set<string>; employeeName: string | null }>();
-    for (const day of freshDays) {
-      const bucket = byEmployee.get(day.employeeHrId) ?? { dates: new Set<string>(), employeeName: day.employeeName };
-      bucket.dates.add(day.date);
-      byEmployee.set(day.employeeHrId, bucket);
-    }
-
-    // Older still-unresolved rows (never clarified/confirmed, never decided) keep surfacing
-    // weekly even once the day itself is more than 7 days old — "people who still have
-    // issues", not just this week's fresh flags.
-    const { data: staleRows, error: staleError } = await supabase
-      .from("private_calendar_no_activity_clarifications")
-      .select("activity_date,employee_hr_id,employee_name")
-      .eq("status", "pending_review")
-      .eq("confirmed_no_activity", false)
-      .is("clarification_text", null)
-      .lt("activity_date", windowStart);
-    if (staleError) throw staleError;
-    for (const row of (staleRows ?? []) as Array<{ activity_date: string; employee_hr_id: string; employee_name: string | null }>) {
-      const bucket = byEmployee.get(row.employee_hr_id) ?? { dates: new Set<string>(), employeeName: row.employee_name };
-      bucket.dates.add(row.activity_date);
-      byEmployee.set(row.employee_hr_id, bucket);
-    }
-
-    result.checked = byEmployee.size;
-    if (byEmployee.size === 0) return result;
-
-    const hrRecipients = await resolveSuperAdminRecipients();
-    const hrEmails = hrRecipients.map((recipient) => recipient.email).filter((email): email is string => Boolean(email));
-    const now = new Date().toISOString();
-
-    for (const [employeeHrId, bucket] of byEmployee) {
-      try {
-        const candidateDates = Array.from(bucket.dates).sort();
-        const unresolvedDates: string[] = [];
-
-        for (const activityDate of candidateDates) {
-          const { data: existing, error: existingError } = await supabase
-            .from("private_calendar_no_activity_clarifications")
-            .select("id,clarification_text,confirmed_no_activity,status")
-            .eq("employee_hr_id", employeeHrId)
-            .eq("activity_date", activityDate)
-            .maybeSingle();
-          if (existingError) throw existingError;
-          const row = existing as { clarification_text: string | null; confirmed_no_activity: boolean; id: string; status: NoActivityStatus } | null;
-
-          // Already resolved by the employee or decided by a Super Admin since detection —
-          // drop it, don't email a day that's no longer actually outstanding.
-          if (row && (row.status === "resolved" || Boolean(row.clarification_text) || row.confirmed_no_activity)) continue;
-
-          if (row) {
-            await supabase
-              .from("private_calendar_no_activity_clarifications")
-              .update({ first_notified_at: now })
-              .eq("id", row.id)
-              .is("first_notified_at", null);
-          } else {
-            const { error: insertError } = await supabase
-              .from("private_calendar_no_activity_clarifications")
-              .insert({
-                activity_date: activityDate,
-                employee_hr_id: employeeHrId,
-                employee_name: bucket.employeeName,
-                first_notified_at: now,
-                status: "pending_review",
-              });
-            if (insertError) throw insertError;
-          }
-          unresolvedDates.push(activityDate);
-        }
-
-        if (unresolvedDates.length === 0) continue; // everything already handled — no email needed
-
-        const table = buildNoActivityDigestTable(unresolvedDates);
-        await createSystemNotification({
-          actionUrl: "/employee-portals/private-calendar",
-          actorId: "system",
-          channels: ["email", "in_app", "telegram"],
-          email: {
-            cc: hrEmails,
-            templateContext: { noActivityTable: table.html, noActivityTableText: table.text },
-            templateKey: "no_activity_weekly_reminder",
-          },
-          eventType: "private_calendar_no_activity_weekly_reminder",
-          message: `Phoenix noticed no recorded activity for you on: ${table.text.replace(/\n/g, "; ")}. Phoenix tracks this to help protect your KPIs. Please review these days, and if anything needs to be adjusted, contact HR for support.`,
-          metadata: { activityDates: unresolvedDates, employeeHrId, idempotencyKey: `private-calendar-no-activity-weekly:${employeeHrId}:${windowEnd}` },
-          module: "private_calendar",
-          priority: "normal",
-          recipientHrId: employeeHrId,
-          subjectHrId: employeeHrId,
-          title: "Phoenix System Notice — No Activity Days",
-        });
-        result.notified += 1;
-      } catch (employeeError) {
-        result.errors += 1;
-        logError("No-activity weekly reminder failed for one employee", {
-          error: employeeError,
-          labels: { employeeHrId, event: "private_calendar_no_activity_weekly_reminder_failed" },
-        });
-      }
-    }
-  } catch (error) {
-    result.errors += 1;
-    logError("No-activity weekly reminder run failed", {
-      error,
-      labels: { event: "private_calendar_no_activity_weekly_reminder_run_failed" },
-    });
-  }
-  return result;
 }
