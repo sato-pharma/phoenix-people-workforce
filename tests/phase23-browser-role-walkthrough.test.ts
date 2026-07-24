@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 export function runPhase23BrowserRoleWalkthroughTests() {
   const smoke = readFileSync("scripts/phase23-browser-role-walkthrough.mjs", "utf8");
   const devAuthRoute = readFileSync("app/api/dev-auth/route.ts", "utf8");
+  const devPreviewLib = readFileSync("src/lib/auth/dev-preview.ts", "utf8");
   const employeesPage = readFileSync("app/(admin)/employees/page.tsx", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
@@ -40,10 +41,13 @@ export function runPhase23BrowserRoleWalkthroughTests() {
   assert.doesNotMatch(smoke, /\.update\(/);
   assert.doesNotMatch(smoke, /\.delete\(/);
 
-  assert.match(devAuthRoute, /process\.env\.NODE_ENV !== "development"/);
-  assert.match(devAuthRoute, /function isLoopbackHostname/);
-  assert.match(devAuthRoute, /normalized === "localhost"/);
-  assert.match(devAuthRoute, /normalized === "127\.0\.0\.1"/);
+  // The local-dev+loopback gate lives in src/lib/auth/dev-preview.ts (isLocalDevelopmentRequest)
+  // so /api/dev-auth and the Super Admin-gated /api/dev-auth/preview both enforce the same rule.
+  assert.match(devPreviewLib, /process\.env\.NODE_ENV !== "development"/);
+  assert.match(devPreviewLib, /function isLoopbackHostname/);
+  assert.match(devPreviewLib, /normalized === "localhost"/);
+  assert.match(devPreviewLib, /normalized === "127\.0\.0\.1"/);
+  assert.match(devAuthRoute, /isLocalDevelopmentRequest/);
   assert.match(devAuthRoute, /phoenixDevPreviewCookieName/);
   assert.match(devAuthRoute, /createDevPreviewSessionToken/);
 

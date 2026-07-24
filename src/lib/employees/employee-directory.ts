@@ -381,7 +381,7 @@ function normalizeEnrollmentStatus(value: string | null | undefined) {
     : null;
 }
 
-function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
+export function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
   return (
     isActiveLifecycleStatus(employee.employmentStatus) &&
     employee.organogramVisible !== false &&
