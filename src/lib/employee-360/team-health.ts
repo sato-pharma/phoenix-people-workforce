@@ -91,14 +91,23 @@ export async function getEmployee360TeamHealth(input: {
   const repHrIds = teamReps.map((e) => e.hrId.toUpperCase());
   let reports: CoachingReportSummaryRow[] = [];
   try {
-    const { data } = await getSupabaseAdmin()
-      .from("coaching_reports_summary")
-      .select("medical_rep_hr_id, coaching_date, final_score_percent, coach_name, coach_hr_id, status")
-      .in("medical_rep_hr_id", repHrIds)
-      .gte("coaching_date", input.window.from)
-      .lte("coaching_date", input.window.to);
+    // PostgREST folds every .in() value into the request URL; an unbatched array of a few
+    // hundred ids can push the URL past undici's ~16KB header limit and throw
+    // "TypeError: fetch failed" / HeadersOverflowError — teamHrIds can be a manager's whole
+    // org subtree (e.g. an NSM's line), so batch it.
+    const rawReports: unknown[] = [];
+    for (let i = 0; i < repHrIds.length; i += 100) {
+      const batch = repHrIds.slice(i, i + 100);
+      const { data } = await getSupabaseAdmin()
+        .from("coaching_reports_summary")
+        .select("medical_rep_hr_id, coaching_date, final_score_percent, coach_name, coach_hr_id, status")
+        .in("medical_rep_hr_id", batch)
+        .gte("coaching_date", input.window.from)
+        .lte("coaching_date", input.window.to);
+      rawReports.push(...(data ?? []));
+    }
     // buildTrainingManagerCoachingComparison only reads these six fields.
-    reports = (data ?? []).map(
+    reports = rawReports.map(
       (r) =>
         ({
           medicalRepHrId: String((r as Record<string, unknown>).medical_rep_hr_id ?? ""),

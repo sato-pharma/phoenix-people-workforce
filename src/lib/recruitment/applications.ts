@@ -164,11 +164,15 @@ export async function listApplications(access: AccessContext): Promise<Applicati
 
   const candidateIds = Array.from(new Set(visible.map((application) => application.candidateId)));
   const candidatesById = new Map<string, Candidate>();
-  if (candidateIds.length > 0) {
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError. listApplications is company-wide for HR/admin viewers, so batch.
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const batch = candidateIds.slice(i, i + 100);
     const { data: candidateRows, error: candidateError } = await supabase
       .from("recruitment_candidates")
       .select("*")
-      .in("id", candidateIds);
+      .in("id", batch);
     if (candidateError) throw candidateError;
     for (const row of (candidateRows ?? []) as CandidateDbRow[]) {
       const candidate = mapCandidate(row);

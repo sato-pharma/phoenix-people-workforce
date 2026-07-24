@@ -334,23 +334,28 @@ async function selectChildren(table: string, column: string, value: string | num
 }
 
 async function getPayrollExpenseRows(tripIds: string[]) {
-  if (tripIds.length === 0) return new Map<string, JsonRecord[]>();
-
-  const { data, error } = await getSupabaseAdmin()
-    .from("outstation_expenses")
-    .select("id, imported_payroll_batch_id, imported_to_payroll_at, report_id, trip_id")
-    .in("trip_id", tripIds);
-
-  if (error) {
-    if (isPayrollExpensesSchemaMissing(error)) return new Map<string, JsonRecord[]>();
-    throw new Error(error.message);
-  }
-
   const byTrip = new Map<string, JsonRecord[]>();
-  for (const row of (data ?? []) as unknown as JsonRecord[]) {
-    const tripId = text(row.trip_id);
-    if (!tripId) continue;
-    byTrip.set(tripId, [...(byTrip.get(tripId) ?? []), row]);
+  if (tripIds.length === 0) return byTrip;
+
+  // PostgREST folds every .in() value into the request URL; batch since tripIds comes from an
+  // unbounded, fully-paginated scan of every outstation_expense_requests row ever created.
+  for (let i = 0; i < tripIds.length; i += 100) {
+    const batch = tripIds.slice(i, i + 100);
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expenses")
+      .select("id, imported_payroll_batch_id, imported_to_payroll_at, report_id, trip_id")
+      .in("trip_id", batch);
+
+    if (error) {
+      if (isPayrollExpensesSchemaMissing(error)) return byTrip;
+      throw new Error(error.message);
+    }
+
+    for (const row of (data ?? []) as unknown as JsonRecord[]) {
+      const tripId = text(row.trip_id);
+      if (!tripId) continue;
+      byTrip.set(tripId, [...(byTrip.get(tripId) ?? []), row]);
+    }
   }
   return byTrip;
 }

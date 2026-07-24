@@ -273,12 +273,14 @@ export function runCoachingAnalyticsTests() {
   // M16: the coaching report export route previously fetched each report's detail with a
   // separate getCoachingReportById call inside Promise.all — up to ~3N queries for N reports.
   // getCoachingReportsByIds batches the same 3 queries (report + scores + summary) into one
-  // .in(ids) call each, with identical fail-together semantics.
+  // .in(batch) call each per 100-id chunk of `ids` (PostgREST header-overflow guard — see
+  // src/lib/email/engagement.ts), with identical fail-together semantics.
   const coachingServiceSource = readFileSync("src/lib/coaching/service.ts", "utf8");
   assert.match(coachingServiceSource, /export async function getCoachingReportsByIds\(ids: string\[\], access: AccessContext\)/);
-  assert.match(coachingServiceSource, /\.from\("coaching_reports"\)\.select\("\*"\)\.in\("id", ids\)/);
-  assert.match(coachingServiceSource, /\.from\("coaching_score_items"\)\.select\("\*"\)\.in\("report_id", ids\)/);
-  assert.match(coachingServiceSource, /\.from\("coaching_reports_summary"\)\.select\("\*"\)\.in\("report_id", ids\)/);
+  assert.match(coachingServiceSource, /for \(let i = 0; i < ids\.length; i \+= 100\)/, "getCoachingReportsByIds must batch ids to avoid a PostgREST header-overflow crash");
+  assert.match(coachingServiceSource, /\.from\("coaching_reports"\)\.select\("\*"\)\.in\("id", batch\)/);
+  assert.match(coachingServiceSource, /\.from\("coaching_score_items"\)\.select\("\*"\)\.in\("report_id", batch\)/);
+  assert.match(coachingServiceSource, /\.from\("coaching_reports_summary"\)\.select\("\*"\)\.in\("report_id", batch\)/);
 
   const exportRouteSource = readFileSync("app/api/coaching/reports/export/route.ts", "utf8");
   assert.match(exportRouteSource, /getCoachingReportsByIds/, "the export route uses the batched fetch");

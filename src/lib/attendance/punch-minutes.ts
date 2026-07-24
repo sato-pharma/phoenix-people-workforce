@@ -72,23 +72,30 @@ export async function loadEmployeeDayPunchMinutes(input: {
   const supabase = getSupabaseAdmin();
   const punches: RawPunchRow[] = [];
   const PAGE_SIZE = 20000;
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("attendance_raw_punches")
-      .select("employee_hr_id,punch_time")
-      .not("employee_hr_id", "is", null)
-      .in("employee_hr_id", normalizedHrIds)
-      .gte("punch_time", utcBoundaryForLocalDate(input.dateFromIso))
-      .lt("punch_time", utcBoundaryForLocalDate(input.dateToIso, 1))
-      .order("punch_time", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — callers pass company/site-wide rosters here, so batch the id filter
+  // (nested inside the existing result-row range pagination).
+  for (let h = 0; h < normalizedHrIds.length; h += 100) {
+    const hrIdBatch = normalizedHrIds.slice(h, h + 100);
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from("attendance_raw_punches")
+        .select("employee_hr_id,punch_time")
+        .not("employee_hr_id", "is", null)
+        .in("employee_hr_id", hrIdBatch)
+        .gte("punch_time", utcBoundaryForLocalDate(input.dateFromIso))
+        .lt("punch_time", utcBoundaryForLocalDate(input.dateToIso, 1))
+        .order("punch_time", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
 
-    if (error) throw new Error(`Punch minutes lookup failed: ${error.message}`);
-    const page = (data ?? []) as RawPunchRow[];
-    punches.push(...page);
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+      if (error) throw new Error(`Punch minutes lookup failed: ${error.message}`);
+      const page = (data ?? []) as RawPunchRow[];
+      punches.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
   }
 
   // employeeHrId -> dateIso -> punch times that local day.

@@ -104,11 +104,16 @@ async function buildContext(
 
   // Manager map for the probation employees (DM = evaluator is the employee's manager).
   const managerHrIdByEmployee = new Map<string, string | null>();
-  if (caseEmployeeHrIds.length > 0) {
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — caseEmployeeHrIds covers every probation case ever, tripled by casing
+  // variants, so batch.
+  for (let i = 0; i < caseEmployeeHrIds.length; i += 100) {
+    const batch = caseEmployeeHrIds.slice(i, i + 100);
     const { data: emps, error: empErr } = await supabase
       .from("employees")
       .select("hr_id, manager_hr_id")
-      .in("hr_id", caseEmployeeHrIds);
+      .in("hr_id", batch);
     if (empErr) throw new Error(empErr.message);
     for (const e of (emps ?? []) as Array<{ hr_id: string; manager_hr_id: string | null }>) {
       managerHrIdByEmployee.set(norm(e.hr_id), e.manager_hr_id ? norm(e.manager_hr_id) : null);
