@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { EmailTemplateRecipientRole, EmailTemplateRow } from "@/lib/email-templates/service";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 
 // Mirrors the server-side `emailTemplateCategories` order in
@@ -815,11 +816,11 @@ export function EmailTemplateManager({
                           {template.sentCount.toLocaleString()} fired
                         </span>
                         {template.lastSentAt ? (
-                          <span className="text-xs font-bold text-[#94A3B8]">· last {new Date(template.lastSentAt).toLocaleDateString()}</span>
+                          <span className="text-xs font-bold text-[#94A3B8]">· last {new Date(template.lastSentAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
                         ) : null}
                       </div>
                       <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString()}</span>
+                        <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
                         <Button className="rounded-xl bg-[#0F172A] text-white" onClick={() => selectTemplate(template)} type="button">
                           Edit
                         </Button>
@@ -847,7 +848,7 @@ export function EmailTemplateManager({
                   <div className="flex items-center gap-2 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2">
                     <Send className="h-3.5 w-3.5 text-[#166534]" />
                     <span className="text-xs font-black text-[#166534]">
-                      {draft.sentCount.toLocaleString()} fired{draft.lastSentAt ? ` · last ${new Date(draft.lastSentAt).toLocaleDateString()}` : ""}
+                      {draft.sentCount.toLocaleString()} fired{draft.lastSentAt ? ` · last ${new Date(draft.lastSentAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}` : ""}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
@@ -1094,7 +1095,7 @@ export function EmailTemplateManager({
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-black text-[#0F172A]">Version {entry.versionNumber} - {entry.action}</p>
-                          <p className="mt-1 text-xs font-semibold text-[#64748B]">{new Date(entry.changedAt).toLocaleString()}</p>
+                          <p className="mt-1 text-xs font-semibold text-[#64748B]">{new Date(entry.changedAt).toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</p>
                           {entry.reason ? <p className="mt-2 text-xs leading-5 text-[#475569]">{entry.reason}</p> : null}
                         </div>
                         <Button className="h-9 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" onClick={() => restoreTemplate(entry.versionNumber)} type="button" variant="secondary"><RotateCcw className="h-4 w-4" /></Button>
