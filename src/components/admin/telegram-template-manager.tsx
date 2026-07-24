@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, Eye, Save, Send, ToggleLeft, ToggleRight } f
 import type { TelegramTemplateView } from "@/lib/notifications/telegram-templates";
 import { insertTelegramPlaceholder } from "@/lib/notifications/telegram-template-placeholders";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 
 type Props = {
@@ -49,7 +50,9 @@ function statusClass(active: boolean) {
 function formatDate(value: string | null) {
   if (!value) return "Not saved yet";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE });
 }
 
 function createDraft(template: TelegramTemplateView): Draft {
