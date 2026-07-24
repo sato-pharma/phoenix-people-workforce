@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createDevPreviewSessionToken,
   devPreviewCookieMaxAgeSeconds,
+  isLocalDevelopmentRequest,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
 import { parseRoleStrict } from "@/lib/auth/permissions";
@@ -10,32 +11,6 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isLoopbackHostname(hostname: string | null | undefined) {
-  const normalized = hostname?.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
-  return normalized === "localhost" || hostname === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
-}
-
-function hostnameFromHeader(value: string | null) {
-  const first = value?.split(",")[0]?.trim();
-  if (!first) return null;
-  const withoutPort = first.startsWith("[")
-    ? first.slice(1, first.indexOf("]"))
-    : first.split(":")[0];
-  return withoutPort || null;
-}
-
-function isLocalDevelopmentRequest(request: Request) {
-  if (process.env.NODE_ENV !== "development") {
-    return false;
-  }
-
-  const hostname = new URL(request.url).hostname.toLowerCase();
-  const hostHeader = hostnameFromHeader(request.headers.get("host"));
-  const forwardedHost = hostnameFromHeader(request.headers.get("x-forwarded-host"));
-
-  return [hostname, hostHeader, forwardedHost].some(isLoopbackHostname);
-}
 
 function normalizeNextPath(value: string | null, fallback: string) {
   const next = value?.trim();

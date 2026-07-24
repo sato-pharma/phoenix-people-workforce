@@ -110,6 +110,14 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   tokenApi({ authMode: "dev-only", methods: ["GET"], pattern: "/api/dev-auth", reason: "Development-only local preview authentication helper." }),
+  // Super Admin only, on top of the same dev-only env+localhost gate as /api/dev-auth above
+  // (see isLocalDevelopmentRequest): auto-picks a real active employee for a role+line and
+  // swaps the caller's own session for a dev-preview session as that employee. Role gate is
+  // in-route (domain-helper) rather than a permission resource, matching /api/admin/system-issues.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: readOnly, pattern: "/api/dev-auth/preview", permission: null, guard: "domain-helper" }),
+  // Same Super Admin + dev-only gate as the preview route above: read-only candidate listing
+  // that powers the picker's Line -> Region -> Area -> Name cascade client-side.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/dev-auth/candidates", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
   tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
