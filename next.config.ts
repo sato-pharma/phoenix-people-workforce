@@ -33,7 +33,15 @@ const contentSecurityPolicy = [
   // (console: "Loading the script '.../sync/.../web' violates ... script-src"), which meant
   // push never worked at all, on any device, despite every other piece being correctly wired.
   `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com https://api.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
+  // fonts.googleapis.com: the Maps JavaScript API (loaded above for outstation expense
+  // heatmaps/location review — see src/lib/google-maps/browser.ts) injects its own
+  // <link rel="stylesheet"> for the "Google Sans" font used by its UI controls
+  // (InfoWindow, controls). font-src already allowed fonts.gstatic.com (the actual font
+  // files) for the same reason; style-src needs the matching stylesheet host too — this
+  // is Google's own documented CSP requirement for the Maps JS API, not our own font
+  // loading, so next/font can't replace it. See
+  // https://developers.google.com/maps/documentation/javascript/content-security-policy
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
   // cdn.onesignal.com / api.onesignal.com / onesignal.com: the Web Push SDK (script,
