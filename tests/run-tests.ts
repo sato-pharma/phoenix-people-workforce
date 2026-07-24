@@ -92,6 +92,7 @@ import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.tes
 import { runRecruitmentSeniorApprovalTests } from "./recruitment-senior-approval.test.ts";
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
+import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extraction-analytics.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
@@ -538,6 +539,7 @@ await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
 await runTest("recruitment senior approval", runRecruitmentSeniorApprovalTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
+await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionAnalyticsTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
