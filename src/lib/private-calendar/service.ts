@@ -18,22 +18,18 @@ import {
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
-  filterPrivateCalendarActualItems,
   isPrivateCalendarGlobalViewer,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
   mapHolidayToPrivateCalendarItem,
-  mapPlanRowToPrivateCalendarItem,
   mapPrivateCalendarEmployee,
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
-  privateCalendarPlanStatuses,
   privateCalendarSources,
   resolvePrivateCalendarVisibleEmployees,
   summarizePrivateCalendarItems,
   type PrivateCalendarException,
   type PrivateCalendarItem,
-  type PrivateCalendarPlanRow,
   type PrivateCalendarSource,
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
@@ -66,28 +62,6 @@ type ExcuseCalendarRow = {
   status: string | null;
 };
 
-type PlanHeaderRow = {
-  employee_hr_id: string;
-  employee_name: string;
-  id: string;
-  plan_kind: string;
-  status: string;
-};
-
-type PlanItemRow = {
-  activity_date: string;
-  activity_title: string | null;
-  activity_type: string | null;
-  area: string | null;
-  end_time: string | null;
-  id: string;
-  location_text: string | null;
-  notes: string | null;
-  plan_id: string;
-  sort_order: number | null;
-  start_time: string | null;
-};
-
 function schemaMissing(error: unknown, ...names: string[]) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
   return names.some((name) => text.toLowerCase().includes(name.toLowerCase())) ||
@@ -100,16 +74,6 @@ function expandHrIdLookupKeys(employeeHrIds: string[]) {
       employeeHrIds.flatMap((value) => hrIdLookupKeys(value)),
     ),
   );
-}
-
-// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
-// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
-// HeadersOverflowError. "Team" view scopes employeeHrKeys to every visible employee (company-wide
-// for HR/CEO/Super Admin), so any .in("employee_hr_id", ...) here must be batched.
-function chunk<T>(items: T[], size = 100): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
 }
 
 function selectedEmployeeFromRequest(input: {
@@ -279,21 +243,17 @@ async function loadNoActivityClarificationStatuses(
 ): Promise<NoActivityStatusRow[]> {
   const employeeHrKeys = expandHrIdLookupKeys(employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean));
   if (employeeHrKeys.length === 0) return [];
-  const rows: NoActivityStatusRow[] = [];
-  for (const batch of chunk(employeeHrKeys)) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("private_calendar_no_activity_clarifications")
-      .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
-      .in("employee_hr_id", batch)
-      .gte("activity_date", start)
-      .lte("activity_date", end);
-    if (error) {
-      if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
-      throw error;
-    }
-    rows.push(...((data ?? []) as NoActivityStatusRow[]));
+  const { data, error } = await getSupabaseAdmin()
+    .from("private_calendar_no_activity_clarifications")
+    .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
+    .in("employee_hr_id", employeeHrKeys)
+    .gte("activity_date", start)
+    .lte("activity_date", end);
+  if (error) {
+    if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
+    throw error;
   }
-  return rows;
+  return (data ?? []) as NoActivityStatusRow[];
 }
 
 // Employee-visible status/history for no-activity clarifications: only
@@ -399,27 +359,23 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    const rows: VacationCalendarRow[] = [];
-    for (const batch of chunk(employeeHrKeys)) {
-      const { data, error } = await getSupabaseAdmin()
-        .from("v2_vacation_requests")
-        .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
-        .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
-        .lte("start_date", end)
-        .gte("end_date", start)
-        .in("employee_hr_id", batch)
-        .order("start_date", { ascending: true })
-        .limit(100);
-      if (error) throw error;
-      rows.push(...((data ?? []) as VacationCalendarRow[]));
-    }
-    rows.sort((left, right) => left.start_date.localeCompare(right.start_date));
+    let query = getSupabaseAdmin()
+      .from("v2_vacation_requests")
+      .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
+      .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
+      .lte("start_date", end)
+      .gte("end_date", start)
+      .order("start_date", { ascending: true })
+      .limit(100);
+    query = query.in("employee_hr_id", employeeHrKeys);
+    const { data, error } = await query;
+    if (error) throw error;
     // Covered = the manager has signed off (manager_decision='approved', which
     // also implies status='pending_hr') or HR has recorded it (status='approved').
     // Everything else is a live pending request: it reserves the day on the
     // calendar (so attendance isn't flagged "missing") but renders as pending.
     return {
-      items: rows.slice(0, 100).map((row) => {
+      items: ((data ?? []) as VacationCalendarRow[]).map((row) => {
         const covered = row.manager_decision === "approved" || row.status === "approved";
         return mapVacationRowToPrivateCalendarItem(row, { pending: !covered });
       }),
@@ -436,94 +392,20 @@ async function loadExcuseItems(employeeHrIds: string[], start: string, end: stri
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    const rows: ExcuseCalendarRow[] = [];
-    for (const batch of chunk(employeeHrKeys)) {
-      const { data, error } = await getSupabaseAdmin()
-        .from("v2_excuse_requests")
-        .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
-        .eq("status", "approved")
-        .gte("excuse_date", start)
-        .lte("excuse_date", end)
-        .in("employee_hr_id", batch)
-        .order("excuse_date", { ascending: true })
-        .limit(100);
-      if (error) throw error;
-      rows.push(...((data ?? []) as ExcuseCalendarRow[]));
-    }
-    rows.sort((left, right) => left.excuse_date.localeCompare(right.excuse_date));
-    return { items: rows.slice(0, 100).map(mapExcuseRowToPrivateCalendarItem), ready: true };
+    let query = getSupabaseAdmin()
+      .from("v2_excuse_requests")
+      .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
+      .eq("status", "approved")
+      .gte("excuse_date", start)
+      .lte("excuse_date", end)
+      .order("excuse_date", { ascending: true })
+      .limit(100);
+    query = query.in("employee_hr_id", employeeHrKeys);
+    const { data, error } = await query;
+    if (error) throw error;
+    return { items: ((data ?? []) as ExcuseCalendarRow[]).map(mapExcuseRowToPrivateCalendarItem), ready: true };
   } catch (error) {
     if (schemaMissing(error, "v2_excuse_requests")) return { items: [], ready: false };
-    throw error;
-  }
-}
-
-async function loadPlanItems(employeeHrIds: string[], start: string, end: string) {
-  try {
-    const supabase = getSupabaseAdmin();
-    const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
-    const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
-    if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    const headerRows: Array<PlanHeaderRow & { period_start_date: string }> = [];
-    for (const hrBatch of chunk(employeeHrKeys)) {
-      const { data: headersData, error: headersError } = await supabase
-        .from("employee_plan_headers")
-        .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
-        .in("status", [...privateCalendarPlanStatuses])
-        .lte("period_start_date", end)
-        .gte("period_end_date", start)
-        .in("employee_hr_id", hrBatch)
-        .order("period_start_date", { ascending: true })
-        .limit(1000);
-      if (headersError) throw headersError;
-      headerRows.push(...((headersData ?? []) as Array<PlanHeaderRow & { period_start_date: string }>));
-    }
-    headerRows.sort((left, right) => left.period_start_date.localeCompare(right.period_start_date));
-    const headers = headerRows.slice(0, 1000);
-    const headerById = new Map(headers.map((header) => [header.id, header]));
-    const planIds = headers.map((header) => header.id);
-    if (planIds.length === 0) return { items: [], ready: true };
-
-    const itemRows: PlanItemRow[] = [];
-    for (const planIdBatch of chunk(planIds)) {
-      const { data: itemsData, error: itemsError } = await supabase
-        .from("employee_plan_items")
-        .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,notes,sort_order")
-        .in("plan_id", planIdBatch)
-        .gte("activity_date", start)
-        .lte("activity_date", end)
-        .order("activity_date", { ascending: true })
-        .order("sort_order", { ascending: true })
-        .limit(5000);
-      if (itemsError) throw itemsError;
-      itemRows.push(...((itemsData ?? []) as PlanItemRow[]));
-    }
-    itemRows.sort((left, right) => left.activity_date.localeCompare(right.activity_date) || (left.sort_order ?? 0) - (right.sort_order ?? 0));
-    const itemsData = itemRows.slice(0, 5000);
-
-    const items = itemsData.flatMap((item) => {
-      const header = headerById.get(item.plan_id);
-      if (!header) return [];
-      const row: PrivateCalendarPlanRow = {
-        activity_date: item.activity_date,
-        activity_title: item.activity_title,
-        activity_type: item.activity_type,
-        area: item.area,
-        employee_hr_id: header.employee_hr_id,
-        employee_name: header.employee_name,
-        end_time: item.end_time,
-        id: item.id,
-        location_text: item.location_text,
-        notes: item.notes,
-        plan_kind: header.plan_kind,
-        start_time: item.start_time,
-        status: header.status,
-      };
-      return [mapPlanRowToPrivateCalendarItem(row)];
-    });
-    return { items, ready: true };
-  } catch (error) {
-    if (schemaMissing(error, "employee_plan_headers", "employee_plan_items")) return { items: [], ready: false };
     throw error;
   }
 }
@@ -534,11 +416,11 @@ export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
 
 export async function getPrivateCalendarWorkspace(input: {
   access: AccessContext;
-  // When true, planned/intended activity (source "plan") is loaded and still used
-  // to derive exceptions and suppress false FP-missing flags (a field plan still
-  // self-proves attendance), but is excluded from the items/summary/teamSummary
-  // actually returned. The employee portal uses this so the calendar reflects only
-  // what the system actually recognized that day, not what was merely planned.
+  // Historically distinguished "what actually happened" from planned/intended
+  // activity (the Planning Calendar), which is no longer a private-calendar
+  // source at all — every source returned here is already an actually
+  // recorded/verified event, so this flag currently has no effect. Kept on the
+  // API surface for backward compatibility with existing callers.
   actualOnly?: boolean;
   employeeHrId?: string | null;
   month: number;
@@ -562,11 +444,10 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, plans, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
+  const [attendance, vacations, excuses, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
     loadAttendanceItems(scopeHrIds, start, end),
     loadVacationItems(scopeHrIds, start, end),
     loadExcuseItems(scopeHrIds, start, end),
-    loadPlanItems(scopeHrIds, start, end),
     loadHolidayItems(input.year, input.month, start, end),
     loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
     loadAttendancePolicyScheduleRows(),
@@ -576,22 +457,18 @@ export async function getPrivateCalendarWorkspace(input: {
     ...attendance.items,
     ...vacations.items,
     ...excuses.items,
-    ...plans.items,
     ...holidays,
     ...doubleVisits.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
-  // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on days where a
-  // Double Visit or any off-site/remote plan activity exists — a "late/absent"
-  // flag is meaningless when the employee was legitimately away from the office.
-  // A genuine Complete punch is NEVER suppressed here: real proof of presence
-  // always wins, no matter what an unrelated (even unapproved) plan entry claims
-  // for the same date — this used to delete a real, positive attendance record
-  // whenever any field-type plan existed for that day, which is backwards.
+  // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on a Double
+  // Visit day — a "late/absent" flag is meaningless when the employee was
+  // legitimately away from the office on a CRM-verified visit. A genuine
+  // Complete punch is NEVER suppressed here: real proof of presence always wins.
   const fieldVisitDates = new Set<string>();
   for (const item of allItems) {
-    if (item.source === "double_visit" || (item.source === "plan" && item.planCountsAsAttendance)) {
+    if (item.source === "double_visit") {
       fieldVisitDates.add(item.startDate);
     }
   }
@@ -623,7 +500,6 @@ export async function getPrivateCalendarWorkspace(input: {
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
     holiday: true,
-    plan: plans.ready,
     vacation: vacations.ready,
   };
 
@@ -640,7 +516,7 @@ export async function getPrivateCalendarWorkspace(input: {
     noActivityStatusRows,
   );
 
-  const displayItems = input.actualOnly ? filterPrivateCalendarActualItems(itemsWithCorrections) : itemsWithCorrections;
+  const displayItems = itemsWithCorrections;
 
   return {
     access: {
