@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Info, Loader2, Lock, ShieldCheck, Sparkles, Upload, UploadCloud, XCircle } from "lucide-react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Grid3x3, Info, Loader2, Lock, ShieldCheck, Sparkles, Store, Upload, UploadCloud, XCircle } from "lucide-react";
+
+import { BulkImportWorkspace } from "@/components/sales/bulk-import-workspace";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
@@ -17,24 +19,39 @@ import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-i
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
 
-type MapOption = { code: string; name: string };
+export type MapOption = { code: string; name: string };
 type Props = {
   distributors: SalesDistributorEntry[];
   summaries: Record<string, DistributorProfileSummary>;
   batches: SourceOfSalesUploadBatch[];
   products: MapOption[];
   bricks: { id: string; name: string }[];
+  aiEnabled: boolean;
 };
 
-type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
+export type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type IgnoredItem = { raw: string; displayName: string; count: number; totalQty: number };
 type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null };
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleProducts?: string[]; fixHint?: string };
-type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
-type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
-type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
+export type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
+export type BreakdownRow = { code: string; label: string; parent: string | null; rowCount: number; totalQty: number; totalBonusQty: number; totalValue: number };
+export type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; byBrick: BreakdownRow[]; byLine: BreakdownRow[] };
+
+// ── Bulk Import mode contract ───────────────────────────────────────────────────────────────────
+// A slot's lifecycle, reported upward so the bulk grid can color each distributor's card without
+// duplicating any of MonthlyUpload's own analyze/validate/commit logic.
+export type BulkSlotStage = "idle" | "working" | "rejected" | "ready" | "committed" | "commit_failed";
+export type BulkSlotStatus = {
+  stage: BulkSlotStage;
+  canImport: boolean;
+  fileName: string | null;
+  reconciliation: Reconciliation | null;
+  breakdowns: Breakdowns | null;
+  error: string | null;
+};
+export type MonthlyUploadHandle = { commit: () => Promise<void> };
 type AiExplanation = { aiUsed: boolean; summary: string; suggestions: { expected: string; suggestedHeader: string | null; note?: string }[] };
 type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean };
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
@@ -44,10 +61,10 @@ const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22p
 // Weekly-style step UI tokens (match /sales/weekly exactly).
 const stepCard = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
 const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
-const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const UPLOAD_YEARS = [2024, 2025, 2026, 2027, 2028];
+export const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+export const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+export const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+export const UPLOAD_YEARS = [2024, 2025, 2026, 2027, 2028];
 // Reserved sentinel already handled server-side: rows whose product alias resolves to this are
 // dropped from coding (ignoredRows) rather than surfaced as unmapped exceptions.
 const IGNORE_PRODUCT_CODE = "IGNORE";
@@ -87,7 +104,7 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
   );
 }
 
-function BreakdownTable({ title, headLabel, rows }: { title: string; headLabel: string; rows: BreakdownRow[] }) {
+export function BreakdownTable({ title, headLabel, rows }: { title: string; headLabel: string; rows: BreakdownRow[] }) {
   return (
     <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
       <div className={darkHead}>{title}</div>
@@ -390,7 +407,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
   );
 }
 
-function UnmappedList({ products, customers, territories, productOptions, brickOptions, distributorCode, onSaved }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[]; productOptions: MapOption[]; brickOptions: MapOption[]; distributorCode: string; onSaved: () => void }) {
+function UnmappedList({ products, customers, territories, productOptions, brickOptions, distributorCode, onSaved, aiEnabled }: { products: UnknownItem[]; customers: UnknownItem[]; territories: UnknownItem[]; productOptions: MapOption[]; brickOptions: MapOption[]; distributorCode: string; onSaved: () => void; aiEnabled: boolean }) {
   const allGroups: { type: MapType; label: string; items: UnknownItem[]; options: MapOption[]; placeholder: string }[] = [
     { type: "product", label: "Products", items: products, options: productOptions, placeholder: "product code (e.g. TE001)" },
     { type: "customer", label: "Customers", items: customers, options: brickOptions, placeholder: "brick (e.g. B10)" },
@@ -413,8 +430,36 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState<MapType | null>(null);
 
   if (groups.length === 0) return null;
+
+  // AI suggest — same engine the Normalizer page uses (src/lib/sales/normalizer/ai-suggest.ts),
+  // reached here via the non-gated /api/sales/monthly-import/ai-suggest endpoint (same "sales:import"
+  // permission this page already requires). Suggest-only: pre-fills the dropdowns, never auto-saves.
+  // Product + territory only — customer matching needs the richer geo pipeline that's reserved for
+  // the Super-Admin-only Normalizer/Mapping surfaces, so that group stays manual here.
+  async function runAiSuggest(type: "product" | "territory") {
+    const group = allGroups.find((g) => g.type === type);
+    const items = group?.items ?? [];
+    if (items.length === 0) return;
+    setAiBusy(type); setErr(null);
+    try {
+      const res = await fetch("/api/sales/monthly-import/ai-suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: type, unknowns: items.map((u) => ({ raw: u.raw, rawName: u.rawName })) }),
+      });
+      const payload = await readJson<{ success: boolean; data?: { suggestions: { raw: string; code: string }[] }; error?: string }>(res);
+      if (!payload.success) { setErr(payload.error ?? "AI suggest failed."); return; }
+      for (const s of payload.data?.suggestions ?? []) setCode(type, s.raw, s.code);
+      setMsg(`AI pre-filled ${(payload.data?.suggestions ?? []).length} of ${items.length} — review, then save.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "AI suggest failed.");
+    } finally {
+      setAiBusy(null);
+    }
+  }
 
   const readyMapped = groups.flatMap((g) => g.items
     .filter((u) => !excluded[mapKey(g.type, u.raw)] && confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
@@ -514,7 +559,21 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
       </div>
       {groups.map((g) => (
         <div key={g.type}>
-          <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</span>
+            {aiEnabled && g.type !== "customer" ? (
+              <button
+                className="inline-flex h-6 items-center gap-1 rounded-[6px] border border-violet-300 bg-violet-50 px-2 text-[11px] font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={aiBusy !== null}
+                onClick={() => void runAiSuggest(g.type as "product" | "territory")}
+                title="Let AI pre-fill these from the mapping database"
+                type="button"
+              >
+                {aiBusy === g.type ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                AI suggest
+              </button>
+            ) : null}
+          </div>
           <div className="overflow-visible rounded-[6px] border border-amber-200 bg-white">
             <table className="w-full text-sm">
               <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
@@ -579,13 +638,29 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
   );
 }
 
-function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded, productOptions, brickOptions }: { distributorCode: string; distributorName: string; hasProfile: boolean; hasDateColumn: boolean; onUploaded?: () => void; productOptions: MapOption[]; brickOptions: MapOption[] }) {
+type MonthlyUploadProps = {
+  distributorCode: string;
+  distributorName: string;
+  hasProfile: boolean;
+  hasDateColumn: boolean;
+  onUploaded?: () => void;
+  productOptions: MapOption[];
+  brickOptions: MapOption[];
+  aiEnabled: boolean;
+  /** Bulk mode only: seed the period from the shared month picker (format "YYYY-MM"). */
+  initialPeriod?: string;
+  /** Bulk mode only: reports this slot's stage upward so the distributor grid can color its card. */
+  onStatusChange?: (status: BulkSlotStatus) => void;
+};
+
+export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>(function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateColumn, onUploaded, productOptions, brickOptions, aiEnabled, initialPeriod, onStatusChange }, ref) {
   const fileRef = useRef<HTMLInputElement>(null);
   const analyzingRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
-  const [period, setPeriod] = useState("");
-  const [periodMonth, setPeriodMonth] = useState("");
-  const [periodYear, setPeriodYear] = useState("");
+  const initialParts = initialPeriod && /^\d{4}-\d{2}$/.test(initialPeriod) ? initialPeriod.split("-") : null;
+  const [period, setPeriod] = useState(initialPeriod && initialParts ? initialPeriod : "");
+  const [periodMonth, setPeriodMonth] = useState(initialParts ? initialParts[1] : "");
+  const [periodYear, setPeriodYear] = useState(initialParts ? initialParts[0] : "");
   const [busy, setBusy] = useState<"verify" | "analyze" | "commit" | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [committed, setCommitted] = useState<CommitResponse | null>(null);
@@ -684,8 +759,10 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
     finally { setBusy(null); analyzingRef.current = false; }
   }
 
-  // ── Step 3 — Confirm & upload (persist) ──
-  async function commit() {
+  // ── Step 3 — Confirm & upload (persist) ── wrapped in useCallback so the imperative handle below
+  // (bulk mode's "Confirm & Import All") only gets a new commit reference when something it actually
+  // closes over changes, instead of on every render.
+  const commit = useCallback(async () => {
     if (!file) return;
     setBusy("commit"); setError(null);
     try {
@@ -696,9 +773,34 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
       else onUploaded?.();
     } catch (e) { setError(e instanceof Error ? e.message : "Import failed."); }
     finally { setBusy(null); }
-  }
+  }, [file, distributorCode, period, onUploaded]);
 
-  const rec = analysis?.success ? analysis.reconciliation : null;
+  const rec = analysis?.success ? (analysis.reconciliation ?? null) : null;
+
+  // Bulk mode: expose the SAME commit() this component's own "Confirm & Upload" button calls, so the
+  // bulk grid's "Confirm & Import All" can trigger it externally without duplicating commit logic.
+  useImperativeHandle(ref, () => ({ commit }), [commit]);
+
+  // Bulk mode: report this slot's stage upward for the distributor grid's card coloring. No-op when
+  // onStatusChange isn't passed (the single-distributor page never passes it, so its behavior is
+  // unchanged). Mirrors the exact same gates the Step 2/3 UI below already renders from.
+  useEffect(() => {
+    if (!onStatusChange) return;
+    let stage: BulkSlotStage = "idle";
+    if (committed?.success) stage = "committed";
+    else if (committed && !committed.success) stage = "commit_failed";
+    else if (analysis?.success && canImport) stage = "ready";
+    else if (analysis && (!analysis.success || blockerUnknowns > 0 || validationBlocks)) stage = "rejected";
+    else if (file) stage = "working";
+    onStatusChange({
+      breakdowns,
+      canImport,
+      error,
+      fileName: file?.name ?? null,
+      reconciliation: rec,
+      stage,
+    });
+  }, [committed, analysis, canImport, blockerUnknowns, validationBlocks, file, rec, breakdowns, error, onStatusChange]);
 
   return (
     <div className="space-y-4">
@@ -851,7 +953,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
                   <p className="text-xs">For customers: click <b>Customer fix template</b> below, fill in the Brick ID column in Excel, then upload the file via <b>Mapping tab → Customer/Brick Mapping</b>. Come back here and re-validate.</p>
                   <p className="text-xs">For territories: use the inline mapping or the Territory Mapping template on the Mapping tab.</p>
                 </div></AdminCallout>
-                <UnmappedList brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={[]} territories={analysis.data?.unknownTerritories ?? []} />
+                <UnmappedList aiEnabled={aiEnabled} brickOptions={brickOptions} customers={analysis.data?.unknownCustomers ?? []} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={[]} territories={analysis.data?.unknownTerritories ?? []} />
               </div>
             ) : null}
             {productUnknowns > 0 ? (
@@ -860,7 +962,7 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
                   <p className="font-semibold">{productUnknowns} unrecognized product(s) — {num(rec.rowsBlocked)} row(s) will be skipped unless you map them.</p>
                   <p className="text-xs">This does <b>not</b> block the upload. If any of these are our products, map them inline below and re-validate to include them. If they are not ours, leave them — those rows are skipped and you can still confirm the upload as-is.</p>
                 </div></AdminCallout>
-                <UnmappedList brickOptions={brickOptions} customers={[]} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={analysis.data?.unknownProducts ?? []} territories={[]} />
+                <UnmappedList aiEnabled={aiEnabled} brickOptions={brickOptions} customers={[]} distributorCode={distributorCode} onSaved={() => void analyze()} productOptions={productOptions} products={analysis.data?.unknownProducts ?? []} territories={[]} />
               </div>
             ) : null}
             {!blockerUnknowns && !productUnknowns && analysis?.needsPeriod && !/^\d{4}-\d{2}$/.test(period) ? (
@@ -906,7 +1008,8 @@ function MonthlyUpload({ distributorCode, distributorName, hasProfile, hasDateCo
       ) : null}
     </div>
   );
-}
+});
+MonthlyUpload.displayName = "MonthlyUpload";
 
 // Weekly uploads run through the full guided weekly wizard (/sales/weekly) — the same AI verify →
 // validate → confirm flow as monthly, plus the weekly column checks and per-week replace. Rather than
@@ -966,7 +1069,7 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
   );
 }
 
-function DistributorUpload({ selected, summary, productOptions, brickOptions }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary; productOptions: MapOption[]; brickOptions: MapOption[] }) {
+function DistributorUpload({ selected, summary, productOptions, brickOptions, aiEnabled }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary; productOptions: MapOption[]; brickOptions: MapOption[]; aiEnabled: boolean }) {
   // Bumped after a successful upload so the health panel ("Last monthly") re-reads.
   const [uploadNonce, setUploadNonce] = useState(0);
   return (
@@ -987,7 +1090,7 @@ function DistributorUpload({ selected, summary, productOptions, brickOptions }: 
 
       <Card className={cn(panel, "space-y-3 p-5")}>
         <h3 className="text-base font-black tracking-tight text-slate-950">Upload Monthly Sales</h3>
-        <MonthlyUpload brickOptions={brickOptions} distributorCode={selected.code} distributorName={selected.name} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} productOptions={productOptions} />
+        <MonthlyUpload aiEnabled={aiEnabled} brickOptions={brickOptions} distributorCode={selected.code} distributorName={selected.name} hasDateColumn={summary?.hasDateColumn ?? true} hasProfile={Boolean(summary)} onUploaded={() => setUploadNonce((n) => n + 1)} productOptions={productOptions} />
       </Card>
 
       {selected.weeklySupported ? (
@@ -1000,26 +1103,44 @@ function DistributorUpload({ selected, summary, productOptions, brickOptions }: 
   );
 }
 
-export function SalesUploadWorkspace({ distributors, summaries, batches, products, bricks }: Props) {
+export function SalesUploadWorkspace({ distributors, summaries, batches, products, bricks, aiEnabled }: Props) {
   const brickOptions: MapOption[] = bricks.map((b) => ({ code: b.id, name: b.name }));
+  const [mode, setMode] = useState<"single" | "bulk">("single");
   return (
     <div className="space-y-5 p-4 sm:p-6">
       {/* Header styled to match /sales/weekly exactly — same content as before, just re-skinned. */}
       <header>
-        <div className="flex items-center gap-2">
-          <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
+              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+            </div>
+            <h1 className="mt-1 text-xl font-black text-[#0F172A]">Sales Upload</h1>
+            <p className="mt-1 text-sm font-medium text-[#64748B]">
+              {mode === "single"
+                ? "Pick a distributor, analyze its raw sheet, then import — the analyzer and the importer use the exact same engine, so what's recognized always imports."
+                : "Pick the month, then upload each distributor's sheet from the grid below — same analyzer, same importer, one screen."}
+            </p>
+          </div>
+          <div className="inline-flex shrink-0 items-center gap-1 rounded-[6px] border border-[#E2E8F0] bg-white p-1">
+            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "single" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:text-[#0F172A]")} onClick={() => setMode("single")} type="button">
+              <Store className="h-3.5 w-3.5" /> Single distributor
+            </button>
+            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "bulk" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:text-[#0F172A]")} onClick={() => setMode("bulk")} type="button">
+              <Grid3x3 className="h-3.5 w-3.5" /> Bulk import
+            </button>
+          </div>
         </div>
-        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Sales Upload</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
-          The single upload hub. Pick a distributor, analyze its raw sheet, then import — the analyzer and the
-          importer use the exact same engine, so what&apos;s recognized always imports.
-        </p>
       </header>
       <UploadedSheetsPanel batches={batches} distributors={distributors} />
-      <DistributorWorkspaceShell distributors={distributors}>
-        {(selected) => <DistributorUpload brickOptions={brickOptions} productOptions={products} selected={selected} summary={summaries[selected.code]} />}
-      </DistributorWorkspaceShell>
+      {mode === "single" ? (
+        <DistributorWorkspaceShell distributors={distributors}>
+          {(selected) => <DistributorUpload aiEnabled={aiEnabled} brickOptions={brickOptions} productOptions={products} selected={selected} summary={summaries[selected.code]} />}
+        </DistributorWorkspaceShell>
+      ) : (
+        <BulkImportWorkspace aiEnabled={aiEnabled} brickOptions={brickOptions} distributors={distributors} productOptions={products} summaries={summaries} />
+      )}
     </div>
   );
 }
