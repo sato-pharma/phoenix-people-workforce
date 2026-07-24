@@ -2768,18 +2768,20 @@ async function loadProductCodesByRequestId(
   supabase: SupabaseClient,
   requestIds: string[],
 ): Promise<Map<string, Set<string>>> {
-  if (requestIds.length === 0) return new Map();
-  const { data } = await supabase
-    .from("marketing_request_products")
-    .select("request_id, marketing_products(product_code)")
-    .in("request_id", requestIds);
   const map = new Map<string, Set<string>>();
-  for (const row of (data ?? []) as Array<{ request_id: string; marketing_products?: { product_code?: string | null } | null }>) {
-    const code = row.marketing_products?.product_code;
-    if (!row.request_id || !code) continue;
-    const bucket = map.get(row.request_id) ?? new Set<string>();
-    bucket.add(code.trim().toUpperCase());
-    map.set(row.request_id, bucket);
+  if (requestIds.length === 0) return map;
+  for (const batch of chunk(requestIds)) {
+    const { data } = await supabase
+      .from("marketing_request_products")
+      .select("request_id, marketing_products(product_code)")
+      .in("request_id", batch);
+    for (const row of (data ?? []) as Array<{ request_id: string; marketing_products?: { product_code?: string | null } | null }>) {
+      const code = row.marketing_products?.product_code;
+      if (!row.request_id || !code) continue;
+      const bucket = map.get(row.request_id) ?? new Set<string>();
+      bucket.add(code.trim().toUpperCase());
+      map.set(row.request_id, bucket);
+    }
   }
   return map;
 }
@@ -2839,15 +2841,46 @@ function canSeeMarketingCustomer(access: AccessContext, row: MarketingCustomerDb
   }, employeeRows);
 }
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError (the Customer Database workspace dedupes ids from an org-wide, .limit(1000)
+// links query, well past that threshold). Batch instead of passing the whole array in one .in().
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+async function fetchCustomerContactsByCustomerIds(
+  supabase: SupabaseClient,
+  customerIds: Array<string | number>,
+): Promise<MarketingCustomerContactDbRow[]> {
+  const rows: MarketingCustomerContactDbRow[] = [];
+  for (const batch of chunk(customerIds)) {
+    const { data, error } = await supabase
+      .from("marketing_customer_contacts")
+      .select("id, customer_id, contact_name, mobile_number, active")
+      .in("customer_id", batch)
+      .eq("active", true);
+    if (error) throw error;
+    rows.push(...((data ?? []) as MarketingCustomerContactDbRow[]));
+  }
+  return rows;
+}
+
 async function fetchRowsByIds<T extends { id: string | number }>(
   supabase: SupabaseClient,
   table: string,
   ids: Array<string | number>,
 ) {
   if (ids.length === 0) return [];
-  const { data, error } = await supabase.from(table).select("*").in("id", ids);
-  if (error) throw error;
-  return (data ?? []) as T[];
+  const rows: T[] = [];
+  for (const batch of chunk(ids)) {
+    const { data, error } = await supabase.from(table).select("*").in("id", batch);
+    if (error) throw error;
+    rows.push(...((data ?? []) as T[]));
+  }
+  return rows;
 }
 
 function mapValidationReportRows(params: {
@@ -3061,7 +3094,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
   const pharmacyIds = Array.from(new Set(links.map((row) => row.pharmacy_id)));
   const distributorCodeIds = Array.from(new Set(links.map((row) => row.distributor_code_id)));
 
-  const [customerRows, pharmacyRows, codeRows, contactRows] = await Promise.all([
+  const [customerRows, pharmacyRows, codeRows, contactDataRows] = await Promise.all([
     fetchRowsByIds<MarketingCustomerDbRow>(supabase, "marketing_customers", customerIds),
     fetchRowsByIds<MarketingPharmacyDbRow>(supabase, "marketing_pharmacies", pharmacyIds),
     fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
@@ -3069,14 +3102,8 @@ export async function getMarketingCustomerDatabaseWorkspace(
       "marketing_pharmacy_distributor_codes",
       distributorCodeIds,
     ),
-    supabase
-      .from("marketing_customer_contacts")
-      .select("id, customer_id, contact_name, mobile_number, active")
-      .in("customer_id", customerIds)
-      .eq("active", true),
+    fetchCustomerContactsByCustomerIds(supabase, customerIds),
   ]);
-
-  if (contactRows.error) throw contactRows.error;
 
   const mappedCustomers = new Map(customerRows.map((row) => [row.id, mapCustomer(row)]));
   const mappedPharmacies = new Map(pharmacyRows.map((row) => [row.id, mapMarketingPharmacy(row)]));
@@ -3088,7 +3115,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
     ]),
   );
   const contactsByCustomer = new Map<string, MarketingCustomerContactDbRow>();
-  for (const contact of (contactRows.data ?? []) as MarketingCustomerContactDbRow[]) {
+  for (const contact of contactDataRows) {
     if (!contactsByCustomer.has(contact.customer_id)) {
       contactsByCustomer.set(contact.customer_id, contact);
     }
@@ -3641,18 +3668,20 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const trackedRequestIds = Array.from(new Set([...inApproval, ...returned].map((request) => request.id)));
   const stepProgressByRequestId: Record<string, MarketingRequestStepProgress> = {};
   if (trackedRequestIds.length > 0) {
-    const trackedStepsResult = await supabase
-      .from("marketing_request_approval_steps")
-      .select("*")
-      .in("request_id", trackedRequestIds)
-      .order("sequence", { ascending: true });
-    if (trackedStepsResult.error) throw trackedStepsResult.error;
     const stepsByRequest = new Map<string, MarketingRequestApprovalStep[]>();
-    for (const row of (trackedStepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
-      const step = mapApprovalStep(row);
-      const bucket = stepsByRequest.get(step.requestId) ?? [];
-      bucket.push(step);
-      stepsByRequest.set(step.requestId, bucket);
+    for (const batch of chunk(trackedRequestIds)) {
+      const trackedStepsResult = await supabase
+        .from("marketing_request_approval_steps")
+        .select("*")
+        .in("request_id", batch)
+        .order("sequence", { ascending: true });
+      if (trackedStepsResult.error) throw trackedStepsResult.error;
+      for (const row of (trackedStepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+        const step = mapApprovalStep(row);
+        const bucket = stepsByRequest.get(step.requestId) ?? [];
+        bucket.push(step);
+        stepsByRequest.set(step.requestId, bucket);
+      }
     }
     for (const [requestId, requestSteps] of stepsByRequest) {
       const progress = buildMarketingStepProgress(requestSteps, employeeRows);

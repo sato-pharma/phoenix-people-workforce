@@ -122,19 +122,27 @@ async function loadLines(lineIds: number[]) {
 
 async function loadManagerNames(managerHrIds: string[]) {
   const uniqueHrIds = Array.from(new Set(managerHrIds.map(normalizeHrId).filter(Boolean))) as string[];
-  if (uniqueHrIds.length === 0) return new Map<string, string>();
+  const result = new Map<string, string>();
+  if (uniqueHrIds.length === 0) return result;
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select("hr_id,full_name,nickname")
-    .in("hr_id", uniqueHrIds);
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — this dashboard is company-wide, so batch.
+  for (let i = 0; i < uniqueHrIds.length; i += 100) {
+    const batch = uniqueHrIds.slice(i, i + 100);
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id,full_name,nickname")
+      .in("hr_id", batch);
 
-  if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message);
 
-  return new Map((data as Array<{ full_name: string | null; hr_id: string; nickname: string | null }>).map((row) => [
-    normalizeHrId(row.hr_id) ?? "",
-    resolveEmployeeDisplayName(row.full_name ?? "", row.nickname),
-  ]));
+    for (const row of data as Array<{ full_name: string | null; hr_id: string; nickname: string | null }>) {
+      const key = normalizeHrId(row.hr_id) ?? "";
+      result.set(key, resolveEmployeeDisplayName(row.full_name ?? "", row.nickname));
+    }
+  }
+  return result;
 }
 
 async function loadDocumentDefinitions() {
@@ -192,27 +200,32 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     loadManagerNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
   ]);
 
-  const [statusData, noteData] = await Promise.all([
-    employeeHrIds.length > 0
-      ? supabase
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — employeeHrIds is company-wide here, so batch both lookups.
+  const statusRows: HiringDocumentStatusDbRow[] = [];
+  const noteRows: HiringDocumentEmployeeNoteDbRow[] = [];
+  for (let i = 0; i < employeeHrIds.length; i += 100) {
+    const batch = employeeHrIds.slice(i, i + 100);
+    const [statusData, noteData] = await Promise.all([
+      supabase
         .from("hiring_document_statuses")
         .select("employee_hr_id,document_id,status,due_date,notes,updated_at")
-        .in("employee_hr_id", employeeHrIds)
-      : Promise.resolve({ data: [], error: null }),
-    employeeHrIds.length > 0
-      ? supabase
+        .in("employee_hr_id", batch),
+      supabase
         .from("hiring_document_employee_notes")
         .select("employee_hr_id,notes")
-        .in("employee_hr_id", employeeHrIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-
-  if (statusData.error) throw new Error(statusData.error.message);
-  if (noteData.error) throw new Error(noteData.error.message);
+        .in("employee_hr_id", batch),
+    ]);
+    if (statusData.error) throw new Error(statusData.error.message);
+    if (noteData.error) throw new Error(noteData.error.message);
+    statusRows.push(...((statusData.data ?? []) as HiringDocumentStatusDbRow[]));
+    noteRows.push(...((noteData.data ?? []) as HiringDocumentEmployeeNoteDbRow[]));
+  }
 
   const documentIds = new Set(documents.map((document) => document.id));
   const statusByEmployee = new Map<string, Record<string, HiringDocumentEntry>>();
-  for (const row of statusData.data as HiringDocumentStatusDbRow[]) {
+  for (const row of statusRows) {
     const hrId = normalizeHrId(row.employee_hr_id) ?? "";
     if (!documentIds.has(row.document_id)) continue;
     const status = row.status && validDocumentStatuses.has(row.status) ? row.status : "pending";
@@ -228,7 +241,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   }
 
   const notesByEmployee = new Map(
-    (noteData.data as HiringDocumentEmployeeNoteDbRow[]).map((row) => [normalizeHrId(row.employee_hr_id) ?? "", row.notes]),
+    noteRows.map((row) => [normalizeHrId(row.employee_hr_id) ?? "", row.notes]),
   );
 
   const employees = employeeRows.map((row) => {

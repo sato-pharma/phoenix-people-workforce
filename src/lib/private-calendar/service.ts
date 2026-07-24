@@ -102,6 +102,16 @@ function expandHrIdLookupKeys(employeeHrIds: string[]) {
   );
 }
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. "Team" view scopes employeeHrKeys to every visible employee (company-wide
+// for HR/CEO/Super Admin), so any .in("employee_hr_id", ...) here must be batched.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 function selectedEmployeeFromRequest(input: {
   access: AccessContext;
   employees: EmployeeDirectoryRow[];
@@ -269,17 +279,21 @@ async function loadNoActivityClarificationStatuses(
 ): Promise<NoActivityStatusRow[]> {
   const employeeHrKeys = expandHrIdLookupKeys(employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean));
   if (employeeHrKeys.length === 0) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("private_calendar_no_activity_clarifications")
-    .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
-    .in("employee_hr_id", employeeHrKeys)
-    .gte("activity_date", start)
-    .lte("activity_date", end);
-  if (error) {
-    if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
-    throw error;
+  const rows: NoActivityStatusRow[] = [];
+  for (const batch of chunk(employeeHrKeys)) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("private_calendar_no_activity_clarifications")
+      .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
+      .in("employee_hr_id", batch)
+      .gte("activity_date", start)
+      .lte("activity_date", end);
+    if (error) {
+      if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
+      throw error;
+    }
+    rows.push(...((data ?? []) as NoActivityStatusRow[]));
   }
-  return (data ?? []) as NoActivityStatusRow[];
+  return rows;
 }
 
 // Employee-visible status/history for no-activity clarifications: only
@@ -385,23 +399,27 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let query = getSupabaseAdmin()
-      .from("v2_vacation_requests")
-      .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
-      .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
-      .lte("start_date", end)
-      .gte("end_date", start)
-      .order("start_date", { ascending: true })
-      .limit(100);
-    query = query.in("employee_hr_id", employeeHrKeys);
-    const { data, error } = await query;
-    if (error) throw error;
+    const rows: VacationCalendarRow[] = [];
+    for (const batch of chunk(employeeHrKeys)) {
+      const { data, error } = await getSupabaseAdmin()
+        .from("v2_vacation_requests")
+        .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
+        .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
+        .lte("start_date", end)
+        .gte("end_date", start)
+        .in("employee_hr_id", batch)
+        .order("start_date", { ascending: true })
+        .limit(100);
+      if (error) throw error;
+      rows.push(...((data ?? []) as VacationCalendarRow[]));
+    }
+    rows.sort((left, right) => left.start_date.localeCompare(right.start_date));
     // Covered = the manager has signed off (manager_decision='approved', which
     // also implies status='pending_hr') or HR has recorded it (status='approved').
     // Everything else is a live pending request: it reserves the day on the
     // calendar (so attendance isn't flagged "missing") but renders as pending.
     return {
-      items: ((data ?? []) as VacationCalendarRow[]).map((row) => {
+      items: rows.slice(0, 100).map((row) => {
         const covered = row.manager_decision === "approved" || row.status === "approved";
         return mapVacationRowToPrivateCalendarItem(row, { pending: !covered });
       }),
@@ -418,18 +436,22 @@ async function loadExcuseItems(employeeHrIds: string[], start: string, end: stri
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let query = getSupabaseAdmin()
-      .from("v2_excuse_requests")
-      .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
-      .eq("status", "approved")
-      .gte("excuse_date", start)
-      .lte("excuse_date", end)
-      .order("excuse_date", { ascending: true })
-      .limit(100);
-    query = query.in("employee_hr_id", employeeHrKeys);
-    const { data, error } = await query;
-    if (error) throw error;
-    return { items: ((data ?? []) as ExcuseCalendarRow[]).map(mapExcuseRowToPrivateCalendarItem), ready: true };
+    const rows: ExcuseCalendarRow[] = [];
+    for (const batch of chunk(employeeHrKeys)) {
+      const { data, error } = await getSupabaseAdmin()
+        .from("v2_excuse_requests")
+        .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
+        .eq("status", "approved")
+        .gte("excuse_date", start)
+        .lte("excuse_date", end)
+        .in("employee_hr_id", batch)
+        .order("excuse_date", { ascending: true })
+        .limit(100);
+      if (error) throw error;
+      rows.push(...((data ?? []) as ExcuseCalendarRow[]));
+    }
+    rows.sort((left, right) => left.excuse_date.localeCompare(right.excuse_date));
+    return { items: rows.slice(0, 100).map(mapExcuseRowToPrivateCalendarItem), ready: true };
   } catch (error) {
     if (schemaMissing(error, "v2_excuse_requests")) return { items: [], ready: false };
     throw error;
@@ -442,35 +464,44 @@ async function loadPlanItems(employeeHrIds: string[], start: string, end: string
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let headersQuery = supabase
-      .from("employee_plan_headers")
-      .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
-      .in("status", [...privateCalendarPlanStatuses])
-      .lte("period_start_date", end)
-      .gte("period_end_date", start)
-      .order("period_start_date", { ascending: true })
-      .limit(1000);
-    headersQuery = headersQuery.in("employee_hr_id", employeeHrKeys);
-    const { data: headersData, error: headersError } = await headersQuery;
-    if (headersError) throw headersError;
-
-    const headers = (headersData ?? []) as PlanHeaderRow[];
+    const headerRows: Array<PlanHeaderRow & { period_start_date: string }> = [];
+    for (const hrBatch of chunk(employeeHrKeys)) {
+      const { data: headersData, error: headersError } = await supabase
+        .from("employee_plan_headers")
+        .select("id,employee_hr_id,employee_name,plan_kind,status,period_start_date,period_end_date")
+        .in("status", [...privateCalendarPlanStatuses])
+        .lte("period_start_date", end)
+        .gte("period_end_date", start)
+        .in("employee_hr_id", hrBatch)
+        .order("period_start_date", { ascending: true })
+        .limit(1000);
+      if (headersError) throw headersError;
+      headerRows.push(...((headersData ?? []) as Array<PlanHeaderRow & { period_start_date: string }>));
+    }
+    headerRows.sort((left, right) => left.period_start_date.localeCompare(right.period_start_date));
+    const headers = headerRows.slice(0, 1000);
     const headerById = new Map(headers.map((header) => [header.id, header]));
     const planIds = headers.map((header) => header.id);
     if (planIds.length === 0) return { items: [], ready: true };
 
-    const { data: itemsData, error: itemsError } = await supabase
-      .from("employee_plan_items")
-      .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,notes,sort_order")
-      .in("plan_id", planIds)
-      .gte("activity_date", start)
-      .lte("activity_date", end)
-      .order("activity_date", { ascending: true })
-      .order("sort_order", { ascending: true })
-      .limit(5000);
-    if (itemsError) throw itemsError;
+    const itemRows: PlanItemRow[] = [];
+    for (const planIdBatch of chunk(planIds)) {
+      const { data: itemsData, error: itemsError } = await supabase
+        .from("employee_plan_items")
+        .select("id,plan_id,activity_date,start_time,end_time,activity_type,activity_title,location_text,area,notes,sort_order")
+        .in("plan_id", planIdBatch)
+        .gte("activity_date", start)
+        .lte("activity_date", end)
+        .order("activity_date", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .limit(5000);
+      if (itemsError) throw itemsError;
+      itemRows.push(...((itemsData ?? []) as PlanItemRow[]));
+    }
+    itemRows.sort((left, right) => left.activity_date.localeCompare(right.activity_date) || (left.sort_order ?? 0) - (right.sort_order ?? 0));
+    const itemsData = itemRows.slice(0, 5000);
 
-    const items = ((itemsData ?? []) as PlanItemRow[]).flatMap((item) => {
+    const items = itemsData.flatMap((item) => {
       const header = headerById.get(item.plan_id);
       if (!header) return [];
       const row: PrivateCalendarPlanRow = {

@@ -49,6 +49,16 @@ type DeliveryEventRow = { occurred_at: string | null; provider_message_id: strin
 
 type Aggregate = { bounced: boolean; clicked: boolean; delivered: boolean; lastActivityAt: string | null; opened: boolean };
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError (crashed /admin/notifications/email-tracking in production, digest
+// 2995304036@E394). Batch any .in() built from a large deduped array instead of passing it whole.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export function providerFor(messageId: string | null): "brevo" | "resend" | "unknown" {
   if (!messageId) return "unknown";
   return /mailin|brevo/i.test(messageId) ? "brevo" : "resend";
@@ -79,11 +89,11 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
   // Engagement events for those sends, keyed on provider_message_id.
   const messageIds = Array.from(new Set(outbox.map((row) => row.provider_message_id).filter((id): id is string => Boolean(id))));
   const byMessage = new Map<string, Aggregate>();
-  if (messageIds.length > 0) {
+  for (const batch of chunk(messageIds)) {
     const { data: eventData, error: eventError } = await supabase
       .from("email_delivery_events")
       .select("provider_message_id,status,occurred_at")
-      .in("provider_message_id", messageIds);
+      .in("provider_message_id", batch);
     if (eventError) throw eventError;
     for (const event of (eventData ?? []) as DeliveryEventRow[]) {
       const key = event.provider_message_id;
@@ -101,8 +111,8 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
   // Resolve recipient emails → employee names.
   const emails = Array.from(new Set(outbox.map((row) => firstRecipient(row.payload)).filter((email) => email.includes("@"))));
   const nameByEmail = new Map<string, string>();
-  if (emails.length > 0) {
-    const { data: employees } = await supabase.from("employees").select("full_name,work_email").in("work_email", emails);
+  for (const batch of chunk(emails)) {
+    const { data: employees } = await supabase.from("employees").select("full_name,work_email").in("work_email", batch);
     for (const employee of (employees ?? []) as Array<{ full_name: string | null; work_email: string | null }>) {
       const key = employee.work_email?.trim().toLowerCase();
       if (key && employee.full_name) nameByEmail.set(key, employee.full_name);

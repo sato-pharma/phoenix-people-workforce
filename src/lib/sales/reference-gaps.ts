@@ -126,18 +126,23 @@ async function loadSummaryRows(
 ): Promise<Array<Record<string, unknown>>> {
   const rows: Array<Record<string, unknown>> = [];
   const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("source_of_sales_import_summaries")
-      .select("batch_id,group_type,group_code,group_label,row_count")
-      .in("batch_id", validatedIds)
-      .in("group_type", ["product", "brick", "area", "region"])
-      .order("batch_id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    const page = (data ?? []) as Array<Record<string, unknown>>;
-    rows.push(...page);
-    if (page.length < pageSize) break;
+  // PostgREST folds every .in() value into the request URL; validatedIds spans every validated
+  // import batch ever (no `.limit()` upstream), so batch it (nested inside result-row pagination).
+  for (let b = 0; b < validatedIds.length; b += 100) {
+    const batchIdBatch = validatedIds.slice(b, b + 100);
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("source_of_sales_import_summaries")
+        .select("batch_id,group_type,group_code,group_label,row_count")
+        .in("batch_id", batchIdBatch)
+        .in("group_type", ["product", "brick", "area", "region"])
+        .order("batch_id", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const page = (data ?? []) as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
   }
   return rows;
 }
@@ -186,34 +191,39 @@ async function scanRawRowsForBatches(
 ) {
   if (batchIds.length === 0) return;
   const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("source_of_sales_import_rows")
-      .select("batch_id,product_code,distributor_code,region_code,area_code,brick_id,is_direct")
-      .in("batch_id", batchIds)
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
-    for (const row of rows) {
-      const info = batchInfo.get(String(row.batch_id));
-      const distributors = [info?.distributor ?? ""];
-      const periods = [info?.period ?? ""];
-      const product = norm(row.product_code);
-      const distributor = norm(row.distributor_code);
-      if (product && !refs.productCodes.has(product)) addGap(buckets, "product", product, 1, distributors, periods);
-      if (distributor && !refs.distributorCodes.has(distributor)) addGap(buckets, "distributor", distributor, 1, distributors, periods);
+  // PostgREST folds every .in() value into the request URL; batch batchIds (nested inside the
+  // existing result-row pagination) since it can span the full unsummarized-batch backlog.
+  for (let b = 0; b < batchIds.length; b += 100) {
+    const batchIdBatch = batchIds.slice(b, b + 100);
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("source_of_sales_import_rows")
+        .select("batch_id,product_code,distributor_code,region_code,area_code,brick_id,is_direct")
+        .in("batch_id", batchIdBatch)
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        const info = batchInfo.get(String(row.batch_id));
+        const distributors = [info?.distributor ?? ""];
+        const periods = [info?.period ?? ""];
+        const product = norm(row.product_code);
+        const distributor = norm(row.distributor_code);
+        if (product && !refs.productCodes.has(product)) addGap(buckets, "product", product, 1, distributors, periods);
+        if (distributor && !refs.distributorCodes.has(distributor)) addGap(buckets, "distributor", distributor, 1, distributors, periods);
 
-      const area = norm(row.area_code);
-      if (row.is_direct !== true && area && area !== "DIRECT") {
-        if (!refs.areaCodes.has(area)) addGap(buckets, "area", area, 1, distributors, periods);
-        const brick = norm(row.brick_id);
-        if (brick && !refs.brickIds.has(brick)) addGap(buckets, "brick", brick, 1, distributors, periods);
-        const region = norm(row.region_code);
-        if (region && !refs.regionCodes.has(region)) addGap(buckets, "region", region, 1, distributors, periods);
+        const area = norm(row.area_code);
+        if (row.is_direct !== true && area && area !== "DIRECT") {
+          if (!refs.areaCodes.has(area)) addGap(buckets, "area", area, 1, distributors, periods);
+          const brick = norm(row.brick_id);
+          if (brick && !refs.brickIds.has(brick)) addGap(buckets, "brick", brick, 1, distributors, periods);
+          const region = norm(row.region_code);
+          if (region && !refs.regionCodes.has(region)) addGap(buckets, "region", region, 1, distributors, periods);
+        }
       }
+      if (rows.length < pageSize) break;
     }
-    if (rows.length < pageSize) break;
   }
 }
 

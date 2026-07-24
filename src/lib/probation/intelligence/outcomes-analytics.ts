@@ -175,11 +175,15 @@ export async function getProbationOutcomesAnalytics(
     new Set(rows.map((r) => r.manager_hr_id).filter((x): x is string => Boolean(x))),
   );
   const managerNameByHrId = new Map<string, string>();
-  if (managerHrIds.length > 0) {
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — this scans EVERY decided case ever, so batch.
+  for (let i = 0; i < managerHrIds.length; i += 100) {
+    const batch = managerHrIds.slice(i, i + 100);
     const { data: managers } = await supabase
       .from("employees")
       .select("hr_id, full_name, nickname")
-      .in("hr_id", managerHrIds);
+      .in("hr_id", batch);
     for (const m of (managers ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
       if (m.full_name) managerNameByHrId.set(m.hr_id.toLowerCase(), resolveEmployeeDisplayName(m.full_name, m.nickname));
     }
@@ -201,11 +205,17 @@ export async function getProbationOutcomesAnalytics(
   for (const r of rows) decisionByCase.set(r.id, r.decision as ProbationCaseDecision);
   let predictiveness: PredictivenessRow[] = rollupPredictiveness([]);
   if (rows.length > 0) {
-    const { data: fb } = await supabase
-      .from("probation_feedback")
-      .select("case_id, recommendation")
-      .in("case_id", Array.from(decisionByCase.keys()));
-    const predInputs: PredictivenessInput[] = ((fb ?? []) as Array<{ case_id: string | null; recommendation: ProbationRecommendation | null }>)
+    const caseIds = Array.from(decisionByCase.keys());
+    const fbRows: Array<{ case_id: string | null; recommendation: ProbationRecommendation | null }> = [];
+    for (let i = 0; i < caseIds.length; i += 100) {
+      const batch = caseIds.slice(i, i + 100);
+      const { data: fb } = await supabase
+        .from("probation_feedback")
+        .select("case_id, recommendation")
+        .in("case_id", batch);
+      fbRows.push(...((fb ?? []) as Array<{ case_id: string | null; recommendation: ProbationRecommendation | null }>));
+    }
+    const predInputs: PredictivenessInput[] = fbRows
       .filter((f) => f.case_id && f.recommendation)
       .map((f) => ({ recommendation: f.recommendation as ProbationRecommendation, caseDecision: decisionByCase.get(f.case_id as string)! }))
       .filter((f) => Boolean(f.caseDecision));
