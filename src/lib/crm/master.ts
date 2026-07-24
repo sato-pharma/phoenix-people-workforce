@@ -70,6 +70,12 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
+  {
+    key: "recognition_score",
+    kind: "text",
+    label: "Recognized",
+    note: "How completely Phoenix resolved this row: 100% = agent (and double partner, if any) mapped to a real employee, the visit target identified, and — for Regular visits — the CRM region resolved to a Phoenix brick. 75%/50% = missing one/two of those checks. Blank = mostly unresolved, worth investigating (hover the badge for exactly what's missing).",
+  },
   { key: "visit_time", kind: "datetime_local", label: "Visit Time", note: "The ONE authoritative visit time (Cairo), shown with its source badge: GPS = a real GPS check-in (on site). Logged = the rep's submission time only, which is often hours later or the next morning — treat as approximate. Never the empty midnight placeholder." },
   { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "When the agent saved/submitted this visit in the CRM (Cairo time). This is paperwork time, NOT proof of being on site — reps frequently batch-log visits later, even after midnight. Prefer the Visit Time column above." },
   { key: "ampm", kind: "text", label: "AM/PM" },
@@ -728,6 +734,54 @@ function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, Bri
   }
 }
 
+/** Non-empty (post-trim) string check — the recurring "is this field actually filled in" test
+ * used all over the recognition score below. */
+function hasText(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+/**
+ * Recognition score: how completely Phoenix could resolve THIS row's identity/data, as a percent
+ * of 4 equally-weighted checks — 100 / 75 / 50 / null (below 50%, shown blank so it stands out).
+ * A check that structurally doesn't apply to this row (no double partner; a non-Regular visit
+ * type, which the vendor never sends region/speciality for) is NOT held against the row — it
+ * auto-passes, so a plain Campaign visit with everything resolvable actually resolved still reads
+ * 100%, instead of every non-Regular visit being capped below it by construction.
+ *
+ * 1. Agent identity  — agent_hr_id resolved to a real Phoenix employee.
+ * 2. Double identity — only when double_crm_id is set: double_hr_id resolved too.
+ * 3. Visit target    — contact_name, customer_name, or comment names who/where was visited.
+ * 4. Geography       — only for Regular visits (visit_type 0): CRM region or the mapped Phoenix
+ *    brick resolved (attachBrickMapping must run first — see attachDerived's call order).
+ *
+ * Also sets `recognition_missing`: a human-readable list of the failed checks, for the column's
+ * hover tooltip — so a low score is immediately actionable, not just a mystery number.
+ */
+function attachRecognitionScore(rows: CrmMasterRow[]): void {
+  for (const row of rows) {
+    const missing: string[] = [];
+    let passed = 0;
+
+    if (hasText(row.agent_hr_id)) passed += 1;
+    else missing.push("agent identity");
+
+    const hasDouble = typeof row.double_crm_id === "number" && row.double_crm_id !== 0;
+    if (!hasDouble || hasText(row.double_hr_id)) passed += 1;
+    else missing.push("double partner identity");
+
+    if (hasText(row.contact_name) || hasText(row.customer_name) || hasText(row.comment)) passed += 1;
+    else missing.push("visit target (contact/customer)");
+
+    const isRegular = row.visit_type === 0;
+    if (!isRegular || hasText(row.crm_region_name) || hasText(row.phx_brick_id)) passed += 1;
+    else missing.push("CRM region / brick");
+
+    const pct = (passed / 4) * 100;
+    row.recognition_score = pct >= 100 ? 100 : pct >= 75 ? 75 : pct >= 50 ? 50 : null;
+    row.recognition_missing = missing.join(", ") || null;
+  }
+}
+
 /** Distinct product-line names for the "Line" filter dropdown (small `lines` table). */
 async function loadLineOptions(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin().from("lines").select("name").order("name", { ascending: true });
@@ -779,11 +833,17 @@ async function resolveAllowedHrIds(opts: {
 /** In-memory filters for the computed tabs (vacations, triples) — their rows aren't produced by the
  * DB query path, so the advanced filters are applied here: agent-HR-id substring, free-text search,
  * a line/hiring-date allow-set (by hr id), and (vacations) minimum Duration + half-days-only.
- * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples). */
+ * `hrIdField` names the row's owning-agent hr id (agent_hr_id for vacations, base_hr_id for triples)
+ * and is what the Line/Hiring-Date allow-set filter is scoped to (deliberately: those filters mean
+ * "the REP is in this line / hired in this range", not any of the three triple positions).
+ * `agentHrIdFields` is the (possibly wider) set of hr-id columns the free-text Agent HR ID box
+ * searches — defaults to just `hrIdField` — so on the triples tab, searching one employee's hr id
+ * finds every triple they appear in (rep, middle manager, OR top manager), not only as the base rep. */
 function filterComputedRows(
   rows: CrmMasterRow[],
   opts: {
     agentHrId: string | null;
+    agentHrIdFields?: readonly string[];
     allowed: Set<string> | null;
     halfDaysOnly: boolean;
     hrIdField: string;
@@ -793,13 +853,20 @@ function filterComputedRows(
 ): CrmMasterRow[] {
   const agentNeedle = opts.agentHrId ? opts.agentHrId.trim().toLowerCase() : null;
   const searchNeedle = opts.search ? opts.search.trim().toLowerCase() : null;
+  const agentHrIdFields = opts.agentHrIdFields ?? [opts.hrIdField];
   return rows.filter((row) => {
     const hrRaw = typeof row[opts.hrIdField] === "string" ? (row[opts.hrIdField] as string) : null;
     if (opts.allowed) {
       const k = canonicalHrIdKey(hrRaw);
       if (!k || !opts.allowed.has(k)) return false;
     }
-    if (agentNeedle && !(hrRaw && hrRaw.toLowerCase().includes(agentNeedle))) return false;
+    if (agentNeedle) {
+      const matchesAny = agentHrIdFields.some((field) => {
+        const raw = typeof row[field] === "string" ? (row[field] as string) : null;
+        return raw != null && raw.toLowerCase().includes(agentNeedle);
+      });
+      if (!matchesAny) return false;
+    }
     if (searchNeedle) {
       const hay = [row.agent_name, row.base_name, row.mid_name, row.top_name, row.contact_name, row.comment]
         .filter((v): v is string => typeof v === "string")
@@ -1047,10 +1114,19 @@ function applyMasterFilters(
     q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
 
-  // Advanced filters. agent_hr_id exists on both tables; the rest are visits-only columns.
+  // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
+  // either so filtering by one employee surfaces EVERY record they appear in — as the primary
+  // agent OR as the double/accompanying partner. Managers/Training staff frequently have no
+  // primary-agent visits of their own at all (their whole CRM footprint is double-visit rides
+  // along a rep's route), so an agent_hr_id-only filter silently showed zero rows for them —
+  // including on the Double Visits tab, whose entire purpose is this exact record type.
   if (agentHrId) {
     const escaped = sanitizeSearch(agentHrId);
-    if (escaped) q = q.ilike("agent_hr_id", `%${escaped}%`);
+    if (escaped) {
+      q = isVisits
+        ? q.or(`agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%`)
+        : q.ilike("agent_hr_id", `%${escaped}%`);
+    }
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
   if (isVisits && visitType) {
@@ -1091,6 +1167,8 @@ async function attachDerived(
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to.
   if (isVisitDataset(dataset)) attachBrickMapping(rows, await loadBrickMappingByRegionId());
+  // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
+  if (isVisitDataset(dataset)) attachRecognitionScore(rows);
 }
 
 /**
@@ -1192,7 +1270,7 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
       loadAgentMetaByHrId(),
     ]);
     // Advanced filters apply to the rep (base) of each triple; Duration/half are vacation-only.
-    const filtered = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const filtered = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     const start = (page - 1) * pageSize;
     const pageRows = filtered.slice(start, start + pageSize);
     attachAgentMeta(pageRows, agentMeta, "base_hr_id"); // triples show the rep's line + hiring date
@@ -1296,7 +1374,7 @@ export async function getCrmMasterExportRows(
       computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
       loadAgentMetaByHrId(),
     ]);
-    const rows = filterComputedRows(allTriples, { ...computedFilter, halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const rows = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
     return { columns, dataset, rows, truncated };
   }

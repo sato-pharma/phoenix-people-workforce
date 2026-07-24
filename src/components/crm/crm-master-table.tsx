@@ -69,9 +69,18 @@ function formatVendorTimeOnly(value: unknown): string {
   return new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
 }
 
+/** Label for a recognition_score value — shared by the on-screen badge and the XLSX export cell. */
+function recognitionLabel(score: unknown): string {
+  if (score === 100) return "100% Recognized";
+  if (score === 75) return "75% Partial";
+  if (score === 50) return "50% Half Data";
+  return "Unrecognized";
+}
+
 /** Export-only rendering: no JSX badge in an XLSX cell, so the visit_time_source is folded into
  * the text as a "(GPS)"/"(Logged)" suffix — otherwise removing the dedicated source column would
- * silently drop that information from exports, not just from the on-screen table. */
+ * silently drop that information from exports, not just from the on-screen table. Same idea for
+ * recognition_score: the export gets the plain label + what's missing, not a raw 100/75/50/null. */
 function renderExportCell(row: Record<string, unknown>, col: CrmMasterColumn): string {
   if (col.key === "visit_time") {
     const value = row[col.key];
@@ -79,6 +88,11 @@ function renderExportCell(row: Record<string, unknown>, col: CrmMasterColumn): s
     const source = row.visit_time_source;
     const suffix = source === "GPS check-in" ? " (GPS)" : source === "Logged/save" ? " (Logged)" : "";
     return `${formatVendorLocal(value)}${suffix}`;
+  }
+  if (col.key === "recognition_score") {
+    const label = recognitionLabel(row[col.key]);
+    const missing = row.recognition_missing;
+    return typeof missing === "string" && missing ? `${label} (missing: ${missing})` : label;
   }
   return renderCell(row[col.key], col.kind);
 }
@@ -101,6 +115,28 @@ function VisitTimeCell({ source, value }: { source: unknown; value: unknown }) {
       >
         {isGps ? "GPS" : "Logged"}
       </span>
+    </span>
+  );
+}
+
+/** The Recognized cell: a color-coded badge for the row's recognition_score (100/75/50/null),
+ * hovering shows exactly which checks failed (row.recognition_missing) — so a bad score is
+ * immediately actionable, not just a mystery color. Red/unlabeled (score null) is deliberately the
+ * loudest state: those are the "mostly unresolved" rows the column exists to surface at a glance. */
+function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown }) {
+  const label = recognitionLabel(score);
+  const tone =
+    score === 100
+      ? "bg-emerald-100 text-emerald-700"
+      : score === 75
+        ? "bg-amber-100 text-amber-700"
+        : score === 50
+          ? "bg-orange-100 text-orange-700"
+          : "bg-rose-100 text-rose-700";
+  const title = typeof missing === "string" && missing ? `Missing: ${missing}` : "All checks resolved";
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold ${tone}`} title={title}>
+      {label}
     </span>
   );
 }
@@ -636,6 +672,8 @@ function RowGroup({
           <td className="whitespace-nowrap px-3 py-2" key={col.key}>
             {col.key === "visit_time" ? (
               <VisitTimeCell source={row.visit_time_source} value={row[col.key]} />
+            ) : col.key === "recognition_score" ? (
+              <RecognitionBadge missing={row.recognition_missing} score={row[col.key]} />
             ) : (
               renderCell(row[col.key], col.kind)
             )}
