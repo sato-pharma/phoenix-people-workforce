@@ -36,7 +36,7 @@ import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel"
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
-import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 
@@ -1535,6 +1535,7 @@ function CandidatesTab({
   );
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryPositionKey, setRetryPositionKey] = useState(defaultCvPositionKey);
 
   const q = query.trim().toLowerCase();
   const visibleCandidates = q
@@ -1550,6 +1551,7 @@ function CandidatesTab({
     setError(null);
     setRetryExtraction(null);
     setRetryError(null);
+    setRetryPositionKey(defaultCvPositionKey);
     try {
       const res = await fetch(`/api/recruitment/candidates/${id}`);
       const data = (await res.json().catch(() => ({}))) as { profile?: CandidateProfile; message?: string };
@@ -1564,11 +1566,15 @@ function CandidatesTab({
   // Re-run AI extraction on a candidate that already has a CV on file — for one manually
   // created, or where the first extraction pass wasn't saved as-is. Reuses the same
   // cv-extract endpoint and drag-and-drop review board as the "create from CV" flow.
-  const startRetryExtraction = async (candidateId: string) => {
+  const startRetryExtraction = async (candidateId: string, positionKey: string) => {
     setRetryBusy(true);
     setRetryError(null);
     try {
-      const res = await fetch(`/api/recruitment/candidates/${candidateId}/cv-extract`, { method: "POST" });
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}/cv-extract`, {
+        body: JSON.stringify({ positionKey }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "AI CV extraction failed.");
       const fields = data.fields as ExtractedCandidateFields | undefined;
@@ -1806,6 +1812,7 @@ function CandidatesTab({
                 setProfile(null);
                 setRetryExtraction(null);
                 setRetryError(null);
+                setRetryPositionKey(defaultCvPositionKey);
               }}
             >
               Close
@@ -1815,14 +1822,28 @@ function CandidatesTab({
           {canManage && profile.files.some((file) => file.kind === "cv") ? (
             <div className="space-y-2">
               {!retryExtraction ? (
-                <Button
-                  disabled={retryBusy}
-                  onClick={() => void startRetryExtraction(profile.candidate.id)}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {retryBusy ? "Reading CV…" : "AI extract from CV"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+                    disabled={retryBusy}
+                    onChange={(event) => setRetryPositionKey(event.target.value)}
+                    value={retryPositionKey}
+                  >
+                    {listCvPositionSchemas().map((option) => (
+                      <option key={option.positionKey} value={option.positionKey}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={retryBusy}
+                    onClick={() => void startRetryExtraction(profile.candidate.id, retryPositionKey)}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    {retryBusy ? "Reading CV…" : "AI extract from CV"}
+                  </Button>
+                </div>
               ) : null}
               {retryError && !retryExtraction ? <p className="text-xs text-rose-600">{retryError}</p> : null}
               {retryExtraction ? (
@@ -1836,7 +1857,7 @@ function CandidatesTab({
                   }}
                   onSave={(values) => saveRetryExtraction(profile.candidate.id, values)}
                   saveLabel="Save extracted fields"
-                  schema={getCvPositionSchema(defaultCvPositionKey)!}
+                  schema={getCvPositionSchema(retryPositionKey)!}
                 />
               ) : null}
             </div>

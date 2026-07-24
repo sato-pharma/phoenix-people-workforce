@@ -11,7 +11,7 @@ import { useRef, useState } from "react";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { Button } from "@/components/ui/button";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
-import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(url, {
@@ -24,7 +24,7 @@ async function postJson(url: string, body: unknown): Promise<Record<string, unkn
   return data;
 }
 
-const schema = getCvPositionSchema(defaultCvPositionKey)!;
+const positionOptions = listCvPositionSchemas();
 
 export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: string) => void }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -34,6 +34,8 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [extractionId, setExtractionId] = useState<string | null>(null);
   const [fields, setFields] = useState<ExtractedCandidateFields>({});
+  const [positionKey, setPositionKey] = useState(defaultCvPositionKey);
+  const schema = getCvPositionSchema(positionKey)!;
 
   const startFromCv = async () => {
     const file = fileRef.current?.files?.[0];
@@ -56,7 +58,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
       const uploadData = (await uploadRes.json().catch(() => ({}))) as Record<string, unknown>;
       if (!uploadRes.ok) throw new Error(typeof uploadData.message === "string" ? uploadData.message : "CV upload failed.");
 
-      const extraction = await postJson(`/api/recruitment/candidates/${newCandidateId}/cv-extract`, {});
+      const extraction = await postJson(`/api/recruitment/candidates/${newCandidateId}/cv-extract`, { positionKey });
       const extractedFields = extraction.fields as ExtractedCandidateFields | undefined;
       if (!extractedFields) throw new Error("The AI did not return any fields.");
 
@@ -117,7 +119,19 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
   if (stage !== "review") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={fileRef} accept=".pdf,.doc,.docx" className="text-sm" type="file" />
+        <select
+          className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+          disabled={busy}
+          onChange={(event) => setPositionKey(event.target.value)}
+          value={positionKey}
+        >
+          {positionOptions.map((option) => (
+            <option key={option.positionKey} value={option.positionKey}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" type="file" />
         <Button disabled={busy} onClick={() => void startFromCv()} variant="secondary">
           {busy ? "Reading CV…" : "Create from CV (AI)"}
         </Button>

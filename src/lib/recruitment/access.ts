@@ -21,6 +21,13 @@ export function canSeeAllRecruitment(access: AccessContext): boolean {
   return access.scope === "system" || recruitmentGlobalReadRoles.includes(access.role);
 }
 
+// Read-only CV-extraction accuracy dashboard — same authority as the rest of the pipeline
+// (Super Admin / Talent Acquisition), not the broader recruitmentGlobalReadRoles (CEO doesn't
+// need per-field AI accuracy stats).
+export function canViewCvExtractionAnalytics(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
 export function canSeeRequisition(access: AccessContext, requisition: Requisition): boolean {
   if (canSeeAllRecruitment(access)) return true;
   return (

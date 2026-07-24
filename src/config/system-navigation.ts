@@ -1543,6 +1543,14 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "employee_documents" }],
     roles: hrAuthorityNavigationRoles,
   },
+  {
+    href: "/recruitment/cv-extraction-analytics",
+    icon: ChartColumnBig,
+    label: "CV Extraction Accuracy",
+    description: "How often Talent Acquisition corrects the AI's proposed CV fields, per position.",
+    permissions: [{ resource: "recruitment" }],
+    roles: hrAuthorityNavigationRoles,
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── People Management hub (app/(admin)/admin/people-management/page.tsx) ────────

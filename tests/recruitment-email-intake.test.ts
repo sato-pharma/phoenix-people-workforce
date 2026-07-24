@@ -94,15 +94,28 @@ export function runRecruitmentEmailIntakeTests() {
   const result4 = parseInboundEmailMessage(noAttachment as never, { mailboxLabel: "careers", uid: 9 });
   assert.equal(result4.attachment, null);
 
-  // Unsupported-only attachment (e.g. a signature image) -> still null, not "unsupported".
-  const onlyImage = fakeMail({ attachments: [fakeAttachment({ contentType: "image/png", filename: "logo.png" })] });
-  const result5 = parseInboundEmailMessage(onlyImage as never, { mailboxLabel: "careers", uid: 10 });
+  // An inline/embedded image (mailparser's related: true — e.g. an email signature logo
+  // referenced via cid: in the HTML body) is excluded even though images are now a supported
+  // CV kind — it's structurally an embedded asset, not a standalone attachment.
+  const onlyInlineImage = fakeMail({
+    attachments: [fakeAttachment({ contentType: "image/png", filename: "logo.png", related: true })],
+  });
+  const result5 = parseInboundEmailMessage(onlyInlineImage as never, { mailboxLabel: "careers", uid: 10 });
   assert.equal(result5.attachment, null);
 
-  // Multiple attachments -> first pdf/docx wins, others counted in rawMetadata, not fanned out.
+  // A genuine (non-inline) photographed/scanned CV image IS now picked up as a usable
+  // attachment — read via OpenAI vision downstream, not local text extraction.
+  const photographedCv = fakeMail({
+    attachments: [fakeAttachment({ contentType: "image/jpeg", filename: "cv-photo.jpg", related: false })],
+  });
+  const result5b = parseInboundEmailMessage(photographedCv as never, { mailboxLabel: "careers", uid: 10 });
+  assert.equal(result5b.attachment?.fileName, "cv-photo.jpg");
+
+  // Multiple attachments -> first pdf/docx/image wins, an inline logo never counts, others
+  // counted in rawMetadata, not fanned out.
   const multi = fakeMail({
     attachments: [
-      fakeAttachment({ contentType: "image/png", filename: "logo.png" }),
+      fakeAttachment({ contentType: "image/png", filename: "logo.png", related: true }),
       fakeAttachment({ contentType: "application/pdf", filename: "cv-1.pdf" }),
       fakeAttachment({
         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -111,7 +124,7 @@ export function runRecruitmentEmailIntakeTests() {
     ],
   });
   const result6 = parseInboundEmailMessage(multi as never, { mailboxLabel: "careers", uid: 11 });
-  assert.equal(result6.attachment?.fileName, "cv-1.pdf", "the first pdf/docx attachment wins, images don't count");
+  assert.equal(result6.attachment?.fileName, "cv-1.pdf", "the first pdf/docx/image attachment wins, an inline logo never counts");
   assert.equal(result6.rawMetadata?.ignoredAttachmentCount, 1, "the second qualifying attachment is logged, not processed");
 
   // Missing Message-ID -> a stable fallback id derived from mailbox + uid (never a crash, and

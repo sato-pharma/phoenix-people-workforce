@@ -1,14 +1,15 @@
 // Recruitment / ATS — AI CV field extraction (schema-driven, per position).
 //
-// Reads an already-uploaded CV (PDF/DOCX, text-based only — no OCR in this phase),
-// extracts its raw text locally, then asks OpenAI to propose that position's candidate
-// fields (src/lib/recruitment/cv-field-schemas.ts) with a per-field confidence rating,
-// following the same structured-output pattern as src/lib/email/ai-assist.ts. This module
-// never writes to recruitment_candidates itself — the caller reviews/corrects the proposal
-// and saves it via updateCandidate(); recordAppliedExtractionFields() only updates this
-// module's own audit-trail row (a correction log for future prompt tuning, not a training
-// pipeline). Medical Rep is the only position with a real field set today; a second
-// position is a new entry in cv-field-schemas.ts, not a change here.
+// Reads an already-uploaded CV. Text-based PDF/DOCX get their raw text extracted locally
+// first; scanned/photographed CVs (image kind) skip local extraction entirely and are read
+// directly by OpenAI's vision-capable model instead (no separate OCR library/vendor — reuses
+// the same OPENAI_API_KEY and model already configured for text extraction). Either way, the
+// same schema-driven structured-output call proposes that position's candidate fields
+// (src/lib/recruitment/cv-field-schemas.ts) with a per-field confidence rating, following the
+// same structured-output pattern as src/lib/email/ai-assist.ts. This module never writes to
+// recruitment_candidates itself — the caller reviews/corrects the proposal and saves it via
+// updateCandidate(); recordAppliedExtractionFields() only updates this module's own
+// audit-trail row (a correction log for future prompt tuning, not a training pipeline).
 
 import { PDFParse } from "pdf-parse";
 import * as mammoth from "mammoth";
@@ -121,8 +122,27 @@ export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fi
   }
   throw new CvExtractionError(
     "unsupported_file",
-    "This CV file type isn't supported for AI extraction yet — only PDF and Word (.docx) files are, since scanned/image CVs aren't handled in this phase.",
+    "This CV file type isn't supported for text extraction — only PDF and Word (.docx) files are (scanned/photographed CVs are read via a separate vision path, not this function).",
   );
+}
+
+// ---------------------------------------------------------------------------
+// Vision input (scanned/photographed CVs) — no local text extraction; the image is sent
+// directly to the same OpenAI model used for text extraction. "high" detail since a CV is a
+// text-dense document, not a casual photo — worth the extra tokens to avoid downsampling
+// artifacts that would cost accuracy on small print.
+// ---------------------------------------------------------------------------
+
+export function buildVisionInput(bytes: Buffer, mimeType: string) {
+  return [
+    {
+      content: [
+        { text: "Extract the candidate fields from this CV image.", type: "input_text" as const },
+        { detail: "high" as const, image_url: `data:${mimeType};base64,${bytes.toString("base64")}`, type: "input_image" as const },
+      ],
+      role: "user" as const,
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -246,20 +266,27 @@ export async function extractCandidateFieldsFromCv(
     );
   }
 
-  const rawText = await extractRawTextFromFile(downloaded.bytes, downloaded.mimeType, downloaded.fileName);
-  const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
-  if (!cleanedText) {
-    throw new CvExtractionError(
-      "unsupported_file",
-      "No readable text was found in this CV file — it may be a scanned image, which isn't supported in this phase.",
-    );
+  const fileKind = detectCvFileKind(downloaded.mimeType, downloaded.fileName);
+  let input: string | ReturnType<typeof buildVisionInput>;
+  if (fileKind === "image") {
+    input = buildVisionInput(downloaded.bytes, downloaded.mimeType);
+  } else {
+    const rawText = await extractRawTextFromFile(downloaded.bytes, downloaded.mimeType, downloaded.fileName);
+    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
+    if (!cleanedText) {
+      throw new CvExtractionError(
+        "unsupported_file",
+        "No readable text was found in this CV file.",
+      );
+    }
+    input = `CV text:\n\n${cleanedText}`;
   }
 
   let outputText: string;
   let model: string;
   try {
     const response = await createOpenAiResponseText({
-      input: `CV text:\n\n${cleanedText}`,
+      input,
       instructions: schema.instructions,
       maxOutputTokens: 2_000,
       model: OPENAI_COPILOT_DEFAULT_MODEL,
