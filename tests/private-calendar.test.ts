@@ -100,6 +100,75 @@ export function runPrivateCalendarTests() {
   assert.ok(lateAttendance.exceptionFlags.includes("Late arrival"), "attendance mapper must highlight late exceptions");
   assert.equal(lateAttendance.title, "Office 9:45 AM to 5:04 PM - Late", "a non-Complete attendance day must keep its own status label in the Office time range");
 
+  // A late/short/early reading that falls in a policy's zero-deduction band
+  // (grace usage, a dead zone below the first bracket, etc.) must not raise a
+  // "needs review" warning flag on the private calendar — nothing will actually
+  // be deducted, so there is nothing to review.
+  const lateNoDeductionAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "9:10 AM",
+    actualLastPunch: "5:04 PM",
+    dateIso: "2026-06-19",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "10",
+    recommendedAction: "No action",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Late",
+    timeLong: "07:54",
+  });
+  assert.equal(
+    lateNoDeductionAttendance.exceptionFlags.includes("Late arrival"),
+    false,
+    "a Late status with zero deductionDays must not be flagged as an exception needing review",
+  );
+
+  const shortNoDeductionAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "9:00 AM",
+    actualLastPunch: "4:50 PM",
+    dateIso: "2026-06-19",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Short day",
+    timeLong: "07:50",
+  });
+  assert.equal(
+    shortNoDeductionAttendance.exceptionFlags.includes("Short day"),
+    false,
+    "a Short day status with zero deductionDays must not be flagged as an exception needing review",
+  );
+
+  // A missing punch is never auto-deducted at this stage (its deductionDays is
+  // always a placeholder 0) — it must stay flagged regardless, since it always
+  // needs a human decision before any deduction is determined either way.
+  const singlePunchNoDeduction = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "9:03 AM",
+    actualLastPunch: "",
+    dateIso: "2026-06-19",
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "",
+    recommendedAction: "Review missing punch",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Single punch",
+    timeLong: "00:00",
+  });
+  assert.ok(
+    singlePunchNoDeduction.exceptionFlags.includes("Single punch"),
+    "a missing punch must stay flagged for review even though its deductionDays placeholder is zero",
+  );
+
   const vacation = mapVacationRowToPrivateCalendarItem({
     day_part: "full_day",
     duration_days: "2",
