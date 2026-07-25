@@ -336,12 +336,11 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
       >
 
         {/* ── KPI tiles ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:gap-4">
           <KpiCard accent="slate"  label="Total Recorded" value={summary.totalRows}                      note="Days in range"     />
           <KpiCard accent="green"  label="Complete"        value={summary.completeDays}                   note="Full working days" />
           <KpiCard accent="amber"  label="Late / Early"    value={summary.lateDays}                       note="Attendance flags"  />
           <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
-          <KpiCard accent="red"    label="Deductions"      value={summary.deductionDays}                  note="Days flagged"      />
         </div>
 
         {/* ── Punch log ─────────────────────────────────────────────────── */}
@@ -398,18 +397,11 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                         <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.timeLong || "—"}</dd>
                       </div>
                     </dl>
-                    {(lateMin > 0 || row.deductionConfirmed) && (
+                    {lateMin > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {lateMin > 0 && (
-                          <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
-                            +{lateMin} min late
-                          </span>
-                        )}
-                        {row.deductionConfirmed && (
-                          <span className="inline-flex bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 tabular-nums">
-                            −{row.deductionDays}d deduction
-                          </span>
-                        )}
+                        <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
+                          +{lateMin} min late
+                        </span>
                       </div>
                     )}
                   </div>
@@ -420,7 +412,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
             {/* Desktop: full table */}
             <div className="hidden overflow-x-auto md:block">
               {(() => {
-                const showDeductionCol = rows.some((r) => r.deductionConfirmed);
                 const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;
                 return (
                   <table className="w-full text-sm">
@@ -431,9 +422,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                             {col}
                           </th>
                         ))}
-                        {showDeductionCol && (
-                          <th className="px-4 py-3 font-black uppercase tracking-[0.14em]">Deduction</th>
-                        )}
                       </tr>
                     </thead>
 
@@ -495,18 +483,6 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                             <td className="px-4 py-3 text-center">
                               <StatusBadge status={row.status} />
                             </td>
-
-                            {showDeductionCol && (
-                              <td className="px-4 py-3 text-center">
-                                {row.deductionConfirmed ? (
-                                  <span className="inline-flex bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 tabular-nums">
-                                    −{row.deductionDays}d
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-slate-300">—</span>
-                                )}
-                              </td>
-                            )}
                           </tr>
                         );
                       })}
