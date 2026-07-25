@@ -105,7 +105,7 @@
     "dommatrix": "^1.0.3",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.42.0",
-    "google-auth-library": "^9.15.1",
+    "google-auth-library": "^10.9.0",
     "html-to-image": "^1.11.13",
     "imapflow": "^1.4.9",
     "lucide-react": "^1.24.0",
