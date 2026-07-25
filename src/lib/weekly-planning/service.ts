@@ -13,7 +13,8 @@ import { writeAuditLog } from "@/lib/admin/audit";
 export type WeeklyPlanRpcErrorCode =
   | "revision_conflict"
   | "invalid_transition"
-  | "not_found";
+  | "not_found"
+  | "duplicate_period";
 
 export class WeeklyPlanRpcError extends Error {
   code: WeeklyPlanRpcErrorCode;
@@ -377,6 +378,17 @@ const planSelect = `
 `;
 
 const WORKSPACE_PLAN_LIMIT = 250;
+
+// Statuses that never became "the plan of record" for their period — a plan that
+// died here leaves no live claim on the period, so a fresh submission shouldn't be
+// blocked by it. Every other status (including final_approved/hr_acknowledged) is
+// still an active or completed submission and must block a second, unlinked plan
+// for the same employee/period — see assertNoActivePlanForSamePeriod.
+const DUPLICATE_PERIOD_IGNORED_STATUSES = new Set<EmployeePlanStatus>([
+  "cancelled",
+  "manager_rejected",
+  "ceo_rejected",
+]);
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
@@ -937,6 +949,36 @@ async function currentEmployee(access: AccessContext) {
   const directory = await getEmployeeDirectory();
   const viewerHrId = normalizeHrId(access.hrId);
   return directory.employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
+}
+
+// Guards createEmployeePlan against spawning a second, unlinked header for a
+// period that already has a live one (the B-122 duplicate-week incident: two
+// independent headers both reached hr_acknowledged for the same week because
+// nothing stopped a brand-new plan from being created instead of using the
+// existing revise flow on updateEmployeePlan, which links via parent_plan_id
+// and is unaffected by this check).
+async function assertNoActivePlanForSamePeriod(
+  employeeHrId: string,
+  planKind: EmployeePlanKind,
+  period: { periodEndDate: string; periodStartDate: string },
+) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,status")
+    .eq("employee_hr_id", employeeHrId)
+    .eq("plan_kind", planKind)
+    .eq("period_start_date", period.periodStartDate)
+    .eq("period_end_date", period.periodEndDate);
+  if (error) throw error;
+  const active = ((data ?? []) as Array<{ id: string; status: EmployeePlanStatus }>).find(
+    (row) => !DUPLICATE_PERIOD_IGNORED_STATUSES.has(row.status),
+  );
+  if (active) {
+    throw new WeeklyPlanRpcError(
+      "duplicate_period",
+      `A ${planKind} plan already exists for ${period.periodStartDate} to ${period.periodEndDate} (status: ${active.status}). Edit or revise that plan instead of creating a new one.`,
+    );
+  }
 }
 
 async function loadPlanRow(planId: string): Promise<PlanHeaderRow> {
@@ -2519,6 +2561,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
     role: access.role,
   });
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate, workweek);
+  await assertNoActivePlanForSamePeriod(employee.hrId, input.planKind, period);
   const items = normalizeItems(
     input.items,
     period.periodStartDate,
