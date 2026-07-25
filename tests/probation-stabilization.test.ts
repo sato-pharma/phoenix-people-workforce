@@ -47,9 +47,20 @@ export function runProbationStabilizationTests() {
 
   assert.match(serviceSource, /allowedWorkflowActions/);
   assert.match(serviceSource, /validateWorkflowTransition/);
-  assert.match(serviceSource, /const probationDays = 90/);
-  assert.match(serviceSource, /baseProbationEndDate/);
-  assert.match(serviceSource, /currentProbationEndDate/);
+  // Cairo/UTC timezone fix (2026-07-25): service.ts's own local probationDays=90 /
+  // baseProbationEndDate() / currentProbationEndDate() were a second, independent
+  // reimplementation of probation/date.ts's canonical (owner-locked, hire+90-day) rule — and,
+  // unlike the canonical module, anchored "today" to the server's local/UTC midnight instead of
+  // Africa/Cairo. Consolidated onto the canonical, now Cairo-aware helpers instead of pinning
+  // the duplicate that used to live here.
+  assert.match(
+    serviceSource,
+    /import \{\s*probationDaysRemaining,\s*probationEndDate as canonicalProbationEndDate,\s*\} from "@\/lib\/probation\/date";/,
+    "probation/service.ts must import the canonical probation-duration helpers instead of reimplementing them",
+  );
+  assert.doesNotMatch(serviceSource, /const probationDays = 90/, "the duplicate local probationDays constant must not come back");
+  assert.doesNotMatch(serviceSource, /function baseProbationEndDate/, "the duplicate local baseProbationEndDate() must not come back");
+  assert.doesNotMatch(serviceSource, /function currentProbationEndDate/, "the duplicate local currentProbationEndDate() must not come back");
   assert.doesNotMatch(serviceSource, /probation\?\.status === extensionProbationStatus/);
   assert.doesNotMatch(serviceSource, /Extension end date must be later than the current probation end date/);
   assert.match(serviceSource, /getProbationReminderSchedule/);
