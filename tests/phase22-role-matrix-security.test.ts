@@ -68,6 +68,10 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(talentAcquisition, "recruitment", "create"), true);
   assert.equal(await canAccess(talentAcquisition, "candidates", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "employee_documents", "update"), true);
+  // "create" was a same-day fix (2026-07-25) — the Request Leave page's
+  // getVacationRequestPageData asserts leave:create, and the original grant
+  // (read/update/export) omitted it, making the page unreachable.
+  assert.equal(await canAccess(talentAcquisition, "leave", "create"), true);
   assert.equal(await canAccess(talentAcquisition, "leave", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "update"), true);

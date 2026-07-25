@@ -497,7 +497,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // does not include this role, so this only unlocks her own attendance record, not
     // company-wide attendance data (owner-requested 2026-07-25).
     attendance: ["read"],
-    leave: ["read", "update", "export"],
+    leave: ["read", "create", "update", "export"],
     // Self-service only (own payslip) — matches Financial Advisor's grant. No broader
     // payroll authority: Talent Acquisition must not inherit the retired HR Specialist
     // role's company-wide payroll access.
