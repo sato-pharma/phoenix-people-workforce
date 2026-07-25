@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
-import { buildPart1SheetWorkbook } from "../src/lib/automated-payroll/exports/sheet.ts";
+import { buildFullSheetWorkbook, buildPart1SheetWorkbook } from "../src/lib/automated-payroll/exports/sheet.ts";
 import { sumNonEmployeePayroll } from "../src/lib/automated-payroll/non-employees.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 
@@ -12,6 +12,16 @@ import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../src/lib/automat
  * publishToPayslips (see [[automated-payroll-special-situations-tab]] for the
  * sibling Special Situations feature this was built alongside).
  */
+async function readAllText(buffer: Buffer, sheetName: string): Promise<string[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const sheet = workbook.getWorksheet(sheetName);
+  assert.ok(sheet, `${sheetName} sheet must exist`);
+  const text: string[] = [];
+  sheet!.eachRow((row) => row.eachCell((cell) => text.push(String(cell.value ?? ""))));
+  return text;
+}
+
 export async function runAutomatedPayrollNonEmployeesTests() {
   // ---- sumNonEmployeePayroll: sums and rounds to 2 decimals ------------------
   const row = (totalSalary: number): NonEmployeePayrollRow => ({
@@ -75,6 +85,21 @@ export async function runAutomatedPayrollNonEmployeesTests() {
   const grandTotalCellIndex = allText.indexOf("GRAND TOTAL (Employees First Part + Non-Employees)");
   assert.ok(grandTotalCellIndex >= 0, "a GRAND TOTAL row must exist");
   assert.equal(Number(allText[grandTotalCellIndex + 1]), 3000);
+
+  // ---- the FULL monthly sheet must include them too (owner decision
+  // 2026-07-25). They pay with Part 1, but the money still leaves the company
+  // this month, so finance's complete picture cannot omit it. The grand-total
+  // row must name Month Salary there, not First Part. --------------------------
+  const fullBuffer = await buildFullSheetWorkbook({ run, rows: [], nonEmployees });
+  const fullText = await readAllText(fullBuffer, "Payroll");
+  assert.ok(
+    fullText.some((text) => text.includes("Non-Employees Payroll")),
+    "the Full monthly sheet must carry the Non-Employees section",
+  );
+  assert.ok(fullText.includes("Second Person"), "each non-employee must be listed on the Full sheet");
+  const fullGrandIndex = fullText.indexOf("GRAND TOTAL (Employees Month Salary + Non-Employees)");
+  assert.ok(fullGrandIndex >= 0, "the Full sheet's grand total must be labelled Month Salary, not First Part");
+  assert.equal(Number(fullText[fullGrandIndex + 1]), 3000);
 
   // ---- no non-employees this run -> the section is a clean no-op, no stray
   // caption/header rows left behind -------------------------------------------
