@@ -94,14 +94,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   }, [load]);
 
   const toEdits = useCallback((): StepEditInput[] => {
-    return rows.map((row) => ({
-      hrId: row.hrId,
-      values: row.values,
-      reasons: row.reasons,
-      selects: row.selects,
-      reason: row.reason,
-      onHold: row.onHold,
-    }));
+    return (
+      rows
+        // Informational rows (notice-period employees) are never saved. Their
+        // settlement belongs to the month they actually leave; sending them here
+        // could stamp this month's figures onto their draft row.
+        .filter((row) => !row.readOnly)
+        .map((row) => ({
+          hrId: row.hrId,
+          values: row.values,
+          reasons: row.reasons,
+          selects: row.selects,
+          reason: row.reason,
+          onHold: row.onHold,
+        }))
+    );
   }, [rows]);
 
   // Every setter below keys off `hrId`, NOT array position — `rows` renders as
@@ -115,15 +122,72 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
     setDirty(true);
   };
 
-  /** Editing a "days" field auto-calculates its paired money field via Base Salary/30 × days. */
-  const setDaysValue = (hrId: string, field: string, autoCalcMoneyKey: string | undefined, days: number) => {
+  /**
+   * Editing a "days" field auto-calculates its paired money field via
+   * Base Salary / divisor × days.
+   *
+   * The divisor defaults to 30 (the owner's day-rate rule for deductions) but a
+   * field can name a context column to read instead — resignation proration
+   * divides by the month's ACTUAL calendar days, so a 31-day month would
+   * otherwise compute the wrong settlement.
+   */
+  const setDaysValue = (
+    hrId: string,
+    field: string,
+    autoCalcMoneyKey: string | undefined,
+    days: number,
+    divisorContextKey?: string,
+  ) => {
     setRows((prev) =>
       prev.map((row) => {
         if (row.hrId !== hrId) return row;
         const values = { ...row.values, [field]: days };
         if (autoCalcMoneyKey) {
           const baseSalary = Number(row.context["Base Salary"] ?? 0);
-          values[autoCalcMoneyKey] = Math.round(((baseSalary / 30) * days + Number.EPSILON) * 100) / 100;
+          const divisor = divisorContextKey ? Number(row.context[divisorContextKey] ?? 0) || 30 : 30;
+          values[autoCalcMoneyKey] = Math.round(((baseSalary / divisor) * days + Number.EPSILON) * 100) / 100;
+        }
+        return { ...row, values };
+      }),
+    );
+    setDirty(true);
+  };
+
+  /**
+   * For a pair of complementary "days" fields (e.g. Working Days / Non-Working
+   * Days, owner request 2026-07-25) that must always sum to a fixed total:
+   * editing either one clamps it to [0, total] and sets the OTHER to
+   * (total - value). Whichever field separately declares `autoCalcMoneyKey`
+   * then recomputes its money field from its OWN (possibly just-derived) day
+   * count, using the DEFAULT /30 divisor — deliberately not the total-days
+   * context value, which is the complement CAP, not the money divisor (see
+   * StepFieldSpec.complementTotalContextKey's doc comment for why conflating
+   * the two would silently change the deduction in a 31-day month).
+   */
+  const setComplementaryDaysValue = (
+    hrId: string,
+    field: string,
+    complementField: string,
+    totalContextKey: string | undefined,
+    rawValue: number,
+  ) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.hrId !== hrId) return row;
+        const total = totalContextKey ? Number(row.context[totalContextKey] ?? 0) : 0;
+        const clamped = Math.min(Math.max(0, rawValue), total);
+        const complementValue = Math.max(0, total - clamped);
+        const values = { ...row.values, [field]: clamped, [complementField]: complementValue };
+
+        const spec = definition.fields.find((candidate) => candidate.key === field);
+        const complementSpec = definition.fields.find((candidate) => candidate.key === complementField);
+        const baseSalary = Number(row.context["Base Salary"] ?? 0);
+        if (spec?.autoCalcMoneyKey) {
+          values[spec.autoCalcMoneyKey] = Math.round(((baseSalary / 30) * clamped + Number.EPSILON) * 100) / 100;
+        }
+        if (complementSpec?.autoCalcMoneyKey) {
+          values[complementSpec.autoCalcMoneyKey] =
+            Math.round(((baseSalary / 30) * complementValue + Number.EPSILON) * 100) / 100;
         }
         return { ...row, values };
       }),
@@ -246,12 +310,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   }, [rows, search]);
 
   /** Same precedence for the grid row tint and the mobile card border. */
-  const rowTone = (row: StepRow): "hold" | "conflict" | "leaver" | null => {
+  const rowTone = (row: StepRow): "hold" | "conflict" | "leaver" | "notice" | null => {
     if (row.onHold) return "hold";
     if (hasConflict(row)) return "conflict";
+    if (row.readOnly) return "notice";
     if (row.lifecycle === "leaver") return "leaver";
     return null;
   };
+
+  /**
+   * A row is uneditable either because the whole step is locked, or because the
+   * row itself is informational (an employee serving notice into a future month:
+   * shown so HR sees the resignation, but their settlement belongs to the month
+   * they actually leave — editing it here would prorate this month's pay).
+   */
+  const isRowLocked = (row: StepRow) => locked || row.readOnly === true;
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-500">Loading {definition.title}…</div>;
@@ -419,6 +492,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                       "grid items-center gap-x-3 border-b border-slate-200 px-3 py-2 transition-colors hover:bg-slate-100/70",
                       tone === "hold" && "bg-rose-50 hover:bg-rose-50",
                       tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50 hover:bg-orange-50",
+                      tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70 hover:bg-sky-50",
                       tone === "leaver" && "bg-red-50 hover:bg-red-50",
                       !tone && (index % 2 ? "bg-slate-50/60" : "bg-white"),
                     )}
@@ -438,6 +512,11 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                       </span>
                       {tone === "hold" ? <Badge variant="danger" className="shrink-0">HOLD</Badge> : null}
                       {tone === "conflict" ? <Badge variant="warning" className="shrink-0">Already settled</Badge> : null}
+                      {row.readOnly ? (
+                        <Badge variant="neutral" className="shrink-0" title={row.readOnlyNote}>
+                          Notice period
+                        </Badge>
+                      ) : null}
                     </div>
                     {definition.contextColumns.map((column) => (
                       <div key={column.key} className="overflow-hidden text-right text-slate-600">
@@ -460,7 +539,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         <Input
                           key={field.key}
                           value={row.reasons?.[field.key] ?? ""}
-                          disabled={locked}
+                          disabled={isRowLocked(row)}
                           placeholder="Reason (optional)"
                           onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                           className={fieldClassName}
@@ -469,7 +548,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         <select
                           key={field.key}
                           value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
-                          disabled={locked}
+                          disabled={isRowLocked(row)}
                           onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
                           className={cn(fieldClassName, "px-2")}
                         >
@@ -484,12 +563,17 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           key={field.key}
                           type="number"
                           value={String(row.values[field.key] ?? 0)}
-                          disabled={locked}
-                          onChange={(event) =>
-                            field.kind === "days"
-                              ? setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
-                              : setValue(row.hrId, field.key, Number(event.target.value) || 0)
-                          }
+                          disabled={isRowLocked(row)}
+                          onChange={(event) => {
+                            const raw = Number(event.target.value) || 0;
+                            if (field.kind === "days" && field.complementFieldKey) {
+                              setComplementaryDaysValue(row.hrId, field.key, field.complementFieldKey, field.complementTotalContextKey, raw);
+                            } else if (field.kind === "days") {
+                              setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, raw, field.autoCalcDivisorContextKey);
+                            } else {
+                              setValue(row.hrId, field.key, raw);
+                            }
+                            }}
                           className={cn(fieldClassName, "text-right")}
                         />
                       ),
@@ -497,7 +581,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     {definition.hasReason ? (
                       <Input
                         value={row.reason ?? ""}
-                        disabled={locked}
+                        disabled={isRowLocked(row)}
                         placeholder="Reason"
                         onChange={(event) => setReason(row.hrId, event.target.value)}
                         className={fieldClassName}
@@ -520,6 +604,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     "border border-slate-200 bg-white p-3",
                     tone === "hold" && "border-rose-200 bg-rose-50",
                     tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50",
+                    tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70",
                     tone === "leaver" && "bg-red-50",
                   )}
                 >
@@ -538,6 +623,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     <div className="flex shrink-0 gap-1.5">
                       {tone === "hold" ? <Badge variant="danger">HOLD</Badge> : null}
                       {tone === "conflict" ? <Badge variant="warning">Already settled</Badge> : null}
+                      {row.readOnly ? <Badge variant="neutral">Notice period</Badge> : null}
                     </div>
                   </div>
 
@@ -570,7 +656,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         {field.kind === "text" ? (
                           <Input
                             value={row.reasons?.[field.key] ?? ""}
-                            disabled={locked}
+                            disabled={isRowLocked(row)}
                             placeholder="Reason (optional)"
                             onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                             className={fieldClassName}
@@ -578,7 +664,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         ) : field.kind === "select" ? (
                           <select
                             value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
-                            disabled={locked}
+                            disabled={isRowLocked(row)}
                             onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
                             className={cn(fieldClassName, "px-2")}
                           >
@@ -592,12 +678,17 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           <Input
                             type="number"
                             value={String(row.values[field.key] ?? 0)}
-                            disabled={locked}
-                            onChange={(event) =>
-                              field.kind === "days"
-                                ? setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
-                                : setValue(row.hrId, field.key, Number(event.target.value) || 0)
-                            }
+                            disabled={isRowLocked(row)}
+                            onChange={(event) => {
+                              const raw = Number(event.target.value) || 0;
+                              if (field.kind === "days" && field.complementFieldKey) {
+                                setComplementaryDaysValue(row.hrId, field.key, field.complementFieldKey, field.complementTotalContextKey, raw);
+                              } else if (field.kind === "days") {
+                                setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, raw, field.autoCalcDivisorContextKey);
+                              } else {
+                                setValue(row.hrId, field.key, raw);
+                              }
+                              }}
                             className={fieldClassName}
                           />
                         )}
@@ -609,7 +700,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         <span className="text-slate-500">Reason</span>
                         <Input
                           value={row.reason ?? ""}
-                          disabled={locked}
+                          disabled={isRowLocked(row)}
                           placeholder="Reason"
                           onChange={(event) => setReason(row.hrId, event.target.value)}
                           className={fieldClassName}

@@ -131,7 +131,7 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
+function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee = false): DraftRowPatch {
   const patch: DraftRowPatch = { employeeHrId: edit.hrId };
   const values = edit.values ?? {};
   for (const field of NUMERIC_FIELDS) {
@@ -140,6 +140,35 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
       (patch as unknown as Record<string, number>)[field as string] = Number(value);
     }
   }
+
+  // Owner request 2026-07-25: a leaver's CRM/Vacation deduction, edited in the
+  // p1_crm / p1_unpaid_vacation tabs, must land on the SAME resignationCrmDays/
+  // crm and unpaidVacations draft columns the Resignations step used to write —
+  // never ALSO on p1odCrmDays/p1odCrmValue/p1odVacationValue, which would
+  // double-count via otherPart1DeductionsTotal (the exact double-deduction bug
+  // this module already guards against elsewhere). Remap AFTER the generic
+  // loop above, deleting the p1od* keys so they are never persisted for a leaver.
+  if (isLeaverEmployee && stepKey === "p1_crm") {
+    const generic = patch as unknown as Record<string, number | undefined>;
+    if (generic.p1odCrmDays !== undefined) {
+      patch.resignationCrmDays = generic.p1odCrmDays;
+      delete generic.p1odCrmDays;
+    }
+    if (generic.p1odCrmValue !== undefined) {
+      patch.crm = generic.p1odCrmValue;
+      delete generic.p1odCrmValue;
+    }
+  } else if (isLeaverEmployee && stepKey === "p1_unpaid_vacation") {
+    const generic = patch as unknown as Record<string, number | undefined>;
+    if (generic.p1odVacationValue !== undefined) {
+      patch.unpaidVacations = generic.p1odVacationValue;
+      delete generic.p1odVacationValue;
+    }
+    // p1odVacationDays intentionally left as p1od* metadata for a leaver — see
+    // step-definitions.ts: their real deduction is a balance-aware composite,
+    // not a flat day rate, so a day count must never drive the money here.
+  }
+
   if (stepKey === "p1_holds" || stepKey === "p2_holds") {
     if (edit.onHold !== undefined) patch.onHold = edit.onHold;
     if (edit.reason !== undefined) patch.holdReason = edit.reason;
@@ -163,14 +192,18 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
 }
 
 function stepRowToPatch(stepKey: StepKey, row: StepRow): DraftRowPatch {
-  return stepEditToPatch(stepKey, {
-    hrId: row.hrId,
-    values: row.values,
-    reasons: row.reasons,
-    selects: row.selects,
-    reason: row.reason,
-    onHold: row.onHold,
-  });
+  return stepEditToPatch(
+    stepKey,
+    {
+      hrId: row.hrId,
+      values: row.values,
+      reasons: row.reasons,
+      selects: row.selects,
+      reason: row.reason,
+      onHold: row.onHold,
+    },
+    row.lifecycle === "leaver",
+  );
 }
 
 async function requireRun(runId: string): Promise<MonthlySalaryRun> {
@@ -302,12 +335,25 @@ export async function saveStep(
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
 
-  const patches = edits.map((edit) => {
-    const patch = stepEditToPatch(stepKey, edit);
-    patch.source = inputMode;
-    patch.editedBy = actorId(access);
-    return patch;
-  });
+  // Notice-period rows are display-only (see confirmStep). Drop any that reach
+  // here — including via a re-uploaded xlsx, which bypasses the UI entirely.
+  const { rows: currentRows } = await getStepRecommendation(access, runId, stepKey);
+  const readOnlyHrIds = new Set(
+    currentRows.filter((row) => row.readOnly).map((row) => row.hrId.toLowerCase()),
+  );
+  // For the leaver draft-column remap in stepEditToPatch — see its doc comment.
+  const leaverHrIds = new Set(
+    currentRows.filter((row) => row.lifecycle === "leaver").map((row) => row.hrId.toLowerCase()),
+  );
+  const patches = edits
+    .filter((edit) => !readOnlyHrIds.has(String(edit.hrId ?? "").toLowerCase()))
+    .map((edit) => {
+      const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
+      const patch = stepEditToPatch(stepKey, edit, isLeaver);
+      patch.source = inputMode;
+      patch.editedBy = actorId(access);
+      return patch;
+    });
   await upsertDraftRows(runId, patches);
   await upsertStepState({ runId, stepKey, status: "pending", inputMode });
   await writeAutomatedPayrollAudit({
@@ -333,11 +379,18 @@ export async function confirmStep(
   const { members, sources, draftRows } = await loadRunContext(period, runId);
   const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
 
-  const patches = rows.map((row) => {
-    const patch = stepRowToPatch(stepKey, row);
-    patch.editedBy = actorId(access);
-    return patch;
-  });
+  // Informational rows never persist. A notice-period employee is shown on the
+  // Resignations step so HR can see the resignation, but their settlement
+  // belongs to the month they actually leave — writing anything here risks
+  // stamping this month's figures onto them. Enforced server-side because the
+  // client filter is a convenience, not a boundary.
+  const patches = rows
+    .filter((row) => !row.readOnly)
+    .map((row) => {
+      const patch = stepRowToPatch(stepKey, row);
+      patch.editedBy = actorId(access);
+      return patch;
+    });
   await upsertDraftRows(runId, patches);
 
   const summary = summarizeStep(stepKey, rows);
