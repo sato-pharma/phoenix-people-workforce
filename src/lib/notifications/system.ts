@@ -326,13 +326,12 @@ function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferr
   if (input.channels?.length) return dedupeChannels(input.channels);
   const policy = resolveNotificationPolicy(input);
   if (policy.channels.length > 0) {
+    // Owner override 2026-07-25: push is now explicitly authorized for payroll/payslip
+    // notifications (policy.ts's payroll.* and payroll.payslip_available rows include it),
+    // accepting the lock-screen-exposure tradeoff. Telegram stays stripped here for any
+    // isSensitivePayroll() event that isn't payslip-named and isn't generic-only.
     const channels = isSensitivePayroll(input) && !policy.telegramGenericOnly
-      // push renders on a locked screen with no auth — same lock-screen exposure as
-      // telegram, strip it alongside telegram here for defense-in-depth. No current
-      // payroll/payslip policy row includes push (and enforcePayslipEmailBlock separately
-      // hard-blocks payslip-eventType pushes below), but this path is the ONLY guard for
-      // any other isSensitivePayroll() event that isn't payslip-named.
-      ? policy.channels.filter((channel) => channel !== "telegram" && channel !== "push")
+      ? policy.channels.filter((channel) => channel !== "telegram")
       : policy.channels;
     return dedupeChannels(channels.length > 0 ? channels : ["in_app", preferred]);
   }
@@ -1478,7 +1477,7 @@ async function triggerTelegramRetryExhaustionFallback(input: {
   try {
     await createSystemNotification({
       actionUrl: input.telegram.actionUrl ?? null,
-      channels: ["email", "in_app"],
+      channels: ["email", "in_app", "push"],
       eventType: input.telegram.eventType ?? "telegram_retry",
       message: String(input.telegram.message ?? ""),
       metadata: { fallbackFrom: "telegram_exhausted", idempotencyKey: `telegram-exhausted-fallback:${input.deliveryId}` },
@@ -1877,7 +1876,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           if (!emailAttempted && preferences.email_enabled) {
             const fallback = await createSystemNotification({
               ...input,
-              channels: ["email", "in_app"],
+              channels: ["email", "in_app", "push"],
               metadata: { ...(input.metadata ?? {}), fallbackFrom: "telegram", idempotencyKey: `${eventKey}:telegram-fallback` },
             });
             deliveries.push(...fallback.deliveries);
@@ -1919,7 +1918,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         if (!emailAttempted && preferences.email_enabled) {
           const fallback = await createSystemNotification({
             ...input,
-            channels: ["email", "in_app"],
+            channels: ["email", "in_app", "push"],
             metadata: { ...(input.metadata ?? {}), fallbackFrom: "telegram", idempotencyKey: `${eventKey}:telegram-fallback` },
           });
           deliveries.push(...fallback.deliveries);

@@ -147,7 +147,7 @@ export async function notifyIReports360SyncResult(input: IReports360SyncNotifyIn
         await createSystemNotification({
           actionUrl: "/admin/crm",
           actorId: "ireports360-sync-cron",
-          channels: ["in_app", "telegram"],
+          channels: ["in_app", "telegram", "push"],
           eventType: `ireports360_sync_${input.status}`,
           message,
           metadata: {

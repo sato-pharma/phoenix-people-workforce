@@ -9,14 +9,14 @@ export function runProbationTelegramChannelTests() {
   const emails = src("src/lib/probation/intelligence/probation-emails.ts");
   assert.match(
     emails,
-    /channels: \["in_app", "email", "telegram"\]/,
-    "DV-snapshot + milestone emitter includes the telegram channel",
+    /channels: \["in_app", "email", "telegram", "push"\]/,
+    "DV-snapshot + milestone emitter includes the telegram and push channels",
   );
 
   const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
   assert.match(
     sla,
-    /channels: \["in_app", "email", "telegram"\]/,
-    "feedback SLA reminders include the telegram channel",
+    /channels: \["in_app", "email", "telegram", "push"\]/,
+    "feedback SLA reminders include the telegram and push channels",
   );
 }
