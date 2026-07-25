@@ -17,6 +17,7 @@ import type {
   FingerprintReportData,
   FingerprintReportRow,
 } from "@/lib/attendance/fingerprint-report";
+import { summarizeFingerprintDeductionQuantities } from "@/lib/attendance/metrics";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -121,6 +122,10 @@ export function FingerprintReport({ initialData, initialError }: Props) {
     router.push(`/attendance/fingerprint-report${params.toString() ? `?${params.toString()}` : ""}`);
   }
 
+  const deductionQuantities = useMemo(
+    () => summarizeFingerprintDeductionQuantities(initialData?.rows ?? []),
+    [initialData?.rows],
+  );
   const rows = initialData?.rows ?? [];
   const policyDetails = initialData?.policyDetails ?? [];
   const hasDateRange = Boolean(initialData?.hasDateRange);
@@ -137,7 +142,8 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           <>
             <AdminInsightChip>{initialData?.summary.rows ?? 0} daily rows</AdminInsightChip>
             <AdminInsightChip tone="slate">{initialData?.summary.complete ?? 0} complete</AdminInsightChip>
-            <AdminInsightChip tone="orange">{initialData?.summary.deductions ?? 0} deduction flags</AdminInsightChip>
+            <AdminInsightChip tone="orange">{deductionQuantities.deductionDays} deduction days</AdminInsightChip>
+            <AdminInsightChip tone="orange">Qty {deductionQuantities.quantity}</AdminInsightChip>
           </>
         )}
         description="Live daily attendance built from raw fingerprint punches. Mark rows before sending to payroll — decisions are local until exported."

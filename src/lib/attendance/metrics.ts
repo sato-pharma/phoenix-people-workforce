@@ -291,6 +291,25 @@ export function summarizeFingerprintRows(rows: FingerprintSummaryInput[]) {
   };
 }
 
+export function summarizeFingerprintDeductionQuantities(
+  rows: Array<{ deductionDays?: number | string | null }>,
+) {
+  let quantity = 0;
+  let deductionDays = 0;
+
+  for (const row of rows) {
+    const days = Number(row.deductionDays);
+    if (!Number.isFinite(days) || days <= 0) continue;
+    quantity += 1;
+    deductionDays += days;
+  }
+
+  return {
+    deductionDays: Math.round(deductionDays * 1000) / 1000,
+    quantity,
+  };
+}
+
 export function rankAttendancePolicyTarget(targetType: string | null | undefined) {
   if (targetType === "employee_hr_id") return 3;
   if (targetType === "job_title") return 2;
