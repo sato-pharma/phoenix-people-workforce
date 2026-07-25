@@ -6,6 +6,13 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import type { ReportItReportRow } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 
 // ─── Premium design language (square corners, slate-900/orange) ──────────────
@@ -527,63 +534,103 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
             </div>
           )}
 
-          {/* Table — black header, thin light-orange grid */}
-          <div className="overflow-x-auto border border-slate-200">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
-                  <th className="px-3 py-2.5">Report #</th>
-                  <th className="px-3 py-2.5">Date</th>
-                  <th className="px-3 py-2.5">Submitted By</th>
-                  <th className="px-3 py-2.5">Patient</th>
-                  <th className="px-3 py-2.5">Reactions</th>
-                  <th className="px-3 py-2.5">Serious</th>
-                  <th className="px-3 py-2.5">Outcome</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-12 text-center text-sm font-semibold text-slate-400">
-                      No reports found.
-                    </td>
-                  </tr>
-                )}
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="cursor-pointer border-t border-orange-100 bg-white transition hover:bg-orange-50/60"
-                    onClick={() => setSelected(row)}
-                  >
-                    <td className="px-3 py-2 font-mono text-xs font-bold text-orange-600">
-                      {row.report_number}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+          {/* Table — black header, thin light-orange grid; card list on mobile */}
+          <div className="border border-slate-200">
+            <PortalResponsiveDataList
+              items={rows}
+              getKey={(row) => row.id}
+              empty={
+                <PortalEmptyState
+                  title="No reports found"
+                  message={loading ? "Loading…" : "Adjust the filters above or submit a new report."}
+                />
+              }
+              renderCard={(row) => (
+                <PortalRecordCard
+                  accent={row.is_serious ? "rose" : "slate"}
+                  title={row.report_number}
+                  meta={
+                    <>
                       {new Date(row.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
-                      {row.submitted_by_hr_id && (
-                        <span className="ml-1 text-xs text-slate-500">({row.submitted_by_hr_id})</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-700">
-                      {row.patient_initials ?? "—"}
-                      {row.patient_sex && <span className="ml-1 text-slate-500">({row.patient_sex})</span>}
-                    </td>
-                    <td className="max-w-[180px] px-3 py-2 text-xs text-slate-700">
-                      <span className="line-clamp-2">{row.reactions_summary.join(", ") || "—"}</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <SeriousChip serious={row.is_serious} />
-                    </td>
-                    <td className="max-w-[140px] px-3 py-2 text-xs text-slate-700">
-                      <span className="line-clamp-1">{row.outcome_summary ?? "—"}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      {" · "}
+                      {row.submitted_by_name ?? "—"}
+                      {row.submitted_by_hr_id ? ` (${row.submitted_by_hr_id})` : ""}
+                    </>
+                  }
+                  status={<SeriousChip serious={row.is_serious} />}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => setSelected(row)}
+                      className="text-xs font-bold text-orange-600 hover:text-orange-700"
+                    >
+                      View full report →
+                    </button>
+                  }
+                >
+                  <PortalRecordFields
+                    fields={[
+                      {
+                        label: "Patient",
+                        value: `${row.patient_initials ?? "—"}${row.patient_sex ? ` (${row.patient_sex})` : ""}`,
+                      },
+                      { label: "Reactions", value: row.reactions_summary.join(", ") || "—" },
+                      { label: "Outcome", value: row.outcome_summary ?? "—" },
+                    ]}
+                  />
+                </PortalRecordCard>
+              )}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="860px">
+                  <thead>
+                    <tr className="bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                      <th className="px-3 py-2.5">Report #</th>
+                      <th className="px-3 py-2.5">Date</th>
+                      <th className="px-3 py-2.5">Submitted By</th>
+                      <th className="px-3 py-2.5">Patient</th>
+                      <th className="px-3 py-2.5">Reactions</th>
+                      <th className="px-3 py-2.5">Serious</th>
+                      <th className="px-3 py-2.5">Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="cursor-pointer border-t border-orange-100 bg-white transition hover:bg-orange-50/60"
+                        onClick={() => setSelected(row)}
+                      >
+                        <td className="px-3 py-2 font-mono text-xs font-bold text-orange-600">
+                          {row.report_number}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+                          {new Date(row.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
+                          {row.submitted_by_hr_id && (
+                            <span className="ml-1 text-xs text-slate-500">({row.submitted_by_hr_id})</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-700">
+                          {row.patient_initials ?? "—"}
+                          {row.patient_sex && <span className="ml-1 text-slate-500">({row.patient_sex})</span>}
+                        </td>
+                        <td className="max-w-[180px] px-3 py-2 text-xs text-slate-700">
+                          <span className="line-clamp-2">{row.reactions_summary.join(", ") || "—"}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <SeriousChip serious={row.is_serious} />
+                        </td>
+                        <td className="max-w-[140px] px-3 py-2 text-xs text-slate-700">
+                          <span className="line-clamp-1">{row.outcome_summary ?? "—"}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
           </div>
 
           {/* Pagination */}

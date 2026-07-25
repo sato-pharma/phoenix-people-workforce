@@ -43,6 +43,12 @@ import { completedReportStatuses as completedStatuses } from "@/lib/coaching/ana
 import { getCoachingScoreColor as getScoreColor } from "@/lib/coaching/landing-insights";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 
 /* ━━━━━━━━━━━━━━━━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -703,65 +709,73 @@ function CoachingRadarChart({ data, wide = false }: { data: { dimension: string;
 
 /* ━━━━━━━━━━━━━━━━━━ Mobile Report Card ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
+/** Map a coaching performance zone to the closest PortalRecordCard accent color. */
+function zoneAccent(zone: CoachingPerformanceZone | null): "orange" | "emerald" | "amber" | "rose" | "sky" | "slate" {
+  switch (zone) {
+    case "critical_red":
+    case "red_zone":
+      return "rose";
+    case "yellow_zone":
+      return "amber";
+    case "green_zone":
+      return "emerald";
+    case "excellence_zone":
+      return "sky";
+    default:
+      return "slate";
+  }
+}
+
 function MobileReportCard({ report, isTeamMode }: { isTeamMode: boolean; report: CoachingReportSummaryRow }) {
   const scoreColor = getScoreColor(report.finalScorePercent);
   return (
-    <div className="border border-slate-200 bg-white">
-      {/* Header row */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
-        <span className="text-[11px] font-bold text-orange-600">{report.reportNumber}</span>
-        <div className="flex items-center gap-1.5">
-          <StatusBadge status={report.status} />
-          <AckBadge acknowledged={report.acknowledged} />
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="px-3 py-3">
-        {isTeamMode ? (
-          <p className="mb-2 text-sm font-bold text-slate-900">{formatEmployeeDisplayName(report.medicalRepName, report.medicalRepHrId)}</p>
-        ) : null}
-
-        {/* Score highlight */}
-        <div className="mb-3 flex items-center gap-3">
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold" style={{ color: scoreColor }}>{formatPct(report.finalScorePercent)}</span>
-          </div>
+    <PortalRecordCard
+      accent={zoneAccent(report.performanceZone)}
+      title={<span className="text-orange-600">{report.reportNumber}</span>}
+      meta={
+        isTeamMode ? (
+          <>
+            {formatEmployeeDisplayName(report.medicalRepName)}
+            {report.medicalRepHrId ? <span className="text-slate-400"> · {report.medicalRepHrId}</span> : null}
+          </>
+        ) : undefined
+      }
+      status={
+        // Score + zone are the most important glance-value, so they take the
+        // card's status slot instead of sitting in the label/value field grid.
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-xl font-black leading-none tabular-nums" style={{ color: scoreColor }}>
+            {formatPct(report.finalScorePercent)}
+          </span>
           <ZoneBadge zone={report.performanceZone} />
         </div>
-
-        {/* Detail grid */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Date</span>
-            <p className="font-semibold text-slate-800">{formatDate(report.coachingDate)}</p>
-          </div>
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Coach</span>
-            <p className="font-semibold text-slate-800">{report.coachName || "—"}</p>
-          </div>
-          {isTeamMode ? (
-            <>
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Team</span>
-                <p className="font-semibold text-slate-800">{report.teamName || "—"}</p>
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Area</span>
-                <p className="font-semibold text-slate-800">{report.areaName || "—"}</p>
-              </div>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Action */}
-      <div className="border-t border-slate-100 px-3 py-2.5">
-        <Link className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
+      }
+      actions={
+        <Link
+          className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-orange-600"
+          href={`/employee-portals/coaching/${report.reportId}`}
+        >
           Review Report <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
+      }
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <StatusBadge status={report.status} />
+        <AckBadge acknowledged={report.acknowledged} />
       </div>
-    </div>
+      <PortalRecordFields
+        fields={[
+          { label: "Date", value: formatDate(report.coachingDate) },
+          { label: "Coach", value: report.coachName || "—" },
+          ...(isTeamMode
+            ? [
+                { label: "Team", value: report.teamName || "—" },
+                { label: "Area", value: report.areaName || "—" },
+              ]
+            : []),
+        ]}
+      />
+    </PortalRecordCard>
   );
 }
 
@@ -796,64 +810,54 @@ function ReportsTable({
     row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedRow]);
 
-  if (reports.length === 0) {
-    return (
-      <div className="border border-slate-200 bg-white">
-        <div className="px-3 py-8 text-center text-sm text-slate-500">No reports match the current filters.</div>
-      </div>
-    );
-  }
-
   const thCls = "border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 last:border-r-0";
   const tdCls = "border-b border-r border-slate-100 px-3 py-2.5 last:border-r-0";
 
   return (
-    <div className="border border-slate-200 bg-white" onKeyDown={handleKeyDown} tabIndex={0} role="grid" aria-label="Coaching reports">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr>
-              <th className={thCls}>Report</th>
-              {isTeamMode ? <th className={thCls}>Medical Rep</th> : null}
-              <th className={thCls}>Date</th>
-              <th className={thCls}>Coach</th>
-              <th className={cn(thCls, "text-right")}>Score</th>
-              <th className={thCls}>Zone</th>
-              <th className={thCls}>Status</th>
-              <th className={thCls}>Ack</th>
-              <th className={cn(thCls, "w-[70px]")}></th>
-            </tr>
-          </thead>
-          <tbody ref={tbodyRef}>
-            {reports.map((report, idx) => (
-              <tr
-                className={cn("transition-colors last:border-b-0", idx === focusedRow ? "bg-orange-50/60 outline outline-1 outline-orange-200" : "hover:bg-slate-50/40")}
-                key={report.reportId}
-                aria-selected={idx === focusedRow}
-              >
-                <td className={cn(tdCls, "whitespace-nowrap font-bold text-orange-600")}>{report.reportNumber}</td>
-                {isTeamMode ? (
-                  <td className={tdCls}>
-                    <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                    <p className="text-[11px] text-slate-400">{report.medicalRepHrId}</p>
-                  </td>
-                ) : null}
-                <td className={cn(tdCls, "whitespace-nowrap text-slate-700")}>{formatDate(report.coachingDate)}</td>
-                <td className={cn(tdCls, "text-slate-700")}>{report.coachName || "—"}</td>
-                <td className={cn(tdCls, "whitespace-nowrap text-right font-bold")} style={{ color: getScoreColor(report.finalScorePercent) }}>{formatPct(report.finalScorePercent)}</td>
-                <td className={tdCls}><ZoneBadge zone={report.performanceZone} /></td>
-                <td className={tdCls}><StatusBadge status={report.status} /></td>
-                <td className={tdCls}><AckBadge acknowledged={report.acknowledged} /></td>
-                <td className={cn(tdCls, "text-center")}>
-                  <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
-                    View <ArrowUpRight className="h-3 w-3" />
-                  </Link>
+    <div aria-label="Coaching reports" className="hidden md:block" onKeyDown={handleKeyDown} role="grid" tabIndex={0}>
+      <PortalDesktopTable minWidth={isTeamMode ? "1040px" : "860px"}>
+        <thead>
+          <tr>
+            <th className={thCls}>Report</th>
+            {isTeamMode ? <th className={thCls}>Medical Rep</th> : null}
+            <th className={thCls}>Date</th>
+            <th className={thCls}>Coach</th>
+            <th className={cn(thCls, "text-right")}>Score</th>
+            <th className={thCls}>Zone</th>
+            <th className={thCls}>Status</th>
+            <th className={thCls}>Ack</th>
+            <th className={cn(thCls, "w-[70px]")}></th>
+          </tr>
+        </thead>
+        <tbody ref={tbodyRef}>
+          {reports.map((report, idx) => (
+            <tr
+              className={cn("transition-colors last:border-b-0", idx === focusedRow ? "bg-orange-50/60 outline outline-1 outline-orange-200" : "hover:bg-slate-50/40")}
+              key={report.reportId}
+              aria-selected={idx === focusedRow}
+            >
+              <td className={cn(tdCls, "whitespace-nowrap font-bold text-orange-600")}>{report.reportNumber}</td>
+              {isTeamMode ? (
+                <td className={tdCls}>
+                  <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(report.medicalRepName)}</p>
+                  <p className="text-[11px] text-slate-400">{report.medicalRepHrId}</p>
                 </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              ) : null}
+              <td className={cn(tdCls, "whitespace-nowrap text-slate-700")}>{formatDate(report.coachingDate)}</td>
+              <td className={cn(tdCls, "text-slate-700")}>{report.coachName || "—"}</td>
+              <td className={cn(tdCls, "whitespace-nowrap text-right font-bold")} style={{ color: getScoreColor(report.finalScorePercent) }}>{formatPct(report.finalScorePercent)}</td>
+              <td className={tdCls}><ZoneBadge zone={report.performanceZone} /></td>
+              <td className={tdCls}><StatusBadge status={report.status} /></td>
+              <td className={tdCls}><AckBadge acknowledged={report.acknowledged} /></td>
+              <td className={cn(tdCls, "text-center")}>
+                <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
+                  View <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </PortalDesktopTable>
     </div>
   );
 }
@@ -1069,23 +1073,22 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
         </div>
       ) : null}
 
-      {/* ─── Reports Table (desktop >=480px) ─────────────────────────── */}
-      <div className="hidden min-[480px]:block">
-        <ReportsTable
-          reports={filtered}
-          isTeamMode={isTeamMode}
-          focusedRow={focusedRow}
-          onKeyNav={setFocusedRow}
+      {/* ─── Reports (desktop table / mobile cards) ──────────────────── */}
+      <div className="border border-slate-200 bg-white">
+        <PortalResponsiveDataList
+          items={filtered}
+          getKey={(report) => report.reportId}
+          empty={<div className="px-3 py-8 text-center text-sm text-slate-500">No reports match the current filters.</div>}
+          renderCard={(report) => <MobileReportCard report={report} isTeamMode={isTeamMode} />}
+          renderTable={() => (
+            <ReportsTable
+              reports={filtered}
+              isTeamMode={isTeamMode}
+              focusedRow={focusedRow}
+              onKeyNav={setFocusedRow}
+            />
+          )}
         />
-      </div>
-
-      {/* ─── Mobile Card View (<480px) ───────────────────────────────── */}
-      <div className="grid gap-3 min-[480px]:hidden">
-        {filtered.length === 0 ? (
-          <div className="border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">No reports match the current filters.</div>
-        ) : (
-          filtered.map((report) => <MobileReportCard key={report.reportId} report={report} isTeamMode={isTeamMode} />)
-        )}
       </div>
     </div>
   );

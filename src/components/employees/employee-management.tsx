@@ -29,6 +29,12 @@ import {
 } from "@/components/admin/admin-design-system";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1652,175 +1658,294 @@ export function EmployeeManagement({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1200px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-                    <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
-                    <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
-                    <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
-                    <th className="sticky top-0 z-10 px-6 py-4">Direct Manager</th>
-                    <th className="sticky top-0 z-10 px-6 py-4 text-center">Payout</th>
-                    <th className="sticky top-0 z-10 px-6 py-4">Contact Details</th>
-                    <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
+            {/* Mobile Card View */}
+            <div className="divide-y divide-slate-100 md:hidden">
+              {filteredEmployees.length === 0 ? (
+                <PortalEmptyState
+                  message={
+                    directoryTab === "missing" && !hasActiveFilters
+                      ? "No employee records are missing master data."
+                      : "No employee records match your current filter criteria."
+                  }
+                  title="No employees found"
+                />
+              ) : (
+                filteredEmployees.map((employee, index) => {
+                  const missingFields = getMissingEmployeeRecordFields(employee);
+
+                  return (
+                    <PortalRecordCard
+                      accent={missingFields.length > 0 ? "amber" : "slate"}
+                      actions={
+                        <>
+                          <Button
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            onClick={() => setMasterDetailsEmployee(employee)}
+                            variant="outline"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                            View
+                          </Button>
+                          <Button
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            onClick={() => startEdit(employee)}
+                            variant="outline"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                          <Button
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-rose-200 bg-rose-50 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                            onClick={() => startResignation(employee)}
+                            variant="outline"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            Resign
+                          </Button>
+                        </>
+                      }
+                      key={employeeRowKey(employee, index)}
+                      meta={
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider text-slate-600">
+                            {employee.hrId}
+                          </span>
+                          {employee.employmentStatus === "active" ? (
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          ) : null}
+                        </div>
+                      }
+                      status={
+                        <Badge
+                          className={cn(
+                            "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
+                            employee.salaryPaymentMode === "two_parts"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          )}
+                          variant="neutral"
+                        >
+                          {employee.salaryPaymentMode === "two_parts" ? "2 Parts" : "1 Part"}
+                        </Badge>
+                      }
+                      title={employee.displayName}
+                    >
+                      {directoryTab === "missing" && missingFields.length > 0 ? (
+                        <div
+                          className="mb-2 flex items-start gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700"
+                          title={missingFields.join(", ")}
+                        >
+                          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>{missingEmployeeRecordSummary(employee)}</span>
+                        </div>
+                      ) : null}
+                      <PortalRecordFields
+                        fields={[
+                          {
+                            label: "Position",
+                            value: emptyText(employee.positionTitle ?? employee.jobTitle),
+                          },
+                          {
+                            label: "Department / Line",
+                            value: `${emptyText(employee.departmentName)} · ${emptyText(employee.lineName)}`,
+                          },
+                          {
+                            label: "Hired",
+                            value: employee.hireDate ? employee.hireDate.slice(0, 10) : "-",
+                          },
+                          {
+                            label: "Manager",
+                            value: employee.managerHrId ? (
+                              <>
+                                {emptyText(employee.managerName)}{" "}
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  {employee.managerHrId}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-tighter text-amber-600">
+                                Unassigned
+                              </span>
+                            ),
+                          },
+                          { label: "Email", value: emptyText(employee.workEmail) },
+                          { label: "Phone", value: emptyText(employee.mobileNumber) },
+                        ]}
+                      />
+                    </PortalRecordCard>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Table View */}
+            <PortalDesktopTable minWidth="1200px">
+              <thead>
+                <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                  <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
+                  <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
+                  <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
+                  <th className="sticky top-0 z-10 px-6 py-4">Direct Manager</th>
+                  <th className="sticky top-0 z-10 px-6 py-4 text-center">Payout</th>
+                  <th className="sticky top-0 z-10 px-6 py-4">Contact Details</th>
+                  <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9]">
+                {filteredEmployees.length === 0 ? (
+                  <tr>
+                    <td
+                      className="px-6 py-16 text-center text-sm text-[#94A3B8]"
+                      colSpan={7}
+                    >
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-[#F1F5F9] flex items-center justify-center">
+                          <Users className="h-6 w-6 text-[#CBD5E1]" />
+                        </div>
+                        <span>
+                          {directoryTab === "missing" && !hasActiveFilters
+                            ? "No employee records are missing master data."
+                            : "No employee records match your current filter criteria."}
+                        </span>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F1F5F9]">
-                  {filteredEmployees.length === 0 ? (
-                    <tr>
-                      <td
-                        className="px-6 py-16 text-center text-sm text-[#94A3B8]"
-                        colSpan={7}
+                ) : (
+                  filteredEmployees.map((employee, index) => {
+                    const missingFields = getMissingEmployeeRecordFields(employee);
+
+                    return (
+                      <tr
+                        className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
+                        key={employeeRowKey(employee, index)}
                       >
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="h-12 w-12 rounded-full bg-[#F1F5F9] flex items-center justify-center">
-                            <Users className="h-6 w-6 text-[#CBD5E1]" />
+                      <td className="px-6 py-4">
+                        <button
+                          className="flex items-center gap-3 rounded-lg text-left group/name focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                          onClick={() => startEdit(employee)}
+                          type="button"
+                        >
+                          <DirectoryAvatar
+                            fullName={employee.displayName}
+                            hasPhoto={employee.hasPhoto}
+                            hrId={employee.hrId}
+                          />
+                          <div className="flex flex-col">
+                          <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
+                            {employee.displayName}
+                          </span>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-1.5 py-0.5 rounded uppercase">
+                              {employee.hrId}
+                            </span>
+                            {employee.employmentStatus === "active" && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            )}
                           </div>
-                          <span>
-                            {directoryTab === "missing" && !hasActiveFilters
-                              ? "No employee records are missing master data."
-                              : "No employee records match your current filter criteria."}
+                          {directoryTab === "missing" && missingFields.length > 0 ? (
+                            <span
+                              className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700"
+                              title={missingFields.join(", ")}
+                            >
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                              <span className="truncate">
+                                {missingEmployeeRecordSummary(employee)}
+                              </span>
+                            </span>
+                          ) : null}
+                          </div>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="font-mono text-xs text-[#475569]">
+                          {employee.hireDate ? employee.hireDate.slice(0, 10) : "-"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-semibold text-[#0F172A] leading-tight">
+                            {emptyText(employee.positionTitle ?? employee.jobTitle)}
+                          </span>
+                          <span className="text-[10px] text-[#64748B]">
+                            {emptyText(employee.departmentName)} · {emptyText(employee.lineName)}
                           </span>
                         </div>
                       </td>
-                    </tr>
-                  ) : (
-                    filteredEmployees.map((employee, index) => {
-                      const missingFields = getMissingEmployeeRecordFields(employee);
-
-                      return (
-                        <tr
-                          className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
-                          key={employeeRowKey(employee, index)}
-                        >
-                        <td className="px-6 py-4">
-                          <button
-                            className="flex items-center gap-3 text-left group/name"
-                            onClick={() => startEdit(employee)}
-                            type="button"
-                          >
-                            <DirectoryAvatar
-                              fullName={employee.displayName}
-                              hasPhoto={employee.hasPhoto}
-                              hrId={employee.hrId}
-                            />
-                            <div className="flex flex-col">
-                            <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
-                              {employee.displayName}
+                      <td className="px-6 py-4">
+                        {employee.managerHrId ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-medium text-[#0F172A]">
+                              {emptyText(employee.managerName)}
                             </span>
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-1.5 py-0.5 rounded uppercase">
-                                {employee.hrId}
-                              </span>
-                              {employee.employmentStatus === "active" && (
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              )}
-                            </div>
-                            {directoryTab === "missing" && missingFields.length > 0 ? (
-                              <span
-                                className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700"
-                                title={missingFields.join(", ")}
-                              >
-                                <AlertCircle className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {missingEmployeeRecordSummary(employee)}
-                                </span>
-                              </span>
-                            ) : null}
-                            </div>
-                          </button>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-mono text-xs text-[#475569]">
-                            {employee.hireDate ? employee.hireDate.slice(0, 10) : "-"}
+                            <span className="font-mono text-[10px] tracking-tight text-[#94A3B8]">
+                              {employee.managerHrId}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                            Unassigned
                           </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs font-semibold text-[#0F172A] leading-tight">
-                              {emptyText(employee.positionTitle ?? employee.jobTitle)}
-                            </span>
-                            <span className="text-[10px] text-[#64748B]">
-                              {emptyText(employee.departmentName)} · {emptyText(employee.lineName)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {employee.managerHrId ? (
-                            <div className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-[#0F172A]">
-                                {emptyText(employee.managerName)}
-                              </span>
-                              <span className="font-mono text-[10px] tracking-tight text-[#94A3B8]">
-                                {employee.managerHrId}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                              Unassigned
-                            </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <Badge
+                          className={cn(
+                            "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
+                            employee.salaryPaymentMode === "two_parts"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-emerald-100 text-emerald-700"
                           )}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <Badge
-                            className={cn(
-                              "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
-                              employee.salaryPaymentMode === "two_parts"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-emerald-100 text-emerald-700"
-                            )}
-                            variant="neutral"
+                          variant="neutral"
+                        >
+                          {employee.salaryPaymentMode === "two_parts"
+                            ? "2 Parts"
+                            : "1 Part"}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-medium text-[#0F172A] leading-tight">
+                            {emptyText(employee.workEmail)}
+                          </span>
+                          <span className="font-mono text-[10px] tracking-tight text-[#64748B]">
+                            {emptyText(employee.mobileNumber)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-1.5 transition-all duration-200">
+                          <Button
+                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            onClick={() => setMasterDetailsEmployee(employee)}
+                            title="View Master Details"
+                            variant="ghost"
                           >
-                            {employee.salaryPaymentMode === "two_parts"
-                              ? "2 Parts"
-                              : "1 Part"}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium text-[#0F172A] leading-tight">
-                              {emptyText(employee.workEmail)}
-                            </span>
-                            <span className="font-mono text-[10px] tracking-tight text-[#64748B]">
-                              {emptyText(employee.mobileNumber)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-1.5 transition-all duration-200">
-                            <Button
-                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
-                              onClick={() => setMasterDetailsEmployee(employee)}
-                              title="View Master Details"
-                              variant="ghost"
-                            >
-                              <Info className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
-                              onClick={() => startEdit(employee)}
-                              title="Edit Record"
-                              variant="ghost"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
-                              onClick={() => startResignation(employee)}
-                              title="Mark as Resigned"
-                              variant="ghost"
-                            >
-                              <UserX className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                            <Info className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            onClick={() => startEdit(employee)}
+                            title="Edit Record"
+                            variant="ghost"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            onClick={() => startResignation(employee)}
+                            title="Mark as Resigned"
+                            variant="ghost"
+                          >
+                            <UserX className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </PortalDesktopTable>
           </AdminTableShell>
         </>
       ) : null}

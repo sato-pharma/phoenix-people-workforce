@@ -31,6 +31,12 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { RoiMultiSelect } from "@/components/marketing-requests/roi-multi-select";
 import { CoverageKpiCard } from "@/components/marketing-requests/coverage-kpi-card";
 import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
+import {
   computeFacetedCoverageDimensions,
   pruneCoverageFilterState,
   withCoverageFilterValues,
@@ -107,6 +113,16 @@ const RESULT_BADGE_CLASS: Record<MarketingRoiResultStatus, string> = {
   behind: "border-amber-200 bg-amber-50 text-amber-700",
   awaiting_data: "border-sky-200 bg-sky-50 text-sky-700",
   no_data: "border-slate-200 bg-slate-50 text-slate-500",
+};
+
+/** Mirrors RESULT_BADGE_CLASS's own color choice per result status, for the mobile
+ *  request card's left accent bar (PortalRecordCard's `accent` prop) — same signal,
+ *  just a different rendering surface, never a new color convention. */
+const RESULT_ACCENT: Record<MarketingRoiResultStatus, "emerald" | "amber" | "sky" | "slate"> = {
+  on_track: "emerald",
+  behind: "amber",
+  awaiting_data: "sky",
+  no_data: "slate",
 };
 
 /** Only the 3 requested states get a color; every other status keeps the plain-text look
@@ -804,11 +820,23 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
         {/* ── Collapsible request list ─────────────────────────────────────── */}
         {report ? (
           <section className="overflow-hidden rounded-none border border-[#E2E8F0] bg-white shadow-sm">
-            {report.rows.length === 0 ? (
-              <div className="px-4 py-10 text-center text-[13px] font-semibold text-[#64748B]">No requests match the applied filters.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px] border-collapse text-sm">
+            <PortalResponsiveDataList
+              empty={<div className="px-4 py-10 text-center text-[13px] font-semibold text-[#64748B]">No requests match the applied filters.</div>}
+              getKey={(row) => row.requestId}
+              items={sortedRows}
+              renderCard={(row) => (
+                <RequestAccordionCard
+                  key={row.requestId}
+                  row={row}
+                  expanded={expandedRequestId === row.requestId}
+                  onToggle={() => setExpandedRequestId((current) => (current === row.requestId ? null : row.requestId))}
+                  isSuperAdmin={isSuperAdmin}
+                  cachedPharmacies={pharmacyCache.get(row.requestId) ?? null}
+                  onPharmaciesLoaded={(pharmacies) => cachePharmacies(row.requestId, pharmacies)}
+                />
+              )}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="960px">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
                       <th className="px-2 py-2.5">
@@ -857,9 +885,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       />
                     ))}
                   </tbody>
-                </table>
-              </div>
-            )}
+                </PortalDesktopTable>
+              )}
+            />
           </section>
         ) : null}
       </div>
@@ -924,128 +952,391 @@ function CoverageBreakdownPanel({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div>
         {dimension === "distributor" ? (
-          distributorRollup.length === 0 ? (
-            <p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No distributor data for the current filter.</p>
-          ) : (
-            <table className="w-full min-w-[560px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
-                  <th className="px-3 py-2.5">Distributor</th>
-                  <th className="px-3 py-2.5 text-right">Requests</th>
-                  <th className="px-3 py-2.5 text-right">Allocated cost</th>
-                  <th className="px-3 py-2.5 text-right">Allocated required ROI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {distributorRollup.map((row) => (
-                  <tr
-                    key={row.distributorCode}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onFilterDimension("distributor", [row.distributorCode])}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
-                    }}
-                    className="cursor-pointer border-b border-[#F1F5F9] transition hover:bg-orange-50/40"
-                  >
-                    <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
-                      {row.distributorName ?? row.distributorCode}
-                      <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({row.distributorCode})</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedRequiredRoi)}</td>
+          <PortalResponsiveDataList
+            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No distributor data for the current filter.</p>}
+            getKey={(row) => row.distributorCode}
+            items={distributorRollup}
+            renderCard={(row) => (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onFilterDimension("distributor", [row.distributorCode])}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
+                }}
+              >
+                <PortalRecordCard
+                  className="cursor-pointer transition hover:bg-orange-50/40"
+                  meta={`${row.distributorCode} · ${row.requestCount.toLocaleString("en-US")} request${row.requestCount === 1 ? "" : "s"}`}
+                  title={row.distributorName ?? row.distributorCode}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Allocated cost", value: money(row.allocatedCost) },
+                      { label: "Allocated required ROI", value: money(row.allocatedRequiredRoi) },
+                    ]}
+                  />
+                </PortalRecordCard>
+              </div>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="560px">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                    <th className="px-3 py-2.5">Distributor</th>
+                    <th className="px-3 py-2.5 text-right">Requests</th>
+                    <th className="px-3 py-2.5 text-right">Allocated cost</th>
+                    <th className="px-3 py-2.5 text-right">Allocated required ROI</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )
-        ) : dimensionRollup.length === 0 ? (
-          <p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No data for the current filter.</p>
+                </thead>
+                <tbody>
+                  {distributorRollup.map((row) => (
+                    <tr
+                      key={row.distributorCode}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onFilterDimension("distributor", [row.distributorCode])}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
+                      }}
+                      className="cursor-pointer border-b border-[#F1F5F9] transition hover:bg-orange-50/40"
+                    >
+                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
+                        {row.distributorName ?? row.distributorCode}
+                        <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({row.distributorCode})</span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedRequiredRoi)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         ) : (
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
-                <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
-                <th className="px-3 py-2.5 text-right">Requests</th>
-                <th className="px-3 py-2.5 text-right">Cost</th>
-                <th className="px-3 py-2.5 text-right">Actual</th>
-                <th className="px-3 py-2.5 text-right">Coverage</th>
-                <th className="px-3 py-2.5 text-right">Behind</th>
-                <th className="px-3 py-2.5 text-right">No data</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dimensionRollup.map((row) => {
-                // "Unassigned" is a display fallback for a null/blank dimension value on
-                // the row, not a real filterable value — filtering by it would silently
-                // produce a wrong/empty result, so those rows render inert (no click).
-                const filterable = row.key !== "Unassigned";
-                return (
-                  <tr
-                    key={row.key}
-                    role={filterable ? "button" : undefined}
-                    tabIndex={filterable ? 0 : undefined}
-                    onClick={filterable ? () => onFilterDimension(dimension, [row.key]) : undefined}
-                    onKeyDown={
-                      filterable
-                        ? (event) => {
-                            if (event.key === "Enter" || event.key === " ") onFilterDimension(dimension, [row.key]);
-                          }
-                        : undefined
-                    }
-                    className={cn(
-                      "border-b border-[#F1F5F9] transition",
-                      filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70",
-                    )}
-                  >
-                    <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{row.label}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.totalCost)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{money(row.totalActualValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-amber-700">{row.behindCount.toLocaleString("en-US")}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{row.noDataCount.toLocaleString("en-US")}</td>
+          <PortalResponsiveDataList
+            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No data for the current filter.</p>}
+            getKey={(row) => row.key}
+            items={dimensionRollup}
+            renderCard={(row) => {
+              // "Unassigned" is a display fallback for a null/blank dimension value on
+              // the row, not a real filterable value — filtering by it would silently
+              // produce a wrong/empty result, so those rows render inert (no click).
+              const filterable = row.key !== "Unassigned";
+              const card = (
+                <PortalRecordCard
+                  accent={filterable ? "orange" : "slate"}
+                  className={cn("transition", filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70")}
+                  meta={`${row.requestCount.toLocaleString("en-US")} request${row.requestCount === 1 ? "" : "s"}`}
+                  status={<span className="whitespace-nowrap text-sm font-black text-slate-900">{percent(row.coverageRatio)}</span>}
+                  title={row.label}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Cost", value: money(row.totalCost) },
+                      { label: "Actual", value: money(row.totalActualValue) },
+                      { label: "Behind", value: row.behindCount.toLocaleString("en-US") },
+                      { label: "No data", value: row.noDataCount.toLocaleString("en-US") },
+                    ]}
+                  />
+                </PortalRecordCard>
+              );
+              if (!filterable) return card;
+              return (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onFilterDimension(dimension, [row.key])}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onFilterDimension(dimension, [row.key]);
+                  }}
+                >
+                  {card}
+                </div>
+              );
+            }}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="720px">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                    <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
+                    <th className="px-3 py-2.5 text-right">Requests</th>
+                    <th className="px-3 py-2.5 text-right">Cost</th>
+                    <th className="px-3 py-2.5 text-right">Actual</th>
+                    <th className="px-3 py-2.5 text-right">Coverage</th>
+                    <th className="px-3 py-2.5 text-right">Behind</th>
+                    <th className="px-3 py-2.5 text-right">No data</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {dimensionRollup.map((row) => {
+                    // "Unassigned" is a display fallback for a null/blank dimension value on
+                    // the row, not a real filterable value — filtering by it would silently
+                    // produce a wrong/empty result, so those rows render inert (no click).
+                    const filterable = row.key !== "Unassigned";
+                    return (
+                      <tr
+                        key={row.key}
+                        role={filterable ? "button" : undefined}
+                        tabIndex={filterable ? 0 : undefined}
+                        onClick={filterable ? () => onFilterDimension(dimension, [row.key]) : undefined}
+                        onKeyDown={
+                          filterable
+                            ? (event) => {
+                                if (event.key === "Enter" || event.key === " ") onFilterDimension(dimension, [row.key]);
+                              }
+                            : undefined
+                        }
+                        className={cn(
+                          "border-b border-[#F1F5F9] transition",
+                          filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70",
+                        )}
+                      >
+                        <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{row.label}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.totalCost)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{money(row.totalActualValue)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-amber-700">{row.behindCount.toLocaleString("en-US")}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{row.noDataCount.toLocaleString("en-US")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         )}
       </div>
 
       {trend.length > 0 ? (
         <div className="border-t border-[#F1F5F9] px-4 py-3 sm:px-5">
           <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">Trend by pay month</p>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-sm">
-              <thead>
-                <tr className="text-left text-[11px] font-black uppercase tracking-wide text-slate-400">
-                  <th className="px-3 py-1.5">Month</th>
-                  <th className="px-3 py-1.5 text-right">Requests</th>
-                  <th className="px-3 py-1.5 text-right">Cost</th>
-                  <th className="px-3 py-1.5 text-right">Actual</th>
-                  <th className="px-3 py-1.5 text-right">Coverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trend.map((point) => (
-                  <tr key={point.month} className="border-t border-[#F1F5F9]">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-bold text-slate-900">{point.month}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{money(point.totalActualValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{percent(point.coverageRatio)}</td>
+          <PortalResponsiveDataList
+            empty={<p className="text-[13px] font-semibold text-[#64748B]">No trend data for the current filter.</p>}
+            getKey={(point) => point.month}
+            items={trend}
+            renderCard={(point) => (
+              <PortalRecordCard
+                meta={`${point.requestCount.toLocaleString("en-US")} request${point.requestCount === 1 ? "" : "s"}`}
+                status={<span className="whitespace-nowrap text-sm font-black text-slate-900">{percent(point.coverageRatio)}</span>}
+                title={point.month}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "Cost", value: money(point.totalCost) },
+                    { label: "Actual", value: money(point.totalActualValue) },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="560px">
+                <thead>
+                  <tr className="text-left text-[11px] font-black uppercase tracking-wide text-slate-400">
+                    <th className="px-3 py-1.5">Month</th>
+                    <th className="px-3 py-1.5 text-right">Requests</th>
+                    <th className="px-3 py-1.5 text-right">Cost</th>
+                    <th className="px-3 py-1.5 text-right">Actual</th>
+                    <th className="px-3 py-1.5 text-right">Coverage</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {trend.map((point) => (
+                    <tr key={point.month} className="border-t border-[#F1F5F9]">
+                      <td className="whitespace-nowrap px-3 py-1.5 font-bold text-slate-900">{point.month}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{money(point.totalActualValue)}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{percent(point.coverageRatio)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** Fetches (and caches, via the parent-level pharmacyCache) a request's target pharmacies
+ *  when its accordion row/card is expanded. Extracted so both the desktop row and mobile
+ *  card presentations of the same request share byte-identical fetch/cache/error behavior —
+ *  each still holds its own local copy (seeded from the shared cache), exactly like the
+ *  single-presentation implementation this was lifted from. */
+function useExpandedPharmacies({
+  cachedPharmacies,
+  expanded,
+  onPharmaciesLoaded,
+  requestId,
+}: {
+  cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
+  expanded: boolean;
+  onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
+  requestId: string;
+}) {
+  const [pharmacies, setPharmacies] = React.useState<MarketingCoveragePharmacyRow[] | null>(cachedPharmacies);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    // A cache hit is already reflected via the useState(cachedPharmacies) initializer above,
+    // so `pharmacies !== null` here covers both "already fetched locally" and "seeded from
+    // the parent cache" — no separate synchronous setState-from-effect branch needed.
+    if (!expanded || pharmacies !== null || loading) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/marketing-requests/coverage-report/${encodeURIComponent(requestId)}/pharmacies`, { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message ?? "Unable to load target pharmacies.");
+        const loaded = (payload.pharmacies ?? []) as MarketingCoveragePharmacyRow[];
+        if (!cancelled) {
+          setPharmacies(loaded);
+          onPharmaciesLoaded(loaded);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load target pharmacies.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
+  return { pharmacies, loading, error };
+}
+
+/** The "target pharmacies" drill-down shown under an expanded request — shared by both the
+ *  desktop row (inside a <td colSpan>) and the mobile card (inside a plain <div>) so the two
+ *  presentations never drift. Each pharmacy can itself expand to show its matched sales detail
+ *  (Product / Month / Qty / Value), which gets its own desktop-table/mobile-card split. */
+function PharmacyDrilldownPanel({
+  error,
+  isSuperAdmin,
+  loading,
+  pharmacies,
+}: {
+  error: string | null;
+  isSuperAdmin: boolean;
+  loading: boolean;
+  pharmacies: MarketingCoveragePharmacyRow[] | null;
+}) {
+  // Only one pharmacy's sales-detail drill-down open at a time per request, mirroring the
+  // single-expanded-request convention at the parent level — no separate fetch on toggle,
+  // salesDetail is already present on each pharmacy row from the same load above.
+  const [expandedPharmacyCode, setExpandedPharmacyCode] = React.useState<string | null>(null);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3 text-[13px] font-semibold text-slate-500">
+        <LoadingSpinner /> Loading target pharmacies…
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="rounded-none border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-700">{error}</div>;
+  }
+  if (!pharmacies || pharmacies.length === 0) {
+    return <p className="py-2 text-[13px] font-semibold text-slate-500">This request has no target pharmacy codes.</p>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">
+        {pharmacies.length} target pharmac{pharmacies.length === 1 ? "y" : "ies"} — sales shown even at zero
+      </p>
+      {pharmacies.map((pharmacy) => {
+        const pharmacyExpanded = expandedPharmacyCode === pharmacy.pharmacyCode;
+        return (
+          <div key={pharmacy.pharmacyCode} className="rounded-none border border-slate-200 bg-white">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode))}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode));
+              }}
+              className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-orange-50/40"
+            >
+              <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", pharmacyExpanded ? "rotate-180" : "")} />
+              <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
+              <span className="whitespace-nowrap text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
+              <span className="text-slate-300">·</span>
+              <span className="whitespace-nowrap text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
+              <span className="ml-auto flex items-center gap-2">
+                <span className={cn("whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
+                  {money(pharmacy.salesValue)} EGP
+                </span>
+                {isSuperAdmin && pharmacy.parentDistributorCode ? (
+                  <a
+                    href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-[#F97316] hover:text-[#F97316]"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Full sales history
+                  </a>
+                ) : null}
+              </span>
+            </div>
+            {pharmacyExpanded ? (
+              <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
+                <PortalResponsiveDataList
+                  empty={<p className="py-1 text-[12px] font-medium text-slate-500">No matched sales in this window.</p>}
+                  getKey={(sale, index) => `${sale.productCode}-${sale.invoicePeriod}-${index}`}
+                  items={pharmacy.salesDetail}
+                  renderCard={(sale) => (
+                    <PortalRecordCard accent="slate" meta={formatPeriod(sale.invoicePeriod)} title={sale.productName}>
+                      <PortalRecordFields
+                        fields={[
+                          { label: "Qty", value: sale.qty.toLocaleString("en-US") },
+                          { label: "Value (EGP)", value: money(sale.value) },
+                        ]}
+                      />
+                    </PortalRecordCard>
+                  )}
+                  renderTable={() => (
+                    <PortalDesktopTable className="text-[12px]" minWidth="480px">
+                      <thead>
+                        <tr className="text-left text-[10px] font-black uppercase tracking-wide text-slate-400">
+                          <th className="px-2 py-1">Product</th>
+                          <th className="px-2 py-1">Month</th>
+                          <th className="px-2 py-1 text-right">Qty</th>
+                          <th className="px-2 py-1 text-right">Value (EGP)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pharmacy.salesDetail.map((sale, index) => (
+                          <tr key={`${sale.productCode}-${sale.invoicePeriod}-${index}`} className="border-t border-slate-200">
+                            <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-900">{sale.productName}</td>
+                            <td className="whitespace-nowrap px-2 py-1 text-slate-600">{formatPeriod(sale.invoicePeriod)}</td>
+                            <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-700">{sale.qty.toLocaleString("en-US")}</td>
+                            <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold text-emerald-700">{money(sale.value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </PortalDesktopTable>
+                  )}
+                />
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1066,43 +1357,7 @@ function RequestAccordionRow({
   cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
   onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
 }) {
-  const [pharmacies, setPharmacies] = React.useState<MarketingCoveragePharmacyRow[] | null>(cachedPharmacies);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  // Only one pharmacy's sales-detail drill-down open at a time per request, mirroring the
-  // single-expanded-request convention at the parent level — no separate fetch on toggle,
-  // salesDetail is already present on each pharmacy row from the same load above.
-  const [expandedPharmacyCode, setExpandedPharmacyCode] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    // A cache hit is already reflected via the useState(cachedPharmacies) initializer above,
-    // so `pharmacies !== null` here covers both "already fetched locally" and "seeded from
-    // the parent cache" — no separate synchronous setState-from-effect branch needed.
-    if (!expanded || pharmacies !== null || loading) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`/api/marketing-requests/coverage-report/${encodeURIComponent(row.requestId)}/pharmacies`, { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.message ?? "Unable to load target pharmacies.");
-        const loaded = (payload.pharmacies ?? []) as MarketingCoveragePharmacyRow[];
-        if (!cancelled) {
-          setPharmacies(loaded);
-          onPharmaciesLoaded(loaded);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load target pharmacies.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, onPharmaciesLoaded, requestId: row.requestId });
 
   const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
 
@@ -1152,91 +1407,105 @@ function RequestAccordionRow({
       {expanded ? (
         <tr className="border-b border-[rgba(249,115,22,0.22)] bg-slate-50">
           <td colSpan={11} className="px-3 py-3">
-            {loading ? (
-              <div className="flex items-center gap-2 py-3 text-[13px] font-semibold text-slate-500">
-                <LoadingSpinner /> Loading target pharmacies…
-              </div>
-            ) : error ? (
-              <div className="rounded-none border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-700">{error}</div>
-            ) : !pharmacies || pharmacies.length === 0 ? (
-              <p className="py-2 text-[13px] font-semibold text-slate-500">This request has no target pharmacy codes.</p>
-            ) : (
-              <div className="space-y-1.5">
-                <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">
-                  {pharmacies.length} target pharmac{pharmacies.length === 1 ? "y" : "ies"} — sales shown even at zero
-                </p>
-                {pharmacies.map((pharmacy) => {
-                  const pharmacyExpanded = expandedPharmacyCode === pharmacy.pharmacyCode;
-                  return (
-                    <div key={pharmacy.pharmacyCode} className="rounded-none border border-slate-200 bg-white">
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode))}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter" && event.key !== " ") return;
-                          setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode));
-                        }}
-                        className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-orange-50/40"
-                      >
-                        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", pharmacyExpanded ? "rotate-180" : "")} />
-                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
-                        <span className="whitespace-nowrap text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
-                        <span className="text-slate-300">·</span>
-                        <span className="whitespace-nowrap text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
-                        <span className="ml-auto flex items-center gap-2">
-                          <span className={cn("whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
-                            {money(pharmacy.salesValue)} EGP
-                          </span>
-                          {isSuperAdmin && pharmacy.parentDistributorCode ? (
-                            <a
-                              href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(event) => event.stopPropagation()}
-                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-[#F97316] hover:text-[#F97316]"
-                            >
-                              <ExternalLink className="h-3 w-3" /> Full sales history
-                            </a>
-                          ) : null}
-                        </span>
-                      </div>
-                      {pharmacyExpanded ? (
-                        <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
-                          {pharmacy.salesDetail.length === 0 ? (
-                            <p className="py-1 text-[12px] font-medium text-slate-500">No matched sales in this window.</p>
-                          ) : (
-                            <table className="w-full min-w-[480px] border-collapse text-[12px]">
-                              <thead>
-                                <tr className="text-left text-[10px] font-black uppercase tracking-wide text-slate-400">
-                                  <th className="px-2 py-1">Product</th>
-                                  <th className="px-2 py-1">Month</th>
-                                  <th className="px-2 py-1 text-right">Qty</th>
-                                  <th className="px-2 py-1 text-right">Value (EGP)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {pharmacy.salesDetail.map((sale, index) => (
-                                  <tr key={`${sale.productCode}-${sale.invoicePeriod}-${index}`} className="border-t border-slate-200">
-                                    <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-900">{sale.productName}</td>
-                                    <td className="whitespace-nowrap px-2 py-1 text-slate-600">{formatPeriod(sale.invoicePeriod)}</td>
-                                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-700">{sale.qty.toLocaleString("en-US")}</td>
-                                    <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold text-emerald-700">{money(sale.value)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
           </td>
         </tr>
       ) : null}
     </>
+  );
+}
+
+/** Mobile counterpart of RequestAccordionRow — same expand/fetch behavior (via
+ *  useExpandedPharmacies) and the same PharmacyDrilldownPanel drill-down, rendered as a
+ *  PortalRecordCard instead of a <tr>. Not every column carries equal weight on a phone: the
+ *  Result badge (this report's headline signal, already used to drive the KPI toggle buttons
+ *  above) takes the card's title-row status slot and its accent color, requester + location
+ *  become the meta line, and the remaining workflow-status/pay-date/money/coverage figures
+ *  move into the fields grid. */
+function RequestAccordionCard({
+  row,
+  expanded,
+  onToggle,
+  isSuperAdmin,
+  cachedPharmacies,
+  onPharmaciesLoaded,
+}: {
+  row: MarketingCoverageReportRow;
+  expanded: boolean;
+  onToggle: () => void;
+  isSuperAdmin: boolean;
+  cachedPharmacies: MarketingCoveragePharmacyRow[] | null;
+  onPharmaciesLoaded: (pharmacies: MarketingCoveragePharmacyRow[]) => void;
+}) {
+  const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, onPharmaciesLoaded, requestId: row.requestId });
+
+  const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onToggle();
+      }}
+    >
+      <PortalRecordCard
+        accent={RESULT_ACCENT[row.resultStatus]}
+        className="cursor-pointer transition hover:bg-orange-50/40"
+        meta={
+          <>
+            <span className="block font-bold text-slate-700">{row.requesterName ?? row.requesterHrId}</span>
+            <span className="block text-slate-400">
+              {locationLabel}
+              {row.requesterTier ? <span className="ml-1.5 font-semibold">({row.requesterTier})</span> : null}
+            </span>
+          </>
+        }
+        status={
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn("inline-flex whitespace-nowrap rounded-none border px-2 py-0.5 text-[11px] font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
+              {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
+            </span>
+            <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition", expanded ? "rotate-180" : "")} />
+          </span>
+        }
+        title={row.requestCode}
+      >
+        <PortalRecordFields
+          fields={[
+            { label: "Customer", value: row.customerName },
+            {
+              label: "Status",
+              value: STATUS_BADGE_CLASS[row.status] ? (
+                <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", STATUS_BADGE_CLASS[row.status])}>
+                  {STATUS_LABELS[row.status] ?? row.status}
+                </span>
+              ) : (
+                STATUS_LABELS[row.status] ?? row.status
+              ),
+            },
+            { label: "Pay date", value: row.payDate ?? "—" },
+            { label: "Cost (EGP)", value: money(row.estimatedCost) },
+            { label: "Required ROI (EGP)", value: money(row.requiredRoiValue) },
+            { label: "Actual sales (EGP)", value: money(row.actualSalesValue) },
+            { label: "Coverage", value: percent(row.actualCoverageRatio) },
+          ]}
+        />
+        {expanded ? (
+          // Stops clicks/keydowns inside the drill-down (expanding a pharmacy, following the
+          // "Full sales history" link) from bubbling up to this card's own onToggle above —
+          // the desktop row doesn't need this since its drill-down lives in a sibling <tr>,
+          // not nested inside the same clickable element.
+          <div
+            className="mt-3 border-t border-slate-100 pt-3"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
+          </div>
+        ) : null}
+      </PortalRecordCard>
+    </div>
   );
 }

@@ -35,7 +35,12 @@ import {
   type ExpenseBubbleInput,
 } from "@/components/outstation/expense-heatmap-layer";
 import { Card } from "@/components/ui/card";
-import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
@@ -634,13 +639,33 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
           {trips.length} trip{trips.length === 1 ? "" : "s"} · {formatMoney(total)} pending resolution
         </p>
       </div>
-      {trips.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-slate-500">
-          Nothing to resolve — every visible trip has a recorded destination.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-[12px]">
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-4 py-8 text-center text-sm text-slate-500">
+            Nothing to resolve — every visible trip has a recorded destination.
+          </p>
+        }
+        getKey={(trip) => `${trip.tripId}-${trip.date}-unresolved`}
+        items={trips}
+        renderCard={(trip) => (
+          <PortalRecordCard
+            meta={formatDate(trip.date)}
+            status={<StatusPill category={mapStatusCategory(trip.status)} />}
+            title={trip.tripId || "N/A"}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Employee", value: trip.ownerName || "Employee" },
+                { label: "Type", value: trip.requestType || "—" },
+                { label: "Origin (home)", value: trip.fromCity || trip.from || "—" },
+                { label: "Transport", value: trip.transportationType || "—" },
+                { label: "Amount", value: formatMoney(trip.total) },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable minWidth="720px">
             <thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-semibold">Trip</th>
@@ -667,9 +692,9 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
-      )}
+          </PortalDesktopTable>
+        )}
+      />
     </Card>
   );
 }

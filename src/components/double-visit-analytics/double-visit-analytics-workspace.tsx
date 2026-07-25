@@ -24,6 +24,13 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type {
   DoubleVisitDashboardData,
@@ -33,6 +40,7 @@ import type {
   DoubleVisitMrScore,
   DoubleVisitRoleCode,
   DoubleVisitRoleRollup,
+  DoubleVisitTrendPoint,
 } from "@/lib/double-visit-analytics/types";
 
 type Tab = "summary" | "managers" | "mr-status" | "trends";
@@ -425,6 +433,105 @@ function ExpandableMrRow({
   );
 }
 
+// ─── MR score card (mobile) — mirrors ExpandableMrRow's data + expand/collapse ──
+
+function MrScoreCard({
+  onSelectManager,
+  onToggle,
+  open,
+  periodFilter,
+  score,
+  visitLog,
+}: {
+  onSelectManager: (managerHrId: string | null) => void;
+  onToggle: () => void;
+  open: boolean;
+  periodFilter: PeriodFilter;
+  score: DoubleVisitMrScore;
+  visitLog: DoubleVisitLogEntry[];
+}) {
+  const mrHistory = useMemo(() => {
+    const scoreKey = hk(score.hrId);
+    const rows = visitLog.filter(
+      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || e.period === periodFilter),
+    );
+    return [...rows].sort((a, b) => b.date.localeCompare(a.date));
+  }, [visitLog, score.hrId, periodFilter]);
+
+  return (
+    <PortalRecordCard
+      accent={score.band === "critical" ? "rose" : score.band === "warning" ? "amber" : "emerald"}
+      title={score.mrName}
+      meta={<span>{score.hrId} · {score.areaName ?? "No area"}</span>}
+      status={<span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>}
+      actions={
+        <button
+          type="button"
+          onClick={onToggle}
+          className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-wide text-orange-700"
+        >
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {open ? "Hide history" : "View history"}
+        </button>
+      }
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Hire date", value: fmtDate(score.hireDate) },
+          {
+            label: "Manager",
+            value: score.managerName ? (
+              <button
+                type="button"
+                onClick={() => onSelectManager(score.managerHrId)}
+                className="font-bold text-orange-700 underline decoration-orange-300 underline-offset-2"
+              >
+                {score.managerName}
+              </button>
+            ) : (
+              "—"
+            ),
+          },
+          { label: "Total DVs", value: score.totalDvs },
+          { label: "DVs (90d)", value: score.dvsLast90Days },
+          { label: "Last DV", value: fmtDate(score.lastDvDate) },
+          { label: "Days since", value: score.daysSinceLastDv ?? "Never" },
+          { label: "Last by", value: score.lastDoubleVisitorName ?? "—" },
+        ]}
+      />
+      {open ? (
+        <div className="mt-3 divide-y divide-slate-100 rounded border border-slate-100">
+          {mrHistory.length === 0 ? (
+            <p className="px-3 py-3 text-xs font-semibold text-slate-400">
+              No visits recorded{periodFilter !== "ALL" ? ` in ${periodFilter}` : ""}.
+            </p>
+          ) : (
+            mrHistory.map((e, i) => (
+              <div
+                key={`${e.date}-${hk(e.doubleVisitorHrId) || e.doubleVisitorName || "dv"}-${e.period}-${e.visitCount}-${i}`}
+                className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-800">{fmtDate(e.date)}</p>
+                  <p className="truncate text-slate-500">
+                    {e.doubleVisitorName ?? e.doubleVisitorHrId ?? "—"} · {e.area ?? "—"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {e.period !== "UNKNOWN" ? (
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-black ${periodPillClass(e.period)}`}>{e.period}</span>
+                  ) : null}
+                  <span className="font-black tabular-nums text-slate-800">{e.visitCount}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : null}
+    </PortalRecordCard>
+  );
+}
+
 // ─── Role rollup card ─────────────────────────────────────────────────────────
 
 function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick: () => void; rollup: DoubleVisitRoleRollup }) {
@@ -457,6 +564,197 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
         <div className="mt-1"><AmPmBar am={rollup.amVisits} pm={rollup.pmVisits} /></div>
       </div>
     </button>
+  );
+}
+
+// ─── Mobile record cards (leaderboard / breakdown / trend tables) ────────────
+
+function LeaderboardCard({
+  maxDvs,
+  onOpen,
+  rank,
+  row,
+}: {
+  maxDvs: number;
+  onOpen: (managerHrId: string | null) => void;
+  rank: number;
+  row: DoubleVisitManagerSummary;
+}) {
+  return (
+    <PortalRecordCard
+      accent="slate"
+      title={row.managerName}
+      meta={<span>#{rank} · {row.managerHrId.toUpperCase()}</span>}
+      status={<RoleBadge role={row.roleCode} />}
+      actions={
+        <button
+          type="button"
+          onClick={() => onOpen(row.managerHrId)}
+          className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-wide text-orange-700"
+        >
+          View profile <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <div className="relative h-2 flex-1 bg-slate-100">
+          <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${maxDvs ? (row.totalDvs / maxDvs) * 100 : 0}%` }} />
+        </div>
+        <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.totalDvs} DVs</span>
+      </div>
+      <PortalRecordFields
+        fields={[
+          { label: "Active days", value: row.activeDvDays },
+          { label: "Calls/day", value: fmt(row.callsPerActiveDay) },
+          { label: "MRs / team", value: `${row.distinctMrs} / ${row.teamMrCount ?? "—"}` },
+          {
+            label: "Coverage",
+            value: (
+              <span className={`rounded px-2 py-0.5 text-xs font-black ${coverageClass(row.coveragePct)}`}>
+                {row.coveragePct != null ? `${row.coveragePct}%` : "—"}
+              </span>
+            ),
+          },
+          { label: "Concentration", value: row.concentrationPct != null ? `${row.concentrationPct}%` : "—" },
+          {
+            label: "Last visit",
+            value: row.lastDvDate ? (
+              <>
+                {fmtDate(row.lastDvDate)}
+                {row.daysSinceLastDv != null ? <span className="block text-slate-400">{row.daysSinceLastDv}d ago</span> : null}
+              </>
+            ) : (
+              "—"
+            ),
+          },
+        ]}
+      />
+      <div className="mt-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <span>AM {row.amVisits}</span>
+        <span>PM {row.pmVisits}</span>
+      </div>
+      <div className="mt-1"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
+    </PortalRecordCard>
+  );
+}
+
+function MrBreakdownCard({
+  maxVisits,
+  overFocused,
+  row,
+}: {
+  maxVisits: number;
+  overFocused: boolean;
+  row: MrVisitRow;
+}) {
+  return (
+    <PortalRecordCard
+      accent={overFocused ? "orange" : "slate"}
+      title={row.name}
+      meta={<span>{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</span>}
+      status={
+        row.score ? (
+          <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
+        ) : null
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative h-2 flex-1 bg-slate-100">
+          <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${maxVisits ? (row.visits / maxVisits) * 100 : 0}%` }} />
+        </div>
+        <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>
+        {overFocused ? (
+          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
+        ) : null}
+      </div>
+      <PortalRecordFields
+        fields={[
+          { label: "Days", value: row.days },
+          {
+            label: "Visits/day",
+            value: <span className={row.visitsPerDay > 4 ? "font-black text-orange-600" : undefined}>{fmt(row.visitsPerDay)}</span>,
+          },
+          { label: "AM", value: row.am > 0 ? row.am : "—" },
+          { label: "PM", value: row.pm > 0 ? row.pm : "—" },
+          { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
+function VacantTerritoryCard({ row }: { row: MrVisitRow }) {
+  return (
+    <PortalRecordCard
+      accent="slate"
+      title={territoryLabel(row)}
+      meta={<span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>}
+      status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Days", value: row.days },
+          { label: "AM", value: row.am > 0 ? row.am : "—" },
+          { label: "PM", value: row.pm > 0 ? row.pm : "—" },
+          { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
+function TrendCard({ week }: { week: DoubleVisitTrendPoint }) {
+  return (
+    <PortalRecordCard
+      accent="slate"
+      title={fmtDate(week.weekStart)}
+      status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{fmt(week.totalDvs)} DVs</span>}
+    >
+      <PortalRecordFields fields={[{ label: "MRs covered", value: week.distinctMrs }]} />
+      <div className="mt-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <span>AM {week.amVisits}</span>
+        <span>PM {week.pmVisits}</span>
+      </div>
+      <div className="mt-1"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div>
+    </PortalRecordCard>
+  );
+}
+
+function NeglectedMrCard({ onOpen, score }: { onOpen: (score: DoubleVisitMrScore) => void; score: DoubleVisitMrScore }) {
+  return (
+    <PortalRecordCard
+      accent={score.band === "critical" ? "rose" : "amber"}
+      title={score.mrName}
+      meta={<span>{score.hrId} · {score.managerName ?? "No manager"}</span>}
+      status={<span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>}
+      actions={
+        <button
+          type="button"
+          onClick={() => onOpen(score)}
+          className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-wide text-orange-700"
+        >
+          View history <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      }
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Last 90d", value: score.dvsLast90Days },
+          { label: "Prev 90d", value: score.dvsPrev90Days },
+          {
+            label: "Trend",
+            value:
+              score.trendDirection === "improving" ? (
+                <span className="inline-flex items-center gap-1 text-emerald-600"><TrendingUp className="h-3.5 w-3.5" /> Improving</span>
+              ) : score.trendDirection === "declining" ? (
+                <span className="inline-flex items-center gap-1 text-rose-600"><TrendingDown className="h-3.5 w-3.5" /> Declining</span>
+              ) : (
+                <span className="text-slate-400">Flat</span>
+              ),
+          },
+        ]}
+      />
+    </PortalRecordCard>
   );
 }
 
@@ -840,66 +1138,76 @@ export function DoubleVisitAnalyticsWorkspace({
                   <span className="rounded bg-slate-100 px-3 py-1 text-sm font-black text-slate-600">{leaderboardRows.length} {leaderboardRows.length === 1 ? "manager" : "managers"}</span>
                 </div>
               </div>
-              <div className="overflow-auto">
-                <table className="w-full min-w-[980px] text-left">
-                  <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-3">#</th>
-                      <SortHeader label="Manager" field="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                      <th className="px-3 py-3">Role</th>
-                      <SortHeader label="DVs" field="totalDvs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                      <SortHeader label="Active Days" field="activeDvDays" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
-                      <SortHeader label="Calls/Day" field="callsPerActiveDay" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
-                      <SortHeader label="MRs / Team" field="distinctMrs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
-                      <SortHeader label="Coverage" field="coveragePct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                      <SortHeader label="Concentration" field="concentrationPct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
-                      <th className="px-3 py-3">AM / PM</th>
-                      <SortHeader label="Last Visit" field="daysSinceLastDv" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leaderboardRows.map((row, index) => (
-                      <tr key={row.managerHrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => openManager(row.managerHrId)}>
-                        <td className="px-3 py-2.5 text-sm font-bold tabular-nums text-slate-400">{index + 1}</td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-sm font-bold text-slate-800">{row.managerName}</p>
-                          <p className="text-xs text-slate-400">{row.managerHrId.toUpperCase()}</p>
-                        </td>
-                        <td className="px-3 py-2.5"><RoleBadge role={row.roleCode} /></td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="relative h-2 w-16 bg-slate-100">
-                              <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${leaderboardMaxDvs ? (row.totalDvs / leaderboardMaxDvs) * 100 : 0}%` }} />
-                            </div>
-                            <span className="text-sm font-black tabular-nums text-slate-950">{row.totalDvs}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.activeDvDays}</td>
-                        <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{fmt(row.callsPerActiveDay)}</td>
-                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
-                          {row.distinctMrs} <span className="text-slate-400">/ {row.teamMrCount ?? "—"}</span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className={`rounded px-2 py-0.5 text-xs font-black ${coverageClass(row.coveragePct)}`}>{row.coveragePct != null ? `${row.coveragePct}%` : "—"}</span>
-                        </td>
-                        <td className={`px-3 py-2.5 text-right text-sm font-bold tabular-nums ${row.concentrationPct != null && row.concentrationPct >= 60 ? "text-orange-600" : "text-slate-600"}`}>
-                          {row.concentrationPct != null ? `${row.concentrationPct}%` : "—"}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="w-24"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
-                        </td>
-                        <td className="px-3 py-2.5 text-sm text-slate-600">
-                          {fmtDate(row.lastDvDate)}
-                          {row.daysSinceLastDv != null && <span className="block text-xs text-slate-400">{row.daysSinceLastDv}d ago</span>}
-                        </td>
+              <PortalResponsiveDataList
+                empty={
+                  <PortalEmptyState
+                    title="No double-visitors"
+                    message={`No double-visitors${roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in this snapshot.`}
+                  />
+                }
+                getKey={(row) => row.managerHrId}
+                items={leaderboardRows}
+                renderCard={(row, index) => (
+                  <LeaderboardCard row={row} rank={index + 1} maxDvs={leaderboardMaxDvs} onOpen={openManager} />
+                )}
+                renderTable={() => (
+                  <PortalDesktopTable minWidth="980px">
+                    <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-3">#</th>
+                        <SortHeader label="Manager" field="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <th className="px-3 py-3">Role</th>
+                        <SortHeader label="DVs" field="totalDvs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <SortHeader label="Active Days" field="activeDvDays" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                        <SortHeader label="Calls/Day" field="callsPerActiveDay" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                        <SortHeader label="MRs / Team" field="distinctMrs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                        <SortHeader label="Coverage" field="coveragePct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <SortHeader label="Concentration" field="concentrationPct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
+                        <th className="px-3 py-3">AM / PM</th>
+                        <SortHeader label="Last Visit" field="daysSinceLastDv" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                       </tr>
-                    ))}
-                    {leaderboardRows.length === 0 && (
-                      <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-400">No double-visitors{roleFilter !== "ALL" ? ` for ${roleFilter}` : ""} in this snapshot.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {leaderboardRows.map((row, index) => (
+                        <tr key={row.managerHrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => openManager(row.managerHrId)}>
+                          <td className="px-3 py-2.5 text-sm font-bold tabular-nums text-slate-400">{index + 1}</td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-sm font-bold text-slate-800">{row.managerName}</p>
+                            <p className="text-xs text-slate-400">{row.managerHrId.toUpperCase()}</p>
+                          </td>
+                          <td className="px-3 py-2.5"><RoleBadge role={row.roleCode} /></td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="relative h-2 w-16 bg-slate-100">
+                                <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${leaderboardMaxDvs ? (row.totalDvs / leaderboardMaxDvs) * 100 : 0}%` }} />
+                              </div>
+                              <span className="text-sm font-black tabular-nums text-slate-950">{row.totalDvs}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.activeDvDays}</td>
+                          <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{fmt(row.callsPerActiveDay)}</td>
+                          <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
+                            {row.distinctMrs} <span className="text-slate-400">/ {row.teamMrCount ?? "—"}</span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`rounded px-2 py-0.5 text-xs font-black ${coverageClass(row.coveragePct)}`}>{row.coveragePct != null ? `${row.coveragePct}%` : "—"}</span>
+                          </td>
+                          <td className={`px-3 py-2.5 text-right text-sm font-bold tabular-nums ${row.concentrationPct != null && row.concentrationPct >= 60 ? "text-orange-600" : "text-slate-600"}`}>
+                            {row.concentrationPct != null ? `${row.concentrationPct}%` : "—"}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="w-24"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
+                          </td>
+                          <td className="px-3 py-2.5 text-sm text-slate-600">
+                            {fmtDate(row.lastDvDate)}
+                            {row.daysSinceLastDv != null && <span className="block text-xs text-slate-400">{row.daysSinceLastDv}d ago</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </PortalDesktopTable>
+                )}
+              />
             </Card>
 
             {/* Heatmaps */}
@@ -1054,56 +1362,72 @@ export function DoubleVisitAnalyticsWorkspace({
                     </h3>
                     <p className="text-sm text-slate-500">Visits = total calls; Days = distinct dates; Visits/Day shows intensity (e.g. 29 visits across 6 days). Resigned-rep territories are listed separately below.</p>
                   </div>
-                  <div className="max-h-[480px] overflow-auto">
-                    <table className="w-full min-w-[760px] text-left">
-                      <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-3">MR</th>
-                          <th className="px-3 py-3">Visits</th>
-                          <th className="px-3 py-3 text-right">Days</th>
-                          <th className="px-3 py-3 text-right">Visits/Day</th>
-                          <th className="px-3 py-3">Span</th>
-                          <th className="px-3 py-3 text-right">AM</th>
-                          <th className="px-3 py-3 text-right">PM</th>
-                          <th className="px-3 py-3">Band</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {managerProfile.mrBreakdown.map((row) => (
-                          <tr key={row.key} className="border-t border-slate-100">
-                            <td className="px-3 py-2.5">
-                              <p className="text-sm font-semibold text-slate-800">{row.name}</p>
-                              <p className="text-xs text-slate-400">{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</p>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <div className="flex items-center gap-2">
-                                <div className="relative h-2 w-20 bg-slate-100">
-                                  <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${managerProfile.maxVisits ? (row.visits / managerProfile.maxVisits) * 100 : 0}%` }} />
-                                </div>
-                                <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
-                                {managerProfile.overFocusedKeys.has(row.key) && (
-                                  <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{row.days}</td>
-                            <td className={`px-3 py-2.5 text-right text-sm tabular-nums ${row.visitsPerDay > 4 ? "font-black text-orange-600" : "text-slate-600"}`}>{fmt(row.visitsPerDay)}</td>
-                            <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
-                            <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
-                            <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
-                            <td className="px-3 py-2.5">
-                              {row.score ? (
-                                <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
-                              ) : <span className="text-xs text-slate-400">—</span>}
-                            </td>
-                          </tr>
-                        ))}
-                        {managerProfile.mrBreakdown.length === 0 && (
-                          <tr><td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-400">No visits recorded{periodLabel ? ` for ${periodLabel}` : ""}.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                  <PortalResponsiveDataList
+                    empty={
+                      <PortalEmptyState
+                        title="No visits recorded"
+                        message={`No visits recorded${periodLabel ? ` for ${periodLabel}` : ""}.`}
+                      />
+                    }
+                    getKey={(row) => row.key}
+                    items={managerProfile.mrBreakdown}
+                    renderCard={(row) => (
+                      <MrBreakdownCard
+                        row={row}
+                        maxVisits={managerProfile.maxVisits}
+                        overFocused={managerProfile.overFocusedKeys.has(row.key)}
+                      />
+                    )}
+                    renderTable={() => (
+                      <div className="max-h-[480px] overflow-y-auto">
+                        <PortalDesktopTable minWidth="760px">
+                          <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="px-3 py-3">MR</th>
+                              <th className="px-3 py-3">Visits</th>
+                              <th className="px-3 py-3 text-right">Days</th>
+                              <th className="px-3 py-3 text-right">Visits/Day</th>
+                              <th className="px-3 py-3">Span</th>
+                              <th className="px-3 py-3 text-right">AM</th>
+                              <th className="px-3 py-3 text-right">PM</th>
+                              <th className="px-3 py-3">Band</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {managerProfile.mrBreakdown.map((row) => (
+                              <tr key={row.key} className="border-t border-slate-100">
+                                <td className="px-3 py-2.5">
+                                  <p className="text-sm font-semibold text-slate-800">{row.name}</p>
+                                  <p className="text-xs text-slate-400">{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</p>
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="relative h-2 w-20 bg-slate-100">
+                                      <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${managerProfile.maxVisits ? (row.visits / managerProfile.maxVisits) * 100 : 0}%` }} />
+                                    </div>
+                                    <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
+                                    {managerProfile.overFocusedKeys.has(row.key) && (
+                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-right text-sm font-bold tabular-nums text-slate-800">{row.days}</td>
+                                <td className={`px-3 py-2.5 text-right text-sm tabular-nums ${row.visitsPerDay > 4 ? "font-black text-orange-600" : "text-slate-600"}`}>{fmt(row.visitsPerDay)}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
+                                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
+                                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                                <td className="px-3 py-2.5">
+                                  {row.score ? (
+                                    <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
+                                  ) : <span className="text-xs text-slate-400">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </PortalDesktopTable>
+                      </div>
+                    )}
+                  />
                 </Card>
 
                 {/* Resigned / vacant-territory visits — resigned reps' accounts renamed to their area */}
@@ -1113,35 +1437,43 @@ export function DoubleVisitAnalyticsWorkspace({
                       <h3 className="text-base font-black text-slate-950">Resigned / Vacant Territory · {fmt(managerProfile.vacantVisits)} visits</h3>
                       <p className="text-sm text-slate-500">Visits to territories whose rep resigned (the CRM renames the account to the area). These are real effort — already counted in this manager&apos;s Total DVs above — but there is no active MR to credit, so they are listed by territory exactly as recorded.</p>
                     </div>
-                    <div className="max-h-[320px] overflow-auto">
-                      <table className="w-full min-w-[560px] text-left">
-                        <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                          <tr>
-                            <th className="px-3 py-3">Territory (as recorded)</th>
-                            <th className="px-3 py-3 text-right">Visits</th>
-                            <th className="px-3 py-3 text-right">Days</th>
-                            <th className="px-3 py-3 text-right">AM</th>
-                            <th className="px-3 py-3 text-right">PM</th>
-                            <th className="px-3 py-3">Span</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {managerProfile.vacantTerritories.map((row) => (
-                            <tr key={row.key} className="border-t border-slate-100">
-                              <td className="px-3 py-2.5">
-                                <span className="text-sm font-semibold text-slate-800">{territoryLabel(row)}</span>
-                                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>
-                              </td>
-                              <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-950">{row.visits}</td>
-                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
-                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <PortalResponsiveDataList
+                      empty={<PortalEmptyState title="No vacant territories" message="No resigned/vacant territory visits in this period." />}
+                      getKey={(row) => row.key}
+                      items={managerProfile.vacantTerritories}
+                      renderCard={(row) => <VacantTerritoryCard row={row} />}
+                      renderTable={() => (
+                        <div className="max-h-[320px] overflow-y-auto">
+                          <PortalDesktopTable minWidth="560px">
+                            <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-3 py-3">Territory (as recorded)</th>
+                                <th className="px-3 py-3 text-right">Visits</th>
+                                <th className="px-3 py-3 text-right">Days</th>
+                                <th className="px-3 py-3 text-right">AM</th>
+                                <th className="px-3 py-3 text-right">PM</th>
+                                <th className="px-3 py-3">Span</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {managerProfile.vacantTerritories.map((row) => (
+                                <tr key={row.key} className="border-t border-slate-100">
+                                  <td className="px-3 py-2.5">
+                                    <span className="text-sm font-semibold text-slate-800">{territoryLabel(row)}</span>
+                                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-950">{row.visits}</td>
+                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
+                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
+                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                                  <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </PortalDesktopTable>
+                        </div>
+                      )}
+                    />
                   </Card>
                 )}
 
@@ -1190,45 +1522,63 @@ export function DoubleVisitAnalyticsWorkspace({
               {filteredMrScores.length} MRs
             </span>
           </div>
-          <div className="overflow-auto">
-            <table className="w-full min-w-[920px] text-left">
-              <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="w-8 px-3 py-3" />
-                  <th className="px-3 py-3">MR</th>
-                  <th className="px-3 py-3">Hire Date</th>
-                  <th className="px-3 py-3">Manager</th>
-                  <th className="px-3 py-3 text-right">Total DVs</th>
-                  <th className="px-3 py-3 text-right">DVs (90d)</th>
-                  <th className="px-3 py-3">Last DV</th>
-                  <th className="px-3 py-3 text-right">Days</th>
-                  <th className="px-3 py-3">Last By</th>
-                  <th className="px-3 py-3">Band</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMrScores.map((score) => {
-                  const sKey = hk(score.hrId);
-                  return (
-                    <ExpandableMrRow
-                      key={score.hrId}
-                      score={score}
-                      visitLog={visitLog}
-                      periodFilter={periodFilter}
-                      open={expandedMrKeys.has(sKey)}
-                      onToggle={() => toggleMr(sKey)}
-                      onSelectManager={openManager}
-                    />
-                  );
-                })}
-                {filteredMrScores.length === 0 && (
-                  <tr><td colSpan={10} className="px-3 py-10 text-center text-sm text-slate-400">
-                    {mrSearch ? "No MRs match your search — clear it to see all." : "No MRs in this snapshot."}
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <PortalResponsiveDataList
+            empty={
+              <PortalEmptyState
+                title={mrSearch ? "No matches" : "No MRs"}
+                message={mrSearch ? "No MRs match your search — clear it to see all." : "No MRs in this snapshot."}
+              />
+            }
+            getKey={(score) => score.hrId}
+            items={filteredMrScores}
+            renderCard={(score) => {
+              const sKey = hk(score.hrId);
+              return (
+                <MrScoreCard
+                  score={score}
+                  visitLog={visitLog}
+                  periodFilter={periodFilter}
+                  open={expandedMrKeys.has(sKey)}
+                  onToggle={() => toggleMr(sKey)}
+                  onSelectManager={openManager}
+                />
+              );
+            }}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="920px">
+                <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="w-8 px-3 py-3" />
+                    <th className="px-3 py-3">MR</th>
+                    <th className="px-3 py-3">Hire Date</th>
+                    <th className="px-3 py-3">Manager</th>
+                    <th className="px-3 py-3 text-right">Total DVs</th>
+                    <th className="px-3 py-3 text-right">DVs (90d)</th>
+                    <th className="px-3 py-3">Last DV</th>
+                    <th className="px-3 py-3 text-right">Days</th>
+                    <th className="px-3 py-3">Last By</th>
+                    <th className="px-3 py-3">Band</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMrScores.map((score) => {
+                    const sKey = hk(score.hrId);
+                    return (
+                      <ExpandableMrRow
+                        key={score.hrId}
+                        score={score}
+                        visitLog={visitLog}
+                        periodFilter={periodFilter}
+                        open={expandedMrKeys.has(sKey)}
+                        onToggle={() => toggleMr(sKey)}
+                        onSelectManager={openManager}
+                      />
+                    );
+                  })}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         </Card>
       )}
 
@@ -1242,31 +1592,34 @@ export function DoubleVisitAnalyticsWorkspace({
               <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><TrendingUp className="h-5 w-5" /> Weekly double-visit trend</h2>
               <p className="text-sm text-slate-500">Total DVs, AM/PM split, and MR coverage by ISO week within the selected range.</p>
             </div>
-            <div className="overflow-auto">
-              <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-3">Week Of</th>
-                    <th className="px-3 py-3 text-right">Total DVs</th>
-                    <th className="px-3 py-3">AM / PM</th>
-                    <th className="px-3 py-3 text-right">MRs Covered</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dashboard.trend.map((week) => (
-                    <tr key={week.weekStart} className="border-t border-slate-100">
-                      <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtDate(week.weekStart)}</td>
-                      <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-950">{fmt(week.totalDvs)}</td>
-                      <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div></td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{week.distinctMrs}</td>
+            <PortalResponsiveDataList
+              empty={<PortalEmptyState title="No trend data" message="No double visits in this range." />}
+              getKey={(week) => week.weekStart}
+              items={dashboard.trend}
+              renderCard={(week) => <TrendCard week={week} />}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="680px">
+                  <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-3">Week Of</th>
+                      <th className="px-3 py-3 text-right">Total DVs</th>
+                      <th className="px-3 py-3">AM / PM</th>
+                      <th className="px-3 py-3 text-right">MRs Covered</th>
                     </tr>
-                  ))}
-                  {dashboard.trend.length === 0 && (
-                    <tr><td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-400">No double visits in this range.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {dashboard.trend.map((week) => (
+                      <tr key={week.weekStart} className="border-t border-slate-100">
+                        <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtDate(week.weekStart)}</td>
+                        <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-950">{fmt(week.totalDvs)}</td>
+                        <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div></td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{week.distinctMrs}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
           </Card>
 
           <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
@@ -1274,48 +1627,51 @@ export function DoubleVisitAnalyticsWorkspace({
               <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><Flame className="h-5 w-5 text-rose-500" /> Neglected MRs ({dashboard.neglectedMrs.length})</h2>
               <p className="text-sm text-slate-500">Warning/critical band — click a row to open the MR&apos;s full history. Trend compares the current vs prior 90-day window.</p>
             </div>
-            <div className="overflow-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-3">MR</th>
-                    <th className="px-3 py-3">Manager</th>
-                    <th className="px-3 py-3 text-right">Last 90d</th>
-                    <th className="px-3 py-3 text-right">Prev 90d</th>
-                    <th className="px-3 py-3">Trend</th>
-                    <th className="px-3 py-3">Band</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dashboard.neglectedMrs.map((score) => (
-                    <tr key={score.hrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => focusMr(score)}>
-                      <td className="px-3 py-2.5">
-                        <p className="font-semibold text-slate-800">{score.mrName}</p>
-                        <p className="text-xs text-slate-400">{score.hrId}</p>
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-600">{score.managerName ?? "—"}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-800">{score.dvsLast90Days}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{score.dvsPrev90Days}</td>
-                      <td className="px-3 py-2.5">
-                        {score.trendDirection === "improving" ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><TrendingUp className="h-3.5 w-3.5" /> Improving</span>
-                        ) : score.trendDirection === "declining" ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><TrendingDown className="h-3.5 w-3.5" /> Declining</span>
-                        ) : (
-                          <span className="text-xs font-semibold text-slate-400">Flat</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>
-                      </td>
+            <PortalResponsiveDataList
+              empty={<PortalEmptyState title="No neglected MRs" message="No neglected MRs in this range." />}
+              getKey={(score) => score.hrId}
+              items={dashboard.neglectedMrs}
+              renderCard={(score) => <NeglectedMrCard score={score} onOpen={focusMr} />}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="760px">
+                  <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-3">MR</th>
+                      <th className="px-3 py-3">Manager</th>
+                      <th className="px-3 py-3 text-right">Last 90d</th>
+                      <th className="px-3 py-3 text-right">Prev 90d</th>
+                      <th className="px-3 py-3">Trend</th>
+                      <th className="px-3 py-3">Band</th>
                     </tr>
-                  ))}
-                  {dashboard.neglectedMrs.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">No neglected MRs in this range.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {dashboard.neglectedMrs.map((score) => (
+                      <tr key={score.hrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => focusMr(score)}>
+                        <td className="px-3 py-2.5">
+                          <p className="font-semibold text-slate-800">{score.mrName}</p>
+                          <p className="text-xs text-slate-400">{score.hrId}</p>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-600">{score.managerName ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-800">{score.dvsLast90Days}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{score.dvsPrev90Days}</td>
+                        <td className="px-3 py-2.5">
+                          {score.trendDirection === "improving" ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><TrendingUp className="h-3.5 w-3.5" /> Improving</span>
+                          ) : score.trendDirection === "declining" ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><TrendingDown className="h-3.5 w-3.5" /> Declining</span>
+                          ) : (
+                            <span className="text-xs font-semibold text-slate-400">Flat</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
           </Card>
         </>
       )}
