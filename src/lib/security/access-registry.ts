@@ -376,6 +376,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/non-employees/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance/download", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance/fab-download", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance/cib-download", permission: null, guard: "domain-helper" }),
   // Employee Day-by-Day Report deduction decisions — replaced the standalone Fingerprint
   // Deductions page (retired 2026-07-24); this is now the one place a fingerprint deduction
   // gets confirmed/rejected. Super Admin gate enforced in-route (matches the page itself).

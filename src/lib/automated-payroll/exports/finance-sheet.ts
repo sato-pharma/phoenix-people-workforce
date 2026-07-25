@@ -6,7 +6,7 @@ import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
-import { appendNonEmployeesSection, bankExtraColumns, PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
+import { bankExtraColumns, PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
 
 /**
  * Finance download (export-only): the full or Part-1 sheet with EVERY cell locked
@@ -37,7 +37,10 @@ export async function buildFinanceSheetWorkbook(input: {
       "CONFIDENTIAL — Locked payroll sheet for finance execution. Only the Finance Edit columns are editable.",
   });
 
-  const { sheet, nextRow, firstPartTotal, monthSalaryTotal } = await writePayrollWorksheet(workbook, {
+  // Finance sees the same complete picture as HR: non-employees are rendered as
+  // additional rows in this SAME table (owner rule 2026-07-26), against
+  // whichever employee total that scope pays out.
+  await writePayrollWorksheet(workbook, {
     sheetName: input.scope === "part1" ? "Part 1 (Finance)" : "Payroll (Finance)",
     title: input.scope === "part1" ? "Part 1 — Finance (locked)" : "Full Sheet — Finance (locked)",
     subtitle: `${label} · read-only except Finance Edit columns`,
@@ -50,15 +53,8 @@ export async function buildFinanceSheetWorkbook(input: {
       { label: "Finance Edit Reason", kind: "text" },
     ],
     protect: true,
-  });
-
-  // Finance sees the same complete picture as HR: non-employees are appended to
-  // BOTH scopes, against whichever employee total that scope pays out.
-  appendNonEmployeesSection(sheet, {
-    startRow: nextRow,
-    rows: input.nonEmployees ?? [],
-    employeeTotal: input.scope === "part1" ? firstPartTotal : monthSalaryTotal,
-    employeeTotalLabel: input.scope === "part1" ? "First Part" : "Month Salary",
+    nonEmployees: input.nonEmployees ?? [],
+    nonEmployeeValueHeader: input.scope === "part1" ? "First Part" : "Month Salary",
   });
 
   return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;

@@ -9,6 +9,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
+import { buildCibSheetWorkbook, cibRowsForScope } from "./exports/cib-sheet.ts";
+import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForScope } from "./exports/fab-sheet.ts";
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
@@ -947,4 +949,96 @@ export async function getFinanceAvailability(
     full: Boolean(run?.part2ConfirmedAt),
     published: Boolean(run?.publishedAt),
   };
+}
+
+/**
+ * Live-computed rows for a period's active/latest run — for preview/review
+ * tooling only. Unlike buildFabSheet/buildFinanceSheet, this does NOT gate on
+ * part1ConfirmedAt/part2ConfirmedAt, so it reflects whatever the run's
+ * figures are RIGHT NOW, which can still change before the real confirm.
+ */
+export async function previewAssembledRowsForPeriod(
+  access: AccessContext,
+  period: PayrollPeriod,
+): Promise<AssembledRow[]> {
+  assertAutomatedPayrollFinanceActor(access);
+  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
+  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  const { rows } = await assembleForRun(run);
+  return rows;
+}
+
+/**
+ * FAB (First Abu Dhabi Bank) bulk salary-transfer file — the literal bank-
+ * execution format (see exports/fab-sheet.ts doc comment), scoped to the
+ * FAB-bank employees actually owed money in that part. Gated the same way as
+ * the finance sheet: Part 1 requires Part 1 confirmed, Part 2 requires Part 2
+ * confirmed. `valueDateIso` overrides the default (the 25th of the run's
+ * month); validated by the API route before reaching here.
+ */
+export async function buildFabSheet(
+  access: AccessContext,
+  period: PayrollPeriod,
+  scope: "part1" | "part2",
+  valueDateIso?: string,
+): Promise<{ buffer: Buffer; fileName: string }> {
+  assertAutomatedPayrollFinanceActor(access);
+  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
+  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+
+  if (scope === "part1" && !run.part1ConfirmedAt) {
+    throw new Error("Conflict: Part 1 has not been confirmed yet for this period.");
+  }
+  if (scope === "part2" && !run.part2ConfirmedAt) {
+    throw new Error("Conflict: the Part 2 sheet is not ready — Part 2 has not been confirmed yet.");
+  }
+
+  const period2: PayrollPeriod = { month: run.month, year: run.year };
+  const { members, sources, draftRows } = await loadRunContext(period2, run.id);
+  const rows = assembleRows({ members, sources, draftRows, period: period2 });
+  const fabRows = fabRowsForScope(rows, scope);
+  if (fabRows.length === 0) {
+    throw new Error("Conflict: no FAB-bank employees with a payable amount for this part.");
+  }
+
+  const valueDate = valueDateIso ? new Date(`${valueDateIso}T00:00:00Z`) : defaultFabValueDate(period2);
+  const buffer = await buildFabSheetWorkbook({ rows: fabRows, valueDate });
+  const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
+  return { buffer, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
+}
+
+/**
+ * CIB (Commercial International Bank) bulk-credit file — the literal bank-
+ * execution format (see exports/cib-sheet.ts doc comment), scoped to the
+ * CIB-bank employees actually owed money in that part. Same gating as
+ * buildFabSheet: Part 1 requires Part 1 confirmed, Part 2 requires Part 2
+ * confirmed.
+ */
+export async function buildCibSheet(
+  access: AccessContext,
+  period: PayrollPeriod,
+  scope: "part1" | "part2",
+): Promise<{ buffer: Buffer; fileName: string }> {
+  assertAutomatedPayrollFinanceActor(access);
+  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
+  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+
+  if (scope === "part1" && !run.part1ConfirmedAt) {
+    throw new Error("Conflict: Part 1 has not been confirmed yet for this period.");
+  }
+  if (scope === "part2" && !run.part2ConfirmedAt) {
+    throw new Error("Conflict: the Part 2 sheet is not ready — Part 2 has not been confirmed yet.");
+  }
+
+  const period2: PayrollPeriod = { month: run.month, year: run.year };
+  const { members, sources, draftRows } = await loadRunContext(period2, run.id);
+  const rows = assembleRows({ members, sources, draftRows, period: period2 });
+  const cibRows = cibRowsForScope(rows, scope);
+  if (cibRows.length === 0) {
+    throw new Error("Conflict: no CIB-bank employees with a payable amount for this part.");
+  }
+
+  const buffer = await buildCibSheetWorkbook({ rows: cibRows });
+  const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
+  return { buffer, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
 }
