@@ -29,6 +29,23 @@ fi
 
 echo "Setting up Google Cloud Scheduler for Phoenix Workforce..."
 
+# ATTEMPT-DEADLINE NOTE (added 2026-07-25): the 5 jobs below hit routes declaring
+# `export const maxDuration = 300` (their real ceiling is Cloud Run's own service
+# request-timeoutSeconds, also 300s — confirmed live). Left unset, gcloud/the Scheduler API
+# default attemptDeadline to 180s for an HTTP target — nobody chose that value, it was simply
+# never overridden, and it undercuts the 300s a run is allowed to take. Once Scheduler's 180s
+# deadline passes it CANCELS ITS OWN WAIT and marks the attempt FAILED, even though the Cloud
+# Run request keeps executing to real completion — so a perfectly healthy 200-280s run shows as
+# a Scheduler-side failure for no reason. This project's jobs have retryCount unset (=0, the
+# documented gcloud default — verified via `gcloud scheduler jobs update http --help`), so a
+# "failed" attempt is NOT retried; the false-failure is pure noise, not a duplicate-run risk —
+# but it is exactly the kind of noise that would drown out a real failure once truthful
+# reporting (see the same PR's fix to app/api/notifications/daily/route.ts) starts alerting on
+# job status. --attempt-deadline=330s gives Cloud Run's own 300s timeout room to resolve first
+# and report its real outcome, well under the Scheduler HTTP-target ceiling of 30 minutes.
+# The 2 jobs further down (live-sync, recruitment-email-intake) hit 120s-max routes, so the
+# 180s default already covers them — left alone deliberately, not overlooked.
+
 # 1. Daily Notifications (6:36 Cairo — off :30 to avoid the */5 drain's minute)
 gcloud scheduler jobs create http phoenix-notify-daily \
     --schedule="36 6 * * *" \
@@ -36,6 +53,7 @@ gcloud scheduler jobs create http phoenix-notify-daily \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
+    --attempt-deadline="330s" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
@@ -48,6 +66,7 @@ gcloud scheduler jobs create http phoenix-process-notifications \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
+    --attempt-deadline="330s" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
@@ -59,6 +78,7 @@ gcloud scheduler jobs create http phoenix-background-jobs \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
+    --attempt-deadline="330s" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
@@ -69,6 +89,7 @@ gcloud scheduler jobs create http phoenix-ireports360-sync \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
+    --attempt-deadline="330s" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
@@ -79,6 +100,7 @@ gcloud scheduler jobs create http phoenix-reconcile-visits \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
     --time-zone="Africa/Cairo" \
+    --attempt-deadline="330s" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 

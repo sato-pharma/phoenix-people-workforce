@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { processBackgroundJobs } from "@/lib/background-jobs/worker";
 import { notifyBackgroundJobsRun } from "@/lib/notifications/background-jobs-digest";
 
@@ -27,12 +28,15 @@ export async function GET(request: Request) {
     // once a week instead of every 10 minutes — a week's worth of admin-requested exports
     // should fully drain in one run rather than leaving some queued for another week.
     const maxJobs = Number.isFinite(limit) && limit > 0 ? Math.min(10, Math.floor(limit)) : 10;
-    const result = await Sentry.withMonitor("background-jobs", () => processBackgroundJobs(maxJobs), {
-      checkinMargin: 15,
-      maxRuntime: 10,
-      schedule: { type: "crontab", value: "0 3 * * 5" },
-      timezone: "Africa/Cairo",
-    });
+    // Slug matches the live Cloud Scheduler job name (phoenix-background-jobs).
+    const result = await withDeadMansSwitch("phoenix-background-jobs", () =>
+      Sentry.withMonitor("background-jobs", () => processBackgroundJobs(maxJobs), {
+        checkinMargin: 15,
+        maxRuntime: 10,
+        schedule: { type: "crontab", value: "0 3 * * 5" },
+        timezone: "Africa/Cairo",
+      }),
+    );
     await notifyBackgroundJobsRun({ processed: result.processed, results: result.results, status: "success" }).catch(
       (notifyError: unknown) => {
         logError("Failed to send background-jobs run notification", { error: notifyError, labels: { job: "background-jobs" } });

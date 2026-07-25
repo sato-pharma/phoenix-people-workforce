@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 
 export const runtime = "nodejs";
@@ -54,12 +55,17 @@ export async function GET(request: Request) {
     // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
-    return await Sentry.withMonitor("notifications-process", () => runNotificationOutbox(limit), {
-      checkinMargin: 5,
-      maxRuntime: 5,
-      schedule: { type: "crontab", value: "*/5 * * * *" },
-      timezone: "Africa/Cairo",
-    });
+    // Slug matches the live Cloud Scheduler job name (phoenix-process-notifications) — the outbox
+    // drain. Highest-value job for this monitor: a paused/broken drain leaves everything queued
+    // silently undelivered, and this job fires every 5 minutes so a real outage is caught fast.
+    return await withDeadMansSwitch("phoenix-process-notifications", () =>
+      Sentry.withMonitor("notifications-process", () => runNotificationOutbox(limit), {
+        checkinMargin: 5,
+        maxRuntime: 5,
+        schedule: { type: "crontab", value: "*/5 * * * *" },
+        timezone: "Africa/Cairo",
+      }),
+    );
   } catch (error) {
     console.error(error, { tags: { cron: "notification-outbox-drain" } });
     const message = error instanceof Error ? error.message : "Notification processing failed.";
