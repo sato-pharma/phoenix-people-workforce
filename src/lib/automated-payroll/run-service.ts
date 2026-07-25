@@ -16,6 +16,7 @@ import {
   markCarryForwardApplied,
   outstandingCarryForwardFor,
   recordOverpaidCarryForward,
+  releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import {
@@ -235,8 +236,21 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
+
+  // Undo this run's effect on the carry-forward ledger BEFORE marking it
+  // cancelled. A run whose Part 2 was confirmed has already marked previous
+  // months' overpayments as recovered — but a cancelled run pays nobody, so
+  // leaving that would silently forgive real money (the exact bug the ledger
+  // exists to prevent). See releaseCarryForwardForCancelledRun.
+  const ledger = await releaseCarryForwardForCancelledRun(runId);
+
   const updated = await updateRun(runId, { phase: "cancelled" });
-  await writeAutomatedPayrollAudit({ runId, actorHrId: actorId(access), action: "run_cancelled" });
+  await writeAutomatedPayrollAudit({
+    runId,
+    actorHrId: actorId(access),
+    action: "run_cancelled",
+    detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
+  });
   return updated;
 }
 
@@ -793,6 +807,7 @@ export async function buildRunSheet(
           run,
           rows,
           previousSummary: await previousMonthSummary(period, "month_salary"),
+          nonEmployees: await getNonEmployeePayrollRows(runId),
         });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };
@@ -860,7 +875,7 @@ export async function buildFinanceSheet(
     run,
     rows,
     scope,
-    nonEmployees: scope === "part1" ? await getNonEmployeePayrollRows(run.id) : [],
+    nonEmployees: await getNonEmployeePayrollRows(run.id),
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
