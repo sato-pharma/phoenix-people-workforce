@@ -21,8 +21,8 @@ import {
 
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
-import type { MonthlySalaryRun } from "../types.ts";
-import { sortForExport } from "./export-order.ts";
+import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
+import { sortForExport, unlistedExportHrIds } from "./export-order.ts";
 
 const HELD_FILL = "FFFEE2E2";
 const HELD_TEXT = "FF991B1B";
@@ -74,6 +74,19 @@ export function bankExtraColumns(): ExtraColumn[] {
   ];
 }
 
+/**
+ * A previous month's overpayment being recovered this run (owner rule
+ * 2026-07-25). Shown as its own column so a past-month correction is legible
+ * to finance instead of silently inflating "other deductions".
+ */
+export function carryForwardExtraColumn(): ExtraColumn {
+  return {
+    label: "Recovered (prev. overpay)",
+    kind: "money",
+    value: (entry) => entry.carriedForwardApplied || "",
+  };
+}
+
 /** SalaryValidationRow → the SalaryRecord shape payrollSheetValue reads (batchId/id unused here). */
 function toSheetRecord(entry: AssembledRow): SalaryRecord {
   return { ...entry.row, batchId: "", employeeCode: entry.row.hrId, id: "" } as unknown as SalaryRecord;
@@ -97,10 +110,14 @@ export async function writePayrollWorksheet(
     extraColumns?: ExtraColumn[];
     protect?: boolean;
   },
-): Promise<void> {
+): Promise<{ sheet: ExcelJS.Worksheet; nextRow: number; firstPartTotal: number }> {
   const { run, headers } = options;
   // Owner-fixed HR-ID execution order (2026-07-24) — every downloaded sheet.
-  const rows = sortForExport(options.rows, (entry) => entry.row.hrId);
+  // Anyone the fixed list doesn't cover is grouped by line then hire date
+  // rather than dumped in arbitrary order (see sortForExport's doc comment).
+  const rows = sortForExport(options.rows, (entry) => entry.row.hrId, {
+    fallbackKey: (entry) => `${entry.row.line ?? ""}|${entry.row.hireDate ?? ""}|${entry.row.hrId}`,
+  });
   const extraColumns = options.extraColumns ?? [];
   const labels = [...headers, ...extraColumns.map((column) => column.label)];
   const colCount = labels.length;
@@ -172,6 +189,7 @@ export async function writePayrollWorksheet(
 
   // Totals over money columns.
   const totalsRow = sheet.getRow(rowNumber);
+  let firstPartTotal = 0;
   headers.forEach((header, ci) => {
     const cell = totalsRow.getCell(ci + 1);
     if (ci === 0) cell.value = "TOTALS";
@@ -180,8 +198,10 @@ export async function writePayrollWorksheet(
         const value = payrollSheetValue(toSheetRecord(entry), run.month, run.year, 0, header);
         return acc + (typeof value === "number" ? value : 0);
       }, 0);
-      cell.value = Math.round(sum * 100) / 100;
+      const rounded = Math.round(sum * 100) / 100;
+      cell.value = rounded;
       cell.numFmt = VALUE_FMT;
+      if (header === "First Part") firstPartTotal = rounded;
     }
     cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
     cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
@@ -209,13 +229,101 @@ export async function writePayrollWorksheet(
       sort: true,
     });
   }
+
+  return { sheet, nextRow: rowNumber + 1, firstPartTotal };
+}
+
+/**
+ * Appends a "Non-Employees Payroll" mini-table below the Part 1 sheet's own
+ * TOTALS row: people paid a monthly salary with no employee/HR_ID record (owner
+ * rule 2026-07-25), entered fresh each run. Ends with a GRAND TOTAL that adds
+ * their subtotal to the employee sheet's First Part total — deliberately the
+ * only place these entries are combined with real payroll figures; they never
+ * touch AssembledRow/publishToPayslips. No-op if the run has none.
+ */
+export function appendNonEmployeesSection(
+  sheet: ExcelJS.Worksheet,
+  input: { startRow: number; rows: NonEmployeePayrollRow[]; employeeFirstPartTotal: number },
+): void {
+  if (input.rows.length === 0) return;
+  const labels = ["Full Name (EN)", "Full Name (AR)", "Bank Name", "Bank Account", "Total Salary"];
+  const totalColumn = labels.length; // "Total Salary" is the last column.
+
+  let rowNumber = input.startRow + 1; // blank spacer row before the section.
+  const captionCell = sheet.getRow(rowNumber).getCell(1);
+  captionCell.value = "Non-Employees Payroll (no employee/HR_ID record)";
+  captionCell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 11 };
+  rowNumber += 1;
+
+  const headerRow = sheet.getRow(rowNumber);
+  labels.forEach((label, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+  });
+  rowNumber += 1;
+
+  let subtotal = 0;
+  input.rows.forEach((entry, index) => {
+    const excelRow = sheet.getRow(rowNumber);
+    const values: (string | number)[] = [
+      entry.fullNameEn,
+      entry.fullNameAr,
+      entry.bankName ?? "",
+      entry.bankAccount ?? "",
+      entry.totalSalary,
+    ];
+    values.forEach((value, ci) => {
+      const cell = excelRow.getCell(ci + 1);
+      cell.value = value as ExcelJS.CellValue;
+      const isMoney = ci + 1 === totalColumn;
+      if (isMoney) cell.numFmt = VALUE_FMT;
+      cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
+      cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle" };
+      cell.border = gridBorder();
+      if (index % 2 === 1) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+    });
+    subtotal = Math.round((subtotal + entry.totalSalary) * 100) / 100;
+    rowNumber += 1;
+  });
+
+  const subtotalRow = sheet.getRow(rowNumber);
+  subtotalRow.getCell(1).value = "NON-EMPLOYEES SUBTOTAL";
+  subtotalRow.getCell(totalColumn).value = subtotal;
+  subtotalRow.getCell(totalColumn).numFmt = VALUE_FMT;
+  [1, totalColumn].forEach((col) => {
+    const cell = subtotalRow.getCell(col);
+    cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
+    cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+    cell.alignment = { horizontal: col === totalColumn ? "right" : "left", vertical: "middle" };
+  });
+  rowNumber += 1;
+
+  const grandTotal = Math.round((input.employeeFirstPartTotal + subtotal) * 100) / 100;
+  const grandTotalRow = sheet.getRow(rowNumber);
+  grandTotalRow.getCell(1).value = "GRAND TOTAL (Employees First Part + Non-Employees)";
+  grandTotalRow.getCell(totalColumn).value = grandTotal;
+  grandTotalRow.getCell(totalColumn).numFmt = VALUE_FMT;
+  [1, totalColumn].forEach((col) => {
+    const cell = grandTotalRow.getCell(col);
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 11 };
+    cell.fill = { fgColor: { argb: EXECUTION_HEADER_FILL }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+    cell.alignment = { horizontal: col === totalColumn ? "right" : "left", vertical: "middle" };
+  });
 }
 
 function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: string): Array<[string, string]> {
   const held = rows.filter((entry) => entry.onHold).length;
   const joiners = rows.filter((entry) => entry.lifecycle === "joiner").length;
   const leavers = rows.filter((entry) => entry.lifecycle === "leaver").length;
-  return [
+  const recovered = rows.reduce((sum, entry) => sum + entry.carriedForwardApplied, 0);
+  const unlisted = unlistedExportHrIds(rows, (entry) => entry.row.hrId);
+  const cover: Array<[string, string]> = [
     ["Period", monthLabel(run.month, run.year)],
     ["Scope", scopeLabel],
     ["Employees", String(rows.length)],
@@ -226,6 +334,18 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
     ["Part 2 confirmed", run.part2ConfirmedAt ? "Yes" : "No"],
     ["Published", run.publishedAt ? "Yes" : "No"],
   ];
+  if (recovered > 0) {
+    cover.push(["Recovered (prev. overpayments)", String(Math.round(recovered * 100) / 100)]);
+  }
+  // Make the hand-maintained execution list's drift visible on the sheet
+  // itself, so it can't keep degrading unnoticed month after month.
+  if (unlisted.length > 0) {
+    cover.push([
+      "Not in fixed export order",
+      `${unlisted.length} employee(s) appended at the end — update FIXED_EXPORT_HR_ID_ORDER`,
+    ]);
+  }
+  return cover;
 }
 
 const CONFIDENTIAL_NOTE =
@@ -239,6 +359,8 @@ async function toBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
 export async function buildFullSheetWorkbook(input: {
   run: MonthlySalaryRun;
   rows: AssembledRow[];
+  /** Headcount + total Month Salary from the previous month's published run, if any. */
+  previousSummary?: PeriodSummary | null;
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -246,6 +368,16 @@ export async function buildFullSheetWorkbook(input: {
     subtitle: `${monthLabel(input.run.month, input.run.year)} · HR-confirmed`,
     rows: coverRows(input.run, input.rows, "Full monthly sheet"),
     confidentialNote: CONFIDENTIAL_NOTE,
+  });
+  addExecutiveSummarySheet(workbook, {
+    run: input.run,
+    scopeLabel: "Full monthly sheet",
+    valueLabel: "Total Month Salary",
+    current: {
+      headcount: input.rows.length,
+      totalValue: Math.round(input.rows.reduce((sum, entry) => sum + entry.row.monthSalary, 0) * 100) / 100,
+    },
+    previous: input.previousSummary ?? null,
   });
   await writePayrollWorksheet(workbook, {
     sheetName: "Payroll",
@@ -262,6 +394,101 @@ const INCREASE_FILL = "FFDCFCE7";
 const INCREASE_TEXT = "FF166534";
 const DECREASE_FILL = "FFFEE2E2";
 const DECREASE_TEXT = "FF991B1B";
+
+/** Headcount + total payout for one period — current (computed from AssembledRow[]) or previous (from salary_records). */
+export type PeriodSummary = { headcount: number; totalValue: number };
+
+function periodDelta(current: number, previous: number): { delta: number; percent: number | null } {
+  const delta = Math.round((current - previous) * 100) / 100;
+  const percent = previous === 0 ? null : Math.round((delta / previous) * 1000) / 10;
+  return { delta, percent };
+}
+
+/**
+ * Appends an "Executive Summary" dashboard tab: headcount and total payout this
+ * month vs. the previous month's published run (owner request 2026-07-25) — a
+ * professional-looking KPI comparison, not a raw data dump. `valueLabel` names
+ * whichever money figure this sheet variant pays out (First Part for Part 1,
+ * Month Salary for the full sheet). No-op if there is no previous month to
+ * compare against (first-ever run, or the prior month was never published).
+ */
+function addExecutiveSummarySheet(
+  workbook: ExcelJS.Workbook,
+  input: {
+    run: MonthlySalaryRun;
+    scopeLabel: string;
+    valueLabel: string;
+    current: PeriodSummary;
+    previous: PeriodSummary | null;
+  },
+): void {
+  const sheet = workbook.addWorksheet("Executive Summary");
+  const title = "Executive Summary Dashboard";
+  const subtitle = input.previous
+    ? `${monthLabel(input.run.month, input.run.year)} · ${input.scopeLabel} · vs. previous month`
+    : `${monthLabel(input.run.month, input.run.year)} · ${input.scopeLabel} · no previous month to compare`;
+  bandHeader(sheet, 5, title, subtitle);
+
+  const headerRowNumber = 5;
+  const labels = ["Metric", "This Month", "Last Month", "Change", "% Change"];
+  const headerRow = sheet.getRow(headerRowNumber);
+  labels.forEach((label, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+  });
+  headerRow.height = 26;
+
+  const metrics: { label: string; current: number; previous: number | null; money: boolean }[] = [
+    { label: "Employees", current: input.current.headcount, previous: input.previous?.headcount ?? null, money: false },
+    { label: input.valueLabel, current: input.current.totalValue, previous: input.previous?.totalValue ?? null, money: true },
+  ];
+
+  metrics.forEach((metric, index) => {
+    const rowNumber = headerRowNumber + 1 + index;
+    const excelRow = sheet.getRow(rowNumber);
+    const hasPrevious = metric.previous != null;
+    const { delta, percent } = hasPrevious ? periodDelta(metric.current, metric.previous!) : { delta: 0, percent: null };
+    const increase = delta > 0;
+    const decrease = delta < 0;
+
+    const cells: (string | number)[] = [
+      metric.label,
+      metric.current,
+      hasPrevious ? metric.previous! : "—",
+      hasPrevious ? delta : "—",
+      hasPrevious ? (percent == null ? "—" : `${percent > 0 ? "+" : ""}${percent}%`) : "—",
+    ];
+    cells.forEach((value, ci) => {
+      const cell = excelRow.getCell(ci + 1);
+      cell.value = value as ExcelJS.CellValue;
+      if (metric.money && (ci === 1 || ci === 2 || ci === 3) && typeof value === "number") cell.numFmt = VALUE_FMT;
+      cell.font = {
+        bold: ci === 0 || ci === 3,
+        color: { argb: ci === 3 && hasPrevious ? (increase ? INCREASE_TEXT : decrease ? DECREASE_TEXT : SLATE) : SLATE },
+        name: "Calibri",
+        size: ci === 0 ? 11 : 10,
+      };
+      cell.alignment = { horizontal: ci === 0 ? "left" : "right", vertical: "middle" };
+      cell.border = gridBorder();
+      if (ci === 3 && hasPrevious && (increase || decrease)) {
+        cell.fill = { fgColor: { argb: increase ? INCREASE_FILL : DECREASE_FILL }, pattern: "solid", type: "pattern" };
+      } else if (index % 2 === 1) {
+        cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      }
+    });
+  });
+
+  labels.forEach((label, index) => {
+    const column = sheet.getColumn(index + 1);
+    column.width = Math.max(column.width ?? 9, Math.min(30, Math.max(14, label.length + 4)));
+  });
+  sheet.getColumn(1).width = 28;
+  sheet.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowNumber, showGridLines: false }];
+}
 
 /**
  * Appends a "Salary Changes" tab listing only employees whose Net Salary this
@@ -339,6 +566,10 @@ export async function buildPart1SheetWorkbook(input: {
   rows: AssembledRow[];
   /** Net Salary per employee (keyed by compact HR id) from the previous month's published run, if any. */
   previousNetByHrIdCompact?: Map<string, number>;
+  /** People paid a monthly salary with no employee/HR_ID record (owner rule 2026-07-25). */
+  nonEmployees?: NonEmployeePayrollRow[];
+  /** Headcount + total First Part from the previous month's published run, if any. */
+  previousSummary?: PeriodSummary | null;
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -347,14 +578,29 @@ export async function buildPart1SheetWorkbook(input: {
     rows: coverRows(input.run, input.rows, "Part 1 (first installment)"),
     confidentialNote: CONFIDENTIAL_NOTE,
   });
-  await writePayrollWorksheet(workbook, {
+  addExecutiveSummarySheet(workbook, {
+    run: input.run,
+    scopeLabel: "Part 1 (first installment)",
+    valueLabel: "Total First Part",
+    current: {
+      headcount: input.rows.length,
+      totalValue: Math.round(input.rows.reduce((sum, entry) => sum + entry.row.firstPart, 0) * 100) / 100,
+    },
+    previous: input.previousSummary ?? null,
+  });
+  const { sheet, nextRow, firstPartTotal } = await writePayrollWorksheet(workbook, {
     sheetName: "Part 1",
     title: "Part 1 — First Installment",
     subtitle: `${monthLabel(input.run.month, input.run.year)}`,
     run: input.run,
     rows: input.rows,
     headers: PART1_HEADERS,
-    extraColumns: bankExtraColumns(),
+    extraColumns: [...bankExtraColumns(), carryForwardExtraColumn()],
+  });
+  appendNonEmployeesSection(sheet, {
+    startRow: nextRow,
+    rows: input.nonEmployees ?? [],
+    employeeFirstPartTotal: firstPartTotal,
   });
   addSalaryChangesSheet(workbook, {
     run: input.run,

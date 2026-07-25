@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
+import { isAfterPeriod, isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
 import { normalizePayrollPaymentMode } from "../src/lib/payroll/policy.ts";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, type StepRow } from "../src/lib/automated-payroll/types.ts";
 import { STEP_DEFINITIONS, STEP_ORDER } from "../src/lib/automated-payroll/step-definitions.ts";
@@ -171,4 +171,87 @@ export function runAutomatedPayrollPart1ScopeTests() {
   const noRecordStep = STEP_DEFINITIONS.p1_no_record;
   assert.equal(settledElsewhereAmount(noRecordStep, leaverRow(500)), 0);
   assert.equal(hasDoubleDeductionConflict(noRecordStep, leaverRow(500)), false);
+
+  // ---- "Resignation Date" column, so a leaver showing up in a Part 1 manual
+  // tab is legible (owner request 2026-07-25) ---------------------------------
+  for (const key of part1ManualTabs) {
+    assert.equal(
+      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Resignation Date"),
+      true,
+      `${key} must show the Resignation Date context column`,
+    );
+  }
+
+  // ---- Resignations' CRM Days auto-calculates its Value (same formula the leaver's
+  // own system-recommended crm figure already uses) — safe to auto-calc. Unpaid
+  // Vacation Days deliberately does NOT: that figure is a composite (balance-aware
+  // Phoenix amount + a separate CRM-leave amount), not a flat day rate, so
+  // auto-calculating it from a single day count would be mathematically wrong. -----
+  const resignationsStep = STEP_DEFINITIONS.p1_resignations;
+  const crmDaysField = resignationsStep.fields.find((field) => field.key === "resignationCrmDays");
+  assert.equal(crmDaysField?.kind, "days");
+  assert.equal(crmDaysField?.autoCalcMoneyKey, "crm");
+  assert.equal(
+    resignationsStep.fields.some((field) => field.kind === "days" && field.autoCalcMoneyKey === "unpaidVacations"),
+    false,
+    "Unpaid Vacation must never auto-calculate from a day count — see comment above",
+  );
+  assert.equal(
+    resignationsStep.contextColumns.some((column) => column.key === "Unpaid Vacation Days"),
+    true,
+    "Unpaid Vacation Days stays a read-only context column, not an editable field",
+  );
+
+  // ---- notice-period employees must not vanish from earlier months (owner-confirmed
+  // real bug, 2026-07-25 — B-157 Sameh Ahmed Ezzat Mohamed Hussien: employment_status
+  // already "resigned" but last_working_date=2026-08-31, a full month after the July
+  // run being processed). isAfterPeriod is the one predicate that tells "already
+  // departed before this period" apart from "departing later, still owed this
+  // period's pay" — resolvePayrollPopulationAndSources uses it alongside
+  // isPayrollIneligibleEmployee so a terminal status alone can never wrongly exclude
+  // someone still actively working through a future exit. -----------------------
+  const july = { month: 7, year: 2026 };
+  // Sameh's real shape: still active through August, for the July run.
+  assert.equal(isAfterPeriod("2026-08-31", july), true);
+  // An employee who already left in an EARLIER month must stay excluded.
+  assert.equal(isAfterPeriod("2026-06-30", july), false);
+  // A leaver exiting THIS SAME month is handled by the leaver path, not this one —
+  // isAfterPeriod itself must say false so isPayrollIneligibleEmployee still applies
+  // (that employee is included via isLeaver instead, never via this predicate).
+  assert.equal(isAfterPeriod("2026-07-31", july), false);
+  // Across a year boundary: exiting January next year is still "after" December.
+  assert.equal(isAfterPeriod("2027-01-15", { month: 12, year: 2026 }), true);
+  // No date at all (still actively employed, no resignation on file) — never "after."
+  assert.equal(isAfterPeriod(null, july), false);
+
+  // ---- Special Situations (owner rule 2026-07-25): a genuine Part 1 step, NOT a
+  // phase-agnostic novelty — it lives in PART1_STEP_KEYS like its siblings, so it
+  // locks the same way (stepLocked in automated-payroll-wizard.tsx checks
+  // run.phase !== stepPhase(stepKey)) once Part 1 is confirmed. No extra runtime
+  // gating was needed for "only allow First Part before Part 1 is confirmed" —
+  // it falls out of the existing per-step lock every Part 1 tab already has. ----
+  assert.equal(STEP_DEFINITIONS.p1_special_situations.phase, "part1");
+  assert.equal(PART1_STEP_KEYS.includes("p1_special_situations"), true);
+  // No conflict twin — this step is deliberately independent of the Resignations
+  // step's auto-computed CRM/vacation, so it must never claim a warning key.
+  assert.equal(STEP_DEFINITIONS.p1_special_situations.conflictContextKey, undefined);
+
+  const specialFields = STEP_DEFINITIONS.p1_special_situations.fields;
+  const specialDeductionDays = specialFields.find((field) => field.key === "specialDeductionDays");
+  const specialAdditionDays = specialFields.find((field) => field.key === "specialAdditionDays");
+  assert.equal(specialDeductionDays?.kind, "days");
+  assert.equal(specialDeductionDays?.autoCalcMoneyKey, "specialDeductionValue");
+  assert.equal(specialAdditionDays?.kind, "days");
+  assert.equal(specialAdditionDays?.autoCalcMoneyKey, "specialAdditionValue");
+
+  // The ONE shared routing choice (owner-confirmed: "whatever i choose is
+  // actually synced the same for addition field") — a single select field, not
+  // two independent first/second dropdowns for deduction vs addition.
+  const routingFields = specialFields.filter((field) => field.kind === "select");
+  assert.equal(routingFields.length, 1, "Special Situations must have exactly ONE routing select field");
+  assert.equal(routingFields[0]?.key, "specialSituationPart");
+  assert.deepEqual(
+    routingFields[0]?.options?.map((option) => option.value),
+    ["first", "second"],
+  );
 }

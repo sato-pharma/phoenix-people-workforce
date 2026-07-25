@@ -15,8 +15,10 @@ import type {
   StepState,
 } from "@/lib/automated-payroll/types";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-payroll/types";
+import type { PopulationDiff } from "@/lib/automated-payroll/population-diff";
 import { cn } from "@/lib/utils";
 
+import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
 import { SelectField } from "./select-field";
 
@@ -38,10 +40,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [run, setRun] = useState<MonthlySalaryRun | null>(null);
   const [stepStates, setStepStates] = useState<StepState[]>([]);
   const [activeStep, setActiveStep] = useState<StepKey | null>(null);
+  const [nonEmployeesOpen, setNonEmployeesOpen] = useState(false);
+  const [nonEmployeeCount, setNonEmployeeCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [recon, setRecon] = useState<ReconciliationTotals | null>(null);
+  const [overpaidPrompt, setOverpaidPrompt] = useState<{ runId: string; message: string } | null>(null);
+  const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
 
   const confirmedSet = useMemo(
     () => new Set(stepStates.filter((state) => state.status === "confirmed").map((state) => state.stepKey)),
@@ -62,6 +68,23 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
       setRecon(null);
+      setNonEmployeeCount(0);
+      setPopulationDiff(null);
+
+      // Load the population diff eagerly rather than behind a button: the bug
+      // it guards against (someone silently vanishing from payroll) is invisible
+      // by definition, so it has to be on screen without anyone thinking to ask.
+      const runId = data.run?.id;
+      if (runId) {
+        void fetch(`/api/automated-payroll/runs/${runId}/population-diff`)
+          .then((response) => response.json())
+          .then((diffData) => {
+            if (diffData?.success) setPopulationDiff(diffData.diff as PopulationDiff);
+          })
+          .catch(() => {
+            /* diff is a safety net, never block the wizard on it */
+          });
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load run.");
     } finally {
@@ -75,12 +98,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const post = async (url: string, okMessage?: string) => {
+  const post = async (url: string, okMessage?: string, body?: Record<string, unknown>) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch(url, { method: "POST" });
+      const res = await fetch(url, {
+        method: "POST",
+        ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed.");
       if (okMessage) setNotice(okMessage);
@@ -89,6 +115,42 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Action failed.");
       return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Part 2 confirm can be blocked by the overpayment gate (run-service.ts):
+   * money already paid out in Part 1 that this month's total can't absorb. The
+   * server refuses the first attempt and returns `requiresOverpaidAcknowledgment`
+   * with the who/how-much detail, so HR consciously accepts before the sheet
+   * becomes payable truth. A split mismatch is NOT acknowledgeable — it means a
+   * calculation bug and always hard-blocks via the normal error path.
+   */
+  const confirmPart2WithOverpaidGate = async (runId: string, acknowledgeOverpaid = false) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/automated-payroll/runs/${runId}/part2/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acknowledgeOverpaid }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.requiresOverpaidAcknowledgment) {
+          setOverpaidPrompt({ runId, message: String(data.error ?? "") });
+          return;
+        }
+        throw new Error(data.error ?? "Action failed.");
+      }
+      setOverpaidPrompt(null);
+      setNotice("Part 2 confirmed. Finance roles notified.");
+      await loadRun(month, year);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Action failed.");
     } finally {
       setBusy(false);
     }
@@ -150,7 +212,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <button
             key={key}
             type="button"
-            onClick={() => setActiveStep(key)}
+            onClick={() => {
+              setActiveStep(key);
+              setNonEmployeesOpen(false);
+            }}
             className={cn(
               "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
               isActive
@@ -173,6 +238,32 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         );
       })}
     </div>
+  );
+
+  /**
+   * Non-Employees Payroll is NOT a StepKey — there is no population to
+   * recommend against, just a free-form list HR authors directly (owner rule
+   * 2026-07-25) — so it gets its own pill outside the confirm-tracked strip
+   * rather than a fake entry in PART1_STEP_KEYS.
+   */
+  const renderNonEmployeesPill = () => (
+    <button
+      type="button"
+      onClick={() => {
+        setNonEmployeesOpen(true);
+        setActiveStep(null);
+      }}
+      className={cn(
+        "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
+        nonEmployeesOpen
+          ? "border-orange-500 bg-orange-50 text-slate-900"
+          : "border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+      )}
+    >
+      <span className="whitespace-nowrap">
+        Non-Employees Payroll{nonEmployeeCount > 0 ? ` (${nonEmployeeCount})` : ""}
+      </span>
+    </button>
   );
 
   const phaseTone: Record<MonthlySalaryRun["phase"], "orange" | "emerald" | "neutral" | "slate"> = {
@@ -245,6 +336,54 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
       {notice ? <div className="border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">{notice}</div> : null}
 
+      {/* Unexplained disappearance — the loudest thing on this page by design.
+          Someone was paid last month, is absent now, and has no resignation on
+          file. That is the exact shape of the 2026-07-25 notice-period bug,
+          which was invisible until the owner asked about one person by name. */}
+      {populationDiff && populationDiff.disappeared.length > 0 ? (
+        <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <div className="font-black">
+            {populationDiff.disappeared.length === 1
+              ? "1 employee disappeared from payroll with no resignation on file"
+              : `${populationDiff.disappeared.length} employees disappeared from payroll with no resignation on file`}
+          </div>
+          <p className="mt-1 text-xs">
+            They were paid last month and are missing from this run. This usually means a data problem, not a real
+            departure — check each one before confirming anything.
+          </p>
+          <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+            {populationDiff.disappeared.map((person) => (
+              <li key={person.hrId}>
+                <span className="font-semibold">{person.fullName}</span> ({person.hrId})
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* Overpayment gate — real money already paid out that this month can't
+          absorb. Deliberately NOT a browser confirm(): HR needs to read who and
+          how much before accepting, and the acceptance is written to the audit log. */}
+      {overpaidPrompt ? (
+        <div className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-black">Part 1 overpayment — your acknowledgment is required</div>
+          <p className="mt-1 text-xs">{overpaidPrompt.message}</p>
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void confirmPart2WithOverpaidGate(overpaidPrompt.runId, true)}
+              className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+            >
+              Acknowledge &amp; confirm Part 2
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOverpaidPrompt(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {!run ? (
         <div className={cn(adminPanelClassName, "p-8 text-center text-sm text-slate-500")}>
           Choose a month and start a run to begin.
@@ -268,7 +407,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 Confirm Part 1
               </Button>
             </div>
-            {renderStepPills(PART1_STEP_KEYS)}
+            <div className="flex flex-wrap items-center gap-2">
+              {renderStepPills(PART1_STEP_KEYS)}
+              {renderNonEmployeesPill()}
+            </div>
 
             <div className="border-t border-slate-200 pt-3">
               {run.phase === "part1" ? (
@@ -283,7 +425,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                       size="sm"
                       className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                       disabled={busy || !part2AllConfirmed || run.phase !== "part2"}
-                      onClick={() => void post(`/api/automated-payroll/runs/${run.id}/part2/confirm`, "Part 2 confirmed. Finance roles notified.")}
+                      onClick={() => void confirmPart2WithOverpaidGate(run.id)}
                     >
                       Confirm Part 2
                     </Button>
@@ -317,6 +459,58 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             </div>
           </div>
 
+          {/* Roster movement vs last month — the calm version of the alarm above.
+              Names people rather than counting them, because a joiner can mask a
+              disappearance in a pure headcount comparison. */}
+          {populationDiff && !populationDiff.noBaseline ? (
+            <div className={cn(adminSoftPanelClassName, "flex flex-col gap-2 p-4")}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                  Roster vs last month
+                </span>
+                <AdminInsightChip tone="neutral">
+                  {populationDiff.currentHeadcount} now · {populationDiff.previousHeadcount} last month
+                </AdminInsightChip>
+                {populationDiff.joined.length > 0 ? (
+                  <AdminInsightChip tone="emerald">+{populationDiff.joined.length} joined</AdminInsightChip>
+                ) : null}
+                {populationDiff.left.length > 0 ? (
+                  <AdminInsightChip tone="slate">−{populationDiff.left.length} left</AdminInsightChip>
+                ) : null}
+              </div>
+              {populationDiff.joined.length > 0 || populationDiff.left.length > 0 ? (
+                <div className="grid gap-3 text-xs sm:grid-cols-2">
+                  {populationDiff.joined.length > 0 ? (
+                    <div>
+                      <div className="font-semibold text-emerald-700">Joined</div>
+                      <ul className="mt-0.5 flex flex-col gap-0.5 text-slate-600">
+                        {populationDiff.joined.map((person) => (
+                          <li key={person.hrId}>
+                            {person.fullName} ({person.hrId})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {populationDiff.left.length > 0 ? (
+                    <div>
+                      <div className="font-semibold text-slate-700">Left</div>
+                      <ul className="mt-0.5 flex flex-col gap-0.5 text-slate-600">
+                        {populationDiff.left.map((person) => (
+                          <li key={person.hrId}>
+                            {person.fullName} ({person.hrId})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500">No joiners or leavers vs last month.</div>
+              )}
+            </div>
+          ) : null}
+
           {recon ? (
             <div className={cn(adminPanelClassName, "grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 lg:grid-cols-8")}>
               <Stat label="Employees" value={String(recon.headcount)} />
@@ -335,7 +529,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           ) : null}
 
           <div className={cn(adminPanelClassName, "p-4")}>
-            {activeStep ? (
+            {nonEmployeesOpen ? (
+              <NonEmployeesPanel
+                key={run.id}
+                runId={run.id}
+                locked={run.phase !== "part1"}
+                onChange={setNonEmployeeCount}
+              />
+            ) : activeStep ? (
               <RecommendationStep
                 key={`${run.id}-${activeStep}`}
                 runId={run.id}

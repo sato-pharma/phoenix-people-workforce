@@ -30,19 +30,20 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p1_resignations",
     phase: "part1",
     title: "Resignations",
-    subtitle: "Leavers this month, with the recommended settlement (≤25th prorated, >25th full) plus their CRM no-activity and unpaid-vacation deductions — settled here since they won't be present for Part 2. Deducted from their own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
+    subtitle: "Leavers this month, with the recommended settlement (≤25th prorated, >25th full) plus their CRM no-activity and unpaid-vacation deductions — settled here since they won't be present for Part 2. CRM Days auto-calculates its Value (Base/30 × days); Unpaid Vacation Days is read-only reference only — its Value combines a balance-aware Phoenix-vacation amount with a separate CRM-leave amount, not a flat day rate, so edit the Value directly instead. Deducted from their own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Last Working Date", label: "Last Working Date" },
       { key: "Branch", label: "Rule" },
       { key: "Days Worked", label: "Days Worked" },
-      { key: "CRM No-Activity Days", label: "CRM No-Activity Days" },
+      { key: "Net Salary", label: "Net Salary" },
       { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days" },
     ],
     fields: [
       { key: "baseForMonth", label: "Base (month)", kind: "money" },
       { key: "ecolPaid", label: "Extra Cost of Living", kind: "money" },
       { key: "fuelPaid", label: "Fuel Allowance", kind: "money" },
+      { key: "resignationCrmDays", label: "CRM No-Activity Days", kind: "days", autoCalcMoneyKey: "crm" },
       { key: "crm", label: "CRM Deduction", kind: "money" },
       { key: "unpaidVacations", label: "Vacation Deduction", kind: "money" },
     ],
@@ -70,7 +71,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "CRM no-activity deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Base Salary", label: "Base Salary" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
       { key: "Settled in Resignations", label: "Settled in Resignations" },
     ],
     fields: [
@@ -90,7 +92,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Base Salary", label: "Base Salary" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
       { key: "Settled in Resignations", label: "Settled in Resignations" },
     ],
     fields: [
@@ -110,7 +113,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Day-without-attendance-record deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Base Salary", label: "Base Salary" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
     ],
     fields: [
       { key: "p1odNoRecordDays", label: "Day Without Record Days", kind: "days", autoCalcMoneyKey: "p1odNoRecordValue" },
@@ -128,7 +132,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Base Salary", label: "Base Salary" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
     ],
     fields: [
       { key: "p1odLoanDays", label: "Loan Days", kind: "days", autoCalcMoneyKey: "p1odLoanValue" },
@@ -137,6 +142,45 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "p1odOtherDays", label: "Other Days", kind: "days", autoCalcMoneyKey: "p1odOtherValue" },
       { key: "p1odOtherValue", label: "Other Value", kind: "money" },
       { key: "p1odOtherReason", label: "Other Reason", kind: "text" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+  },
+  p1_special_situations: {
+    key: "p1_special_situations",
+    phase: "part1",
+    title: "Special Situations",
+    subtitle:
+      "Every employee, regardless of payment mode — for cases that fall outside the normal rules. Enter a deduction and/or addition (days auto-calculate the value at Base/30 × days, or type the value directly), then choose which installment it applies to. That choice applies to BOTH the deduction and the addition for this employee. Only available while Part 1 is still open — like every Part 1 step, this tab locks once Part 1 is confirmed.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
+    ],
+    fields: [
+      {
+        key: "specialDeductionDays",
+        label: "Deduction Days",
+        kind: "days",
+        autoCalcMoneyKey: "specialDeductionValue",
+      },
+      { key: "specialDeductionValue", label: "Deduction Value", kind: "money" },
+      {
+        key: "specialAdditionDays",
+        label: "Addition Days",
+        kind: "days",
+        autoCalcMoneyKey: "specialAdditionValue",
+      },
+      { key: "specialAdditionValue", label: "Addition Value", kind: "money" },
+      {
+        key: "specialSituationPart",
+        label: "Apply To",
+        kind: "select",
+        options: [
+          { value: "first", label: "First Part" },
+          { value: "second", label: "Second Part" },
+        ],
+      },
     ],
     hasReason: false,
     isHoldStep: false,
@@ -238,6 +282,7 @@ export const STEP_ORDER: StepKey[] = [
   "p1_unpaid_vacation",
   "p1_no_record",
   "p1_other_deductions",
+  "p1_special_situations",
   "p1_holds",
   "p2_expenses",
   "p2_vacation",
