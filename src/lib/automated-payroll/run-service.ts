@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { roundCurrency } from "@/lib/payroll/money";
 import {
   createSalaryBatch,
   findSalaryBatchForPeriod,
@@ -11,7 +12,17 @@ import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
+import {
+  markCarryForwardApplied,
+  outstandingCarryForwardFor,
+  recordOverpaidCarryForward,
+} from "./carry-forward.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
+import {
+  diffPopulation,
+  type PopulationDiff,
+  type PreviousRosterEntry,
+} from "./population-diff.ts";
 import {
   createRun,
   findActiveRun,
@@ -410,7 +421,12 @@ export async function confirmPart1(access: AccessContext, runId: string): Promis
 }
 
 /** Confirm Part 2: assemble the full sheet, run the pre-flight gate, notify. */
-export async function confirmPart2(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function confirmPart2(
+  access: AccessContext,
+  runId: string,
+  options: { acknowledgeOverpaid?: boolean } = {},
+): Promise<MonthlySalaryRun> {
+  const acknowledgeOverpaid = options.acknowledgeOverpaid === true;
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -421,13 +437,60 @@ export async function confirmPart2(access: AccessContext, runId: string): Promis
   const states = await listStepStates(runId);
   assertAllStepsConfirmed(states, PART2_STEP_KEYS);
 
-  const { rows } = await assembleForRun(run);
+  const { rows, carryForwardByCompact } = await assembleForRun(run);
   const { preflightValidate } = await import("./validate.ts");
   const preflight = preflightValidate(rows);
   if (!preflight.ok) {
     const sample = preflight.issues.slice(0, 6).map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
     throw new Error(`Validation: fix ${preflight.errorCount} issue(s) before confirming Part 2. ${sample.join("; ")}`);
   }
+
+  // The accuracy nets ENFORCE here — before this they were advisory, computed by
+  // reconcile() and shown only if HR happened to click the Reconcile button
+  // (audit finding 2026-07-25). Part 2 confirm is the last gate before the sheet
+  // becomes the payable truth, so both checks run unconditionally.
+  const totals = reconcile(rows);
+
+  // A split mismatch can ONLY mean a code bug (reconcile's own doc comment says
+  // this list "must always be empty"). Never acknowledgeable — hard block.
+  if (totals.splitMismatches.length > 0) {
+    const sample = totals.splitMismatches
+      .slice(0, 5)
+      .map((row) => `${row.hrId}: ${row.firstPart} + ${row.secondPart} != ${row.monthSalary}`);
+    throw new Error(
+      `Conflict: ${totals.splitMismatches.length} row(s) have First Part + Second Part != Month Salary. ` +
+        `This indicates a calculation bug, not a data-entry problem — do not confirm; report it. ${sample.join("; ")}`,
+    );
+  }
+
+  // Overpaid rows are real money the company paid out in Part 1 that this
+  // month's total can no longer absorb. HR must consciously accept them rather
+  // than discover them later in a report.
+  if (totals.overpaid.length > 0 && !acknowledgeOverpaid) {
+    const totalResidual = roundCurrency(totals.overpaid.reduce((sum, row) => sum + row.residual, 0));
+    const sample = totals.overpaid.slice(0, 5).map((row) => `${row.hrId}: ${row.residual}`);
+    throw new Error(
+      `Conflict: ${OVERPAID_ACK_REQUIRED} ${totals.overpaid.length} employee(s) were overpaid in Part 1 by a ` +
+        `total of ${totalResidual} (Part 2 deductions exceeded their already-paid first installment). ` +
+        `Acknowledge to confirm and carry these balances forward to next month. ${sample.join("; ")}`,
+    );
+  }
+
+  // ---- carry-forward ledger settlement (owner decision 2026-07-25) ----------
+  // Order matters. First close out what this run RECOVERED (those balances were
+  // already deducted in `rows` above, so they are genuinely settled), then
+  // record what this run newly OVERPAID. Doing it in this order means a run
+  // that both recovers an old debt and creates a new one leaves the ledger in
+  // the right state instead of immediately re-consuming its own fresh entry.
+  const recoveredCompacts = Array.from(carryForwardByCompact.keys()).filter(
+    (compact) => (carryForwardByCompact.get(compact) ?? 0) > 0,
+  );
+  const carryForwardRecovered = await markCarryForwardApplied({ runId, appliedCompacts: recoveredCompacts });
+  const carryForwardRecorded = await recordOverpaidCarryForward({
+    runId,
+    rows,
+    actorHrId: actorId(access),
+  });
 
   const updated = await updateRun(runId, {
     phase: "ready",
@@ -438,7 +501,15 @@ export async function confirmPart2(access: AccessContext, runId: string): Promis
     runId,
     actorHrId: actorId(access),
     action: "part2_confirmed",
-    detail: { employees: rows.length },
+    detail: {
+      employees: rows.length,
+      // Record WHAT was accepted, not just that someone clicked twice — an
+      // overpayment acknowledgment is a money decision and must be auditable.
+      overpaidAcknowledged: totals.overpaid.length,
+      overpaidTotal: roundCurrency(totals.overpaid.reduce((sum, row) => sum + row.residual, 0)),
+      carryForwardRecovered,
+      carryForwardRecorded,
+    },
   });
   await notifyPart2Ready(updated);
   return updated;
@@ -449,11 +520,18 @@ export async function confirmPart2(access: AccessContext, runId: string): Promis
 async function assembleForRun(run: MonthlySalaryRun): Promise<{
   rows: AssembledRow[];
   members: PopulationMember[];
+  carryForwardByCompact: Map<string, number>;
 }> {
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const { members, sources, draftRows } = await loadRunContext(period, run.id);
-  const rows = assembleRows({ members, sources, draftRows, period });
-  return { rows, members };
+  const [{ members, sources, draftRows }, carryForwardByCompact] = await Promise.all([
+    loadRunContext(period, run.id),
+    // Overpayments from PREVIOUS runs that this run recovers (owner rule
+    // 2026-07-25). Loaded on every assemble so the figure HR reviews, the
+    // figure on the sheet, and the figure that gets published are the same one.
+    outstandingCarryForwardFor(run.id),
+  ]);
+  const rows = assembleRows({ members, sources, draftRows, period, carryForwardByCompact });
+  return { rows, members, carryForwardByCompact };
 }
 
 export async function getReconciliation(
@@ -464,6 +542,70 @@ export async function getReconciliation(
   const run = await requireRun(runId);
   const { rows } = await assembleForRun(run);
   return reconcile(rows);
+}
+
+/**
+ * Last month's roster, for the population diff. Read from the previous month's
+ * PUBLISHED salary records (the durable truth about who actually got paid)
+ * rather than re-deriving the population, so the comparison can't be skewed by
+ * the very population bug it exists to detect.
+ */
+async function previousMonthRoster(period: PayrollPeriod): Promise<PreviousRosterEntry[]> {
+  if (isAtOrBeforeLaunch(period)) return [];
+  const prev = previousPeriod(period);
+  const prevRun = await findPublishedRun(prev.month, prev.year);
+  if (!prevRun?.publishedBatchId) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("salary_records")
+    .select("hr_id,full_name")
+    .eq("batch_id", prevRun.publishedBatchId);
+  if (error) throw error;
+
+  // Anyone whose resignation had already taken effect by the end of last month
+  // is legitimately absent now — that is "left", not "disappeared".
+  const { end } = periodBoundsFor(prev);
+  const { data: leavers } = await getSupabaseAdmin()
+    .from("employee_resignations")
+    .select("employee_hr_id")
+    .lte("last_working_date", end);
+  const leaverCompacts = new Set(
+    ((leavers ?? []) as Array<{ employee_hr_id: string | null }>)
+      .map((row) => compactHrKey(row.employee_hr_id ?? ""))
+      .filter(Boolean),
+  );
+
+  return ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>)
+    .map((row) => {
+      const hrId = row.hr_id ?? "";
+      const compact = compactHrKey(hrId);
+      return { hrId, compact, fullName: row.full_name ?? hrId, wasLeaver: leaverCompacts.has(compact) };
+    })
+    .filter((entry) => entry.compact);
+}
+
+function periodBoundsFor(period: PayrollPeriod): { start: string; end: string } {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
+  return {
+    start: `${period.year}-${pad(period.month)}-01`,
+    end: `${period.year}-${pad(period.month)}-${pad(lastDay)}`,
+  };
+}
+
+/**
+ * Who joined, left, or unexpectedly vanished vs. last month. `disappeared`
+ * should always be empty — anything in it means someone silently fell out of
+ * payroll (see population-diff.ts for the real incident this guards).
+ */
+export async function getPopulationDiff(access: AccessContext, runId: string): Promise<PopulationDiff> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const [{ members }, previous] = await Promise.all([
+    assembleForRun(run),
+    previousMonthRoster(period),
+  ]);
+  return diffPopulation({ current: members, previous });
 }
 
 // ---- Publish (separate, Super-Admin-only) -----------------------------------
@@ -565,6 +707,13 @@ function previousPeriod(period: PayrollPeriod): PayrollPeriod {
  * published run happens to exist (e.g. leftover test/legacy data): this is an
  * explicit design boundary, not an incidental side effect of missing data.
  */
+/**
+ * Stable marker embedded in the Part-2 overpayment-gate error so the API route
+ * can tell "HR must acknowledge this" apart from any other Conflict, without
+ * fragile matching on the human-readable sentence around it.
+ */
+export const OVERPAID_ACK_REQUIRED = "[overpaid-acknowledgment-required]";
+
 export const AUTOMATED_PAYROLL_LAUNCH_PERIOD: PayrollPeriod = { month: 7, year: 2026 };
 
 export function isAtOrBeforeLaunch(period: PayrollPeriod): boolean {
