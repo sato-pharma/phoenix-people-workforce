@@ -27,6 +27,7 @@ export type StepKey =
   | "p1_resignations"
   | "p1_fingerprint"
   | "p1_crm"
+  | "p1_resignation_crm"
   | "p1_unpaid_vacation"
   | "p1_no_record"
   | "p1_other_deductions"
@@ -44,6 +45,7 @@ export const PART1_STEP_KEYS: readonly StepKey[] = [
   "p1_resignations",
   "p1_fingerprint",
   "p1_crm",
+  "p1_resignation_crm",
   "p1_unpaid_vacation",
   "p1_no_record",
   "p1_other_deductions",
