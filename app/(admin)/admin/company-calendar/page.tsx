@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,10 @@ export default async function AdminCompanyCalendarPage() {
     redirect("/admin");
   }
 
-  const now = new Date();
+  const { year, month } = currentCairoDateParts();
   let workspace = null;
   try {
-    workspace = await getCompanyCalendarWorkspace(access, now.getUTCFullYear(), now.getUTCMonth() + 1);
+    workspace = await getCompanyCalendarWorkspace(access, year, month);
   } catch {
     workspace = null;
   }

@@ -11,6 +11,7 @@ import { loadAttendanceFlexPolicyGroups, type AttendanceFlexPolicyGroupDbRow } f
 import { formatAttendanceWorkingWeekdays } from "@/lib/attendance/work-schedule";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 import {
   bracketsForEventType,
   evaluateFlexibleHoursDay,
@@ -260,11 +261,6 @@ function isDateInput(value: string | undefined) {
 
 function todayKey() {
   return localDateKey(new Date());
-}
-
-function utcBoundaryForLocalDate(date: string, dayOffset = 0) {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, month - 1, day + dayOffset).toISOString();
 }
 
 function localDateKey(date: Date) {
@@ -635,8 +631,8 @@ export async function getFingerprintAttendanceReport(input: {
       .from("attendance_raw_punches")
       .select("device_user_id,employee_hr_id,punch_time")
       .not("employee_hr_id", "is", null)
-      .gte("punch_time", utcBoundaryForLocalDate(dateFrom))
-      .lt("punch_time", utcBoundaryForLocalDate(dateTo, 1));
+      .gte("punch_time", cairoMidnightUtcIso(dateFrom))
+      .lt("punch_time", cairoMidnightUtcIso(dateTo, 1));
     if (filters.exactEmployeeHrId) {
       punchQuery = punchQuery.eq("employee_hr_id", filters.exactEmployeeHrId);
     }

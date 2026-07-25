@@ -5,6 +5,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canSeeConfidentialNote } from "./assessments";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 import { getProbationConfig } from "./config";
@@ -81,7 +82,10 @@ export async function buildConsolidatedReport(
   caseId: string,
   nowIso: string = new Date().toISOString(),
 ): Promise<ConsolidatedReport> {
-  const today = nowIso.slice(0, 10);
+  // Africa/Cairo calendar day (not a naive UTC slice of nowIso) — must stay derived from the
+  // same instant as daysRemaining below so the two never visibly disagree near the nightly
+  // Cairo/UTC boundary.
+  const today = currentCairoDateOnlyIso(new Date(nowIso));
   const supabase = getSupabaseAdmin();
   const config = await getProbationConfig();
 
@@ -193,7 +197,7 @@ export async function buildConsolidatedReport(
       ...probationCase,
       employeeName: evaluatorNameByHrId.get(probationCase.employeeHrId.toLowerCase()) ?? probationCase.employeeName,
       currentProbationDay: currentProbationDay(probationCase.hireDate, today),
-      daysRemaining: probationDaysRemaining(probationCase.hireDate),
+      daysRemaining: probationDaysRemaining(probationCase.hireDate, new Date(nowIso)),
     },
     milestones: milestoneStatuses(probationCase.hireDate, today),
     dvProgress,

@@ -6,6 +6,7 @@ import {
   type DistributorSalesValidationResult,
   type ParsedDistributorRow,
 } from "@/lib/sales/monthly-distributor-import";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { explainHeaderMismatch, type HeaderMismatchExplanation } from "@/lib/sales/normalizer/ai-explain";
 import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation, previewOfficeAllocation } from "@/lib/sales/office-upload";
@@ -96,11 +97,12 @@ export type AnalyzeResult =
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation }
   | { status: "coded_sheet"; distributorName: string };
 
-// Current calendar month as YYYY-MM (server clock). Used by the temporal validations. Date is safe
-// here — this is server code (the validator itself stays pure; the month is part of its context).
+// Current calendar month as YYYY-MM (Africa/Cairo business time — see currentCairoDateParts).
+// Used by the temporal validations. A server running in UTC and a Cairo browser can otherwise
+// disagree on the month near midnight Cairo time.
 function currentPeriodUtc(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const { year, month } = currentCairoDateParts();
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 // Validated periods already imported for this distributor. Incomplete/blocked batches are ignored so

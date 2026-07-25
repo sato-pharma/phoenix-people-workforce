@@ -36,7 +36,7 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
-import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { currentCairoDateOnlyIso, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
@@ -428,7 +428,7 @@ function regionOptions(currentRegion?: string | null) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function addDays(date: string, days: number) {

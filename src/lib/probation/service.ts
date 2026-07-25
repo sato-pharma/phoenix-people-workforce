@@ -12,9 +12,14 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
-import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
+import { addDaysToDateOnly } from "@/lib/date-only";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
+import {
+  probationDaysRemaining,
+  probationEndDate as canonicalProbationEndDate,
+} from "@/lib/probation/date";
 import {
   getProbationCaseByEmployee,
   isMedicalRepresentativeTitle,
@@ -105,7 +110,6 @@ type ProbationWorkflowInput = {
   note?: string | null;
 };
 
-const probationDays = 90;
 // Governance: probation pass/terminate/evaluation authority is reserved for Super Admin
 // (Admin-HR) and the HR Manager B-10 (Omar Anwar Gawish), who holds the Super Admin role.
 // The retired broad HR access role and Talent Acquisition must NOT administer or approve probation.
@@ -290,23 +294,6 @@ function addDays(value: string | null | undefined, days: number) {
   return addDaysToDateOnly(normalizeDate(value), days);
 }
 
-function daysRemaining(value: string | null | undefined) {
-  const endDate = parseDateOnly(normalizeDate(value));
-  if (!endDate) return 0;
-  const end = endDate.getTime();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.ceil((end - today.getTime()) / 86400000);
-}
-
-function baseProbationEndDate(employee: Pick<EmployeeScopeRow, "hireDate">) {
-  return addDays(employee.hireDate, probationDays) ?? "";
-}
-
-function currentProbationEndDate(employee: EmployeeScopeRow) {
-  return baseProbationEndDate(employee);
-}
-
 function appendWorkflowNote(existing: string | null | undefined, actor: string, action: string, note?: string | null) {
   const entry = `[${new Date().toISOString()}] ${actor}: ${action}${note ? ` - ${note}` : ""}`;
   return existing ? `${existing}\n${entry}` : entry;
@@ -477,14 +464,14 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
       const workflow = evaluationsByHrId.get(employee.hrId) ?? null;
       const manager = managerOf(employee, employees);
       const managerManager = manager ? managerOf(manager, employees) : null;
-      const probationEndDate = currentProbationEndDate(employee);
+      const probationEndDate = canonicalProbationEndDate(employee.hireDate) ?? "";
       const allowedActions = allowedWorkflowActions(access, workflow, employee, viewer, employees);
       if (workflow) workflow.allowedActions = allowedActions;
       return {
         allowedActions,
         area_name: employee.areaName ?? "Unassigned",
         crm_id: employee.crmId ?? "",
-        days_remaining: daysRemaining(probationEndDate),
+        days_remaining: probationDaysRemaining(employee.hireDate) ?? 0,
         employment_status: employee.employmentStatus ?? "",
         dv_state: probation?.dm_dv_done !== undefined ? {
           dm_dv_done: probation.dm_dv_done ?? false,
@@ -831,7 +818,7 @@ async function ensureSystemProbationReview(employee: EmployeeScopeRow, probation
 }
 
 function todayDateOnly() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function reminderMetadata(row: ProbationReminderEventDbRow) {
@@ -1074,7 +1061,7 @@ export async function createProbationEvaluation(input: CreateProbationEvaluation
     throw error;
   });
   const probation = probationByHrId.get(employee.hrId);
-  const probationEndDate = currentProbationEndDate(employee);
+  const probationEndDate = canonicalProbationEndDate(employee.hireDate) ?? "";
   if (!probationEndDate) throw new Error("Probation end date is required.");
 
   const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {

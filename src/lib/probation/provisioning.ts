@@ -6,12 +6,13 @@
 // stays out of files under concurrent edit. Writes the employee_probation row and
 // mirrors the window onto employees.probation_end_date.
 
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { probationEndDate } from "@/lib/probation/date";
 import { ensureProbationCase } from "@/lib/probation/intelligence/cases";
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 // App-layer provisioning of the new central Probation Case on the primary hire path.

@@ -818,7 +818,7 @@ function isWithinQuietHours(preferences: LoadedPreferences, now = new Date()) {
   const start = timeMinutes(preferences.quiet_hours_start);
   const end = timeMinutes(preferences.quiet_hours_end);
   if (start === null || end === null || start === end) return false;
-  // Quiet hours are the user's LOCAL window. The server runs in UTC on Vercel, so
+  // Quiet hours are the user's LOCAL window. The server runs in UTC (GCP Cloud Run), so
   // compare against Africa/Cairo wall-clock minutes, not the server clock.
   const current = currentCairoMinutesOfDay(now);
   return start < end ? current >= start && current < end : current >= start || current < end;

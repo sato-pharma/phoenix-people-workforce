@@ -4,10 +4,11 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { parseDateOnly } from "@/lib/date-only";
 import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
@@ -89,7 +90,7 @@ export function isContractRenewalValidationError(error: unknown) {
 }
 
 function todayDate() {
-  return toDateOnlyString(new Date()) ?? "";
+  return currentCairoDateOnlyIso();
 }
 
 function cleanText(value: string | null | undefined) {

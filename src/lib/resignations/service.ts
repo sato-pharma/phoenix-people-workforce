@@ -9,6 +9,7 @@ import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/wo
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -110,7 +111,7 @@ function asIso(value: string | null | undefined) {
 }
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -1620,7 +1621,7 @@ export async function runResignationWorkflow(
 }
 
 export async function runResignationSlaDaily(): Promise<{ processed: number; errors: number }> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = currentCairoDateOnlyIso();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employee_resignations")

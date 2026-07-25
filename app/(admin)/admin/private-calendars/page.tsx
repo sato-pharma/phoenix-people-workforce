@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { canUsePrivateCalendarAdminSurface, getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -32,6 +33,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   }
 
   const now = new Date();
+  const { year: currentYear, month: currentMonth } = currentCairoDateParts(now);
   const resolved = await searchParams;
   const getString = (key: string) => {
     const v = resolved[key];
@@ -46,8 +48,8 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
   const regionFilter = getString("region") ?? "";
   const titleFilter = (getString("title") ?? "").toLowerCase();
 
-  const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : now.getUTCMonth() + 1;
-  const year = rawYear ? parseInt(rawYear, 10) : now.getUTCFullYear();
+  const month = rawMonth ? Math.max(1, Math.min(12, parseInt(rawMonth, 10))) : currentMonth;
+  const year = rawYear ? parseInt(rawYear, 10) : currentYear;
 
   // Load and filter to eligible employees (NSM/PM/GPM/TM or head-office = no area)
   const directory = await getEmployeeDirectory().catch(() => null);
@@ -178,7 +180,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             <input
               className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
               defaultValue={year}
-              max={now.getUTCFullYear() + 1}
+              max={currentYear + 1}
               min={2024}
               name="year"
               type="number"
@@ -293,7 +295,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               &larr; Back to list
             </a>
           </div>
-          <PrivateCalendar initialWorkspace={workspace} todayIso={now.toISOString().slice(0, 10)} viewerHrId={access.hrId} />
+          <PrivateCalendar initialWorkspace={workspace} todayIso={currentCairoDateOnlyIso(now)} viewerHrId={access.hrId} />
         </div>
       )}
 

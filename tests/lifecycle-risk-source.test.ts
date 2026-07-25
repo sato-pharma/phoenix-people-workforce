@@ -22,6 +22,37 @@ export function runLifecycleRiskSourceTests() {
   assert.equal(isDateWithinLifecycleRiskWindow("2026-06-18", 30, referenceDate), false);
   assert.equal(probationEndDateFromHire("2026-01-01"), "2026-04-01");
 
+  // Cairo/UTC day-boundary regression: startOfToday() must resolve "today" via Africa/Cairo,
+  // not the server's own UTC clock. Cairo is ahead of UTC (EEST=+3 late Apr-late Oct,
+  // EET=+2 otherwise), so for a few hours after Cairo's local midnight, the UTC clock is
+  // still on the previous calendar day — the exact window the old `setHours(0,0,0,0)`
+  // (server-local midnight) implementation got wrong.
+  const eestBeforeCairoMidnight = new Date("2026-07-24T20:59:00Z"); // Cairo 23:59 Jul 24 (EEST)
+  const eestAfterCairoMidnight = new Date("2026-07-24T21:00:00Z"); // Cairo 00:00 Jul 25 (EEST)
+  assert.equal(
+    daysUntilLifecycleDate("2026-07-25", eestBeforeCairoMidnight),
+    1,
+    "20:59 UTC (EEST): Cairo is still Jul 24, so Jul 25 is 1 day away",
+  );
+  assert.equal(
+    daysUntilLifecycleDate("2026-07-25", eestAfterCairoMidnight),
+    0,
+    "21:00 UTC (EEST): Cairo has already rolled to Jul 25, so it's due today",
+  );
+
+  const eetBeforeCairoMidnight = new Date("2026-01-15T21:59:00Z"); // Cairo 23:59 Jan 15 (EET)
+  const eetAfterCairoMidnight = new Date("2026-01-15T22:00:00Z"); // Cairo 00:00 Jan 16 (EET)
+  assert.equal(
+    daysUntilLifecycleDate("2026-01-16", eetBeforeCairoMidnight),
+    1,
+    "21:59 UTC (EET): Cairo is still Jan 15, so Jan 16 is 1 day away",
+  );
+  assert.equal(
+    daysUntilLifecycleDate("2026-01-16", eetAfterCairoMidnight),
+    0,
+    "22:00 UTC (EET): Cairo has already rolled to Jan 16, so it's due today",
+  );
+
   assert.equal(classifyContractRenewalRisk(null), "missing");
   assert.equal(classifyContractRenewalRisk(5), "critical");
   assert.equal(classifyContractRenewalRisk(20), "warning");
