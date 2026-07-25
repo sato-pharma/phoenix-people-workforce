@@ -1174,7 +1174,7 @@ async function notifyRecipients(input: {
     .map((recipient) => createSystemNotification({
       actionUrl: input.actionUrl,
       category: "general",
-      channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
+      channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
       ...(emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
         ? {
             email: {

@@ -71,7 +71,7 @@ async function safeSendNotificationEmail(input: {
 }) {
   return createSystemNotification({
     actionUrl: input.ctaHref ?? null,
-    channels: ["email"],
+    channels: ["email", "push"],
     email: input,
     eventType: "interview_email",
     message: input.summary,
@@ -94,7 +94,7 @@ async function enqueueInAppNotification(input: {
   return createSystemNotification({
     actionUrl: input.href ?? null,
     category: input.category,
-    channels: ["in_app"],
+    channels: ["in_app", "push"],
     eventType: "interview_notification",
     message: input.message,
     metadata: { ...(input.metadata ?? {}), idempotencyKey: input.dedupeKey },

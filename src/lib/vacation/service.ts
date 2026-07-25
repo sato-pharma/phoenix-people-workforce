@@ -2110,7 +2110,7 @@ async function dispatchVacationNextManagerStep(input: {
     title: `${input.request.employeeName}'s vacation request needs your approval`,
   });
   await notifyRecipients({
-    channels: ["in_app", "telegram"],
+    channels: ["in_app", "telegram", "push"],
     href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(input.request.id)}`,
     message: `${actingName} approved your ${vacationTypeLabel(input.request.vacationType)} request (${input.request.startDate} → ${input.request.endDate}). It is now pending secondary management review.`,
     metadata: {
@@ -2157,7 +2157,7 @@ async function dispatchVacationDecision(input: {
     // Email is delivered by the templated sendVacationDecisionResultEmail below
     // (leave_approval / leave_rejection); keep this generic notification to in-app + Telegram
     // so the employee/approvers don't also receive a duplicate generic email.
-    channels: ["in_app", "telegram"],
+    channels: ["in_app", "telegram", "push"],
     href: reportHref,
     message: `${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}) was ${input.decision === "approve" ? "approved" : "rejected"} by the vacation approval workflow.`,
     metadata: {
@@ -3196,7 +3196,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     const returnReason = input.decisionComment ?? "No reason provided.";
     // Employee: in-app + Telegram (already all 3 once email below fires)
     void notifyRecipients({
-      channels: ["in_app", "telegram"],
+      channels: ["in_app", "telegram", "push"],
       href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(returned.id)}`,
       message: `Your ${vacationTypeLabel(returned.vacationType)} vacation request (${returned.startDate} → ${returned.endDate}) was returned by ${actorName} for revision. Reason: ${returnReason}`,
       metadata: { requestId: returned.id, status: "returned" },
@@ -3216,7 +3216,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     // HR: in-app + Telegram so they know the request was sent back
     const hrRecipientsForReturn = await getHrRecipients(directory);
     void notifyRecipients({
-      channels: ["in_app", "telegram"],
+      channels: ["in_app", "telegram", "push"],
       href: `/admin/approvals/vacation/${encodeURIComponent(returned.id)}`,
       message: `${actorName} returned ${returned.employeeName}'s ${vacationTypeLabel(returned.vacationType)} request (${returned.startDate} → ${returned.endDate}) for revision. Reason: ${returnReason}`,
       metadata: { requestId: returned.id, status: "returned" },
@@ -3792,7 +3792,7 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
     summary: "Vacation request resubmitted by employee.",
   });
   void notifyRecipients({
-    channels: ["in_app", "telegram"],
+    channels: ["in_app", "telegram", "push"],
     href: `/admin/approvals/vacation/${encodeURIComponent(resubmitted.id)}`,
     message: `${resubmitted.employeeName}'s ${vacationTypeLabel(resubmitted.vacationType)} vacation request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending your review.`,
     metadata: { requestId: resubmitted.id, status: "pending_manager" },
@@ -3811,7 +3811,7 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   });
   // Employee resubmit confirmation — 3-channel requirement (previously zero channels for the employee).
   void notifyRecipients({
-    channels: ["in_app", "telegram"],
+    channels: ["in_app", "telegram", "push"],
     href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(resubmitted.id)}`,
     message: `Your ${vacationTypeLabel(resubmitted.vacationType)} request (${resubmitted.startDate} → ${resubmitted.endDate}) has been resubmitted and is pending manager review.`,
     metadata: { requestId: resubmitted.id, status: "pending_manager" },

@@ -223,7 +223,7 @@ export async function runTelegramDailyHrDigest() {
       const result = await createSystemNotification({
         actionUrl: "/admin/notifications/telegram",
         actorId: "daily-dispatcher",
-        channels: ["in_app", "telegram"],
+        channels: ["in_app", "telegram", "push"],
         eventType: "daily_hr_digest",
         message,
         metadata: {

@@ -305,7 +305,7 @@ export async function runDvPlannerWeeklyDigest(
         recipientHrId: hrId,
         subjectHrId: hrId,
         title,
-        channels: ["in_app", "email"],
+        channels: ["in_app", "email", "push"],
         email: {
           cc: ccEmails,
           ctaHref: ctaUrl,

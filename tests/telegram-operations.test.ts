@@ -42,7 +42,7 @@ export function runTelegramOperationsTests() {
   assert.match(operations, /createSystemNotification\(\{/);
   assert.match(operations, /eventType: "daily_hr_digest"/);
   assert.match(operations, /module: "system"/, "digest must use a module recognized by telegram-governance policies, not the literal string \"telegram\" (which fails closed)");
-  assert.match(operations, /channels: \["in_app", "telegram"\]/);
+  assert.match(operations, /channels: \["in_app", "telegram", "push"\]/);
   assert.match(operations, /Telegram daily HR digest skipped because no exact pilot recipient was resolved/);
   assert.match(operations, /failClosed: true/);
 
