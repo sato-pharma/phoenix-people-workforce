@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useTransition, type ReactNode } from "rea
 
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import type { PlanningCalendarItem, PlanningCalendarPlanItem, PlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar";
 
 const allValue = "__all__";
@@ -14,10 +15,6 @@ function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
   );
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function monthDateIso(year: number, month: number, day = 1) {
@@ -208,13 +205,11 @@ export function PrivateCalendarsFilterMap({
   }
 
   function goToday() {
-    const now = new Date();
-    const todayMonth = now.getUTCMonth() + 1;
-    const todayYear = now.getUTCFullYear();
+    const { year: todayYear, month: todayMonth } = currentCairoDateParts();
 
     startTransition(async () => {
       try {
-        await loadMonth(todayYear, todayMonth, now.toISOString().slice(0, 10));
+        await loadMonth(todayYear, todayMonth, currentCairoDateOnlyIso());
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to load planning calendar.");
       }

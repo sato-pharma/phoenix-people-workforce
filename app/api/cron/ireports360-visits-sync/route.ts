@@ -99,9 +99,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "iReports360 visits sync is not authorized." }, { status: 401 });
   }
   try {
-    // 09:00/12:00/19:00 UTC = 12pm/3pm/10pm Africa/Cairo (EEST, UTC+3 in summer) — matches the
-    // existing daily dispatcher's UTC+3 calibration. Vercel cron has no DST awareness, so this
-    // drifts an hour off in winter (EET, UTC+2), same known tradeoff as that existing cron.
+    // Scheduled at 9:07/12:07/19:07 Africa/Cairo via Google Cloud Scheduler's --time-zone flag
+    // (see scripts/setup-gcp-cron.sh), which is genuinely DST-aware — the trigger stays pinned
+    // to Cairo wall-clock time across the EET/EEST transition. The app server itself still runs
+    // in UTC (Cloud Run), so any in-app "now" logic must still resolve via Africa/Cairo, not the
+    // server clock.
     // Slug matches the live Cloud Scheduler job name (phoenix-ireports360-sync), not JOB_NAME
     // above or the Sentry monitor slug inside runSync (both "ireports360-visits-sync").
     return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync());

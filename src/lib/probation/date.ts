@@ -7,6 +7,19 @@
 // uses the identical +90 formula; a unit test asserts the two agree so they can never drift.
 
 import { addDaysToDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
+import { currentCairoDateParts } from "@/lib/i18n/format";
+
+// Reduces a live clock reading (e.g. the default `reference = new Date()`) to the CALENDAR
+// DAY it falls on in Africa/Cairo — not the server's own UTC clock, which disagrees with
+// Cairo for a few hours every night — then builds a Date for that day using the same
+// local-constructor convention parseDateOnly uses for date-only strings below, so the two
+// stay directly comparable via getTime(). Only ever apply this to a live instant; a
+// date-only string (start/end below) has no time-of-day to begin with, so it's unambiguous
+// as-is and must not be run through this.
+function cairoCalendarDayAsLocalDate(reference: Date): Date {
+  const { year, month, day } = currentCairoDateParts(reference);
+  return new Date(year, month - 1, day);
+}
 
 /** Fixed probation length in days. */
 export const PROBATION_TOTAL_DAYS = 90;
@@ -54,7 +67,7 @@ export function currentProbationDay(
   const start = parseDateOnly(probationStartDate(hireDate, explicitStart));
   if (!start) return null;
   const startMs = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
-  const ref = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+  const ref = cairoCalendarDayAsLocalDate(reference).getTime();
   const elapsed = Math.floor((ref - startMs) / 86400000);
   return Math.max(0, elapsed) + 1;
 }
@@ -68,7 +81,7 @@ export function probationDaysRemaining(
   const end = parseDateOnly(probationEndDate(hireDate, explicitStart));
   if (!end) return null;
   const endMs = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
-  const ref = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+  const ref = cairoCalendarDayAsLocalDate(reference).getTime();
   return Math.ceil((endMs - ref) / 86400000);
 }
 

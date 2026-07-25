@@ -15,6 +15,23 @@ export function runContractRenewalHardeningTests() {
     "leap-day hires should renew on the last valid day in non-leap years",
   );
   const service = readFileSync("src/lib/contracts/service.ts", "utf8");
+
+  // Cairo/UTC timezone fix: todayDate() (used by both getContractRenewalReminderCandidates'
+  // due-date matching and the non-renewal auto-terminate path's effectiveDate/submittedDate
+  // fallback) must resolve "today" via Africa/Cairo, not the server's own local/UTC clock —
+  // the reminder route's own display-only cairoDate() was already Cairo-aware; this used to be
+  // the one place in this file that diverged.
+  assert.match(
+    service,
+    /function todayDate\(\) \{\s*return currentCairoDateOnlyIso\(\);\s*\}/,
+    "todayDate() must delegate to the canonical Cairo-aware currentCairoDateOnlyIso helper",
+  );
+  assert.doesNotMatch(
+    service,
+    /toDateOnlyString\(new Date\(\)\)/,
+    'todayDate() must not resolve "today" via the server\'s local/UTC clock',
+  );
+
   assert.match(service, /phx_create_contract_renewal_request/);
   assert.match(service, /phx_apply_contract_renewal_workflow/);
   assert.match(service, /ContractRenewalValidationError/);

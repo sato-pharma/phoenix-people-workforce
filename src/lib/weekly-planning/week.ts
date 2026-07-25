@@ -162,38 +162,54 @@ function sundayFromWeekKey(weekKey: string): Date {
 }
 
 /**
- * Submission deadline: Thursday 17:00 of the PRIOR week.
+ * Compute the UTC instant corresponding to a specific Africa/Cairo wall-clock time
+ * (hour:minute, on the UTC calendar date given) — DST-safe. Builds a naive UTC
+ * guess, reads back what wall-clock time that guess actually displays in
+ * Africa/Cairo, and corrects by the difference. Same round-trip idiom as
+ * currentCairoDateParts in src/lib/i18n/format.ts, rather than a fixed UTC+2/UTC+3
+ * offset that would silently drift wrong across the DST transition.
+ */
+function cairoWallClockUtcInstant(year: number, month: number, day: number, hour: number, minute: number): Date {
+  const guess = Date.UTC(year, month, day, hour, minute, 0);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    hourCycle: "h23", timeZone: "Africa/Cairo",
+  }).formatToParts(new Date(guess));
+  const value = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  const asIfUtc = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), 0);
+  return new Date(guess - (asIfUtc - guess));
+}
+
+/**
+ * Submission deadline: Thursday 17:00 Africa/Cairo of the PRIOR week.
  * Submit next week's plan by the Thursday before it starts.
- * Returns a Date (UTC midnight-anchored arithmetic; 17:00 is set as UTC hours
- * since the platform treats deadlines in Africa/Cairo ~ UTC+2, but for pure
- * arithmetic correctness we store as UTC+0 17:00 and callers should display
- * in local time).
+ * Returns the correct UTC instant for that Cairo wall-clock time (DST-safe via
+ * cairoWallClockUtcInstant), not a flat "17:00 UTC" approximation.
  */
 export function submissionDeadlineForWeek(weekKey: string): Date {
   const sunday = sundayFromWeekKey(weekKey);
   // Prior Thursday = Sunday - 3 days.
   const thursday = new Date(Date.UTC(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate() - 3));
-  thursday.setUTCHours(17, 0, 0, 0);
-  return thursday;
+  return cairoWallClockUtcInstant(thursday.getUTCFullYear(), thursday.getUTCMonth(), thursday.getUTCDate(), 17, 0);
 }
 
 /**
- * Manager approval deadline: Saturday 12:00 noon of the prior week.
- * Saturday = Sunday of the plan's week - 1 day.
+ * Manager approval deadline: Saturday 12:00 noon Africa/Cairo of the prior week.
+ * Saturday = Sunday of the plan's week - 1 day. Returns the correct UTC instant for
+ * that Cairo wall-clock time (DST-safe via cairoWallClockUtcInstant).
  */
 export function managerApprovalDeadlineForWeek(weekKey: string): Date {
   const sunday = sundayFromWeekKey(weekKey);
   const saturday = new Date(Date.UTC(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate() - 1));
-  saturday.setUTCHours(12, 0, 0, 0);
-  return saturday;
+  return cairoWallClockUtcInstant(saturday.getUTCFullYear(), saturday.getUTCMonth(), saturday.getUTCDate(), 12, 0);
 }
 
 /**
- * CEO approval deadline: Sunday 10:00 AM of the plan's working week.
+ * CEO approval deadline: Sunday 10:00 AM Africa/Cairo of the plan's working week.
+ * Returns the correct UTC instant for that Cairo wall-clock time (DST-safe via
+ * cairoWallClockUtcInstant).
  */
 export function ceoApprovalDeadlineForWeek(weekKey: string): Date {
   const sunday = sundayFromWeekKey(weekKey);
-  const deadline = new Date(sunday);
-  deadline.setUTCHours(10, 0, 0, 0);
-  return deadline;
+  return cairoWallClockUtcInstant(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate(), 10, 0);
 }

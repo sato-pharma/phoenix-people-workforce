@@ -5,6 +5,7 @@ import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design
 import { PlanningCalendar } from "@/components/employee-portal/planning-calendar";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,8 @@ export default async function AdminPlanningCalendarPage() {
     redirect("/employee-portals");
   }
 
-  const now = new Date();
-  const workspace = await getSharedPlanningCalendarWorkspace(access, now.getUTCFullYear(), now.getUTCMonth() + 1);
+  const { year, month } = currentCairoDateParts();
+  const workspace = await getSharedPlanningCalendarWorkspace(access, year, month);
 
   return (
     <div className="space-y-6">

@@ -6,6 +6,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 
 import { getProbationConfig } from "./config";
 import { filterResolvedProbationCases } from "./cases";
@@ -88,7 +89,12 @@ function groupBy<T>(rows: T[], key: (r: T) => string | null): Map<string, T[]> {
 }
 
 export async function getProbationDashboard(nowIso: string = new Date().toISOString()): Promise<ProbationDashboard> {
-  const today = nowIso.slice(0, 10);
+  // Africa/Cairo calendar day, not a naive UTC slice of nowIso — Cairo is ahead of UTC, so a
+  // UTC-slice can read "yesterday" for a few hours every night. currentDay (below, via
+  // report-metrics' currentProbationDay) and daysRemaining (via probationDaysRemaining, which
+  // independently resolves the same nowIso instant through the same Cairo primitive) must derive
+  // from the same underlying instant so they can never visibly disagree near the boundary.
+  const today = currentCairoDateOnlyIso(new Date(nowIso));
   const supabase = getSupabaseAdmin();
   const config = await getProbationConfig();
 
@@ -179,7 +185,7 @@ export async function getProbationDashboard(nowIso: string = new Date().toISOStr
 
     const milestones = milestoneStatuses(c.hire_date, today);
     const mByDay = Object.fromEntries(milestones.map((m) => [m.day, m.reached]));
-    const daysRemaining = probationDaysRemaining(c.hire_date);
+    const daysRemaining = probationDaysRemaining(c.hire_date, new Date(nowIso));
     const hasHighContradiction = contradictions.some((x) => x.severity === "high");
 
     const signals = {

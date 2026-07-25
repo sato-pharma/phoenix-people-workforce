@@ -7,6 +7,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
 
 const punchTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -46,11 +47,6 @@ function localMinutesOfDay(date: Date): number | null {
   return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : null;
 }
 
-function utcBoundaryForLocalDate(date: string, dayOffset = 0): string {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, month - 1, day + dayOffset).toISOString();
-}
-
 /**
  * Map<employeeHrId, Map<dateIso, EmployeeDayPunches>> for the given employees
  * and date range (inclusive, local Cairo calendar days). "Visible" punch times
@@ -85,8 +81,8 @@ export async function loadEmployeeDayPunchMinutes(input: {
         .select("employee_hr_id,punch_time")
         .not("employee_hr_id", "is", null)
         .in("employee_hr_id", hrIdBatch)
-        .gte("punch_time", utcBoundaryForLocalDate(input.dateFromIso))
-        .lt("punch_time", utcBoundaryForLocalDate(input.dateToIso, 1))
+        .gte("punch_time", cairoMidnightUtcIso(input.dateFromIso))
+        .lt("punch_time", cairoMidnightUtcIso(input.dateToIso, 1))
         .order("punch_time", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
 

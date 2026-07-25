@@ -24,6 +24,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -1000,12 +1001,20 @@ function mapSlaSettings(row: VacationSlaSettingsDbRow | null | undefined) {
   };
 }
 
+// Egypt's weekend is Friday/Saturday in Africa/Cairo terms. A real timestamp's UTC weekday can
+// disagree with its Cairo weekday for the few hours before UTC midnight where Cairo has already
+// rolled over to the next calendar day — resolve the weekend check via Cairo, not getUTCDay().
+function cairoDayOfWeek(date: Date): number {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", weekday: "short" }).format(date);
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday);
+}
+
 function addBusinessDays(date: Date, days: number) {
   const result = new Date(date);
   let added = 0;
   while (added < days) {
     result.setUTCDate(result.getUTCDate() + 1);
-    const day = result.getUTCDay();
+    const day = cairoDayOfWeek(result);
     if (day !== 5 && day !== 6) added += 1;
   }
   return result;
@@ -1017,7 +1026,7 @@ function businessDaysBetween(start: Date, end: Date) {
   let days = 0;
   while (cursor < end) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
-    const day = cursor.getUTCDay();
+    const day = cairoDayOfWeek(cursor);
     if (day !== 5 && day !== 6 && cursor <= end) days += 1;
   }
   return days;
@@ -2532,7 +2541,11 @@ async function deleteSickAttachment(objectPath: string | null | undefined) {
 export async function getVacationRequestPageData(access: AccessContext) {
   await assertPermission(access, "leave", "create");
   const { directory, employee } = await getCurrentEmployee(access);
-  const today = toDateOnlyString(new Date()) ?? "";
+  // Africa/Cairo calendar day — matches getAnnualVacationMinimumStartDate() below (also
+  // Cairo-anchored), so every key in balanceReferenceDates resolves "today" consistently
+  // instead of "annual" alone being correct and the other four types using the server's own
+  // local/UTC clock.
+  const today = currentCairoDateOnlyIso();
   const { manager, managerOfManager } = managerChain(directory, employee);
   const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
 
@@ -5092,12 +5105,7 @@ export async function runVacationRetentionPurge(access: AccessContext, input: { 
 }
 
 function cairoDateOnly() {
-  return new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date());
+  return currentCairoDateOnlyIso();
 }
 
 async function startVacationSlaRun(runDate: string) {

@@ -60,6 +60,7 @@ import {
 } from "@/lib/employee-portal/service";
 import { compactDeductionHrId, listPublishedDeductionsForPortal } from "@/lib/deductions-governance/service";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
   getMarketingOverview,
   getMarketingRequestDecisionSummary,
@@ -279,8 +280,8 @@ export async function WorkspacePlansPage({ searchParams }: { searchParams: Searc
 
 export async function WorkspacePlanningCalendarPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "weekly_plans" });
-  const now = new Date();
-  const workspace = await getSharedPlanningCalendarWorkspace(access, now.getUTCFullYear(), now.getUTCMonth() + 1);
+  const { year, month } = currentCairoDateParts();
+  const workspace = await getSharedPlanningCalendarWorkspace(access, year, month);
   return (
     <WorkspaceFrame
       description="View submitted planning activity, vacations, and conflicts from your existing employee scope."
@@ -295,10 +296,11 @@ export async function WorkspacePlanningCalendarPage() {
 export async function WorkspacePrivateCalendarPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
   const now = new Date();
+  const { year, month } = currentCairoDateParts(now);
   const workspace = await getPrivateCalendarWorkspace({
     access,
-    month: now.getUTCMonth() + 1,
-    year: now.getUTCFullYear(),
+    month,
+    year,
   }).catch((error) => {
     logPortalFailure({ route: "/workspace/private-calendar", module: "private_calendar", role: access.role, hrId: access.hrId }, error);
     return null;
@@ -309,7 +311,7 @@ export async function WorkspacePrivateCalendarPage() {
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Private Calendar"
     >
-      {workspace ? <PrivateCalendar initialWorkspace={workspace} surface="workspace" todayIso={now.toISOString().slice(0, 10)} /> : (
+      {workspace ? <PrivateCalendar initialWorkspace={workspace} surface="workspace" todayIso={currentCairoDateOnlyIso(now)} /> : (
         <WorkspaceUnavailable message="We could not load the private calendar right now." title="Private Calendar Unavailable" />
       )}
     </WorkspaceFrame>

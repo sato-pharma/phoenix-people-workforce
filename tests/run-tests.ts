@@ -1,4 +1,5 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
@@ -68,6 +69,7 @@ import { runProbationScoringTests } from "./probation-scoring.test.ts";
 import { runProbationReportTests } from "./probation-report.test.ts";
 import { runProbationDashboardTests } from "./probation-dashboard.test.ts";
 import { runProbationEmailsTests } from "./probation-emails.test.ts";
+import { runProbationCairoTodayConsistencyTests } from "./probation-cairo-today-consistency.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
 import { runEmailRenderHarnessTests, runTokenRegistryConsistencyTests } from "./email-render-harness.test.ts";
 import { runProbationDecisionTests } from "./probation-decision.test.ts";
@@ -95,6 +97,7 @@ import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runEmployeeStatusFilterConsolidationTests } from "./employee-status-filter-consolidation.test.ts";
 import { runAttendanceWorkingDaysTests } from "./attendance-working-days.test.ts";
+import { runAttendanceCairoMidnightBoundaryTests } from "./attendance-cairo-midnight-boundary.test.ts";
 import { runAttendanceTrackingEligibilityTests } from "./attendance-tracking-eligibility.test.ts";
 import { runAttendanceManagerViewAccessTests } from "./attendance-manager-view-access.test.ts";
 import { runAttendanceFlexibleHoursTests } from "./attendance-flexible-hours.test.ts";
@@ -294,6 +297,7 @@ import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts";
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
 import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
+import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
@@ -328,6 +332,7 @@ import { runNotificationAutoArchiveTests } from "./notification-auto-archive.tes
 import { runVacationApprovalFlowTests } from "./vacation-approval-flow.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
+import { runVacationCairoTodayTests } from "./vacation-cairo-today.test.ts";
 import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
 import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
@@ -446,6 +451,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("i18n config", runI18nConfigTests);
+await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
@@ -516,6 +522,7 @@ await runTest("probation scoring + contradictions (P6 DM-avg, weights, provision
 await runTest("probation consolidated report (P7 milestones + progress + composition)", runProbationReportTests);
 await runTest("probation CEO dashboard (P8 risk classification + exception flags + rollup)", runProbationDashboardTests);
 await runTest("probation emails (P9 template registration + confirmed recipients + dedup)", runProbationEmailsTests);
+await runTest("probation Cairo-today consistency (dashboard/report/emails share one Cairo-aware clock, not silent UTC default)", runProbationCairoTodayConsistencyTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
 await runTest("email render harness (functional contextVariables → interpolate + all-module token coverage)", runEmailRenderHarnessTests);
 await runTest("token registry consistency (placeholderHints/variableCatalog/contextVariables/htmlBlockTokens all derive from TOKEN_REGISTRY)", runTokenRegistryConsistencyTests);
@@ -544,6 +551,7 @@ await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("employee status filter consolidation (5 hand-rolled terminal-status filters → shared constant)", runEmployeeStatusFilterConsolidationTests);
 await runTest("attendance working days", runAttendanceWorkingDaysTests);
+await runTest("attendance Cairo-midnight boundary (shared cairoMidnightUtcIso, EEST/EET + dropped-punch regression)", runAttendanceCairoMidnightBoundaryTests);
 await runTest("attendance tracking eligibility (device mapping OR field title)", runAttendanceTrackingEligibilityTests);
 await runTest("attendance manager view access (self + direct reports)", runAttendanceManagerViewAccessTests);
 await runTest("attendance flexible-hours engine", runAttendanceFlexibleHoursTests);
@@ -764,6 +772,7 @@ await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
+await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
@@ -779,6 +788,7 @@ await runTest("notification auto-archive (bell)", runNotificationAutoArchiveTest
 await runTest("vacation approval flow", runVacationApprovalFlowTests);
 await runTest("vacation calculations", runVacationCalculationTests);
 await runTest("vacation module", runVacationModuleTests);
+await runTest("vacation Cairo-today (balance-reference dates + Fri/Sat SLA weekday math)", runVacationCairoTodayTests);
 await runTest("vacation paid approval atomic", runVacationPaidApprovalAtomicTests);
 await runTest("vacation overlap warnings", runVacationOverlapWarningsTests);
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
