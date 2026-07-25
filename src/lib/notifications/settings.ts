@@ -308,7 +308,7 @@ async function notifyTelegramConnectionLinked(input: { hrId: string | null; user
     await createSystemNotification({
       actionUrl: "/employee-portals/profile",
       category: "security",
-      channels: ["in_app", "email"],
+      channels: ["in_app", "email", "push"],
       eventType: "telegram_connection_linked",
       message:
         "Your Telegram account was just connected to Phoenix Workforce notifications. If this was not you, open your portal Notification Settings and disconnect Telegram immediately, then contact HR.",

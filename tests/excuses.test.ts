@@ -129,8 +129,8 @@ export async function runExcusesTests() {
   // --- Notification workflow: policy channels, HR visibility, and dedicated template ----
   assert.match(
     serviceSource,
-    /notifyManagerOfExcuse[\s\S]*channels: \["in_app", "email", "telegram"\]/,
-    "submission notifications must use in-app, email, and Telegram for the direct manager",
+    /notifyManagerOfExcuse[\s\S]*channels: \["in_app", "email", "telegram", "push"\]/,
+    "submission notifications must use in-app, email, Telegram, and push for the direct manager",
   );
   assert.match(
     serviceSource,
@@ -139,13 +139,13 @@ export async function runExcusesTests() {
   );
   assert.match(
     serviceSource,
-    /notifyHrVisibilityRecipients[\s\S]*channels: \["in_app", "telegram"\]/,
-    "HR visibility recipients resolved from the HR email config must also get in-app and Telegram",
+    /notifyHrVisibilityRecipients[\s\S]*channels: \["in_app", "telegram", "push"\]/,
+    "HR visibility recipients resolved from the HR email config must also get in-app, Telegram, and push",
   );
   assert.match(
     serviceSource,
-    /notifyDecisionRecipients[\s\S]*channels: \["in_app", "email", "telegram"\]/,
-    "manager decision notifications must use in-app, email, and Telegram for the employee",
+    /notifyDecisionRecipients[\s\S]*channels: \["in_app", "email", "telegram", "push"\]/,
+    "manager decision notifications must use in-app, email, Telegram, and push for the employee",
   );
   assert.match(
     serviceSource,

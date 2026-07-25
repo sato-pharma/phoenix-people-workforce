@@ -443,7 +443,7 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
       try {
         const result = await createSystemNotification({
           category: "internal_message",
-          channels: ["email"],
+          channels: ["email", "push"],
           email: {
             notificationType: "general",
             recipients: [recipient.email],

@@ -80,7 +80,7 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.match(serviceSource, /createSystemNotification/, "workflow must use unified notifications");
   assert.match(
     serviceSource,
-    /channels: emailMode !== "none" && \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
+    /channels: emailMode !== "none" && \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram", "push"\] : \["in_app", "telegram", "push"\]/,
     "workflow notifications should route email to only the primary notification recipient",
   );
   assert.match(serviceSource, /emailMode: "none"/, "HR submit notifications should avoid duplicate submit emails");

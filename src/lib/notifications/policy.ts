@@ -79,7 +79,7 @@ const defaultPolicy: NotificationPolicy = {
   actionUrlRequired: false,
   auditRequired: true,
   bypassQuietHours: false,
-  channels: ["in_app", "email"],
+  channels: ["in_app", "email", "push"],
   fallbackChannels: ["in_app", "email"],
   permissionAction: "read",
   permissionResource: null,
@@ -97,16 +97,17 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // exact-key override targets whichever admins the caller names explicitly via
   // metadata.moduleOwnerHrIds (see runAttendanceIngestionAlert), bypassing the
   // subject/org-scope matching permission_based normally requires.
-  "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "email"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
-  "attendance.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
-  "birthday.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
+  "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "email", "push"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
+  "attendance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
+  "birthday.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
   "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
-  "employee_import.*": { channels: ["in_app", "email"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
-  "expenses.*": { channels: ["in_app", "email"], recipientStrategy: ["direct_manager"] },
+  "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
+  "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
-  "internal_messages.*": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
+  "field_workforce_compliance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["permission_based"] },
+  "internal_messages.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "marketing_requests.due_date_reminder": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
   "marketing_requests.escalation": { bypassQuietHours: true, channels: ["in_app", "email", "telegram", "push"], priority: "critical", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.overdue_reminder": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
@@ -116,22 +117,38 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "marketing_requests.request_rejected": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
   "marketing_requests.request_returned": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
   "marketing_requests.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
-  "offers.*": { channels: ["in_app", "email"], permissionResource: "offers", priority: "high", recipientStrategy: ["permission_based"] },
+  // Safety-net fallback for any marketing_requests eventType not covered by one of the
+  // exact keys above, so a future/uncovered event type still gets the full channel set
+  // instead of silently falling back to the bare in_app+email default.
+  "marketing_requests.*": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
+  "offers.*": { channels: ["in_app", "email", "push"], permissionResource: "offers", priority: "high", recipientStrategy: ["permission_based"] },
   "outstation.*": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
-  // Owner request 2026-07-13: no payslip emails to employees — in-app + Telegram only.
-  "payroll.payslip_available": { channels: ["in_app", "telegram"], recipientStrategy: ["employee"], sensitive: "payroll", telegramAllowed: true, telegramGenericOnly: true },
-  "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
+  // Owner request 2026-07-13: no payslip emails to employees — in-app + Telegram + push.
+  // Owner override 2026-07-25: push explicitly authorized here (and for payroll.* below)
+  // despite the lock-screen-exposure tradeoff — see enforcePayslipEmailBlock and
+  // resolveBasePolicyChannels in system.ts, which previously hard-stripped push for any
+  // isSensitivePayroll() notification and now only strip email/telegram respectively.
+  "payroll.payslip_available": { channels: ["in_app", "telegram", "push"], recipientStrategy: ["employee"], sensitive: "payroll", telegramAllowed: true, telegramGenericOnly: true },
+  "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email", "push"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
-  "recruitment.*": { channels: ["in_app", "email"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
+  "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   "resignations.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "resignations", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
-  "system.announcement": { channels: ["in_app", "email"], recipientStrategy: ["employee"] },
-  "telegram.daily_hr_digest": { actionUrlRequired: true, channels: ["in_app", "telegram"], priority: "normal", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
+  "system.announcement": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
+  // Live sender (telegram-operations.ts) passes explicit channels and doesn't consult this
+  // entry today, but kept push-inclusive here too in case a future caller relies on policy
+  // resolution instead of hardcoding channels.
+  "telegram.daily_hr_digest": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], priority: "normal", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
   "telegram.delivery_escalation": { actionUrlRequired: true, bypassQuietHours: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
   "vacation.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], recipientStrategy: [], telegramAllowed: true },
   "vacation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "leave", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
+  // No policyTable entry existed for weekly_plans before — it silently fell back to the bare
+  // defaultPolicy (in_app+email only). The live sender (weekly-planning/service.ts) passes its
+  // own explicit channels including telegram+push already; this wildcard covers the other
+  // caller (drift-check.ts) that relies on policy resolution.
+  "weekly_plans.*": { channels: ["in_app", "email", "push"], priority: "high", recipientStrategy: ["direct_manager", "permission_based"] },
 };
 
 function cleanText(value: unknown) {

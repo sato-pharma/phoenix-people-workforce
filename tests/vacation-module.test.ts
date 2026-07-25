@@ -210,7 +210,7 @@ export function runVacationModuleTests() {
   const decisionEnd = serviceSource.indexOf("async function resolveManagerEmail", decisionStart);
   assert.ok(decisionStart >= 0 && decisionEnd > decisionStart, "dispatchVacationDecision must exist as a dedicated helper");
   const decisionBlock = serviceSource.slice(decisionStart, decisionEnd);
-  assert.match(decisionBlock, /channels: \["in_app", "telegram"\]/, "decision dispatch must suppress the generic email so only the templated decision email sends");
+  assert.match(decisionBlock, /channels: \["in_app", "telegram", "push"\]/, "decision dispatch must suppress the generic email so only the templated decision email sends");
   assert.match(decisionBlock, /sendVacationDecisionResultEmail\(/, "decision dispatch must send the templated decision result email");
   assert.match(
     serviceSource,

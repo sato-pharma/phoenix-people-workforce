@@ -1019,7 +1019,7 @@ async function notifyExpensesAddedToPayroll(input: { batchId: string; hrIds: str
         createSystemNotification({
           actionUrl: "/employee-portals/expenses",
           category: "general",
-          channels: ["in_app", "email", "telegram"],
+          channels: ["in_app", "email", "telegram", "push"],
           eventType: "added_to_payroll",
           message: `Your approved expense has been added to the ${period} payroll run and will be paid with that payroll.`,
           metadata: {

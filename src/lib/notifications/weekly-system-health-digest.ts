@@ -178,7 +178,7 @@ export async function runWeeklySystemHealthDigest(options?: { force?: boolean; n
       const result = await createSystemNotification({
         actionUrl: "/admin/system-issues",
         actorId: "daily-dispatcher",
-        channels: ["in_app", "telegram"],
+        channels: ["in_app", "telegram", "push"],
         eventType: "weekly_system_health_digest",
         message,
         metadata: {

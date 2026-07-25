@@ -181,7 +181,7 @@ async function emitToRecipients(
         recipientHrId,
         // Telegram carries full content (E3); actual delivery still needs the global switch, a bot token,
         // and each recipient's per-user opt-in + connected chat (admin/DB, not code).
-        channels: ["in_app", "email", "telegram"],
+        channels: ["in_app", "email", "telegram", "push"],
         actionUrl: input.ctaUrl,
         email: {
           templateKey: input.templateKey,
