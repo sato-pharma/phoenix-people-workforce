@@ -1333,6 +1333,45 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   return rows.filter((row) => canSeeEmployee(context, row));
 }
 
+// Owner-requested (2026-07-25): Talent Acquisition can browse the whole employee
+// directory (see hardBoundaryAllowedActions above), but must not see the real
+// salary figures for this specific set of senior employees — her own manager
+// chain (B-10 HR Manager, AA CEO) plus a handful of other named seniors. Row
+// visibility is unaffected; only the compensation fields below are blanked.
+// See the isSalaryRedactedForViewer check in app/api/employees/route.ts's POST
+// handler for the matching write-side guard — without it, a blanked read
+// becomes a real, destructive write the moment this viewer edits an unrelated
+// field and saves.
+const TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS = new Set(
+  ["B-10", "AA", "A-12", "AB", "OF-0002", "B-185", "A-9"].map((id) => normalizeHrId(id)),
+);
+
+/** True when `context` must not see (or write) the real salary figures for `hrId`. */
+export function isSalaryRedactedForViewer(
+  context: Pick<AccessContext, "role">,
+  hrId: string | null | undefined,
+): boolean {
+  return context.role === "Talent Acquisition" && TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
+}
+
+function redactSalaryFields(row: EmployeeDirectoryRow, context: AccessContext): EmployeeDirectoryRow {
+  if (!isSalaryRedactedForViewer(context, row.hrId)) return row;
+  return {
+    ...row,
+    baseSalary: null,
+    basicSalary: null,
+    extraCostOfLiving: null,
+    fuelAllowance: null,
+    grossSalary: null,
+    medicalInsurance: null,
+    netSalary: null,
+    salaryDetails: null,
+    socialInsurance: null,
+    socialInsuranceWage: null,
+    taxes: null,
+  };
+}
+
 export function filterEmployeeDirectoryForAccess(
   directory: EmployeeDirectoryData,
   context: AccessContext,
@@ -1356,7 +1395,9 @@ export function filterEmployeeDirectoryForAccess(
   }
   if (context.scope === "system" || context.role === "Super Admin") return directory;
 
-  const employees = filterEmployeesForAccess(directory.employees, context);
+  const employees = filterEmployeesForAccess(directory.employees, context).map((employee) =>
+    redactSalaryFields(employee, context),
+  );
   const visibleHrIds = new Set(employees.map((employee) => normalizeHrId(employee.hrId)).filter(Boolean));
 
   return {
