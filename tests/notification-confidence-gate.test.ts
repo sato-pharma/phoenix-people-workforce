@@ -5,6 +5,7 @@ import {
   checkIdentityResolved,
   checkRecipientValidity,
   computeDecision,
+  computeRecipientVolumeCeiling,
 } from "../src/lib/notifications/confidence-gate.ts";
 
 function baseInput(overrides: Partial<Parameters<typeof checkContentIntegrity>[0]> = {}) {
@@ -96,4 +97,46 @@ export function runNotificationConfidenceGateTests() {
   ]);
   assert.equal(allNotApplicable.decision, "auto_send", "no applicable checks at all must default to auto_send");
   assert.equal(allNotApplicable.confidencePercent, 100, "no applicable checks at all must default to 100%");
+
+  // computeRecipientVolumeCeiling: the check that catches what fanout_anomaly cannot — a SINGLE
+  // send with an unusually large to+cc+bcc recipient count. fanoutToBcc collapses many recipients
+  // into one email specifically so a burst reads as "one send" to fanout_anomaly; this is the
+  // check that still catches that one send if its recipient list itself is abnormally large.
+
+  // First-run (fewer than 5 prior sends on record): flat ceiling, capped at both an absolute
+  // number and a fraction of headcount — identical shape to fanout_anomaly's own first-run
+  // ceiling, so a newly-configured broad policy cannot silently reach most of the company on its
+  // very first send.
+  const firstRunSmallCompany = computeRecipientVolumeCeiling([], 20);
+  assert.equal(firstRunSmallCompany.basis, "first_run");
+  assert.equal(firstRunSmallCompany.ceiling, 5, "20 headcount * 25% = 5, below the absolute cap of 10");
+
+  const firstRunBigCompany = computeRecipientVolumeCeiling([2, 3], 500);
+  assert.equal(firstRunBigCompany.basis, "first_run", "fewer than 5 prior sends must still be first_run");
+  assert.equal(firstRunBigCompany.ceiling, 10, "500 headcount * 25% = 125, clamped down to the absolute cap of 10");
+
+  // THE actual worst-case shape this check exists for: a brand-new (module,eventType) pair whose
+  // very first send already has hundreds of BCC'd recipients (a mis-scoped "all Medical Reps, all
+  // lines" policy) must fail outright against the first-run ceiling.
+  const massBccFirstSend = computeRecipientVolumeCeiling([], 115);
+  assert.ok(300 > massBccFirstSend.ceiling, "a 300-recipient first send must exceed the first-run ceiling");
+
+  // Established (5+ prior sends): judged against that pair's own historical per-send recipient
+  // count, not a flat number — so a routinely-large distribution list (e.g. a company-wide
+  // holiday announcement, ~100 recipients every time) never trips this once it has a track record.
+  const establishedLargeList = computeRecipientVolumeCeiling([98, 102, 100, 101, 99], 115);
+  assert.equal(establishedLargeList.basis, "established");
+  assert.ok(
+    establishedLargeList.ceiling >= 100,
+    "an established ~100-recipient baseline must not itself get flagged as anomalous",
+  );
+
+  // But a genuine outlier against an established SMALL baseline must still be caught — this is
+  // the exact incident shape: a notification that's always gone to 1-3 people suddenly reaching
+  // hundreds.
+  const establishedSmallList = computeRecipientVolumeCeiling([1, 2, 1, 3, 2], 115);
+  assert.ok(
+    establishedSmallList.ceiling < 50,
+    "an established 1-3-recipient baseline must not tolerate a jump into the hundreds",
+  );
 }

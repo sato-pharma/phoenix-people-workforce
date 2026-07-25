@@ -288,6 +288,94 @@ async function checkFanoutAnomaly(origin: NotificationOrigin | null | undefined)
   }
 }
 
+// Minimum number of PRIOR SENDS (not days — a recipient-count distribution is a per-send metric,
+// unlike fanout's per-day event frequency) of this (module,eventType) pair needed to trust a
+// statistical baseline over the flat first-run ceiling.
+const RECIPIENT_VOLUME_MIN_HISTORY_SENDS = 5;
+
+/**
+ * Pure decision math for checkRecipientVolume, split out so it is unit-testable without Supabase
+ * (checkFanoutAnomaly's equivalent logic is not, hence this file's docs noting that one needs I/O
+ * — this function deliberately does not).
+ */
+export function computeRecipientVolumeCeiling(
+  priorCounts: number[],
+  headcount: number,
+): { basis: "established" | "first_run"; ceiling: number; mean?: number; stddev?: number } {
+  if (priorCounts.length >= RECIPIENT_VOLUME_MIN_HISTORY_SENDS) {
+    const mean = priorCounts.reduce((sum, value) => sum + value, 0) / priorCounts.length;
+    const variance = priorCounts.reduce((sum, value) => sum + (value - mean) ** 2, 0) / priorCounts.length;
+    const stddev = Math.sqrt(variance);
+    return { basis: "established", ceiling: Math.max(mean + BASELINE_STDDEV_MULTIPLIER * stddev, mean * 2, 3), mean, stddev };
+  }
+  const ceiling = Math.max(3, Math.min(FIRST_RUN_MAX_ABSOLUTE, Math.round(headcount * FIRST_RUN_MAX_HEADCOUNT_FRACTION)));
+  return { basis: "first_run", ceiling };
+}
+
+/**
+ * Catches what checkFanoutAnomaly cannot: a SINGLE send with an unusually large recipient list.
+ * fanoutToBcc (send-phoenix-email.ts) deliberately collapses many recipients into one email (all
+ * but the primary go to BCC) so a burst of individually-small notifications reads as one send to
+ * the fan-out check — but that same collapsing means a single mis-scoped notification policy
+ * (e.g. "general" recipientMode "selected_titles_all_lines" with targetTitles: ["Medical
+ * Representative"], loadEmployeesByTitlesAndLines returning every matching employee unbounded)
+ * can reach hundreds of people in ONE send. checkFanoutAnomaly's event-per-15-minute counter sees
+ * that as a burst of exactly 1 and waves it through; checkRecipientValidity only inspects `to`
+ * (length 1, since the rest are BCC'd), so it passes too. Before this check, that path was
+ * "Company-wide email, no cap, no hold, no confirmation" — found auditing the gate, not from a
+ * live incident, but it is the same shape as the 2026-07-23 incident this gate exists to catch.
+ *
+ * Same two-mode shape as checkFanoutAnomaly, over recipient COUNT PER SEND instead of send COUNT
+ * PER WINDOW: an established (module,eventType) pair is judged against its own historical per-send
+ * recipient-count baseline (so a routinely-large distribution list, e.g. a company-wide holiday
+ * announcement, never trips this once it has a track record); a brand-new/rare pair gets the same
+ * flat first-run ceiling as checkFanoutAnomaly. Fails OPEN on infra error, matching this file's
+ * existing philosophy — a transient DB hiccup must never become a second, self-inflicted outage.
+ */
+async function checkRecipientVolume(input: ConfidenceGateInput): Promise<ConfidenceCheck> {
+  const moduleName = input.origin?.module ?? null;
+  const eventType = input.origin?.eventType ?? null;
+  if (!moduleName || !eventType) {
+    return { detail: "No module/eventType supplied by the caller.", name: "recipient_volume", passed: null };
+  }
+  const currentRecipientCount =
+    input.to.filter(Boolean).length + (input.cc ?? []).filter(Boolean).length + (input.bcc ?? []).filter(Boolean).length;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: priorRows, error: priorError } = await supabase
+      .from("notification_send_reviews")
+      .select("to_addresses, cc_addresses, bcc_addresses")
+      .eq("module", moduleName)
+      .eq("event_type", eventType)
+      .lt("created_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString())
+      .limit(500);
+    if (priorError) throw priorError;
+
+    const priorCounts = ((priorRows ?? []) as Array<{
+      bcc_addresses: string[] | null;
+      cc_addresses: string[] | null;
+      to_addresses: string[] | null;
+    }>).map((row) => (row.to_addresses?.length ?? 0) + (row.cc_addresses?.length ?? 0) + (row.bcc_addresses?.length ?? 0));
+
+    const employees = await getEmployeeDirectoryRows().catch(() => []);
+    const headcount = employees.length || 1;
+    const { basis, ceiling, mean, stddev } = computeRecipientVolumeCeiling(priorCounts, headcount);
+    const passed = currentRecipientCount <= ceiling;
+    const detail =
+      basis === "established"
+        ? `${currentRecipientCount} recipient(s) on this send vs an established baseline of ~${(mean ?? 0).toFixed(1)} (±${(stddev ?? 0).toFixed(1)} stddev) over ${priorCounts.length} prior sends of "${moduleName}/${eventType}".`
+        : `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}", which has no established history yet — capped at ${ceiling} while it's new.`;
+    return { detail, name: "recipient_volume", passed };
+  } catch (error) {
+    logError("Confidence gate recipient-volume check failed — defaulting to pass (fail-open on infra error)", {
+      error,
+      labels: { event: "confidence_gate_recipient_volume_check_failed", eventType, module: moduleName },
+    });
+    return { detail: "Recipient-volume check could not run (infra error) — defaulted to pass.", name: "recipient_volume", passed: true };
+  }
+}
+
 export function computeDecision(checks: ConfidenceCheck[]): { confidencePercent: number; decision: "auto_send" | "hold" } {
   const applicable = checks.filter((check) => check.passed !== null);
   const failed = applicable.filter((check) => check.passed === false);
@@ -308,6 +396,7 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
     checkRecipientValidity(input),
     checkIdentityResolved(input),
     await checkFanoutAnomaly(input.origin),
+    await checkRecipientVolume(input),
   ];
   const computed = computeDecision(checks);
   let decision = computed.decision;
