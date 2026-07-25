@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -554,7 +555,8 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               ) : null}
             </AdminTableShell>
 
-            <Card className="overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)]">
+            {/* Desktop: full document-completion matrix, unchanged, with its synced dual scrollbar. */}
+            <Card className="hidden overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:block">
               <div
                 ref={topScrollRef}
                 className="overflow-x-auto overflow-y-hidden border-b border-[#E2E8F0] bg-white px-2"
@@ -692,6 +694,161 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </table>
               </div>
             </Card>
+
+            {/* Mobile: one card per employee, name/HR ID as the title, and a compact
+                submitted/missing checklist (one row per document type) as the body,
+                instead of forcing the 10+ column matrix into a cramped card. */}
+            <Card className="divide-y divide-[#E2E8F0] rounded-2xl border border-[#D8E0EA] bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:hidden">
+              {filteredEmployees.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-[#64748B]">
+                  No employees match the current filters.
+                </div>
+              ) : (
+                filteredEmployees.map((employee, index) => {
+                  const completion = employeeCompletion(employee, documents);
+                  const submittedCount = documents.filter(
+                    (document) => employee.documents[document.id]?.status === "submitted",
+                  ).length;
+
+                  return (
+                    <div className="px-4 py-4" key={`${employee.hrId}-${index}-mobile`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-[#0F172A]">{employee.fullName}</p>
+                          <p className="mt-0.5 font-mono text-xs text-[#64748B]">{employee.hrId}</p>
+                          <p className="mt-0.5 text-xs text-[#64748B]">{employee.jobTitle ?? "-"}</p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          {statusBadge(employee.employmentStatus)}
+                          <Badge variant="neutral">{completion}%</Badge>
+                        </div>
+                      </div>
+
+                      <dl className="mt-3 grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Line</dt>
+                          <dd className="mt-0.5 truncate text-xs font-bold text-[#0F172A]">{employee.lineName ?? "-"}</dd>
+                        </div>
+                        <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Hiring Date</dt>
+                          <dd className="mt-0.5 truncate text-xs font-bold text-[#0F172A]">{formatDate(employee.hireDate)}</dd>
+                        </div>
+                        <div className="col-span-2 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Manager</dt>
+                          <dd className="mt-0.5 break-words text-xs font-bold text-[#0F172A]">
+                            {employee.managerName ?? "-"}
+                            {employee.managerHrId ? (
+                              <span className="ml-1.5 font-mono text-[10px] font-normal text-[#94A3B8]">
+                                {employee.managerHrId}
+                              </span>
+                            ) : null}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      <div className="mt-3">
+                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                          Documents ({submittedCount}/{documents.length} submitted)
+                        </p>
+                        <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0]">
+                          {documents.length === 0 ? (
+                            <div className="px-3 py-3 text-xs text-[#64748B]">No hiring documents configured.</div>
+                          ) : (
+                            documents.map((document) => {
+                              const entry = employee.documents[document.id];
+                              const dueDate = entry?.dueDate ?? "";
+                              const status = entry?.status ?? "pending";
+                              const busy = Boolean(busyKey?.startsWith(`${employee.hrId}:${document.id}`));
+
+                              return (
+                                <div className="px-3 py-2.5" key={`${employee.hrId}:${document.id}:mobile`}>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="min-w-0 pr-2 text-xs font-bold text-[#0F172A]">{document.name}</p>
+                                    {documentStatusBadge(status)}
+                                  </div>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <Button
+                                      aria-label={`Mark ${document.name} submitted for ${employee.fullName}`}
+                                      className="h-8 w-8 rounded-lg p-0"
+                                      disabled={!canManage || busy}
+                                      onClick={() => void updateDocumentStatus(employee, document, "submitted")}
+                                      title="Mark submitted"
+                                      variant={status === "submitted" ? "default" : "secondary"}
+                                    >
+                                      <Check className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      aria-label={`Mark ${document.name} missing for ${employee.fullName}`}
+                                      className="h-8 w-8 rounded-lg p-0"
+                                      disabled={!canManage || busy}
+                                      onClick={() => void updateDocumentStatus(employee, document, "missing", dueDate || null)}
+                                      title="Mark missing"
+                                      variant={status === "missing" ? "destructive" : "secondary"}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                  {status === "missing" ? (
+                                    <label className="mt-2 block">
+                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Deadline</span>
+                                      <Input
+                                        className="h-9 rounded-lg border-[#FCA5A5] text-xs"
+                                        disabled={!canManage || busy}
+                                        onBlur={(event) => void updateDocumentStatus(employee, document, "missing", event.target.value || null)}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setData((current) => {
+                                            if (!current) return current;
+                                            return {
+                                              ...current,
+                                              employees: current.employees.map((row) => row.hrId === employee.hrId
+                                                ? {
+                                                  ...row,
+                                                  documents: {
+                                                    ...row.documents,
+                                                    [document.id]: {
+                                                      ...row.documents[document.id],
+                                                      dueDate: value,
+                                                      documentId: document.id,
+                                                      status: "missing",
+                                                    },
+                                                  },
+                                                }
+                                                : row),
+                                            };
+                                          });
+                                        }}
+                                        type="date"
+                                        value={dueDate}
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3">
+                        <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Notes</span>
+                        <textarea
+                          className="min-h-20 w-full resize-y rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A] shadow-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                          disabled={!canManage || busyKey === `${employee.hrId}:notes`}
+                          onBlur={(event) => {
+                            const currentValue = event.target.value;
+                            if (currentValue !== (employee.notes ?? "")) void saveEmployeeNotes(employee.hrId, currentValue);
+                          }}
+                          onChange={(event) => setDraftNotes((current) => ({ ...current, [employee.hrId]: event.target.value }))}
+                          placeholder="HR notes..."
+                          value={draftNotes[employee.hrId] ?? employee.notes ?? ""}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </Card>
           </>
         ) : (
           <AdminTableShell
@@ -731,8 +888,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+            <PortalDesktopTable className="text-sm" minWidth="100%">
                 <thead>
                   <tr>
                     <th className={tableHeaderClassName}>Document</th>
@@ -773,7 +929,42 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                     ))
                   )}
                 </tbody>
-              </table>
+            </PortalDesktopTable>
+
+            {/* Mobile: one card per configured document (name/id as title, order as a badge). */}
+            <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0] md:hidden">
+              {documents.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-[#64748B]">
+                  No hiring documents are configured yet.
+                </div>
+              ) : (
+                documents.map((document) => (
+                  <div className="px-4 py-3.5" key={`${document.id}-mobile`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#0F172A]">{document.name}</p>
+                        <p className="mt-1 font-mono text-xs text-[#94A3B8]">{document.id}</p>
+                      </div>
+                      <Badge variant="neutral">Order {document.displayOrder}</Badge>
+                    </div>
+                    {document.description ? (
+                      <p className="mt-2 text-xs text-[#64748B]">{document.description}</p>
+                    ) : null}
+                    <div className="mt-3">
+                      <Button
+                        aria-label={`Delete ${document.name}`}
+                        className="h-9 gap-2 rounded-xl"
+                        disabled={!canManage || busyKey === `document:${document.id}:delete`}
+                        onClick={() => void deleteDocument(document)}
+                        variant="destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </AdminTableShell>
         )}

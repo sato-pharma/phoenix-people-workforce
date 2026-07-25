@@ -8,6 +8,13 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import type { MarketingRoiViewSales, MarketingRoiViewSalesAggregate, MarketingRoiViewSalesRow } from "@/lib/marketing-requests/roi-report-types";
 import { DirectTrackingToggle } from "@/components/marketing-requests/direct-tracking-toggle";
 import { MarketingRoiExplainPanel } from "@/components/marketing-requests/roi-explain-panel";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -279,38 +286,63 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-[#0F172A]">Matched sales rows</h3>
                 <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">{data.rows.length} row{data.rows.length === 1 ? "" : "s"}</span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[920px] border-collapse text-left text-[13px]">
-                  <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                    <tr>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleSort("invoicePeriod")} className="inline-flex items-center gap-1 font-black">Period {sortArrow("invoicePeriod")}</button>
-                      </th>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleSort("distributorName")} className="inline-flex items-center gap-1 font-black">Distributor {sortArrow("distributorName")}</button>
-                      </th>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleSort("productName")} className="inline-flex items-center gap-1 font-black">Product {sortArrow("productName")}</button>
-                      </th>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleSort("customerCode")} className="inline-flex items-center gap-1 font-black">Customer code {sortArrow("customerCode")}</button>
-                      </th>
-                      <th className="px-3 py-2.5">
-                        <button type="button" onClick={() => toggleSort("customerName")} className="inline-flex items-center gap-1 font-black">Pharmacy {sortArrow("customerName")}</button>
-                      </th>
-                      <th className="px-3 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleSort("qty")} className="inline-flex items-center gap-1 font-black">Units {sortArrow("qty")}</button>
-                      </th>
-                      <th className="px-3 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleSort("value")} className="inline-flex items-center gap-1 font-black">Value {sortArrow("value")}</button>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRows.length === 0 ? (
-                      <tr><td className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]" colSpan={7}>No sales matched in this period range.</td></tr>
-                    ) : (
-                      sortedRows.map((row, index) => (
+              <PortalResponsiveDataList
+                items={sortedRows}
+                getKey={(row, index) => `${row.customerCode}-${row.productCode}-${row.invoicePeriod}-${index}`}
+                empty={
+                  <PortalEmptyState
+                    title="No sales matched"
+                    message="No sales matched in this period range."
+                  />
+                }
+                renderCard={(row) => (
+                  <PortalRecordCard
+                    title={row.productName}
+                    meta={`${row.invoicePeriod} · ${row.distributorName}`}
+                    status={
+                      <span className="whitespace-nowrap text-sm font-black text-[#0F172A]">
+                        {money(row.value)} EGP
+                      </span>
+                    }
+                  >
+                    <PortalRecordFields
+                      fields={[
+                        { label: "Customer code", value: row.customerCode },
+                        { label: "Pharmacy", value: row.customerName ?? "—" },
+                        { label: "Units", value: units(row.qty) },
+                      ]}
+                    />
+                  </PortalRecordCard>
+                )}
+                renderTable={() => (
+                  <PortalDesktopTable className="text-[13px]" minWidth="920px">
+                    <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
+                      <tr>
+                        <th className="px-3 py-2.5">
+                          <button type="button" onClick={() => toggleSort("invoicePeriod")} className="inline-flex items-center gap-1 font-black">Period {sortArrow("invoicePeriod")}</button>
+                        </th>
+                        <th className="px-3 py-2.5">
+                          <button type="button" onClick={() => toggleSort("distributorName")} className="inline-flex items-center gap-1 font-black">Distributor {sortArrow("distributorName")}</button>
+                        </th>
+                        <th className="px-3 py-2.5">
+                          <button type="button" onClick={() => toggleSort("productName")} className="inline-flex items-center gap-1 font-black">Product {sortArrow("productName")}</button>
+                        </th>
+                        <th className="px-3 py-2.5">
+                          <button type="button" onClick={() => toggleSort("customerCode")} className="inline-flex items-center gap-1 font-black">Customer code {sortArrow("customerCode")}</button>
+                        </th>
+                        <th className="px-3 py-2.5">
+                          <button type="button" onClick={() => toggleSort("customerName")} className="inline-flex items-center gap-1 font-black">Pharmacy {sortArrow("customerName")}</button>
+                        </th>
+                        <th className="px-3 py-2.5 text-right">
+                          <button type="button" onClick={() => toggleSort("qty")} className="inline-flex items-center gap-1 font-black">Units {sortArrow("qty")}</button>
+                        </th>
+                        <th className="px-3 py-2.5 text-right">
+                          <button type="button" onClick={() => toggleSort("value")} className="inline-flex items-center gap-1 font-black">Value {sortArrow("value")}</button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedRows.map((row, index) => (
                         <tr key={`${row.customerCode}-${row.productCode}-${row.invoicePeriod}-${index}`} className="border-t border-[#FEE7D2]">
                           <td className="px-3 py-2 font-mono text-[12px] font-bold text-[#0F172A]">{row.invoicePeriod}</td>
                           <td className="px-3 py-2 font-medium text-[#64748B]">{row.distributorName}</td>
@@ -320,11 +352,11 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                           <td className="px-3 py-2 text-right font-semibold text-[#475569]">{units(row.qty)}</td>
                           <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{money(row.value)}</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      ))}
+                    </tbody>
+                  </PortalDesktopTable>
+                )}
+              />
             </section>
 
             {/* Reverse lookup */}

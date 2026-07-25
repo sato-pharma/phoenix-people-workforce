@@ -1,5 +1,6 @@
 "use client";
 
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -18,6 +19,13 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
@@ -26,6 +34,7 @@ import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
+import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
@@ -62,6 +71,92 @@ const fieldClass =
 function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+// Light-touch color coding for stage/status pills — shared by the mobile cards and
+// the desktop tables below so both surfaces read consistently at a glance. Purely
+// presentational: it maps existing stage/status strings to a color, nothing more.
+type BadgeTone = "orange" | "emerald" | "amber" | "rose" | "sky" | "slate";
+
+const badgeToneClassName: Record<BadgeTone, string> = {
+  amber: "bg-amber-100 text-amber-700",
+  emerald: "bg-emerald-100 text-emerald-700",
+  orange: "bg-orange-100 text-orange-700",
+  rose: "bg-rose-100 text-rose-700",
+  sky: "bg-sky-100 text-sky-700",
+  slate: "bg-slate-100 text-slate-600",
+};
+
+function StagePill({ children, tone }: { children: ReactNode; tone: BadgeTone }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        badgeToneClassName[tone],
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+const stageToneMap: Record<string, BadgeTone> = {
+  application_received: "slate",
+  in_candidate_pool: "slate",
+  cv_screening: "sky",
+  phone_screening: "sky",
+  interview_scheduling: "sky",
+  hr_interview: "sky",
+  hiring_manager_interview: "sky",
+  shortlisted: "orange",
+  manager_interview_completed: "orange",
+  final_selection: "orange",
+  backup_candidate: "amber",
+  on_hold: "amber",
+  no_response: "amber",
+  call_back: "amber",
+  offer_draft: "orange",
+  offer_pending_approval: "orange",
+  offer_approved: "orange",
+  offer_generated: "orange",
+  offer_negotiation: "orange",
+  offer_initiated: "orange",
+  offer_sent: "orange",
+  offer_accepted: "emerald",
+  pre_boarding: "emerald",
+  hired: "emerald",
+  offer_declined: "rose",
+  offer_expired: "rose",
+  application_rejected: "rose",
+  application_withdrawn: "rose",
+};
+
+function stageTone(stage: string): BadgeTone {
+  return stageToneMap[stage] ?? "slate";
+}
+
+const requisitionStatusToneMap: Record<string, BadgeTone> = {
+  req_draft: "slate",
+  req_open: "sky",
+  req_published: "orange",
+  req_on_hold: "amber",
+  req_filled: "emerald",
+  req_closed: "rose",
+  req_cancelled: "rose",
+};
+
+function requisitionStatusTone(status: string): BadgeTone {
+  return requisitionStatusToneMap[status] ?? "slate";
+}
+
+// Shared shape for the per-status requisition workflow buttons — used by both the
+// desktop table cell and the mobile card's actions slot (RequisitionActionsControl).
+type RequisitionActionItem = {
+  action: RecruitmentActionKey;
+  label: string;
+  reason?: boolean;
+  variant?: "default" | "secondary" | "destructive";
+};
+type RequisitionActionsMap = Record<string, RequisitionActionItem[]>;
 
 // cv_screening, phone_screening (ScreeningCard), hiring_manager_interview (HM
 // decision card) and final_selection (FinalSelectionCard) are handled by dedicated
@@ -497,6 +592,51 @@ export function RecruitmentWorkspace(props: Props) {
   );
 }
 
+function PipelineApplicationCard({
+  application,
+  canDelete,
+  onSelect,
+  pending,
+  run,
+  selected,
+}: {
+  application: ApplicationWithContext;
+  canDelete: boolean;
+  onSelect: () => void;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+  selected: boolean;
+}) {
+  return (
+    <div className={cn("cursor-pointer transition-colors", selected && "bg-orange-50")} onClick={onSelect}>
+      <PortalRecordCard
+        accent={selected ? "orange" : "slate"}
+        actions={
+          canDelete ? (
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!window.confirm("Delete this application permanently? This cannot be undone.")) return;
+                run(async () => {
+                  await deleteRequest(`/api/recruitment/applications/${application.id}`);
+                  return "Application deleted.";
+                });
+              }}
+            >
+              Delete
+            </Button>
+          ) : undefined
+        }
+        meta={application.requisition?.jobTitle ?? "—"}
+        status={<StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>}
+        title={application.candidate?.fullName ?? "Unknown candidate"}
+      />
+    </div>
+  );
+}
+
 function PipelineTab({
   applications,
   canApprove,
@@ -570,25 +710,32 @@ function PipelineTab({
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <AdminTableShell title="Pipeline" description="Every application and its current stage. Select a row to act on it.">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th>Candidate</th>
-                <th>Requisition</th>
-                <th>Stage</th>
-                <th className="w-px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {applications.length === 0 ? (
+        <PortalResponsiveDataList
+          empty={<PortalEmptyState message="Add a candidate from the Candidates tab." title="No applications yet" />}
+          getKey={(application) => application.id}
+          items={applications}
+          renderCard={(application) => (
+            <PipelineApplicationCard
+              application={application}
+              canDelete={canDelete}
+              onSelect={() => selectApplication(application.id)}
+              pending={pending}
+              run={run}
+              selected={selectedId === application.id}
+            />
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="640px">
+              <thead>
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={4}>
-                    No applications yet. Add a candidate from the Candidates tab.
-                  </td>
+                  <th>Candidate</th>
+                  <th>Requisition</th>
+                  <th>Stage</th>
+                  <th className="w-px"></th>
                 </tr>
-              ) : (
-                applications.map((application) => (
+              </thead>
+              <tbody>
+                {applications.map((application) => (
                   <tr
                     key={application.id}
                     className={selectedId === application.id ? "bg-orange-50" : "cursor-pointer"}
@@ -598,7 +745,9 @@ function PipelineTab({
                       {application.candidate?.fullName ?? "Unknown candidate"}
                     </td>
                     <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
-                    <td className="px-3 py-2">{titleCase(application.stage)}</td>
+                    <td className="px-3 py-2">
+                      <StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>
+                    </td>
                     <td className="px-3 py-2 text-right">
                       {canDelete ? (
                         <Button
@@ -618,11 +767,11 @@ function PipelineTab({
                       ) : null}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </AdminTableShell>
 
       <div className="space-y-3">
@@ -812,6 +961,129 @@ function PipelineTab({
   );
 }
 
+function RequisitionActionsControl({
+  canDelete,
+  canManage,
+  pending,
+  requisition,
+  requisitionActions,
+  run,
+}: {
+  canDelete: boolean;
+  canManage: boolean;
+  pending: boolean;
+  requisition: Requisition;
+  requisitionActions: RequisitionActionsMap;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  if (!canManage) return <span className="text-xs text-slate-400">View only</span>;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {(requisitionActions[requisition.status] ?? []).map((item) => (
+        <Button
+          key={item.action}
+          variant={item.variant ?? "default"}
+          disabled={pending}
+          onClick={() =>
+            run(async () => {
+              let reason: string | undefined;
+              if (item.reason) {
+                const entered = window.prompt(`Reason for "${item.label}"`);
+                if (entered === null) return;
+                reason = entered;
+              }
+              await postJson(`/api/recruitment/requisitions/${requisition.id}/workflow`, {
+                action: item.action,
+                reason,
+              });
+              return `${item.label} complete.`;
+            })
+          }
+        >
+          {item.label}
+        </Button>
+      ))}
+      {["req_open", "req_published"].includes(requisition.status) ? (
+        <Button
+          variant="secondary"
+          disabled={pending}
+          onClick={() =>
+            run(async () => {
+              const data = await postJson(`/api/recruitment/requisitions/${requisition.id}/posting`, {});
+              const path = typeof data.path === "string" ? data.path : "";
+              return `Application link: ${window.location.origin}${path}`;
+            })
+          }
+        >
+          Application link
+        </Button>
+      ) : null}
+      {canDelete ? (
+        <Button
+          variant="destructive"
+          disabled={pending}
+          onClick={() => {
+            if (
+              !window.confirm(
+                `Delete requisition ${requisition.requisitionCode} and all of its applications? This cannot be undone.`,
+              )
+            )
+              return;
+            run(async () => {
+              await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
+              return "Requisition deleted.";
+            });
+          }}
+        >
+          Delete
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function RequisitionCard({
+  canDelete,
+  canManage,
+  pending,
+  requisition,
+  requisitionActions,
+  run,
+}: {
+  canDelete: boolean;
+  canManage: boolean;
+  pending: boolean;
+  requisition: Requisition;
+  requisitionActions: RequisitionActionsMap;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  return (
+    <PortalRecordCard
+      accent="slate"
+      actions={
+        <RequisitionActionsControl
+          canDelete={canDelete}
+          canManage={canManage}
+          pending={pending}
+          requisition={requisition}
+          requisitionActions={requisitionActions}
+          run={run}
+        />
+      }
+      meta={requisition.jobTitle}
+      status={<StagePill tone={requisitionStatusTone(requisition.status)}>{titleCase(requisition.status)}</StagePill>}
+      title={requisition.requisitionCode}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Hiring manager", value: requisition.hiringManagerName ?? requisition.hiringManagerHrId ?? "—" },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
 function RequisitionsTab({
   canCreate,
   canDelete,
@@ -855,7 +1127,7 @@ function RequisitionsTab({
   );
   const selectedVacancy = openVacancies.find((v) => String(v.id) === vacancyId) ?? null;
 
-  const requisitionActions: Record<string, Array<{ action: RecruitmentActionKey; label: string; reason?: boolean; variant?: "default" | "secondary" | "destructive" }>> = {
+  const requisitionActions: RequisitionActionsMap = {
     req_draft: [
       { action: "req_open", label: "Open" },
       { action: "req_cancel", label: "Cancel", reason: true, variant: "destructive" },
@@ -975,106 +1247,188 @@ function RequisitionsTab({
       ) : null}
 
       <AdminTableShell title="Requisitions" description="All recruitment openings and their status.">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Hiring manager</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requisitions.length === 0 ? (
+        <PortalResponsiveDataList
+          empty={<PortalEmptyState message="Requisitions will appear here once one is opened." title="No requisitions yet" />}
+          getKey={(requisition) => requisition.id}
+          items={requisitions}
+          renderCard={(requisition) => (
+            <RequisitionCard
+              canDelete={canDelete}
+              canManage={canManage}
+              pending={pending}
+              requisition={requisition}
+              requisitionActions={requisitionActions}
+              run={run}
+            />
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="860px">
+              <thead>
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
-                    No requisitions yet.
-                  </td>
+                  <th>Code</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Hiring manager</th>
+                  <th>Actions</th>
                 </tr>
-              ) : (
-                requisitions.map((requisition) => (
+              </thead>
+              <tbody>
+                {requisitions.map((requisition) => (
                   <tr key={requisition.id}>
                     <td className="px-3 py-2 font-medium text-slate-900">{requisition.requisitionCode}</td>
                     <td className="px-3 py-2">{requisition.jobTitle}</td>
-                    <td className="px-3 py-2">{titleCase(requisition.status)}</td>
+                    <td className="px-3 py-2">
+                      <StagePill tone={requisitionStatusTone(requisition.status)}>{titleCase(requisition.status)}</StagePill>
+                    </td>
                     <td className="px-3 py-2">{requisition.hiringManagerName ?? requisition.hiringManagerHrId ?? "—"}</td>
                     <td className="px-3 py-2">
-                      {canManage ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {(requisitionActions[requisition.status] ?? []).map((item) => (
-                            <Button
-                              key={item.action}
-                              variant={item.variant ?? "default"}
-                              disabled={pending}
-                              onClick={() =>
-                                run(async () => {
-                                  let reason: string | undefined;
-                                  if (item.reason) {
-                                    const entered = window.prompt(`Reason for "${item.label}"`);
-                                    if (entered === null) return;
-                                    reason = entered;
-                                  }
-                                  await postJson(`/api/recruitment/requisitions/${requisition.id}/workflow`, {
-                                    action: item.action,
-                                    reason,
-                                  });
-                                  return `${item.label} complete.`;
-                                })
-                              }
-                            >
-                              {item.label}
-                            </Button>
-                          ))}
-                          {["req_open", "req_published"].includes(requisition.status) ? (
-                            <Button
-                              variant="secondary"
-                              disabled={pending}
-                              onClick={() =>
-                                run(async () => {
-                                  const data = await postJson(`/api/recruitment/requisitions/${requisition.id}/posting`, {});
-                                  const path = typeof data.path === "string" ? data.path : "";
-                                  return `Application link: ${window.location.origin}${path}`;
-                                })
-                              }
-                            >
-                              Application link
-                            </Button>
-                          ) : null}
-                          {canDelete ? (
-                            <Button
-                              variant="destructive"
-                              disabled={pending}
-                              onClick={() => {
-                                if (
-                                  !window.confirm(
-                                    `Delete requisition ${requisition.requisitionCode} and all of its applications? This cannot be undone.`,
-                                  )
-                                )
-                                  return;
-                                run(async () => {
-                                  await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
-                                  return "Requisition deleted.";
-                                });
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">View only</span>
-                      )}
+                      <RequisitionActionsControl
+                        canDelete={canDelete}
+                        canManage={canManage}
+                        pending={pending}
+                        requisition={requisition}
+                        requisitionActions={requisitionActions}
+                        run={run}
+                      />
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </AdminTableShell>
     </div>
+  );
+}
+
+function CandidateActionsControl({
+  candidate,
+  canDelete,
+  canManage,
+  openProfile,
+  openRequisitions,
+  pending,
+  run,
+  setStartReq,
+  startReq,
+}: {
+  candidate: Candidate;
+  canDelete: boolean;
+  canManage: boolean;
+  openProfile: (id: string) => void;
+  openRequisitions: Requisition[];
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+  setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
+  startReq: Record<string, string>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
+        Profile
+      </Button>
+      {canManage ? (
+        <>
+          <SearchableSelect
+            className={fieldClass}
+            value={startReq[candidate.id] ?? ""}
+            onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+          >
+            <option value="">Requisition…</option>
+            {openRequisitions.map((requisition) => (
+              <option key={requisition.id} value={requisition.id}>
+                {requisition.jobTitle}
+              </option>
+            ))}
+          </SearchableSelect>
+          <Button
+            disabled={pending || !startReq[candidate.id]}
+            onClick={() =>
+              run(async () => {
+                await postJson("/api/recruitment/applications", {
+                  requisitionId: startReq[candidate.id],
+                  candidateId: candidate.id,
+                });
+                return "Application started.";
+              })
+            }
+          >
+            Start
+          </Button>
+          {canDelete ? (
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                  )
+                )
+                  return;
+                run(async () => {
+                  await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
+                  return "Candidate deleted.";
+                });
+              }}
+            >
+              Delete
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function CandidatePoolCard({
+  candidate,
+  canDelete,
+  canManage,
+  openProfile,
+  openRequisitions,
+  pending,
+  run,
+  setStartReq,
+  startReq,
+}: {
+  candidate: Candidate;
+  canDelete: boolean;
+  canManage: boolean;
+  openProfile: (id: string) => void;
+  openRequisitions: Requisition[];
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+  setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
+  startReq: Record<string, string>;
+}) {
+  return (
+    <PortalRecordCard
+      accent="slate"
+      actions={
+        <CandidateActionsControl
+          candidate={candidate}
+          canDelete={canDelete}
+          canManage={canManage}
+          openProfile={openProfile}
+          openRequisitions={openRequisitions}
+          pending={pending}
+          run={run}
+          setStartReq={setStartReq}
+          startReq={startReq}
+        />
+      }
+      status={<StagePill tone="slate">{candidate.status}</StagePill>}
+      title={candidate.fullName}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Email", value: candidate.email ?? "—" },
+          { label: "Phone", value: candidate.phone ?? "—" },
+        ]}
+      />
+    </PortalRecordCard>
   );
 }
 
@@ -1293,94 +1647,62 @@ function CandidatesTab({
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleCandidates.length === 0 ? (
+        <PortalResponsiveDataList
+          empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
+          getKey={(candidate) => candidate.id}
+          items={visibleCandidates}
+          renderCard={(candidate) => (
+            <CandidatePoolCard
+              candidate={candidate}
+              canDelete={canDelete}
+              canManage={canManage}
+              openProfile={openProfile}
+              openRequisitions={openRequisitions}
+              pending={pending}
+              run={run}
+              setStartReq={setStartReq}
+              startReq={startReq}
+            />
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="860px">
+              <thead>
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
-                    No candidates found.
-                  </td>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Actions</th>
                 </tr>
-              ) : (
-                visibleCandidates.map((candidate) => (
+              </thead>
+              <tbody>
+                {visibleCandidates.map((candidate) => (
                   <tr key={candidate.id}>
                     <td className="px-3 py-2 font-medium text-slate-900">{candidate.fullName}</td>
-                    <td className="px-3 py-2">{candidate.status}</td>
+                    <td className="px-3 py-2">
+                      <StagePill tone="slate">{candidate.status}</StagePill>
+                    </td>
                     <td className="px-3 py-2">{candidate.email ?? "—"}</td>
                     <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
                     <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
-                          Profile
-                        </Button>
-                        {canManage ? (
-                          <>
-                          <SearchableSelect
-                            className={fieldClass}
-                            value={startReq[candidate.id] ?? ""}
-                            onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-                          >
-                            <option value="">Requisition…</option>
-                            {openRequisitions.map((requisition) => (
-                              <option key={requisition.id} value={requisition.id}>
-                                {requisition.jobTitle}
-                              </option>
-                            ))}
-                          </SearchableSelect>
-                          <Button
-                            disabled={pending || !startReq[candidate.id]}
-                            onClick={() =>
-                              run(async () => {
-                                await postJson("/api/recruitment/applications", {
-                                  requisitionId: startReq[candidate.id],
-                                  candidateId: candidate.id,
-                                });
-                                return "Application started.";
-                              })
-                            }
-                          >
-                            Start
-                          </Button>
-                          {canDelete ? (
-                            <Button
-                              variant="destructive"
-                              disabled={pending}
-                              onClick={() => {
-                                if (
-                                  !window.confirm(
-                                    `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
-                                  )
-                                )
-                                  return;
-                                run(async () => {
-                                  await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
-                                  return "Candidate deleted.";
-                                });
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          ) : null}
-                          </>
-                        ) : null}
-                      </div>
+                      <CandidateActionsControl
+                        candidate={candidate}
+                        canDelete={canDelete}
+                        canManage={canManage}
+                        openProfile={openProfile}
+                        openRequisitions={openRequisitions}
+                        pending={pending}
+                        run={run}
+                        setStartReq={setStartReq}
+                        startReq={startReq}
+                      />
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </AdminTableShell>
 
       {profile ? (

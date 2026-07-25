@@ -12,6 +12,13 @@ import {
   AdminSectionHeader,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -387,33 +394,62 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </div>
           }
         />
-            <div className="overflow-x-auto bg-white/80">
-          <table className="w-full min-w-[820px] text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/90">
-                {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
-                  <th className={tableHeaderClassName} key={col}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-7 text-center text-xs text-text-secondary">
-                    <div className="mx-auto max-w-md">
-                      <p className="text-sm font-semibold text-[#0F172A]">
-                        {rows.length === 0
-                          ? "No hire dates are available to calculate renewals."
-                          : "No contract renewals found for this month."}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-[#64748B]">
-                        Add employee hire dates to calculate each annual contract renewal automatically.
-                      </p>
-                    </div>
-                  </td>
+        <PortalResponsiveDataList
+          items={filtered}
+          getKey={(row, index) => `${row.hr_id}-${index}`}
+          empty={
+            <PortalEmptyState
+              title={
+                rows.length === 0
+                  ? "No hire dates are available to calculate renewals."
+                  : "No contract renewals found for this month."
+              }
+              message="Add employee hire dates to calculate each annual contract renewal automatically."
+            />
+          }
+          renderCard={(row) => {
+            const days = daysUntilDate(row.contract_renewal_date);
+            const isUrgent = days >= 0 && days <= 7;
+            const isWarning = days >= 0 && days <= 30;
+            return (
+              <PortalRecordCard
+                title={row.full_name}
+                meta={row.job_title}
+                accent={isUrgent ? "rose" : isWarning ? "amber" : "slate"}
+                status={
+                  days < 0
+                    ? <Badge variant="neutral">Past</Badge>
+                    : isUrgent
+                      ? <Badge variant="danger">{days}d left</Badge>
+                      : isWarning
+                        ? <Badge variant="warning">{days}d left</Badge>
+                        : <Badge variant="neutral">{days}d left</Badge>
+                }
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "HR ID", value: row.hr_id || "-" },
+                    { label: "CRM ID", value: row.crm_id || "-" },
+                    { label: "Line", value: row.line || "-" },
+                    { label: "Area", value: row.area || "-" },
+                    { label: "Hire Date", value: formatStoredDate(row.contract_signed_date) },
+                    { label: "Renewal Date", value: formatStoredDate(row.contract_renewal_date) },
+                  ]}
+                />
+              </PortalRecordCard>
+            );
+          }}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="820px" className="text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/90">
+                  {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
+                    <th className={tableHeaderClassName} key={col}>{col}</th>
+                  ))}
                 </tr>
-              ) : (
-                filtered.map((row, index) => {
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {filtered.map((row, index) => {
                   const days = daysUntilDate(row.contract_renewal_date);
                   const isUrgent = days >= 0 && days <= 7;
                   const isWarning = days >= 0 && days <= 30;
@@ -439,11 +475,11 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </Card>
     </ContractsPageShell>
   );

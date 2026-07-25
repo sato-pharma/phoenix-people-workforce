@@ -4,6 +4,13 @@ import { type ReactNode, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Download, SlidersHorizontal, Search } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import { ALL, filterLogRows, filterNeverVisitedRows, filterProbationRows } from "@/lib/double-visit-analytics/report-filters";
 import type {
@@ -32,6 +39,36 @@ function pageCountOf(total: number) {
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// Shared between the desktop table cell and the mobile card's status slot so both surfaces
+// always agree on wording/color.
+function VisitKindBadge({ kind }: { kind: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+        kind === "Regular" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+      )}
+    >
+      {kind}
+    </span>
+  );
+}
+
+function ProbationDvBadge({ row }: { row: DoubleVisitFocusProbationEntry }) {
+  if (row.dvDone === null) {
+    return <span className="text-sm font-bold tabular-nums text-slate-700">{row.dvCount}</span>;
+  }
+  return row.dvDone ? (
+    <span className="inline-flex items-center gap-1 text-sm text-emerald-600">
+      <CheckCircle2 className="h-3.5 w-3.5" /> Done
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-sm text-rose-600">
+      <AlertTriangle className="h-3.5 w-3.5" /> Pending
+    </span>
+  );
 }
 
 function SortHeader<T extends string>({
@@ -167,6 +204,76 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
         Apply Range
       </button>
     </div>
+  );
+}
+
+// ── Mobile card views (< md) — one per tab, mirroring the desktop table's columns. ──────
+
+function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
+  return (
+    <PortalRecordCard
+      accent={row.visitKind === "Regular" ? "emerald" : "amber"}
+      meta={
+        <span>
+          {row.doubleVisitorRole ?? "—"} · {formatDate(row.activityDate)}
+        </span>
+      }
+      status={<VisitKindBadge kind={row.visitKind} />}
+      title={row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Visited MR", value: row.visitedName ?? row.visitedHrId ?? "—" },
+          { label: "Area", value: row.areaName ?? "—" },
+          { label: "Region", value: row.regionName ?? "—" },
+          { label: "Line", value: row.lineName ?? "—" },
+          { label: "Period", value: row.period },
+          { label: "Visits", value: row.visitCount },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
+function NeverVisitedCard({ row }: { row: DoubleVisitFocusRosterEntry }) {
+  return (
+    <PortalRecordCard
+      accent={row.flagged ? "rose" : "slate"}
+      meta={row.areaName ?? "—"}
+      status={
+        <span className={cn("text-sm font-black tabular-nums", row.flagged ? "text-rose-600" : "text-slate-700")}>
+          {row.daysSinceHire ?? "—"}
+          <span className="ml-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">days</span>
+        </span>
+      }
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          {row.flagged ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-500" /> : null}
+          {row.name}
+        </span>
+      }
+    >
+      <PortalRecordFields fields={[{ label: "Hired", value: formatDate(row.hireDate) }]} />
+    </PortalRecordCard>
+  );
+}
+
+function ProbationCard({ row, viewerHrId }: { row: DoubleVisitFocusProbationEntry; viewerHrId: string | null }) {
+  return (
+    <PortalRecordCard
+      accent={row.dvDone === true ? "emerald" : row.dvDone === false ? "rose" : "slate"}
+      className={cn(row.hrId === viewerHrId && "ring-1 ring-inset ring-orange-300")}
+      meta={<span>Hired {formatDate(row.hireDate)}</span>}
+      status={<ProbationDvBadge row={row} />}
+      title={row.name}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Probation End", value: formatDate(row.probationEndDate) },
+          { label: "Days Left", value: row.daysRemaining },
+        ]}
+      />
+    </PortalRecordCard>
   );
 }
 
@@ -476,134 +583,133 @@ export function DoubleVisitReportWorkspace({
             <span className="font-bold text-slate-700">Type</span> shows whether the source system logged this as a Regular field visit
             or a Campaign/other activity. Both count toward totals — this column and filter are for visibility, not exclusion.
           </p>
-          <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
-              <thead className={STICKY_HEAD}>
-                <tr>
-                  <SortHeader label="Date" sortKey="date" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Double Visitor" sortKey="visitor" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Job Title" sortKey="role" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Visited MR" sortKey="visited" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Area" sortKey="area" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Region" sortKey="region" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Line" sortKey="line" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Period" sortKey="period" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Type" sortKey="kind" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
-                  <SortHeader label="Visits" sortKey="visits" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} align="right" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100">
-                {logSort.sorted.length === 0 ? (
-                  <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
-                ) : (
-                  logPageRows.map((row, index) => (
-                    <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
-                      <td className="px-3 py-2.5">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.visitedName ?? row.visitedHrId ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
-                      <td className="px-3 py-2.5">{row.period}</td>
-                      <td className="px-3 py-2.5">
-                        <span
-                          className={cn(
-                            "inline-flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                            row.visitKind === "Regular" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
-                          )}
-                        >
-                          {row.visitKind}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.visitCount}</td>
+          <PortalResponsiveDataList
+            empty={<PortalEmptyState title="No visits found" message="No visits match these filters." />}
+            getKey={(row, index) => `${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`}
+            items={logPageRows}
+            renderCard={(row) => <LogVisitCard row={row} />}
+            renderTable={() => (
+              <div className="max-h-[70vh] overflow-auto">
+                <PortalDesktopTable minWidth="1180px">
+                  <thead className={STICKY_HEAD}>
+                    <tr>
+                      <SortHeader label="Date" sortKey="date" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Double Visitor" sortKey="visitor" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Job Title" sortKey="role" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Visited MR" sortKey="visited" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Area" sortKey="area" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Region" sortKey="region" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Line" sortKey="line" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Period" sortKey="period" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Type" sortKey="kind" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
+                      <SortHeader label="Visits" sortKey="visits" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} align="right" />
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {logPageRows.map((row, index) => (
+                      <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
+                        <td className="px-3 py-2.5">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.visitedName ?? row.visitedHrId ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
+                        <td className="px-3 py-2.5">{row.period}</td>
+                        <td className="px-3 py-2.5">
+                          <VisitKindBadge kind={row.visitKind} />
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.visitCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              </div>
+            )}
+          />
           <Pagination page={logPageSafe} total={logSort.sorted.length} unit="visits" onPage={setLogPage} />
         </div>
       )}
 
       {tab === "neverVisited" && (
         <div className="border border-slate-200 bg-white">
-          <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className={STICKY_HEAD}>
-                <tr>
-                  <SortHeader label="Name" sortKey="name" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
-                  <SortHeader label="Area" sortKey="area" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
-                  <SortHeader label="Hired" sortKey="hire" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
-                  <SortHeader label="Days Since Hire" sortKey="days" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} align="right" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100">
-                {neverVisitedSort.sorted.length === 0 ? (
-                  <tr><td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-500">Everyone in scope has been double-visited in this range.</td></tr>
-                ) : (
-                  neverPageRows.map((row, index) => (
-                    <tr key={row.hrId} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          {row.flagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-500" />}
-                          {row.name}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
-                      <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", row.flagged && "text-rose-600")}>
-                        {row.daysSinceHire ?? "—"}
-                      </td>
+          <PortalResponsiveDataList
+            empty={<PortalEmptyState title="Everyone visited" message="Everyone in scope has been double-visited in this range." />}
+            getKey={(row) => row.hrId}
+            items={neverPageRows}
+            renderCard={(row) => <NeverVisitedCard row={row} />}
+            renderTable={() => (
+              <div className="max-h-[70vh] overflow-auto">
+                <PortalDesktopTable minWidth="680px">
+                  <thead className={STICKY_HEAD}>
+                    <tr>
+                      <SortHeader label="Name" sortKey="name" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
+                      <SortHeader label="Area" sortKey="area" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
+                      <SortHeader label="Hired" sortKey="hire" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
+                      <SortHeader label="Days Since Hire" sortKey="days" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} align="right" />
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {neverPageRows.map((row, index) => (
+                      <tr key={row.hrId} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            {row.flagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-500" />}
+                            {row.name}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
+                        <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", row.flagged && "text-rose-600")}>
+                          {row.daysSinceHire ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              </div>
+            )}
+          />
           <Pagination page={neverPageSafe} total={neverVisitedSort.sorted.length} unit="reps" onPage={setNeverPage} />
         </div>
       )}
 
       {tab === "probation" && (
         <div className="border border-slate-200 bg-white">
-          <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className={STICKY_HEAD}>
-                <tr>
-                  <SortHeader label="Name" sortKey="name" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
-                  <SortHeader label="Hired" sortKey="hire" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
-                  <SortHeader label="Probation End" sortKey="end" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
-                  <SortHeader label="Days Left" sortKey="remaining" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} align="right" />
-                  <SortHeader label="DV" sortKey="dv" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} align="right" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100">
-                {probationSort.sorted.length === 0 ? (
-                  <tr><td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">No one in your scope is currently on probation.</td></tr>
-                ) : (
-                  probPageRows.map((row, index) => (
-                    <tr key={row.hrId} className={cn(index % 2 === 0 ? "bg-white" : "bg-orange-50/30", row.hrId === viewerHrId && "ring-1 ring-inset ring-orange-300")}>
-                      <td className="px-3 py-2.5">{row.name}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.probationEndDate)}</td>
-                      <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.daysRemaining}</td>
-                      <td className="px-3 py-2.5 text-right">
-                        {row.dvDone === null ? (
-                          <span className="font-bold tabular-nums text-slate-700">{row.dvCount}</span>
-                        ) : row.dvDone ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Done</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-rose-600"><AlertTriangle className="h-3.5 w-3.5" /> Pending</span>
-                        )}
-                      </td>
+          <PortalResponsiveDataList
+            empty={<PortalEmptyState title="No one on probation" message="No one in your scope is currently on probation." />}
+            getKey={(row) => row.hrId}
+            items={probPageRows}
+            renderCard={(row) => <ProbationCard row={row} viewerHrId={viewerHrId} />}
+            renderTable={() => (
+              <div className="max-h-[70vh] overflow-auto">
+                <PortalDesktopTable minWidth="720px">
+                  <thead className={STICKY_HEAD}>
+                    <tr>
+                      <SortHeader label="Name" sortKey="name" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
+                      <SortHeader label="Hired" sortKey="hire" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
+                      <SortHeader label="Probation End" sortKey="end" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />
+                      <SortHeader label="Days Left" sortKey="remaining" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} align="right" />
+                      <SortHeader label="DV" sortKey="dv" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} align="right" />
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {probPageRows.map((row, index) => (
+                      <tr key={row.hrId} className={cn(index % 2 === 0 ? "bg-white" : "bg-orange-50/30", row.hrId === viewerHrId && "ring-1 ring-inset ring-orange-300")}>
+                        <td className="px-3 py-2.5">{row.name}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.probationEndDate)}</td>
+                        <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.daysRemaining}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <ProbationDvBadge row={row} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              </div>
+            )}
+          />
           <Pagination page={probPageSafe} total={probationSort.sorted.length} unit="reps" onPage={setProbPage} />
         </div>
       )}
