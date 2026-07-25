@@ -380,11 +380,17 @@ const planSelect = `
 const WORKSPACE_PLAN_LIMIT = 250;
 
 // Statuses that never became "the plan of record" for their period — a plan that
-// died here leaves no live claim on the period, so a fresh submission shouldn't be
-// blocked by it. Every other status (including final_approved/hr_acknowledged) is
-// still an active or completed submission and must block a second, unlinked plan
-// for the same employee/period — see assertNoActivePlanForSamePeriod.
+// died here (or was never submitted at all) leaves no live claim on the period, so
+// a fresh submission shouldn't be blocked by it. 'draft' is included deliberately,
+// matching the original employee_plan_headers_active_period_uidx design: an
+// unsubmitted draft is a private scratchpad, not a claim on the period, so multiple
+// stray/abandoned drafts for the same period are harmless and pre-existing (found
+// in staging while verifying this fix). Every other status — including
+// final_approved/hr_acknowledged, the actual gap this check closes — is a real
+// submission and must block a second, unlinked plan for the same employee/period.
+// See assertNoActivePlanForSamePeriod.
 const DUPLICATE_PERIOD_IGNORED_STATUSES = new Set<EmployeePlanStatus>([
+  "draft",
   "cancelled",
   "manager_rejected",
   "ceo_rejected",

@@ -20,9 +20,13 @@
 -- Widen the WHERE clause to cover every status except the true dead ends —
 -- cancelled, manager_rejected, ceo_rejected — which never became "the plan
 -- of record" for their period, so a fresh submission after one of them is
--- not a duplicate. Every other status, including final_approved and
--- hr_acknowledged, now blocks a second unlinked header. This is paired with
--- an application-level check (assertNoActivePlanForSamePeriod in
+-- not a duplicate. 'draft' is also kept excluded, preserving the original
+-- index's own design: an unsubmitted draft is a private scratchpad, not a
+-- claim on the period, and staging has pre-existing stray/abandoned drafts
+-- that would otherwise wrongly conflict. Every other status — including
+-- final_approved and hr_acknowledged, the actual gap this migration closes —
+-- now blocks a second unlinked header. This is paired with an
+-- application-level check (assertNoActivePlanForSamePeriod in
 -- src/lib/weekly-planning/service.ts) that surfaces a clearer error before
 -- ever reaching this constraint; this index is the authoritative guarantee
 -- against races and any other insert path.
@@ -32,6 +36,6 @@ begin;
 drop index if exists public.employee_plan_headers_active_period_uidx;
 create unique index employee_plan_headers_active_period_uidx
   on public.employee_plan_headers (employee_hr_id, plan_kind, period_key)
-  where status not in ('cancelled', 'manager_rejected', 'ceo_rejected');
+  where status not in ('draft', 'cancelled', 'manager_rejected', 'ceo_rejected');
 
 commit;
