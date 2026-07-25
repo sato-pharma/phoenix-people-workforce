@@ -75,7 +75,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "CRM Deduction",
     subtitle:
-      "CRM no-activity deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it). For a resigning leaver, Non-Working Days/Value are pre-filled with their real computed figure (owner request 2026-07-25 — moved here from the Resignations step so it's edited in exactly one place) and still nets against their own Second Part first. Working Days and Non-Working Days always sum to the month's calendar days (owner request 2026-07-25) — edit either one and the other adjusts automatically; the deduction is always calculated from Non-Working Days. Reason is optional.",
+      "CRM no-activity deduction for Part 1 — shown only for this month's one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it; this month's resignations have their own dedicated Resignations CRM tab). Working Days and Non-Working Days always sum to the month's calendar days (owner request 2026-07-25) — edit either one and the other adjusts automatically; the deduction is always calculated from Non-Working Days at Base/30 × days. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -105,6 +105,51 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       },
       { key: "p1odCrmValue", label: "CRM Value", kind: "money" },
       { key: "p1odCrmReason", label: "CRM Reason", kind: "text" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+  },
+  p1_resignation_crm: {
+    key: "p1_resignation_crm",
+    phase: "part1",
+    title: "Resignations CRM",
+    subtitle:
+      "CRM no-activity deduction for this month's RESIGNATIONS only — dedicated to leavers so its rules never collide with the normal CRM tab (owner request 2026-07-26). Everything here uses the SAME daily rate as the resignation settlement: Base ÷ the month's ACTUAL calendar days (e.g. 14,000 ÷ 31 = 451.61 in July), NOT ÷30. Working Days + Non-Working Days always sum to the employee's DAYS WORKED this month (his employment span — 9 for someone who left on the 9th), never the whole month, so he can never be deducted for days after he left. Edit either day field and the other adjusts; the deduction is Base ÷ month-days × Non-Working Days. Value/days are pre-filled from his real CRM activity in the days he actually worked. Reason is optional.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Days Worked", label: "Days Worked" },
+    ],
+    fields: [
+      // Working Days is derived/display only (no DraftRow column). Editing it
+      // recomputes Non-Working Days as the complement — capped at DAYS WORKED
+      // (the employment span), NOT the month, so a leaver can never show more
+      // non-working days than days he was actually employed.
+      {
+        key: "resigCrmWorkingDays",
+        label: "Working Days",
+        kind: "days",
+        complementFieldKey: "resignationCrmDays",
+        complementTotalContextKey: "Days Worked",
+      },
+      {
+        key: "resignationCrmDays",
+        label: "Non-Working Days",
+        kind: "days",
+        // Deduction divisor is the month's ACTUAL calendar days (unified with the
+        // resignation settlement rate) — NOT the default /30. This is a DIFFERENT
+        // context key from complementTotalContextKey ("Days Worked", the cap):
+        // the cap bounds the day count, the divisor sets the money per day. The
+        // key IS the DraftRow column, so the generic persist-loop writes it —
+        // no run-service remap needed. See StepFieldSpec doc comments.
+        autoCalcMoneyKey: "crm",
+        autoCalcDivisorContextKey: "Days In Month",
+        complementFieldKey: "resigCrmWorkingDays",
+        complementTotalContextKey: "Days Worked",
+      },
+      { key: "crm", label: "CRM Value", kind: "money" },
+      { key: "resigCrmReason", label: "CRM Reason", kind: "text" },
     ],
     hasReason: false,
     isHoldStep: false,
@@ -303,6 +348,7 @@ export const STEP_ORDER: StepKey[] = [
   "p1_resignations",
   "p1_fingerprint",
   "p1_crm",
+  "p1_resignation_crm",
   "p1_unpaid_vacation",
   "p1_no_record",
   "p1_other_deductions",

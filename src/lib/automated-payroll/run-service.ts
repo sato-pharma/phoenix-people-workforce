@@ -112,6 +112,10 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
 /** Maps a Part 1 manual-deduction-tab text field key to its DraftRowPatch reason field. */
 const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
   p1odCrmReason: "p1odCrmReason",
+  // Resignations CRM tab reuses the p1od_crm_reason column (its employees —
+  // leavers — never overlap with the p1_crm tab's continuing employees), under
+  // a distinct field key so each tab still owns a unique set of field keys.
+  resigCrmReason: "p1odCrmReason",
   p1odVacationReason: "p1odVacationReason",
   p1odNoRecordReason: "p1odNoRecordReason",
   p1odLoanReason: "p1odLoanReason",
@@ -143,24 +147,18 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee
     }
   }
 
-  // Owner request 2026-07-25: a leaver's CRM/Vacation deduction, edited in the
-  // p1_crm / p1_unpaid_vacation tabs, must land on the SAME resignationCrmDays/
-  // crm and unpaidVacations draft columns the Resignations step used to write —
-  // never ALSO on p1odCrmDays/p1odCrmValue/p1odVacationValue, which would
-  // double-count via otherPart1DeductionsTotal (the exact double-deduction bug
-  // this module already guards against elsewhere). Remap AFTER the generic
-  // loop above, deleting the p1od* keys so they are never persisted for a leaver.
-  if (isLeaverEmployee && stepKey === "p1_crm") {
-    const generic = patch as unknown as Record<string, number | undefined>;
-    if (generic.p1odCrmDays !== undefined) {
-      patch.resignationCrmDays = generic.p1odCrmDays;
-      delete generic.p1odCrmDays;
-    }
-    if (generic.p1odCrmValue !== undefined) {
-      patch.crm = generic.p1odCrmValue;
-      delete generic.p1odCrmValue;
-    }
-  } else if (isLeaverEmployee && stepKey === "p1_unpaid_vacation") {
+  // Owner request 2026-07-25: a leaver's unpaid-vacation deduction, edited in the
+  // p1_unpaid_vacation tab, must land on the SAME unpaidVacations draft column the
+  // Resignations step used to write — never ALSO on p1odVacationValue, which would
+  // double-count via otherPart1DeductionsTotal (the exact double-deduction bug this
+  // module guards against elsewhere). Remap AFTER the generic loop, deleting the
+  // p1od* key so it is never persisted for a leaver.
+  //
+  // (The leaver CRM deduction needs no such remap: it has its own dedicated
+  // p1_resignation_crm tab (owner request 2026-07-26) whose fields are keyed
+  // directly to the resignationCrmDays/crm columns, so the generic loop above
+  // already writes them.)
+  if (isLeaverEmployee && stepKey === "p1_unpaid_vacation") {
     const generic = patch as unknown as Record<string, number | undefined>;
     if (generic.p1odVacationValue !== undefined) {
       patch.unpaidVacations = generic.p1odVacationValue;

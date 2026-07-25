@@ -59,9 +59,16 @@ export function runAutomatedPayrollPart1ScopeTests() {
   assert.equal(isSettledInPart1(regular, { paymentMode: normalizePayrollPaymentMode(null) }), false);
   assert.equal(isSettledInPart1(regular, { paymentMode: normalizePayrollPaymentMode("") }), false);
 
-  // ---- the four Part 1 manual deduction tabs all exist and sit in Part 1 -----
-  // (each is scoped by isSettledInPart1 inside recommend.ts)
-  const part1ManualTabs = ["p1_crm", "p1_unpaid_vacation", "p1_no_record", "p1_other_deductions"] as const;
+  // ---- the Part 1 manual deduction tabs all exist and sit in Part 1 ----------
+  // (each is scoped by isSettledInPart1 inside recommend.ts). p1_resignation_crm
+  // is the dedicated leaver CRM tab (owner request 2026-07-26).
+  const part1ManualTabs = [
+    "p1_crm",
+    "p1_resignation_crm",
+    "p1_unpaid_vacation",
+    "p1_no_record",
+    "p1_other_deductions",
+  ] as const;
   for (const key of part1ManualTabs) {
     assert.equal(STEP_DEFINITIONS[key].phase, "part1", `${key} must be a Part 1 step`);
     assert.equal(PART1_STEP_KEYS.includes(key), true, `${key} missing from PART1_STEP_KEYS`);
@@ -82,7 +89,9 @@ export function runAutomatedPayrollPart1ScopeTests() {
   }
   // CRM / Vacation / No-Record are single-category tabs; Loan+Other carries two.
   // p1_crm has 4 (owner request 2026-07-25 added the Working Days complement).
+  // p1_resignation_crm (owner request 2026-07-26) mirrors that same shape.
   assert.equal(STEP_DEFINITIONS.p1_crm.fields.length, 4);
+  assert.equal(STEP_DEFINITIONS.p1_resignation_crm.fields.length, 4);
   assert.equal(STEP_DEFINITIONS.p1_unpaid_vacation.fields.length, 3);
   assert.equal(STEP_DEFINITIONS.p1_no_record.fields.length, 3);
   assert.equal(STEP_DEFINITIONS.p1_other_deductions.fields.length, 6);
@@ -103,7 +112,13 @@ export function runAutomatedPayrollPart1ScopeTests() {
   // The computation itself moved INTO these dedicated tabs instead, so there is
   // no longer a second place the same amount can be entered — the warning
   // machinery is retired for every Part 1 manual tab. --------------------------
-  for (const key of ["p1_crm", "p1_unpaid_vacation", "p1_no_record", "p1_other_deductions"] as const) {
+  for (const key of [
+    "p1_crm",
+    "p1_resignation_crm",
+    "p1_unpaid_vacation",
+    "p1_no_record",
+    "p1_other_deductions",
+  ] as const) {
     assert.equal(
       STEP_DEFINITIONS[key].conflictContextKey,
       undefined,
@@ -150,15 +165,14 @@ export function runAutomatedPayrollPart1ScopeTests() {
 
   // ---- CRM/Vacation computation now lives in the DEDICATED tabs, not
   // Resignations (owner request 2026-07-25 — the same figure used to appear in
-  // both places, which read as duplication). p1_crm's Days field auto-calculates
-  // its Value (Base/30 × days) — safe, because that is the exact formula
-  // calculateDeductionAmountFromBaseSalary already uses for a leaver's real
-  // no-activity days (verified elsewhere against production: divisor/formula
-  // match exactly). p1_unpaid_vacation's Days field deliberately carries NO such
-  // wiring for a leaver's real figure: it is a composite (balance-aware Phoenix
-  // amount + a separate CRM-leave amount), not a flat day rate — the real Value
-  // is written directly, and Days is read-only reference via its own context
-  // column instead. -------------------------------------------------------------
+  // both places, which read as duplication). Leaver CRM moved a SECOND time
+  // (owner request 2026-07-26) into its OWN p1_resignation_crm tab — p1_crm is
+  // now continuing (one-part) employees only, keeping the whole-month /30
+  // behavior for them. p1_unpaid_vacation's Days field deliberately carries NO
+  // auto-calc wiring for a leaver's real figure: it is a composite (balance-aware
+  // Phoenix amount + a separate CRM-leave amount), not a flat day rate — the real
+  // Value is written directly, and Days is read-only reference via its own
+  // context column instead. -----------------------------------------------------
   const crmStep = STEP_DEFINITIONS.p1_crm;
   const crmDaysField = crmStep.fields.find((field) => field.key === "p1odCrmDays");
   assert.equal(crmDaysField?.kind, "days");
@@ -183,6 +197,38 @@ export function runAutomatedPayrollPart1ScopeTests() {
     undefined,
     "the CRM money divisor must stay fixed at 30, not read the complement's calendar-days total",
   );
+
+  // ---- Resignations CRM (owner request 2026-07-26): the fix for a real bug —
+  // the shared CRM tab capped Working+Non-Working at the WHOLE MONTH, so a
+  // leaver who worked only 9 days could show 22 "non-working" days (the days
+  // AFTER he had already left) and be deducted for them. This dedicated tab
+  // caps the complement at DAYS WORKED instead, and unifies the deduction rate
+  // with the settlement's own Base ÷ actual-month-days (NOT /30). ---------------
+  const resigCrmStep = STEP_DEFINITIONS.p1_resignation_crm;
+  const resigNonWorkingField = resigCrmStep.fields.find((field) => field.key === "resignationCrmDays");
+  const resigWorkingField = resigCrmStep.fields.find((field) => field.key === "resigCrmWorkingDays");
+  assert.equal(resigNonWorkingField?.kind, "days");
+  assert.equal(resigNonWorkingField?.autoCalcMoneyKey, "crm");
+  assert.equal(
+    resigNonWorkingField?.autoCalcDivisorContextKey,
+    "Days In Month",
+    "the resignation CRM deduction must divide by the month's ACTUAL calendar days, unified with the settlement rate — not the fixed 30",
+  );
+  assert.equal(resigWorkingField?.complementFieldKey, "resignationCrmDays");
+  assert.equal(resigNonWorkingField?.complementFieldKey, "resigCrmWorkingDays");
+  assert.equal(
+    resigWorkingField?.complementTotalContextKey,
+    "Days Worked",
+    "the complement must cap at DAYS WORKED (the employment span), never the whole month",
+  );
+  assert.equal(resigNonWorkingField?.complementTotalContextKey, "Days Worked");
+  // Field keys ARE the literal DraftRow columns (resignationCrmDays/crm), so the
+  // generic persist-loop in stepEditToPatch writes them directly — no remap
+  // needed (unlike the vacation tab below), confirmed by the write-path checks
+  // further down finding no p1_resignation_crm-specific remap branch.
+  assert.equal(STEP_DEFINITIONS.p1_resignation_crm.phase, "part1");
+  assert.equal(PART1_STEP_KEYS.includes("p1_resignation_crm"), true, "p1_resignation_crm missing from PART1_STEP_KEYS");
+  assert.ok(STEP_ORDER.includes("p1_resignation_crm"), "p1_resignation_crm missing from STEP_ORDER");
 
   const vacationStep = STEP_DEFINITIONS.p1_unpaid_vacation;
   assert.equal(
@@ -210,11 +256,15 @@ export function runAutomatedPayrollPart1ScopeTests() {
     "Resignations must not show Unpaid Vacation Days either — see the dedicated tab instead",
   );
 
-  // ---- the WRITE path must remap a leaver's edit onto the SAME draft columns
-  // Resignations always used (resignationCrmDays/crm, unpaidVacations) — never
-  // ALSO onto p1odCrmValue/p1odVacationValue, which would double-count via
-  // otherPart1DeductionsTotal and reintroduce the exact double-deduction bug
-  // this module already guards against elsewhere. stepEditToPatch/stepRowToPatch
+  // ---- the WRITE path must remap a leaver's VACATION edit onto the SAME
+  // unpaidVacations draft column Resignations always used — never ALSO onto
+  // p1odVacationValue, which would double-count via otherPart1DeductionsTotal
+  // and reintroduce the exact double-deduction bug this module already guards
+  // against elsewhere. (Leaver CRM needs no such remap anymore — its dedicated
+  // p1_resignation_crm tab's field keys ARE resignationCrmDays/crm already, see
+  // the STEP_DEFINITIONS assertions above — so there must be no p1_crm-specific
+  // leaver branch left in stepEditToPatch; that branch is exactly what produced
+  // the whole-month bug this tab was built to fix.) stepEditToPatch/stepRowToPatch
   // are private to run-service.ts, so this pins the contract at the source level
   // — comments stripped first (a bare identifier match would also hit a doc
   // comment mentioning the same function name and pass even if the real call
@@ -231,22 +281,25 @@ export function runAutomatedPayrollPart1ScopeTests() {
     ),
   );
   assert.ok(
-    stepEditToPatchBody.includes('patch.resignationCrmDays = generic.p1odCrmDays'),
-    "a leaver's CRM edit must remap onto resignationCrmDays, not stay on p1odCrmDays",
-  );
-  assert.ok(
-    stepEditToPatchBody.includes("patch.crm = generic.p1odCrmValue"),
-    "a leaver's CRM edit must remap onto crm, not stay on p1odCrmValue",
+    !stepEditToPatchBody.includes('stepKey === "p1_crm"'),
+    "there must be no leaver-specific remap branch left for p1_crm — its leavers moved to p1_resignation_crm entirely",
   );
   assert.ok(
     stepEditToPatchBody.includes("patch.unpaidVacations = generic.p1odVacationValue"),
     "a leaver's Vacation edit must remap onto unpaidVacations, not stay on p1odVacationValue",
   );
   assert.ok(
-    stepEditToPatchBody.includes("delete generic.p1odCrmDays") &&
-      stepEditToPatchBody.includes("delete generic.p1odCrmValue") &&
-      stepEditToPatchBody.includes("delete generic.p1odVacationValue"),
-    "the p1od* keys must be deleted after remapping — leaving them would double-write both columns",
+    stepEditToPatchBody.includes("delete generic.p1odVacationValue"),
+    "the p1odVacationValue key must be deleted after remapping — leaving it would double-write both columns",
+  );
+  // The Resignations CRM tab's reason field (resigCrmReason) reuses the SAME
+  // p1od_crm_reason column the old p1_crm leaver branch wrote — confirmed via
+  // OTHER_DEDUCTIONS_REASON_FIELDS, not a remap branch (a reason field is a
+  // simple 1:1 lookup, not numeric patch logic).
+  assert.ok(
+    stepEditToPatchBody.includes('resigCrmReason: "p1odCrmReason"') ||
+      runServiceSource.includes('resigCrmReason: "p1odCrmReason"'),
+    "resigCrmReason must map onto the existing p1od_crm_reason column",
   );
   const stepRowToPatchBody = stripComments(
     runServiceSource.slice(

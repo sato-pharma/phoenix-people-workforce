@@ -159,10 +159,15 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
    * editing either one clamps it to [0, total] and sets the OTHER to
    * (total - value). Whichever field separately declares `autoCalcMoneyKey`
    * then recomputes its money field from its OWN (possibly just-derived) day
-   * count, using the DEFAULT /30 divisor — deliberately not the total-days
-   * context value, which is the complement CAP, not the money divisor (see
-   * StepFieldSpec.complementTotalContextKey's doc comment for why conflating
-   * the two would silently change the deduction in a 31-day month).
+   * count.
+   *
+   * The money divisor is per-field: DEFAULT /30 (the deduction day-rate), unless
+   * the field names an `autoCalcDivisorContextKey` — the Resignations CRM tab
+   * (owner rule 2026-07-26) reads the month's ACTUAL calendar days there to
+   * unify with the settlement rate. This is a DIFFERENT context key from
+   * `totalContextKey` (the complement CAP): the cap bounds the day count, the
+   * divisor sets money-per-day. Conflating them would silently change the
+   * deduction (see StepFieldSpec.complementTotalContextKey's doc comment).
    */
   const setComplementaryDaysValue = (
     hrId: string,
@@ -182,12 +187,17 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
         const spec = definition.fields.find((candidate) => candidate.key === field);
         const complementSpec = definition.fields.find((candidate) => candidate.key === complementField);
         const baseSalary = Number(row.context["Base Salary"] ?? 0);
+        const divisorFor = (candidate: typeof spec) => {
+          const key = candidate?.autoCalcDivisorContextKey;
+          return key ? Number(row.context[key] ?? 0) || 30 : 30;
+        };
         if (spec?.autoCalcMoneyKey) {
-          values[spec.autoCalcMoneyKey] = Math.round(((baseSalary / 30) * clamped + Number.EPSILON) * 100) / 100;
+          values[spec.autoCalcMoneyKey] =
+            Math.round(((baseSalary / divisorFor(spec)) * clamped + Number.EPSILON) * 100) / 100;
         }
         if (complementSpec?.autoCalcMoneyKey) {
           values[complementSpec.autoCalcMoneyKey] =
-            Math.round(((baseSalary / 30) * complementValue + Number.EPSILON) * 100) / 100;
+            Math.round(((baseSalary / divisorFor(complementSpec)) * complementValue + Number.EPSILON) * 100) / 100;
         }
         return { ...row, values };
       }),

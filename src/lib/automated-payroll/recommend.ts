@@ -1152,6 +1152,13 @@ async function recommendP1Crm(
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
     if (!isSettledInPart1(member, source)) continue;
+    // This month's resignations moved to their own dedicated Resignations CRM
+    // tab (owner request 2026-07-26 — see recommendResignationCrm), because a
+    // leaver's CRM rules differ: the Working/Non-Working split caps at his DAYS
+    // WORKED (not the whole month) and the deduction divides by the month's
+    // ACTUAL calendar days (not /30). This tab is now one-part CONTINUING
+    // employees only, keeping the old whole-month /30 behavior for them.
+    if (member.lifecycle === "leaver") continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
     // Working/Non-Working Days cap (owner request 2026-07-25) — the real
@@ -1159,46 +1166,6 @@ async function recommendP1Crm(
     // See StepFieldSpec.complementTotalContextKey's doc for why these must stay separate.
     const daysInMonth = daysInPeriodMonth(period);
     row.context["Days In Month"] = daysInMonth;
-
-    if (member.lifecycle === "leaver" && member.lastWorkingDate) {
-      // Owner request 2026-07-25: a leaver's real CRM no-activity deduction is
-      // computed and edited HERE now (moved out of the Resignations step, which
-      // used to show the exact same number, reading like duplication). The
-      // presentation keys stay p1odCrmDays/p1odCrmValue for the generic grid,
-      // but the underlying value is read from/written to the SAME
-      // resignationCrmDays/crm draft columns Resignations always used — see
-      // run-service.ts's leaver remap — so leaverDeductionFor's Second-Part-
-      // netting rule (owner 2026-07-20) keeps working unchanged.
-      const baseSalary = roundCurrency(source?.baseSalary ?? 0);
-      const crmDates = await computeLeaverCrmDates({
-        hrId: member.employee.hrId,
-        crmId: member.employee.crmId,
-        jobTitle: member.employee.jobTitle,
-        hireDate: member.employee.hireDate,
-        lastWorkingDate: member.lastWorkingDate,
-        period,
-      });
-      const noActivityDays = crmDates.noActivityDates.length;
-      const crmValue = roundCurrency(
-        noActivityDays > 0
-          ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: noActivityDays }) ?? 0
-          : 0,
-      );
-      const nonWorkingDays = pick(draft?.resignationCrmDays, noActivityDays);
-      row.recommended = {
-        p1odCrmWorkingDays: Math.max(0, daysInMonth - noActivityDays),
-        p1odCrmDays: noActivityDays,
-        p1odCrmValue: crmValue,
-      };
-      row.values = {
-        p1odCrmWorkingDays: Math.max(0, daysInMonth - nonWorkingDays),
-        p1odCrmDays: nonWorkingDays,
-        p1odCrmValue: pick(draft?.crm, crmValue),
-      };
-      row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
-      rows.push(row);
-      continue;
-    }
 
     const nonWorkingDays = pick(draft?.p1odCrmDays, 0);
     row.recommended = { p1odCrmWorkingDays: daysInMonth, p1odCrmDays: 0, p1odCrmValue: 0 };
@@ -1208,6 +1175,109 @@ async function recommendP1Crm(
       p1odCrmValue: pick(draft?.p1odCrmValue, 0),
     };
     row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Leaver CRM deduction rate — UNIFIED with the resignation settlement (owner
+ * rule 2026-07-26): Base ÷ the month's ACTUAL calendar days × days, NOT the /30
+ * used for continuing employees. One no-activity day therefore costs exactly one
+ * day of his prorated pay. Exported for direct unit testing (pure/deterministic).
+ */
+export function resignationCrmDeduction(baseSalary: number, days: number, period: PayrollPeriod): number {
+  const monthDays = daysInPeriodMonth(period);
+  if (baseSalary <= 0 || days <= 0 || monthDays <= 0) return 0;
+  return roundCurrency((baseSalary / monthDays) * days);
+}
+
+/**
+ * Dedicated Resignations CRM tab (owner request 2026-07-26): this month's
+ * leavers only. Fixes the bug where the shared CRM tab's Working/Non-Working
+ * split ran against the whole month (31), so a 9-day employee could show 22
+ * "non-working" days — the 22 days AFTER he had already left — and be deducted
+ * for them.
+ *
+ * Here Working + Non-Working cap at DAYS WORKED (his employment span this month,
+ * from the settlement), so no post-resignation day can ever be deducted. The
+ * deduction uses `resignationCrmDeduction` (Base ÷ actual month days), matching
+ * the settlement's own daily rate. Fields are keyed directly to the
+ * resignationCrmDays/crm draft columns, so the generic persist-loop in
+ * run-service.ts writes them with no remap, and leaverDeductionFor's
+ * Second-Part-netting rule (owner 2026-07-20) keeps working unchanged.
+ */
+async function recommendResignationCrm(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  period: PayrollPeriod,
+  drafts: Map<string, DraftRow>,
+): Promise<StepRow[]> {
+  const leavers = members.filter((member) => member.lifecycle === "leaver" && member.lastWorkingDate);
+  if (leavers.length === 0) return [];
+  const daysInMonth = daysInPeriodMonth(period);
+
+  const rows: StepRow[] = [];
+  for (const member of leavers) {
+    if (!member.lastWorkingDate) continue;
+    const source = lookupSource(sources, member.employee.hrId);
+    const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+    const draft = drafts.get(member.compact);
+
+    // Days worked = the paid-days count from the settlement — the cap for his
+    // Working + Non-Working CRM days. He can never be marked non-working for a
+    // day he was no longer employed.
+    const settlement = computeResignationSettlement({
+      baseSalary,
+      extraCostOfLiving: roundCurrency(source?.extraCostOfLiving ?? 0),
+      fuelAllowance: roundCurrency(source?.fuelAllowance ?? 0),
+      lastWorkingDate: member.lastWorkingDate,
+      period,
+      unpaidDaysInSpan: member.unpaidDaysInSpan,
+      otherAdditions: 0,
+      otherDeductions: 0,
+    });
+    const daysWorked = Math.max(0, settlement?.daysWorked ?? 0);
+
+    // Recommended no-activity days from his real CRM history within the days he
+    // actually worked (computeLeaverCrmDates only scans up to his last working
+    // date), clamped to days worked as a final guard.
+    const crmDates = await computeLeaverCrmDates({
+      hrId: member.employee.hrId,
+      crmId: member.employee.crmId,
+      jobTitle: member.employee.jobTitle,
+      hireDate: member.employee.hireDate,
+      lastWorkingDate: member.lastWorkingDate,
+      period,
+    });
+    const recommendedNonWorking = Math.min(daysWorked, crmDates.noActivityDates.length);
+    const recommendedValue = resignationCrmDeduction(baseSalary, recommendedNonWorking, period);
+
+    // Trust a saved day count only if it is within the valid span. A stored
+    // value greater than days worked can only be the old whole-month bug (e.g.
+    // 22 saved for a 9-day leaver) — discard it and re-recommend, self-healing
+    // the stale data without a DB write. The money always re-derives from the
+    // (clamped) day count so the displayed value can never disagree with it.
+    const storedDays = draft?.resignationCrmDays;
+    const nonWorking =
+      storedDays != null && storedDays >= 0 && storedDays <= daysWorked ? storedDays : recommendedNonWorking;
+    const value = resignationCrmDeduction(baseSalary, nonWorking, period);
+
+    const row = part1ManualDeductionBaseRow(member, source);
+    row.context["Days In Month"] = daysInMonth; // deduction divisor (Base ÷ actual month days)
+    row.context["Days Worked"] = daysWorked; // complement cap for Working/Non-Working
+
+    row.recommended = {
+      resigCrmWorkingDays: Math.max(0, daysWorked - recommendedNonWorking),
+      resignationCrmDays: recommendedNonWorking,
+      crm: recommendedValue,
+    };
+    row.values = {
+      resigCrmWorkingDays: Math.max(0, daysWorked - nonWorking),
+      resignationCrmDays: nonWorking,
+      crm: value,
+    };
+    row.reasons = { resigCrmReason: draft?.p1odCrmReason ?? "" };
     rows.push(row);
   }
   return rows;
@@ -1426,6 +1496,8 @@ export async function recommendStep(input: {
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
     case "p1_crm":
       return recommendP1Crm(input.members, input.sources, input.period, drafts);
+    case "p1_resignation_crm":
+      return recommendResignationCrm(input.members, input.sources, input.period, drafts);
     case "p1_unpaid_vacation":
       return recommendP1UnpaidVacation(input.members, input.sources, input.period, drafts);
     case "p1_no_record":
