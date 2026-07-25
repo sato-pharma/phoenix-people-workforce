@@ -142,6 +142,12 @@ const ANTI_INFECTIVE_LINE = "Anti Infective";
 // named-exception pattern applied to this one person's sales/marketing scope.
 const AHMED_SHARAF_HR_ID = "B-155";
 
+// A-10 (Nahed Hattab, Product Manager — Anti Infective) is a named addition to
+// Talent Acquisition's otherwise Head-Office-only Planning Calendar scope
+// (owner-requested 2026-07-25) — same named-exception shape as B-155 above, but
+// naming a specific PLAN OWNER an outside viewer needs, not the viewer herself.
+const NAHED_HATTAB_HR_ID = "A-10";
+
 export type CalendarViewerContext = {
   hrId: string;
   role: string | null;
@@ -172,8 +178,9 @@ export type CalendarViewerContext = {
 //   - Regional Manager: same shape as District Manager (Training Manager + own-line Product
 //     Manager), PLUS their own line's Group Product Manager, PLUS the plans of the District
 //     Managers who report directly to them (not every District Manager on their line).
-//   - Talent Acquisition: Head-Office-line plans only (owner-requested 2026-07-25) — HR/
-//     recruiting oversight of HO staff scheduling, not company-wide.
+//   - Talent Acquisition: Head-Office-line plans (owner-requested 2026-07-25) — HR/
+//     recruiting oversight of HO staff scheduling, not company-wide — PLUS Nahed
+//     Hattab's (A-10) plans specifically (owner-requested addition, same day).
 //   - Anyone else with calendar access (any role/line not named above) keeps the
 //     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
@@ -218,7 +225,7 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
     );
   }
   if (role === "talent acquisition") {
-    return isHeadOfficeLine(item.lineName);
+    return isHeadOfficeLine(item.lineName) || hrIdsMatch(item.employeeHrId, NAHED_HATTAB_HR_ID);
   }
 
   return true;
