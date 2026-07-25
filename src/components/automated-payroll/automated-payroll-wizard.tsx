@@ -17,6 +17,7 @@ import type {
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-payroll/types";
 import { cn } from "@/lib/utils";
 
+import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
 import { SelectField } from "./select-field";
 
@@ -38,6 +39,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [run, setRun] = useState<MonthlySalaryRun | null>(null);
   const [stepStates, setStepStates] = useState<StepState[]>([]);
   const [activeStep, setActiveStep] = useState<StepKey | null>(null);
+  const [nonEmployeesOpen, setNonEmployeesOpen] = useState(false);
+  const [nonEmployeeCount, setNonEmployeeCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,6 +65,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
       setRecon(null);
+      setNonEmployeeCount(0);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load run.");
     } finally {
@@ -150,7 +154,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <button
             key={key}
             type="button"
-            onClick={() => setActiveStep(key)}
+            onClick={() => {
+              setActiveStep(key);
+              setNonEmployeesOpen(false);
+            }}
             className={cn(
               "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
               isActive
@@ -173,6 +180,32 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         );
       })}
     </div>
+  );
+
+  /**
+   * Non-Employees Payroll is NOT a StepKey — there is no population to
+   * recommend against, just a free-form list HR authors directly (owner rule
+   * 2026-07-25) — so it gets its own pill outside the confirm-tracked strip
+   * rather than a fake entry in PART1_STEP_KEYS.
+   */
+  const renderNonEmployeesPill = () => (
+    <button
+      type="button"
+      onClick={() => {
+        setNonEmployeesOpen(true);
+        setActiveStep(null);
+      }}
+      className={cn(
+        "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
+        nonEmployeesOpen
+          ? "border-orange-500 bg-orange-50 text-slate-900"
+          : "border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+      )}
+    >
+      <span className="whitespace-nowrap">
+        Non-Employees Payroll{nonEmployeeCount > 0 ? ` (${nonEmployeeCount})` : ""}
+      </span>
+    </button>
   );
 
   const phaseTone: Record<MonthlySalaryRun["phase"], "orange" | "emerald" | "neutral" | "slate"> = {
@@ -268,7 +301,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 Confirm Part 1
               </Button>
             </div>
-            {renderStepPills(PART1_STEP_KEYS)}
+            <div className="flex flex-wrap items-center gap-2">
+              {renderStepPills(PART1_STEP_KEYS)}
+              {renderNonEmployeesPill()}
+            </div>
 
             <div className="border-t border-slate-200 pt-3">
               {run.phase === "part1" ? (
@@ -335,7 +371,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           ) : null}
 
           <div className={cn(adminPanelClassName, "p-4")}>
-            {activeStep ? (
+            {nonEmployeesOpen ? (
+              <NonEmployeesPanel
+                key={run.id}
+                runId={run.id}
+                locked={run.phase !== "part1"}
+                onChange={setNonEmployeeCount}
+              />
+            ) : activeStep ? (
               <RecommendationStep
                 key={`${run.id}-${activeStep}`}
                 runId={run.id}

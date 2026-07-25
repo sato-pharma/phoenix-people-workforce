@@ -319,3 +319,33 @@ export type ReconciliationTotals = {
   /** Rows flagged part1_overpaid (Part-2 deductions exceeded the frozen first installment). */
   overpaid: { hrId: string; residual: number }[];
 };
+
+/**
+ * Non-Employees Payroll (owner rule 2026-07-25): people paid a monthly salary
+ * with NO employee/HR_ID record at all. A free-form, HR-authored list per run —
+ * added/removed manually each month, never derived from the employee
+ * population. Flat total only, no deductions/additions, no lifecycle. Kept
+ * deliberately separate from DraftRow/AssembledRow — these people must never
+ * generate a real employee salary_record; they are appended only to the
+ * exported Part 1 sheet's own section and its grand total.
+ */
+export type NonEmployeePayrollRow = {
+  id: string;
+  runId: string;
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName: string | null;
+  bankAccount: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NonEmployeePayrollInput = {
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
+};
