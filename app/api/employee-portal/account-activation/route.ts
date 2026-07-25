@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { listAccountActivationEligibleUsers, setAccountActiveForRecruiting } from "@/lib/recruitment/account-activation";
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
 
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     assertAuthenticated(access);
+    await assertPermission(access, "account_activation", "read");
     return NextResponse.json({ users: await listAccountActivationEligibleUsers() });
   } catch (error) {
     const apiError = toApiError(error, "Failed to load accounts.");
