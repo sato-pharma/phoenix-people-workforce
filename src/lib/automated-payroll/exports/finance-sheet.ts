@@ -5,8 +5,8 @@ import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
-import type { MonthlySalaryRun } from "../types.ts";
-import { bankExtraColumns, PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
+import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
+import { appendNonEmployeesSection, bankExtraColumns, PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
 
 /**
  * Finance download (export-only): the full or Part-1 sheet with EVERY cell locked
@@ -17,6 +17,8 @@ export async function buildFinanceSheetWorkbook(input: {
   run: MonthlySalaryRun;
   rows: AssembledRow[];
   scope: "part1" | "full";
+  /** People paid a monthly salary with no employee/HR_ID record (Part 1 scope only). */
+  nonEmployees?: NonEmployeePayrollRow[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const label = monthLabel(input.run.month, input.run.year);
@@ -35,7 +37,7 @@ export async function buildFinanceSheetWorkbook(input: {
       "CONFIDENTIAL — Locked payroll sheet for finance execution. Only the Finance Edit columns are editable.",
   });
 
-  await writePayrollWorksheet(workbook, {
+  const { sheet, nextRow, firstPartTotal } = await writePayrollWorksheet(workbook, {
     sheetName: input.scope === "part1" ? "Part 1 (Finance)" : "Payroll (Finance)",
     title: input.scope === "part1" ? "Part 1 — Finance (locked)" : "Full Sheet — Finance (locked)",
     subtitle: `${label} · read-only except Finance Edit columns`,
@@ -49,6 +51,14 @@ export async function buildFinanceSheetWorkbook(input: {
     ],
     protect: true,
   });
+
+  if (input.scope === "part1") {
+    appendNonEmployeesSection(sheet, {
+      startRow: nextRow,
+      rows: input.nonEmployees ?? [],
+      employeeFirstPartTotal: firstPartTotal,
+    });
+  }
 
   return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
 }

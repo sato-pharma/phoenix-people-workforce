@@ -8,9 +8,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
-import { buildFullSheetWorkbook, buildPart1SheetWorkbook } from "./exports/sheet.ts";
+import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
+import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import {
   createRun,
   findActiveRun,
@@ -556,9 +557,55 @@ function previousPeriod(period: PayrollPeriod): PayrollPeriod {
   return period.month === 1 ? { month: 12, year: period.year - 1 } : { month: period.month - 1, year: period.year };
 }
 
-/** Net Salary per employee (keyed by compact HR id) from the previous month's published run, for the Salary Changes tab. Empty map if none. */
+/**
+ * Automated Payroll's first live month (owner rule 2026-07-25: "treat july as
+ * a fresh [start], starting from august compare"). No month-over-month
+ * comparison — Executive Summary or the per-employee Salary Changes tab — is
+ * ever shown for this period or earlier, regardless of whether some prior
+ * published run happens to exist (e.g. leftover test/legacy data): this is an
+ * explicit design boundary, not an incidental side effect of missing data.
+ */
+export const AUTOMATED_PAYROLL_LAUNCH_PERIOD: PayrollPeriod = { month: 7, year: 2026 };
+
+export function isAtOrBeforeLaunch(period: PayrollPeriod): boolean {
+  return (
+    period.year < AUTOMATED_PAYROLL_LAUNCH_PERIOD.year ||
+    (period.year === AUTOMATED_PAYROLL_LAUNCH_PERIOD.year && period.month <= AUTOMATED_PAYROLL_LAUNCH_PERIOD.month)
+  );
+}
+
+/**
+ * Headcount + total payout for the previous month's published run — the
+ * Executive Summary Dashboard's comparison baseline (owner request 2026-07-25:
+ * "must have comparison between the last month in number of employees and
+ * value of money"). Null if the prior month was never published (first-ever
+ * run) or if `period` is at/before the launch month. `valueField` picks which
+ * money column to sum: First Part for the Part 1 sheet, Month Salary for the
+ * full sheet — matching whichever figure that sheet variant actually pays out.
+ */
+async function previousMonthSummary(
+  period: PayrollPeriod,
+  valueField: "first_part" | "month_salary",
+): Promise<PeriodSummary | null> {
+  if (isAtOrBeforeLaunch(period)) return null;
+  const prevRun = await findPublishedRun(previousPeriod(period).month, previousPeriod(period).year);
+  if (!prevRun?.publishedBatchId) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("salary_records")
+    .select(valueField)
+    .eq("batch_id", prevRun.publishedBatchId);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Record<string, number | null>>;
+  return {
+    headcount: rows.length,
+    totalValue: Math.round(rows.reduce((sum, row) => sum + Number(row[valueField] ?? 0), 0) * 100) / 100,
+  };
+}
+
+/** Net Salary per employee (keyed by compact HR id) from the previous month's published run, for the Salary Changes tab. Empty map if none, or if `period` is at/before the launch month. */
 async function previousMonthNetSalaryByHrIdCompact(period: PayrollPeriod): Promise<Map<string, number>> {
   const map = new Map<string, number>();
+  if (isAtOrBeforeLaunch(period)) return map;
   const prevRun = await findPublishedRun(previousPeriod(period).month, previousPeriod(period).year);
   if (!prevRun?.publishedBatchId) return map;
   const { data, error } = await getSupabaseAdmin()
@@ -583,14 +630,21 @@ export async function buildRunSheet(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const { rows } = await assembleForRun(run);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
   const buffer =
     variant === "part1"
       ? await buildPart1SheetWorkbook({
           run,
           rows,
-          previousNetByHrIdCompact: await previousMonthNetSalaryByHrIdCompact({ month: run.month, year: run.year }),
+          previousNetByHrIdCompact: await previousMonthNetSalaryByHrIdCompact(period),
+          nonEmployees: await getNonEmployeePayrollRows(runId),
+          previousSummary: await previousMonthSummary(period, "first_part"),
         })
-      : await buildFullSheetWorkbook({ run, rows });
+      : await buildFullSheetWorkbook({
+          run,
+          rows,
+          previousSummary: await previousMonthSummary(period, "month_salary"),
+        });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };
 }
@@ -653,7 +707,12 @@ export async function buildFinanceSheet(
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
   const rows = assembleRows({ members, sources, draftRows, period: period2 });
-  const buffer = await buildFinanceSheetWorkbook({ run, rows, scope });
+  const buffer = await buildFinanceSheetWorkbook({
+    run,
+    rows,
+    scope,
+    nonEmployees: scope === "part1" ? await getNonEmployeePayrollRows(run.id) : [],
+  });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
 }
