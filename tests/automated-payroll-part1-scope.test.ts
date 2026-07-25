@@ -223,4 +223,35 @@ export function runAutomatedPayrollPart1ScopeTests() {
   assert.equal(isAfterPeriod("2027-01-15", { month: 12, year: 2026 }), true);
   // No date at all (still actively employed, no resignation on file) — never "after."
   assert.equal(isAfterPeriod(null, july), false);
+
+  // ---- Special Situations (owner rule 2026-07-25): a genuine Part 1 step, NOT a
+  // phase-agnostic novelty — it lives in PART1_STEP_KEYS like its siblings, so it
+  // locks the same way (stepLocked in automated-payroll-wizard.tsx checks
+  // run.phase !== stepPhase(stepKey)) once Part 1 is confirmed. No extra runtime
+  // gating was needed for "only allow First Part before Part 1 is confirmed" —
+  // it falls out of the existing per-step lock every Part 1 tab already has. ----
+  assert.equal(STEP_DEFINITIONS.p1_special_situations.phase, "part1");
+  assert.equal(PART1_STEP_KEYS.includes("p1_special_situations"), true);
+  // No conflict twin — this step is deliberately independent of the Resignations
+  // step's auto-computed CRM/vacation, so it must never claim a warning key.
+  assert.equal(STEP_DEFINITIONS.p1_special_situations.conflictContextKey, undefined);
+
+  const specialFields = STEP_DEFINITIONS.p1_special_situations.fields;
+  const specialDeductionDays = specialFields.find((field) => field.key === "specialDeductionDays");
+  const specialAdditionDays = specialFields.find((field) => field.key === "specialAdditionDays");
+  assert.equal(specialDeductionDays?.kind, "days");
+  assert.equal(specialDeductionDays?.autoCalcMoneyKey, "specialDeductionValue");
+  assert.equal(specialAdditionDays?.kind, "days");
+  assert.equal(specialAdditionDays?.autoCalcMoneyKey, "specialAdditionValue");
+
+  // The ONE shared routing choice (owner-confirmed: "whatever i choose is
+  // actually synced the same for addition field") — a single select field, not
+  // two independent first/second dropdowns for deduction vs addition.
+  const routingFields = specialFields.filter((field) => field.kind === "select");
+  assert.equal(routingFields.length, 1, "Special Situations must have exactly ONE routing select field");
+  assert.equal(routingFields[0]?.key, "specialSituationPart");
+  assert.deepEqual(
+    routingFields[0]?.options?.map((option) => option.value),
+    ["first", "second"],
+  );
 }

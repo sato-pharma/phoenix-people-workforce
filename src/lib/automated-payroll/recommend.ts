@@ -1228,6 +1228,43 @@ function recommendP1OtherDeductions(
   return rows;
 }
 
+/**
+ * Special Situations (owner rule 2026-07-25): unlike the 4 manual deduction tabs
+ * above, this shows EVERY employee regardless of payment mode — it exists
+ * precisely for cases that fall outside the normal one-part/two-part rules. One
+ * shared "Apply To" choice per employee routes BOTH their deduction and their
+ * addition to the same installment (see split.ts's FreezeFirstPartInput doc and
+ * assemble.ts's specialRoutedToFirst). Defaults to "second" — the safer default,
+ * since it never touches the frozen First Part unless HR explicitly opts in.
+ */
+function recommendSpecialSituations(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    row.recommended = {
+      specialDeductionDays: 0,
+      specialDeductionValue: 0,
+      specialAdditionDays: 0,
+      specialAdditionValue: 0,
+    };
+    row.values = {
+      specialDeductionDays: pick(draft?.specialDeductionDays, 0),
+      specialDeductionValue: pick(draft?.specialDeductionValue, 0),
+      specialAdditionDays: pick(draft?.specialAdditionDays, 0),
+      specialAdditionValue: pick(draft?.specialAdditionValue, 0),
+    };
+    row.selects = { specialSituationPart: draft?.specialSituationPart ?? "second" };
+    rows.push(row);
+  }
+  return rows;
+}
+
 function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
@@ -1264,6 +1301,8 @@ export async function recommendStep(input: {
       return recommendP1NoRecord(input.members, input.sources, drafts);
     case "p1_other_deductions":
       return recommendP1OtherDeductions(input.members, input.sources, drafts);
+    case "p1_special_situations":
+      return recommendSpecialSituations(input.members, input.sources, drafts);
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts);
     case "p2_vacation":

@@ -101,6 +101,11 @@ function mapDraftRow(row: RunRow): DraftRow {
     p1odOtherDays: numeric(row.p1od_other_days),
     p1odOtherValue: numeric(row.p1od_other_value),
     p1odOtherReason: (row.p1od_other_reason as string | null) ?? null,
+    specialDeductionDays: numeric(row.special_deduction_days),
+    specialDeductionValue: numeric(row.special_deduction_value),
+    specialAdditionDays: numeric(row.special_addition_days),
+    specialAdditionValue: numeric(row.special_addition_value),
+    specialSituationPart: (row.special_situation_part as "first" | "second" | null) ?? null,
     firstPartFrozen: numeric(row.first_part_frozen),
     onHold: Boolean(row.on_hold),
     holdReason: (row.hold_reason as string | null) ?? null,
@@ -283,6 +288,10 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("p1odLoanValue", "p1od_loan_value");
   num("p1odOtherDays", "p1od_other_days");
   num("p1odOtherValue", "p1od_other_value");
+  num("specialDeductionDays", "special_deduction_days");
+  num("specialDeductionValue", "special_deduction_value");
+  num("specialAdditionDays", "special_addition_days");
+  num("specialAdditionValue", "special_addition_value");
   num("firstPartFrozen", "first_part_frozen");
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
   if (patch.p1odCrmReason !== undefined) db.p1od_crm_reason = patch.p1odCrmReason;
@@ -290,6 +299,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   if (patch.p1odNoRecordReason !== undefined) db.p1od_no_record_reason = patch.p1odNoRecordReason;
   if (patch.p1odLoanReason !== undefined) db.p1od_loan_reason = patch.p1odLoanReason;
   if (patch.p1odOtherReason !== undefined) db.p1od_other_reason = patch.p1odOtherReason;
+  if (patch.specialSituationPart !== undefined) db.special_situation_part = patch.specialSituationPart;
   if (patch.onHold !== undefined) db.on_hold = patch.onHold;
   if (patch.holdReason !== undefined) db.hold_reason = patch.holdReason;
   if (patch.source !== undefined) db.source = patch.source;

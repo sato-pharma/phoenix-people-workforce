@@ -53,7 +53,9 @@ function gridTemplate(definition: StepDefinition): string {
   ];
   if (definition.isHoldStep) columns.push("84px");
   for (const field of definition.fields) {
-    columns.push(field.kind === "text" ? "minmax(170px,1.3fr)" : "minmax(108px,0.85fr)");
+    columns.push(
+      field.kind === "text" || field.kind === "select" ? "minmax(170px,1.3fr)" : "minmax(108px,0.85fr)",
+    );
   }
   if (definition.hasReason) columns.push("minmax(180px,1.4fr)");
   return columns.join(" ");
@@ -96,6 +98,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
       hrId: row.hrId,
       values: row.values,
       reasons: row.reasons,
+      selects: row.selects,
       reason: row.reason,
       onHold: row.onHold,
     }));
@@ -131,6 +134,13 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   const setFieldReason = (hrId: string, field: string, value: string) => {
     setRows((prev) =>
       prev.map((row) => (row.hrId === hrId ? { ...row, reasons: { ...row.reasons, [field]: value } } : row)),
+    );
+    setDirty(true);
+  };
+
+  const setSelectValue = (hrId: string, field: string, value: string) => {
+    setRows((prev) =>
+      prev.map((row) => (row.hrId === hrId ? { ...row, selects: { ...row.selects, [field]: value } } : row)),
     );
     setDirty(true);
   };
@@ -389,7 +399,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     key={field.key}
                     className={cn(
                       "overflow-hidden text-[11px] font-bold uppercase tracking-wide text-slate-300",
-                      field.kind === "text" ? "text-left" : "text-right",
+                      field.kind === "text" || field.kind === "select" ? "text-left" : "text-right",
                     )}
                   >
                     <span className="whitespace-nowrap">{field.label}</span>
@@ -455,6 +465,20 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                           className={fieldClassName}
                         />
+                      ) : field.kind === "select" ? (
+                        <select
+                          key={field.key}
+                          value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
+                          disabled={locked}
+                          onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
+                          className={cn(fieldClassName, "px-2")}
+                        >
+                          {field.options?.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <Input
                           key={field.key}
@@ -551,6 +575,19 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                             onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                             className={fieldClassName}
                           />
+                        ) : field.kind === "select" ? (
+                          <select
+                            value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
+                            disabled={locked}
+                            onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
+                            className={cn(fieldClassName, "px-2")}
+                          >
+                            {field.options?.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                         ) : (
                           <Input
                             type="number"
