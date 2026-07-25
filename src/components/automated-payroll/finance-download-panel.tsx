@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+import { SelectField } from "./select-field";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -52,25 +55,26 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
         description="Download the HR-confirmed payroll sheet. All cells are locked except two Finance Edit columns for your execution notes."
       />
 
-      <Card className="flex flex-wrap items-end gap-3 p-4">
-        <label className="flex flex-col text-xs font-semibold text-slate-500">
-          Month
-          <select value={month} onChange={(event) => setMonth(Number(event.target.value))} className="mt-1 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm">
-            {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col text-xs font-semibold text-slate-500">
-          Year
-          <select value={year} onChange={(event) => setYear(Number(event.target.value))} className="mt-1 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm">
-            {[year - 1, year, year + 1].map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <Button variant="outline" disabled={busy} onClick={() => void load(month, year)}>Check</Button>
-      </Card>
+      <div className={cn(adminPanelClassName, "flex flex-wrap items-end gap-3 p-4")}>
+        <SelectField label="Month" value={month} onChange={setMonth}>
+          {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
+        </SelectField>
+        <SelectField label="Year" value={year} onChange={setYear}>
+          {[year - 1, year, year + 1].map((value) => <option key={value} value={value}>{value}</option>)}
+        </SelectField>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => void load(month, year)}
+          className="h-10 border-slate-300 font-bold text-slate-700 shadow-sm hover:bg-slate-100"
+        >
+          Check
+        </Button>
+      </div>
 
-      {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
+      {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
 
-      <Card className="flex flex-col gap-3 p-5">
+      <div className={cn(adminPanelClassName, "flex flex-col gap-3 p-5")}>
         {!availability?.hasRun ? (
           <p className="text-sm text-slate-500">No Automated Payroll run for this period yet.</p>
         ) : (
@@ -81,13 +85,25 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
               {availability.full ? <Badge variant="success">Full sheet ready</Badge> : availability.part1 ? <Badge variant="neutral">Part 1 ready</Badge> : <Badge variant="warning">In progress</Badge>}
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button disabled={!availability.part1} onClick={() => download("part1")}>Download Part 1 (locked)</Button>
-              <Button disabled={!availability.full} onClick={() => download("full")}>Download Full sheet (locked)</Button>
+              <Button
+                disabled={!availability.part1}
+                onClick={() => download("part1")}
+                className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+              >
+                Download Part 1 (locked)
+              </Button>
+              <Button
+                disabled={!availability.full}
+                onClick={() => download("full")}
+                className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+              >
+                Download Full sheet (locked)
+              </Button>
             </div>
             <p className="text-xs text-slate-400">The downloaded workbook is protected: only the Finance Edit and Finance Edit Reason columns are editable.</p>
           </>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
