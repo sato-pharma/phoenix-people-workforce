@@ -89,7 +89,7 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "p1odOtherValue",
 ];
 
-/** Maps a p1_other_deductions text field key to its DraftRowPatch reason field. */
+/** Maps a Part 1 manual-deduction-tab text field key to its DraftRowPatch reason field. */
 const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
   p1odCrmReason: "p1odCrmReason",
   p1odVacationReason: "p1odVacationReason",
@@ -124,7 +124,7 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
   if (stepKey === "p2_manual_deductions" && edit.reason !== undefined) {
     patch.manualReason = edit.reason;
   }
-  if (stepKey === "p1_other_deductions" && edit.reasons) {
+  if (edit.reasons) {
     for (const [key, field] of Object.entries(OTHER_DEDUCTIONS_REASON_FIELDS)) {
       const value = edit.reasons[key];
       if (value !== undefined) (patch as unknown as Record<string, string>)[field as string] = value;

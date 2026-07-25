@@ -26,6 +26,9 @@ export type StepKey =
   | "p1_new_hires"
   | "p1_resignations"
   | "p1_fingerprint"
+  | "p1_crm"
+  | "p1_unpaid_vacation"
+  | "p1_no_record"
   | "p1_other_deductions"
   | "p1_holds"
   | "p2_expenses"
@@ -39,6 +42,9 @@ export const PART1_STEP_KEYS: readonly StepKey[] = [
   "p1_new_hires",
   "p1_resignations",
   "p1_fingerprint",
+  "p1_crm",
+  "p1_unpaid_vacation",
+  "p1_no_record",
   "p1_other_deductions",
   "p1_holds",
 ] as const;
@@ -121,10 +127,14 @@ export type DraftRow = {
   crm: number | null;
   manualOtherDeductions: number | null;
   manualReason: string | null;
-  // Part 1 — "Other deductions" step: HR may flag any of 5 categories per employee,
-  // each with its own optional days (auto-calculates value via Base/30 × days),
-  // value (money — can be typed directly instead of days), and reason (optional).
-  // These reduce the frozen First Part for EVERY employee (not just one-part).
+  // Part 1 — 4 manual deduction tabs (CRM, Unpaid Vacation, Day Without Record, and
+  // Other deductions for Loan/Other), each category with its own optional days
+  // (auto-calculates value via Base/30 × days), value (money — can be typed directly
+  // instead of days), and reason (optional). Every tab is scoped in recommend.ts to
+  // this month's resignations and one-part-salary employees only — continuing
+  // two-part employees get CRM/Vacation handled automatically in Part 2 instead, so
+  // showing them here too would double the deduction. Reduces the frozen First Part
+  // for whichever employees actually get a value here.
   p1odCrmDays: number | null;
   p1odCrmValue: number | null;
   p1odCrmReason: string | null;
@@ -216,6 +226,19 @@ export type StepDefinition = {
   hasReason: boolean;
   /** Whether this is a hold-review step (toggle + reason, no recommendation feeder). */
   isHoldStep: boolean;
+  /**
+   * Names a context column whose non-zero value means this employee's deduction is
+   * ALREADY settled on a different step — currently the Resignations step, which
+   * auto-computes a leaver's CRM + unpaid vacation from real CRM data into the
+   * `crm` / `unpaidVacations` columns. The Part 1 manual tabs write DIFFERENT
+   * columns (`p1od*`), and assemble.ts sums both, so filling in a value here on
+   * top of that amount deducts the same thing twice.
+   *
+   * Owner decision 2026-07-25: warn, don't block — HR keeps the ability to enter a
+   * manual figure for a leaver, but the wizard flags any row where this context
+   * value and an editable money value are both non-zero.
+   */
+  conflictContextKey?: string;
 };
 
 /** A dry-run diff line produced when an edited xlsx is re-uploaded. */

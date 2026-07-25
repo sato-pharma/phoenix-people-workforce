@@ -44,7 +44,7 @@ function num(value: number | null | undefined): number {
   return value == null || !Number.isFinite(value) ? 0 : value;
 }
 
-/** Sum of the Part-1 "Other deductions" step's 5 category values (0 for any not filled in). */
+/** Sum of the Part-1 manual deduction tabs' 5 category values (CRM/Vacation/No-Record/Loan/Other; 0 for any not filled in). */
 function otherPart1DeductionsTotal(draft: DraftRow | undefined): number {
   return roundCurrency(
     num(draft?.p1odCrmValue) +
