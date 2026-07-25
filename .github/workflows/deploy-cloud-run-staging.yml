@@ -245,7 +245,7 @@ jobs:
         # Mirrors deploy-cloud-run.yml's equivalent step. Best-effort: never fail an
         # already-live staging deploy over a Sentry deploy-marker call.
         continue-on-error: true
-        uses: getsentry/action-release@v3
+        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: phoenix-workforce

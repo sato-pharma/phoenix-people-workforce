@@ -182,7 +182,7 @@ jobs:
         # the deploy-marker/suspect-commit UI in Sentry — release tagging itself already
         # works without this step. Best-effort: never fail an already-live deploy over it.
         continue-on-error: true
-        uses: getsentry/action-release@v3
+        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: phoenix-workforce
