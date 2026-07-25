@@ -272,4 +272,33 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     "Regional Manager does NOT see a same-line District Manager who does not report to them",
   );
   assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, regionalManagerViewer), false, "Regional Manager does NOT see an Anti Infective-line plan");
+
+  // --- Talent Acquisition: unrestricted, same as Training Manager (owner decision
+  // 2026-07-25, Head Office system-wide audit) — she is a Head Office role serving all
+  // 3 sales lines, not a role confined to Head-Office-only scheduling. A same-day
+  // narrower rule (Head-Office-line plans plus one named PM exception) was reverted
+  // once that concept was clarified; these assertions confirm the full revert, not
+  // just the addition of a couple of previously-blocked cases. ---
+
+  const talentAcquisitionViewer = viewer({ hrId: "A-16", role: "Talent Acquisition" });
+  assert.equal(
+    isPlanItemVisibleToViewer(headOfficeItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees a Head-Office-line plan",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(pediaFieldItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees a Pedia-line plan too — she serves all 3 sales lines, not just Head Office",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(antiInfectiveFieldItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees an Anti Infective-line plan too",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(antiInfectivePmTitledItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees every Anti Infective Product Manager's plan now, not just one named exception",
+  );
 }

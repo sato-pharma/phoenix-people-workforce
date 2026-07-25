@@ -174,6 +174,7 @@ function buildEmployeePortalSections({
   showProbationTab = false,
   showOrganogramTab = false,
   showPlansTab = false,
+  showPlanningCalendarTab = false,
   showSupportTab = false,
   showRecruitmentHiringTab = false,
   showPeopleManagementTab = false,
@@ -232,7 +233,7 @@ function buildEmployeePortalSections({
         // Approvals Hub section — neither belongs in My Workspace anymore.
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
-        ...(showPlansTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
+        ...(showPlanningCalendarTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
       ],
     },
     // Dedicated Approvals Hub section — mirrors the admin shell's own "Approvals Hub" nav

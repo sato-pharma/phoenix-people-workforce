@@ -32,6 +32,10 @@ export type EmployeePortalNavVisibility = {
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
   showPlansTab?: boolean;
+  // Planning Calendar (read-only, HO-scoped for Talent Acquisition — see
+  // isPlanItemVisibleToViewer). Split from showPlansTab (2026-07-25) so the Weekly/
+  // Monthly Plan submission link can be removed for a role while keeping this one.
+  showPlanningCalendarTab?: boolean;
   showSupportTab?: boolean;
   // Recruitment & Hiring group (Recruitment, CV Database, Hiring Documents) plus HR
   // Support Requests (which lives in the "HR Support" section) — Talent Acquisition's
@@ -313,7 +317,10 @@ export function resolveEmployeePortalNavVisibility(
     showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
     showOrganogramTab:
       showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
-    showPlansTab: isA3Account || showPlansTab,
+    // Talent Acquisition keeps the read-only Planning Calendar (HO-scoped) but not the
+    // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25.
+    showPlanningCalendarTab: isA3Account || showPlansTab,
+    showPlansTab: isA3Account || (showPlansTab && !isTalentAcquisition),
     showProbationTab:
       showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
     showSupportTab: true,

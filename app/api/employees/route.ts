@@ -4,9 +4,11 @@ import {
   assertPermission,
   canReadEmployeeDirectory,
   filterEmployeeDirectoryForAccess,
+  isSalaryRedactedForViewer,
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
+import { hrIdsMatch } from "@/lib/hr-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   employeeDirectoryErrorMessage,
@@ -122,6 +124,33 @@ export async function POST(request: Request) {
         { error: "missing_employee", message: "Employee payload is required." },
         { status: 400 },
       );
+    }
+
+    // A viewer whose read access to this row's salary is redacted (see
+    // isSalaryRedactedForViewer) never has the real figures to submit — their
+    // edit form necessarily carries blanked-out values. Splice the CURRENT
+    // real values back in before the upsert so an unrelated edit (e.g. a
+    // phone number fix) can never silently wipe this employee's real salary.
+    if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
+      const currentRow = (await getEmployeeDirectory()).employees.find((employee) =>
+        hrIdsMatch(employee.hrId, payload.employee?.hrId ?? ""),
+      );
+      if (currentRow) {
+        payload.employee = {
+          ...payload.employee,
+          baseSalary: currentRow.baseSalary,
+          basicSalary: currentRow.basicSalary,
+          extraCostOfLiving: currentRow.extraCostOfLiving,
+          fuelAllowance: currentRow.fuelAllowance,
+          grossSalary: currentRow.grossSalary,
+          medicalInsurance: currentRow.medicalInsurance,
+          netSalary: currentRow.netSalary,
+          salaryDetails: currentRow.salaryDetails ?? null,
+          socialInsurance: currentRow.socialInsurance,
+          socialInsuranceWage: currentRow.socialInsuranceWage,
+          taxes: currentRow.taxes,
+        };
+      }
     }
 
     const savedRows = await upsertEmployee(payload.employee);

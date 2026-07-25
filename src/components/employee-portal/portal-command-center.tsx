@@ -1095,7 +1095,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       <QuickActions
         actions={[
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
-          { href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" },
+          ...(isTalentAcquisition ? [] : [{ href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" }]),
           ...(isTalentAcquisition ? [] : [{ href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" }]),
           { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
         ]}
@@ -1137,7 +1137,9 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
-          <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
+          {!isTalentAcquisition && (
+            <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
+          )}
           {!isTalentAcquisition && (
             <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
           )}
