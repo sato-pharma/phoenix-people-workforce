@@ -11,7 +11,7 @@ import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts"
 const KNOWN_DUAL_AUTH_EXCEPTIONS = new Set(["/api/notifications/process"]);
 
 export function runCronControlRegistryTests() {
-  assert.equal(cronJobRegistry.length, 6, "expected exactly the 6 live Cloud Scheduler jobs");
+  assert.equal(cronJobRegistry.length, 7, "expected exactly the 7 live Cloud Scheduler jobs");
 
   const seenJobNames = new Set<string>();
   const seenRoutes = new Set<string>();
