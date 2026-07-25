@@ -5,7 +5,29 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FieldWorkforceRouteMap, type DayRoute, type RouteCheckin } from "@/components/field-workforce-compliance/field-workforce-route-map";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Card } from "@/components/ui/card";
+
+function VisitKindBadge({ kind }: { kind: Visit["kind"] }) {
+  return (
+    <span
+      className={
+        kind === "campaign"
+          ? "inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700"
+          : kind === "regular"
+            ? "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
+            : "inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
+      }
+    >
+      {kind === "campaign" ? "Campaign" : kind === "regular" ? "Regular" : "Other"}
+    </span>
+  );
+}
 
 type Visit = {
   ampm: string | null;
@@ -125,50 +147,65 @@ export function FieldWorkforceVisitsView({
               : `No visit records for this rep on ${date}.`}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-950 text-left text-xs font-black uppercase tracking-wide text-white">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Contact</th>
-                <th className="px-4 py-3">Customer / Facility</th>
-                <th className="px-4 py-3">Visit</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">AM/PM</th>
-                <th className="px-4 py-3">Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visits.map((visit, index) => (
-                <tr className="border-t border-orange-100 align-top text-slate-700" key={visit.id}>
-                  <td className="px-4 py-3 font-bold text-slate-900">{index + 1}</td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">{visit.contactName || "—"}</td>
-                  <td className="px-4 py-3">{visit.customerName || "—"}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={
-                        visit.kind === "campaign"
-                          ? "inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700"
-                          : visit.kind === "regular"
-                            ? "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
-                            : "inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
-                      }
-                    >
-                      {visit.kind === "campaign" ? "Campaign" : visit.kind === "regular" ? "Regular" : "Other"}
-                    </span>
-                    <div className="mt-0.5 text-[10px] text-slate-400">
-                      {visit.visitTypeDescription ?? `type:${visit.visitType}`}
-                      {visit.callType != null ? ` · ct:${visit.callType}` : ""}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">
-                    {visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`)}
-                  </td>
-                  <td className="px-4 py-3">{visit.ampm || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{visit.comment || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <PortalResponsiveDataList
+            empty={null}
+            getKey={(visit) => String(visit.id)}
+            items={visits}
+            renderCard={(visit, index) => (
+              <PortalRecordCard
+                meta={`Visit #${index + 1}${visit.customerName ? ` · ${visit.customerName}` : ""}`}
+                status={<VisitKindBadge kind={visit.kind} />}
+                title={visit.contactName || "—"}
+              >
+                <PortalRecordFields
+                  fields={[
+                    {
+                      label: "Type",
+                      value: visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`),
+                    },
+                    { label: "AM/PM", value: visit.ampm || "—" },
+                    { label: "Comment", value: visit.comment || "—" },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="720px">
+                <thead>
+                  <tr className="bg-slate-950 text-left text-xs font-black uppercase tracking-wide text-white">
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Contact</th>
+                    <th className="px-4 py-3">Customer / Facility</th>
+                    <th className="px-4 py-3">Visit</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">AM/PM</th>
+                    <th className="px-4 py-3">Comment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visits.map((visit, index) => (
+                    <tr className="border-t border-orange-100 align-top text-slate-700" key={visit.id}>
+                      <td className="px-4 py-3 font-bold text-slate-900">{index + 1}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{visit.contactName || "—"}</td>
+                      <td className="px-4 py-3">{visit.customerName || "—"}</td>
+                      <td className="px-4 py-3">
+                        <VisitKindBadge kind={visit.kind} />
+                        <div className="mt-0.5 text-[10px] text-slate-400">
+                          {visit.visitTypeDescription ?? `type:${visit.visitType}`}
+                          {visit.callType != null ? ` · ct:${visit.callType}` : ""}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`)}
+                      </td>
+                      <td className="px-4 py-3">{visit.ampm || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">{visit.comment || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         )}
       </Card>
 

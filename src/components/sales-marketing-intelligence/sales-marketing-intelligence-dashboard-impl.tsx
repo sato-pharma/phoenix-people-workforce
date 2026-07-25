@@ -34,6 +34,13 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { RoiRefreshPanel } from "@/components/sales-marketing-intelligence/roi-refresh-panel";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Button } from "@/components/ui/button";
@@ -303,6 +310,23 @@ function ActionBadge({ action }: { action: SalesMarketingRecommendedAction }) {
   return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", config)}>{label}</span>;
 }
 
+/** Mobile-card status badge for tables whose rows don't carry an explicit on_track/behind/no_data
+ *  status field (the ROI comparison and customer-impact aggregates) — coverage >= 100% mirrors the
+ *  same emerald/rose threshold AdminStatCard uses for the "ROI Coverage" summary tile above. */
+function CoverageBadge({ coverage }: { coverage: number }) {
+  const onTrack = coverage >= 1;
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+        onTrack ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700",
+      )}
+    >
+      {percent(coverage)}
+    </span>
+  );
+}
+
 function DecisionSummaryPanel({ snapshot }: { snapshot: SalesMarketingDashboardSnapshot }) {
   const decision = snapshot.decisionSummary;
   const topRisk = decision.topRiskRequest;
@@ -354,6 +378,41 @@ function DecisionSummaryPanel({ snapshot }: { snapshot: SalesMarketingDashboardS
   );
 }
 
+function RoiComparisonRowCard({
+  kind,
+  row,
+}: {
+  kind: "line" | "product" | "standard";
+  row: SalesMarketingRoiComparisonRow;
+}) {
+  return (
+    <PortalRecordCard
+      accent={row.actualRoiCoverage >= 1 ? "emerald" : "rose"}
+      meta={
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          {kind === "product" ? <span>{row.line ?? "Unassigned line"}</span> : null}
+          <span>{number(row.requestCount)} requests</span>
+        </span>
+      }
+      status={<CoverageBadge coverage={row.actualRoiCoverage} />}
+      title={row.label}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Customers", value: number(row.customerCount) },
+          { label: "Pharmacies", value: number(row.pharmacyCount) },
+          { label: "Cost", value: money(row.marketingCost) },
+          { label: "Required", value: money(row.requiredRoiValue) },
+          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
+          { label: "Behind", value: number(row.behindRequests) },
+          { label: "No data", value: number(row.noDataRequests) },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
 function RoiComparisonTable({
   description,
   kind,
@@ -367,49 +426,82 @@ function RoiComparisonTable({
 }) {
   return (
     <AdminTableShell description={description} title={title}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-[13px]">
-          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="border-r border-slate-100 px-3 py-2.5">{kind === "product" ? "Product" : kind === "line" ? "Line" : "Segment"}</th>
-              {kind === "product" ? <th className="border-r border-slate-100 px-3 py-2.5">Line</th> : null}
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Requests</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Customers</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Pharmacies</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
-              <th className="px-3 py-2.5 text-right">Behind / No data</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <PortalResponsiveDataList
+        empty={<PortalEmptyState message="No ROI comparison rows for the current filters." title="No ROI comparison rows" />}
+        getKey={(row) => `${title}-${row.value}`}
+        items={rows}
+        renderCard={(row) => <RoiComparisonRowCard kind={kind} row={row} />}
+        renderTable={() => (
+          <PortalDesktopTable className="text-[13px]" minWidth="1180px">
+            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={kind === "product" ? 11 : 10}>
-                  No ROI comparison rows for the current filters.
-                </td>
+                <th className="border-r border-slate-100 px-3 py-2.5">{kind === "product" ? "Product" : kind === "line" ? "Line" : "Segment"}</th>
+                {kind === "product" ? <th className="border-r border-slate-100 px-3 py-2.5">Line</th> : null}
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Requests</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Customers</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Pharmacies</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
+                <th className="px-3 py-2.5 text-right">Behind / No data</th>
               </tr>
-            ) : rows.map((row) => (
-              <tr className="border-t border-slate-100" key={`${title}-${row.value}`}>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                {kind === "product" ? <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td> : null}
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.customerCount)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.pharmacyCount)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
-                <td className="px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.behindRequests)} / {number(row.noDataRequests)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr className="border-t border-slate-100" key={`${title}-${row.value}`}>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
+                  {kind === "product" ? <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td> : null}
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.customerCount)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.pharmacyCount)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.behindRequests)} / {number(row.noDataRequests)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </AdminTableShell>
+  );
+}
+
+function RequestRowCard({ row }: { row: SalesMarketingRequestRow }) {
+  return (
+    <PortalRecordCard
+      accent={row.actualRoiStatus === "on_track" ? "emerald" : row.actualRoiStatus === "behind" ? "amber" : "slate"}
+      meta={
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="font-mono">{row.requestCode}</span>
+          {row.customerCode ? <span>{row.customerCode}</span> : null}
+        </span>
+      }
+      status={<RoiStatusBadge status={row.actualRoiStatus} />}
+      title={row.customerName}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Line", value: row.line ?? "-" },
+          { label: "Pay date", value: row.payDate ?? row.payMonth ?? "-" },
+          { label: "Cost", value: money(row.estimatedCost) },
+          { label: "Required", value: money(row.requiredRoiValue) },
+          { label: "Expected", value: money(row.expectedRoiValue) },
+          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
+          { label: "Coverage", value: percent(row.actualRoiCoverage) },
+        ]}
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <AttributionBadge quality={row.attributionQuality} />
+        <ActionBadge action={row.recommendedAction} />
+      </div>
+    </PortalRecordCard>
   );
 }
 
@@ -419,62 +511,90 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
       description="Priority rows are sorted by no-data risk, coverage gap, and spend. Exact customer attribution is preferred before brick fallback."
       title="Request ROI decision report"
     >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1480px] border-collapse text-left text-[13px]">
-          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Line</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Pay date</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Attribution</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Status</th>
-              <th className="px-3 py-2.5">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <PortalResponsiveDataList
+        empty={<PortalEmptyState message="No approved paid requests for the current filters." title="No requests to report" />}
+        getKey={(row) => row.id}
+        items={rows}
+        renderCard={(row) => <RequestRowCard row={row} />}
+        renderTable={() => (
+          <PortalDesktopTable className="text-[13px]" minWidth="1480px">
+            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={13}>
-                  No approved paid requests for the current filters.
-                </td>
+                <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Line</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Pay date</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Expected</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Attribution</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5">Action</th>
               </tr>
-            ) : rows.map((row) => (
-              <tr className="border-t border-slate-100" key={row.id}>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-xs font-black text-slate-900">{row.requestCode}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5">
-                  <p className="font-bold text-slate-800">{row.customerName}</p>
-                  {row.customerCode ? <p className="text-[11px] font-semibold text-slate-500">{row.customerCode}</p> : null}
-                </td>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.payDate ?? row.payMonth ?? "-"}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.estimatedCost)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.expectedRoiValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5">
-                  <AttributionBadge quality={row.attributionQuality} />
-                </td>
-                <td className="border-r border-slate-100 px-3 py-2.5">
-                  <RoiStatusBadge status={row.actualRoiStatus} />
-                </td>
-                <td className="px-3 py-2.5">
-                  <ActionBadge action={row.recommendedAction} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr className="border-t border-slate-100" key={row.id}>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-xs font-black text-slate-900">{row.requestCode}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5">
+                    <p className="font-bold text-slate-800">{row.customerName}</p>
+                    {row.customerCode ? <p className="text-[11px] font-semibold text-slate-500">{row.customerCode}</p> : null}
+                  </td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.payDate ?? row.payMonth ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.estimatedCost)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.expectedRoiValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5">
+                    <AttributionBadge quality={row.attributionQuality} />
+                  </td>
+                  <td className="border-r border-slate-100 px-3 py-2.5">
+                    <RoiStatusBadge status={row.actualRoiStatus} />
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <ActionBadge action={row.recommendedAction} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </AdminTableShell>
+  );
+}
+
+function CustomerImpactRowCard({ row }: { row: SalesMarketingCustomerImpactRow }) {
+  return (
+    <PortalRecordCard
+      accent={row.actualRoiCoverage >= 1 ? "emerald" : "rose"}
+      meta={
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span>{row.distributorName ?? row.distributorCode ?? "Unassigned distributor"}</span>
+          <span>{row.regionName ?? "Unassigned region"}</span>
+        </span>
+      }
+      status={<CoverageBadge coverage={row.actualRoiCoverage} />}
+      title={row.label}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Requests", value: number(row.requestCount) },
+          { label: "Cost", value: money(row.marketingCost) },
+          { label: "Required", value: money(row.requiredRoiValue) },
+          { label: "Actual", value: <span className="text-emerald-700">{money(row.actualSalesValue)}</span> },
+          { label: "Gap", value: <span className="text-amber-700">{money(row.coverageGap)}</span> },
+          { label: "Exact rows", value: <span className="text-emerald-700">{number(row.exactSalesRows)}</span> },
+          { label: "Fallback rows", value: <span className="text-amber-700">{number(row.fallbackSalesRows)}</span> },
+        ]}
+      />
+    </PortalRecordCard>
   );
 }
 
@@ -484,48 +604,48 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
       description="Customers and pharmacies ranked by ROI decision impact. Fallback rows remain visible so leadership can judge attribution trust."
       title="Customer and pharmacy impact report"
     >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1280px] border-collapse text-left text-[13px]">
-          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="border-r border-slate-100 px-3 py-2.5">Customer / Pharmacy</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Distributor</th>
-              <th className="border-r border-slate-100 px-3 py-2.5">Region</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Requests</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
-              <th className="border-r border-slate-100 px-3 py-2.5 text-right">Exact Rows</th>
-              <th className="px-3 py-2.5 text-right">Fallback Rows</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <PortalResponsiveDataList
+        empty={<PortalEmptyState message="No customer impact rows for the current filters." title="No customer impact rows" />}
+        getKey={(row) => row.value}
+        items={rows}
+        renderCard={(row) => <CustomerImpactRowCard row={row} />}
+        renderTable={() => (
+          <PortalDesktopTable className="text-[13px]" minWidth="1280px">
+            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={11}>
-                  No customer impact rows for the current filters.
-                </td>
+                <th className="border-r border-slate-100 px-3 py-2.5">Customer / Pharmacy</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Distributor</th>
+                <th className="border-r border-slate-100 px-3 py-2.5">Region</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Requests</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Cost</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Required</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Actual</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Gap</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Coverage</th>
+                <th className="border-r border-slate-100 px-3 py-2.5 text-right">Exact Rows</th>
+                <th className="px-3 py-2.5 text-right">Fallback Rows</th>
               </tr>
-            ) : rows.map((row) => (
-              <tr className="border-t border-slate-100" key={row.value}>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.distributorName ?? row.distributorCode ?? "-"}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionName ?? "-"}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
-                <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-emerald-700">{number(row.exactSalesRows)}</td>
-                <td className="px-3 py-2.5 text-right font-semibold text-amber-700">{number(row.fallbackSalesRows)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr className="border-t border-slate-100" key={row.value}>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.distributorName ?? row.distributorCode ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionName ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-emerald-700">{money(row.actualSalesValue)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-amber-700">{money(row.coverageGap)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-black text-slate-900">{percent(row.actualRoiCoverage)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-emerald-700">{number(row.exactSalesRows)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-amber-700">{number(row.fallbackSalesRows)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </AdminTableShell>
   );
 }

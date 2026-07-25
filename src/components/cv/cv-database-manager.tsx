@@ -21,6 +21,13 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -72,6 +79,12 @@ function experienceBadgeVariant(status: CvExperienceStatus) {
   if (status === "experienced") return "success" as const;
   if (status === "fresh") return "neutral" as const;
   return "warning" as const;
+}
+
+function experienceCardAccent(status: CvExperienceStatus) {
+  if (status === "experienced") return "emerald" as const;
+  if (status === "fresh") return "slate" as const;
+  return "amber" as const;
 }
 
 async function downloadWorkbook(rows: CvDatabaseRow[], fileName: string) {
@@ -334,32 +347,60 @@ export function CvDatabaseManager() {
             description="This is a standalone candidate sheet, so no HR_ID or employee record link is required."
             title="Candidate Records"
           />
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Date of sending CV</th>
-                  <th className="px-4 py-3">Medical Sales Exp?</th>
-                  <th className="px-4 py-3">From</th>
-                  <th className="px-4 py-3">To</th>
-                  <th className="px-4 py-3">Duration</th>
-                  <th className="px-4 py-3">Companies</th>
-                  <th className="px-4 py-3">CV Name</th>
-                  <th className="px-4 py-3">Profile</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
-                {filteredRows.length === 0 ? (
+          <PortalResponsiveDataList
+            items={filteredRows}
+            getKey={(row) => `${row.rowNumber}-${row.name}-${row.cvName}`}
+            empty={
+              <PortalEmptyState
+                title={rows.length === 0 ? "No candidates uploaded yet" : "No candidates match your filters"}
+                message={
+                  rows.length === 0
+                    ? "Upload the CV database Excel sheet to preview candidates here."
+                    : "Try adjusting the search text or experience filter above."
+                }
+              />
+            }
+            renderCard={(row) => (
+              <PortalRecordCard
+                title={emptyText(row.name)}
+                meta={`Sheet row ${row.rowNumber}`}
+                accent={experienceCardAccent(row.status)}
+                status={
+                  <Badge variant={experienceBadgeVariant(row.status)}>
+                    {experienceLabel(row.status)}
+                  </Badge>
+                }
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "Date of sending CV", value: emptyText(row.dateOfSendingCv) },
+                    { label: "Medical Sales Exp?", value: emptyText(row.medicalSalesExp) },
+                    { label: "From", value: emptyText(row.from) },
+                    { label: "To", value: emptyText(row.to) },
+                    { label: "Duration", value: emptyText(row.duration || formatDurationMonths(row.durationMonths)) },
+                    { label: "Companies", value: emptyText(row.companies) },
+                    { label: "CV Name", value: emptyText(row.cvName) },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="100%">
+                <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
                   <tr>
-                    <td className="px-4 py-10 text-center text-sm text-[#64748B]" colSpan={9}>
-                      {rows.length === 0
-                        ? "Upload the CV database Excel sheet to preview candidates here."
-                        : "No candidates match the current filters."}
-                    </td>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Date of sending CV</th>
+                    <th className="px-4 py-3">Medical Sales Exp?</th>
+                    <th className="px-4 py-3">From</th>
+                    <th className="px-4 py-3">To</th>
+                    <th className="px-4 py-3">Duration</th>
+                    <th className="px-4 py-3">Companies</th>
+                    <th className="px-4 py-3">CV Name</th>
+                    <th className="px-4 py-3">Profile</th>
                   </tr>
-                ) : (
-                  filteredRows.map((row) => (
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {filteredRows.map((row) => (
                     <tr className="transition-colors hover:bg-[#F8FAFC]" key={`${row.rowNumber}-${row.name}-${row.cvName}`}>
                       <td className="px-4 py-4">
                         <p className="font-bold text-[#0F172A]">{emptyText(row.name)}</p>
@@ -384,11 +425,11 @@ export function CvDatabaseManager() {
                         </Badge>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         </Card>
       </div>
     </CvDatabaseShell>
