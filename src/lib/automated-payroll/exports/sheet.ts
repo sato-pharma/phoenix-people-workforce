@@ -110,7 +110,12 @@ export async function writePayrollWorksheet(
     extraColumns?: ExtraColumn[];
     protect?: boolean;
   },
-): Promise<{ sheet: ExcelJS.Worksheet; nextRow: number; firstPartTotal: number }> {
+): Promise<{
+  sheet: ExcelJS.Worksheet;
+  nextRow: number;
+  firstPartTotal: number;
+  monthSalaryTotal: number;
+}> {
   const { run, headers } = options;
   // Owner-fixed HR-ID execution order (2026-07-24) — every downloaded sheet.
   // Anyone the fixed list doesn't cover is grouped by line then hire date
@@ -190,6 +195,7 @@ export async function writePayrollWorksheet(
   // Totals over money columns.
   const totalsRow = sheet.getRow(rowNumber);
   let firstPartTotal = 0;
+  let monthSalaryTotal = 0;
   headers.forEach((header, ci) => {
     const cell = totalsRow.getCell(ci + 1);
     if (ci === 0) cell.value = "TOTALS";
@@ -202,6 +208,7 @@ export async function writePayrollWorksheet(
       cell.value = rounded;
       cell.numFmt = VALUE_FMT;
       if (header === "First Part") firstPartTotal = rounded;
+      if (header === "Month Salary") monthSalaryTotal = rounded;
     }
     cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
     cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
@@ -230,7 +237,7 @@ export async function writePayrollWorksheet(
     });
   }
 
-  return { sheet, nextRow: rowNumber + 1, firstPartTotal };
+  return { sheet, nextRow: rowNumber + 1, firstPartTotal, monthSalaryTotal };
 }
 
 /**
@@ -243,7 +250,14 @@ export async function writePayrollWorksheet(
  */
 export function appendNonEmployeesSection(
   sheet: ExcelJS.Worksheet,
-  input: { startRow: number; rows: NonEmployeePayrollRow[]; employeeFirstPartTotal: number },
+  input: {
+    startRow: number;
+    rows: NonEmployeePayrollRow[];
+    /** The employee-side total this section adds to (First Part on the Part 1 sheet, Month Salary on the Full sheet). */
+    employeeTotal: number;
+    /** Names which employee total is being added, so the grand-total row can't mislead. */
+    employeeTotalLabel: string;
+  },
 ): void {
   if (input.rows.length === 0) return;
   const labels = ["Full Name (EN)", "Full Name (AR)", "Bank Name", "Bank Account", "Total Salary"];
@@ -303,9 +317,9 @@ export function appendNonEmployeesSection(
   });
   rowNumber += 1;
 
-  const grandTotal = Math.round((input.employeeFirstPartTotal + subtotal) * 100) / 100;
+  const grandTotal = Math.round((input.employeeTotal + subtotal) * 100) / 100;
   const grandTotalRow = sheet.getRow(rowNumber);
-  grandTotalRow.getCell(1).value = "GRAND TOTAL (Employees First Part + Non-Employees)";
+  grandTotalRow.getCell(1).value = `GRAND TOTAL (Employees ${input.employeeTotalLabel} + Non-Employees)`;
   grandTotalRow.getCell(totalColumn).value = grandTotal;
   grandTotalRow.getCell(totalColumn).numFmt = VALUE_FMT;
   [1, totalColumn].forEach((col) => {
@@ -361,6 +375,13 @@ export async function buildFullSheetWorkbook(input: {
   rows: AssembledRow[];
   /** Headcount + total Month Salary from the previous month's published run, if any. */
   previousSummary?: PeriodSummary | null;
+  /**
+   * People paid a monthly salary with no employee/HR_ID record. They pay with
+   * Part 1, but their money still leaves the company this month, so the FULL
+   * sheet (finance's complete monthly picture) must account for it too — owner
+   * decision 2026-07-25. They still never reach salary_records.
+   */
+  nonEmployees?: NonEmployeePayrollRow[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   buildCoverSheet(workbook, {
@@ -379,13 +400,19 @@ export async function buildFullSheetWorkbook(input: {
     },
     previous: input.previousSummary ?? null,
   });
-  await writePayrollWorksheet(workbook, {
+  const { sheet, nextRow, monthSalaryTotal } = await writePayrollWorksheet(workbook, {
     sheetName: "Payroll",
     title: "Full Monthly Sheet",
     subtitle: `${monthLabel(input.run.month, input.run.year)} · all employees`,
     run: input.run,
     rows: input.rows,
     headers: [...payrollSheetHeaders],
+  });
+  appendNonEmployeesSection(sheet, {
+    startRow: nextRow,
+    rows: input.nonEmployees ?? [],
+    employeeTotal: monthSalaryTotal,
+    employeeTotalLabel: "Month Salary",
   });
   return toBuffer(workbook);
 }
@@ -600,7 +627,8 @@ export async function buildPart1SheetWorkbook(input: {
   appendNonEmployeesSection(sheet, {
     startRow: nextRow,
     rows: input.nonEmployees ?? [],
-    employeeFirstPartTotal: firstPartTotal,
+    employeeTotal: firstPartTotal,
+    employeeTotalLabel: "First Part",
   });
   addSalaryChangesSheet(workbook, {
     run: input.run,

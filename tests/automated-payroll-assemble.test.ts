@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { assembleRows, type AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import type { PopulationMember } from "../src/lib/automated-payroll/recommend.ts";
@@ -287,6 +288,38 @@ export function runAutomatedPayrollAssembleTests() {
   });
   assert.equal(negativeLedger[0]!.carriedForwardApplied, 0, "a negative balance must clamp to 0, never pay the employee");
   assert.equal(negativeLedger[0]!.row.otherDeductions, 0);
+
+  // ---- CANCEL MUST NOT FORGIVE DEBT ----------------------------------------
+  // A run whose Part 2 was confirmed has already marked previous months'
+  // overpayments as recovered. Cancelling it (a `ready` run IS cancellable —
+  // assertActiveRun only blocks published/cancelled) must hand those balances
+  // back, or the company writes off money it collected from nobody. This pins
+  // the CONTRACT: cancelRun has to consult the ledger at all. The two-way
+  // behaviour (release consumed + discard created) is exercised against the
+  // real table by the staging smoke test, since it is pure SQL.
+  const cancelSource = readFileSync(
+    new URL("../src/lib/automated-payroll/run-service.ts", import.meta.url),
+    "utf8",
+  );
+  const cancelBodyRaw = cancelSource.slice(
+    cancelSource.indexOf("export async function cancelRun"),
+    cancelSource.indexOf("// ---- Per-step recommend"),
+  );
+  assert.ok(cancelBodyRaw.length > 0, "cancelRun body must be locatable — update these markers if it moved");
+  // Strip comments FIRST. Matching the bare function name would also match the
+  // explanatory comment inside cancelRun, so removing the real call would still
+  // pass — verified: it did. Assert on the executable call only.
+  const cancelBody = cancelBodyRaw
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  assert.ok(
+    cancelBody.includes("await releaseCarryForwardForCancelledRun("),
+    "cancelRun must actually CALL releaseCarryForwardForCancelledRun — otherwise cancelling after Part 2 confirm silently forgives recovered debt",
+  );
+  assert.ok(
+    cancelBody.indexOf("await releaseCarryForwardForCancelledRun(") < cancelBody.indexOf('phase: "cancelled"'),
+    "the ledger must be released BEFORE the run is marked cancelled",
+  );
 
   // ---- the Part-2 gate marker is a STABLE contract between run-service and the
   // API route. The route keys the "prompt HR to acknowledge" branch off this

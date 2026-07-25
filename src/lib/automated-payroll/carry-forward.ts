@@ -173,6 +173,52 @@ export async function markCarryForwardApplied(input: {
   return (data ?? []).length;
 }
 
+/**
+ * Undo everything a run did to the ledger, because that run is being cancelled.
+ *
+ * Without this, cancelling a run AFTER its Part 2 confirm silently forgives real
+ * money: `confirmPart2` marks previous months' balances as recovered by this
+ * run, but a cancelled run never pays anybody — so those debts would vanish
+ * having been collected from no one. (A `ready` run is still cancellable:
+ * `assertActiveRun` only blocks `published`/`cancelled`.)
+ *
+ * Two halves, both required:
+ *   - balances this run CONSUMED  -> released back to outstanding, so the next
+ *     real run collects them.
+ *   - balances this run CREATED   -> deleted, because they were derived from a
+ *     sheet that is being thrown away. Only unapplied ones: if a later run has
+ *     already recovered a debt, that recovery is real and must not be undone.
+ */
+export async function releaseCarryForwardForCancelledRun(runId: string): Promise<{
+  released: number;
+  discarded: number;
+}> {
+  const admin = getSupabaseAdmin();
+
+  const { data: released, error: releaseError } = await admin
+    .from(TABLE)
+    .update({ applied_run_id: null, applied_at: null, updated_at: new Date().toISOString() })
+    .eq("applied_run_id", runId)
+    .select("id");
+  if (releaseError) {
+    if (isMissingTableError(releaseError)) return { released: 0, discarded: 0 };
+    throw releaseError;
+  }
+
+  const { data: discarded, error: discardError } = await admin
+    .from(TABLE)
+    .delete()
+    .eq("source_run_id", runId)
+    .is("applied_run_id", null)
+    .select("id");
+  if (discardError) {
+    if (isMissingTableError(discardError)) return { released: (released ?? []).length, discarded: 0 };
+    throw discardError;
+  }
+
+  return { released: (released ?? []).length, discarded: (discarded ?? []).length };
+}
+
 /** Sum of a carry-forward map — the total the company is recovering this run. */
 export function sumCarryForward(totals: Map<string, number>): number {
   let sum = 0;

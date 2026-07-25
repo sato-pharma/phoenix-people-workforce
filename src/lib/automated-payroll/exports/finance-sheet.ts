@@ -37,7 +37,7 @@ export async function buildFinanceSheetWorkbook(input: {
       "CONFIDENTIAL — Locked payroll sheet for finance execution. Only the Finance Edit columns are editable.",
   });
 
-  const { sheet, nextRow, firstPartTotal } = await writePayrollWorksheet(workbook, {
+  const { sheet, nextRow, firstPartTotal, monthSalaryTotal } = await writePayrollWorksheet(workbook, {
     sheetName: input.scope === "part1" ? "Part 1 (Finance)" : "Payroll (Finance)",
     title: input.scope === "part1" ? "Part 1 — Finance (locked)" : "Full Sheet — Finance (locked)",
     subtitle: `${label} · read-only except Finance Edit columns`,
@@ -52,13 +52,14 @@ export async function buildFinanceSheetWorkbook(input: {
     protect: true,
   });
 
-  if (input.scope === "part1") {
-    appendNonEmployeesSection(sheet, {
-      startRow: nextRow,
-      rows: input.nonEmployees ?? [],
-      employeeFirstPartTotal: firstPartTotal,
-    });
-  }
+  // Finance sees the same complete picture as HR: non-employees are appended to
+  // BOTH scopes, against whichever employee total that scope pays out.
+  appendNonEmployeesSection(sheet, {
+    startRow: nextRow,
+    rows: input.nonEmployees ?? [],
+    employeeTotal: input.scope === "part1" ? firstPartTotal : monthSalaryTotal,
+    employeeTotalLabel: input.scope === "part1" ? "First Part" : "Month Salary",
+  });
 
   return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
 }
