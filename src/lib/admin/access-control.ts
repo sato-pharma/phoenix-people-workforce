@@ -806,7 +806,39 @@ export async function updateAccessUserStatus(
   governanceReason?: string | null,
 ) {
   assertSuperAdminUserAdminActor(actor);
+  return performUserStatusUpdate(loginId, isActive, actor, governanceReason);
+}
 
+/**
+ * Narrow entry point for the portal account-activation tool (Talent Acquisition only —
+ * see src/lib/recruitment/account-activation.ts for the caller-side permission check).
+ * Deliberately bypasses assertSuperAdminUserAdminActor — that shared gate also covers
+ * role/scope/permission changes elsewhere in this file, which this tool must never grant.
+ * assertActorMayManageUser below (unchanged, same call as the Super Admin path) already
+ * blocks everything this tool must not touch: Super Admin accounts are hard-blocked by role
+ * for any non-Super-Admin actor, and the rank comparison blocks same-or-higher-privilege
+ * peers — Talent Acquisition's own rank (150, see getRolePrivilegeRank) is not >= CEO's (300)
+ * so CEO is blocked, and IS >= another Talent Acquisition's rank (150) so peer accounts are
+ * blocked too. Only default-rank (100) roles are reachable.
+ */
+export async function updateAccountActiveForRecruiting(
+  loginId: string,
+  isActive: boolean,
+  actor: AccessActor,
+  governanceReason?: string | null,
+) {
+  if (actor.role !== "Talent Acquisition") {
+    throw new Error("Forbidden: only Talent Acquisition can use this tool.");
+  }
+  return performUserStatusUpdate(loginId, isActive, actor, governanceReason);
+}
+
+async function performUserStatusUpdate(
+  loginId: string,
+  isActive: boolean,
+  actor: AccessActor | null | undefined,
+  governanceReason?: string | null,
+) {
   const supabase = getSupabaseAdmin();
   const existing = await supabaseUser(loginId);
   if (!existing) {

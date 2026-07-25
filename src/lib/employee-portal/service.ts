@@ -45,7 +45,7 @@ import {
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
 } from "@/lib/workforce/hierarchy-resolver";
-import { canAccessCompanyOrganogram } from "@/lib/reports/organogram";
+import { canAccessCompanyVacancies } from "@/lib/reports/organogram";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import {
   buildPayrollExpenseDsmSummaries,
@@ -5028,7 +5028,9 @@ export async function getEmployeePortalVacancies(
     // (canAccessCompanyOrganogram). A head-office department head sits on the Head Office line
     // while their reports sit on the business lines, so a single-line vacancy filter would show
     // ~0. Vacancies are just the open-seat layer of the same org structure the organogram shows.
-    const isCompanyScoped = canAccessCompanyOrganogram(access);
+    // canAccessCompanyVacancies already includes canAccessCompanyOrganogram's roles plus
+    // Talent Acquisition (see src/lib/reports/organogram.ts) — a strict superset.
+    const isCompanyScoped = canAccessCompanyVacancies(access);
     // Product / Group Product Managers + NSM see vacancies for their own single business line.
     const isLineScoped =
       !isCompanyScoped &&

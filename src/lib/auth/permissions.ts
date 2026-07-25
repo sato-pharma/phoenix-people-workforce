@@ -93,6 +93,7 @@ export type PermissionResource =
   | "support_requests"
   | "recruitment"
   | "candidates"
+  | "account_activation"
   | "hiring_interviews"
   | "workflow_registry"
   | "report_it"
@@ -138,6 +139,7 @@ export const permissionResources: PermissionResource[] = [
   "support_requests",
   "recruitment",
   "candidates",
+  "account_activation",
   "hiring_interviews",
   "report_it",
   "attendance",
@@ -192,6 +194,7 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Training Manager",
   "CEO",
   "Manager",
+  "Talent Acquisition",
 ]);
 
 export const adminShellEmployeeRoles = [
@@ -244,7 +247,7 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "synthetic_journeys":
       return role === "Super Admin" ? ["read"] : [];
     case "employees":
-      return role === "Super Admin" ? allActions : [];
+      return role === "Super Admin" || role === "Talent Acquisition" ? allActions : [];
     case "module_control":
       return role === "Super Admin" ? allActions : [];
     case "employee_documents":
@@ -500,6 +503,17 @@ const defaultPermissionMatrix: PermissionMap = {
     candidates: ["read", "create", "update", "delete", "export", "import"],
     support_requests: ["read", "create", "update", "export"],
     report_it: ["read", "create"],
+    // Owner-requested expansion (2026-07-24): full portal parity for people-facing HR
+    // tooling — employee directory, contract renewal, resignations, and org chart —
+    // matching Super Admin's action set on these specific resources.
+    employees: allActions,
+    contracts: allActions,
+    resignations: allActions,
+    organogram: ["read"],
+    // Narrow, purpose-built resource for the portal-only account activate/deactivate
+    // tool — deliberately NOT user_admin (see hardBoundaryAllowedActions: that stays
+    // Super-Admin-only since it also covers role/scope/permission changes).
+    account_activation: ["read", "update"],
   },
   // Financial Advisor: executes approved requests (payroll runs, disbursements).
   // No approval authority on any resource — does not approve, only processes.
@@ -1260,6 +1274,11 @@ export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDi
   // the whole company. Sensitive financial domains stay self-scoped because getPayrollScope /
   // getExpensesScope key off role, not this helper, so org-wide oversight never exposes salaries.
   if (context.role === "Training Manager") return true;
+
+  // Talent Acquisition has company-wide HR/recruiting oversight (owner-requested 2026-07-24) —
+  // same carve-out shape as Training Manager above, for the same reason: sensitive financial
+  // domains stay self-scoped because they key off role, not this helper.
+  if (context.role === "Talent Acquisition") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);

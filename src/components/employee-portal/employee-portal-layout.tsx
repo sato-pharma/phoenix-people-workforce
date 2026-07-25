@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   Building2,
   ChartColumnBig,
+  FileCheck2,
   FilePlus2,
   ShieldCheck,
   Database,
@@ -39,6 +40,7 @@ import {
   ChevronDown,
   WalletCards,
   UserCog,
+  UsersRound,
   Inbox,
   Target,
   CalendarRange,
@@ -141,6 +143,8 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Team Operations") return BriefcaseBusiness;
   if (title === "Expenses") return FileText;
   if (title === "Support" || title === "HR Support") return Headphones;
+  if (title === "Recruitment & Hiring") return BriefcaseBusiness;
+  if (title === "People Management") return UsersRound;
   if (title === "Pharmacovigilance") return FileText;
   if (title === "Sales Intelligence") return Target;
   if (title === "Sales Operations") return ChartColumnBig;
@@ -171,6 +175,12 @@ function buildEmployeePortalSections({
   showOrganogramTab = false,
   showPlansTab = false,
   showSupportTab = false,
+  showRecruitmentHiringTab = false,
+  showPeopleManagementTab = false,
+  showPrivateCalendarTab = false,
+  showAccountActivationTab = false,
+  showMyVisitsTab = true,
+  showDeductionsTab = true,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
   showTrainingManagerCreateCoachingTab = false,
@@ -215,6 +225,9 @@ function buildEmployeePortalSections({
         // Open to every role, self-scoped (see src/lib/employee-360/access.ts) — same
         // employee_profile:read gate as the rest of "My Workspace", no visibility flag needed.
         { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
+        // Private Calendar is hidden from every other role's nav by design (the page has no
+        // role gate, it's just unlinked) — this is a scoped, Talent-Acquisition-only exception.
+        ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: CalendarDays }] : []),
         // Incentive now lives in the Payroll section; "Other Approvals" now lives in the
         // Approvals Hub section — neither belongs in My Workspace anymore.
         ...(showMyCoachingTab ? [{ href: "/employee-portals/coaching", label: "My Coaching Reports", icon: ClipboardCheck }] : []),
@@ -242,7 +255,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
-        { href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText },
+        ...(showDeductionsTab ? [{ href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText }] : []),
       ],
     },
     {
@@ -259,9 +272,9 @@ function buildEmployeePortalSections({
     {
       title: "Fieldforce",
       items: [
-        // Every employee-portal role sees their own CRM visits — unconditional, unlike
-        // the flag-gated team/manager views below.
-        { href: "/employee-portals/visits", label: "My Visits", icon: MapPinned },
+        // Every employee-portal role sees their own CRM visits except Talent Acquisition
+        // (owner-requested exclusion — she is HR/office staff, not a field employee).
+        ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
@@ -287,6 +300,34 @@ function buildEmployeePortalSections({
         { href: "/employee-portals/vacation-report", label: "Vacation Report", icon: FileText },
         ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
         ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
+      ],
+    },
+    // Talent Acquisition's portal mirror of the admin-shell hrAuthorityNavigationRoles
+    // tools (see app/employee-portals/{recruitment,cv-database,hiring-documents,
+    // vacation-control,support-requests}/page.tsx). Empty — and dropped by the
+    // items.length filter below — for every other role. HR Support Requests lives in
+    // the "HR Support" section below, alongside Request Support.
+    {
+      title: "Recruitment & Hiring",
+      items: [
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/recruitment", label: "Recruitment", icon: BriefcaseBusiness }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
+      ],
+    },
+    // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline
+    // tools above (see app/employee-portals/{employees,contracts,resignations}/page.tsx).
+    // Vacancies Report reuses the existing /employee-portals/vacancies page — the
+    // company-wide branch of getEmployeePortalVacancies now covers her (see
+    // canAccessCompanyVacancies in src/lib/reports/organogram.ts).
+    {
+      title: "People Management",
+      items: [
+        ...(showPeopleManagementTab ? [{ href: "/employee-portals/employees", label: "Employees", icon: UsersRound }] : []),
+        ...(showPeopleManagementTab ? [{ href: "/employee-portals/contracts", label: "Contract Renewal", icon: CalendarClock }] : []),
+        ...(showPeopleManagementTab ? [{ href: "/employee-portals/resignations", label: "Resignations", icon: FileSpreadsheet }] : []),
+        ...(showPeopleManagementTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies Report", icon: BriefcaseBusiness }] : []),
+        ...(showAccountActivationTab ? [{ href: "/employee-portals/account-activation", label: "Account Activation", icon: UserCog }] : []),
       ],
     },
     {
@@ -328,6 +369,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
         ...(showSupportTab ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/support-requests", label: "HR Support Requests", icon: Headphones }] : []),
       ],
     },
   ].filter((section) => section.items.length > 0);
