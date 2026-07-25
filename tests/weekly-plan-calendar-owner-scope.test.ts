@@ -273,7 +273,8 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
   );
   assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, regionalManagerViewer), false, "Regional Manager does NOT see an Anti Infective-line plan");
 
-  // --- Talent Acquisition: Head-Office-line plans only (owner-requested 2026-07-25) ---
+  // --- Talent Acquisition: Head-Office-line plans (owner-requested 2026-07-25),
+  // PLUS Nahed Hattab's (A-10) plans specifically (named addition, same day) ---
 
   const talentAcquisitionViewer = viewer({ hrId: "A-16", role: "Talent Acquisition" });
   assert.equal(
@@ -295,5 +296,22 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     isPlanItemVisibleToViewer(antiInfectiveFieldItem, talentAcquisitionViewer),
     false,
     "Talent Acquisition does NOT see a non-HO (Anti Infective) plan either",
+  );
+
+  const nahedHattabItem = planItem({ employeeHrId: "A-10", employeeJobTitle: "Product Manager", lineName: "Anti Infective" });
+  assert.equal(
+    isPlanItemVisibleToViewer(nahedHattabItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees Nahed Hattab's (A-10) plan specifically, even though Anti Infective is not her line",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(nahedHattabItem, viewer({ hrId: "OTHER-1", role: "Employee" })),
+    true,
+    "the A-10 exception is scoped to Talent Acquisition only via her own branch, not a global unlock — sanity-check that an unrestricted-default viewer still sees it too (unchanged behavior)",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(antiInfectivePmTitledItem, talentAcquisitionViewer),
+    false,
+    "Talent Acquisition does NOT see every Anti Infective Product Manager's plan — only Nahed Hattab's (A-10) by name, confirmed against a different Anti Infective PM (A-10 vs PM-AI-1)",
   );
 }
