@@ -628,13 +628,19 @@ async function recommendResignations(
       "Last Working Date": member.lastWorkingDate,
       Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
       "Days Worked": settlement.daysWorked,
-      "CRM No-Activity Days": noActivityDays,
       "Unpaid Vacation Days": roundCurrency(v2Days + crmLeaveUnpaidDays),
+      // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
+      // see step-definitions.ts) purely because the client-side Days→Value auto-calc
+      // reads row.context["Base Salary"] for CRM Days (Base/30 × days, unchanged formula).
+      // "Net Salary" is what HR actually sees displayed (owner request 2026-07-25).
+      "Base Salary": baseSalary,
+      "Net Salary": roundCurrency(source?.netSalary ?? 0),
     };
     row.recommended = {
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
+      resignationCrmDays: noActivityDays,
       crm: roundCurrency(crmValue),
       unpaidVacations: vacationValue,
     };
@@ -642,6 +648,7 @@ async function recommendResignations(
       baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
       ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
       fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
+      resignationCrmDays: pick(draft?.resignationCrmDays, noActivityDays),
       crm: pick(draft?.crm, roundCurrency(crmValue)),
       unpaidVacations: pick(draft?.unpaidVacations, vacationValue),
     };
@@ -1080,7 +1087,15 @@ function part1ManualDeductionBaseRow(
   const row = baseRow(member);
   row.context = {
     "Hire Date": member.employee.hireDate ?? "",
+    // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
+    // see step-definitions.ts) purely because the client-side Days→Value auto-calc
+    // reads row.context["Base Salary"] to compute Base/30 × days (recommendation-step.tsx
+    // setDaysValue) — that formula is untouched. "Net Salary" is the number HR actually
+    // sees displayed (owner request 2026-07-25: show Net, not Base, in the UI).
     "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+    "Net Salary": roundCurrency(source?.netSalary ?? 0),
+    // Blank for continuing (non-leaver) one-part employees — only leavers have one.
+    "Resignation Date": member.lastWorkingDate ?? "",
   };
   return row;
 }

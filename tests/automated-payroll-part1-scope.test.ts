@@ -171,4 +171,34 @@ export function runAutomatedPayrollPart1ScopeTests() {
   const noRecordStep = STEP_DEFINITIONS.p1_no_record;
   assert.equal(settledElsewhereAmount(noRecordStep, leaverRow(500)), 0);
   assert.equal(hasDoubleDeductionConflict(noRecordStep, leaverRow(500)), false);
+
+  // ---- "Resignation Date" column, so a leaver showing up in a Part 1 manual
+  // tab is legible (owner request 2026-07-25) ---------------------------------
+  for (const key of part1ManualTabs) {
+    assert.equal(
+      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Resignation Date"),
+      true,
+      `${key} must show the Resignation Date context column`,
+    );
+  }
+
+  // ---- Resignations' CRM Days auto-calculates its Value (same formula the leaver's
+  // own system-recommended crm figure already uses) — safe to auto-calc. Unpaid
+  // Vacation Days deliberately does NOT: that figure is a composite (balance-aware
+  // Phoenix amount + a separate CRM-leave amount), not a flat day rate, so
+  // auto-calculating it from a single day count would be mathematically wrong. -----
+  const resignationsStep = STEP_DEFINITIONS.p1_resignations;
+  const crmDaysField = resignationsStep.fields.find((field) => field.key === "resignationCrmDays");
+  assert.equal(crmDaysField?.kind, "days");
+  assert.equal(crmDaysField?.autoCalcMoneyKey, "crm");
+  assert.equal(
+    resignationsStep.fields.some((field) => field.kind === "days" && field.autoCalcMoneyKey === "unpaidVacations"),
+    false,
+    "Unpaid Vacation must never auto-calculate from a day count — see comment above",
+  );
+  assert.equal(
+    resignationsStep.contextColumns.some((column) => column.key === "Unpaid Vacation Days"),
+    true,
+    "Unpaid Vacation Days stays a read-only context column, not an editable field",
+  );
 }

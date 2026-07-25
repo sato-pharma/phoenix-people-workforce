@@ -127,6 +127,17 @@ export type DraftRow = {
   crm: number | null;
   manualOtherDeductions: number | null;
   manualReason: string | null;
+  /**
+   * Resignations-step-only: the editable day count behind `crm` (CRM no-activity
+   * days for the leaver's final settlement). Auto-calculates `crm` via Base/30 ×
+   * days when edited — safe because the leaver's system-recommended `crm` value
+   * already uses that exact formula (calculateDeductionAmountFromBaseSalary).
+   * There is deliberately NO equivalent for `unpaidVacations`: that figure is a
+   * composite of a balance-aware Phoenix-vacation amount plus a day-rate CRM-leave
+   * amount, not a flat day-rate — auto-calculating it from a single day count
+   * would silently produce a wrong number for a leaver's final settlement.
+   */
+  resignationCrmDays: number | null;
   // Part 1 — 4 manual deduction tabs (CRM, Unpaid Vacation, Day Without Record, and
   // Other deductions for Loan/Other), each category with its own optional days
   // (auto-calculates value via Base/30 × days), value (money — can be typed directly
