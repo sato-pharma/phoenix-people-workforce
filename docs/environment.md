@@ -92,6 +92,16 @@ See docs/observability.md for the full picture.
 | PHOENIX_PREVIEW_READ_ONLY | Legacy Vercel-preview read-only guard; inert on Cloud Run today (neither environment sets `APP_ENV=preview`) |
 | VERCEL_ENV | Legacy — Vercel is decommissioned for hosting, so nothing sets this anymore; any code still branching on it is inert |
 
+## Dead-Man's-Switch Monitoring (Optional)
+
+External liveness alert for the 7 Cloud Scheduler jobs, independent of Sentry/GCP — see
+docs/observability.md for what it catches and full setup steps.
+
+| Variable | Description | Default |
+|---|---|---|
+| HEALTHCHECKS_PING_KEY | Healthchecks.io project Ping Key. Inert (no ping ever attempted, in any environment) until set. | (unset) |
+| HEALTHCHECKS_PING_HOST | Override for a self-hosted Healthchecks instance | `https://hc-ping.com` |
+
 ## Dev-Only Variables
 
 These should never be set in production.

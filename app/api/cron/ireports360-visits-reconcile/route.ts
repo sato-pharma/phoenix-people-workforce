@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/crm/sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
@@ -86,7 +87,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "iReports360 wide reconciliation is not authorized." }, { status: 401 });
   }
   try {
-    return await runReconcile();
+    // Slug matches the live Cloud Scheduler job name (phoenix-reconcile-visits), not JOB_NAME
+    // above or the Sentry monitor slug inside runReconcile (both "ireports360-visits-reconcile").
+    return await withDeadMansSwitch("phoenix-reconcile-visits", () => runReconcile());
   } catch (error) {
     logError("iReports360 wide reconciliation failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = error instanceof Error ? error.message : "iReports360 wide reconciliation failed.";

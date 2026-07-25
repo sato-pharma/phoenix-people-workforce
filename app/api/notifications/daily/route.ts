@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 
 import { purgeOldActivityEvents } from "@/lib/activity/service";
 import { cleanupOldNotificationData } from "@/lib/notifications/email";
@@ -226,6 +227,17 @@ async function runDailyNotifications(request: Request) {
     });
   }
 
+  // Slug matches the live Cloud Scheduler job name (phoenix-notify-daily), not the Sentry monitor
+  // slug above ("notifications-daily") or this route's own path — deliberately, so it lines up
+  // with what the owner sees in /admin/cron-control and `gcloud scheduler jobs list`. Called
+  // directly (not via the generic withDeadMansSwitch wrapper) so a PARTIAL sub-job failure — which
+  // never throws, by design — still pings /fail instead of reporting a false "success" externally.
+  await pingDeadMansSwitch(
+    "phoenix-notify-daily",
+    failures.length > 0 ? "fail" : "success",
+    failures.length > 0 ? `${failures.length}/${totalJobs} sub-job(s) failed: ${failures.map((f) => f.job).join(", ")}` : undefined,
+  );
+
   return NextResponse.json({
     activityRetention,
     birthdays,
@@ -272,6 +284,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
+    // A total dispatcher crash never reaches the per-run ping inside runDailyNotifications above,
+    // so it needs its own — this is the single most important case for the external monitor to
+    // catch (nothing about this run's outcome would otherwise leave the app at all).
+    await pingDeadMansSwitch("phoenix-notify-daily", "fail", error instanceof Error ? error.message : String(error));
     const message = error instanceof Error ? error.message : "Daily notification run failed.";
     return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
   }
