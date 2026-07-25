@@ -30,6 +30,7 @@ import { runTelegramTemplateManagementTests } from "./telegram-template-manageme
 import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
 import { runTelegramDeliveryErrorsTests } from "./telegram-delivery-errors.test.ts";
 import { runConfigDriftTests } from "./config-drift.test.ts";
+import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
@@ -473,6 +474,7 @@ await runTest("telegram template management", runTelegramTemplateManagementTests
 await runTest("telegram hardening", runTelegramHardeningTests);
 await runTest("telegram permanent-delivery-error classification", runTelegramDeliveryErrorsTests);
 await runTest("notification config drift guard", runConfigDriftTests);
+await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);

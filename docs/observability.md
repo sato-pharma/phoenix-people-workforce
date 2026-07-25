@@ -27,8 +27,8 @@ self-hosted: HR-ID/module-queryable errors, GCP log-based alerting, login-securi
   `SENTRY_AUTH_TOKEN` sourced from GCP Secret Manager as a BuildKit `--secret` mount in
   `Dockerfile`/`cloudbuild.yaml` (never a plain build-arg/env, so it never persists in the pushed
   `:deps-cache`/`:latest-cache` image layers).
-- **Cron monitors:** all 6 GCP-scheduled cron routes (`app/api/notifications/{daily,process}`,
-  `app/api/cron/{background-jobs,ireports360-visits-sync,ireports360-visits-reconcile,ireports360-visits-live-sync}`)
+- **Cron monitors:** all 7 GCP-scheduled cron routes (`app/api/notifications/{daily,process}`,
+  `app/api/cron/{background-jobs,ireports360-visits-sync,ireports360-visits-reconcile,ireports360-visits-live-sync,recruitment-email-intake}`)
   wrap their real work in `Sentry.withMonitor(slug, fn, { schedule, timezone: "Africa/Cairo", ... })`,
   matching `scripts/setup-gcp-cron.sh`'s `--schedule`/`--time-zone` exactly. Sentry alerts on missed/
   failed check-ins independently of the app's own per-job notification logic.
@@ -85,6 +85,64 @@ Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notificati
 | Notification-config drift | log-based metric `phoenix_config_drift` — fires on any occurrence in a 5-minute window (`labels.event="config_drift"`, see Structured logging above) |
 
 **Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
+
+## External dead-man's-switch (Healthchecks.io)
+
+`src/lib/observability/dead-mans-switch.ts`, wired into all 7 Cloud Scheduler-triggered routes.
+**Deliberately separate from Sentry and GCP Monitoring above** — both of those are hosted by/run
+inside this same GCP project, so they structurally cannot alert on the case where the app, its
+Cloud Run service, or this project's own Sentry integration is what's paused or broken. That
+exact gap is what let 3 scheduler jobs (including the notification outbox drain) sit silently
+**PAUSED for ~2 days** after a 2026-07-23 emergency stop — Cloud Scheduler showed a state, not an
+alert, and nothing external was watching for the absence of an expected ping.
+
+**How it works:** each route calls `pingDeadMansSwitch(jobSlug, "success" | "fail", detail?)` (via
+the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partial-sub-job-failure
+case — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
+**expected ping doesn't arrive**, which is exactly the failure shape a paused/crashed/misconfigured
+job produces. Uses Healthchecks' [Ping Key + slug API](https://healthchecks.io/docs/http_api/) —
+one secret (`HEALTHCHECKS_PING_KEY`) covers all 7 jobs, addressed by slug instead of a per-check
+UUID, with [auto-provisioning](https://healthchecks.io/docs/autoprovisioning/) (`?create=1`) so
+each check is created automatically on its job's first real ping. Fails silent by design: no key
+configured, or non-production runtime, means the code never attempts a network call at all — see
+`tests/dead-mans-switch.test.ts` for the exact contract (never throws, never masks the real job
+outcome, no-ops outside production).
+
+**One-time owner setup** (an AI session cannot create third-party accounts — see repository
+policy):
+
+1. Create a free account at [healthchecks.io](https://healthchecks.io/) (or use an existing one).
+2. Open the default project (or create one) → **Settings** → copy the **Ping Key**.
+3. Set `HEALTHCHECKS_PING_KEY` on the `phoenix-hr` Cloud Run service (production env var change —
+   needs its own approval per repo policy) and, if you also want staging heartbeats, on
+   `phoenix-hr-staging` too.
+4. Configure notification channels for the project (email is on by default; add Slack/Telegram/
+   SMS/etc. under **Integrations** if wanted) — this is what actually pages you.
+5. Deploy. Each job's check auto-appears in the dashboard the first time it pings after step 3 —
+   nothing to pre-create.
+6. **Tune each check's schedule** — auto-provisioned defaults (Simple: 1-day period, 1-hour grace)
+   are wrong for most of these jobs. For each check, switch **Schedule** to **Cron Expression**,
+   paste the matching row below, set **Time Zone** to `Africa/Cairo` (Healthchecks defaults to
+   UTC), and set the grace period:
+
+   | Check slug (= Cloud Scheduler job name) | Cron expression | Suggested grace |
+   |---|---|---|
+   | `phoenix-notify-daily` | `36 6 * * *` | 1h |
+   | `phoenix-process-notifications` | `*/5 * * * *` | 10m |
+   | `phoenix-background-jobs` | `0 3 * * 5` | 2h |
+   | `phoenix-ireports360-sync` | `7 9,12,19 * * *` | 30m |
+   | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
+   | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
+   | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
+
+   These are the exact same cron expressions already live in `scripts/setup-gcp-cron.sh` and each
+   route's `Sentry.withMonitor` call — keep all three in sync if a schedule ever changes.
+
+**What it does NOT replace:** the Confidence Gate (holds a suspicious send before it goes out),
+the held-notification alert (tells you when the gate held something), or fix #3's truthful
+`cron_run_summary` logging (tells you which of the daily job's 22 sub-jobs failed). This only
+answers one question — "did the job run at all?" — for the case none of those can cover: total
+silence.
 
 ### p95 latency: scoped to production traffic
 

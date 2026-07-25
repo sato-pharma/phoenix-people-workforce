@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -101,7 +102,9 @@ export async function GET(request: Request) {
     // 09:00/12:00/19:00 UTC = 12pm/3pm/10pm Africa/Cairo (EEST, UTC+3 in summer) — matches the
     // existing daily dispatcher's UTC+3 calibration. Vercel cron has no DST awareness, so this
     // drifts an hour off in winter (EET, UTC+2), same known tradeoff as that existing cron.
-    return await runSync();
+    // Slug matches the live Cloud Scheduler job name (phoenix-ireports360-sync), not JOB_NAME
+    // above or the Sentry monitor slug inside runSync (both "ireports360-visits-sync").
+    return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync());
   } catch (error) {
     logError("iReports360 visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = error instanceof Error ? error.message : "iReports360 visits sync failed.";

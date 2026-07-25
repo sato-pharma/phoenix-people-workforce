@@ -112,9 +112,33 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runWeeklyPlansDriftCheck\(\)\.catch\(/, "daily weekly plans drift check must have catch boundary");
   assert.match(dailyCronRoute, /runExcuseDriftCheck\(\)\.catch\(/, "daily excuse drift check must have catch boundary");
   assert.match(dailyCronRoute, /pruneExpiredRateLimitBuckets\(\)\.catch\(/, "daily rate limit prune must have catch boundary");
-  assert.match(dailyCronRoute, /console\.error\(e, \{ tags: \{ cron: "daily-birthday" \} \}\)/, "errors must be captured in Sentry with tags");
-  assert.match(dailyCronRoute, /console\.error\(e, \{ tags: \{ cron: "daily-vacation-sla" \} \}\)/, "errors must be captured in Sentry with tags");
-  
+  // Sub-job failures must be observable. These two assertions previously pinned
+  // `console.error(e, { tags: { cron: "..." } })` under the claim "errors must be captured in
+  // Sentry with tags" — but that second argument is not a console.error parameter, no
+  // console-capture integration is registered in sentry.server.config.ts, and the label
+  // `event=cron_failed` that GCP log-based alerting matches on was never emitted. So 18 of the 22
+  // sub-jobs failed completely silently while the route still returned `success: true`.
+  // Now every sub-job routes through onJobFailure -> logError with the standard labels, matching
+  // the convention already asserted for scheduled-processing.ts further down this file.
+  assert.match(
+    dailyCronRoute,
+    /logError\(`Daily cron sub-job failed: \$\{job\}`, \{ labels: \{ event: "cron_failed", job \}, error \}\)/,
+    "daily sub-job failures must be logged via logError with event=cron_failed so log-based alerting can match",
+  );
+  assert.doesNotMatch(
+    dailyCronRoute,
+    /console\.error\(e, \{ tags:/,
+    "must not regress to console.error with a dead `tags` argument — it emits no cron_failed label and no Sentry issue",
+  );
+  assert.match(dailyCronRoute, /onJobFailure\("daily-birthday",/, "birthday sub-job must report failures through onJobFailure");
+  assert.match(dailyCronRoute, /onJobFailure\("daily-vacation-sla",/, "vacation SLA sub-job must report failures through onJobFailure");
+
+  // The run must never claim success while sub-jobs failed.
+  assert.match(dailyCronRoute, /success: failures\.length === 0,/, "daily run must report success truthfully, not a hardcoded true");
+  assert.doesNotMatch(dailyCronRoute, /\n    success: true,/, "daily run must not hardcode success: true");
+  assert.match(dailyCronRoute, /event: "cron_run_summary"/, "daily run must emit a per-run summary log that alerting can key on");
+
+
   assert.doesNotMatch(dailyCronRoute, /maxRuntime: 60,/, "must not regress back to the 12x-looser maxRuntime");
 
   // Verify notification-outbox-drain cron hardening (drains every 30 min, so silent failures
