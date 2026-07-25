@@ -391,17 +391,26 @@ export function stripRestrictedRows<T extends { productCode?: string | null }>(
 }
 
 /**
- * Drop confidential-product rows from a raw master-data record (snake_case `product_code`,
- * e.g. source_of_sales_products via listMasterRows). Used by the Database Mapping master-data
- * routes, which read the raw DB shape directly rather than the camelCase Source-of-Sales shape
- * `stripRestrictedRows` expects. Returns rows unchanged for CEO / Super Admin.
+ * Drop confidential rows from a raw master-data record (snake_case `product_code`/`line`, e.g.
+ * source_of_sales_products via listMasterRows). Used by the Database Mapping master-data routes,
+ * which read the raw DB shape directly rather than the camelCase Source-of-Sales shape
+ * `stripRestrictedRows`/`stripHeadOfficeRows` expect. Strips BOTH the restricted product codes
+ * AND any row on the confidential Head Office line (same lock class — see canViewHeadOfficeLine's
+ * docstring: "the entire line and ALL of its products", not just the 3 restricted codes). Returns
+ * rows unchanged for CEO / Super Admin.
  */
 export function stripRestrictedMasterProductRows<T extends Record<string, string | number | boolean | null>>(
   rows: T[],
   role: PhoenixRole,
 ): T[] {
-  if (canViewRestrictedProducts(role)) return rows;
-  return rows.filter((row) => !isRestrictedProductCode(String(row.product_code ?? "")));
+  const dropRestrictedCodes = !canViewRestrictedProducts(role);
+  const dropHeadOffice = !canViewHeadOfficeLine(role);
+  if (!dropRestrictedCodes && !dropHeadOffice) return rows;
+  return rows.filter((row) => {
+    if (dropRestrictedCodes && isRestrictedProductCode(String(row.product_code ?? ""))) return false;
+    if (dropHeadOffice && isHeadOfficeLine(row.line != null ? String(row.line) : null)) return false;
+    return true;
+  });
 }
 
 /** Drop rows whose product NAME is confidential (legacy pipeline). `enabled === false`

@@ -137,6 +137,37 @@ export async function runSalesRestrictedProductsTests() {
     "Super Admin keeps every master row",
   );
 
+  // ── stripRestrictedMasterProductRows also strips the confidential Head Office LINE (not just
+  //    the 3 restricted codes) — the Database Mapping Product Master GET/export routes previously
+  //    only stripped by code, leaking every other Head-Office-tagged product's name/price to any
+  //    role with generic sales:read/export (District Manager, PM, GPM, Marketing Manager, SFE
+  //    Manager, ...), not just CEO/Super Admin. ──
+  const masterRowsWithHeadOffice = [
+    { product_code: "LA001", product_name: "Lacto Advanced 1", line: "Pedia" },
+    { product_code: "HO001", product_name: "Head Office Sample Kit", line: "Head Office" },
+    { product_code: "HO002", product_name: "Internal Use Only", line: "office" }, // legacy label variant
+  ];
+  assert.deepEqual(
+    stripRestrictedMasterProductRows(masterRowsWithHeadOffice, "District Manager").map((r) => r.product_code),
+    ["LA001"],
+    "non-privileged role loses every Head-Office-line master row too, including the legacy 'office' label",
+  );
+  assert.deepEqual(
+    stripRestrictedMasterProductRows(masterRowsWithHeadOffice, "SFE Manager").map((r) => r.product_code),
+    ["LA001"],
+    "SFE Manager (company sales scope but not CEO/Super Admin) still loses Head-Office-line master rows",
+  );
+  assert.equal(
+    stripRestrictedMasterProductRows(masterRowsWithHeadOffice, "CEO").length,
+    masterRowsWithHeadOffice.length,
+    "CEO keeps Head-Office-line master rows",
+  );
+  assert.equal(
+    stripRestrictedMasterProductRows(masterRowsWithHeadOffice, "Super Admin").length,
+    masterRowsWithHeadOffice.length,
+    "Super Admin keeps Head-Office-line master rows",
+  );
+
   // ── Sales & Marketing Intelligence aggregate exclusion (p_exclude_codes) ──
   // The RPC computes summary + every breakdown server-side, so the exclusion MUST be driven from
   // the caller's role, not client input. CEO / Super Admin opt into the full picture (empty list);
