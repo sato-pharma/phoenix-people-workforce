@@ -100,8 +100,8 @@ export function runProbationFeedbackWorkflowTests() {
     "HR must not be CC'd on the escalated warning (volume fix preserved)");
   assert.match(rem, /activeHrIdsByRole\(\["Super Admin"\]\)/,
     "HR approver lookup must be Super Admin only — \"HR Manager\" is a job title, not an app_auth_users.role value");
-  assert.match(rem, /const SYSTEM_ADMIN_CC_HR_ID = "B-10"/,
-    "the System Admin CC routes to the real system-administrator account B-10 (PHX-1 has no deliverable mailbox)");
+  assert.match(rem, /const SYSTEM_ADMIN_CC_HR_ID = canonicalPersonHrId\("PHX-1"\) \?\? "PHX-1"/,
+    "the System Admin CC resolves to the canonical person behind PHX-1 (which has no deliverable mailbox) via the shared-identity primitive, not a hardcoded HR_ID");
   assert.match(rem, /\.eq\("hr_id", SYSTEM_ADMIN_CC_HR_ID\)/,
     "the System Admin CC resolves that account by hr_id + is_active");
   // MOD-3 daily cap: an over-cap recipient is filtered out of the SLA reminder audience this run.

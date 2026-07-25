@@ -39,9 +39,12 @@ export function runProbationNotificationControlsTests() {
 
   {
     // PHX-1 (System Admin) is EXEMPT — never blocked, never counted.
-    const gate = createCapGate("2026-07-17", new Map([["phx-1", 99]]));
+    const gate = createCapGate("2026-07-17", new Map([["phx-1", 99], ["b-10", 99]]));
     for (let i = 0; i < 5; i++) {
       assert.equal(gate.allow("PHX-1"), true, "System Admin (PHX-1) is exempt from the daily cap");
+      // Same human, different login: the reminders actually land on B-10's mailbox, so exempting
+      // only the console account would still cap the person it is meant to protect.
+      assert.equal(gate.allow("B-10"), true, "every HR_ID of the System Admin person is exempt");
     }
     // A null/blank recipient is never allowed (nothing to key on).
     assert.equal(gate.allow(null), false, "null recipient is not allowed");

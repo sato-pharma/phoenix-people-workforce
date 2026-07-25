@@ -16,6 +16,7 @@ import {
   getManagerPendingExcuses,
   type EmployeeExcuseRequest,
 } from "@/lib/excuses/service";
+import { canonicalPersonHrId, isSamePerson } from "@/lib/auth/identity-aliases";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
@@ -51,6 +52,18 @@ import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sl
  * plus per-request detail (full record + stage tracker + per-viewer actions) and
  * per-responder history filtered from getMyApprovalHistory.
  */
+
+/**
+ * Viewer matching for approvals — resolves to the PERSON, not the login.
+ *
+ * The HR Manager also operates the system-administrator console, so "is this my own request?" and
+ * "am I the assigned manager?" must hold across both of their HR_IDs. Matching only the signed-in
+ * HR_ID let the self-approval guard be bypassed simply by deciding from the other login.
+ * `hrIdsMatch` is kept alongside for its symbol-stripped formatting-drift fallback.
+ */
+function isViewer(candidate: string | null | undefined, viewerHrId: string | null | undefined) {
+  return hrIdsMatch(candidate, viewerHrId) || isSamePerson(viewerHrId, candidate);
+}
 
 // ── URL helpers (single source of truth for approval deep-links) ──────────────
 
@@ -165,7 +178,7 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
 
   for (const row of center?.rows ?? []) {
     // Own submissions are surfaced separately (read-only) — never as an approvable item.
-    if (hrIdsMatch(row.employeeHrId, hrId)) continue;
+    if (isViewer(row.employeeHrId, hrId)) continue;
     if (anyActionEnabled(row.actionAvailability)) awaiting.push(row);
     else upcoming.push(row);
   }
@@ -176,8 +189,8 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
   for (const record of report?.rows ?? []) {
     if (record.vacationType !== "sick") continue;
     if (seen.has(record.id)) continue;
-    if (hrIdsMatch(record.employeeHrId, hrId)) continue;
-    const managerTurn = record.status === "pending_manager" && hrIdsMatch(record.managerHrId, hrId);
+    if (isViewer(record.employeeHrId, hrId)) continue;
+    const managerTurn = record.status === "pending_manager" && isViewer(record.managerHrId, hrId);
     const hrTurn = record.status === "pending_hr" && hrActor;
     if (managerTurn || hrTurn) awaiting.push(sickRecordAsActionRow(record, true));
   }
@@ -288,7 +301,7 @@ export async function getExcuseApprovalsForResponder(access: AccessContext): Pro
 
   // Own submissions live on the dedicated "My Requests" tab (getMyExcuseRequestItems below),
   // which shows every status — pending and decided — in one report, not just in-flight ones.
-  const awaiting = pending.filter((r) => !hrIdsMatch(r.employeeHrId, hrId));
+  const awaiting = pending.filter((r) => !isViewer(r.employeeHrId, hrId));
   awaiting.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return { awaiting };
 }
@@ -481,7 +494,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
   const row = center?.rows.find((r) => r.id === id) ?? null;
   if (row) {
     const actionable = anyActionEnabled(row.actionAvailability);
-    const own = hrIdsMatch(row.employeeHrId, hrId);
+    const own = isViewer(row.employeeHrId, hrId);
     return {
       notFound: false,
       record: row,
@@ -528,7 +541,7 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
       canReviewEvidence: false,
     };
   }
-  const own = hrIdsMatch(record.employeeHrId, hrId);
+  const own = isViewer(record.employeeHrId, hrId);
   return {
     notFound: false,
     record,
@@ -558,7 +571,7 @@ export async function getExcuseApprovalDetail(access: AccessContext, id: string)
   const result = await getExcuseRequestForActionCenterDeepLink(access, id).catch(() => null);
   if (!result) return { notFound: true, request: null, canAct: false, readOnlyReason: null };
 
-  const own = hrIdsMatch(result.request.employeeHrId, hrId);
+  const own = isViewer(result.request.employeeHrId, hrId);
   const decided = result.request.status !== "pending_manager";
   const canAct = result.canAct && !own && !decided;
   const readOnlyReason = own
@@ -722,7 +735,12 @@ function deciderDisplayName(
   hrId: string | null | undefined,
 ): string | null {
   if (!hrId) return null;
-  const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
+  // The system-administrator console account is not in the employee directory, so a decision it
+  // recorded would otherwise render as a bare code. Fall back to the person behind that login —
+  // "show names, not codes" — before giving up and returning the raw HR_ID.
+  const employee =
+    employees.find((e) => hrIdsMatch(e.hrId, hrId))
+    ?? employees.find((e) => hrIdsMatch(e.hrId, canonicalPersonHrId(hrId)));
   if (!employee) return hrId;
   return employee.jobTitle ? `${employee.displayName} (${employee.jobTitle})` : employee.displayName;
 }
@@ -1208,7 +1226,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     const status = String(raw.status ?? "") as EmployeePlanStatus;
     const employeeHrId = String(raw.employee_hr_id ?? "");
     // Own submissions live on the dedicated "My Requests" tab, never as an approvable item.
-    if (hrIdsMatch(employeeHrId, hrId)) continue;
+    if (isViewer(employeeHrId, hrId)) continue;
     const managerHrId = raw.manager_hr_id ? String(raw.manager_hr_id) : null;
     const base = {
       id: String(raw.id ?? ""),
@@ -1229,7 +1247,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     // Employee asked to reopen a submitted plan for edits — only the actual direct manager decides
     // (assertManagerReviewer has no Super Admin bypass — owner-confirmed: he can't act on someone
     // else's turn, only where he's the real assigned manager or at the final HR-acknowledge step).
-    if (status === "edit_requested" && hrIdsMatch(managerHrId, hrId)) {
+    if (status === "edit_requested" && isViewer(managerHrId, hrId)) {
       awaiting.push({ ...base, stage: "edit_request" });
       continue;
     }
@@ -1700,13 +1718,13 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   const employeeHrId = String(row.employee_hr_id ?? "");
   const status = String(row.status ?? "") as EmployeePlanStatus;
   const managerHrId = row.manager_hr_id ? String(row.manager_hr_id) : null;
-  const own = hrIdsMatch(employeeHrId, hrId);
+  const own = isViewer(employeeHrId, hrId);
 
   // Visibility (scoped): Super Admin/system, the plan owner, the assigned manager, or the CEO.
   // Anyone else is not allowed to open the plan → not found.
   const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
   const isCeo = access.role === "CEO";
-  const isAssignedManager = hrIdsMatch(managerHrId, hrId);
+  const isAssignedManager = isViewer(managerHrId, hrId);
   if (!isSuperAdmin && !own && !isAssignedManager && !isCeo) return emptyPlanDetail(id);
 
   const directory = await getEmployeeDirectory();
