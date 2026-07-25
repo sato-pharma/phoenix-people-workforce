@@ -10,6 +10,7 @@ import {
   resolvePolicyAttendanceStatus,
   summarizeAttendancePolicies,
   summarizeDeviceUserMappings,
+  summarizeFingerprintDeductionQuantities,
   summarizeFingerprintRows,
 } from "../src/lib/attendance/metrics.ts";
 import {
@@ -157,6 +158,16 @@ export function runAttendanceCalendarSourceTests() {
     rows: 3,
     shortDays: 1,
     singlePunches: 1,
+  });
+
+  assert.deepEqual(summarizeFingerprintDeductionQuantities([
+    { deductionDays: "0.13" },
+    { deductionDays: "0" },
+    { deductionDays: 0.25 },
+    { deductionDays: "Base salary missing" },
+  ]), {
+    deductionDays: 0.38,
+    quantity: 2,
   });
 
   const selectedPolicy = resolveActiveAttendancePolicy(
