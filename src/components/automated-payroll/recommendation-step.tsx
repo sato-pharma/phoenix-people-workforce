@@ -67,6 +67,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [preview, setPreview] = useState<StepImportPreview | null>(null);
+  const [search, setSearch] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -100,55 +101,47 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
     }));
   }, [rows]);
 
-  const setValue = (index: number, field: string, value: number) => {
-    setRows((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], values: { ...next[index].values, [field]: value } };
-      return next;
-    });
+  // Every setter below keys off `hrId`, NOT array position — `rows` renders as
+  // `filteredRows` once the search box (below) is active, so a positional index would
+  // silently mutate the wrong employee (filteredRows[i] !== rows[i] whenever anything is
+  // filtered out). hrId is stable and unique per row regardless of filtering.
+  const setValue = (hrId: string, field: string, value: number) => {
+    setRows((prev) =>
+      prev.map((row) => (row.hrId === hrId ? { ...row, values: { ...row.values, [field]: value } } : row)),
+    );
     setDirty(true);
   };
 
   /** Editing a "days" field auto-calculates its paired money field via Base Salary/30 × days. */
-  const setDaysValue = (index: number, field: string, autoCalcMoneyKey: string | undefined, days: number) => {
-    setRows((prev) => {
-      const next = [...prev];
-      const row = next[index];
-      const values = { ...row.values, [field]: days };
-      if (autoCalcMoneyKey) {
-        const baseSalary = Number(row.context["Base Salary"] ?? 0);
-        values[autoCalcMoneyKey] = Math.round(((baseSalary / 30) * days + Number.EPSILON) * 100) / 100;
-      }
-      next[index] = { ...row, values };
-      return next;
-    });
+  const setDaysValue = (hrId: string, field: string, autoCalcMoneyKey: string | undefined, days: number) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.hrId !== hrId) return row;
+        const values = { ...row.values, [field]: days };
+        if (autoCalcMoneyKey) {
+          const baseSalary = Number(row.context["Base Salary"] ?? 0);
+          values[autoCalcMoneyKey] = Math.round(((baseSalary / 30) * days + Number.EPSILON) * 100) / 100;
+        }
+        return { ...row, values };
+      }),
+    );
     setDirty(true);
   };
 
-  const setFieldReason = (index: number, field: string, value: string) => {
-    setRows((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], reasons: { ...next[index].reasons, [field]: value } };
-      return next;
-    });
+  const setFieldReason = (hrId: string, field: string, value: string) => {
+    setRows((prev) =>
+      prev.map((row) => (row.hrId === hrId ? { ...row, reasons: { ...row.reasons, [field]: value } } : row)),
+    );
     setDirty(true);
   };
 
-  const setReason = (index: number, reason: string) => {
-    setRows((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], reason };
-      return next;
-    });
+  const setReason = (hrId: string, reason: string) => {
+    setRows((prev) => prev.map((row) => (row.hrId === hrId ? { ...row, reason } : row)));
     setDirty(true);
   };
 
-  const setHold = (index: number, onHold: boolean) => {
-    setRows((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], onHold };
-      return next;
-    });
+  const setHold = (hrId: string, onHold: boolean) => {
+    setRows((prev) => prev.map((row) => (row.hrId === hrId ? { ...row, onHold } : row)));
     setDirty(true);
   };
 
@@ -231,6 +224,16 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   }, [rows, definition.fields]);
 
   const template = useMemo(() => gridTemplate(definition), [definition]);
+
+  /** Search/filter by HR_ID or name — client-side over the already-loaded rows, so it
+   * never touches the server and works instantly even on a large population. */
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter(
+      (row) => row.hrId.toLowerCase().includes(query) || row.fullName.toLowerCase().includes(query),
+    );
+  }, [rows, search]);
 
   /** Same precedence for the grid row tint and the mobile card border. */
   const rowTone = (row: StepRow): "hold" | "conflict" | "leaver" | null => {
@@ -341,9 +344,22 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
         </div>
       ) : null}
 
+      {rows.length > 0 ? (
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by HR_ID or name…"
+          className={cn(fieldClassName, "max-w-xs")}
+        />
+      ) : null}
+
       {rows.length === 0 ? (
         <div className="border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
           No employees for this step.
+        </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+          No employees match &ldquo;{search}&rdquo;.
         </div>
       ) : (
         <>
@@ -384,7 +400,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                 ) : null}
               </div>
 
-              {rows.map((row, index) => {
+              {filteredRows.map((row, index) => {
                 const tone = rowTone(row);
                 return (
                   <div
@@ -425,7 +441,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                             {row.onHold ? "Held" : "—"}
                           </span>
                         ) : (
-                          <Switch checked={row.onHold} onChange={(value) => setHold(index, value)} />
+                          <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
                         )}
                       </div>
                     ) : null}
@@ -436,7 +452,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           value={row.reasons?.[field.key] ?? ""}
                           disabled={locked}
                           placeholder="Reason (optional)"
-                          onChange={(event) => setFieldReason(index, field.key, event.target.value)}
+                          onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                           className={fieldClassName}
                         />
                       ) : (
@@ -447,8 +463,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           disabled={locked}
                           onChange={(event) =>
                             field.kind === "days"
-                              ? setDaysValue(index, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
-                              : setValue(index, field.key, Number(event.target.value) || 0)
+                              ? setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
+                              : setValue(row.hrId, field.key, Number(event.target.value) || 0)
                           }
                           className={cn(fieldClassName, "text-right")}
                         />
@@ -459,7 +475,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         value={row.reason ?? ""}
                         disabled={locked}
                         placeholder="Reason"
-                        onChange={(event) => setReason(index, event.target.value)}
+                        onChange={(event) => setReason(row.hrId, event.target.value)}
                         className={fieldClassName}
                       />
                     ) : null}
@@ -471,7 +487,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
 
           {/* Mobile: one stacked card per employee — never horizontal-scrolls a table. */}
           <div className="flex flex-col gap-2 md:hidden">
-            {rows.map((row, index) => {
+            {filteredRows.map((row) => {
               const tone = rowTone(row);
               return (
                 <div
@@ -519,7 +535,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                             {row.onHold ? "Held" : "—"}
                           </span>
                         ) : (
-                          <Switch checked={row.onHold} onChange={(value) => setHold(index, value)} />
+                          <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
                         )}
                       </div>
                     ) : null}
@@ -532,7 +548,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                             value={row.reasons?.[field.key] ?? ""}
                             disabled={locked}
                             placeholder="Reason (optional)"
-                            onChange={(event) => setFieldReason(index, field.key, event.target.value)}
+                            onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
                             className={fieldClassName}
                           />
                         ) : (
@@ -542,8 +558,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                             disabled={locked}
                             onChange={(event) =>
                               field.kind === "days"
-                                ? setDaysValue(index, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
-                                : setValue(index, field.key, Number(event.target.value) || 0)
+                                ? setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, Number(event.target.value) || 0)
+                                : setValue(row.hrId, field.key, Number(event.target.value) || 0)
                             }
                             className={fieldClassName}
                           />
@@ -558,7 +574,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           value={row.reason ?? ""}
                           disabled={locked}
                           placeholder="Reason"
-                          onChange={(event) => setReason(index, event.target.value)}
+                          onChange={(event) => setReason(row.hrId, event.target.value)}
                           className={fieldClassName}
                         />
                       </label>
@@ -573,7 +589,10 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-500">
-          {rows.length} employees{totalPrimary != null ? ` · total ${money(totalPrimary)}` : ""}
+          {filteredRows.length === rows.length
+            ? `${rows.length} employees`
+            : `${filteredRows.length} of ${rows.length} employees shown`}
+          {totalPrimary != null ? ` · total ${money(totalPrimary)}` : ""}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" disabled={locked || busy || !dirty} onClick={() => void save()}>
