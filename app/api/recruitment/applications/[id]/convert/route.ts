@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { approveAndConvert } from "@/lib/recruitment/applications";
+import { markApplicationHired } from "@/lib/recruitment/applications";
 import {
   assertSameOriginMutation,
+  num,
   readJsonObject,
   recruitmentApiError,
   requireRecruitmentAccess,
@@ -19,9 +20,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const access = await requireRecruitmentAccess(request, "recruitment", "approve");
     const { id } = await params;
     const body = await readJsonObject(request);
-    const result = await approveAndConvert(id, access, { manualHrId: str(body.manualHrId) });
+    const employeeHrId = str(body.employeeHrId);
+    if (!employeeHrId) throw new Error("employeeHrId is required.");
+    const result = await markApplicationHired(id, access, {
+      employeeHrId,
+      startDate: str(body.startDate),
+      probationMonths: num(body.probationMonths),
+    });
     return NextResponse.json({ success: true, application: result.application, employeeHrId: result.employeeHrId });
   } catch (error) {
-    return recruitmentApiError(error, "Failed to convert hire.");
+    return recruitmentApiError(error, "Failed to mark this application as hired.");
   }
 }

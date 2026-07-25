@@ -1,0 +1,65 @@
+// Recruitment / ATS — inbound-CV mailbox configuration (pure, no I/O).
+//
+// RECRUITMENT_EMAIL_INBOXES_JSON is a JSON array so multiple mailboxes (careers@, hr@) share one
+// env var, matching this repo's existing precedent for multi-entry config-in-one-var (e.g.
+// PHOENIX_RLS_TEST_USERS_JSON). Defensive by design: a missing or malformed value must never
+// crash the poller — it just means no mailboxes are configured yet.
+
+export type RecruitmentMailboxConfig = {
+  label: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+};
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function parseOneMailbox(raw: unknown): RecruitmentMailboxConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Record<string, unknown>;
+  if (!isNonEmptyString(entry.label) || !isNonEmptyString(entry.host) || !isNonEmptyString(entry.user) || !isNonEmptyString(entry.password)) {
+    return null;
+  }
+  const port = Number(entry.port);
+  return {
+    host: entry.host.trim(),
+    label: entry.label.trim(),
+    password: entry.password,
+    port: Number.isFinite(port) && port > 0 ? port : 993,
+    secure: entry.secure === undefined ? true : Boolean(entry.secure),
+    user: entry.user.trim(),
+  };
+}
+
+/**
+ * Parses RECRUITMENT_EMAIL_INBOXES_JSON. Never throws — invalid JSON, a non-array value, or an
+ * entry missing a required field is simply dropped (and the whole result is `[]` for invalid
+ * JSON), so a misconfigured env var disables email intake instead of crashing the cron job.
+ */
+export function parseRecruitmentEmailInboxesConfig(json: string | undefined | null): RecruitmentMailboxConfig[] {
+  const trimmed = (json ?? "").trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const mailboxes: RecruitmentMailboxConfig[] = [];
+  for (const entry of parsed) {
+    const mailbox = parseOneMailbox(entry);
+    if (mailbox) mailboxes.push(mailbox);
+  }
+  return mailboxes;
+}
+
+export function loadConfiguredMailboxes(): RecruitmentMailboxConfig[] {
+  return parseRecruitmentEmailInboxesConfig(process.env.RECRUITMENT_EMAIL_INBOXES_JSON);
+}

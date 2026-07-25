@@ -94,6 +94,7 @@ export type PermissionResource =
   | "recruitment"
   | "candidates"
   | "account_activation"
+  | "hiring_interviews"
   | "workflow_registry"
   | "report_it"
   | "attendance"
@@ -139,6 +140,7 @@ export const permissionResources: PermissionResource[] = [
   "recruitment",
   "candidates",
   "account_activation",
+  "hiring_interviews",
   "report_it",
   "attendance",
   "crm_visits",
@@ -255,6 +257,11 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       return isHrAuthorityRole(role) ? allActions : [];
     case "support_requests":
       return isHrAuthorityRole(role) ? hrSupportStaffActions : supportRequestSenderActions;
+    // `hiring_interviews` is deliberately NOT hard-boundary-capped (falls to `default`
+    // below) — it is a narrow, purpose-built resource (a hiring manager's own assigned
+    // candidate + their own interview only, enforced by service-layer scoping in
+    // src/lib/recruitment/hiring-manager-view.ts) and must stay independent of the broad
+    // `recruitment`/`candidates`/`offers` HR-authority-only lock above.
     default:
       return null;
   }
@@ -420,6 +427,7 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: allActions,
     recruitment: allActions,
     candidates: allActions,
+    hiring_interviews: allActions,
     report_it: allActions,
     // Activity Control Center: Super Admin only (read + export). Deliberately
     // omitted from every other role so the employee-monitoring surface stays
@@ -475,6 +483,10 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
     recruitment: ["read"],
     candidates: ["read"],
+    // NSM/RM/CEO candidate tracking: CEO's own hiring round (District Manager -> HR/RM
+    // -> National Sales Manager -> CEO for a District Manager candidate). Deliberately NOT
+    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect.
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
   },
   "Talent Acquisition": {
@@ -593,7 +605,7 @@ const defaultPermissionMatrix: PermissionMap = {
     team: ["read", "export"],
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   "Regional Manager": {
@@ -617,7 +629,7 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
@@ -642,7 +654,7 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   "Product Manager": {
@@ -666,7 +678,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   "Group Product Manager": {
@@ -690,7 +702,7 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     support_requests: ["read", "create"],
     weekly_plans: ["read", "create", "update"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   "SFE Manager": {
@@ -763,6 +775,7 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_sales: ["read", "export"],
     support_requests: ["create"],
     weekly_plans: ["read", "create", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
   Manager: {
@@ -784,7 +797,7 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "create"],
     team: ["read", "export"],
     weekly_plans: ["read", "approve"],
-    recruitment: ["read", "update"],
+    hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],
   },
 };

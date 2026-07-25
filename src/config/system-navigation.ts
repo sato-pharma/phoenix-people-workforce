@@ -51,6 +51,7 @@ import {
   Target,
   TriangleAlert,
   Trash2,
+  UserCog,
   UsersRound,
   Wrench,
 } from "lucide-react";
@@ -200,6 +201,13 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO"] },
     ],
     label: "Company Calendar",
+  },
+  {
+    id: "ceo-recruitment-candidates",
+    items: [
+      { href: "/recruitment/candidates", icon: BriefcaseBusiness, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"] },
+    ],
+    label: "Hiring",
   },
 
   // ── Employee 360: one consolidated, scoreable view per employee. v1 surfaces
@@ -595,6 +603,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      { href: "/employee-portals/recruitment-candidates", icon: UsersRound, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
@@ -1135,6 +1144,14 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "Each email's exact situation — sent, delivered, opened, clicked (Resend + Brevo).",
     permissions: [{ resource: "communication" }],
   },
+  {
+    href: "/admin/dev-preview",
+    icon: UserCog,
+    label: "Dev Preview (Real Data)",
+    description:
+      "Pick a role and line, auto-select a real active employee, and browse the app as them with their genuine data. Local development only — not available in this environment.",
+    roles: ["Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Access & Communication hub (app/(admin)/admin/access-communication/page.tsx) ─
@@ -1292,7 +1309,7 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     href: "/attendance/employee-day-report",
     icon: Fingerprint,
     label: "Employee Day-by-Day Report",
-    description: "One employee, any date range — every calendar day with full detail (why it was skipped, or the late/short/deduction breakdown).",
+    description: "One employee, any date range — every calendar day with full detail, and confirm or reject that day's fingerprint deduction directly.",
     permissions: [{ resource: "attendance", action: "read" }],
     roles: systemAdministratorNavigationRoles,
   },
@@ -1535,19 +1552,19 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     roles: hrAuthorityNavigationRoles,
   },
   {
-    href: "/offers",
-    icon: IdCard,
-    label: "Offer Lifecycle",
-    description: "Track job offers from draft through acceptance.",
-    permissions: [{ resource: "offers" }],
-    roles: hrAuthorityNavigationRoles,
-  },
-  {
     href: "/hiring-documents",
     icon: FileCheck2,
     label: "Hiring Documents",
     description: "Manage hiring-related employee documents.",
     permissions: [{ resource: "employee_documents" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/recruitment/cv-extraction-analytics",
+    icon: ChartColumnBig,
+    label: "CV Extraction Accuracy",
+    description: "How often Talent Acquisition corrects the AI's proposed CV fields, per position.",
+    permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },
 ] as const satisfies readonly AdminToolsPageItem[];

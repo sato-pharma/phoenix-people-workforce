@@ -15,6 +15,7 @@ import {
   createRun,
   findActiveRun,
   findLatestRun,
+  findPublishedRun,
   getRunById,
   listDraftRows,
   listStepStates,
@@ -22,6 +23,7 @@ import {
   upsertDraftRows,
   upsertStepState,
 } from "./draft-store.ts";
+import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { monthLabel, notifyPart1Ready, notifyPart2Ready, notifyPublished } from "./notify.ts";
 import {
   actorId,
@@ -75,7 +77,26 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "unpaidVacations",
   "crm",
   "manualOtherDeductions",
+  "p1odCrmDays",
+  "p1odCrmValue",
+  "p1odVacationDays",
+  "p1odVacationValue",
+  "p1odNoRecordDays",
+  "p1odNoRecordValue",
+  "p1odLoanDays",
+  "p1odLoanValue",
+  "p1odOtherDays",
+  "p1odOtherValue",
 ];
+
+/** Maps a p1_other_deductions text field key to its DraftRowPatch reason field. */
+const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
+  p1odCrmReason: "p1odCrmReason",
+  p1odVacationReason: "p1odVacationReason",
+  p1odNoRecordReason: "p1odNoRecordReason",
+  p1odLoanReason: "p1odLoanReason",
+  p1odOtherReason: "p1odOtherReason",
+};
 
 export type RunView = {
   run: MonthlySalaryRun;
@@ -103,6 +124,12 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
   if (stepKey === "p2_manual_deductions" && edit.reason !== undefined) {
     patch.manualReason = edit.reason;
   }
+  if (stepKey === "p1_other_deductions" && edit.reasons) {
+    for (const [key, field] of Object.entries(OTHER_DEDUCTIONS_REASON_FIELDS)) {
+      const value = edit.reasons[key];
+      if (value !== undefined) (patch as unknown as Record<string, string>)[field as string] = value;
+    }
+  }
   return patch;
 }
 
@@ -110,6 +137,7 @@ function stepRowToPatch(stepKey: StepKey, row: StepRow): DraftRowPatch {
   return stepEditToPatch(stepKey, {
     hrId: row.hrId,
     values: row.values,
+    reasons: row.reasons,
     reason: row.reason,
     onHold: row.onHold,
   });
@@ -506,6 +534,29 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
 
 // ---- Exports / per-step round-trip ------------------------------------------
 
+/** Previous calendar month for a period (handles the January → December/year-1 rollover). */
+function previousPeriod(period: PayrollPeriod): PayrollPeriod {
+  return period.month === 1 ? { month: 12, year: period.year - 1 } : { month: period.month - 1, year: period.year };
+}
+
+/** Net Salary per employee (keyed by compact HR id) from the previous month's published run, for the Salary Changes tab. Empty map if none. */
+async function previousMonthNetSalaryByHrIdCompact(period: PayrollPeriod): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const prevRun = await findPublishedRun(previousPeriod(period).month, previousPeriod(period).year);
+  if (!prevRun?.publishedBatchId) return map;
+  const { data, error } = await getSupabaseAdmin()
+    .from("salary_records")
+    .select("hr_id,net_salary")
+    .eq("batch_id", prevRun.publishedBatchId);
+  if (error) throw error;
+  for (const row of (data ?? []) as Array<{ hr_id: string | null; net_salary: number | null }>) {
+    const compact = compactHrKey(row.hr_id ?? "");
+    if (!compact) continue;
+    map.set(compact, Number(row.net_salary ?? 0));
+  }
+  return map;
+}
+
 /** Full or Part-1 branded sheet for the HR wizard (xlsx buffer). */
 export async function buildRunSheet(
   access: AccessContext,
@@ -517,7 +568,11 @@ export async function buildRunSheet(
   const { rows } = await assembleForRun(run);
   const buffer =
     variant === "part1"
-      ? await buildPart1SheetWorkbook({ run, rows })
+      ? await buildPart1SheetWorkbook({
+          run,
+          rows,
+          previousNetByHrIdCompact: await previousMonthNetSalaryByHrIdCompact({ month: run.month, year: run.year }),
+        })
       : await buildFullSheetWorkbook({ run, rows });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };

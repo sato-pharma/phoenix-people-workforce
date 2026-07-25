@@ -136,6 +136,15 @@ export type FreezeFirstPartInput = {
   paymentMode: PayrollPaymentMode | string | null;
   /** Confirmed Part-1 fingerprint deduction (EGP). */
   fingerprint: number;
+  /** Confirmed Part-1 "Other deductions" step total (EGP) — reduces First Part for every employee. */
+  otherPart1Deductions?: number;
+  /**
+   * One-part employees only (owner rule 2026-07-24): they have no Second Part to
+   * net medical insurance against, so it must come out of Part 1 directly.
+   * Two-part employees are unaffected — their medical insurance stays netted
+   * against Second Part exactly as before.
+   */
+  medicalInsurance?: number;
   /**
    * Leaver only (owner rule 2026-07-20): their CRM no-activity + unpaid-vacation
    * deduction, computed and confirmed at resignation time — a leaver won't be present
@@ -157,6 +166,9 @@ export type FreezeFirstPartInput = {
 export function freezeFirstPart(input: FreezeFirstPartInput): number {
   const mode = normalizePayrollPaymentMode(input.paymentMode);
   const fp = Math.max(0, roundCurrency(input.fingerprint));
+  const otherP1 = Math.max(0, roundCurrency(input.otherPart1Deductions ?? 0));
+  // One-part employees only — see FreezeFirstPartInput.medicalInsurance doc comment.
+  const medical = mode === "two_parts" ? 0 : Math.max(0, roundCurrency(input.medicalInsurance ?? 0));
   const effNet = input.effective.net;
   const isLeaver = input.effective.lifecycle === "leaver";
 
@@ -169,7 +181,7 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
     firstBeforeFp = effNet;
   }
 
-  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp));
+  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp - otherP1 - medical));
   if (!isLeaver) return firstAfterFp;
 
   const leaverDeduction = Math.max(0, roundCurrency(input.leaverDeduction ?? 0));

@@ -122,7 +122,7 @@ export type HeadcountType = (typeof headcountTypes)[number];
 export const requisitionPriorities = ["low", "normal", "high", "urgent"] as const;
 export type RequisitionPriority = (typeof requisitionPriorities)[number];
 
-export const interviewTypes = ["phone", "hr", "hiring_manager", "cv"] as const;
+export const interviewTypes = ["phone", "hr", "hiring_manager", "cv", "rm_interview", "nsm_interview", "ceo_interview"] as const;
 export type InterviewType = (typeof interviewTypes)[number];
 
 // Rule 5/6 — screening outcomes that drive the pipeline from the screening forms.
@@ -178,6 +178,7 @@ export type Candidate = {
   nationalId: string | null;
   email: string | null;
   phone: string | null;
+  address: string | null;
   governorate: string | null;
   currentEmployer: string | null;
   yearsExperience: number | null;
@@ -187,6 +188,16 @@ export type Candidate = {
   cvReferenceName: string | null;
   cvExternalUrl: string | null;
   notes: string | null;
+  faculty: string | null;
+  university: string | null;
+  hasPriorWorkExperience: boolean | null;
+  hasMedicalRepExperience: boolean | null;
+  medicalRepEmployer: string | null;
+  medicalRepExperienceFrom: string | null;
+  medicalRepExperienceTo: string | null;
+  // Generic storage for any CV-extraction position other than Medical Rep — see
+  // src/lib/recruitment/cv-field-schemas.ts. Keyed by that position's field keys.
+  positionSpecificFields: Record<string, unknown>;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -278,6 +289,7 @@ export type CreateCandidateInput = {
   nationalId?: string | null;
   email?: string | null;
   phone?: string | null;
+  address?: string | null;
   governorate?: string | null;
   currentEmployer?: string | null;
   yearsExperience?: number | null;
@@ -287,4 +299,16 @@ export type CreateCandidateInput = {
   cvReferenceName?: string | null;
   cvExternalUrl?: string | null;
   notes?: string | null;
+  faculty?: string | null;
+  university?: string | null;
+  hasPriorWorkExperience?: boolean | null;
+  hasMedicalRepExperience?: boolean | null;
+  medicalRepEmployer?: string | null;
+  medicalRepExperienceFrom?: string | null;
+  medicalRepExperienceTo?: string | null;
+  positionSpecificFields?: Record<string, unknown> | null;
 };
+
+// Partial edit of an existing candidate — an omitted key leaves that column
+// untouched; an explicit `null` clears it. Used by the CV-extraction review UI.
+export type UpdateCandidateInput = Partial<CreateCandidateInput>;

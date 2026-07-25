@@ -99,6 +99,7 @@ export function MultiSelectFilter({
           <div className="flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] p-0.5">
             <button
               type="button"
+              aria-label={`Include mode for ${label}`}
               onClick={() => onModeChange("include")}
               className={cn(
                 "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
@@ -109,6 +110,7 @@ export function MultiSelectFilter({
             </button>
             <button
               type="button"
+              aria-label={`Exclude mode for ${label}`}
               onClick={() => onModeChange("exclude")}
               className={cn(
                 "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
@@ -121,6 +123,7 @@ export function MultiSelectFilter({
           <div className="flex items-center gap-2 text-[11px] font-black">
             <button
               type="button"
+              aria-label={`Select all ${label}`}
               className="text-[#64748B] transition hover:text-[#F97316]"
               // "All" must mean "show every row," which is mode-dependent: in include mode that
               // means selecting every code (include + all codes = keep everything); in exclude
@@ -134,6 +137,7 @@ export function MultiSelectFilter({
             <span className="text-[#E2E8F0]">|</span>
             <button
               type="button"
+              aria-label={`Clear ${label} selection`}
               className="text-[#64748B] transition hover:text-[#F97316] disabled:opacity-40"
               disabled={count === 0}
               onClick={() => onSelectedChange([])}
@@ -149,6 +153,7 @@ export function MultiSelectFilter({
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
               <input
                 type="text"
+                aria-label={searchPlaceholder ?? `Search ${label.toLowerCase()}`}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
@@ -181,6 +186,7 @@ export function MultiSelectFilter({
               >
                 <input
                   type="checkbox"
+                  aria-label={option.label}
                   className="h-4 w-4 accent-[#F97316]"
                   checked={selectedSet.has(option.code)}
                   onChange={() => onSelectedChange(toggle(selected, option.code))}

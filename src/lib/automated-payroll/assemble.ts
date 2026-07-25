@@ -31,6 +31,9 @@ export type AssembledRow = {
   onHold: boolean;
   overpaidResidual: number;
   lifecycle: RowLifecycle;
+  /** For the Part-1 sheet's bank columns — not part of the canonical salary_records payload. */
+  bankName: string | null;
+  bankAccount: string | null;
 };
 
 function draftByCompact(draftRows: DraftRow[]): Map<string, DraftRow> {
@@ -39,6 +42,17 @@ function draftByCompact(draftRows: DraftRow[]): Map<string, DraftRow> {
 
 function num(value: number | null | undefined): number {
   return value == null || !Number.isFinite(value) ? 0 : value;
+}
+
+/** Sum of the Part-1 "Other deductions" step's 5 category values (0 for any not filled in). */
+function otherPart1DeductionsTotal(draft: DraftRow | undefined): number {
+  return roundCurrency(
+    num(draft?.p1odCrmValue) +
+      num(draft?.p1odVacationValue) +
+      num(draft?.p1odNoRecordValue) +
+      num(draft?.p1odLoanValue) +
+      num(draft?.p1odOtherValue),
+  );
 }
 
 function buildEffective(
@@ -85,6 +99,8 @@ export function computeFrozenFirstParts(input: {
       fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
       paymentMode: source?.paymentMode ?? "two_parts",
       fingerprint: num(draft?.fingerprintValue),
+      otherPart1Deductions: otherPart1DeductionsTotal(draft),
+      medicalInsurance: roundCurrency(num(member.employee.medicalInsurance)),
       leaverDeduction: leaverDeductionFor(member, draft),
     });
     frozen.set(member.compact, value);
@@ -118,6 +134,8 @@ export function assembleRows(input: {
     const fullBaseSalary = roundCurrency(source?.baseSalary ?? 0);
 
     const fingerprint = num(draft?.fingerprintValue);
+    const otherPart1Total = otherPart1DeductionsTotal(draft);
+    const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
     // Use the frozen First Part after Part-1 confirm; before that, compute live.
     const firstPartFrozen =
       draft?.firstPartFrozen != null
@@ -127,6 +145,8 @@ export function assembleRows(input: {
             fullBaseSalary,
             paymentMode,
             fingerprint,
+            otherPart1Deductions: otherPart1Total,
+            medicalInsurance,
             leaverDeduction: leaverDeductionFor(member, draft),
           });
 
@@ -137,7 +157,7 @@ export function assembleRows(input: {
     const crm = num(draft?.crm);
     const unpaidVacations = num(draft?.unpaidVacations);
     const manualOtherDeductions = num(draft?.manualOtherDeductions);
-    const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
+    const otherDeductionsTotal = roundCurrency(manualOtherDeductions + otherPart1Total);
     const loans = 0;
 
     const parts = assembleParts({
@@ -151,7 +171,7 @@ export function assembleRows(input: {
         unpaidVacations,
         medicalInsurance,
         loans,
-        otherDeductions: manualOtherDeductions,
+        otherDeductions: otherDeductionsTotal,
       },
     });
 
@@ -167,7 +187,7 @@ export function assembleRows(input: {
       expenses + incentive + overtime + bonus + effective.ecol + effective.fuel,
     );
     const totalDeductions = roundCurrency(
-      crm + fingerprint + unpaidVacations + medicalInsurance + loans + manualOtherDeductions,
+      crm + fingerprint + unpaidVacations + medicalInsurance + loans + otherDeductionsTotal,
     );
     const onHold = Boolean(draft?.onHold);
 
@@ -196,7 +216,7 @@ export function assembleRows(input: {
       nameAr: employee.nameAr,
       netSalary: effective.net,
       otherAdditions: 0,
-      otherDeductions: manualOtherDeductions,
+      otherDeductions: otherDeductionsTotal,
       overtime,
       payrollComment: onHold ? draft?.holdReason ?? "HOLD" : draft?.manualReason ?? null,
       paymentMode,
@@ -214,6 +234,8 @@ export function assembleRows(input: {
       onHold,
       overpaidResidual: parts.overpaidResidual,
       lifecycle: member.lifecycle,
+      bankName: employee.bankName ?? null,
+      bankAccount: employee.bankAccount ?? null,
     });
   });
 

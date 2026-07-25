@@ -1,21 +1,5 @@
 import type { CvDatabaseRow } from "@/lib/cv/cv-database";
 import type { HiringDocumentDefinition, HiringDocumentEmployeeRow } from "@/lib/hiring-documents/types";
-import type { OfferLifecycleRow } from "@/lib/offers/service";
-
-export type RecruitmentOfferMetrics = {
-  acceptanceRate: number;
-  acceptedOffers: number;
-  acceptedToEmployeeConversions: number;
-  acceptedToEmployeeConversionRate: number;
-  averageHoursToAccept: number;
-  expiredOffers: number;
-  pendingHrApprovalOffers: number;
-  pendingOffers: number;
-  rejectedOffers: number;
-  totalOffers: number;
-  vacancyLinkedOffers: number;
-  vacancyLinkageRate: number;
-};
 
 export type OnboardingDocumentMetrics = {
   completeDocuments: number;
@@ -35,7 +19,7 @@ export type CandidatePipelineMetrics = {
   unknown: number;
 };
 
-export type RecruitmentOnboardingMetrics = RecruitmentOfferMetrics & {
+export type RecruitmentOnboardingMetrics = {
   candidatePipeline: CandidatePipelineMetrics;
   hiringDocuments: OnboardingDocumentMetrics;
 };
@@ -62,38 +46,6 @@ function isPastDueMissingDocument(entry: { dueDate: string | null; status: strin
   if (entry.status !== "missing" || !entry.dueDate) return false;
   const dueDate = new Date(`${entry.dueDate}T00:00:00`);
   return !Number.isNaN(dueDate.getTime()) && dueDate <= today;
-}
-
-export function summarizeOfferLifecycleRows(rows: OfferLifecycleRow[]): RecruitmentOfferMetrics {
-  const accepted = rows.filter((row) => row.status === "accepted" || row.status === "hired");
-  const rejected = rows.filter((row) => ["cancelled", "rejected", "voided", "withdrawn"].includes(row.status));
-  const final = [...accepted, ...rejected];
-  const converted = accepted.filter((row) => Boolean(row.employeeHrId));
-  const vacancyLinked = rows.filter((row) =>
-    Boolean(row.areaId && row.lineId && row.positionId && row.managerHrId),
-  );
-  const averageHoursToAccept =
-    accepted.length === 0
-      ? 0
-      : accepted.reduce((sum, row) => {
-          if (!row.acceptedAt) return sum;
-          return sum + (new Date(row.acceptedAt).getTime() - new Date(row.createdAt).getTime()) / 36e5;
-        }, 0) / accepted.length;
-
-  return {
-    acceptanceRate: final.length ? accepted.length / final.length : 0,
-    acceptedOffers: accepted.length,
-    acceptedToEmployeeConversions: converted.length,
-    acceptedToEmployeeConversionRate: accepted.length ? converted.length / accepted.length : 0,
-    averageHoursToAccept,
-    expiredOffers: rows.filter((row) => row.status === "expired").length,
-    pendingHrApprovalOffers: accepted.filter((row) => row.onboardingStatus === "pending_hr_approval").length,
-    pendingOffers: rows.filter((row) => row.status === "sent").length,
-    rejectedOffers: rejected.length,
-    totalOffers: rows.length,
-    vacancyLinkedOffers: vacancyLinked.length,
-    vacancyLinkageRate: rows.length ? vacancyLinked.length / rows.length : 1,
-  };
 }
 
 export function summarizeHiringDocumentReadiness(
@@ -149,14 +101,11 @@ export function buildRecruitmentOnboardingMetrics(input: {
   candidateRows?: CvDatabaseRow[];
   hiringDocumentEmployees?: HiringDocumentEmployeeRow[];
   hiringDocumentDefinitions?: HiringDocumentDefinition[];
-  offerRows: OfferLifecycleRow[];
 }): RecruitmentOnboardingMetrics {
-  const offerMetrics = summarizeOfferLifecycleRows(input.offerRows);
   const documentMetrics = input.hiringDocumentEmployees && input.hiringDocumentDefinitions
     ? summarizeHiringDocumentReadiness(input.hiringDocumentEmployees, input.hiringDocumentDefinitions)
     : emptyHiringDocumentMetrics;
   return {
-    ...offerMetrics,
     candidatePipeline: input.candidateRows
       ? summarizeCandidatePipeline(input.candidateRows)
       : emptyCandidatePipelineMetrics,

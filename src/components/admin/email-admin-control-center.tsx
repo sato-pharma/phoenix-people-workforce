@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { EmailAdminControlCenter, EmailAdminDelivery } from "@/lib/notifications/email-admin";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 type Props = {
   initialData: EmailAdminControlCenter;
@@ -21,7 +22,9 @@ function badgeClass(status: string) {
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE });
 }
 
 function moduleLabel(value: string | null) {

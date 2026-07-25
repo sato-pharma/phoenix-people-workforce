@@ -58,17 +58,12 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
 
   const dynamicInsights = useMemo(() => {
     const baseInsights = [
-      { 
-        l: `Sales reached ${Math.round(data.sales.achievementRate * 100)}% of target`, 
-        s: data.sales.achievementRate >= 1 ? "Great job! Keep up the momentum." : "Focus on closing pending deals.", 
-        c: data.sales.achievementRate >= 1 ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-500" 
+      {
+        l: `Sales reached ${Math.round(data.sales.achievementRate * 100)}% of target`,
+        s: data.sales.achievementRate >= 1 ? "Great job! Keep up the momentum." : "Focus on closing pending deals.",
+        c: data.sales.achievementRate >= 1 ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-500"
       },
-      { 
-        l: `Acceptance rate is ${Math.round(data.recruitment.acceptanceRate * 100)}%`, 
-        s: "Offers are being converted successfully.", 
-        c: "bg-blue-50 text-blue-500" 
-      },
-      { 
+      {
         l: `${data.risk.expiringContracts + data.risk.probationEndings} operational risks found`, 
         s: "Review expiring contracts and probations.", 
         c: "bg-rose-50 text-rose-500" 
@@ -116,54 +111,46 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
         </div>
 
         {/* Executive KPI Row */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <KPIBulletCard 
-            title="Total Revenue" 
-            value={compactEGP(data.financial.revenue).replace("EGP ", "")} 
-            trend="+12.4%" 
-            trendDir="up" 
-            icon={Landmark} 
-            color="#10B981" 
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KPIBulletCard
+            title="Total Revenue"
+            value={compactEGP(data.financial.revenue).replace("EGP ", "")}
+            trend="+12.4%"
+            trendDir="up"
+            icon={Landmark}
+            color="#10B981"
             data={sparklineData}
           />
-          <KPIBulletCard 
-            title="People Cost" 
-            value={compactEGP(data.financial.peopleCost).replace("EGP ", "")} 
-            trend="+5.2%" 
-            trendDir="up" 
-            icon={Users} 
-            color="#3B82F6" 
+          <KPIBulletCard
+            title="People Cost"
+            value={compactEGP(data.financial.peopleCost).replace("EGP ", "")}
+            trend="+5.2%"
+            trendDir="up"
+            icon={Users}
+            color="#3B82F6"
             data={sparklineData}
           />
-          <StatusCard 
-            title="Gross Margin" 
-            value={`${Math.round(data.financial.grossMargin * 100)}%`} 
-            subtitle="Efficiency vs Cost" 
-            percent={Math.round(data.financial.grossMargin * 100)} 
+          <StatusCard
+            title="Gross Margin"
+            value={`${Math.round(data.financial.grossMargin * 100)}%`}
+            subtitle="Efficiency vs Cost"
+            percent={Math.round(data.financial.grossMargin * 100)}
           />
-          <StatusCard 
-            title="Acceptance Rate" 
-            value={`${Math.round(data.recruitment.acceptanceRate * 100)}%`} 
-            subtitle="Recruitment Success" 
-            percent={Math.round(data.recruitment.acceptanceRate * 100)} 
-            colorClass="stroke-orange-500"
-          />
-          <KPIBulletCard 
-            title="Active Employees" 
-            value={data.hr.activeEmployees} 
-            trend="+8" 
-            trendDir="up" 
-            icon={Activity} 
-            color="#8B5CF6" 
+          <KPIBulletCard
+            title="Active Employees"
+            value={data.hr.activeEmployees}
+            trend="+8"
+            trendDir="up"
+            icon={Activity}
+            color="#8B5CF6"
             data={sparklineData}
           />
         </div>
 
-        {/* Financial Intelligence & Recruitment Funnel */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-12">
-          <ChartCard 
-            title="Financial Intelligence (Revenue vs. Cost)" 
-            className="md:col-span-2 lg:col-span-8"
+        {/* Financial Intelligence */}
+        <div className="grid grid-cols-1 gap-6">
+          <ChartCard
+            title="Financial Intelligence (Revenue vs. Cost)"
             action={
               <div className="flex gap-4">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500">
@@ -175,8 +162,8 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
               </div>
             }
           >
-            <MultiLayerChart 
-              data={data.financial.trend} 
+            <MultiLayerChart
+              data={data.financial.trend}
               xAxisKey="month"
               yAxisFormatter={(v) => `${v}M`}
               tooltipSuffix="M"
@@ -184,17 +171,6 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                 { key: "revenue", name: "Revenue", type: "line", color: "#10B981" },
                 { key: "cost", name: "People Cost", type: "line", color: "#3B82F6" },
               ]}
-            />
-          </ChartCard>
-
-          <ChartCard 
-            title="Recruitment Pipeline" 
-            className="md:col-span-1 lg:col-span-4"
-          >
-            <StackedChart 
-              centerLabel={String(data.recruitment.totalOffers)}
-              centerSub="Total Offers"
-              data={data.recruitment.pipeline}
             />
           </ChartCard>
         </div>

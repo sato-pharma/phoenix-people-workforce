@@ -2,42 +2,22 @@ import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
-import type { EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 
-export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "plan", "holiday", "double_visit"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
   double_visit: "Double Visit",
   excuse: "Excuse",
   holiday: "National vacation",
-  plan: "Plan",
   vacation: "Vacation",
 };
 
 export const defaultPrivateCalendarGlobalHrIds = ["B-10", "admin-HR"] as const;
-
-// Plan statuses whose items appear on the private calendar. Deliberately broader
-// than the shared planning-calendar set: a plan keeps counting as attendance
-// proof while it is under review or was returned for edit (edit_requested /
-// details_requested / *_returned), so a routine manager action can never
-// re-flag the employee as "missing attendance". Only draft, rejected and
-// cancelled plans are excluded.
-export const privateCalendarPlanStatuses = [
-  "submitted",
-  "edit_requested",
-  "details_requested",
-  "manager_approved",
-  "manager_returned",
-  "ceo_approved",
-  "ceo_returned",
-  "final_approved",
-  "hr_acknowledged",
-] as const satisfies readonly EmployeePlanStatus[];
 
 export type PrivateCalendarEmployeeOption = {
   departmentName: string | null;
@@ -84,11 +64,6 @@ export type PrivateCalendarItem = {
   status: string | null;
   time: string | null;
   title: string;
-  // Only set on plan items: true when the planned activity is off-site or remote
-  // (Single/Double Visit, Coaching, Travel, Training, external Meeting/Event,
-  // Remote, or an injected leave day) and therefore self-proves attendance with
-  // no fingerprint punch. Desk activities (Office/Admin) leave this false.
-  planCountsAsAttendance?: boolean;
 };
 
 export type PrivateCalendarException = {
@@ -175,22 +150,6 @@ export type PrivateCalendarExcuseRow = {
   status: string | null;
 };
 
-export type PrivateCalendarPlanRow = {
-  activity_date: string;
-  activity_title: string | null;
-  activity_type: string | null;
-  area: string | null;
-  employee_hr_id: string;
-  employee_name: string;
-  end_time: string | null;
-  id: string;
-  location_text: string | null;
-  notes: string | null;
-  plan_kind: string;
-  start_time: string | null;
-  status: string;
-};
-
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -269,33 +228,6 @@ function displayEnum(value: string | null | undefined, fallback = "Other") {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
-}
-
-function planActivityLabel(activityType: string | null | undefined, activityTitle: string | null | undefined) {
-  const type = cleanText(activityType);
-  const title = cleanText(activityTitle);
-  if (type === "Field") return "Single Visit";
-  if (type === "Other" && title.toLowerCase() === "coaching") return "Coaching";
-  return title || type || "Plan activity";
-}
-
-// Desk activities are the only planned days that still require a fingerprint
-// punch (or an approved leave/excuse) to be considered "covered". Every other
-// planned activity is off-site or remote — the plan itself is the attendance
-// proof. A blank/unknown type is treated as desk (needs a punch), never as
-// self-proving.
-const deskPlanActivityTypes = new Set(["Office", "Admin", ""]);
-export function planActivityCountsAsAttendance(activityType: string | null | undefined) {
-  return !deskPlanActivityTypes.has(cleanText(activityType));
-}
-
-function planSlotLabel(startTime: string | null | undefined, endTime: string | null | undefined) {
-  const start = cleanText(startTime).slice(0, 5);
-  const end = cleanText(endTime).slice(0, 5);
-  if (start === "09:00" && end === "13:00") return "AM";
-  if (start === "13:00" && end === "17:00") return "PM";
-  if (start || end) return [start, end].filter(Boolean).join(" - ");
-  return "Full day";
 }
 
 // "Complete" reads as "Full day" (an office-hours label the employee recognizes);
@@ -467,42 +399,6 @@ export function mapExcuseRowToPrivateCalendarItem(row: PrivateCalendarExcuseRow)
   };
 }
 
-export function mapPlanRowToPrivateCalendarItem(row: PrivateCalendarPlanRow): PrivateCalendarItem {
-  const activity = planActivityLabel(row.activity_type, row.activity_title);
-  const region = nullableText(row.location_text);
-  const area = nullableText(row.area);
-  return {
-    approvalImpact: "Submitted or approved plan activity appears on the employee private calendar for month clarity.",
-    description: nullableText(row.notes),
-    detailLines: [
-      `Kind: ${displayEnum(row.plan_kind)}`,
-      region ? `Region: ${region}` : null,
-      area ? `Area: ${area}` : null,
-      `Status: ${displayEnum(row.status)}`,
-    ].filter((value): value is string => Boolean(value)),
-    employeeDepartmentName: null,
-    employeeHrId: row.employee_hr_id,
-    employeeJobTitle: null,
-    employeeLineName: null,
-    employeeName: row.employee_name,
-    endDate: row.activity_date,
-    exceptionFlags: [],
-    id: `plan-${row.id}`,
-    managerName: null,
-    severity: "info",
-    source: "plan",
-    sourceLabel: "Weekly / monthly plan item",
-    sourceRecordId: row.id,
-    sourceSystem: "Planning workflow",
-    sourceTable: "employee_plan_items",
-    startDate: row.activity_date,
-    status: row.status,
-    time: planSlotLabel(row.start_time, row.end_time),
-    title: area ? `${activity} - ${area}` : activity,
-    planCountsAsAttendance: planActivityCountsAsAttendance(row.activity_type),
-  };
-}
-
 export function mapHolidayToPrivateCalendarItem(input: {
   description?: string | null;
   endDate?: string | null;
@@ -540,23 +436,12 @@ export function privateCalendarItemOccursOn(item: PrivateCalendarItem, date: str
   return date >= item.startDate && date <= item.endDate;
 }
 
-// When a viewer wants "actual synced activity only" (the employee's own portal
-// view), planned/intended activity must not render as a calendar item — only
-// attendance, leave, and CRM-verified visits are real events. This filter runs
-// AFTER exceptions/FP-suppression are derived from the full item set upstream,
-// since a self-proving field plan must keep preventing false "missing
-// attendance" flags even though the plan card itself stays hidden.
-export function filterPrivateCalendarActualItems(items: PrivateCalendarItem[]): PrivateCalendarItem[] {
-  return items.filter((item) => item.source !== "plan");
-}
-
 export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): PrivateCalendarWorkspace["summary"] {
   const summary = {
     attendance: 0,
     double_visit: 0,
     excuse: 0,
     holiday: 0,
-    plan: 0,
     total: items.length,
     vacation: 0,
   };
@@ -572,7 +457,6 @@ function sourceCounts() {
     double_visit: 0,
     excuse: 0,
     holiday: 0,
-    plan: 0,
     vacation: 0,
   } satisfies Record<PrivateCalendarSource, number>;
 }
@@ -675,20 +559,17 @@ export function derivePrivateCalendarExceptions(input: {
       const attendance = dayItems.filter((item) => item.source === "attendance");
       const vacations = dayItems.filter((item) => item.source === "vacation");
       const excuses = dayItems.filter((item) => item.source === "excuse");
-      const plans = dayItems.filter((item) => item.source === "plan");
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
-      // Any off-site/remote planned activity (see planActivityCountsAsAttendance)
-      // or a CRM Double Visit self-proves attendance for the day — no fingerprint
-      // needed. A desk-typed plan (Office/Admin) still expects a punch.
-      const hasSelfProvingPresence =
-        plans.some((p) => p.planCountsAsAttendance) || doubleVisits.length > 0;
+      // A CRM Double Visit self-proves attendance for the day — no fingerprint
+      // needed. Planned/intended activity (the Planning Calendar) is never
+      // consulted here — only actually recorded/verified sources count as covered.
       const isCovered =
         attendance.length > 0 ||
         vacations.length > 0 ||
         excuses.length > 0 ||
         holidays.length > 0 ||
-        hasSelfProvingPresence;
+        doubleVisits.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -731,11 +612,10 @@ export function derivePrivateCalendarExceptions(input: {
       // A day that isn't expected to have activity for this employee (their
       // weekly off, whichever day that is) stays blank when uncovered — no
       // label, no noise — while a real captured record on any day, off or not,
-      // still shows normally (items are never exception-gated). The
-      // employee-facing calendar hides plan items entirely (actualOnly), so
-      // whether a hidden plan existed for this day is irrelevant to what the
-      // employee actually sees: an uncovered expected workday reads the same
-      // way, no activity was recognized anywhere, full stop.
+      // still shows normally (items are never exception-gated). Only actually
+      // recorded/verified sources count as covered — an uncovered expected
+      // workday reads the same way regardless: no activity was recognized
+      // anywhere, full stop.
       if (isExpectedWorkday(employee, date) && !isCovered) {
         exceptions.push(createException({
           code: "no_activity_recorded",

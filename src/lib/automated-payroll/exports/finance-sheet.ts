@@ -6,7 +6,7 @@ import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun } from "../types.ts";
-import { PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
+import { bankExtraColumns, PART1_HEADERS, writePayrollWorksheet } from "./sheet.ts";
 
 /**
  * Finance download (export-only): the full or Part-1 sheet with EVERY cell locked
@@ -43,6 +43,7 @@ export async function buildFinanceSheetWorkbook(input: {
     rows: input.rows,
     headers: input.scope === "part1" ? PART1_HEADERS : [...payrollSheetHeaders],
     extraColumns: [
+      ...(input.scope === "part1" ? bankExtraColumns() : []),
       { label: "Finance Edit", kind: "money" },
       { label: "Finance Edit Reason", kind: "text" },
     ],

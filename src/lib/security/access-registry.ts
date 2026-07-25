@@ -110,8 +110,17 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   tokenApi({ authMode: "dev-only", methods: ["GET"], pattern: "/api/dev-auth", reason: "Development-only local preview authentication helper." }),
+  // Super Admin only, on top of the same dev-only env+localhost gate as /api/dev-auth above
+  // (see isLocalDevelopmentRequest): auto-picks a real active employee for a role+line and
+  // swaps the caller's own session for a dev-preview session as that employee. Role gate is
+  // in-route (domain-helper) rather than a permission resource, matching /api/admin/system-issues.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: readOnly, pattern: "/api/dev-auth/preview", permission: null, guard: "domain-helper" }),
+  // Same Super Admin + dev-only gate as the preview route above: read-only candidate listing
+  // that powers the picker's Line -> Region -> Area -> Name cascade client-side.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/dev-auth/candidates", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
+  tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/integrations/telegram/webhook", reason: "Telegram bot webhook is protected by the Telegram secret-token header." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/attendance/raw-punches", reason: "Local attendance agent bearer-token ingestion route." }),
   tokenApi({ authMode: "public-token", methods: ["GET", "POST"], pattern: "/api/excuses/:id/decision", reason: "Manager excuse decision email link is protected by a one-time token; POST is explicitly unsupported." }),
@@ -119,15 +128,11 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/contract-renewals", reason: "Scheduled notification route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/holiday-confirmation", reason: "Scheduled notification route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/daily", reason: "Scheduled notification route guarded by cron controls." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/no-activity-weekly", reason: "Weekly Friday-evening no-activity reminder route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-sync", reason: "Scheduled iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-reconcile", reason: "Scheduled wide iReports360 reconciliation sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-live-sync", reason: "Scheduled high-frequency morning iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/accept", reason: "Candidate offer acceptance uses a secure offer token." }),
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/reject", reason: "Candidate offer rejection uses a secure offer token." }),
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/offers/:offerRef/negotiate", reason: "Candidate offer negotiation request uses a secure offer token; write-only, flags the offer for HR." }),
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/recruitment/apply/:token", reason: "Public job application submission protected by the posting token and IP rate limit; write-only, exposes no data." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/health/email", reason: "Unauthenticated health check; reports env-var presence only, no secrets or PII." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/healthz", reason: "Unauthenticated Cloud Run liveness probe; returns status/revision only, no data or secrets." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/readyz", reason: "Unauthenticated readiness probe; returns dependency booleans + missing-env NAMES only, never values." }),
@@ -323,7 +328,6 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/test", permission: { resource: "employee_profile", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
-  sessionApi({ methods: allMethods, pattern: "/api/offers/**", permission: { resource: "offers", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper" }),
@@ -367,6 +371,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/part2/confirm", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/finance/download", permission: null, guard: "domain-helper" }),
+  // Employee Day-by-Day Report deduction decisions — replaced the standalone Fingerprint
+  // Deductions page (retired 2026-07-24); this is now the one place a fingerprint deduction
+  // gets confirmed/rejected. Super Admin gate enforced in-route (matches the page itself).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/decisions", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/attendance/employee-day-report/decisions", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/all-summary", permission: null, guard: "domain-helper" }),
   // Probation Decision Intelligence routes are gated at probation:read at the middleware; each
   // route enforces its exact permission / row-level ownership / decision-role check in-handler
   // (findAccessRegistryEntry picks the longest matching pattern, so these override the blanket
@@ -387,11 +397,15 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/candidates/template", permission: { resource: "candidates", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/interviews/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
-  sessionApi({ methods: allMethods, pattern: "/api/recruitment/onboarding/**", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
-  sessionApi({ methods: allMethods, pattern: "/api/recruitment/offers/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: allMethods, pattern: "/api/recruitment/offer-letter/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: allMethods, pattern: "/api/recruitment/salary-summary/**", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
+  // Deliberately gated on the narrow `hiring_interviews` resource, not `recruitment`/
+  // `candidates` (both hard-boundary-locked to HR authority roles) — so a hiring-manager-type
+  // role like District Manager can view/act on only their own assigned candidate's CV,
+  // interview, and outcome, without a broader recruitment grant. See
+  // src/lib/recruitment/hiring-manager-view.ts for the full rationale and per-record scoping.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
+  sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),

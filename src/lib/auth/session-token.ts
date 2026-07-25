@@ -1,9 +1,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
+import { sessionAbsoluteTimeoutSecondsForRole } from "./app-sessions.ts";
 import type { PhoenixRole } from "./permissions.ts";
 
 export const phoenixSessionCookieName = "phoenix_session";
-const defaultSessionIdleTimeoutSeconds = 15 * 60;
 
 export type SessionPayload = {
   exp: number;
@@ -59,13 +59,15 @@ export function createSessionToken(input: {
   return `${encodedPayload}.${sign(encodedPayload)}`;
 }
 
+// No separate idle window (owner decision 2026-07-23): a session now stays alive for
+// as long as it's open on the same device/browser, bounded only by the absolute
+// session lifetime below — not a shorter inactivity cutoff. A prior 15-minute local
+// clock was forcing signed-out sessions on anyone who opened a push notification (or
+// otherwise returned to the app) more than 15 minutes after their last click. Kept as
+// its own function, rather than deleted and inlined, so a future per-role idle policy
+// can reintroduce a real distinction here without touching every call site.
 export function sessionIdleTimeoutSecondsForRole(role: PhoenixRole) {
-  switch (role) {
-    case "Super Admin":
-      return defaultSessionIdleTimeoutSeconds;
-    default:
-      return defaultSessionIdleTimeoutSeconds;
-  }
+  return sessionAbsoluteTimeoutSecondsForRole(role);
 }
 
 export function verifySessionToken(token: string | null | undefined): SessionPayload | null {

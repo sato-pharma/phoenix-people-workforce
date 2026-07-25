@@ -120,6 +120,7 @@ export function SearchableSelect({
   maxResults = 100,
   noResultsText = "No results",
   placeholder,
+  "aria-label": ariaLabel,
   ...rest
 }: SearchableSelectProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -282,6 +283,7 @@ export function SearchableSelect({
         aria-autocomplete="list"
         aria-controls={`${id ?? "searchable-select"}-options`}
         aria-expanded={open}
+        aria-label={ariaLabel ?? placeholder ?? name ?? "Select an option"}
         autoComplete="off"
         className={cn(baseInputClassName, className)}
         disabled={disabled}

@@ -1,26 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
-  CalendarCheck,
-  CalendarDays,
-  CalendarX2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Download,
   FileSearch,
-  Fingerprint,
   ListFilter,
   MessageSquareWarning,
-  Plane,
   RefreshCw,
   Search,
-  ShieldCheck,
-  UserRound,
-  UsersRound,
 } from "lucide-react";
 
 
@@ -98,27 +89,18 @@ function monthDateIso(year: number, month: number, preferredDay = 1) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function sourceIcon(source: PrivateCalendarSource) {
-  if (source === "attendance") return <Fingerprint className="h-4 w-4" />;
-  if (source === "vacation") return <Plane className="h-4 w-4" />;
-  if (source === "excuse") return <Clock className="h-4 w-4" />;
-  if (source === "plan") return <CalendarCheck className="h-4 w-4" />;
-  return <ShieldCheck className="h-4 w-4" />;
-}
-
-// Every source gets its own hue below — double_visit previously fell through to
-// the same blue as vacation in two of these helpers (while the others already
-// defaulted it to teal), so a DV chip and a vacation chip were visually
-// indistinguishable. double_visit now gets a dedicated indigo, consistently.
+// Every source gets its own hue, chosen to stay visually distinct even at
+// small chip sizes: double_visit is fuchsia (indigo read too close to
+// vacation's blue), holiday defaults to violet (teal read too close to
+// attendance's emerald green).
 function sourceAccentColor(source: PrivateCalendarSource, severity?: string) {
   if (severity === "danger") return "border-l-red-500";
   if (severity === "warning") return "border-l-amber-400";
   if (source === "attendance") return "border-l-emerald-500";
   if (source === "vacation") return "border-l-blue-500";
   if (source === "excuse") return "border-l-amber-500";
-  if (source === "plan") return "border-l-violet-500";
-  if (source === "double_visit") return "border-l-indigo-500";
-  return "border-l-teal-500";
+  if (source === "double_visit") return "border-l-fuchsia-500";
+  return "border-l-violet-500";
 }
 
 function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
@@ -127,9 +109,8 @@ function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
   if (source === "attendance") return "bg-emerald-100 text-emerald-700";
   if (source === "vacation") return "bg-blue-100 text-blue-700";
   if (source === "excuse") return "bg-amber-100 text-amber-700";
-  if (source === "plan") return "bg-violet-100 text-violet-700";
-  if (source === "double_visit") return "bg-indigo-100 text-indigo-700";
-  return "bg-teal-100 text-teal-700";
+  if (source === "double_visit") return "bg-fuchsia-100 text-fuchsia-700";
+  return "bg-violet-100 text-violet-700";
 }
 
 // Solid swatch colour per source for legend dots / agenda markers.
@@ -137,9 +118,8 @@ function sourceSwatchColor(source: PrivateCalendarSource) {
   if (source === "attendance") return "bg-emerald-500";
   if (source === "vacation") return "bg-blue-500";
   if (source === "excuse") return "bg-amber-500";
-  if (source === "plan") return "bg-violet-500";
-  if (source === "double_visit") return "bg-indigo-500";
-  return "bg-teal-500";
+  if (source === "double_visit") return "bg-fuchsia-500";
+  return "bg-violet-500";
 }
 
 // Every private calendar exception is either a real problem (danger) or a
@@ -209,7 +189,6 @@ function timelineRank(item: PrivateCalendarItem) {
   if (item.source === "holiday") return 0;
   if (item.source === "vacation") return 1;
   if (item.source === "excuse") return 2;
-  if (item.source === "plan") return 3;
   return 4;
 }
 
@@ -235,10 +214,13 @@ function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitl
 export function PrivateCalendar({
   initialWorkspace,
   surface = "employee",
+  todayIso: todayIsoProp,
   viewerHrId = null,
 }: {
   initialWorkspace: PrivateCalendarWorkspace;
   surface?: PrivateCalendarSurface;
+  /** Today's date as YYYY-MM-DD, computed once on the server to prevent SSR/hydration mismatch. */
+  todayIso: string;
   // Whoever is actually logged in and looking at this screen — NOT necessarily
   // the employee whose calendar is displayed (a manager/admin can view someone
   // else's calendar here too). Flag-day and no-activity-clarification are
@@ -247,7 +229,7 @@ export function PrivateCalendar({
   viewerHrId?: string | null;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedDate, setSelectedDate] = useState(todayIsoProp);
   const [sourceFilter, setSourceFilter] = useState<string>(allValue);
   const [statusFilter, setStatusFilter] = useState<string>(allValue);
   const [employeeFilter, setEmployeeFilter] = useState<string>(allValue);
@@ -283,7 +265,7 @@ export function PrivateCalendar({
     weeks,
     year,
   } = workspace;
-  const today = todayIso();
+  const today = todayIsoProp;
   const isTeamView = viewMode === "team";
   const isWorkspaceSurface = surface === "workspace";
   // View/Employee/Line/Department/Search only mean anything when the viewer can
@@ -292,9 +274,9 @@ export function PrivateCalendar({
   // so those controls would be dead UI that filters nothing. Source/Status/
   // Exceptions still filter within one person's own items and stay for everyone.
   const canFilterAcrossEmployees = workspace.access.canSelectEmployee;
-  // The employee-portal surface only ever shows what the system actually recognized
-  // (attendance, leave, CRM double visits) — never the employee's own planned/intended
-  // activity. Admin/workspace surfaces keep plan vs. actual side-by-side for oversight.
+  // Every private calendar source is already an actually recorded/verified event
+  // (attendance, leave, CRM double visits) — there is no separate "planned" view
+  // to distinguish anymore, so this flag currently has no effect on what renders.
   const actualOnly = surface === "employee";
   const panelClass = isWorkspaceSurface
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
@@ -653,7 +635,6 @@ export function PrivateCalendar({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
-                  <UserRound className="h-3 w-3" />
                   Private Calendar
                 </span>
                 {workspace.access.isGlobalViewer ? (
@@ -663,7 +644,6 @@ export function PrivateCalendar({
                 ) : null}
                 {isTeamView ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
-                    <UsersRound className="h-3 w-3" />
                     Team mode
                   </span>
                 ) : null}
@@ -751,16 +731,13 @@ export function PrivateCalendar({
           </div>
         </div>
 
-        <div className={["grid gap-3 p-4 sm:grid-cols-2", actualOnly ? "xl:grid-cols-6" : "xl:grid-cols-7"].join(" ")}>
-          <Metric icon={<Fingerprint className="h-5 w-5" />} label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} color="emerald" />
-          <Metric icon={<Plane className="h-5 w-5" />} label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} color="blue" />
-          <Metric icon={<Clock className="h-5 w-5" />} label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} color="amber" />
-          {!actualOnly ? (
-            <Metric icon={<CalendarCheck className="h-5 w-5" />} label="Plans" ready={sourceReadiness.plan} value={summary.plan} color="violet" />
-          ) : null}
-          <Metric icon={<ShieldCheck className="h-5 w-5" />} label="National" ready={sourceReadiness.holiday} value={summary.holiday} color="teal" />
-          <Metric icon={<AlertTriangle className="h-5 w-5" />} label="Exceptions" ready value={exceptions.length} color="red" tone="warning" />
-          <Metric icon={<CalendarX2 className="h-5 w-5" />} label="Days w/ Issues" ready value={daysWithIssues} color="red" tone="warning" />
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
+          <Metric label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} />
+          <Metric label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} />
+          <Metric label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} />
+          <Metric label="National" ready={sourceReadiness.holiday} value={summary.holiday} />
+          <Metric label="Exceptions" ready value={exceptions.length} tone="warning" />
+          <Metric label="Days w/ Issues" ready value={daysWithIssues} tone="warning" />
         </div>
       </section>
 
@@ -969,9 +946,10 @@ export function PrivateCalendar({
       {filteredExceptions.length > 0 ? (
         <section className={["border-l-4 border-l-red-500", secondaryPanelClass].join(" ")}>
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
             <span className="text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
-              {filteredExceptions.length} exception{filteredExceptions.length === 1 ? "" : "s"} need review
+              {filteredExceptions.length} {filteredExceptions.every((exception) => exception.title === "No Activity Recorded")
+                ? `No Activity Day${filteredExceptions.length === 1 ? "" : "s"}`
+                : `Exception${filteredExceptions.length === 1 ? "" : "s"}`} Need Review
             </span>
           </div>
           <div className="divide-y divide-slate-100">
@@ -984,9 +962,6 @@ export function PrivateCalendar({
                   onClick={() => focusException(exception.date)}
                   type="button"
                 >
-                  <span className={["inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
-                    {exception.severity}
-                  </span>
                   <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
                   {exception.employeeName ? (
@@ -1071,7 +1046,7 @@ export function PrivateCalendar({
                       ) : null}
                     </span>
                   </span>
-                  <span className="mt-1.5 block space-y-1">
+                  <span className="mt-1.5 block space-y-2">
                     {dayExceptions.slice(0, visibleExceptionCount).map((exception) => (
                       <span
                         className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
@@ -1086,12 +1061,12 @@ export function PrivateCalendar({
                       const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...baseLines] : baseLines;
                       return (
                         <span
-                          className={["block divide-y divide-black/10 rounded px-1.5 py-0.5 text-[10px] font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
+                          className={["block divide-y divide-black/15 rounded px-1.5 py-0.5 text-[10px] font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
                           key={item.id}
                           title={chipTitle(item, viewMode)}
                         >
                           {lines.map((line, lineIndex) => (
-                            <span className="line-clamp-2 py-0.5 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
+                            <span className="block py-1 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
                           ))}
                         </span>
                       );
@@ -1113,7 +1088,6 @@ export function PrivateCalendar({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
               <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
-                <CalendarDays className="h-4 w-4" />
                 Daily Timeline
               </div>
               <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
@@ -1267,7 +1241,6 @@ export function PrivateCalendar({
             <section className={selectedExceptions.length > 0 ? "min-w-0" : "min-w-0 xl:col-span-2"}>
               {timelineItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
-                  <CalendarDays className="h-8 w-8 text-slate-300" />
                   <p className="text-sm font-semibold text-slate-400">No calendar items for this day.</p>
                 </div>
               ) : (
@@ -1355,7 +1328,6 @@ function PrivateCalendarAgenda({
                     <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", sourceSwatchColor(item.source)].join(" ")} />
                     <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
                     <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
-                      {sourceIcon(item.source)}
                       {privateCalendarSourceLabels[item.source]}
                     </span>
                     {item.status ? (
@@ -1396,36 +1368,19 @@ function PrivateCalendarAgenda({
 }
 
 function Metric({
-  color = "slate",
-  icon,
   label,
   ready,
   tone = "neutral",
   value,
 }: {
-  color?: "emerald" | "blue" | "amber" | "violet" | "teal" | "red" | "slate";
-  icon: ReactNode;
   label: string;
   ready: boolean;
   tone?: "neutral" | "warning";
   value: number;
 }) {
-  const iconBg: Record<string, string> = {
-    amber: "bg-amber-100 text-amber-600",
-    blue: "bg-blue-100 text-blue-600",
-    emerald: "bg-emerald-100 text-emerald-600",
-    red: "bg-red-100 text-red-600",
-    slate: "bg-slate-100 text-slate-600",
-    teal: "bg-teal-100 text-teal-600",
-    violet: "bg-violet-100 text-violet-600",
-  };
-
   return (
     <div className={["rounded-sm border p-4", tone === "warning" ? "bg-red-50/60 border-red-100" : "bg-slate-50/60 border-slate-200"].join(" ")}>
-      <div className="flex items-center justify-between gap-2">
-        <span className={["inline-flex h-8 w-8 items-center justify-center rounded-sm", iconBg[color] ?? iconBg.slate].join(" ")}>
-          {icon}
-        </span>
+      <div className="flex items-center justify-end">
         <span className={["rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
           {ready ? "Ready" : "N/A"}
         </span>
@@ -1443,7 +1398,6 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
-            <UsersRound className="h-4 w-4" />
             Manager Team Calendar
           </div>
           <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
@@ -1470,7 +1424,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
               <span className="rounded-sm bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
               <span className="rounded-sm bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
               <span className="rounded-sm bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
-              <span className="rounded-sm bg-violet-100 px-1 py-1.5 text-violet-700">P {row.sourceCounts.plan}</span>
+              <span className="rounded-sm bg-indigo-100 px-1 py-1.5 text-indigo-700">D {row.sourceCounts.double_visit}</span>
             </div>
           </article>
         ))}
@@ -1537,20 +1491,15 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
   const isDanger = exception.severity === "danger";
   return (
     <article className={["rounded-sm border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h4 className={["text-sm font-black", isDanger ? "text-red-900" : "text-amber-900"].join(" ")}>
-            {exception.title}
-          </h4>
-          {exception.employeeName ? (
-            <p className={["mt-1 text-xs font-semibold", tone.text].join(" ")}>
-              {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
-            </p>
-          ) : null}
-        </div>
-        <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
-          {exception.severity}
-        </span>
+      <div className="min-w-0">
+        <h4 className={["text-sm font-black", isDanger ? "text-red-900" : "text-amber-900"].join(" ")}>
+          {exception.title}
+        </h4>
+        {exception.employeeName ? (
+          <p className={["mt-1 text-xs font-semibold", tone.text].join(" ")}>
+            {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+          </p>
+        ) : null}
       </div>
       <p className={["mt-2.5 text-xs font-semibold leading-relaxed", tone.text].join(" ")}>
         {exception.description}
@@ -1567,7 +1516,6 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={["inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
-                {sourceIcon(item.source)}
                 {privateCalendarSourceLabels[item.source]}
               </span>
               {item.time ? (

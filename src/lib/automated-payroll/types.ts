@@ -26,6 +26,7 @@ export type StepKey =
   | "p1_new_hires"
   | "p1_resignations"
   | "p1_fingerprint"
+  | "p1_other_deductions"
   | "p1_holds"
   | "p2_expenses"
   | "p2_vacation"
@@ -38,6 +39,7 @@ export const PART1_STEP_KEYS: readonly StepKey[] = [
   "p1_new_hires",
   "p1_resignations",
   "p1_fingerprint",
+  "p1_other_deductions",
   "p1_holds",
 ] as const;
 
@@ -119,6 +121,25 @@ export type DraftRow = {
   crm: number | null;
   manualOtherDeductions: number | null;
   manualReason: string | null;
+  // Part 1 — "Other deductions" step: HR may flag any of 5 categories per employee,
+  // each with its own optional days (auto-calculates value via Base/30 × days),
+  // value (money — can be typed directly instead of days), and reason (optional).
+  // These reduce the frozen First Part for EVERY employee (not just one-part).
+  p1odCrmDays: number | null;
+  p1odCrmValue: number | null;
+  p1odCrmReason: string | null;
+  p1odVacationDays: number | null;
+  p1odVacationValue: number | null;
+  p1odVacationReason: string | null;
+  p1odNoRecordDays: number | null;
+  p1odNoRecordValue: number | null;
+  p1odNoRecordReason: string | null;
+  p1odLoanDays: number | null;
+  p1odLoanValue: number | null;
+  p1odLoanReason: string | null;
+  p1odOtherDays: number | null;
+  p1odOtherValue: number | null;
+  p1odOtherReason: string | null;
   // Frozen at Part 1 confirm — the first installment, never recomputed afterward.
   firstPartFrozen: number | null;
   // Hold — held employee still appears (red + flagged), excluded from publish.
@@ -142,6 +163,8 @@ export type RowLifecycle = "regular" | "joiner" | "leaver";
 export type StepEditInput = {
   hrId: string;
   values?: Record<string, number>;
+  /** Per-field free-text reasons, keyed by a "text"-kind field's key. */
+  reasons?: Record<string, string>;
   reason?: string | null;
   onHold?: boolean;
 };
@@ -159,6 +182,8 @@ export type StepRow = {
   context: Record<string, string | number | null>;
   values: Record<string, number>;
   recommended: Record<string, number>;
+  /** Per-field free-text reasons, keyed by a "text"-kind field's key. Only used by steps with such fields. */
+  reasons?: Record<string, string>;
   reason: string | null;
   onHold: boolean;
   lifecycle?: RowLifecycle;
@@ -168,9 +193,15 @@ export type StepRow = {
 export type StepFieldSpec = {
   key: string;
   label: string;
-  kind: "money" | "days";
+  kind: "money" | "days" | "text";
   /** When true the field is a per-employee reason string, not a number. */
   reason?: boolean;
+  /**
+   * For a "days" field: the key of the paired "money" field it auto-calculates
+   * (via Base Salary/30 × days) whenever the days input changes. Direct edits to
+   * the money field itself are left alone.
+   */
+  autoCalcMoneyKey?: string;
 };
 
 export type StepDefinition = {

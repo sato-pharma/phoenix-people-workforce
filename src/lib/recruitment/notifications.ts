@@ -1,17 +1,15 @@
 // Recruitment / ATS — scheduled work. Composed into the single daily cron
 // (app/api/notifications/daily) — do NOT add a new Vercel cron (Hobby limit = 2).
 //
-// Phase 1: reflect candidate offer decisions onto linked applications.
-// Phase 2: remind interviewers of interviews scheduled for the next day.
+// Remind interviewers of interviews scheduled for the next day.
 
 import { createSystemNotification } from "@/lib/notifications/system";
-import { reconcileOfferStatuses } from "@/lib/recruitment/applications";
 import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
 
 export type RecruitmentDailyResult =
-  | { ok: true; reconciledOffers: number; interviewReminders: number }
-  | { ok: false; reconciledOffers: 0; interviewReminders: 0; error: string };
+  | { ok: true; interviewReminders: number }
+  | { ok: false; interviewReminders: 0; error: string };
 
 async function sendInterviewReminders(): Promise<number> {
   const now = new Date();
@@ -49,13 +47,11 @@ async function sendInterviewReminders(): Promise<number> {
 
 export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDailyResult> {
   try {
-    const reconciledOffers = await reconcileOfferStatuses();
     const interviewReminders = await sendInterviewReminders();
-    return { ok: true, reconciledOffers, interviewReminders };
+    return { ok: true, interviewReminders };
   } catch (error) {
     return {
       ok: false,
-      reconciledOffers: 0,
       interviewReminders: 0,
       error: error instanceof Error ? error.message : "Recruitment daily processing failed.",
     };

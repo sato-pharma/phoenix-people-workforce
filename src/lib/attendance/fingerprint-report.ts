@@ -18,6 +18,10 @@ import {
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
+import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
+import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
+import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
+import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -40,7 +44,11 @@ export type FingerprintReportColumnKey =
   | "status"
   | "recommendedAction"
   | "deductionDays"
-  | "deductionValue";
+  | "deductionValue"
+  | "approvedLeave"
+  | "approvedExcuse"
+  | "crmActivity"
+  | "weeklyPlan";
 
 export type FingerprintReportColumn = {
   always?: boolean;
@@ -225,6 +233,17 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "recommendedAction", label: "Recommended Action" },
   { always: true, key: "deductionDays", label: "Deduction Days" },
   { always: true, key: "deductionValue", label: "Deduction Amount" },
+  // Owner request 2026-07-24: give the export enough context (CRM visit, approved vacation/leave,
+  // approved excuse, weekly-plan office/field designation) to manually re-verify a day's deduction
+  // the same way the Employee Day-by-Day Report's reconcileDay gate does -- this report's own
+  // status/deduction math is intentionally left untouched (see statusFromFlexibleHours), these
+  // columns are supporting evidence only. Not `always`: the on-screen table hides them on a day
+  // with nothing to show, but the export always includes them (generateFingerprintReportWorkbook
+  // renders every entry in `columns`, not just the on-screen-visible subset).
+  { key: "approvedLeave", label: "Approved Vacation/Leave" },
+  { key: "approvedExcuse", label: "Approved Excuse" },
+  { key: "crmActivity", label: "CRM Activity" },
+  { key: "weeklyPlan", label: "Weekly Plan" },
 ];
 
 function pad(value: number) {
@@ -644,8 +663,14 @@ export async function getFingerprintAttendanceReport(input: {
     if (hrId && employeeHrIds.includes(hrId)) employeeMap.set(hrId, employee);
   }
 
-  const exceptionMap = await getAttendanceExceptionMap(employeeHrIds, dateFrom, dateTo);
-  const halfDayVacationMap = await loadApprovedHalfDayVacationMap(employeeHrIds, dateFrom, dateTo);
+  const [exceptionMap, halfDayVacationMap, approvedLeaveMap, approvedExcuseMap, crmActivity, planOfficeMap] = await Promise.all([
+    getAttendanceExceptionMap(employeeHrIds, dateFrom, dateTo),
+    loadApprovedHalfDayVacationMap(employeeHrIds, dateFrom, dateTo),
+    getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
+    getApprovedExcuseDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
+    getCrmActivityDayMaps({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
+    getPlanOfficeDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
+  ]);
 
   const buckets = new Map<string, PunchBucket>();
   for (const punch of punches) {
@@ -714,9 +739,25 @@ export async function getFingerprintAttendanceReport(input: {
     const hasApprovedException = exception?.status === "approved";
     const hasPendingException = !hasApprovedException && exception?.status === "pending";
 
+    const hasApprovedLeave = approvedLeaveMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
+    const hasApprovedExcuse = approvedExcuseMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
+    const hasCrmLeave = crmActivity.leaveMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
+    const hasCrmFieldVisit = crmActivity.fieldVisitMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
+    const crmDetail = crmActivity.detailMap.get(bucket.employeeHrId)?.get(bucket.reportDate) ?? "";
+    const planSaysOffice = planOfficeMap.get(bucket.employeeHrId)?.get(bucket.reportDate);
+
     return {
       actualFirstPunch: firstPunchText,
       actualLastPunch: hasDistinctVisibleLastPunch ? lastPunchText : "",
+      approvedExcuse: hasApprovedExcuse ? `Approved excuse${exception ? `: ${exception.reason}` : ""}` : "",
+      approvedLeave: hasApprovedLeave
+        ? halfDayVacationPart
+          ? `Approved vacation (${halfDayVacationPart === "am_only" ? "AM only" : "PM only"})`
+          : "Approved vacation/leave"
+        : hasCrmLeave
+          ? `CRM-recorded leave${crmDetail ? `: ${crmDetail}` : ""}`
+          : "",
+      crmActivity: hasCrmFieldVisit ? crmDetail || "CRM field visit" : "",
       date: displayDate(bucket.reportDate),
       dateIso: bucket.reportDate,
       deductionDays: hasApprovedException ? "0" : status.deductionDays,
@@ -731,6 +772,7 @@ export async function getFingerprintAttendanceReport(input: {
       hasException: hasApprovedException,
       jobTitle: employee?.job_title?.trim() || "",
       lateMinutes: hasApprovedException ? "0" : status.lateMinutes,
+      weeklyPlan: planSaysOffice === true ? "Office" : planSaysOffice === false ? "Field" : "",
       recommendedAction: hasApprovedException
         ? `Exception: ${exception!.reason}`
         : hasPendingException

@@ -67,10 +67,31 @@ export type EnablePushResult = {
 // or already-blocked prompt does NOT reject the promise. Callers MUST check the returned
 // `optedIn`/`permission` state rather than assuming success just because this resolved,
 // or a denied user gets told "push enabled" when nothing was actually turned on.
+
+// Waits for the OneSignal service worker registration to have an active worker, or
+// resolves after `timeoutMs` regardless. This prevents the "Registration does not have
+// an active worker" TypeError on Safari (and occasionally other browsers) where
+// optIn() internally calls showNotification() before the SW has fully activated.
+// navigator.serviceWorker.ready resolves with the first registration that has an active
+// worker at the current scope — which is the OneSignalSDKWorker registered at "/".
+function waitForServiceWorkerReady(timeoutMs = 10_000): Promise<void> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return Promise.resolve();
+  }
+  const ready = navigator.serviceWorker.ready.then(() => undefined);
+  const timeout = new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs));
+  return Promise.race([ready, timeout]);
+}
+
 export function requestOneSignalPermission(): Promise<EnablePushResult> {
   return new Promise((resolve, reject) => {
     withOneSignal(async (OneSignal) => {
       try {
+        // Wait for the service worker to reach "active" state before calling optIn().
+        // On Safari the SW lifecycle is stricter: optIn() triggers showNotification()
+        // internally, which throws "Registration does not have an active worker" when
+        // called against a registration that is still in the installing/waiting phase.
+        await waitForServiceWorkerReady();
         await OneSignal.User.PushSubscription.optIn();
         resolve({
           optedIn: OneSignal.User.PushSubscription.optedIn,

@@ -8,8 +8,9 @@ import {
   SUPPORT_REQUEST_STATUSES,
   type SupportRequestRow,
   type SupportRequestStatus,
-} from "@/lib/support-requests/service";
+} from "@/lib/support-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 
 type StatusFilter = SupportRequestStatus | "all";
@@ -25,12 +26,13 @@ function formatDate(value: string): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
   });
 }
 

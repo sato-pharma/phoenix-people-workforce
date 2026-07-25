@@ -15,7 +15,7 @@ import type { RecruitmentFile } from "@/lib/recruitment/types";
 export async function listCandidateFiles(candidateId: string): Promise<RecruitmentFile[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_files")
+    .from("ats_files")
     .select("*")
     .eq("candidate_id", candidateId)
     .order("created_at", { ascending: false });
@@ -51,7 +51,7 @@ export async function uploadCandidateFile(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_files")
+    .from("ats_files")
     .insert({
       candidate_id: input.candidateId,
       application_id: textOrNull(input.applicationId),
@@ -76,7 +76,7 @@ export type FileDownload =
 export async function getFileForDownload(fileId: string): Promise<FileDownload | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_files")
+    .from("ats_files")
     .select("*")
     .eq("id", fileId)
     .maybeSingle();

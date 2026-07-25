@@ -12,7 +12,10 @@ import {
   phoenixSessionTimeoutReason,
   readSessionActivityAt,
 } from "../src/lib/auth/client-session.ts";
-import { shouldBlockLoginWhenSupabaseBridgeUnavailable } from "../src/lib/auth/app-sessions.ts";
+import {
+  sessionAbsoluteTimeoutSecondsForRole,
+  shouldBlockLoginWhenSupabaseBridgeUnavailable,
+} from "../src/lib/auth/app-sessions.ts";
 import {
   createSessionToken,
   sessionIdleTimeoutSecondsForRole,
@@ -55,8 +58,11 @@ function createMemoryStorage() {
 export async function runAuthSessionTests() {
   process.env.PHOENIX_AUTH_SECRET = process.env.PHOENIX_AUTH_SECRET || "test-session-secret";
 
-  assert.equal(sessionIdleTimeoutSecondsForRole("Employee"), 15 * 60);
-  assert.equal(sessionIdleTimeoutSecondsForRole("Super Admin"), 15 * 60);
+  // No separate idle window: a session's idle allowance now equals its absolute
+  // lifetime, so inactivity alone can never expire a session before the absolute cap
+  // does (see src/lib/auth/session-token.ts).
+  assert.equal(sessionIdleTimeoutSecondsForRole("Employee"), sessionAbsoluteTimeoutSecondsForRole("Employee"));
+  assert.equal(sessionIdleTimeoutSecondsForRole("Super Admin"), sessionAbsoluteTimeoutSecondsForRole("Super Admin"));
 
   const token = createSessionToken({
     hrId: "B-67",
@@ -70,7 +76,7 @@ export async function runAuthSessionTests() {
 
   assert.ok(payload);
   assert.equal(payload.loginId, "B-67");
-  assert.equal(payload.exp - payload.iat, 15 * 60);
+  assert.equal(payload.exp - payload.iat, sessionAbsoluteTimeoutSecondsForRole("Employee"));
 
   const storage = createMemoryStorage();
   assert.equal(phoenixSessionTimeoutReason, "session-timeout");
@@ -136,13 +142,17 @@ export async function runAuthSessionTests() {
   );
   assert.match(
     sessionSecurityGuardSource,
-    /markSessionInvalidated\("client_idle_timeout"\)/,
-    "client-detected idle timeout must mark the session invalidated before clearing cookies",
-  );
-  assert.match(
-    sessionSecurityGuardSource,
     /markSessionInvalidated\("heartbeat_401"\)/,
     "heartbeat 401 must mark the session invalidated before the logout redirect",
+  );
+  // No separate client-side idle clock: a local inactivity timer used to force-logout
+  // a tab after 15 minutes of no clicks/keys, independent of the server-side session
+  // state — removed so opening the app (e.g. from a push notification) well after the
+  // last click doesn't land on /login while the server-side session is still valid.
+  assert.doesNotMatch(
+    sessionSecurityGuardSource,
+    /client_idle_timeout/,
+    "no separate client-side idle timeout should force a logout independent of server session state",
   );
 
   // ===========================================================================

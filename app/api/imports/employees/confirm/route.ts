@@ -14,7 +14,7 @@ import type {
   VacantPositionImportRecord,
 } from "@/lib/imports/employee-import-types";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { closeVacancyForOffer } from "@/lib/offers/service";
+import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -897,7 +897,7 @@ async function closeVacanciesForImportedEmployees(
       continue;
     }
 
-    const closedVacancy = await closeVacancyForOffer({
+    const closedVacancy = await closeVacancyOnHire({
       area_id: areaId,
       department_id: departmentId,
       filled_by_hr_id: record.hrId,

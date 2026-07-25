@@ -122,11 +122,11 @@ export type EmployeeDirectoryRow = {
 };
 
 import {
-  closeVacancyForOffer,
+  closeVacancyOnHire,
   getOpenMedicalRepVacancies,
   getOpenWorkforceVacancies,
   type VacancyLookupRow,
-} from "@/lib/offers/vacancies";
+} from "@/lib/employees/vacancy-closer";
 
 export type EmployeeLookupOption = {
   id?: number;
@@ -381,7 +381,7 @@ function normalizeEnrollmentStatus(value: string | null | undefined) {
     : null;
 }
 
-function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
+export function isActiveDirectoryEmployee(employee: EmployeeDirectoryRow) {
   return (
     isActiveLifecycleStatus(employee.employmentStatus) &&
     employee.organogramVisible !== false &&
@@ -2175,12 +2175,12 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     upsertEmployeeResidenceLocation(input, payload.hr_id),
   ]);
 
-  // Requirement: closeVacancyForOffer should only run after a NEW employee is created
+  // Requirement: closeVacancyOnHire should only run after a NEW employee is created
   if (!isUpdate) {
     const managerName = payload.manager_hr_id
       ? (await loadManagerNames([payload.manager_hr_id])).get(payload.manager_hr_id) ?? null
       : null;
-    const closedVacancy = await closeVacancyForOffer({
+    const closedVacancy = await closeVacancyOnHire({
       area_id: payload.area_id,
       department_id: payload.department_id,
       filled_by_hr_id: payload.hr_id,

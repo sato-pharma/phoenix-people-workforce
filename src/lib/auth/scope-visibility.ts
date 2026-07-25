@@ -119,11 +119,14 @@ export async function listUserScopeOverrides(): Promise<UserScopeOverride[]> {
   const hrIds = rows.map((r) => r.hr_id).filter(Boolean) as string[];
   const nameByHrId = new Map<string, string | null>();
   const nicknameByHrId = new Map<string, string | null>();
-  if (hrIds.length > 0) {
+  // PostgREST folds every .in() value into the request URL; batch since hrIds is every active
+  // login-enabled user company-wide.
+  for (let i = 0; i < hrIds.length; i += 100) {
+    const batch = hrIds.slice(i, i + 100);
     const { data: empData } = await supabase
       .from("employees")
       .select("hr_id, full_name, nickname")
-      .in("hr_id", hrIds);
+      .in("hr_id", batch);
     for (const row of (empData ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
       if (row.hr_id) {
         const key = canonicalHrIdForDisplay(row.hr_id) ?? row.hr_id.toUpperCase();

@@ -901,20 +901,28 @@ export async function getPayrollDashboard(
   let resignationCandidates: PayrollDashboardData["resignationCandidates"] = [];
   if (batchHrIds.length > 0) {
     try {
-      const { data: candidateRows, error: candidateError } = await getSupabaseAdmin()
-        .from("payroll_resignation_candidates")
-        .select("hr_id, employee_name, last_payout_month, last_payout_year")
-        .in("hr_id", batchHrIds);
-      if (!candidateError) {
-        resignationCandidates = ((candidateRows ?? []) as Array<Record<string, unknown>>).map(
-          (row) => ({
-            fullName: String(row.employee_name ?? row.hr_id ?? ""),
-            hrId: String(row.hr_id ?? ""),
-            lastPayoutMonth: Number(row.last_payout_month ?? 0),
-            lastPayoutYear: Number(row.last_payout_year ?? 0),
-          }),
-        );
+      // PostgREST folds every .in() value into the request URL; an unbatched array of a few
+      // hundred ids can push the URL past undici's ~16KB header limit and throw
+      // "TypeError: fetch failed" / HeadersOverflowError — a company-wide batch can have that
+      // many hr_ids, so batch this lookup.
+      const candidateRows: Array<Record<string, unknown>> = [];
+      for (let i = 0; i < batchHrIds.length; i += 100) {
+        const batch = batchHrIds.slice(i, i + 100);
+        const { data, error: candidateError } = await getSupabaseAdmin()
+          .from("payroll_resignation_candidates")
+          .select("hr_id, employee_name, last_payout_month, last_payout_year")
+          .in("hr_id", batch);
+        if (candidateError) throw candidateError;
+        candidateRows.push(...((data ?? []) as Array<Record<string, unknown>>));
       }
+      resignationCandidates = candidateRows.map(
+        (row) => ({
+          fullName: String(row.employee_name ?? row.hr_id ?? ""),
+          hrId: String(row.hr_id ?? ""),
+          lastPayoutMonth: Number(row.last_payout_month ?? 0),
+          lastPayoutYear: Number(row.last_payout_year ?? 0),
+        }),
+      );
     } catch {
       /* best-effort — never block the payroll dashboard on this cross-reference */
     }

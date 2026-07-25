@@ -694,14 +694,19 @@ async function fetchDecisionsByCandidateIds(
   if (candidateIds.length === 0) return decisionMap;
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("deduction_decisions")
-    .select(DECISION_COLUMNS)
-    .in("candidate_id", candidateIds);
+  // PostgREST folds every .in() value into the request URL; batch since candidateIds is fed by
+  // MAX_KPI_ROWS = 10000-capped inbox aggregation with no smaller bound.
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const batch = candidateIds.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("deduction_decisions")
+      .select(DECISION_COLUMNS)
+      .in("candidate_id", batch);
 
-  if (error) throw error;
-  for (const row of (data ?? []) as DecisionRow[]) {
-    decisionMap.set(row.candidate_id, mapDecisionRow(row));
+    if (error) throw error;
+    for (const row of (data ?? []) as DecisionRow[]) {
+      decisionMap.set(row.candidate_id, mapDecisionRow(row));
+    }
   }
   return decisionMap;
 }
@@ -820,14 +825,23 @@ export async function supersedeExitedEmployeeDeductionCandidates(): Promise<Exit
     }
     if (exitedByCompact.size === 0) return { checked: 0, superseded: 0 };
 
-    const { data: candidateData, error: candidateError } = await supabase
-      .from("deduction_candidates")
-      .select("id,employee_hr_id_compact,month_key")
-      .is("superseded_at", null)
-      .in("employee_hr_id_compact", Array.from(exitedByCompact.keys()));
-    if (candidateError) throw candidateError;
+    // PostgREST folds every .in() value into the request URL; an unbatched array of a few
+    // hundred ids can push the URL past undici's ~16KB header limit and throw
+    // "TypeError: fetch failed" / HeadersOverflowError — exitedByCompact spans every employee
+    // who has ever left the company, so batch every .in() derived from it.
+    const exitedCompactIds = Array.from(exitedByCompact.keys());
+    const candidates: Array<{ employee_hr_id_compact: string; id: string; month_key: string }> = [];
+    for (let i = 0; i < exitedCompactIds.length; i += 100) {
+      const batch = exitedCompactIds.slice(i, i + 100);
+      const { data: candidateData, error: candidateError } = await supabase
+        .from("deduction_candidates")
+        .select("id,employee_hr_id_compact,month_key")
+        .is("superseded_at", null)
+        .in("employee_hr_id_compact", batch);
+      if (candidateError) throw candidateError;
+      candidates.push(...((candidateData ?? []) as Array<{ employee_hr_id_compact: string; id: string; month_key: string }>));
+    }
 
-    const candidates = (candidateData ?? []) as Array<{ employee_hr_id_compact: string; id: string; month_key: string }>;
     const staleIds: string[] = [];
     for (const candidate of candidates) {
       const lastWorkingDate = exitedByCompact.get(candidate.employee_hr_id_compact);
@@ -837,20 +851,27 @@ export async function supersedeExitedEmployeeDeductionCandidates(): Promise<Exit
     }
     if (staleIds.length === 0) return { checked: candidates.length, superseded: 0 };
 
-    const { data: decisionData, error: decisionError } = await supabase
-      .from("deduction_decisions")
-      .select("candidate_id")
-      .in("candidate_id", staleIds);
-    if (decisionError) throw decisionError;
-    const decidedIds = new Set(((decisionData ?? []) as Array<{ candidate_id: string }>).map((row) => row.candidate_id));
+    const decidedIds = new Set<string>();
+    for (let i = 0; i < staleIds.length; i += 100) {
+      const batch = staleIds.slice(i, i + 100);
+      const { data: decisionData, error: decisionError } = await supabase
+        .from("deduction_decisions")
+        .select("candidate_id")
+        .in("candidate_id", batch);
+      if (decisionError) throw decisionError;
+      for (const row of (decisionData ?? []) as Array<{ candidate_id: string }>) decidedIds.add(row.candidate_id);
+    }
     const toSupersede = staleIds.filter((id) => !decidedIds.has(id));
     if (toSupersede.length === 0) return { checked: candidates.length, superseded: 0 };
 
-    const { error: updateError } = await supabase
-      .from("deduction_candidates")
-      .update({ superseded_at: new Date().toISOString() })
-      .in("id", toSupersede);
-    if (updateError) throw updateError;
+    for (let i = 0; i < toSupersede.length; i += 100) {
+      const batch = toSupersede.slice(i, i + 100);
+      const { error: updateError } = await supabase
+        .from("deduction_candidates")
+        .update({ superseded_at: new Date().toISOString() })
+        .in("id", batch);
+      if (updateError) throw updateError;
+    }
 
     return { checked: candidates.length, superseded: toSupersede.length };
   } catch (error) {
@@ -1371,18 +1392,20 @@ export async function updateDeductionDecision(input: UpdateDeductionDecisionInpu
  * of truth regardless of which UI made the call.
  *
  * Deliberately bypasses `assertDeductionsGovernanceDecisionActor` (which is
- * Super-Admin-only) — the caller (the Copilot API route) has already
- * asserted CEO/Super Admin access via `assertCopilotAccess`, so gating again
- * here on the HR-only role would just lock the CEO out of a page built for
- * them. Every write is stamped with a `copilot:<actor>` decided_by and a
- * closed reason enum so it is never confused with a human HR-governance
- * decision in the audit trail.
+ * Super-Admin-only) — every caller of this function already asserts its own
+ * CEO/Super Admin gate before reaching here, so gating again on the HR-only
+ * role would just lock the CEO out of a page built for them. Every write is
+ * stamped with a `<source.key>:<actor>` decided_by and a closed reason label
+ * (defaulting to Payroll Copilot) so it is never confused with a human
+ * HR-governance decision in the audit trail, and stays traceable to the
+ * specific simplified-review surface that made the call.
  */
 export async function recordCopilotDeductionDecision(input: {
   candidateId: string;
   decisionStatus: "Approved for Payroll" | "Do Not Take Action";
   appliedDeductionValue?: number | null;
   actorLoginId: string;
+  source?: { key: string; label: string };
 }): Promise<DeductionDecision> {
   const candidate = await loadCandidateById(input.candidateId);
   if (candidate.sourceModule !== "ATTENDANCE_DEVICE" && candidate.sourceModule !== "FIELD_WORKFORCE") {
@@ -1403,15 +1426,16 @@ export async function recordCopilotDeductionDecision(input: {
     requestedValue: input.appliedDeductionValue ?? null,
   });
   const appliedAmount = await calculateAppliedAmount({ appliedValue, candidate });
-  const actor = `copilot:${input.actorLoginId || "unknown"}`;
+  const source = input.source ?? { key: "copilot", label: "Payroll Copilot" };
+  const actor = `${source.key}:${input.actorLoginId || "unknown"}`;
   const now = new Date().toISOString();
   const decisionReason =
     input.decisionStatus === "Approved for Payroll"
-      ? "Approved via Payroll Copilot"
-      : "Rejected via Payroll Copilot";
+      ? `Approved via ${source.label}`
+      : `Rejected via ${source.label}`;
 
   const payload = {
-    actor_role_at_decision: "CEO/Super Admin (Payroll Copilot)",
+    actor_role_at_decision: `CEO/Super Admin (${source.label})`,
     actor_scope_at_decision: "system",
     applied_amount: appliedAmount,
     applied_deduction_value: appliedValue,
@@ -1439,7 +1463,7 @@ export async function recordCopilotDeductionDecision(input: {
     entityId: candidate.id,
     entityType: "deduction_decision",
     newValues: payload,
-    summary: `Payroll Copilot decision for ${candidate.employeeCode} (${candidate.monthKey}): ${decisionReason}.`,
+    summary: `${source.label} decision for ${candidate.employeeCode} (${candidate.monthKey}): ${decisionReason}.`,
   });
 
   return mapDecisionRow(data as DecisionRow);
@@ -1700,13 +1724,21 @@ export async function listDeductionComments(input: {
   candidateIds: string[];
 }): Promise<DeductionComment[]> {
   if (input.candidateIds.length === 0) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("deduction_comments")
-    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
-    .in("candidate_id", input.candidateIds)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return ((data ?? []) as CommentRow[]).map(mapCommentRow);
+  // PostgREST folds every .in() value into the request URL; batch since candidateIds can span an
+  // unbounded, system-wide deduction_monthly_summary_lines read for system-scope viewers.
+  const rows: CommentRow[] = [];
+  for (let i = 0; i < input.candidateIds.length; i += 100) {
+    const batch = input.candidateIds.slice(i, i + 100);
+    const { data, error } = await getSupabaseAdmin()
+      .from("deduction_comments")
+      .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
+      .in("candidate_id", batch)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    rows.push(...((data ?? []) as CommentRow[]));
+  }
+  rows.sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
+  return rows.map(mapCommentRow);
 }
 
 async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string) {

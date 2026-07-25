@@ -133,11 +133,15 @@ const columns: ExportColumn[] = [
   { header: "Last Updated", key: "lastUpdated", section: "Lifecycle/System", width: 18 },
 ];
 
+// On-brand only — every value here is either a BRAND token or a shade from the same
+// orange/navy/slate family used across the app (src/styles/tokens.css) and every other
+// Phoenix xlsx export (e.g. src/lib/sales/sos-mapping-templates.ts). No purple/indigo —
+// those hues don't exist anywhere else in the design system.
 const sectionColors: Record<string, string> = {
   "Identity": BRAND.navy,
   "Organization": BRAND.primaryDark,
-  "Contact & Residence": "FF7C3AED",
-  "CRM": "FF4338CA",
+  "Contact & Residence": "FF334155",
+  "CRM": BRAND.primary,
   "Payroll Reference Information": "FFC2410C",
   "Lifecycle/System": BRAND.slate,
 };
@@ -470,7 +474,7 @@ async function styleWorksheet(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbo
     sheet.getCell(rowNumber, genderCol).dataValidation = { allowBlank: true, formulae: ['"Male,Female,Other,Not specified"'], type: "list" };
     sheet.getCell(rowNumber, contractCol).dataValidation = {
       allowBlank: true,
-      formulae: ['"Permanent,Fixed-term,Temporary,Consultant,Internship,Not specified"'],
+      formulae: ['"Full time,Semi-full time,Part time"'],
       type: "list",
     };
     sheet.getCell(rowNumber, statusCol).dataValidation = {

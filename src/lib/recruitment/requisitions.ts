@@ -22,6 +22,7 @@ import {
   assertCanDeleteRecruitment,
   assertCanSeeRequisition,
   filterRequisitionsForAccess,
+  resolveHiringManagerScopeHrIds,
 } from "@/lib/recruitment/access";
 import {
   headcountTypes,
@@ -59,30 +60,29 @@ function enrich(requisition: Requisition, names: Map<string, string>): Requisiti
 
 export async function listRequisitions(access: AccessContext): Promise<Requisition[]> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("recruitment_requisitions")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const [{ data, error }, names, scopeHrIds] = await Promise.all([
+    supabase.from("ats_requisitions").select("*").order("created_at", { ascending: false }),
+    employeeNameByHrId(),
+    resolveHiringManagerScopeHrIds(access),
+  ]);
   if (error) throw error;
 
-  const names = await employeeNameByHrId();
   const requisitions = ((data ?? []) as RequisitionDbRow[]).map((row) => enrich(mapRequisition(row), names));
-  return filterRequisitionsForAccess(access, requisitions);
+  return filterRequisitionsForAccess(access, requisitions, scopeHrIds);
 }
 
 export async function getRequisition(access: AccessContext, id: string): Promise<Requisition | null> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("recruitment_requisitions")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data, error }, names, scopeHrIds] = await Promise.all([
+    supabase.from("ats_requisitions").select("*").eq("id", id).maybeSingle(),
+    employeeNameByHrId(),
+    resolveHiringManagerScopeHrIds(access),
+  ]);
   if (error) throw error;
   if (!data) return null;
 
-  const names = await employeeNameByHrId();
   const requisition = enrich(mapRequisition(data as RequisitionDbRow), names);
-  assertCanSeeRequisition(access, requisition);
+  assertCanSeeRequisition(access, requisition, scopeHrIds);
   return requisition;
 }
 
@@ -91,7 +91,7 @@ export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRo
   const [report, supabase] = [await getVacancyReport(), recruitmentDb()];
   const open = report.rows.filter((row) => row.status === "open");
   const { data, error } = await supabase
-    .from("recruitment_requisitions")
+    .from("ats_requisitions")
     .select("vacancy_id,status")
     .in("status", activeRequisitionStatuses);
   if (error) throw error;
@@ -130,7 +130,7 @@ export async function createRequisition(
     if (vacancy.status !== "open") throw new Error("Selected vacancy is not open.");
 
     const { data: existing, error: existingError } = await supabase
-      .from("recruitment_requisitions")
+      .from("ats_requisitions")
       .select("id")
       .eq("vacancy_id", vacancyId)
       .in("status", activeRequisitionStatuses)
@@ -171,7 +171,7 @@ export async function createRequisition(
   };
 
   const { data, error } = await supabase
-    .from("recruitment_requisitions")
+    .from("ats_requisitions")
     .insert(payload)
     .select("*")
     .single();
@@ -212,7 +212,7 @@ export async function runRequisitionWorkflow(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_requisitions")
+    .from("ats_requisitions")
     .update({ status: nextStatus, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select("*")
@@ -239,6 +239,6 @@ export async function deleteRequisition(access: AccessContext, id: string): Prom
   const requisition = await getRequisition(access, id); // throws if out of scope
   if (!requisition) throw new Error("Requisition not found.");
   const supabase = recruitmentDb();
-  const { error } = await supabase.from("recruitment_requisitions").delete().eq("id", id);
+  const { error } = await supabase.from("ats_requisitions").delete().eq("id", id);
   if (error) throw error;
 }

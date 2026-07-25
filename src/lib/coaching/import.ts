@@ -440,12 +440,17 @@ async function loadExistingReportKeys(): Promise<Set<string>> {
 
 async function cleanupImportedReportIds(reportIds: string[]) {
   if (reportIds.length === 0) return;
-  const { error } = await getSupabaseAdmin()
-    .from("coaching_reports")
-    .delete()
-    .in("id", reportIds);
-  if (error) {
-    console.warn("Failed to clean up partial coaching import reports.", error.message);
+  // PostgREST folds every .in() value into the request URL; batch since a large historical
+  // workbook import can fail partway through with hundreds of pending report ids to roll back.
+  for (let i = 0; i < reportIds.length; i += 100) {
+    const batch = reportIds.slice(i, i + 100);
+    const { error } = await getSupabaseAdmin()
+      .from("coaching_reports")
+      .delete()
+      .in("id", batch);
+    if (error) {
+      console.warn("Failed to clean up partial coaching import reports.", error.message);
+    }
   }
 }
 
