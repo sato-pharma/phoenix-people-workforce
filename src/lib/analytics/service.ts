@@ -5,7 +5,7 @@
 import { unstable_cache } from "next/cache.js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { canViewRestrictedProducts, stripHeadOfficeRows } from "@/lib/sales/access-scope";
+import { canViewHeadOfficeLine, canViewRestrictedProducts, isHeadOfficeLine, stripHeadOfficeRows } from "@/lib/sales/access-scope";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
@@ -146,8 +146,15 @@ export async function loadAnalyticsDimensions(role: PhoenixRole): Promise<Analyt
     analytics.from(productDimensionView as never).select("product_code,product_name,line,family").order("product_name"),
   ] as const);
 
-  // Extract distinct lines and families from products
-  const productRows = (products.data ?? []) as { product_code: string; product_name: string; line: string; family: string }[];
+  // Extract distinct lines and families from products. Head Office is confidential (same lock
+  // class as the restricted codes above — see canViewHeadOfficeLine's docstring): strip it from
+  // the dimension lists too, not just the aggregated rows, so a non-CEO/Super-Admin viewer's
+  // filter dropdowns never offer it as a selectable Line/Product/Family in the first place. Belt
+  // and braces alongside the dim_products view's own WHERE-clause exclusion (defense in depth,
+  // matching this file's existing stripHeadOfficeRows-on-every-row-loader pattern).
+  const canViewHeadOffice = canViewHeadOfficeLine(role);
+  const allProductRows = (products.data ?? []) as { product_code: string; product_name: string; line: string; family: string }[];
+  const productRows = canViewHeadOffice ? allProductRows : allProductRows.filter((p) => !isHeadOfficeLine(p.line));
   const lines = [...new Set(productRows.map((p) => p.line).filter(Boolean))].sort();
   const families = [...new Set(productRows.map((p) => p.family).filter(Boolean))].sort();
   const areaRows = (areas.data ?? []) as { area_code: string; area_name: string; region_code: string; region_name: string }[];

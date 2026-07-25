@@ -426,6 +426,7 @@ import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
+import { runAnalyticsDimProductsHeadOfficeExclusionTests } from "./analytics-dim-products-head-office-exclusion.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
 import { runAutomatedPayrollFingerprintAggregationTests } from "./automated-payroll-fingerprint-aggregation.test.ts";
@@ -882,6 +883,7 @@ await runTest("payroll copilot holiday bridging (mandatory before/after national
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
+await runTest("analytics dim_products excludes confidential Head Office line (filter dropdown leak fix)", runAnalyticsDimProductsHeadOfficeExclusionTests);
 await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
