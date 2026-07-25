@@ -317,7 +317,14 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
   const items = rows.flatMap((row) => {
     const header = headerById.get(row.plan_id);
     if (!header) return [];
+    // directoryByHrId only contains active, organogram-visible employees (see
+    // getEmployeeDirectoryRows' default includeInactive:false) — a plan owner
+    // who has since resigned/been terminated won't be in it. Drop their rows
+    // entirely rather than falling back to the raw stored name, so a shared
+    // calendar of "who's doing what" stops surfacing people who no longer work
+    // here, regardless of how far in the past or future the plan period is.
     const employee = directoryByHrId.get(normalizeHrId(header.employee_hr_id));
+    if (!employee) return [];
     const lineName = employee?.lineName ?? null;
     const region = cleanText(row.location_text) || null;
     const area = cleanText(row.area) || null;

@@ -1,20 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Filter,
   Search,
-  ShieldAlert,
   Sparkles,
   TriangleAlert,
-  Users,
-  type LucideIcon,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -96,53 +90,88 @@ function planSearchText(item: PlanningCalendarPlanItem) {
     .toLowerCase();
 }
 
-// Left-accent-bar tone per activity type, used by the month-grid pills. Kept as a
-// single className string (border-l accent + tint + text) so the color coding stays
-// aligned with the same activity semantics used in the List/Week agenda dots.
-function planTone(item: PlanningCalendarPlanItem) {
-  if (item.conflictWarning) {
-    return "border-red-500 bg-red-100 text-red-900";
-  }
-  if (item.activityTitle === "Coaching") {
-    return "border-violet-500 bg-violet-100 text-violet-900";
-  }
-  if (item.activityTitle === "Double Visit") {
-    return "border-blue-500 bg-blue-100 text-blue-900";
-  }
-  if (item.activityTitle === "Training") {
-    return "border-amber-500 bg-amber-100 text-amber-900";
-  }
-  return "border-slate-400 bg-slate-100 text-slate-900";
+// Per-day employee color coding — same recipe as the Private Calendar's
+// per-source colors (border-l-500 accent, bg-100/text-700 chip, bg-500 dot),
+// just keyed by employee instead of by data source. Colors are assigned by
+// order of first appearance WITHIN a single day's item list, never by hashing
+// the HR ID — a hash can (and did) collide two unrelated employees onto the
+// same bucket. Red stays reserved for conflict warnings and emerald for
+// national vacations, matching how this calendar already used those two
+// colors before per-employee coding existed.
+type EmployeeHue = { border: string; chip: string; dot: string };
+
+const employeeHues: EmployeeHue[] = [
+  { border: "border-l-amber-500", chip: "bg-amber-100 text-amber-700", dot: "bg-amber-500" },
+  { border: "border-l-blue-500", chip: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
+  { border: "border-l-pink-500", chip: "bg-pink-100 text-pink-700", dot: "bg-pink-500" },
+  { border: "border-l-violet-500", chip: "bg-violet-100 text-violet-700", dot: "bg-violet-500" },
+  { border: "border-l-orange-500", chip: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
+  { border: "border-l-indigo-500", chip: "bg-indigo-100 text-indigo-700", dot: "bg-indigo-500" },
+  { border: "border-l-fuchsia-500", chip: "bg-fuchsia-100 text-fuchsia-700", dot: "bg-fuchsia-500" },
+  { border: "border-l-sky-500", chip: "bg-sky-100 text-sky-700", dot: "bg-sky-500" },
+  { border: "border-l-purple-500", chip: "bg-purple-100 text-purple-700", dot: "bg-purple-500" },
+  { border: "border-l-cyan-500", chip: "bg-cyan-100 text-cyan-700", dot: "bg-cyan-500" },
+];
+
+function employeeHueKey(employeeHrId: string) {
+  return employeeHrId.trim().toUpperCase() || "unassigned";
 }
 
-const statCardTones = {
-  emerald: { badge: "bg-emerald-600", border: "border-emerald-500", tint: "bg-emerald-50", value: "text-emerald-700" },
-  orange: { badge: "bg-orange-600", border: "border-orange-500", tint: "bg-orange-50", value: "text-orange-700" },
-  rose: { badge: "bg-rose-600", border: "border-rose-500", tint: "bg-rose-50", value: "text-rose-700" },
-  slate: { badge: "bg-slate-800", border: "border-slate-500", tint: "bg-slate-100", value: "text-slate-900" },
-} as const;
+// Builds a same-day color map: the first distinct employee seen gets palette
+// slot 0, the second gets slot 1, and so on, so two different employees can
+// never end up with the same color on the same day (only wraps, extremely
+// unlikely to matter in practice, once a single day has more distinct
+// employees than the palette has colors).
+function assignDailyEmployeeHues(dayItems: PlanningCalendarPlanItem[]) {
+  const map = new Map<string, EmployeeHue>();
+  let cursor = 0;
+  for (const item of dayItems) {
+    const key = employeeHueKey(item.employeeHrId);
+    if (map.has(key)) continue;
+    map.set(key, employeeHues[cursor % employeeHues.length]);
+    cursor += 1;
+  }
+  return map;
+}
 
-function PlanningStatCard({
-  accent,
-  icon: Icon,
+function employeeHueFor(map: Map<string, EmployeeHue>, employeeHrId: string) {
+  return map.get(employeeHueKey(employeeHrId)) ?? employeeHues[0];
+}
+
+function planChipTone(item: PlanningCalendarPlanItem, hue: EmployeeHue) {
+  return item.conflictWarning ? "bg-red-100 text-red-700" : hue.chip;
+}
+
+// The three activity groupings the month grid buckets each day's plans into.
+// "Field Visits" covers every field-facing activity type — Single Visit
+// (activityType "Field"), Double Visit, and Coaching (activityType "Other"
+// with activityDisplayLabel normalizing the raw title to "Coaching") — so a
+// manager scanning the day sees who's out in the field together, regardless
+// of which specific visit type it is. Everything else (Training, Meeting,
+// Event, Travel, Admin, Remote, Vacation, Excuse, Other) falls into "Other".
+const planGroups = ["Office", "Field Visits", "Other"] as const;
+type PlanGroup = (typeof planGroups)[number];
+
+function planGroupFor(item: PlanningCalendarPlanItem): PlanGroup {
+  if (item.activityType === "Office") return "Office";
+  if (item.activityType === "Field" || item.activityType === "Double Visit") return "Field Visits";
+  if (item.activityTitle === "Coaching") return "Field Visits";
+  return "Other";
+}
+
+function PlanningMetric({
   label,
+  tone = "neutral",
   value,
 }: {
-  accent: keyof typeof statCardTones;
-  icon: LucideIcon;
   label: string;
-  value: ReactNode;
+  tone?: "neutral" | "warning";
+  value: number;
 }) {
-  const tone = statCardTones[accent];
   return (
-    <div className={`flex items-center gap-3 border-l-4 px-4 py-3.5 shadow-sm ${tone.border} ${tone.tint}`}>
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center text-white shadow-sm ${tone.badge}`}>
-        <Icon className="h-5 w-5" />
-      </span>
-      <div className="min-w-0">
-        <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <p className={`text-2xl font-black leading-none ${tone.value}`}>{value}</p>
-      </div>
+    <div className={`rounded-sm border p-4 ${tone === "warning" ? "border-red-100 bg-red-50/60" : "border-slate-200 bg-slate-50/60"}`}>
+      <p className="text-3xl font-black text-slate-950">{value}</p>
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
   );
 }
@@ -157,6 +186,7 @@ type PlanningCalendarDetailRow = {
   conflictWarning: string;
   date: string;
   employee: string;
+  employeeHrId: string;
   id: string;
   medicalRep: string;
   notes: string;
@@ -278,6 +308,7 @@ export function PlanningCalendar({
   const selectedHolidays = selectedItems.filter((item) => item.source === "holiday");
   const selectedPlans = selectedItems.filter(isPlanItem);
   const selectedConflicts = conflictForDay(conflicts, selectedDate);
+  const selectedDayHues = useMemo(() => assignDailyEmployeeHues(selectedPlans), [selectedPlans]);
   const selectedDetailRows: PlanningCalendarDetailRow[] = [
     ...selectedConflicts.map((conflict) => ({
       activity: "Conflict warning",
@@ -285,6 +316,7 @@ export function PlanningCalendar({
       conflictWarning: conflict.warning,
       date: conflict.date,
       employee: conflict.employeeNames.join(", ") || "-",
+      employeeHrId: "",
       id: conflict.id,
       medicalRep: conflict.medicalRepName || conflict.medicalRepHrId || "-",
       notes: conflict.lineName ? `Line: ${conflict.lineName}` : "-",
@@ -299,6 +331,7 @@ export function PlanningCalendar({
       conflictWarning: "-",
       date: selectedDate,
       employee: "Company calendar",
+      employeeHrId: "",
       id: holiday.id,
       medicalRep: "-",
       notes: holiday.description || "-",
@@ -313,6 +346,7 @@ export function PlanningCalendar({
       conflictWarning: item.conflictWarning || "-",
       date: item.startDate,
       employee: item.employeeDisplayName || item.employeeName,
+      employeeHrId: item.employeeHrId,
       id: item.id,
       medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
       notes: item.notes || "-",
@@ -367,8 +401,8 @@ export function PlanningCalendar({
   }
 
   const cappedResultsBanner = workspace.hasMoreHeaders || workspace.hasMoreItems ? (
-    <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+    <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+      <TriangleAlert className="h-4 w-4 shrink-0" />
       <span>
         Planning calendar results are capped at {workspace.headerLimit} headers and {workspace.itemLimit} plan rows. Loaded {workspace.loadedHeaderCount} headers and {workspace.loadedItemCount} rows; narrow the month before using this view for a full audit.
       </span>
@@ -378,88 +412,107 @@ export function PlanningCalendar({
   return (
     <div className="space-y-5">
       {!workspace.schemaReady ? (
-        <div className="border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+        <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+          <TriangleAlert className="h-4 w-4 shrink-0" />
           Planning calendar data is not ready. National vacations are still shown.
         </div>
       ) : null}
       {cappedResultsBanner}
 
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-4 border-b border-slate-200 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-orange-700">
-                <Sparkles className="h-3.5 w-3.5" />
-                Shared Planning Calendar
-              </span>
-              {summary.conflictCount > 0 ? (
-                <span className="inline-flex items-center gap-1 border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
-                  <TriangleAlert className="h-3.5 w-3.5" />
-                  {summary.conflictCount} warnings
+      {/* ── Header + Metrics ── */}
+      <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
+        <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Shared Planning Calendar
                 </span>
-              ) : null}
+                {summary.conflictCount > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-red-200 ring-1 ring-red-400/30">
+                    <TriangleAlert className="h-3.5 w-3.5" />
+                    {summary.conflictCount} warnings
+                  </span>
+                ) : null}
+              </div>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-300">
+                Submitted plan activity, national vacations, and same-line Medical Rep warnings
+              </p>
             </div>
-            <h2 className="mt-2 text-2xl font-black text-slate-950">{monthLabel(year, month)}</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex border border-slate-200 bg-slate-100 p-0.5">
-              {(["month", "week", "list"] as const).map((mode) => (
-                <button
-                  className={`h-9 px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
-                    viewMode === mode ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-white"
-                  }`}
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  type="button"
-                >
-                  {mode === "month" ? "Month" : mode === "week" ? "Week" : "List"}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-sm border border-white/20 bg-white/10 p-0.5">
+                {(["month", "week", "list"] as const).map((mode) => (
+                  <button
+                    className={`h-9 rounded-sm px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
+                      viewMode === mode ? "bg-slate-900 text-white" : "text-white/70 hover:bg-white/15"
+                    }`}
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
+                    type="button"
+                  >
+                    {mode === "month" ? "Month" : mode === "week" ? "Week" : "List"}
+                  </button>
+                ))}
+              </div>
+              <button
+                aria-label="Previous month"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
+                disabled={isPending}
+                onClick={() => shiftMonth(-1)}
+                type="button"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                className="h-9 rounded-sm bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50"
+                disabled={isPending}
+                onClick={goToday}
+                type="button"
+              >
+                Today
+              </button>
+              <button
+                aria-label="Next month"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
+                disabled={isPending}
+                onClick={() => shiftMonth(1)}
+                type="button"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              aria-label="Previous month"
-              className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => shiftMonth(-1)}
-              type="button"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <Button disabled={isPending} onClick={goToday} variant="secondary">
-              Today
-            </Button>
-            <button
-              aria-label="Next month"
-              className="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              disabled={isPending}
-              onClick={() => shiftMonth(1)}
-              type="button"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
           </div>
         </div>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-          <PlanningStatCard accent="orange" icon={CalendarDays} label="Plan entries" value={summary.planCount} />
-          <PlanningStatCard accent="slate" icon={Users} label="Planning owners" value={summary.submittedOwnerCount} />
-          <PlanningStatCard accent="rose" icon={ShieldAlert} label="Same-line warnings" value={summary.conflictCount} />
-          <PlanningStatCard accent="emerald" icon={Sparkles} label="National vacations" value={summary.holidayCount} />
+          <PlanningMetric label="Plan entries" value={summary.planCount} />
+          <PlanningMetric label="Planning owners" value={summary.submittedOwnerCount} />
+          <PlanningMetric label="Same-line warnings" tone={summary.conflictCount > 0 ? "warning" : "neutral"} value={summary.conflictCount} />
+          <PlanningMetric label="National vacations" value={summary.holidayCount} />
         </div>
       </section>
 
       {message ? (
-        <div className="border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{message}</div>
+        <div className="flex items-center gap-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm">
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          {message}
+        </div>
       ) : null}
 
-      <section className="border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_minmax(160px,220px)_auto_auto] lg:items-end">
+      {/* ── Filters ── */}
+      <section className="overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60">
+        <div className="border-b border-slate-100 px-5 py-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
+        </div>
+        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_minmax(160px,220px)_auto_auto] lg:items-end">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full border border-slate-200 bg-white px-3 pl-9 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="h-10 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Employee, area, rep"
                 value={query}
@@ -467,9 +520,9 @@ export function PlanningCalendar({
             </span>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
             <SearchableSelect
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setActivityFilter(event.target.value)}
               value={activityFilter}
             >
@@ -482,9 +535,9 @@ export function PlanningCalendar({
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
             <SearchableSelect
-              className="h-10 w-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setRegionFilter(event.target.value)}
               value={regionFilter}
             >
@@ -497,10 +550,10 @@ export function PlanningCalendar({
             </SearchableSelect>
           </label>
           <button
-            className={`inline-flex h-10 items-center justify-center gap-2 border px-3 text-sm font-black ${
+            className={`inline-flex h-10 items-center gap-2 rounded-sm px-3 text-sm font-black ring-1 transition ${
               conflictsOnly
-                ? "border-red-300 bg-red-50 text-red-800"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
+                : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200"
             }`}
             onClick={() => setConflictsOnly((value) => !value)}
             type="button"
@@ -508,29 +561,33 @@ export function PlanningCalendar({
             <TriangleAlert className="h-4 w-4" />
             Conflicts
           </button>
-          <Button onClick={resetFilters} variant="secondary">
-            <Filter className="mr-2 h-4 w-4" />
+          <button
+            className="h-10 rounded-sm bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200"
+            onClick={resetFilters}
+            type="button"
+          >
             Reset
-          </Button>
+          </button>
         </div>
       </section>
 
       {conflicts.length > 0 ? (
-        <section className="space-y-2 border border-red-200 bg-red-50 p-4 text-red-900">
-          <div className="flex items-center gap-2 text-sm font-black">
-            <TriangleAlert className="h-4 w-4" />
-            Same-line Medical Rep warnings
+        <section className="overflow-hidden rounded-sm border-l-4 border-l-red-500 bg-white shadow-md ring-1 ring-slate-200/60">
+          <div className="border-b border-slate-100 px-5 py-3">
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
+              {conflicts.length} Same-line Medical Rep Warning{conflicts.length === 1 ? "" : "s"}
+            </span>
           </div>
-          <div className="grid gap-2 lg:grid-cols-2">
-            {conflicts.slice(0, 4).map((conflict) => (
+          <div className="divide-y divide-slate-100">
+            {conflicts.slice(0, 8).map((conflict) => (
               <button
-                className="border border-red-200 bg-white/80 p-3 text-left text-xs font-semibold text-red-900 hover:bg-white"
+                className="flex w-full flex-col gap-1 px-5 py-3 text-left transition hover:bg-orange-50/40"
                 key={conflict.id}
                 onClick={() => setSelectedDate(conflict.date)}
                 type="button"
               >
-                <p className="font-black">{dayLabel(conflict.date)}</p>
-                <p className="mt-1">{conflict.warning}</p>
+                <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-red-700">{dayLabel(conflict.date)}</span>
+                <span className="text-sm font-semibold text-slate-800">{conflict.warning}</span>
               </button>
             ))}
           </div>
@@ -542,7 +599,7 @@ export function PlanningCalendar({
           <PlanningCalendarAgenda agendaDays={agendaDays} onSelectDate={setSelectedDate} />
         ) : viewMode === "week" ? (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 py-2.5">
               <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
               <span className="whitespace-nowrap text-sm font-black text-slate-900">{weekRangeLabel}</span>
             </div>
@@ -558,106 +615,104 @@ export function PlanningCalendar({
           </div>
         ) : (
         <>
-        <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-7 border-b-2 border-orange-500 bg-slate-900">
+        <div className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] border-b-2 border-orange-500 bg-slate-900">
             {weekdays.map((weekday) => (
               <div className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] divide-x divide-y divide-slate-100">
             {weeks.flat().map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
-              // National Vacation plan items are excluded from the month-grid block list:
+              // National Vacation plan items are excluded from the month-grid chip list:
               // the holiday overlay below already shows the day is a national vacation for
-              // everyone, so a redundant per-person block reads as "still doing something
+              // everyone, so a redundant per-person chip reads as "still doing something
               // that day" instead of correctly disappearing into the holiday. The plan row
-              // itself is untouched (still visible in List/Week views and the Selected-day
-              // detail table) — this only hides it from the compact month grid.
+              // itself is untouched (still visible in List/Week views and the Daily
+              // Timeline) — this only hides it from the compact month grid.
               const dayPlans = dayItems.filter(isPlanItem).filter((item) => item.activityTitle !== "National Vacation");
               const dayHolidays = dayItems.filter((item) => item.source === "holiday");
               const dayConflicts = date ? conflictForDay(conflicts, date) : [];
+              const dayHues = assignDailyEmployeeHues(dayPlans);
+              const dayPlanGroups = planGroups
+                .map((group) => ({ group, plans: dayPlans.filter((item) => planGroupFor(item) === group) }))
+                .filter((entry) => entry.plans.length > 0);
               const isSelected = date === selectedDate;
               const isToday = date === today;
               return (
                 <button
-                  className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 text-left transition sm:min-h-[150px] ${
-                    isToday ? "bg-orange-50" : day.inMonth ? "bg-white" : "bg-slate-50"
-                  } ${isSelected ? "ring-2 ring-inset ring-orange-500" : "hover:bg-orange-50/40"}`}
+                  className={`min-h-[86px] bg-white p-2 text-left align-top transition-colors sm:min-h-[150px] ${
+                    day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20"
+                  } ${isSelected ? "ring-2 ring-inset ring-orange-400" : ""}`}
                   disabled={!date}
                   key={date ?? `empty-${index}`}
                   onClick={() => date && setSelectedDate(date)}
                   type="button"
                 >
-                  <div className="flex items-center justify-between gap-1">
+                  <span className="flex items-center justify-between gap-1">
                     <span
-                      className={`flex h-6 w-6 items-center justify-center border text-xs font-black transition-colors ${
-                        isToday ? "border-orange-600 bg-orange-600 text-white shadow-sm" : "border-transparent text-slate-700"
+                      className={`flex h-6 w-6 items-center justify-center text-xs font-black ${
+                        isToday ? "rounded-full bg-orange-500 text-white" : "text-slate-700"
                       }`}
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="inline-flex h-5 min-w-5 items-center justify-center border border-red-200 bg-red-50 px-1 text-[10px] font-black text-red-700">
+                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600">
                         {dayConflicts.length}
                       </span>
                     ) : null}
-                  </div>
+                  </span>
 
-                  <div className="mt-1.5 hidden space-y-1.5 sm:block">
-                    {dayHolidays.slice(0, 1).map((holiday) => (
-                      <div
-                        className="border-l-4 border-emerald-500 bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-900 shadow-sm"
+                  <span className="mt-1.5 block space-y-1">
+                    {dayHolidays.map((holiday) => (
+                      <span
+                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-normal text-emerald-700"
                         key={holiday.id}
                       >
-                        <p className="line-clamp-2 break-words leading-snug">{holiday.title}</p>
-                      </div>
+                        {holiday.title}
+                      </span>
                     ))}
-                    {dayPlans.slice(0, 3).map((item) => (
-                      <div
-                        className={`border-l-4 px-2 py-1 shadow-sm transition-shadow hover:shadow ${planTone(item)}`}
-                        key={item.id}
-                        title={item.title}
-                      >
-                        <p className="line-clamp-2 break-words text-[10px] font-black leading-snug">
-                          {item.employeeDisplayName}
-                        </p>
-                      </div>
+                    {dayPlanGroups.map(({ group, plans }) => (
+                      <span className="block" key={group}>
+                        <span className="block rounded bg-slate-900 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300">{group}</span>
+                        <span className="mt-0.5 block space-y-1">
+                          {plans.map((item) => {
+                            const hue = employeeHueFor(dayHues, item.employeeHrId);
+                            return (
+                              <span
+                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-normal leading-tight ${planChipTone(item, hue)}`}
+                                key={item.id}
+                                title={item.title}
+                              >
+                                {item.employeeDisplayName}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      </span>
                     ))}
-                    {dayHolidays.length + dayPlans.length > 4 ? (
-                      <div className="border-l-4 border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">
-                        +{dayHolidays.length + dayPlans.length - 4} more
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-1 flex flex-wrap gap-1 sm:hidden">
-                    {dayHolidays.slice(0, 2).map((holiday) => (
-                      <span className="h-2 w-2 border border-emerald-500 bg-emerald-500" key={holiday.id} />
-                    ))}
-                    {dayPlans.slice(0, 4).map((item) => (
-                      <span className={`h-2 w-2 border ${item.conflictWarning ? "border-red-600 bg-red-600" : "border-indigo-500 bg-indigo-500"}`} key={item.id} />
-                    ))}
-                  </div>
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        <section className="border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Selected day</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Selected day</p>
               <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
-            <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
+            <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
               {selectedDetailRows.length} visible row{selectedDetailRows.length === 1 ? "" : "s"}
             </span>
           </div>
-          <PlanningCalendarDetailsTable rows={selectedDetailRows} />
+          <PlanningCalendarDetailsTable hues={selectedDayHues} rows={selectedDetailRows} />
         </section>
         </>
         )}
@@ -675,7 +730,7 @@ function PlanningCalendarAgenda({
 }) {
   if (agendaDays.length === 0) {
     return (
-      <div className="border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-sm bg-white shadow-sm ring-1 ring-slate-200/60">
         <PortalEmptyState title="No planned activities" message="There are no planned activities for this month." />
       </div>
     );
@@ -704,15 +759,16 @@ function AgendaDayBlock({
   onSelectDate: (date: string) => void;
   showEmpty?: boolean;
 }) {
+  const dayHues = assignDailyEmployeeHues(dayItems.filter(isPlanItem));
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-sm bg-white shadow-sm ring-1 ring-slate-200/60">
       <button
-        className="flex w-full items-center justify-between gap-2 border-b-2 border-orange-500 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+        className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
         onClick={() => onSelectDate(date)}
         type="button"
       >
         <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-        <span className="inline-flex whitespace-nowrap bg-orange-500 px-2 py-0.5 text-[11px] font-black text-white">
+        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
           {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
         </span>
       </button>
@@ -728,7 +784,7 @@ function AgendaDayBlock({
                 <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800">
                     National vacation
                   </span>
                 </div>
@@ -741,10 +797,10 @@ function AgendaDayBlock({
               <div className="px-4 py-3" key={item.id}>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : "bg-indigo-500"}`}
+                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
                     {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>
@@ -772,7 +828,6 @@ function AgendaDayBlock({
   );
 }
 
-
 function detailToneClass(tone: PlanningCalendarDetailRow["tone"]) {
   if (tone === "conflict") return "bg-red-50/60 text-red-900";
   if (tone === "holiday") return "bg-emerald-50/60 text-emerald-900";
@@ -791,7 +846,13 @@ function detailAccent(tone: PlanningCalendarDetailRow["tone"]) {
   return "slate";
 }
 
-function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRow[] }) {
+function PlanningCalendarDetailsTable({
+  hues,
+  rows,
+}: {
+  hues: Map<string, EmployeeHue>;
+  rows: PlanningCalendarDetailRow[];
+}) {
   return (
     <div className="p-4">
       {rows.length === 0 ? (
@@ -821,12 +882,12 @@ function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRo
                   { label: "Time", value: row.time },
                 ]}
               />
-              {row.conflictWarning ? (
+              {row.conflictWarning !== "-" ? (
                 <p className="mt-2 rounded border border-red-100 bg-red-50 px-2.5 py-2 text-xs font-semibold leading-5 text-red-800">
                   {row.conflictWarning}
                 </p>
               ) : null}
-              {row.notes ? (
+              {row.notes !== "-" ? (
                 <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
                   {row.notes}
                 </p>
@@ -853,7 +914,12 @@ function PlanningCalendarDetailsTable({ rows }: { rows: PlanningCalendarDetailRo
             {rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">{row.date}</td>
-                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">{row.employee}</td>
+                  <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${employeeHueFor(hues, row.employeeHrId).dot}`} />
+                      {row.employee}
+                    </span>
+                  </td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
