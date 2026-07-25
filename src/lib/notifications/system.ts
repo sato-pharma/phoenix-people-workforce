@@ -23,6 +23,7 @@ import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
 import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
+import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -319,7 +320,12 @@ function dedupeChannels(channels: SystemNotificationChannel[]) {
 function basePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
   // Hard, fallback-proof guarantee: a payslip notification is NEVER emailed, whatever the policy,
   // explicit channels, or Telegram-failure fallbacks resolve to. See payslip-channel-guard.ts.
-  return enforcePayslipEmailBlock(resolveBasePolicyChannels(input, preferred), input.eventType);
+  const resolved = enforcePayslipEmailBlock(resolveBasePolicyChannels(input, preferred), input.eventType);
+  // Same hard guarantee for marketing-request SLA reminders/escalations (owner request
+  // 2026-07-25, after this exact notification type produced a real incident) -- see
+  // marketing-sla-channel-guard.ts. The other marketing_requests lifecycle notifications
+  // (submitted/assigned/approved/rejected/returned/completed) are untouched.
+  return enforceMarketingSlaEmailBlock(resolved, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

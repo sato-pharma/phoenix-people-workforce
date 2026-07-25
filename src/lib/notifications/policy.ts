@@ -108,9 +108,14 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
   "field_workforce_compliance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["permission_based"] },
   "internal_messages.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
-  "marketing_requests.due_date_reminder": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
-  "marketing_requests.escalation": { bypassQuietHours: true, channels: ["in_app", "email", "telegram", "push"], priority: "critical", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
-  "marketing_requests.overdue_reminder": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
+  // Email retired for all 3 SLA reminder/escalation types (owner request 2026-07-25, after this
+  // exact notification type produced a real incident: 93 undecidable requests re-escalating an
+  // unactionable "critical" email every morning) -- also hard-enforced in system.ts's
+  // basePolicyChannels via enforceMarketingSlaEmailBlock (marketing-sla-channel-guard.ts), same
+  // two-layer pattern as payroll.payslip_available below.
+  "marketing_requests.due_date_reminder": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
+  "marketing_requests.escalation": { bypassQuietHours: true, channels: ["in_app", "telegram", "push"], priority: "critical", recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
+  "marketing_requests.overdue_reminder": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
   "marketing_requests.request_approved": { channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.request_assigned": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "cc"], telegramAllowed: true },
   "marketing_requests.request_completed": { channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },

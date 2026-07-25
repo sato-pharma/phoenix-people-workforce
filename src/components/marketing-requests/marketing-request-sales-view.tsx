@@ -41,6 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
   roi_tracking: "ROI tracking",
   closed: "Closed",
   finance_hold: "Finance hold",
+  archived: "Archived",
 };
 
 function StatCard({ label, value, hint, accent = "slate" }: { label: string; value: string; hint?: string; accent?: "slate" | "orange" | "green" | "sky" }) {
