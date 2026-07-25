@@ -39,8 +39,29 @@ export function runNotificationConfidenceGateTests() {
   // this must NEVER count against a send, since most direct sendPhoenixEmail callers don't
   // carry one.
   assert.equal(checkIdentityResolved(baseInput()).passed, null, "no identity status supplied must be not-applicable, not a fail");
+
+  // The three statuses resolvedEmailIdentity (system.ts) actually emits:
+  // "verified" | "not_required" | "failed". Only "failed" is a real problem — it is set solely on
+  // conflicting subject HR IDs, or a missing subject HR ID on a workflow email that requires one.
   assert.equal(checkIdentityResolved(baseInput({ origin: { identityStatus: "verified" } })).passed, true, "verified identity must pass");
-  assert.equal(checkIdentityResolved(baseInput({ origin: { identityStatus: "unresolved" } })).passed, false, "a non-verified identity status must fail");
+  assert.equal(checkIdentityResolved(baseInput({ origin: { identityStatus: "failed" } })).passed, false, "a genuinely failed identity must fail");
+
+  // REGRESSION (production, 2026-07-24): "not_required" simply means this notification has no
+  // subject employee and needs none — recruitment notices, digests, etc. Scoring it as a failure
+  // held every such send (both production held rows were exactly this: 3/4 checks, fan-out
+  // PASSING, blocked only here). It must be not-applicable, never a hold.
+  const notRequired = checkIdentityResolved(baseInput({ origin: { identityStatus: "not_required" } }));
+  assert.equal(notRequired.passed, null, "not_required identity must be not-applicable, never a fail");
+  assert.equal(
+    computeDecision([
+      { detail: "", name: "content_integrity", passed: true },
+      { detail: "", name: "recipient_validity", passed: true },
+      notRequired,
+      { detail: "", name: "fanout_anomaly", passed: true },
+    ]).decision,
+    "auto_send",
+    "a healthy send whose only non-pass is not_required identity must auto-send, not hold",
+  );
 
   // computeDecision: the actual gate. One failing check holds the whole send outright — three
   // passing checks must never outvote one failing one (that dilution is exactly what would
