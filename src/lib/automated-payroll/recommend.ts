@@ -51,8 +51,23 @@ export type PopulationMember = {
   employee: EmployeeDirectoryRow;
   compact: string;
   lifecycle: RowLifecycle;
-  /** Leaver only. */
+  /**
+   * Leaver only — the exit falls INSIDE this period, so this drives real
+   * settlement proration in effectiveSalary. Deliberately stays null for anyone
+   * leaving in a future month: see noticeLastWorkingDate.
+   */
   lastWorkingDate: string | null;
+  /**
+   * Serving notice into a FUTURE month (owner case 2026-07-25, B-157: resigned
+   * effective 31 Aug while being paid a normal full July salary).
+   *
+   * Kept strictly separate from `lastWorkingDate` because that field feeds
+   * `computeResignationSettlement` — putting a future date there would prorate
+   * this month's pay as though the employee had already left and UNDERPAY them.
+   * This one is display-only: it exists so HR can see "resigned, leaving 31 Aug"
+   * instead of the employee looking completely ordinary.
+   */
+  noticeLastWorkingDate: string | null;
   /** Leaver only — unpaid-leave days inside the settlement span (resignation Rule 1). */
   unpaidDaysInSpan: number;
 };
@@ -185,6 +200,8 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
       compact,
       lifecycle: isLeaver ? "leaver" : isJoiner ? "joiner" : "regular",
       lastWorkingDate: leaverLastWorkingDate,
+      // Display-only. Never feeds proration — see the field's doc comment.
+      noticeLastWorkingDate: stillActiveThroughFutureExit ? employee.lastWorkingDate : null,
       unpaidDaysInSpan: feeder?.unpaidDaysBeforeLastWorkingDate ?? 0,
     });
 
@@ -569,21 +586,13 @@ async function recommendResignations(
   const leavers = members.filter((member) => member.lifecycle === "leaver" && member.lastWorkingDate);
   if (leavers.length === 0) return [];
 
-  // Owner rule (2026-07-20): a leaver won't be around for the whole-company Part-2 CRM/
-  // Vacation steps, so their deduction is computed and settled right here instead. CRM
-  // no-activity + CRM-recorded leave are computed directly per leaver via
-  // computeLeaverCrmDates (see its own doc comment) rather than through the shared Part-2
-  // sourcing, which silently excludes resigned employees at two different layers — verified
-  // 2026-07-20 against real production leavers whose CRM figures were showing zero despite
-  // real underlying activity gaps. Phoenix-submitted (v2) unpaid vacation isn't affected by
-  // that exclusion, so its existing balance-aware total is still read the normal way — only
-  // its v2Days/v2Amount fields are used here; its crm* fields come from the same
-  // leaver-excluded source this function works around, so they're ignored.
-  const [{ totals: vacationTotals }, v2Dates] = await Promise.all([
-    computeVacationDeductionTotals(members, sources, period),
-    loadV2VacationDatesByCompact(period),
-  ]);
-
+  // Owner request 2026-07-25: CRM no-activity and unpaid-vacation deductions
+  // moved OUT of this step into the dedicated p1_crm / p1_unpaid_vacation tabs
+  // (see recommendP1Crm / recommendP1UnpaidVacation) — they were showing up in
+  // both places, which read as duplication even though it wasn't a double
+  // deduction. This step now settles ONLY Base/ECoL/Fuel; the leaver's own
+  // Second-Part-netting rule (owner 2026-07-20) still applies, just driven from
+  // the tab that now owns the computation.
   const rows: StepRow[] = [];
   for (const member of leavers) {
     if (!member.lastWorkingDate) continue;
@@ -602,88 +611,93 @@ async function recommendResignations(
     const draft = drafts.get(member.compact);
     const baseSalary = roundCurrency(source?.baseSalary ?? 0);
 
-    const crmDates = await computeLeaverCrmDates({
-      hrId: member.employee.hrId,
-      crmId: member.employee.crmId,
-      jobTitle: member.employee.jobTitle,
-      hireDate: member.employee.hireDate,
-      lastWorkingDate: member.lastWorkingDate,
-      period,
-    });
-
-    const noActivityDays = crmDates.noActivityDates.length;
-    const crmValue =
-      noActivityDays > 0
-        ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: noActivityDays }) ?? 0
-        : 0;
-
-    // CRM-recorded leave (AV), balance-first, de-duped against any Phoenix v2 vacation
-    // already covering the same date (owner rule 2026-07-20, same as the Part-2 Vacation step).
-    const covered = v2Dates.get(member.compact);
-    const crmOnlyAvDates = crmDates.avDates.filter((date) => !covered?.has(date)).sort();
-    let crmLeaveBalanceDays = 0;
-    if (crmOnlyAvDates.length > 0) {
-      try {
-        const snapshot = await calculatePaymentForRequest({
-          durationDays: crmOnlyAvDates.length,
-          employeeHrId: member.employee.hrId,
-          hireDate: member.employee.hireDate,
-          startDate: crmOnlyAvDates[0],
-          vacationType: "annual",
-        });
-        crmLeaveBalanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
-      } catch (error) {
-        logError("Automated payroll: leaver CRM leave balance check failed", {
-          labels: { event: "automated_payroll_leaver_crm_leave_balance_check_failed", hrId: member.employee.hrId },
-          error,
-        });
-      }
-    }
-    const crmLeaveUnpaidDays = Math.max(0, crmOnlyAvDates.length - crmLeaveBalanceDays);
-    const crmLeaveAmount =
-      crmLeaveUnpaidDays > 0
-        ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: crmLeaveUnpaidDays }) ?? 0
-        : 0;
-
-    const vacationTotal = vacationTotals.get(member.compact);
-    const v2Days = vacationTotal?.v2Days ?? 0;
-    const v2Amount = vacationTotal?.v2Amount ?? 0;
-    const vacationValue = roundCurrency(v2Amount + crmLeaveAmount);
-
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Last Working Date": member.lastWorkingDate,
-      Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
-      "Days Worked": settlement.daysWorked,
-      "Unpaid Vacation Days": roundCurrency(v2Days + crmLeaveUnpaidDays),
+      // Divisor for the client-side Days Worked -> Base (month) auto-calc. Must
+      // be the month's ACTUAL calendar days to match dailyRate() in proration.ts;
+      // the default 30 used for deduction day-rates would overpay in a 31-day month.
+      "Days In Month": daysInPeriodMonth(period),
       // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
       // see step-definitions.ts) purely because the client-side Days→Value auto-calc
-      // reads row.context["Base Salary"] for CRM Days (Base/30 × days, unchanged formula).
-      // "Net Salary" is what HR actually sees displayed (owner request 2026-07-25).
+      // reads row.context["Base Salary"]. "Net Salary" is what HR actually sees
+      // displayed (owner request 2026-07-25).
       "Base Salary": baseSalary,
       "Net Salary": roundCurrency(source?.netSalary ?? 0),
     };
+    // Days Worked has no column of its own in the DB — Base (month) is what
+    // persists. So when HR has already overridden the settlement, derive the day
+    // count back OUT of the saved amount, otherwise the two would disagree on
+    // reload (days showing the system's calendar count, base showing HR's edit).
+    const perDay = daysInPeriodMonth(period) > 0 ? baseSalary / daysInPeriodMonth(period) : 0;
+    const displayedDaysWorked =
+      draft?.baseForMonth != null && perDay > 0
+        ? Math.round((draft.baseForMonth / perDay) * 100) / 100
+        : settlement.daysWorked;
+
     row.recommended = {
+      daysWorked: settlement.daysWorked,
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
-      resignationCrmDays: noActivityDays,
-      crm: roundCurrency(crmValue),
-      unpaidVacations: vacationValue,
     };
     row.values = {
+      daysWorked: displayedDaysWorked,
       baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
       ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
       fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
-      resignationCrmDays: pick(draft?.resignationCrmDays, noActivityDays),
-      crm: pick(draft?.crm, roundCurrency(crmValue)),
-      unpaidVacations: pick(draft?.unpaidVacations, vacationValue),
     };
     rows.push(row);
   }
+
+  // ---- employees serving notice into a FUTURE month (owner request 2026-07-25)
+  // They belong here visually — HR needs to see that they have resigned — but
+  // they are still working this whole month and earn a normal full salary, so
+  // they get NO settlement. `values` and `recommended` are deliberately EMPTY:
+  // stepEditToPatch only writes numeric fields present in `values`, so confirming
+  // this step can never stamp a prorated baseForMonth (or a zero) onto them. The
+  // real settlement happens in the month they actually leave.
+  for (const member of members) {
+    if (!member.noticeLastWorkingDate) continue;
+    const source = lookupSource(sources, member.employee.hrId);
+    const row = baseRow(member);
+    row.readOnly = true;
+    row.readOnlyNote = `Still employed — settles ${monthNameOf(member.noticeLastWorkingDate)}`;
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      "Last Working Date": member.noticeLastWorkingDate,
+      "Net Salary": roundCurrency(source?.netSalary ?? 0),
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+      "Days In Month": daysInPeriodMonth(period),
+    };
+    row.recommended = {};
+    row.values = {};
+    rows.push(row);
+  }
+
   return rows;
 }
+
+/** Calendar days in the run's month — the proration divisor (see dailyRate in proration.ts). */
+function daysInPeriodMonth(period: PayrollPeriod): number {
+  return new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
+}
+
+/** "August 2026" for a yyyy-mm-dd date — used to say when a notice-period employee actually settles. */
+function monthNameOf(dateText: string): string {
+  const match = /^(\d{4})-(\d{2})/.exec(dateText.trim());
+  if (!match) return "later";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return "later";
+  return `${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
 
 /** Aggregate day-based deduction candidates per employee → { days, value }. Exported for tests. */
 export function aggregateDeductionRows(
@@ -1128,25 +1142,69 @@ function part1ManualDeductionBaseRow(
   return row;
 }
 
-function recommendP1Crm(
+async function recommendP1Crm(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
+  period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
-): StepRow[] {
+): Promise<StepRow[]> {
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
     if (!isSettledInPart1(member, source)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
-    // Amount already settled for this employee on the Resignations step (leavers only —
-    // it auto-computes their CRM there). Read from the SAME draft column assemble.ts
-    // sums, so the warning reflects exactly what will actually be deducted. Drives the
-    // wizard's double-deduction warning via StepDefinition.conflictContextKey.
-    row.context["Settled in Resignations"] = roundCurrency(pick(draft?.crm, 0));
-    row.recommended = { p1odCrmDays: 0, p1odCrmValue: 0 };
+    // Working/Non-Working Days cap (owner request 2026-07-25) — the real
+    // calendar day count, deliberately NOT the fixed /30 the money formula uses.
+    // See StepFieldSpec.complementTotalContextKey's doc for why these must stay separate.
+    const daysInMonth = daysInPeriodMonth(period);
+    row.context["Days In Month"] = daysInMonth;
+
+    if (member.lifecycle === "leaver" && member.lastWorkingDate) {
+      // Owner request 2026-07-25: a leaver's real CRM no-activity deduction is
+      // computed and edited HERE now (moved out of the Resignations step, which
+      // used to show the exact same number, reading like duplication). The
+      // presentation keys stay p1odCrmDays/p1odCrmValue for the generic grid,
+      // but the underlying value is read from/written to the SAME
+      // resignationCrmDays/crm draft columns Resignations always used — see
+      // run-service.ts's leaver remap — so leaverDeductionFor's Second-Part-
+      // netting rule (owner 2026-07-20) keeps working unchanged.
+      const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+      const crmDates = await computeLeaverCrmDates({
+        hrId: member.employee.hrId,
+        crmId: member.employee.crmId,
+        jobTitle: member.employee.jobTitle,
+        hireDate: member.employee.hireDate,
+        lastWorkingDate: member.lastWorkingDate,
+        period,
+      });
+      const noActivityDays = crmDates.noActivityDates.length;
+      const crmValue = roundCurrency(
+        noActivityDays > 0
+          ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: noActivityDays }) ?? 0
+          : 0,
+      );
+      const nonWorkingDays = pick(draft?.resignationCrmDays, noActivityDays);
+      row.recommended = {
+        p1odCrmWorkingDays: Math.max(0, daysInMonth - noActivityDays),
+        p1odCrmDays: noActivityDays,
+        p1odCrmValue: crmValue,
+      };
+      row.values = {
+        p1odCrmWorkingDays: Math.max(0, daysInMonth - nonWorkingDays),
+        p1odCrmDays: nonWorkingDays,
+        p1odCrmValue: pick(draft?.crm, crmValue),
+      };
+      row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
+      rows.push(row);
+      continue;
+    }
+
+    const nonWorkingDays = pick(draft?.p1odCrmDays, 0);
+    row.recommended = { p1odCrmWorkingDays: daysInMonth, p1odCrmDays: 0, p1odCrmValue: 0 };
     row.values = {
-      p1odCrmDays: pick(draft?.p1odCrmDays, 0),
+      p1odCrmWorkingDays: Math.max(0, daysInMonth - nonWorkingDays),
+      p1odCrmDays: nonWorkingDays,
       p1odCrmValue: pick(draft?.p1odCrmValue, 0),
     };
     row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
@@ -1155,19 +1213,92 @@ function recommendP1Crm(
   return rows;
 }
 
-function recommendP1UnpaidVacation(
+async function recommendP1UnpaidVacation(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
+  period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
-): StepRow[] {
+): Promise<StepRow[]> {
+  // Bulk fetches — same two calls recommendResignations used to make before the
+  // computation moved here (owner request 2026-07-25). One fetch for the whole
+  // population, not per-employee.
+  const [{ totals: vacationTotals }, v2Dates] = await Promise.all([
+    computeVacationDeductionTotals(members, sources, period),
+    loadV2VacationDatesByCompact(period),
+  ]);
+
   const rows: StepRow[] = [];
   for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
     if (!isSettledInPart1(member, source)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
-    // See recommendP1Crm — same double-deduction guard, unpaid-vacation column.
-    row.context["Settled in Resignations"] = roundCurrency(pick(draft?.unpaidVacations, 0));
+
+    if (member.lifecycle === "leaver" && member.lastWorkingDate) {
+      // Real settlement — a balance-aware Phoenix-vacation amount plus a
+      // separate CRM-leave amount, NOT a flat day rate (unchanged reasoning from
+      // when this lived in the Resignations step). p1odVacationValue is
+      // presented here for the generic grid but reads from/writes to the SAME
+      // unpaidVacations draft column Resignations always used — see
+      // run-service.ts's leaver remap — so leaverDeductionFor's Second-Part-
+      // netting rule (owner 2026-07-20) keeps working unchanged.
+      const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+      const crmDates = await computeLeaverCrmDates({
+        hrId: member.employee.hrId,
+        crmId: member.employee.crmId,
+        jobTitle: member.employee.jobTitle,
+        hireDate: member.employee.hireDate,
+        lastWorkingDate: member.lastWorkingDate,
+        period,
+      });
+      // CRM-recorded leave (AV), balance-first, de-duped against any Phoenix v2
+      // vacation already covering the same date (owner rule 2026-07-20, same as
+      // the Part-2 Vacation step).
+      const covered = v2Dates.get(member.compact);
+      const crmOnlyAvDates = crmDates.avDates.filter((date) => !covered?.has(date)).sort();
+      let crmLeaveBalanceDays = 0;
+      if (crmOnlyAvDates.length > 0) {
+        try {
+          const snapshot = await calculatePaymentForRequest({
+            durationDays: crmOnlyAvDates.length,
+            employeeHrId: member.employee.hrId,
+            hireDate: member.employee.hireDate,
+            startDate: crmOnlyAvDates[0],
+            vacationType: "annual",
+          });
+          crmLeaveBalanceDays = Math.max(0, Number(snapshot.balanceBeforeDays ?? 0));
+        } catch (error) {
+          logError("Automated payroll: leaver CRM leave balance check failed", {
+            labels: { event: "automated_payroll_leaver_crm_leave_balance_check_failed", hrId: member.employee.hrId },
+            error,
+          });
+        }
+      }
+      const crmLeaveUnpaidDays = Math.max(0, crmOnlyAvDates.length - crmLeaveBalanceDays);
+      const crmLeaveAmount =
+        crmLeaveUnpaidDays > 0
+          ? calculateDeductionAmountFromBaseSalary({ baseSalary, deductionDays: crmLeaveUnpaidDays }) ?? 0
+          : 0;
+
+      const vacationTotal = vacationTotals.get(member.compact);
+      const v2Days = vacationTotal?.v2Days ?? 0;
+      const v2Amount = vacationTotal?.v2Amount ?? 0;
+      const vacationValue = roundCurrency(v2Amount + crmLeaveAmount);
+
+      // Read-only reference days shown via the step's own contextColumns entry
+      // (not the editable p1odVacationDays field — see the field's doc comment
+      // for why a leaver's day count must never drive the money via auto-calc).
+      row.context["Unpaid Vacation Days"] = roundCurrency(v2Days + crmLeaveUnpaidDays);
+      row.recommended = { p1odVacationDays: 0, p1odVacationValue: vacationValue };
+      row.values = {
+        p1odVacationDays: pick(draft?.p1odVacationDays, 0),
+        p1odVacationValue: pick(draft?.unpaidVacations, vacationValue),
+      };
+      row.reasons = { p1odVacationReason: draft?.p1odVacationReason ?? "" };
+      rows.push(row);
+      continue;
+    }
+
     row.recommended = { p1odVacationDays: 0, p1odVacationValue: 0 };
     row.values = {
       p1odVacationDays: pick(draft?.p1odVacationDays, 0),
@@ -1294,9 +1425,9 @@ export async function recommendStep(input: {
     case "p1_fingerprint":
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
     case "p1_crm":
-      return recommendP1Crm(input.members, input.sources, drafts);
+      return recommendP1Crm(input.members, input.sources, input.period, drafts);
     case "p1_unpaid_vacation":
-      return recommendP1UnpaidVacation(input.members, input.sources, drafts);
+      return recommendP1UnpaidVacation(input.members, input.sources, input.period, drafts);
     case "p1_no_record":
       return recommendP1NoRecord(input.members, input.sources, drafts);
     case "p1_other_deductions":

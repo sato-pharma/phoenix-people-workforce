@@ -25,6 +25,7 @@ function member(hrId: string, fullName: string, lifecycle: RowLifecycle = "regul
     compact: hrId.toLowerCase().replace(/[^a-z0-9]+/g, ""),
     lifecycle,
     lastWorkingDate: null,
+    noticeLastWorkingDate: null,
     unpaidDaysInSpan: 0,
   };
 }

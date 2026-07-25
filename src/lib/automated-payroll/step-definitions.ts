@@ -30,22 +30,29 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p1_resignations",
     phase: "part1",
     title: "Resignations",
-    subtitle: "Leavers this month, with the recommended settlement (≤25th prorated, >25th full) plus their CRM no-activity and unpaid-vacation deductions — settled here since they won't be present for Part 2. CRM Days auto-calculates its Value (Base/30 × days); Unpaid Vacation Days is read-only reference only — its Value combines a balance-aware Phoenix-vacation amount with a separate CRM-leave amount, not a flat day rate, so edit the Value directly instead. Deducted from their own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
+    subtitle: "Leavers this month, with the recommended Base/ECoL/Fuel settlement (≤25th prorated, >25th full). CRM no-activity and Unpaid Vacation deductions moved to their own dedicated tabs (owner request 2026-07-25) — edit them there; they still net against this leaver's own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Last Working Date", label: "Last Working Date" },
-      { key: "Branch", label: "Rule" },
-      { key: "Days Worked", label: "Days Worked" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days" },
     ],
     fields: [
+      // Days Worked is EDITABLE (owner 2026-07-25): the system can only count
+      // CALENDAR days from the 1st to the last working date, which is routinely
+      // wrong — a leaver hired and resigned the same day showed 7, someone who
+      // actually worked 4.5 days showed 12. HR types the true figure and Base
+      // (month) recalculates as Base / calendar-days-in-month × days, matching
+      // the locked proration formula exactly (verified: 14000/31×9 = 4064.52).
+      {
+        key: "daysWorked",
+        label: "Days Worked",
+        kind: "days",
+        autoCalcMoneyKey: "baseForMonth",
+        autoCalcDivisorContextKey: "Days In Month",
+      },
       { key: "baseForMonth", label: "Base (month)", kind: "money" },
       { key: "ecolPaid", label: "Extra Cost of Living", kind: "money" },
       { key: "fuelPaid", label: "Fuel Allowance", kind: "money" },
-      { key: "resignationCrmDays", label: "CRM No-Activity Days", kind: "days", autoCalcMoneyKey: "crm" },
-      { key: "crm", label: "CRM Deduction", kind: "money" },
-      { key: "unpaidVacations", label: "Vacation Deduction", kind: "money" },
     ],
     hasReason: false,
     isHoldStep: false,
@@ -68,33 +75,51 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "CRM Deduction",
     subtitle:
-      "CRM no-activity deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+      "CRM no-activity deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it). For a resigning leaver, Non-Working Days/Value are pre-filled with their real computed figure (owner request 2026-07-25 — moved here from the Resignations step so it's edited in exactly one place) and still nets against their own Second Part first. Working Days and Non-Working Days always sum to the month's calendar days (owner request 2026-07-25) — edit either one and the other adjusts automatically; the deduction is always calculated from Non-Working Days. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
       { key: "Resignation Date", label: "Resignation Date" },
-      { key: "Settled in Resignations", label: "Settled in Resignations" },
     ],
     fields: [
-      { key: "p1odCrmDays", label: "CRM Days", kind: "days", autoCalcMoneyKey: "p1odCrmValue" },
+      // Working Days is purely derived/display — it has no DraftRow column of
+      // its own and is never persisted. Editing it just recomputes Non-Working
+      // Days (below) as the complement, which IS the persisted, money-driving
+      // field. See StepFieldSpec.complementFieldKey.
+      {
+        key: "p1odCrmWorkingDays",
+        label: "Working Days",
+        kind: "days",
+        complementFieldKey: "p1odCrmDays",
+        complementTotalContextKey: "Days In Month",
+      },
+      {
+        key: "p1odCrmDays",
+        label: "Non-Working Days",
+        kind: "days",
+        // Money divisor stays the DEFAULT 30 (matches calculateDeductionAmountFromBaseSalary
+        // server-side) — never autoCalcDivisorContextKey here, see that field's own doc.
+        autoCalcMoneyKey: "p1odCrmValue",
+        complementFieldKey: "p1odCrmWorkingDays",
+        complementTotalContextKey: "Days In Month",
+      },
       { key: "p1odCrmValue", label: "CRM Value", kind: "money" },
       { key: "p1odCrmReason", label: "CRM Reason", kind: "text" },
     ],
     hasReason: false,
     isHoldStep: false,
-    conflictContextKey: "Settled in Resignations",
   },
   p1_unpaid_vacation: {
     key: "p1_unpaid_vacation",
     phase: "part1",
     title: "Unpaid Vacation",
     subtitle:
-      "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+      "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). For a resigning leaver, Value is pre-filled with their real settlement (owner request 2026-07-25 — moved here from the Resignations step) and still nets against their own Second Part first; \"Unpaid Vacation Days\" is read-only reference only — it combines a balance-aware Phoenix-vacation amount with a separate CRM-leave amount, not a flat day rate, so edit the Value directly instead of typing days for a leaver. For everyone else, type days to auto-calculate the value (Base/30 × days), or type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
       { key: "Resignation Date", label: "Resignation Date" },
-      { key: "Settled in Resignations", label: "Settled in Resignations" },
+      { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days" },
     ],
     fields: [
       { key: "p1odVacationDays", label: "Unpaid Vacation Days", kind: "days", autoCalcMoneyKey: "p1odVacationValue" },
@@ -103,7 +128,6 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     ],
     hasReason: false,
     isHoldStep: false,
-    conflictContextKey: "Settled in Resignations",
   },
   p1_no_record: {
     key: "p1_no_record",

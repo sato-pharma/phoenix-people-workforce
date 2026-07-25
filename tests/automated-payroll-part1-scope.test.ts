@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { isAfterPeriod, isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
 import { normalizePayrollPaymentMode } from "../src/lib/payroll/policy.ts";
@@ -80,7 +81,8 @@ export function runAutomatedPayrollPart1ScopeTests() {
     }
   }
   // CRM / Vacation / No-Record are single-category tabs; Loan+Other carries two.
-  assert.equal(STEP_DEFINITIONS.p1_crm.fields.length, 3);
+  // p1_crm has 4 (owner request 2026-07-25 added the Working Days complement).
+  assert.equal(STEP_DEFINITIONS.p1_crm.fields.length, 4);
   assert.equal(STEP_DEFINITIONS.p1_unpaid_vacation.fields.length, 3);
   assert.equal(STEP_DEFINITIONS.p1_no_record.fields.length, 3);
   assert.equal(STEP_DEFINITIONS.p1_other_deductions.fields.length, 6);
@@ -94,83 +96,47 @@ export function runAutomatedPayrollPart1ScopeTests() {
   // ---- STEP_ORDER stays in sync with the phase key lists -------------------
   assert.deepEqual(STEP_ORDER, [...PART1_STEP_KEYS, ...PART2_STEP_KEYS]);
 
-  // ---- double-deduction WARNING wiring (owner decision 2026-07-25: warn, don't
-  // block). Leavers keep their auto-computed CRM + unpaid vacation on the
-  // Resignations step (columns `crm` / `unpaidVacations`) AND appear in these two
-  // manual tabs (columns `p1od*`). assemble.ts sums both, so the wizard must warn
-  // when a row carries a value in both places. ------------------------------
-  for (const key of ["p1_crm", "p1_unpaid_vacation"] as const) {
-    const definition = STEP_DEFINITIONS[key];
-    assert.equal(
-      definition.conflictContextKey,
-      "Settled in Resignations",
-      `${key} must declare the double-deduction warning key`,
-    );
-    // The key MUST name a real context column — a typo here silently disables the
-    // warning (the lookup just yields undefined and every row looks clean).
-    assert.equal(
-      definition.contextColumns.some((column) => column.key === definition.conflictContextKey),
-      true,
-      `${key}.conflictContextKey does not match any of its contextColumns`,
-    );
-  }
-
-  // ---- the other two Part 1 tabs have no counterpart anywhere else, so they
-  // must NOT claim a conflict key (a false warning is its own kind of noise) --
-  for (const key of ["p1_no_record", "p1_other_deductions"] as const) {
+  // ---- CRM/Vacation double-deduction risk is now STRUCTURALLY ELIMINATED
+  // (owner request 2026-07-25). The two tabs used to show the SAME leaver
+  // twice — once as an auto-computed Resignations settlement, once as an
+  // optional manual top-up here, with a warning banner to catch double entry.
+  // The computation itself moved INTO these dedicated tabs instead, so there is
+  // no longer a second place the same amount can be entered — the warning
+  // machinery is retired for every Part 1 manual tab. --------------------------
+  for (const key of ["p1_crm", "p1_unpaid_vacation", "p1_no_record", "p1_other_deductions"] as const) {
     assert.equal(
       STEP_DEFINITIONS[key].conflictContextKey,
       undefined,
-      `${key} has no deduction twin and must not declare a conflict key`,
+      `${key} must not declare a conflict key — nothing computes a competing figure elsewhere anymore`,
+    );
+    assert.equal(
+      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Settled in Resignations"),
+      false,
+      `${key} must not show a "Settled in Resignations" column`,
     );
   }
 
-  // ---- the warning rule itself, exercised on a REAL production shape: leaver
-  // B-176 carries 2,903 EGP of CRM already settled on the Resignations step
-  // (verified live against the July 2026 run on 2026-07-25) -------------------
-  const crmStep = STEP_DEFINITIONS.p1_crm;
-  const leaverRow = (crmValue: number): StepRow => ({
-    hrId: "B-176",
-    fullName: "Eman Essam Arafa Attia Mohamed",
+  // The conflict-detection helpers themselves still degrade safely for a step
+  // that declares no conflict key (kept generic on purpose; exercised here so
+  // the degrade path itself stays covered even with no consumer left).
+  const noRecordStep = STEP_DEFINITIONS.p1_no_record;
+  const plainRow: StepRow = {
+    hrId: "A-12",
+    fullName: "Someone",
     jobTitle: null,
     line: null,
-    context: { "Hire Date": "", "Base Salary": 8709, "Settled in Resignations": 2903 },
-    values: { p1odCrmDays: 0, p1odCrmValue: crmValue },
-    recommended: { p1odCrmDays: 0, p1odCrmValue: 0 },
-    reasons: { p1odCrmReason: "" },
+    context: {},
+    values: { p1odNoRecordValue: 500 },
+    recommended: { p1odNoRecordValue: 0 },
     reason: null,
     onHold: false,
-    lifecycle: "leaver",
-  });
-
-  // Untouched (the default) — informational only, no warning.
-  assert.equal(hasDoubleDeductionConflict(crmStep, leaverRow(0)), false);
-  assert.equal(settledElsewhereAmount(crmStep, leaverRow(0)), 2903);
-  assert.equal(enteredOnThisStepAmount(crmStep, leaverRow(0)), 0);
-
-  // HR types a value on top of the already-settled amount → warn.
-  assert.equal(hasDoubleDeductionConflict(crmStep, leaverRow(500)), true);
-  assert.equal(enteredOnThisStepAmount(crmStep, leaverRow(500)), 500);
-
-  // A negative entry REDUCES the deduction rather than stacking a second one, so it
-  // deliberately does not warn (the guard is about adding on top, not any edit).
-  assert.equal(hasDoubleDeductionConflict(crmStep, leaverRow(-100)), false);
-
-  // ---- an employee with nothing settled elsewhere never warns, however much
-  // they have entered here (e.g. every one-part employee) --------------------
-  const onePartRow: StepRow = {
-    ...leaverRow(4000),
-    hrId: "A-12",
     lifecycle: "regular",
-    context: { "Hire Date": "", "Base Salary": 13000, "Settled in Resignations": 0 },
   };
-  assert.equal(settledElsewhereAmount(crmStep, onePartRow), 0);
-  assert.equal(hasDoubleDeductionConflict(crmStep, onePartRow), false);
-
-  // ---- a step with no conflict key never warns, whatever its context holds --
-  const noRecordStep = STEP_DEFINITIONS.p1_no_record;
-  assert.equal(settledElsewhereAmount(noRecordStep, leaverRow(500)), 0);
-  assert.equal(hasDoubleDeductionConflict(noRecordStep, leaverRow(500)), false);
+  assert.equal(settledElsewhereAmount(noRecordStep, plainRow), 0);
+  assert.equal(hasDoubleDeductionConflict(noRecordStep, plainRow), false);
+  // enteredOnThisStepAmount reports what HR typed regardless of any conflict key
+  // (it is not itself conflict-gated) — 500 here, matching plainRow's own entry.
+  assert.equal(enteredOnThisStepAmount(noRecordStep, plainRow), 500);
 
   // ---- "Resignation Date" column, so a leaver showing up in a Part 1 manual
   // tab is legible (owner request 2026-07-25) ---------------------------------
@@ -182,24 +148,115 @@ export function runAutomatedPayrollPart1ScopeTests() {
     );
   }
 
-  // ---- Resignations' CRM Days auto-calculates its Value (same formula the leaver's
-  // own system-recommended crm figure already uses) — safe to auto-calc. Unpaid
-  // Vacation Days deliberately does NOT: that figure is a composite (balance-aware
-  // Phoenix amount + a separate CRM-leave amount), not a flat day rate, so
-  // auto-calculating it from a single day count would be mathematically wrong. -----
-  const resignationsStep = STEP_DEFINITIONS.p1_resignations;
-  const crmDaysField = resignationsStep.fields.find((field) => field.key === "resignationCrmDays");
+  // ---- CRM/Vacation computation now lives in the DEDICATED tabs, not
+  // Resignations (owner request 2026-07-25 — the same figure used to appear in
+  // both places, which read as duplication). p1_crm's Days field auto-calculates
+  // its Value (Base/30 × days) — safe, because that is the exact formula
+  // calculateDeductionAmountFromBaseSalary already uses for a leaver's real
+  // no-activity days (verified elsewhere against production: divisor/formula
+  // match exactly). p1_unpaid_vacation's Days field deliberately carries NO such
+  // wiring for a leaver's real figure: it is a composite (balance-aware Phoenix
+  // amount + a separate CRM-leave amount), not a flat day rate — the real Value
+  // is written directly, and Days is read-only reference via its own context
+  // column instead. -------------------------------------------------------------
+  const crmStep = STEP_DEFINITIONS.p1_crm;
+  const crmDaysField = crmStep.fields.find((field) => field.key === "p1odCrmDays");
   assert.equal(crmDaysField?.kind, "days");
-  assert.equal(crmDaysField?.autoCalcMoneyKey, "crm");
+  assert.equal(crmDaysField?.autoCalcMoneyKey, "p1odCrmValue");
+
+  // ---- Working Days / Non-Working Days complement pair (owner request
+  // 2026-07-25): both must sum to the month's calendar days, and the money
+  // divisor must stay the FIXED 30 the deduction formula always uses — never
+  // the actual calendar-day-count, which is a DIFFERENT number in a 31-day
+  // month. Conflating the two would silently change the deduction amount. ----
+  const workingDaysField = crmStep.fields.find((field) => field.key === "p1odCrmWorkingDays");
+  assert.equal(workingDaysField?.kind, "days");
+  assert.equal(workingDaysField?.complementFieldKey, "p1odCrmDays");
+  assert.equal(workingDaysField?.complementTotalContextKey, "Days In Month");
+  assert.equal(workingDaysField?.autoCalcMoneyKey, undefined, "Working Days must never drive money directly");
+  assert.equal(crmDaysField?.complementFieldKey, "p1odCrmWorkingDays");
+  assert.equal(crmDaysField?.complementTotalContextKey, "Days In Month");
+  // The money field's own divisor key must be undefined (uses the client's
+  // hardcoded default of 30), NOT the complement's total-days context key.
   assert.equal(
-    resignationsStep.fields.some((field) => field.kind === "days" && field.autoCalcMoneyKey === "unpaidVacations"),
+    crmDaysField?.autoCalcDivisorContextKey,
+    undefined,
+    "the CRM money divisor must stay fixed at 30, not read the complement's calendar-days total",
+  );
+
+  const vacationStep = STEP_DEFINITIONS.p1_unpaid_vacation;
+  assert.equal(
+    vacationStep.fields.some((field) => field.kind === "days" && field.autoCalcMoneyKey === "p1odVacationValue"),
+    true,
+    "the manual-entry auto-calc must still exist for non-leaver (one-part) employees",
+  );
+  assert.equal(
+    vacationStep.contextColumns.some((column) => column.key === "Unpaid Vacation Days"),
+    true,
+    "Unpaid Vacation Days must be a read-only reference column for a leaver's real day count",
+  );
+
+  // The Resignations step no longer computes or shows CRM/Vacation at all —
+  // confirms the "showing in two places" complaint is structurally impossible now.
+  const resignationsStep = STEP_DEFINITIONS.p1_resignations;
+  assert.equal(
+    resignationsStep.fields.some((field) => ["resignationCrmDays", "crm", "unpaidVacations"].includes(field.key)),
     false,
-    "Unpaid Vacation must never auto-calculate from a day count — see comment above",
+    "Resignations must not carry CRM/Vacation fields anymore — they moved to the dedicated tabs",
   );
   assert.equal(
     resignationsStep.contextColumns.some((column) => column.key === "Unpaid Vacation Days"),
-    true,
-    "Unpaid Vacation Days stays a read-only context column, not an editable field",
+    false,
+    "Resignations must not show Unpaid Vacation Days either — see the dedicated tab instead",
+  );
+
+  // ---- the WRITE path must remap a leaver's edit onto the SAME draft columns
+  // Resignations always used (resignationCrmDays/crm, unpaidVacations) — never
+  // ALSO onto p1odCrmValue/p1odVacationValue, which would double-count via
+  // otherPart1DeductionsTotal and reintroduce the exact double-deduction bug
+  // this module already guards against elsewhere. stepEditToPatch/stepRowToPatch
+  // are private to run-service.ts, so this pins the contract at the source level
+  // — comments stripped first (a bare identifier match would also hit a doc
+  // comment mentioning the same function name and pass even if the real call
+  // were deleted; caught exactly that way once already this session). ----------
+  const runServiceSource = readFileSync(
+    new URL("../src/lib/automated-payroll/run-service.ts", import.meta.url),
+    "utf8",
+  );
+  const stripComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const stepEditToPatchBody = stripComments(
+    runServiceSource.slice(
+      runServiceSource.indexOf("function stepEditToPatch"),
+      runServiceSource.indexOf("function stepRowToPatch"),
+    ),
+  );
+  assert.ok(
+    stepEditToPatchBody.includes('patch.resignationCrmDays = generic.p1odCrmDays'),
+    "a leaver's CRM edit must remap onto resignationCrmDays, not stay on p1odCrmDays",
+  );
+  assert.ok(
+    stepEditToPatchBody.includes("patch.crm = generic.p1odCrmValue"),
+    "a leaver's CRM edit must remap onto crm, not stay on p1odCrmValue",
+  );
+  assert.ok(
+    stepEditToPatchBody.includes("patch.unpaidVacations = generic.p1odVacationValue"),
+    "a leaver's Vacation edit must remap onto unpaidVacations, not stay on p1odVacationValue",
+  );
+  assert.ok(
+    stepEditToPatchBody.includes("delete generic.p1odCrmDays") &&
+      stepEditToPatchBody.includes("delete generic.p1odCrmValue") &&
+      stepEditToPatchBody.includes("delete generic.p1odVacationValue"),
+    "the p1od* keys must be deleted after remapping — leaving them would double-write both columns",
+  );
+  const stepRowToPatchBody = stripComments(
+    runServiceSource.slice(
+      runServiceSource.indexOf("function stepRowToPatch"),
+      runServiceSource.indexOf("async function requireRun"),
+    ),
+  );
+  assert.ok(
+    stepRowToPatchBody.includes('row.lifecycle === "leaver"'),
+    "stepRowToPatch (used at confirm time) must pass the row's own lifecycle into the remap",
   );
 
   // ---- notice-period employees must not vanish from earlier months (owner-confirmed
@@ -223,6 +280,52 @@ export function runAutomatedPayrollPart1ScopeTests() {
   assert.equal(isAfterPeriod("2027-01-15", { month: 12, year: 2026 }), true);
   // No date at all (still actively employed, no resignation on file) — never "after."
   assert.equal(isAfterPeriod(null, july), false);
+
+  // ---- notice-period employees are VISIBLE but never SETTLED (owner request
+  // 2026-07-25, after B-157's resignation was completed by mistake and he looked
+  // like an ordinary employee with no resignation shown anywhere).
+  //
+  // The safety property: a future exit date must NEVER reach the field that
+  // drives proration. PopulationMember carries it in `noticeLastWorkingDate`;
+  // `lastWorkingDate` stays leaver-only, because effectiveSalary feeds THAT one
+  // into computeResignationSettlement. Putting a future date there would prorate
+  // the employee's current-month pay and underpay them.
+  const recommendSource = readFileSync(
+    new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
+    "utf8",
+  );
+  const populationPush = recommendSource.slice(
+    recommendSource.indexOf("members.push({"),
+    recommendSource.indexOf("unpaidDaysInSpan: feeder?.unpaidDaysBeforeLastWorkingDate"),
+  );
+  assert.ok(
+    populationPush.includes("lastWorkingDate: leaverLastWorkingDate"),
+    "lastWorkingDate must stay leaver-only — it drives settlement proration",
+  );
+  assert.ok(
+    populationPush.includes("noticeLastWorkingDate: stillActiveThroughFutureExit"),
+    "a future exit must be carried in noticeLastWorkingDate, never in lastWorkingDate",
+  );
+  assert.equal(
+    populationPush.includes("lastWorkingDate: employee.lastWorkingDate"),
+    false,
+    "the employee's own (possibly future) lastWorkingDate must never be assigned to the proration field",
+  );
+
+  // Both the save and confirm paths must drop read-only rows, so a notice-period
+  // employee can never have this month's figures written to their draft row.
+  // (runServiceSource/stripComments already declared above for the leaver
+  // CRM/Vacation remap checks — reused here rather than re-reading the file.)
+  const confirmStepBody = stripComments(
+    runServiceSource.slice(
+      runServiceSource.indexOf("export async function confirmStep"),
+      runServiceSource.indexOf("function summarizeStep"),
+    ),
+  );
+  assert.ok(
+    confirmStepBody.includes("filter((row) => !row.readOnly)"),
+    "confirmStep must skip read-only rows — otherwise confirming writes a notice-period employee's draft row",
+  );
 
   // ---- Special Situations (owner rule 2026-07-25): a genuine Part 1 step, NOT a
   // phase-agnostic novelty — it lives in PART1_STEP_KEYS like its siblings, so it

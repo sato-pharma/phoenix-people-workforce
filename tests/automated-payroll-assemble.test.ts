@@ -52,6 +52,7 @@ function member(hrId: string, opts: { lifecycle?: RowLifecycle; medicalInsurance
     compact: hrId.toLowerCase().replace(/[^a-z0-9]+/g, ""),
     lifecycle: opts.lifecycle ?? "regular",
     lastWorkingDate: null,
+    noticeLastWorkingDate: null,
     unpaidDaysInSpan: 0,
   };
 }

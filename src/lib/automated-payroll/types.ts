@@ -228,6 +228,15 @@ export type StepRow = {
   reason: string | null;
   onHold: boolean;
   lifecycle?: RowLifecycle;
+  /**
+   * Informational row — rendered but not editable, and carrying no values to
+   * save. Used for employees serving notice into a FUTURE month: they belong on
+   * the Resignations step visually (HR needs to know they are leaving) but must
+   * never receive this month's settlement math, which would prorate their pay.
+   */
+  readOnly?: boolean;
+  /** Short explanation shown beside a read-only row, e.g. "settles in August". */
+  readOnlyNote?: string;
 };
 
 /** A field editable within a step (drives the grid + the xlsx template columns). */
@@ -243,6 +252,29 @@ export type StepFieldSpec = {
    * the money field itself are left alone.
    */
   autoCalcMoneyKey?: string;
+  /**
+   * For a "days" field: names a context column holding the divisor to use
+   * instead of the default 30. Deduction day-rates are Base/30 by owner rule,
+   * but resignation proration is Base/actual-calendar-days-in-month — using 30
+   * there would pay the wrong amount in any 31-day month.
+   */
+  autoCalcDivisorContextKey?: string;
+  /**
+   * For a "days" field: the key of ANOTHER "days" field on the same row that
+   * this one complements to a fixed total (e.g. Working Days + Non-Working
+   * Days = the month's calendar day count — owner request 2026-07-25).
+   * Editing either field clamps it to [0, total] and sets the OTHER to
+   * (total - value). The total is read from `complementTotalContextKey`.
+   *
+   * Deliberately a SEPARATE field from `autoCalcDivisorContextKey`: the money
+   * formula's divisor must stay a fixed 30 regardless of the actual month
+   * length (calculateDeductionAmountFromBaseSalary is hardcoded to /30), while
+   * the complement CAP must be the real calendar day count (28–31) — conflating
+   * the two would silently change the deduction amount in any 31-day month.
+   */
+  complementFieldKey?: string;
+  /** For a "days" field with `complementFieldKey`: the context column holding the fixed total both fields sum to. */
+  complementTotalContextKey?: string;
   /** For a "select" field: the dropdown's choices. */
   options?: { value: string; label: string }[];
 };
