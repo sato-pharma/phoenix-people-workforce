@@ -1,4 +1,5 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -480,6 +481,18 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
   const hrId = (access.hrId ?? "").trim().toUpperCase();
   if (!hrId) return [];
 
+  // A person who holds more than one login (the HR Manager also operates the system-administrator
+  // console) records decisions under whichever HR_ID was signed in at the time. History is per
+  // PERSON, not per login, so every query below matches all of their HR_IDs — otherwise half of
+  // their own decisions are invisible depending on how they signed in today.
+  const actorHrIds = Array.from(sharedIdentityKeys(hrId));
+  // PostgREST `or` terms. `ilike` (not `eq`/`in`) because stored casing drifts — "admin-HR",
+  // "ADMIN-HR" and "admin-hr" all appear in historic decision columns.
+  const decidedByAnyOfMine = (...columns: string[]) =>
+    columns.flatMap((column) => actorHrIds.map((id) => `${column}.ilike.${id}`)).join(",");
+  /** True when a stored decider value is this same person, under any of their logins. */
+  const decidedByMe = (value: unknown) => isSamePerson(hrId, value == null ? null : String(value));
+
   const db = getSupabaseAdmin();
   const items: HistoricalApprovalItem[] = [];
 
@@ -516,54 +529,54 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
       db
         .from("v2_vacation_requests")
         .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
-        .or(`manager_decision_by_hr_id.ilike.${hrId},hr_decision_by_hr_id.ilike.${hrId}`)
+        .or(decidedByAnyOfMine("manager_decision_by_hr_id", "hr_decision_by_hr_id"))
         .not("manager_decision_at", "is", null)
         .order("manager_decision_at", { ascending: false })
         .limit(200),
       db
         .from("v2_excuse_requests")
         .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
-        .ilike("manager_decision_by_hr_id", hrId)
+        .or(decidedByAnyOfMine("manager_decision_by_hr_id"))
         .not("manager_decision", "is", null)
         .order("manager_decision_at", { ascending: false })
         .limit(200),
       db
         .from("employee_plan_headers")
         .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
-        .or(`manager_decision_by_hr_id.ilike.${hrId},ceo_decision_by_hr_id.ilike.${hrId}`)
+        .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
         .not("manager_decision_at", "is", null)
         .order("manager_decision_at", { ascending: false })
         .limit(200),
       db
         .from("employee_resignations")
         .select("id,employee_name,employee_hr_id,effective_date,status,reviewed_by,reviewed_at,approved_by,approved_at,rejected_by,rejected_at")
-        .or(`reviewed_by.ilike.${hrId},approved_by.ilike.${hrId},rejected_by.ilike.${hrId}`)
+        .or(decidedByAnyOfMine("reviewed_by", "approved_by", "rejected_by"))
         .order("reviewed_at", { ascending: false })
         .limit(100),
       db
         .from("salary_batches")
         .select("id,file_name,month,year,status,approved_by,approved_at")
-        .ilike("approved_by", hrId)
+        .or(decidedByAnyOfMine("approved_by"))
         .not("approved_at", "is", null)
         .order("approved_at", { ascending: false })
         .limit(100),
       db
         .from("sales_import_batches")
         .select("id,file_name,period,month,year,status,approved_by,approved_at,rejected_by,rejected_at")
-        .or(`approved_by.ilike.${hrId},rejected_by.ilike.${hrId}`)
+        .or(decidedByAnyOfMine("approved_by", "rejected_by"))
         .order("approved_at", { ascending: false })
         .limit(100),
       db
         .from("marketing_request_approval_steps")
         .select("request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id)")
-        .ilike("decision_by_hr_id", hrId)
+        .or(decidedByAnyOfMine("decision_by_hr_id"))
         .not("decision_at", "is", null)
         .order("decision_at", { ascending: false })
         .limit(200),
       db
         .from("outstation_expenses")
         .select("id,specialist,hr_id,expense_date,total,status,approved_by,approved_at")
-        .ilike("approved_by", hrId)
+        .or(decidedByAnyOfMine("approved_by"))
         .not("approved_at", "is", null)
         .order("approved_at", { ascending: false })
         .limit(200),
@@ -574,7 +587,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .from("v2_vacation_approval_steps")
         .select("request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
         .eq("step_key", "manager_of_manager")
-        .ilike("approver_hr_id", hrId)
+        .or(decidedByAnyOfMine("approver_hr_id"))
         .neq("status", "pending")
         .not("decided_at", "is", null)
         .order("decided_at", { ascending: false })
@@ -586,8 +599,8 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
 
   if (leaves.status === "fulfilled" && !leaves.value.error) {
     for (const row of leaves.value.data ?? []) {
-      const isMgrDecider = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
-      const isHrDecider = String(row.hr_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const isMgrDecider = decidedByMe(row.manager_decision_by_hr_id);
+      const isHrDecider = decidedByMe(row.hr_decision_by_hr_id);
       const decisionRaw = isHrDecider && row.hr_decision ? row.hr_decision : row.manager_decision;
       const decidedAt = isHrDecider && row.hr_decision_at ? row.hr_decision_at : row.manager_decision_at;
       // Returned requests set manager_decision_at but leave manager_decision NULL — detect via status.
@@ -650,8 +663,8 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
 
   if (plans.status === "fulfilled" && !plans.value.error) {
     for (const row of plans.value.data ?? []) {
-      const isMgrDecider = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
-      const isCeoDecider = String(row.ceo_decision_by_hr_id ?? "").toUpperCase() === hrId;
+      const isMgrDecider = decidedByMe(row.manager_decision_by_hr_id);
+      const isCeoDecider = decidedByMe(row.ceo_decision_by_hr_id);
       if (!isMgrDecider && !isCeoDecider) continue;
       const s = String(row.status ?? "").toLowerCase();
       // Derive decision from status — employee_plan_headers has no text decision columns
@@ -680,9 +693,9 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
 
   if (resignations.status === "fulfilled" && !resignations.value.error) {
     for (const row of resignations.value.data ?? []) {
-      const isApprover = String(row.approved_by ?? "").toUpperCase() === hrId;
-      const isRejector = String(row.rejected_by ?? "").toUpperCase() === hrId;
-      const isReviewer = String(row.reviewed_by ?? "").toUpperCase() === hrId;
+      const isApprover = decidedByMe(row.approved_by);
+      const isRejector = decidedByMe(row.rejected_by);
+      const isReviewer = decidedByMe(row.reviewed_by);
       if (!isApprover && !isRejector && !isReviewer) continue;
       // Derive the decision from the final status, not from which actor column matched — a
       // reviewer is not necessarily the approver. A row still under review (matched only via
@@ -724,8 +737,8 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
 
   if (salesImports.status === "fulfilled" && !salesImports.value.error) {
     for (const row of salesImports.value.data ?? []) {
-      const isApprover = String(row.approved_by ?? "").toUpperCase() === hrId && row.approved_at;
-      const isRejector = String(row.rejected_by ?? "").toUpperCase() === hrId && row.rejected_at;
+      const isApprover = decidedByMe(row.approved_by) && row.approved_at;
+      const isRejector = decidedByMe(row.rejected_by) && row.rejected_at;
       if (!isApprover && !isRejector) continue;
       const periodLabel = row.period ?? `${String(row.month ?? "")}/${String(row.year ?? "")}`;
       items.push({
@@ -797,9 +810,11 @@ async function buildLeaveDeepLinkItem(
     .maybeSingle();
   if (error || !data) return null;
   const row = data as Record<string, unknown>;
+  // Same-person matching: the deep-link must open for the human who decided it, whichever of
+  // their logins recorded the decision.
   const isDecider =
-    String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId ||
-    String(row.hr_decision_by_hr_id ?? "").toUpperCase() === hrId;
+    isSamePerson(hrId, row.manager_decision_by_hr_id == null ? null : String(row.manager_decision_by_hr_id)) ||
+    isSamePerson(hrId, row.hr_decision_by_hr_id == null ? null : String(row.hr_decision_by_hr_id));
   if (!isDecider && access.scope !== "system") return null;
 
   const { data: stepData } = await db
@@ -859,8 +874,8 @@ async function buildPlanDeepLinkItem(
     .maybeSingle();
   if (error || !data) return null;
   const row = data as Record<string, unknown>;
-  const isMgr = String(row.manager_decision_by_hr_id ?? "").toUpperCase() === hrId;
-  const isCeo = String(row.ceo_decision_by_hr_id ?? "").toUpperCase() === hrId;
+  const isMgr = isSamePerson(hrId, row.manager_decision_by_hr_id == null ? null : String(row.manager_decision_by_hr_id));
+  const isCeo = isSamePerson(hrId, row.ceo_decision_by_hr_id == null ? null : String(row.ceo_decision_by_hr_id));
   if (!isMgr && !isCeo && access.scope !== "system") return null;
 
   const rawItems = ((row.employee_plan_items as Array<Record<string, unknown>> | undefined) ?? [])

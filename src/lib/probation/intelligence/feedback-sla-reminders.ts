@@ -8,6 +8,7 @@
 
 import { systemDeployment } from "@/config/system-settings";
 import { normalizeHrId, systemAccessContext } from "@/lib/auth/permissions";
+import { canonicalPersonHrId } from "@/lib/auth/identity-aliases";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -46,11 +47,12 @@ const resolveCeoHrIds = () => activeHrIdsByRole(["CEO"]);
 
 // The System Admin CC on the reminder-2 escalation (MOD-2, owner decision 2026-07-17). The synthetic
 // "Phoenix System Administrator" account (PHX-1) has no deliverable mailbox — employees.work_email is
-// UNIQUE and the intended address omar.anwar@satopharma.com already belongs to B-10 — so the escalation
-// is routed to the real system-administrator account B-10 (Omar Anwar, HR Manager + Super Admin), whose
-// work_email is that inbox. Resolved defensively by hr_id + is_active so a deactivation drops it rather
-// than emailing a dead account. (PHX-1 remains the cap-exempt in-app oversight account, see notification-cap.)
-const SYSTEM_ADMIN_CC_HR_ID = "B-10";
+// UNIQUE and the intended address already belongs to the person's own employee row — so the escalation
+// is routed to the canonical account behind that identity (HR Manager + Super Admin), whose work_email
+// is that inbox. Resolved from the shared-identity groups rather than hardcoded, so the mail target and
+// the notification-cap exemption can no longer drift apart. Looked up defensively by hr_id + is_active
+// so a deactivation drops the CC rather than emailing a dead account.
+const SYSTEM_ADMIN_CC_HR_ID = canonicalPersonHrId("PHX-1") ?? "PHX-1";
 async function resolveSystemAdminHrId(): Promise<string | null> {
   const { data } = await getSupabaseAdmin()
     .from("app_auth_users")

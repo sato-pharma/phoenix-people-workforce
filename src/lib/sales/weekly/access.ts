@@ -3,6 +3,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   applyLineRegionScope,
@@ -33,9 +34,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // allowed to reveal them — mirroring the locked rule in `access-scope.ts`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Exception accounts: full weekly access (incl. restricted products) regardless of role. */
+/**
+ * Exception accounts: full weekly access (incl. restricted products) regardless of role — the CEO
+ * (AA) and the HR Manager. The latter also holds the system-administrator console, so every HR_ID
+ * of that one person is expanded from the shared-identity groups instead of being listed by hand.
+ */
 export const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
-  ["admin-hr", "b-10", "aa"].map((id) => canonicalHrIdKey(id)).filter((id): id is string => Boolean(id)),
+  [...sharedIdentityKeys("B-10"), canonicalHrIdKey("aa")].filter((id): id is string => Boolean(id)),
 );
 
 /** Roles scoped by their explicit product assignments (line ignored). */
