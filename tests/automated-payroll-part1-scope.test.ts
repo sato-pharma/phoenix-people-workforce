@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
+import { isAfterPeriod, isSettledInPart1 } from "../src/lib/automated-payroll/recommend.ts";
 import { normalizePayrollPaymentMode } from "../src/lib/payroll/policy.ts";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, type StepRow } from "../src/lib/automated-payroll/types.ts";
 import { STEP_DEFINITIONS, STEP_ORDER } from "../src/lib/automated-payroll/step-definitions.ts";
@@ -201,4 +201,26 @@ export function runAutomatedPayrollPart1ScopeTests() {
     true,
     "Unpaid Vacation Days stays a read-only context column, not an editable field",
   );
+
+  // ---- notice-period employees must not vanish from earlier months (owner-confirmed
+  // real bug, 2026-07-25 — B-157 Sameh Ahmed Ezzat Mohamed Hussien: employment_status
+  // already "resigned" but last_working_date=2026-08-31, a full month after the July
+  // run being processed). isAfterPeriod is the one predicate that tells "already
+  // departed before this period" apart from "departing later, still owed this
+  // period's pay" — resolvePayrollPopulationAndSources uses it alongside
+  // isPayrollIneligibleEmployee so a terminal status alone can never wrongly exclude
+  // someone still actively working through a future exit. -----------------------
+  const july = { month: 7, year: 2026 };
+  // Sameh's real shape: still active through August, for the July run.
+  assert.equal(isAfterPeriod("2026-08-31", july), true);
+  // An employee who already left in an EARLIER month must stay excluded.
+  assert.equal(isAfterPeriod("2026-06-30", july), false);
+  // A leaver exiting THIS SAME month is handled by the leaver path, not this one —
+  // isAfterPeriod itself must say false so isPayrollIneligibleEmployee still applies
+  // (that employee is included via isLeaver instead, never via this predicate).
+  assert.equal(isAfterPeriod("2026-07-31", july), false);
+  // Across a year boundary: exiting January next year is still "after" December.
+  assert.equal(isAfterPeriod("2027-01-15", { month: 12, year: 2026 }), true);
+  // No date at all (still actively employed, no resignation on file) — never "after."
+  assert.equal(isAfterPeriod(null, july), false);
 }

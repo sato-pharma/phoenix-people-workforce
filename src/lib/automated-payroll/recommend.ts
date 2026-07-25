@@ -125,6 +125,22 @@ function buildSalarySource(employee: EmployeeDirectoryRow, period: PayrollPeriod
  * typically already flipped to resigned by the time payroll processes their exit
  * month), which is exactly why the Resignations step showed no rows.
  */
+/**
+ * True when dateText's year-month is strictly AFTER the given period — i.e. still in
+ * the future relative to the run being processed. Used to tell "already departed
+ * before this period" apart from "departing later, still owed this period's pay."
+ * Exported for tests.
+ */
+export function isAfterPeriod(dateText: string | null, period: PayrollPeriod): boolean {
+  if (!dateText) return false;
+  const match = /^(\d{4})-(\d{2})/.exec(dateText.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+  return year > period.year || (year === period.year && month > period.month);
+}
+
 export async function resolvePayrollPopulation(period: PayrollPeriod): Promise<PopulationMember[]> {
   const { members } = await resolvePayrollPopulationAndSources(period);
   return members;
@@ -148,9 +164,21 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
     const leaverLastWorkingDate = feeder?.leaverLastWorkingDate ?? null;
     const isLeaver = Boolean(leaverLastWorkingDate);
     const isJoiner = !isLeaver && isInPeriod(employee.hireDate, period);
+    // A resignation already SUBMITTED with a last working date in a LATER period is
+    // still serving notice — not yet departed as of THIS period. employment_status
+    // flips to a terminal value (e.g. "resigned") the moment the resignation is
+    // approved, often well before the employee's actual last day, and
+    // isPayrollIneligibleEmployee() alone can't distinguish "already left" from
+    // "leaving later" — only `leaverLastWorkingDate` (scoped to THIS period by
+    // buildFeederStates) can. Confirmed live 2026-07-25 against a real case: B-157
+    // had employment_status=resigned for the July run but last_working_date=2026-08-31
+    // — a full month of pay silently dropped from the entire population, every step,
+    // with no error or empty-state to notice it by.
+    const stillActiveThroughFutureExit = isAfterPeriod(employee.lastWorkingDate, period);
 
-    // Include: active/eligible employees, OR a leaver this month (even if terminal now).
-    if (isPayrollIneligibleEmployee(employee) && !isLeaver) continue;
+    // Include: active/eligible employees, a leaver this month (even if terminal now),
+    // or someone serving notice into a future month (still owed this month's pay).
+    if (isPayrollIneligibleEmployee(employee) && !isLeaver && !stillActiveThroughFutureExit) continue;
 
     members.push({
       employee,
