@@ -9,12 +9,12 @@
 // The cached photo map lets any server surface decide "does this HR ID have an
 // uploaded photo?" with a single small query (mirrors the role-override cache).
 //
-// server-only: this module uses node:crypto and the service-role Supabase client.
-// A client component that imports it (even transitively) fails the webpack build
-// with a clear error instead of a cryptic "node:crypto is not handled" crash —
-// see the recruitment-workspace.tsx/support-requests-workspace.tsx incident this
-// guards against (2026-07-25).
-import "server-only";
+// NOT guarded with `import "server-only"` (tried 2026-07-25, reverted): that package
+// always throws unless a bundler substitutes a no-op for server builds, which Next.js
+// does but this repo's plain-Node test runner (tests/run-tests.ts) does not — 25+ test
+// files transitively import this module via employee-directory.ts and all failed. The
+// node:crypto import below already fails any accidental client bundle at webpack build
+// time on its own (that's the mechanism, not a friendly message, but it's a hard stop).
 
 import crypto from "node:crypto";
 
