@@ -1,5 +1,6 @@
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly } from "@/lib/date-only";
 import { nextContractAnniversary } from "@/lib/contracts/date-rules";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import type { ContractRenewalStatus } from "@/lib/contracts/types";
 import type { ProbationDecision } from "@/lib/probation/types";
 
@@ -39,10 +40,13 @@ export type ProbationRiskInput = {
 
 const activeContractRequestStatuses: ContractRenewalStatus[] = ["requested", "manager_review", "hr_review"];
 
+// Resolves which CALENDAR DAY `referenceDate` falls on in Africa/Cairo (not the server's own
+// UTC clock — Cairo is ahead of UTC, so near Cairo midnight the two disagree on "today"), then
+// builds a Date for that day using the same local-constructor convention date-only.ts's
+// parseDateOnly uses, so the two stay directly comparable via getTime().
 function startOfToday(referenceDate = new Date()) {
-  const today = new Date(referenceDate);
-  today.setHours(0, 0, 0, 0);
-  return today;
+  const { year, month, day } = currentCairoDateParts(referenceDate);
+  return new Date(year, month - 1, day);
 }
 
 export function daysUntilLifecycleDate(value: string | null | undefined, referenceDate = new Date()) {
