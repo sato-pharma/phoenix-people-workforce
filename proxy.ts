@@ -97,6 +97,11 @@ export function proxy(request: NextRequest) {
       // Brevo transactional webhook: the provider POSTs cross-origin; a shared secret token
       // (?token= / x-brevo-token, verified in the route) authorises it, so it is CSRF-exempt.
       request.nextUrl.pathname === "/api/webhooks/brevo" ||
+      // WhatsApp Cloud API webhook: Meta POSTs cross-origin with no Origin/Referer header,
+      // so it always fail-closed here (403) even with a correct X-Hub-Signature-256 — the
+      // route verifies that signature itself, so this is CSRF-exempt by the same shared-secret
+      // pattern as the other provider webhooks above.
+      request.nextUrl.pathname === "/api/webhooks/whatsapp" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")
