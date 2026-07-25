@@ -397,8 +397,15 @@ export function runPrivateCalendarTests() {
   assert.match(accessRegistrySource, /\/admin\/private-calendars/, "private calendar admin page must be in access registry");
 
   const portalLayoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-  assert.doesNotMatch(portalLayoutSource, /Private Calendar/, "Private Calendar is hidden from the employee sidebar for all roles");
+  // Private Calendar stays hidden from the sidebar by default for every role — owner-approved
+  // 2026-07-24 exception: Talent Acquisition gets it via a dedicated, narrowly-gated flag
+  // (showPrivateCalendarTab), not a blanket unlock. Assert the gate exists rather than banning
+  // the label outright now that one role legitimately has it.
+  assert.match(portalLayoutSource, /showPrivateCalendarTab \? \[\{ href: "\/employee-portals\/private-calendar"/, "Private Calendar must stay behind the showPrivateCalendarTab flag, not render unconditionally");
   assert.match(portalLayoutSource, /\/employee-portals\/plans\/calendar/, "plan users must get the Planning Calendar route");
+
+  const navigationSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
+  assert.match(navigationSource, /showPrivateCalendarTab: isTalentAcquisition,/, "showPrivateCalendarTab must stay scoped to Talent Acquisition only, not widened to every role");
 
   const navRegistrySource = readFileSync("src/components/employee-portal/employee-portal-nav-registry.ts", "utf8");
   assert.doesNotMatch(navRegistrySource, /\/employee-portals\/private-calendar/, "Private Calendar is removed from the bottom-nav registry for all roles");

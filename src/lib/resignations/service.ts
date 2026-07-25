@@ -529,7 +529,8 @@ function isCompanyResignationReader(access: AccessContext) {
     access.scope === "system" ||
     access.scope === "company" ||
     access.role === "Super Admin" ||
-    access.role === "CEO"
+    access.role === "CEO" ||
+    access.role === "Talent Acquisition"
   );
 }
 
