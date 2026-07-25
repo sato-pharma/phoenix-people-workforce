@@ -72,6 +72,11 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(talentAcquisition, "support_requests", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "export"), true);
+  // Owner-requested 2026-07-25: Private Calendar (self-scoped — isPrivateCalendarGlobalViewer
+  // does not include this role) and the read-only, Head-Office-scoped Planning Calendar.
+  assert.equal(await canAccess(talentAcquisition, "attendance", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "create"), false);
   // Owner-requested 2026-07-24: full manage rights on the employee directory, matching
   // Super Admin's action set — the hard boundary in hardBoundaryAllowedActions was
   // relaxed to include Talent Acquisition specifically for this resource only.

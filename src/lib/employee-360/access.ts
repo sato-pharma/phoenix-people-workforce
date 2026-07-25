@@ -56,6 +56,16 @@ export function isEmployee360Subject(
   return resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle) !== null;
 }
 
+/**
+ * True when this viewer sees the WHOLE company in Employee 360. A company-wide
+ * viewer whose own record isn't itself field-force (e.g. Talent Acquisition) gets
+ * a browse-all list instead of an out-of-scope card when they open their own
+ * profile — see the employee-portal Employee 360 page.
+ */
+export function isCompany360Viewer(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return context.scope === "system" || COMPANY_360_ROLES.has(context.role);
+}
+
 /** Precomputed lookups a scope decision reuses across many subjects. */
 export type Employee360Scope = {
   /** The viewer's own directory row (for line/department scope), or null. */

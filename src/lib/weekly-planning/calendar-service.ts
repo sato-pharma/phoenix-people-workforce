@@ -172,6 +172,8 @@ export type CalendarViewerContext = {
 //   - Regional Manager: same shape as District Manager (Training Manager + own-line Product
 //     Manager), PLUS their own line's Group Product Manager, PLUS the plans of the District
 //     Managers who report directly to them (not every District Manager on their line).
+//   - Talent Acquisition: Head-Office-line plans only (owner-requested 2026-07-25) — HR/
+//     recruiting oversight of HO staff scheduling, not company-wide.
 //   - Anyone else with calendar access (any role/line not named above) keeps the
 //     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
@@ -214,6 +216,9 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
       (itemHasLine(item, viewer.lineName) && (itemIsExactlyProductManager(item) || itemHasJobTitle(item, "group product manager"))) ||
       itemReportsToViewer(item, viewer)
     );
+  }
+  if (role === "talent acquisition") {
+    return isHeadOfficeLine(item.lineName);
   }
 
   return true;

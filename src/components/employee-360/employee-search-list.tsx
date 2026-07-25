@@ -132,7 +132,17 @@ function groupByLine(rows: Employee360ListItem[], subGroupByManager: boolean): L
   });
 }
 
-export function EmployeeSearchList({ employees }: { employees: Employee360ListItem[] }) {
+export function EmployeeSearchList({
+  employees,
+  basePath = "/employee-360",
+}: {
+  employees: Employee360ListItem[];
+  /** Detail-link prefix — the admin index page links to `/employee-360/[hrId]`; the
+   * employee-portal's company-wide viewers (Talent Acquisition today) need their own
+   * `/employee-portals/employee-360/[hrId]` instead, since the admin route redirects
+   * portal-mode roles away. */
+  basePath?: string;
+}) {
   const countByCategory = useMemo(() => {
     const map = new Map<Employee360RoleCategory, number>();
     for (const e of employees) map.set(e.category, (map.get(e.category) ?? 0) + 1);
@@ -350,12 +360,12 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
                         <span className="text-xs font-bold text-slate-500">{mg.manager || "No manager"}</span>
                         <span className="text-[10px] font-semibold text-slate-400">· {mg.items.length}</span>
                       </div>
-                      <CardGrid items={mg.items} />
+                      <CardGrid items={mg.items} basePath={basePath} />
                     </div>
                   ))}
                 </div>
               ) : (
-                <CardGrid items={g.items} />
+                <CardGrid items={g.items} basePath={basePath} />
               )}
             </section>
           ))}
@@ -365,22 +375,22 @@ export function EmployeeSearchList({ employees }: { employees: Employee360ListIt
   );
 }
 
-function CardGrid({ items }: { items: Employee360ListItem[] }) {
+function CardGrid({ items, basePath }: { items: Employee360ListItem[]; basePath: string }) {
   return (
     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((e) => (
         <li key={e.hrId}>
-          <EmployeeCard e={e} />
+          <EmployeeCard e={e} basePath={basePath} />
         </li>
       ))}
     </ul>
   );
 }
 
-function EmployeeCard({ e }: { e: Employee360ListItem }) {
+function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: string }) {
   return (
     <Link
-      href={`/employee-360/${encodeURIComponent(e.hrId)}`}
+      href={`${basePath}/${encodeURIComponent(e.hrId)}`}
       className="group flex h-full items-start gap-3 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]"
     >
       <span

@@ -272,4 +272,28 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     "Regional Manager does NOT see a same-line District Manager who does not report to them",
   );
   assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, regionalManagerViewer), false, "Regional Manager does NOT see an Anti Infective-line plan");
+
+  // --- Talent Acquisition: Head-Office-line plans only (owner-requested 2026-07-25) ---
+
+  const talentAcquisitionViewer = viewer({ hrId: "A-16", role: "Talent Acquisition" });
+  assert.equal(
+    isPlanItemVisibleToViewer(headOfficeItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees a Head-Office-line plan",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(marketingManagerItem, talentAcquisitionViewer),
+    true,
+    "Talent Acquisition sees another Head-Office-line plan regardless of the owner's title",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(pediaFieldItem, talentAcquisitionViewer),
+    false,
+    "Talent Acquisition does NOT see a non-HO (Pedia) District Manager's plan, unlike the unrestricted default",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(antiInfectiveFieldItem, talentAcquisitionViewer),
+    false,
+    "Talent Acquisition does NOT see a non-HO (Anti Infective) plan either",
+  );
 }

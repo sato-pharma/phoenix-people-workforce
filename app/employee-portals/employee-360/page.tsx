@@ -3,12 +3,21 @@ import { redirect } from "next/navigation";
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import {
+  EmployeeSearchList,
+  type Employee360ListItem,
+} from "@/components/employee-360/employee-search-list";
+import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee-360/access";
+import {
+  buildEmployee360Scope,
+  canViewEmployee360Subject,
+  isCompany360Viewer,
+  resolveEmployee360VisibleRows,
+} from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
@@ -59,6 +68,45 @@ export default async function EmployeePortalEmployee360Page({
 
   const rows = await getEmployeeDirectoryRows({ includeInactive: true });
   const target = rows.find((row) => hrIdsMatch(row.hrId, access.hrId));
+  const roleCategory = target ? resolveEmployee360RoleCategory(target.jobTitle ?? target.positionTitle) : null;
+
+  // A company-wide viewer (Talent Acquisition today) whose own record isn't
+  // field-force — or has no directory row at all — gets the same browse-all-field-
+  // force list the admin index page offers, instead of a self-view empty state
+  // that could never apply to them. Everyone else keeps the self-only states below.
+  if ((!target || !roleCategory) && isCompany360Viewer(access)) {
+    const activeRows = await getEmployeeDirectoryRows({ includeInactive: false });
+    const visibleRows = await resolveEmployee360VisibleRows(activeRows, access);
+    const employees: Employee360ListItem[] = visibleRows
+      .map((row) => {
+        const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
+        if (!category) return null;
+        return {
+          hrId: row.hrId,
+          displayName: row.displayName || row.fullName,
+          jobTitle: row.jobTitle,
+          // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
+          lineName: bridgeEmployeeLineToOfficial(row.lineName),
+          areaName: row.areaName,
+          regionName: row.regionName,
+          managerName: row.managerName,
+          employmentStatus: row.employmentStatus,
+          category,
+        } satisfies Employee360ListItem;
+      })
+      .filter((e): e is Employee360ListItem => e !== null)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    return (
+      <Shell description="Company-wide field-force directory." title="Employee 360">
+        {employees.length === 0 ? (
+          <EmployeePortalEmptyState message="No field-force employees are visible right now." title="Employee 360" />
+        ) : (
+          <EmployeeSearchList employees={employees} basePath={PORTAL_BASE_PATH} />
+        )}
+      </Shell>
+    );
+  }
 
   if (!target) {
     return (
@@ -79,7 +127,6 @@ export default async function EmployeePortalEmployee360Page({
 
   // Employee 360 covers only the six field-force role families. Anyone else (HR,
   // Finance, admin, office…) gets a clear out-of-scope state, matching the admin report.
-  const roleCategory = resolveEmployee360RoleCategory(target.jobTitle ?? target.positionTitle);
   if (!roleCategory) {
     return (
       <Shell description="Your field performance, team roll-up, and coaching impact." title="Employee 360">
