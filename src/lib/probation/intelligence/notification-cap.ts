@@ -7,16 +7,20 @@
 // re-emits when the recipient is back under the cap. This is why "defer to next day" needs no
 // deferred-delivery machinery here.
 //
-// The System Admin account (PHX-1) is EXEMPT — it must receive every probation notification for
+// The System Admin is EXEMPT — that account must receive every probation notification for
 // oversight. The cap is a courtesy backstop, so it FAILS OPEN: any query error yields a cap that
 // allows everything rather than silently dropping legitimate mail.
 
 import { normalizeHrId } from "@/lib/auth/permissions";
+import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const PROBATION_DAILY_NOTIFICATION_CAP = 2;
-// Accounts exempt from the cap. PHX-1 is the "Phoenix System Administrator" oversight account.
-export const CAP_EXEMPT_HR_IDS = ["PHX-1"];
+// Accounts exempt from the cap: the "Phoenix System Administrator" oversight identity, expanded to
+// every HR_ID of the one person behind it. Listing only PHX-1 here used to exempt the console while
+// still capping the same human's employee account (B-10) — which is where the reminders actually
+// land, since PHX-1 has no mailbox.
+export const CAP_EXEMPT_HR_IDS: readonly string[] = Array.from(sharedIdentityKeys("PHX-1"));
 
 const CAIRO_TZ = "Africa/Cairo";
 
@@ -46,7 +50,7 @@ export type ProbationDailyCap = {
 export function createCapGate(
   cairoDate: string,
   baseline: Map<string, number>,
-  exemptHrIds: string[] = CAP_EXEMPT_HR_IDS,
+  exemptHrIds: readonly string[] = CAP_EXEMPT_HR_IDS,
 ): ProbationDailyCap {
   const exempt = new Set(exemptHrIds.map((h) => normalizeHrId(h)).filter(Boolean) as string[]);
   const withinRun = new Map<string, number>();

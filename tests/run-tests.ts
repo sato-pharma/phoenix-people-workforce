@@ -133,6 +133,7 @@ import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
+import { runIdentityAliasesTests } from "./identity-aliases.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
 import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce-compliance-live-snapshots.test.ts";
@@ -586,6 +587,7 @@ await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive 
 await runTest("crm duplicate double-visit submission collapse (burst dedup, comment-substance gate)", runCrmDuplicateVisitCollapseTests);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
+await runTest("shared person identity (B-10 = PHX-1 = admin-HR, one primitive)", runIdentityAliasesTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
 await runTest("login page hardening", runLoginPageHardeningTests);

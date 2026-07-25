@@ -287,8 +287,9 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /Separation of duties requires a different HR or Super Admin actor/);
   assert.match(serviceSource, /async function hasAlternateHrApprover\(excludeHrId: string \| null\)/);
   assert.match(serviceSource, /hr_self_acknowledged_sole_admin_exception/);
-  assert.match(serviceSource, /SHARED_HR_IDENTITY_GROUPS: string\[\]\[\] = \[\["B-10", "PHX-1"\]\]/, "B-10 and PHX-1 must be treated as one identity for HR separation-of-duties");
-  assert.match(serviceSource, /function hrIdentityGroup\(hrId: string \| null\)/);
+  assert.match(serviceSource, /const excludedGroup = sharedIdentityKeys\(excludeHrId\)/, "B-10 and PHX-1 must be treated as one identity for HR separation-of-duties");
+  assert.match(serviceSource, /import \{ sharedIdentityKeys \} from "@\/lib\/auth\/identity-aliases"/, "the shared-identity group must come from the one system-wide primitive, not a local list");
+  assert.doesNotMatch(serviceSource, /SHARED_HR_IDENTITY_GROUPS/, "the local copy of the identity group must not come back");
   assert.match(serviceSource, /async function closeSiblingPendingHrApprovalSteps/, "the hr step must close sibling pending rows once any Super Admin decides it");
   assert.match(serviceSource, /hrSteps\.length === 0 \|\| hrSteps\.some\(\(candidate\) => candidate\.status === "approved"\)/, "the legacy flow must treat the hr step as OR-satisfied, not requiring every HR/Super Admin row to approve");
   assert.match(serviceSource, /vacationRetentionPolicyDefaults/);
