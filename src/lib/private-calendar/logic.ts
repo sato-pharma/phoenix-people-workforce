@@ -1,4 +1,5 @@
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
@@ -17,7 +18,10 @@ export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> 
   vacation: "Vacation",
 };
 
-export const defaultPrivateCalendarGlobalHrIds = ["B-10", "admin-HR"] as const;
+// The HR Manager sees every private calendar. That person also holds the system-administrator
+// console, so both of their HR_IDs qualify — sourced from the shared-identity groups rather than
+// listed here, which previously covered "admin-HR" but silently missed "PHX-1".
+export const defaultPrivateCalendarGlobalHrIds: readonly string[] = Array.from(sharedIdentityKeys("B-10"));
 
 export type PrivateCalendarEmployeeOption = {
   departmentName: string | null;

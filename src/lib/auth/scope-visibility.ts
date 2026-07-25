@@ -143,7 +143,7 @@ export async function listUserScopeOverrides(): Promise<UserScopeOverride[]> {
       loginId: row.login_id,
       hrId: row.hr_id ?? null,
       fullName,
-      displayName: fullName ? resolveEmployeeDisplayName(fullName, key ? nicknameByHrId.get(key) ?? null : null) : null,
+      displayName: fullName ? resolveEmployeeDisplayName(fullName, key ? nicknameByHrId.get(key) ?? null : null, key) : null,
       role: row.role ?? null,
       lineNames: Array.isArray(row.line_scope_override) && row.line_scope_override.length > 0
         ? row.line_scope_override
