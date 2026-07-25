@@ -1,0 +1,14 @@
+title = "phoenix-workforce gitleaks config"
+
+[extend]
+# Start from gitleaks' built-in ruleset (AWS keys, private keys, generic
+# high-entropy tokens, etc.) and layer repo-specific path exclusions on top.
+useDefault = true
+
+[allowlist]
+paths = [
+  '''node_modules/''',
+  '''\.next/''',
+  '''dist/''',
+  '''pnpm-lock\.yaml''',
+]
