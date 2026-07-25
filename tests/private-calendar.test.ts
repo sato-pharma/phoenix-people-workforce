@@ -508,7 +508,7 @@ export function runPrivateCalendarTests() {
   );
 
   const workspacePagesSource = readFileSync("src/components/workspace/admin-shell-employee-pages.tsx", "utf8");
-  assert.match(workspacePagesSource, /<PrivateCalendar initialWorkspace=\{workspace\} surface="workspace" \/>/, "workspace private calendar must use the admin-shell surface mode");
+  assert.match(workspacePagesSource, /<PrivateCalendar initialWorkspace=\{workspace\} surface="workspace"[^/]*\/>/, "workspace private calendar must use the admin-shell surface mode");
 
   const adminPageSource = readFileSync("app/(admin)/admin/private-calendars/page.tsx", "utf8");
   assert.match(adminPageSource, /PrivateCalendarsFilterMap|PrivateCalendar/, "admin private calendars page must render a calendar or filter-map component");
