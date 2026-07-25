@@ -309,7 +309,7 @@ export async function WorkspacePrivateCalendarPage() {
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Private Calendar"
     >
-      {workspace ? <PrivateCalendar initialWorkspace={workspace} surface="workspace" /> : (
+      {workspace ? <PrivateCalendar initialWorkspace={workspace} surface="workspace" todayIso={now.toISOString().slice(0, 10)} /> : (
         <WorkspaceUnavailable message="We could not load the private calendar right now." title="Private Calendar Unavailable" />
       )}
     </WorkspaceFrame>

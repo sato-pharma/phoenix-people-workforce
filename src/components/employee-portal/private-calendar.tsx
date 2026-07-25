@@ -214,10 +214,13 @@ function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitl
 export function PrivateCalendar({
   initialWorkspace,
   surface = "employee",
+  todayIso: todayIsoProp,
   viewerHrId = null,
 }: {
   initialWorkspace: PrivateCalendarWorkspace;
   surface?: PrivateCalendarSurface;
+  /** Today's date as YYYY-MM-DD, computed once on the server to prevent SSR/hydration mismatch. */
+  todayIso: string;
   // Whoever is actually logged in and looking at this screen — NOT necessarily
   // the employee whose calendar is displayed (a manager/admin can view someone
   // else's calendar here too). Flag-day and no-activity-clarification are
@@ -226,7 +229,7 @@ export function PrivateCalendar({
   viewerHrId?: string | null;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedDate, setSelectedDate] = useState(todayIsoProp);
   const [sourceFilter, setSourceFilter] = useState<string>(allValue);
   const [statusFilter, setStatusFilter] = useState<string>(allValue);
   const [employeeFilter, setEmployeeFilter] = useState<string>(allValue);
@@ -262,7 +265,7 @@ export function PrivateCalendar({
     weeks,
     year,
   } = workspace;
-  const today = todayIso();
+  const today = todayIsoProp;
   const isTeamView = viewMode === "team";
   const isWorkspaceSurface = surface === "workspace";
   // View/Employee/Line/Department/Search only mean anything when the viewer can
