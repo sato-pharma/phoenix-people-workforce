@@ -319,4 +319,59 @@ export function runAutomatedPayrollSplitTests() {
   assert.equal(onePartWithMedical.secondPart, 0);
   assert.equal(onePartWithMedical.overpaidResidual, 0);
   assert.equal(onePartWithMedical.firstPart + onePartWithMedical.secondPart, onePartWithMedical.monthSalary);
+
+  // ---- Special Situations (owner rule 2026-07-25): an addition HR routes to the
+  // First Part INCREASES the frozen amount — the first time this formula has ever
+  // had an addition term (every other input here only reduces First Part). -----
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      otherPart1Additions: 800,
+    }),
+    21800, // 21000 + 800
+  );
+
+  // ---- the addition and the "Other deductions" term combine correctly (both
+  // apply independently, order-agnostic since it's plain addition/subtraction) -
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      otherPart1Deductions: 1500,
+      otherPart1Additions: 800,
+    }),
+    20300, // 21000 − 1500 + 800
+  );
+
+  // ---- reconciliation: First+Second still equals Total when a Special
+  // Situations addition routed to "first" is ALSO included in the whole-month
+  // addition sum (same double-bookkeeping pattern as otherDeductions above) ----
+  const onePartFrozenWithSpecialAddition = freezeFirstPart({
+    effective: regular,
+    fullBaseSalary: BASE,
+    paymentMode: "one_part",
+    fingerprint: 0,
+    otherPart1Additions: 1000,
+  }); // 32500
+  const onePartWithSpecialAddition = assembleParts({
+    effective: regular,
+    paymentMode: "one_part",
+    firstPartFrozen: onePartFrozenWithSpecialAddition,
+    additions: { ...noAdditions, otherAdditions: 1000 },
+    deductions: { ...noDeductions },
+  });
+  // totalPayable = 31500 + 1000 = 32500 → equals the frozen First Part exactly.
+  assert.equal(onePartWithSpecialAddition.totalPayable, 32500);
+  assert.equal(onePartWithSpecialAddition.firstPart, 32500);
+  assert.equal(onePartWithSpecialAddition.secondPart, 0);
+  assert.equal(onePartWithSpecialAddition.overpaidResidual, 0);
+  assert.equal(
+    onePartWithSpecialAddition.firstPart + onePartWithSpecialAddition.secondPart,
+    onePartWithSpecialAddition.monthSalary,
+  );
 }

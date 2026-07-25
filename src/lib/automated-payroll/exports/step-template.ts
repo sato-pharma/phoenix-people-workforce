@@ -40,7 +40,11 @@ export function stepTemplateColumns(stepKey: StepKey): { label: string; editable
     return columns;
   }
   for (const field of definition.fields) {
-    columns.push({ label: `Recommended ${field.label}`, editable: false, money: field.kind === "money" });
+    // No system recommendation exists for a free-text reason or a routing choice —
+    // only numeric (money/days) fields get a "Recommended" column.
+    if (field.kind === "money" || field.kind === "days") {
+      columns.push({ label: `Recommended ${field.label}`, editable: false, money: field.kind === "money" });
+    }
     columns.push({ label: field.label, editable: true, money: field.kind === "money" });
   }
   if (definition.hasReason) columns.push({ label: "Reason", editable: true, money: false });
@@ -64,7 +68,11 @@ function cellValueForColumn(stepKey: StepKey, row: StepRow, label: string): stri
   const recommendedField = definition.fields.find((field) => `Recommended ${field.label}` === label);
   if (recommendedField) return row.recommended[recommendedField.key] ?? 0;
   const editField = definition.fields.find((field) => field.label === label);
-  if (editField) return row.values[editField.key] ?? 0;
+  if (editField) {
+    if (editField.kind === "text") return row.reasons?.[editField.key] ?? "";
+    if (editField.kind === "select") return row.selects?.[editField.key] ?? editField.options?.[0]?.value ?? "";
+    return row.values[editField.key] ?? 0;
+  }
   return "";
 }
 
@@ -119,6 +127,19 @@ export async function buildStepTemplateWorkbook(input: {
           formulae: ['"Yes,No"'],
           showErrorMessage: true,
           error: "Enter Yes or No.",
+        };
+      }
+      const selectField = definition.fields.find(
+        (field) => field.kind === "select" && field.label === column.label,
+      );
+      if (selectField?.options?.length) {
+        const choices = selectField.options.map((option) => option.value).join(",");
+        cell.dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`"${choices}"`],
+          showErrorMessage: true,
+          error: `Enter one of: ${choices}.`,
         };
       }
     });

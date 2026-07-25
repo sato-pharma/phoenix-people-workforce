@@ -88,6 +88,10 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "p1odLoanValue",
   "p1odOtherDays",
   "p1odOtherValue",
+  "specialDeductionDays",
+  "specialDeductionValue",
+  "specialAdditionDays",
+  "specialAdditionValue",
 ];
 
 /** Maps a Part 1 manual-deduction-tab text field key to its DraftRowPatch reason field. */
@@ -97,6 +101,11 @@ const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
   p1odNoRecordReason: "p1odNoRecordReason",
   p1odLoanReason: "p1odLoanReason",
   p1odOtherReason: "p1odOtherReason",
+};
+
+/** Maps a "select"-kind field key to its DraftRowPatch field (currently just Special Situations). */
+const SELECT_FIELDS: Record<string, keyof DraftRowPatch> = {
+  specialSituationPart: "specialSituationPart",
 };
 
 export type RunView = {
@@ -131,6 +140,12 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput): DraftRowPatch {
       if (value !== undefined) (patch as unknown as Record<string, string>)[field as string] = value;
     }
   }
+  if (edit.selects) {
+    for (const [key, field] of Object.entries(SELECT_FIELDS)) {
+      const value = edit.selects[key];
+      if (value !== undefined) (patch as unknown as Record<string, string>)[field as string] = value;
+    }
+  }
   return patch;
 }
 
@@ -139,6 +154,7 @@ function stepRowToPatch(stepKey: StepKey, row: StepRow): DraftRowPatch {
     hrId: row.hrId,
     values: row.values,
     reasons: row.reasons,
+    selects: row.selects,
     reason: row.reason,
     onHold: row.onHold,
   });

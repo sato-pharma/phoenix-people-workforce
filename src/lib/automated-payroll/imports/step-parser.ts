@@ -82,6 +82,22 @@ export async function parseStepWorkbook(input: {
       edit.reason = String(pickCell(jsonRow, "Hold Reason") ?? "").trim() || null;
     } else {
       for (const field of definition.fields) {
+        if (field.kind === "text") {
+          const raw = String(pickCell(jsonRow, field.label) ?? "").trim();
+          if (raw) {
+            edit.reasons = edit.reasons ?? {};
+            edit.reasons[field.key] = raw;
+          }
+          continue;
+        }
+        if (field.kind === "select") {
+          const raw = String(pickCell(jsonRow, field.label) ?? "").trim();
+          if (raw) {
+            edit.selects = edit.selects ?? {};
+            edit.selects[field.key] = raw;
+          }
+          continue;
+        }
         const value = readNumber(pickCell(jsonRow, field.label));
         if (value != null) edit.values![field.key] = value;
       }
@@ -141,6 +157,15 @@ export function diffStepUpload(input: {
     }
 
     for (const field of definition.fields) {
+      if (field.kind === "text" || field.kind === "select") {
+        const to = field.kind === "text" ? edit.reasons?.[field.key] : edit.selects?.[field.key];
+        if (to === undefined) continue;
+        const from = (field.kind === "text" ? current.reasons?.[field.key] : current.selects?.[field.key]) ?? "";
+        const status = from === to ? "unchanged" : "changed";
+        if (status === "changed") changed += 1;
+        diffs.push({ hrId: edit.hrId, fullName: current.fullName, field: field.label, from, to, status });
+        continue;
+      }
       const to = edit.values?.[field.key];
       if (to === undefined) continue;
       const from = current.values[field.key] ?? 0;

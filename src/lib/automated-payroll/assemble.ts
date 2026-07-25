@@ -55,6 +55,26 @@ function otherPart1DeductionsTotal(draft: DraftRow | undefined): number {
   );
 }
 
+/**
+ * Special Situations (owner rule 2026-07-25): a manual deduction + addition that
+ * always count once in the whole-month total, but only reduce/increase the
+ * FROZEN First Part when HR has routed them there via the shared
+ * `specialSituationPart` choice. Routed to "second" (or unset), they land purely
+ * in Part 2 — same self-canceling pattern the other Part-1 manual tabs already
+ * rely on (see otherPart1DeductionsTotal): whichever installment isn't holding
+ * the amount at freeze time picks it up automatically via
+ * `secondPart = totalPayable - firstPart`.
+ */
+function specialDeductionAmount(draft: DraftRow | undefined): number {
+  return roundCurrency(num(draft?.specialDeductionValue));
+}
+function specialAdditionAmount(draft: DraftRow | undefined): number {
+  return roundCurrency(num(draft?.specialAdditionValue));
+}
+function specialRoutedToFirst(draft: DraftRow | undefined): boolean {
+  return draft?.specialSituationPart === "first";
+}
+
 function buildEffective(
   member: PopulationMember,
   source: PayrollSalarySource | undefined,
@@ -99,7 +119,10 @@ export function computeFrozenFirstParts(input: {
       fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
       paymentMode: source?.paymentMode ?? "two_parts",
       fingerprint: num(draft?.fingerprintValue),
-      otherPart1Deductions: otherPart1DeductionsTotal(draft),
+      otherPart1Deductions: roundCurrency(
+        otherPart1DeductionsTotal(draft) + (specialRoutedToFirst(draft) ? specialDeductionAmount(draft) : 0),
+      ),
+      otherPart1Additions: specialRoutedToFirst(draft) ? specialAdditionAmount(draft) : 0,
       medicalInsurance: roundCurrency(num(member.employee.medicalInsurance)),
       leaverDeduction: leaverDeductionFor(member, draft),
     });
@@ -135,6 +158,9 @@ export function assembleRows(input: {
 
     const fingerprint = num(draft?.fingerprintValue);
     const otherPart1Total = otherPart1DeductionsTotal(draft);
+    const specialDeduction = specialDeductionAmount(draft);
+    const specialAddition = specialAdditionAmount(draft);
+    const specialToFirst = specialRoutedToFirst(draft);
     const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
     // Use the frozen First Part after Part-1 confirm; before that, compute live.
     const firstPartFrozen =
@@ -145,7 +171,8 @@ export function assembleRows(input: {
             fullBaseSalary,
             paymentMode,
             fingerprint,
-            otherPart1Deductions: otherPart1Total,
+            otherPart1Deductions: roundCurrency(otherPart1Total + (specialToFirst ? specialDeduction : 0)),
+            otherPart1Additions: specialToFirst ? specialAddition : 0,
             medicalInsurance,
             leaverDeduction: leaverDeductionFor(member, draft),
           });
@@ -157,14 +184,17 @@ export function assembleRows(input: {
     const crm = num(draft?.crm);
     const unpaidVacations = num(draft?.unpaidVacations);
     const manualOtherDeductions = num(draft?.manualOtherDeductions);
-    const otherDeductionsTotal = roundCurrency(manualOtherDeductions + otherPart1Total);
+    // Special Situations amounts always count once in the whole-month total,
+    // whichever installment HR routed them to (see specialRoutedToFirst doc).
+    const otherDeductionsTotal = roundCurrency(manualOtherDeductions + otherPart1Total + specialDeduction);
+    const otherAdditionsTotal = specialAddition;
     const loans = 0;
 
     const parts = assembleParts({
       effective,
       paymentMode,
       firstPartFrozen,
-      additions: { expenses, incentive, overtime, bonus, otherAdditions: 0 },
+      additions: { expenses, incentive, overtime, bonus, otherAdditions: otherAdditionsTotal },
       deductions: {
         fingerprint,
         crm,
@@ -184,7 +214,7 @@ export function assembleRows(input: {
     const grossSalary = roundCurrency(effective.base + socialInsurance + employmentIncomeTax);
     const governmentalDeductions = roundCurrency(socialInsurance + employmentIncomeTax);
     const totalAdditions = roundCurrency(
-      expenses + incentive + overtime + bonus + effective.ecol + effective.fuel,
+      expenses + incentive + overtime + bonus + effective.ecol + effective.fuel + otherAdditionsTotal,
     );
     const totalDeductions = roundCurrency(
       crm + fingerprint + unpaidVacations + medicalInsurance + loans + otherDeductionsTotal,
@@ -215,7 +245,7 @@ export function assembleRows(input: {
       monthSalary: parts.monthSalary,
       nameAr: employee.nameAr,
       netSalary: effective.net,
-      otherAdditions: 0,
+      otherAdditions: otherAdditionsTotal,
       otherDeductions: otherDeductionsTotal,
       overtime,
       payrollComment: onHold ? draft?.holdReason ?? "HOLD" : draft?.manualReason ?? null,

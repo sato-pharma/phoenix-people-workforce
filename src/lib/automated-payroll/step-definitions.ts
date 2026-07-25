@@ -146,6 +146,45 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     hasReason: false,
     isHoldStep: false,
   },
+  p1_special_situations: {
+    key: "p1_special_situations",
+    phase: "part1",
+    title: "Special Situations",
+    subtitle:
+      "Every employee, regardless of payment mode — for cases that fall outside the normal rules. Enter a deduction and/or addition (days auto-calculate the value at Base/30 × days, or type the value directly), then choose which installment it applies to. That choice applies to BOTH the deduction and the addition for this employee. Only available while Part 1 is still open — like every Part 1 step, this tab locks once Part 1 is confirmed.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Net Salary", label: "Net Salary" },
+      { key: "Resignation Date", label: "Resignation Date" },
+    ],
+    fields: [
+      {
+        key: "specialDeductionDays",
+        label: "Deduction Days",
+        kind: "days",
+        autoCalcMoneyKey: "specialDeductionValue",
+      },
+      { key: "specialDeductionValue", label: "Deduction Value", kind: "money" },
+      {
+        key: "specialAdditionDays",
+        label: "Addition Days",
+        kind: "days",
+        autoCalcMoneyKey: "specialAdditionValue",
+      },
+      { key: "specialAdditionValue", label: "Addition Value", kind: "money" },
+      {
+        key: "specialSituationPart",
+        label: "Apply To",
+        kind: "select",
+        options: [
+          { value: "first", label: "First Part" },
+          { value: "second", label: "Second Part" },
+        ],
+      },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+  },
   p1_holds: {
     key: "p1_holds",
     phase: "part1",
@@ -243,6 +282,7 @@ export const STEP_ORDER: StepKey[] = [
   "p1_unpaid_vacation",
   "p1_no_record",
   "p1_other_deductions",
+  "p1_special_situations",
   "p1_holds",
   "p2_expenses",
   "p2_vacation",
