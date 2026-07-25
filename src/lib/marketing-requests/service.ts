@@ -21,7 +21,7 @@ import {
 } from "@/lib/marketing-requests/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -512,6 +512,11 @@ export type PreparedMarketingRequestDraft = {
 
 export type MarketingFinanceEvidenceType = "money_transfer_proof" | "invoice";
 
+// NOTE: "archived" is intentionally excluded here. It covers requests whose ROI window
+// closed long ago regardless of prior outcome (approved/pending_approval/rejected rows can
+// all become archived), so including it would wrongly inflate "approved" dashboard/finance
+// totals (home-snapshot.ts's approved-request count, and the counts further down this file
+// that filter on this list).
 export const approvedMarketingRequestStatuses: MarketingRequest["status"][] = [
   "approved",
   "active",
@@ -1862,6 +1867,7 @@ const MARKETING_SLA_EVENT_COPY: Record<MarketingSlaEvent, { priority: "critical"
  * date-stamped notification key. Best-effort; never throws.
  */
 export async function runMarketingSlaDaily(): Promise<{
+  dataIntegrityIssues: number;
   errors: Array<{ message: string; requestId: string }>;
   escalations: number;
   overdue: number;
@@ -1875,12 +1881,14 @@ export async function runMarketingSlaDaily(): Promise<{
   let overdue = 0;
   let escalations = 0;
   let scanned = 0;
+  let dataIntegrityIssues = 0;
+  const dataIntegrityRequestCodes: string[] = [];
   // True master-off: recipients here are always the specific request's assigned approver and
   // requester, resolved per-request further below — not a role broadcast list — so this admin
   // "enabled" switch (see "marketing_sla_reminder" in role-recipients.ts) is the only real toggle
   // for this reminder, checked before any request is even scanned.
   if (!(await resolveNotificationRoleEnabled("marketing_sla_reminder"))) {
-    return { errors, escalations, overdue, reminders, runDate: today, scanned };
+    return { dataIntegrityIssues, errors, escalations, overdue, reminders, runDate: today, scanned };
   }
   try {
     const supabase = getSupabaseAdmin();
@@ -1904,7 +1912,28 @@ export async function runMarketingSlaDaily(): Promise<{
           .eq("request_id", request.id)
           .eq("status", "current")
           .maybeSingle();
+        const hasCurrentStep = Boolean(stepData);
         const approverHrId = (stepData as { assigned_hr_id?: string | null } | null)?.assigned_hr_id ?? null;
+
+        // Data-integrity guard: a `pending_approval` request always gets exactly one `current`
+        // gating step the moment it enters this status (createMarketingApprovalSteps stamps it
+        // atomically on submission), and decideMarketingRequestWorkflow hard-requires one before
+        // ANY approve/reject/return can happen. So a `pending_approval` row with no `current`
+        // step is not a normal in-flight state — it is undecidable by any approver in any role,
+        // and firing an "act now" reminder/escalation at the requester (the only recipient left
+        // once approverHrId is null) is actively misleading. Scoped to `pending_approval` ONLY:
+        // `pending_validation` and `returned` rows legitimately have zero `current` steps by
+        // design (steps don't exist until a request enters `pending_approval` — see
+        // createMarketingApprovalSteps — and the decision RPC's "return" branch resets the step
+        // to `returned` with no replacement `current` step until resubmission), so a missing
+        // current step there is expected, not a defect — their reminders continue firing
+        // unchanged below.
+        if (request.status === "pending_approval" && !hasCurrentStep) {
+          dataIntegrityIssues += 1;
+          dataIntegrityRequestCodes.push(request.requestCode);
+          continue;
+        }
+
         const copy = MARKETING_SLA_EVENT_COPY[eventType];
         await notifyMarketingWorkflow({
           actorHrId: "system",
@@ -1930,6 +1959,17 @@ export async function runMarketingSlaDaily(): Promise<{
         errors.push({ message: rowError instanceof Error ? rowError.message : "Marketing SLA notify failed.", requestId: request.id });
       }
     }
+    if (dataIntegrityRequestCodes.length > 0) {
+      // One aggregate line per run (not one per row) — the cron runs once daily, so this alone
+      // satisfies "surface it at most once a day" with no separate dedup key needed.
+      logWarning("Marketing SLA scan found pending_approval requests with no current approval step", {
+        context: { requestCodes: dataIntegrityRequestCodes },
+        labels: {
+          count: dataIntegrityRequestCodes.length,
+          event: "marketing_pending_approval_missing_current_step",
+        },
+      });
+    }
   } catch (error) {
     logError("Marketing SLA daily scan failed", {
       labels: { event: "marketing_sla_scan_failed" },
@@ -1937,7 +1977,7 @@ export async function runMarketingSlaDaily(): Promise<{
     });
     errors.push({ message: error instanceof Error ? error.message : "Marketing SLA scan failed.", requestId: "scan" });
   }
-  return { errors, escalations, overdue, reminders, runDate: today, scanned };
+  return { dataIntegrityIssues, errors, escalations, overdue, reminders, runDate: today, scanned };
 }
 
 export function parseMarketingRequestDecision(value: unknown): MarketingRequestDecision | null {

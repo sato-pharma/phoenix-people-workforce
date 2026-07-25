@@ -44,6 +44,7 @@ const STATUS_LABELS: Record<string, string> = {
   roi_tracking: "ROI tracking",
   closed: "Closed",
   finance_hold: "Finance hold",
+  archived: "Archived",
 };
 
 const RESULT_LABELS: Record<string, string> = {

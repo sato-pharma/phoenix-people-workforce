@@ -202,6 +202,13 @@ export async function runMarketingRequestServiceTests() {
   }
   assert.match(dailyRouteSource, /runMarketingSlaDaily\(\)/, "marketing SLA reminders are restored in the daily cron route, gated by the marketing_sla_reminder enabled toggle");
   assert.match(serviceSource, /resolveNotificationRoleEnabled\("marketing_sla_reminder"\)/, "marketing SLA daily job must check its own enabled toggle before scanning any data");
+  // Data-integrity guard: a pending_approval row with no `current` approval step is
+  // undecidable by anyone — log it for engineering, don't fire a misleading business
+  // notification. Scoped to pending_approval only (pending_validation / returned
+  // legitimately have no current step by design).
+  assert.match(serviceSource, /dataIntegrityIssues/, "SLA daily job must track pending_approval rows with no current step");
+  assert.match(serviceSource, /request\.status === "pending_approval" && !hasCurrentStep/, "the missing-current-step guard must be scoped to pending_approval only");
+  assert.match(serviceSource, /marketing_pending_approval_missing_current_step/, "missing-current-step rows must emit a distinct, greppable structured log event");
   // Routing metadata keys the policy strategies depend on must be present.
   for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds", "escalationOwnerHrId"] as const) {
     assert.match(serviceSource, new RegExp(key), `notification routing must set ${key}`);

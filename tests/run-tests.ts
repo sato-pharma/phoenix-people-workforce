@@ -24,6 +24,7 @@ import { runBirthdayEligibilityTests } from "./birthday-eligibility.test.ts";
 import { runUnifiedNotificationsTests } from "./unified-notifications.test.ts";
 import { runNotificationStepRunnerTests } from "./notification-step-runner.test.ts";
 import { runPayslipEmailBlockTests } from "./payslip-email-block.test.ts";
+import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
@@ -481,6 +482,7 @@ await runTest("birthday eligibility (on_leave included, terminal excluded, birth
 await runTest("unified notifications", runUnifiedNotificationsTests);
 await runTest("notification step runner (per-step timeout budget + overlap guard)", runNotificationStepRunnerTests);
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
+await runTest("marketing SLA email block (SLA reminders/escalations never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
 await runTest("email admin control center", runEmailAdminControlCenterTests);
