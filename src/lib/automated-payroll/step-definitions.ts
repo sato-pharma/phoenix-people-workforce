@@ -62,26 +62,75 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     hasReason: false,
     isHoldStep: false,
   },
-  p1_other_deductions: {
-    key: "p1_other_deductions",
+  p1_crm: {
+    key: "p1_crm",
     phase: "part1",
-    title: "Other deductions",
+    title: "CRM Deduction",
     subtitle:
-      "Flag any other deductions for Part 1, per employee: CRM, Unpaid Vacation, Day Without Record, Loan, or Other. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional. These reduce Part 1 for every employee.",
+      "CRM no-activity deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 CRM step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Base Salary", label: "Base Salary" },
+      { key: "Settled in Resignations", label: "Settled in Resignations" },
     ],
     fields: [
       { key: "p1odCrmDays", label: "CRM Days", kind: "days", autoCalcMoneyKey: "p1odCrmValue" },
       { key: "p1odCrmValue", label: "CRM Value", kind: "money" },
       { key: "p1odCrmReason", label: "CRM Reason", kind: "text" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+    conflictContextKey: "Settled in Resignations",
+  },
+  p1_unpaid_vacation: {
+    key: "p1_unpaid_vacation",
+    phase: "part1",
+    title: "Unpaid Vacation",
+    subtitle:
+      "Unpaid-vacation deduction for Part 1 — shown only for this month's resignations and one-part-salary employees (continuing two-part employees get this automatically via the Part 2 Vacation step instead, so entering it here too would double it). Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Base Salary", label: "Base Salary" },
+      { key: "Settled in Resignations", label: "Settled in Resignations" },
+    ],
+    fields: [
       { key: "p1odVacationDays", label: "Unpaid Vacation Days", kind: "days", autoCalcMoneyKey: "p1odVacationValue" },
       { key: "p1odVacationValue", label: "Unpaid Vacation Value", kind: "money" },
       { key: "p1odVacationReason", label: "Unpaid Vacation Reason", kind: "text" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+    conflictContextKey: "Settled in Resignations",
+  },
+  p1_no_record: {
+    key: "p1_no_record",
+    phase: "part1",
+    title: "Day Without Record",
+    subtitle:
+      "Day-without-attendance-record deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Base Salary", label: "Base Salary" },
+    ],
+    fields: [
       { key: "p1odNoRecordDays", label: "Day Without Record Days", kind: "days", autoCalcMoneyKey: "p1odNoRecordValue" },
       { key: "p1odNoRecordValue", label: "Day Without Record Value", kind: "money" },
       { key: "p1odNoRecordReason", label: "Day Without Record Reason", kind: "text" },
+    ],
+    hasReason: false,
+    isHoldStep: false,
+  },
+  p1_other_deductions: {
+    key: "p1_other_deductions",
+    phase: "part1",
+    title: "Other Deductions (Loan & Other)",
+    subtitle:
+      "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+    contextColumns: [
+      { key: "Hire Date", label: "Hire Date" },
+      { key: "Base Salary", label: "Base Salary" },
+    ],
+    fields: [
       { key: "p1odLoanDays", label: "Loan Days", kind: "days", autoCalcMoneyKey: "p1odLoanValue" },
       { key: "p1odLoanValue", label: "Loan Value", kind: "money" },
       { key: "p1odLoanReason", label: "Loan Reason", kind: "text" },
@@ -116,7 +165,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p2_vacation",
     phase: "part2",
     title: "Vacation (no balance)",
-    subtitle: "Phoenix + CRM leave beyond the employee's balance, deducted from salary (balance covers the rest). Edit or confirm.",
+    subtitle: "Phoenix + CRM leave beyond the employee's balance, deducted from salary (balance covers the rest). Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Unpaid Days (Phoenix)", label: "Unpaid Days (Phoenix)" },
@@ -131,7 +180,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p2_crm",
     phase: "part2",
     title: "CRM (no activity)",
-    subtitle: "Field CRM no-activity days (days × Base/30). Office days with a fingerprint punch are already excluded. Edit or confirm.",
+    subtitle: "Field CRM no-activity days (days × Base/30). Office days with a fingerprint punch are already excluded. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "No-Activity Days", label: "No-Activity Days" },
@@ -185,6 +234,9 @@ export const STEP_ORDER: StepKey[] = [
   "p1_new_hires",
   "p1_resignations",
   "p1_fingerprint",
+  "p1_crm",
+  "p1_unpaid_vacation",
+  "p1_no_record",
   "p1_other_deductions",
   "p1_holds",
   "p2_expenses",
