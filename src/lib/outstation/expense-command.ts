@@ -13,7 +13,7 @@ import {
   groupPayrollExpenses,
   summarizePayrollExpenses,
 } from "@/lib/outstation/expense-metrics";
-import { listUnifiedOutstationExpenses } from "@/lib/outstation/expenses";
+import { listUnifiedOutstationExpenses, PORTAL_HIERARCHY_EXPENSE_ROLES } from "@/lib/outstation/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
@@ -210,6 +210,14 @@ export async function getOutstationExpenseCommandData(
 ): Promise<OutstationExpenseCommandData> {
   const scope = resolveScope(access);
   const isAdmin = scope === "company";
+  // resolveScope only distinguishes company/self, but Product Manager, Group Product
+  // Manager, Training Manager, Marketing Manager, and National Sales Manager (see
+  // PORTAL_HIERARCHY_EXPENSE_ROLES) see their whole downward chain elsewhere in this
+  // module (resolveExpenseAccessFilter, which listUnifiedOutstationExpenses already
+  // applies) — every isAdmin-gated filter below must recognize the same roles, or a
+  // manager's team rows get silently misclassified/dropped even though the correctly-
+  // scoped unifiedExpenses fetch already included them.
+  const hasWideVisibility = isAdmin || PORTAL_HIERARCHY_EXPENSE_ROLES.has(access.role);
 
   const [unifiedExpenses, directory, rawRequests] = await Promise.all([
     listUnifiedOutstationExpenses(undefined, undefined, undefined, access),
@@ -220,7 +228,7 @@ export async function getOutstationExpenseCommandData(
   // In self scope, listOutstationRequests bypasses access scoping — restrict to
   // the caller's own requests before it is ever read.
   const ownCanonicalHrId = normalizeHrIdForAccess(resolveEmployeeIdentityId(access));
-  const scopedRequests = isAdmin
+  const scopedRequests = hasWideVisibility
     ? rawRequests
     : rawRequests.filter((request) => normalizeHrIdForAccess(request.employeeHrId) === ownCanonicalHrId);
 
@@ -290,8 +298,9 @@ export async function getOutstationExpenseCommandData(
 
   // In self (portal) scope, restrict to the caller's own rows so the row scope
   // matches the own-only request enrichment — a manager collapsed to self never
-  // sees, or mis-labels, team rows. Admin scope sees everything.
-  const visibleEnriched = isAdmin
+  // sees, or mis-labels, team rows. Admin scope (and the hierarchy roles above) see
+  // their whole visible pool.
+  const visibleEnriched = hasWideVisibility
     ? enriched
     : enriched.filter((row) => normalizeHrIdForAccess(row.hrId) === ownCanonicalHrId);
 
@@ -526,8 +535,9 @@ export async function getOutstationExpenseCommandData(
     }))
     .sort((a, b) => b.weight - a.weight);
 
-  // In self scope, strip admin-only intelligence from the rows themselves.
-  const exposedRows: ExpenseCommandRow[] = isAdmin
+  // In self scope, strip admin-only intelligence from the rows themselves. Hierarchy
+  // roles keep it — they need the recommendation signal to review their own team's rows.
+  const exposedRows: ExpenseCommandRow[] = hasWideVisibility
     ? rows
     : rows.map((row) => ({
         ...row,

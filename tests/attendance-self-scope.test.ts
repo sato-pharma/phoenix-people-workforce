@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { normalizeAttendanceHrId } from "../src/lib/attendance/metrics.ts";
+import { canViewEmployeeAttendanceReport, resolveAttendanceScopeHrIds } from "../src/lib/attendance/employee-attendance.ts";
+import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 /**
  * Regression guard for the attendance self-service data-leak (audit C1) and the
@@ -17,7 +19,7 @@ import { normalizeAttendanceHrId } from "../src/lib/attendance/metrics.ts";
  * Supabase and cannot be unit-tested without DB infra, so we pin the exact
  * call wiring that enforces the security boundary.
  */
-export function runAttendanceSelfScopeTests() {
+export async function runAttendanceSelfScopeTests() {
   // 1. The substring collision the bug exploited — exact normalized equality must
   //    treat "B-1" and "B-10" as different identities.
   assert.notEqual(
@@ -120,5 +122,42 @@ export function runAttendanceSelfScopeTests() {
     monthlySummaryExportRoute,
     /getMonthlyAttendanceSummary\(\{[^}]*employeeHrIds:\s*scopeHrIds/,
     "monthly summary export route must pass employeeHrIds scope into getMonthlyAttendanceSummary",
+  );
+
+  // 8. Head Office audit regression guard (2026-07-25): SFE Manager and Training Manager
+  //    hold real attendance permissions (SFE Manager: full CRUD; Training Manager: read)
+  //    but have no traditional direct-report chain, unlike a District/Regional Manager —
+  //    scopeForRole never special-cases them, so without this carve-out they'd collapse
+  //    to "direct reports only" and see almost no one. Both early-return before any DB
+  //    read, so this is safe to call directly without mocking Supabase.
+  const sfeManagerContext: AccessContext = { hrId: "A-1", loginId: "A-1", role: "SFE Manager", scope: "self", source: "session" };
+  const trainingManagerContext: AccessContext = { hrId: "A-2", loginId: "A-2", role: "Training Manager", scope: "self", source: "session" };
+  const districtManagerContext: AccessContext = { hrId: "DM-1", loginId: "DM-1", role: "District Manager", scope: "self", source: "session" };
+  const unrelatedTarget = { hrId: "MR-999", managerHrId: "OTHER-MANAGER" };
+
+  assert.equal(
+    canViewEmployeeAttendanceReport(sfeManagerContext, unrelatedTarget),
+    true,
+    "SFE Manager sees the attendance report of an employee who is not her direct report",
+  );
+  assert.equal(
+    canViewEmployeeAttendanceReport(trainingManagerContext, unrelatedTarget),
+    true,
+    "Training Manager sees the attendance report of an employee who is not her direct report",
+  );
+  assert.equal(
+    canViewEmployeeAttendanceReport(districtManagerContext, unrelatedTarget),
+    false,
+    "regression guard: an ordinary District Manager still cannot see a non-report's attendance",
+  );
+  assert.equal(
+    await resolveAttendanceScopeHrIds(sfeManagerContext),
+    null,
+    "SFE Manager's bulk attendance scope is company-wide (null = no restriction)",
+  );
+  assert.equal(
+    await resolveAttendanceScopeHrIds(trainingManagerContext),
+    null,
+    "Training Manager's bulk attendance scope is company-wide (null = no restriction)",
   );
 }
