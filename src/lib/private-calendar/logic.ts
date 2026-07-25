@@ -275,11 +275,22 @@ function attendanceExceptionFlags(row: PrivateCalendarAttendanceRow) {
   const flags: string[] = [];
   const status = cleanText(row.status);
   const action = cleanText(row.recommendedAction);
+  // A missing punch is never auto-deducted (see evaluateFlexibleHoursDay) — it's
+  // routed to a human verification chain before any deduction is even decided,
+  // so its deductionDays is always a placeholder 0, not a real "no cost" answer.
+  // It must stay flagged regardless of that placeholder.
   if (/single punch/i.test(status) || (!row.actualLastPunch && row.actualFirstPunch)) flags.push("Single punch");
-  if (positiveNumber(row.lateMinutes) || /late/i.test(status)) flags.push("Late arrival");
-  if (positiveNumber(row.earlyLeaveMinutes) || /early/i.test(status)) flags.push("Early leave");
-  if (/short/i.test(status) || /short/i.test(action)) flags.push("Short day");
-  if (/absence|absent/i.test(status)) flags.push("Absence risk");
+  // Every other attendance status is already fully computed against the policy's
+  // deduction brackets, so deductionDays reliably tells us whether this specific
+  // day will cost the employee anything. Late/short/early minutes can exist yet
+  // still land in a zero-deduction band (grace usage, a dead zone below the
+  // first bracket, an early-leave/late combo where the other side "wins") — those
+  // must read as plain informational status, not a "needs review" warning flag.
+  const causesDeduction = positiveNumber(row.deductionDays);
+  if (causesDeduction && (positiveNumber(row.lateMinutes) || /late/i.test(status))) flags.push("Late arrival");
+  if (causesDeduction && (positiveNumber(row.earlyLeaveMinutes) || /early/i.test(status))) flags.push("Early leave");
+  if (causesDeduction && (/short/i.test(status) || /short/i.test(action))) flags.push("Short day");
+  if (causesDeduction && /absence|absent/i.test(status)) flags.push("Absence risk");
   if (row.hasException) flags.push("Approved attendance exception");
   return Array.from(new Set(flags));
 }
