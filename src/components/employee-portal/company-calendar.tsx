@@ -12,6 +12,7 @@ import {
   type CompanyCalendarEventInput,
 } from "@/lib/calendar/logic";
 import type { CompanyCalendarWorkspace } from "@/lib/calendar/service";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -51,7 +52,7 @@ function toneFor(item: CalendarItem) {
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function monthLabel(year: number, month: number) {
@@ -135,10 +136,10 @@ export function CompanyCalendar({
   }
 
   function goToday() {
-    const now = new Date();
+    const { year: todayYear, month: todayMonth } = currentCairoDateParts();
     setSelectedDate(todayIso());
     setMessage(null);
-    startTransition(() => loadMonth(now.getUTCFullYear(), now.getUTCMonth() + 1));
+    startTransition(() => loadMonth(todayYear, todayMonth));
   }
 
   function openCreate() {

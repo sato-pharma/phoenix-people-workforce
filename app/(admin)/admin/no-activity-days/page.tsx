@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { NoActivityDaysWorkspace } from "@/components/admin/no-activity-days-workspace";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { resolveCopilotCycleWindow } from "@/lib/payroll/copilot/deductions-review";
 import { getCompanyNoActivityReport } from "@/lib/private-calendar/no-activity-clarifications";
 
@@ -23,9 +24,9 @@ export default async function AdminNoActivityDaysPage({ searchParams }: PageProp
     const value = resolved[key];
     return Array.isArray(value) ? value[0] : (value ?? null);
   };
-  const now = new Date();
-  const month = Math.max(1, Math.min(12, Number(getString("month")) || now.getUTCMonth() + 1));
-  const year = Number(getString("year")) || now.getUTCFullYear();
+  const { year: currentYear, month: currentMonth } = currentCairoDateParts();
+  const month = Math.max(1, Math.min(12, Number(getString("month")) || currentMonth));
+  const year = Number(getString("year")) || currentYear;
 
   let initialRows: Awaited<ReturnType<typeof getCompanyNoActivityReport>> = [];
   let initialCycle: { cycleKey: string; endIso: string; startIso: string } | null = null;

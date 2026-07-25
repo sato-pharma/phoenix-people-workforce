@@ -6,6 +6,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   buildPayrollExpenseTrend,
@@ -77,17 +78,27 @@ function isManualOutstationRequest(request: OutstationExpenseRequest): boolean {
 type DateWindow = { from: number | null; to: number | null; label: string };
 
 function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
 function endOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999).getTime();
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999);
+}
+
+/**
+ * "Now", anchored to Africa/Cairo's calendar day and represented as a UTC-midnight
+ * Date so startOfDay/endOfDay's UTC-getter arithmetic resolves the correct calendar
+ * day regardless of the server runtime's own timezone.
+ */
+function cairoAnchoredNow(): Date {
+  const { year, month, day } = currentCairoDateParts();
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 /** Resolve the active date window from the filter preset / custom bounds. */
 function resolveDateWindow(filters: ExpenseCommandFilters): DateWindow {
   const preset = filters.preset ?? "all";
-  const now = new Date();
+  const now = cairoAnchoredNow();
 
   switch (preset) {
     case "today":
@@ -99,7 +110,7 @@ function resolveDateWindow(filters: ExpenseCommandFilters): DateWindow {
     case "90d":
       return { from: startOfDay(new Date(now.getTime() - 89 * 86_400_000)), to: endOfDay(now), label: "Last 90 days" };
     case "month": {
-      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
       return { from: startOfDay(first), to: endOfDay(now), label: "This month" };
     }
     case "custom": {
@@ -130,15 +141,15 @@ function resolvePreviousWindow(
   if (preset === "all") return null;
 
   if (preset === "today") {
-    const yest = new Date(Date.now() - 86_400_000);
+    const yest = new Date(cairoAnchoredNow().getTime() - 86_400_000);
     return { from: startOfDay(yest), to: endOfDay(yest), label: "vs yesterday" };
   }
 
   if (preset === "month") {
-    const now = new Date();
-    const lastMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const now = cairoAnchoredNow();
+    const lastMonthFirst = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
     // Day 0 of the current month = last day of the previous month.
-    const lastMonthLast = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastMonthLast = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
     return {
       from: startOfDay(lastMonthFirst),
       to: endOfDay(lastMonthLast),

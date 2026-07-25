@@ -8,6 +8,7 @@ import {
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +22,10 @@ export default async function EmployeePortalCalendarPage() {
     redirect("/overview");
   }
 
-  const now = new Date();
+  const { year, month } = currentCairoDateParts();
   let workspace = null;
   try {
-    workspace = await getCompanyCalendarWorkspace(access, now.getUTCFullYear(), now.getUTCMonth() + 1);
+    workspace = await getCompanyCalendarWorkspace(access, year, month);
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals/calendar", module: "calendar", role: access.role, hrId: access.hrId },
