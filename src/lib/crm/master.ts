@@ -70,6 +70,12 @@ export type CrmMasterColumn = {
 export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "crm_visit_id", kind: "number", label: "CRM Visit ID" },
   { key: "visit_date", kind: "date", label: "Visit Date" },
+  {
+    key: "recognition_score",
+    kind: "text",
+    label: "Recognized",
+    note: "How completely Phoenix resolved this row: 100% = agent (and double partner, if any) mapped to a real employee, the visit target identified, and — for Regular visits — the CRM region resolved to a Phoenix brick. 75%/50% = missing one/two of those checks. Blank = mostly unresolved, worth investigating (hover the badge for exactly what's missing).",
+  },
   { key: "visit_time", kind: "datetime_local", label: "Visit Time", note: "The ONE authoritative visit time (Cairo), shown with its source badge: GPS = a real GPS check-in (on site). Logged = the rep's submission time only, which is often hours later or the next morning — treat as approximate. Never the empty midnight placeholder." },
   { key: "crm_save_date", kind: "datetime_local", label: "CRM Save Date", note: "When the agent saved/submitted this visit in the CRM (Cairo time). This is paperwork time, NOT proof of being on site — reps frequently batch-log visits later, even after midnight. Prefer the Visit Time column above." },
   { key: "ampm", kind: "text", label: "AM/PM" },
@@ -728,6 +734,58 @@ function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, Bri
   }
 }
 
+/** Non-empty (post-trim) string check — the recurring "is this field actually filled in" test
+ * used all over the recognition score below. */
+function hasText(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+/**
+ * Recognition score: how completely Phoenix could resolve THIS row's identity/data, as a percent
+ * of 4 equally-weighted checks — 100 / 75 / 50 / null (below 50%, shown blank so it stands out).
+ * A check that structurally doesn't apply to this row (no double partner; a non-Regular visit
+ * type, which the vendor never sends region/speciality for) is NOT held against the row — it
+ * auto-passes, so a plain Campaign visit with everything resolvable actually resolved still reads
+ * 100%, instead of every non-Regular visit being capped below it by construction.
+ *
+ * 1. Agent identity  — agent_hr_id resolved to a real Phoenix employee.
+ * 2. Double identity — only when double_crm_id is set: double_hr_id resolved too.
+ * 3. Visit target    — contact_name, customer_name, or comment names who/where was visited.
+ * 4. Geography       — only for Regular visits (visit_type 0): the CRM region has been mapped to
+ *    a real Phoenix brick (phx_brick_id — attachBrickMapping must run first, see attachDerived's
+ *    call order). Deliberately NOT satisfied by crm_region_name alone — that's a raw vendor
+ *    pass-through field present on nearly every Regular visit regardless of Phoenix's own mapping
+ *    state, so falling back to it would silently mark an unmapped CRM region (see the Region
+ *    Mapping tab) as "recognized" — exactly the gap this column exists to surface.
+ *
+ * Also sets `recognition_missing`: a human-readable list of the failed checks, for the column's
+ * hover tooltip — so a low score is immediately actionable, not just a mystery number.
+ */
+function attachRecognitionScore(rows: CrmMasterRow[]): void {
+  for (const row of rows) {
+    const missing: string[] = [];
+    let passed = 0;
+
+    if (hasText(row.agent_hr_id)) passed += 1;
+    else missing.push("agent identity");
+
+    const hasDouble = typeof row.double_crm_id === "number" && row.double_crm_id !== 0;
+    if (!hasDouble || hasText(row.double_hr_id)) passed += 1;
+    else missing.push("double partner identity");
+
+    if (hasText(row.contact_name) || hasText(row.customer_name) || hasText(row.comment)) passed += 1;
+    else missing.push("visit target (contact/customer)");
+
+    const isRegular = row.visit_type === 0;
+    if (!isRegular || hasText(row.phx_brick_id)) passed += 1;
+    else missing.push("CRM region mapped to a Phoenix brick");
+
+    const pct = (passed / 4) * 100;
+    row.recognition_score = pct >= 100 ? 100 : pct >= 75 ? 75 : pct >= 50 ? 50 : null;
+    row.recognition_missing = missing.join(", ") || null;
+  }
+}
+
 /** Distinct product-line names for the "Line" filter dropdown (small `lines` table). */
 async function loadLineOptions(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin().from("lines").select("name").order("name", { ascending: true });
@@ -1113,6 +1171,8 @@ async function attachDerived(
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to.
   if (isVisitDataset(dataset)) attachBrickMapping(rows, await loadBrickMappingByRegionId());
+  // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
+  if (isVisitDataset(dataset)) attachRecognitionScore(rows);
 }
 
 /**
