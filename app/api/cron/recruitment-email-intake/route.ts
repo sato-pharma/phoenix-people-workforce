@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { pollAllRecruitmentMailboxes } from "@/lib/recruitment/inbound/email-poller";
 
 export const runtime = "nodejs";
@@ -24,15 +25,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
-    const summaries = await Sentry.withMonitor(
-      "recruitment-email-intake",
-      () => pollAllRecruitmentMailboxes(),
-      {
-        checkinMargin: 15,
-        maxRuntime: 5,
-        schedule: { type: "crontab", value: "4-59/10 * * * *" },
-        timezone: "Africa/Cairo",
-      },
+    // Slug matches the live Cloud Scheduler job name (phoenix-recruitment-email-intake).
+    const summaries = await withDeadMansSwitch("phoenix-recruitment-email-intake", () =>
+      Sentry.withMonitor(
+        "recruitment-email-intake",
+        () => pollAllRecruitmentMailboxes(),
+        {
+          checkinMargin: 15,
+          maxRuntime: 5,
+          schedule: { type: "crontab", value: "4-59/10 * * * *" },
+          timezone: "Africa/Cairo",
+        },
+      ),
     );
     return NextResponse.json({ success: true, mailboxes: summaries });
   } catch (error) {
