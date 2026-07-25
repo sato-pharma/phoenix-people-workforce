@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BriefcaseBusiness,
@@ -1101,6 +1101,7 @@ function CandidatesTab({
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const profilePanelRef = useRef<HTMLDivElement | null>(null);
   const [fullName, setFullName] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [email, setEmail] = useState("");
@@ -1141,6 +1142,12 @@ function CandidatesTab({
       setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
     }
   };
+
+  // The profile panel renders below the (often long) candidate table — without this it opens
+  // out of view and looks like the Profile button did nothing.
+  useEffect(() => {
+    if (profile) profilePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [profile]);
 
   // Re-run AI extraction on a candidate that already has a CV on file — for one manually
   // created, or where the first extraction pass wasn't saved as-is. Reuses the same
@@ -1377,7 +1384,7 @@ function CandidatesTab({
       </AdminTableShell>
 
       {profile ? (
-        <div className="space-y-3 border border-slate-200 p-4">
+        <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900">{profile.candidate.fullName}</p>
