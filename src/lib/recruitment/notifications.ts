@@ -3,6 +3,7 @@
 //
 // Remind interviewers of interviews scheduled for the next day.
 
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
@@ -12,10 +13,10 @@ export type RecruitmentDailyResult =
   | { ok: false; interviewReminders: 0; error: string };
 
 async function sendInterviewReminders(): Promise<number> {
-  const now = new Date();
-  // Tomorrow's UTC window [start, end).
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 2, 0, 0, 0));
+  const { year, month, day: cairoDay } = currentCairoDateParts();
+  // Tomorrow's window [start, end) — Cairo's tomorrow, expressed as UTC instants.
+  const start = new Date(Date.UTC(year, month - 1, cairoDay + 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month - 1, cairoDay + 2, 0, 0, 0));
   const day = start.toISOString().slice(0, 10);
 
   const due = await listInterviewsDueForReminder(start.toISOString(), end.toISOString());

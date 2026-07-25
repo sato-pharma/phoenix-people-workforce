@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 
@@ -22,13 +23,14 @@ export default async function EmployeePrivateCalendarPage() {
   }
 
   const now = new Date();
+  const { year, month } = currentCairoDateParts(now);
   let workspace = null;
   try {
     workspace = await getPrivateCalendarWorkspace({
       access,
       actualOnly: true,
-      month: now.getUTCMonth() + 1,
-      year: now.getUTCFullYear(),
+      month,
+      year,
     });
   } catch (error) {
     logPortalFailure(
@@ -45,7 +47,7 @@ export default async function EmployeePrivateCalendarPage() {
       title="Private Calendar"
     >
       {workspace ? (
-        <PrivateCalendar initialWorkspace={workspace} todayIso={now.toISOString().slice(0, 10)} viewerHrId={access.hrId} />
+        <PrivateCalendar initialWorkspace={workspace} todayIso={currentCairoDateOnlyIso(now)} viewerHrId={access.hrId} />
       ) : (
         <EmployeePortalEmptyState
           message="We could not load the private calendar right now. Please refresh in a moment."

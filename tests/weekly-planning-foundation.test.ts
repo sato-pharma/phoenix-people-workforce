@@ -119,37 +119,40 @@ export async function runWeeklyPlanningFoundationTests(): Promise<void> {
     );
   }
 
-  // 7. submissionDeadlineForWeek: Thursday of the prior week at 17:00.
+  // 7. submissionDeadlineForWeek: Thursday of the prior week at 17:00 Africa/Cairo.
   {
-    // 2026-W24: Sunday of W24 = 2026-06-07. Prior Thursday = 2026-06-04 at 17:00.
+    // 2026-W24: Sunday of W24 = 2026-06-07. Prior Thursday = 2026-06-04 at 17:00 Cairo.
+    // June is Cairo EEST (UTC+3), so 17:00 Cairo = 14:00 UTC (DST-safe, not a flat UTC hour).
     const deadline = submissionDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
     assert.equal(deadline.getUTCFullYear(), 2026, "year must be 2026");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June (index 5)");
     assert.equal(deadline.getUTCDate(), 4, "date must be 4 (Thursday before W24 Sunday)");
-    assert.equal(deadline.getUTCHours(), 17, "must be 17:00");
+    assert.equal(deadline.getUTCHours(), 14, "must be 17:00 Cairo (EEST, UTC+3) = 14:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
   }
 
-  // 8. managerApprovalDeadlineForWeek: Saturday noon of the prior week.
+  // 8. managerApprovalDeadlineForWeek: Saturday noon of the prior week, Africa/Cairo.
   {
-    // 2026-W24: Sunday = 2026-06-07. Saturday before = 2026-06-06 at 12:00.
+    // 2026-W24: Sunday = 2026-06-07. Saturday before = 2026-06-06 at 12:00 Cairo.
+    // June is Cairo EEST (UTC+3), so 12:00 Cairo = 09:00 UTC.
     const deadline = managerApprovalDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
     assert.equal(deadline.getUTCDate(), 6, "date must be 6 (Saturday before W24)");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June");
-    assert.equal(deadline.getUTCHours(), 12, "must be 12:00");
+    assert.equal(deadline.getUTCHours(), 9, "must be 12:00 Cairo (EEST, UTC+3) = 09:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
   }
 
-  // 9. ceoApprovalDeadlineForWeek: Sunday 10:00 AM of the plan's week.
+  // 9. ceoApprovalDeadlineForWeek: Sunday 10:00 AM of the plan's week, Africa/Cairo.
   {
-    // 2026-W24: Sunday = 2026-06-07 at 10:00.
+    // 2026-W24: Sunday = 2026-06-07 at 10:00 Cairo.
+    // June is Cairo EEST (UTC+3), so 10:00 Cairo = 07:00 UTC.
     const deadline = ceoApprovalDeadlineForWeek("2026-W24");
     assert.ok(deadline instanceof Date, "must return a Date");
     assert.equal(deadline.getUTCDate(), 7, "date must be 7 (Sunday of W24)");
     assert.equal(deadline.getUTCMonth(), 5, "month must be June");
-    assert.equal(deadline.getUTCHours(), 10, "must be 10:00");
+    assert.equal(deadline.getUTCHours(), 7, "must be 10:00 Cairo (EEST, UTC+3) = 07:00 UTC");
     assert.equal(deadline.getUTCMinutes(), 0, "must be 00 minutes");
   }
 

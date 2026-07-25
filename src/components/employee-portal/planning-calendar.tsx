@@ -21,6 +21,7 @@ import {
   PortalRecordCard,
   PortalRecordFields,
 } from "@/components/employee-portal/portal-primitives";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import type {
   PlanningCalendarConflict,
   PlanningCalendarItem,
@@ -42,7 +43,7 @@ const planStatusLabels: Record<string, string> = {
 };
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function monthLabel(year: number, month: number) {
@@ -346,12 +347,12 @@ export function PlanningCalendar({
   }
 
   function goToday() {
-    const now = new Date();
+    const { year: todayYear, month: todayMonth } = currentCairoDateParts();
     setSelectedDate(todayIso());
     setMessage(null);
     startTransition(async () => {
       try {
-        await loadMonth(now.getUTCFullYear(), now.getUTCMonth() + 1, todayIso());
+        await loadMonth(todayYear, todayMonth, todayIso());
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to load planning calendar.");
       }

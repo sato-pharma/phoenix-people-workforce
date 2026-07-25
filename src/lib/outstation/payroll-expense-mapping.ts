@@ -1,6 +1,7 @@
 import type { PayrollExpenseApproval, ExpenseTripRecord } from "@/lib/payroll/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
@@ -20,14 +21,22 @@ function isoDate(value: unknown) {
 
 function nextPayrollPeriod(dateValue: string) {
   const date = new Date(dateValue);
-  const base = Number.isNaN(date.getTime()) ? new Date() : date;
-  const month = base.getMonth() + 2;
+  let base: Date;
+  if (Number.isNaN(date.getTime())) {
+    // Unparseable date: fall back to "now" anchored to Africa/Cairo's calendar day
+    // (not the server runtime's own timezone).
+    const cairo = currentCairoDateParts();
+    base = new Date(Date.UTC(cairo.year, cairo.month - 1, cairo.day));
+  } else {
+    base = date;
+  }
+  const month = base.getUTCMonth() + 2;
 
   if (month > 12) {
-    return { month: 1, year: base.getFullYear() + 1 };
+    return { month: 1, year: base.getUTCFullYear() + 1 };
   }
 
-  return { month, year: base.getFullYear() };
+  return { month, year: base.getUTCFullYear() };
 }
 
 export function outstationPayrollTripId(requestId: number | string) {

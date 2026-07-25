@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
   privateCalendarHrIdKey,
   privateCalendarItemOccursOn,
@@ -44,7 +45,7 @@ const verificationSourceOptions = [
 ] as const;
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 // Cairo local clock time — the app's operating timezone — so "Synced at" reads as
@@ -555,11 +556,11 @@ export function PrivateCalendar({
   }
 
   function goToday() {
-    const now = new Date();
+    const { year: todayYear, month: todayMonth } = currentCairoDateParts();
     setMessage(null);
     startTransition(async () => {
       try {
-        await loadWorkspace(now.getUTCFullYear(), now.getUTCMonth() + 1, selectedEmployee.hrId, todayIso());
+        await loadWorkspace(todayYear, todayMonth, selectedEmployee.hrId, todayIso());
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to load private calendar.");
       }

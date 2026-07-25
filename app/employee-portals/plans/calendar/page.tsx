@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
 
@@ -29,10 +30,10 @@ export default async function EmployeePlanningCalendarPage() {
     );
   }
 
-  const now = new Date();
+  const { year, month } = currentCairoDateParts();
   let workspace = null;
   try {
-    workspace = await getSharedPlanningCalendarWorkspace(access, now.getUTCFullYear(), now.getUTCMonth() + 1);
+    workspace = await getSharedPlanningCalendarWorkspace(access, year, month);
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals/plans/calendar", module: "weekly_plans", role: access.role, hrId: access.hrId },
