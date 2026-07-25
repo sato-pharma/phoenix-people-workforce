@@ -175,10 +175,30 @@ export function checkRecipientValidity(input: ConfidenceGateInput): ConfidenceCh
   };
 }
 
+// Only a genuine identity FAILURE may hold a send. resolvedEmailIdentity (system.ts) emits
+// exactly three statuses: "failed" when the subject HR ID conflicts or is missing on a workflow
+// email that requires one (it also sets a non-null identityError); "verified" when a subject HR
+// ID resolved; and "not_required" when there simply is no subject employee and none is needed —
+// the normal, healthy state for recruitment notices, digests and other non-employee-scoped mail.
+//
+// Treating "not_required" as a failure (the original `status === "verified"` test) held every one
+// of those legitimate sends: confirmed in production, where the only two held rows scored 3/4 with
+// the fan-out check PASSING and were blocked solely on `identity_resolved: not_required`. Because
+// an omitted status already yields `passed: null`, that logic also punished callers for honestly
+// reporting "not_required" while letting silent ones through — backwards. "not_required" is now
+// not-applicable (no penalty, no credit), matching how this file treats every other inapplicable
+// check.
 export function checkIdentityResolved(input: ConfidenceGateInput): ConfidenceCheck {
   const status = input.origin?.identityStatus ?? null;
   if (!status) {
     return { detail: "No identity status supplied by the caller.", name: "identity_resolved", passed: null };
+  }
+  if (status === "not_required") {
+    return {
+      detail: "Recipient identity status: not_required (no subject employee is needed for this notification).",
+      name: "identity_resolved",
+      passed: null,
+    };
   }
   return { detail: `Recipient identity status: ${status}.`, name: "identity_resolved", passed: status === "verified" };
 }
@@ -338,6 +358,29 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
     logInfo(`Notification held for review: ${input.origin?.module ?? "unknown"}/${input.origin?.eventType ?? "unknown"} (${confidencePercent}% confidence)`, {
       labels: { event: "confidence_gate_held", eventType: input.origin?.eventType ?? "", module: input.origin?.module ?? "", reviewId: reviewId ?? "" },
     });
+    // Tell a Super Admin the mail is sitting undelivered. A log line alone left two real
+    // recruitment emails unnoticed for ~22 hours on 2026-07-24. In-app + Telegram only (never
+    // email — that would re-enter this gate); throttled to one alert per module/eventType per hour
+    // so a mass-hold burst cannot bury the signal. Lazy import: this module is imported BY
+    // send-phoenix-email.ts at module scope, and the alert reaches system.ts → email.ts →
+    // send-phoenix-email.ts, so a top-level import here would close that cycle (same reason
+    // approveHeldNotification imports sendPhoenixEmail lazily below). Awaited but never throwing.
+    try {
+      const { notifyNotificationHeld } = await import("@/lib/notifications/held-notification-alert");
+      await notifyNotificationHeld({
+        confidencePercent,
+        eventType: input.origin?.eventType ?? null,
+        failedCheckNames: checks.filter((check) => check.passed === false).map((check) => check.name),
+        module: input.origin?.module ?? null,
+        reviewId,
+        subject: input.subject,
+      });
+    } catch (error) {
+      logError("Held-notification alert could not be dispatched — the hold itself still stands", {
+        error,
+        labels: { event: "confidence_gate_held_alert_failed", reviewId: reviewId ?? "" },
+      });
+    }
   }
 
   return { checks, confidencePercent, decision, reviewId };
