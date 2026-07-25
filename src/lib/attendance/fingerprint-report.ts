@@ -231,7 +231,6 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "validTime", label: "Valid time" },
   { always: true, key: "date", label: "Date" },
   { always: true, key: "status", label: "Status" },
-  { always: true, key: "recommendedAction", label: "Recommended Action" },
   { always: true, key: "deductionDays", label: "Deduction Days" },
   { always: true, key: "deductionValue", label: "Deduction Amount" },
   // Owner request 2026-07-24: give the export enough context (CRM visit, approved vacation/leave,
@@ -245,6 +244,7 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   { key: "approvedExcuse", label: "Approved Excuse" },
   { key: "crmActivity", label: "CRM Activity" },
   { key: "weeklyPlan", label: "Weekly Plan" },
+  { always: true, key: "recommendedAction", label: "Recommended Action" },
 ];
 
 function pad(value: number) {
