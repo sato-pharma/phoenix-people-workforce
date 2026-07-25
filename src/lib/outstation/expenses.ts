@@ -73,7 +73,7 @@ const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
 // any other non-report on the line) into the NSM's expense dashboard. HIERARCHY
 // binds the NSM to exactly his own sales chain (RSM → DSM → MR), so PM/GPM/TM drop
 // out by construction while every real report is still covered.
-const PORTAL_HIERARCHY_EXPENSE_ROLES = new Set<PhoenixRole>([
+export const PORTAL_HIERARCHY_EXPENSE_ROLES = new Set<PhoenixRole>([
   "Product Manager",
   "Group Product Manager",
   "Training Manager",

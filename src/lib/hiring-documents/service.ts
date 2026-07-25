@@ -365,7 +365,12 @@ export function filterHiringDocumentsForAccess(
   dashboard: HiringDocumentsDashboardData,
   access: AccessContext,
 ): HiringDocumentsDashboardData {
-  if (access.scope === "system" || access.role === "Super Admin") {
+  // Talent Acquisition is the primary user of this dashboard (her recruiting/onboarding
+  // tool) and already gets the equivalent company-wide bypass in every sibling HR domain
+  // (isCompanyResignationReader, isCompanyContractReader, canSeeAllRecruitment) — without
+  // it here she'd fall through to canSeeHrScopedRecord's self-only default and see only
+  // her own employee row instead of the company-wide new-hire document checklist.
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "Talent Acquisition") {
     return dashboard;
   }
 
