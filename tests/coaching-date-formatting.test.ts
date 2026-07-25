@@ -46,4 +46,20 @@ export async function runCoachingDateFormattingTests() {
       `${path} must not hand-parse date-only strings (off-by-one risk)`,
     );
   }
+
+  // Same bug class, one layer down: src/lib/coaching/service.ts's normalizeDate() used to
+  // parse the date-only string as local wall-clock time (no "Z") but serialize via
+  // .toISOString() (always UTC) — a round-trip mismatch, not just a display issue. Fixed
+  // by anchoring both sides at UTC. Guard against the old un-anchored parse returning.
+  const serviceSrc = source("src/lib/coaching/service.ts");
+  assert.doesNotMatch(
+    serviceSrc,
+    /new Date\(`\$\{[^}]*\.slice\(0, 10\)\}T00:00:00`\)/,
+    "coaching/service.ts's normalizeDate must not parse date-only strings without an explicit UTC anchor",
+  );
+  assert.match(
+    serviceSrc,
+    /new Date\(`\$\{[^}]*\.slice\(0, 10\)\}T00:00:00Z`\)/,
+    "coaching/service.ts's normalizeDate must parse date-only strings anchored at UTC",
+  );
 }

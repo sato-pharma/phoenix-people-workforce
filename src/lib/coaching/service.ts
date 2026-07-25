@@ -121,7 +121,12 @@ function coachingRange(filters: CoachingReportFilters) {
 function normalizeDate(value: string | null | undefined) {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
-  const date = new Date(`${raw.slice(0, 10)}T00:00:00`);
+  // Parse and format both anchored at UTC (the trailing "Z") so this is a pure
+  // date-only validation with no dependency on the runtime's local timezone — the
+  // previous local-parse/UTC-format round trip shifted the date back a day on any
+  // non-UTC host (the exact pattern tests/coaching-date-formatting.test.ts guards
+  // the UI layer against; this is the same bug one layer down, in storage).
+  const date = new Date(`${raw.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
 }
