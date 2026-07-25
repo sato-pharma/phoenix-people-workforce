@@ -218,7 +218,7 @@ jobs:
           # public/non-secret (RLS-protected), mirroring the value already committed in
           # deploy-cloud-run-staging.yml:141; only the service-role key is a real secret.
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZndtbmR1bm1seGpoeWp1Z3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzQxMzEsImV4cCI6MjA5OTM1MDEzMX0.2bWjOI1gH67H8Fj1wr2XheQjlDhM5pOQ6xPD8YLd5lc"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZndtbmR1bm1seGpoeWp1Z3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzQxMzEsImV4cCI6MjA5OTM1MDEzMX0.2bWjOI1gH67H8Fj1wr2XheQjlDhM5pOQ6xPD8YLd5lc" # gitleaks:allow (public anon key, RLS-protected -- see comment above)
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
