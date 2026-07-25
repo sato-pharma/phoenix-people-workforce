@@ -82,6 +82,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     bonus: numeric(row.bonus),
     overtime: numeric(row.overtime),
     unpaidVacations: numeric(row.unpaid_vacations),
+    resignationCrmDays: numeric(row.resignation_crm_days),
     crm: numeric(row.crm),
     manualOtherDeductions: numeric(row.manual_other_deductions),
     manualReason: (row.manual_reason as string | null) ?? null,
@@ -269,6 +270,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("bonus", "bonus");
   num("overtime", "overtime");
   num("unpaidVacations", "unpaid_vacations");
+  num("resignationCrmDays", "resignation_crm_days");
   num("crm", "crm");
   num("manualOtherDeductions", "manual_other_deductions");
   num("p1odCrmDays", "p1od_crm_days");

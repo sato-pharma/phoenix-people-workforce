@@ -75,6 +75,7 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "bonus",
   "overtime",
   "unpaidVacations",
+  "resignationCrmDays",
   "crm",
   "manualOtherDeductions",
   "p1odCrmDays",
