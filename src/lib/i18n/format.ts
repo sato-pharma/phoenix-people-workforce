@@ -89,6 +89,16 @@ export function currentCairoDateParts(now: Date = new Date()): { year: number; m
   };
 }
 
+// Today's calendar date in Africa/Cairo as a YYYY-MM-DD string — the canonical
+// "Cairo today, date-only" primitive. Built on currentCairoDateParts rather than a
+// second Intl call, so there's exactly one place that resolves Cairo's wall-clock
+// date from an instant. Use instead of `new Date().toISOString().slice(0, 10)` or
+// `toDateOnlyString(new Date())` anywhere "today" means Cairo business time.
+export function currentCairoDateOnlyIso(now: Date = new Date()): string {
+  const { year, month, day } = currentCairoDateParts(now);
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 function asValidDate(value: Date | string | null | undefined) {
   if (!value) {
     return null;
