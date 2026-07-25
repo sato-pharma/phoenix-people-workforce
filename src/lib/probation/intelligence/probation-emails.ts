@@ -13,6 +13,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { systemDeployment } from "@/config/system-settings";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 
 import { getProbationConfig } from "./config";
 import { filterResolvedProbationCases } from "./cases";
@@ -139,7 +140,12 @@ async function buildCaseContext(caseId: string, employeeHrId: string, hireDate: 
     provisionalScore,
     riskStatus,
     probationDay: String(currentProbationDay(hireDate, today) ?? "—"),
-    daysRemaining: String(probationDaysRemaining(hireDate) ?? "—"),
+    // `today` is already resolved to Cairo's calendar day by every caller below; re-anchor it at
+    // UTC midnight before handing it to probationDaysRemaining, which independently re-derives
+    // the Cairo day via the same primitive — Cairo's offset is always positive (ahead of UTC), so
+    // this round-trip lands on the identical calendar day, keeping probationDay/daysRemaining
+    // consistent with each other rather than drifting near the nightly Cairo/UTC boundary.
+    daysRemaining: String(probationDaysRemaining(hireDate, new Date(`${today}T00:00:00Z`)) ?? "—"),
     reportUrl: `${systemDeployment.productionUrl}/probation/cases/${caseId}`,
   };
 }
@@ -199,7 +205,7 @@ async function emitToRecipients(
 
 /** Send the DV-Day snapshot email after a DV Day is validated. Idempotent per DV-Day. */
 export async function sendDvSnapshotEmail(dvDayId: string, nowIso: string = new Date().toISOString()): Promise<{ sent: number }> {
-  const today = nowIso.slice(0, 10);
+  const today = currentCairoDateOnlyIso(new Date(nowIso));
   const supabase = getSupabaseAdmin();
   const { data: dv } = await supabase
     .from("probation_dv_days")
@@ -416,7 +422,7 @@ export async function processProbationWeeklyDigest(nowIso: string = new Date().t
 
 /** Daily sweep: send Day 30/60/75 milestone emails once each as cases cross the threshold. */
 export async function processProbationMilestoneEmails(nowIso: string = new Date().toISOString()): Promise<{ scanned: number; sent: number }> {
-  const today = nowIso.slice(0, 10);
+  const today = currentCairoDateOnlyIso(new Date(nowIso));
   const supabase = getSupabaseAdmin();
   const { data: cases } = await supabase
     .from("probation_cases").select("id, employee_hr_id, employee_name, hire_date").eq("status", "active");
