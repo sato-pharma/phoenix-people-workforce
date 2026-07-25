@@ -19,7 +19,7 @@
 
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { createCandidate } from "@/lib/recruitment/candidates";
-import { extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
+import { extractCandidateFieldsFromCv, looksLikeCv } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -145,6 +145,24 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     if (input.attachment.bytes.length > maxInboundCvBytes()) {
       await finalizeIntakeEvent(eventId, {
         errorMessage: `Attachment exceeds the maximum accepted size (${maxInboundCvBytes()} bytes).`,
+        outcome: "ignored_unsupported_attachment",
+      });
+      return { outcome: "ignored_unsupported_attachment" };
+    }
+
+    // Best-effort content check — file TYPE alone (checked above) can't tell a real CV apart
+    // from a vendor pitch or supplier letter that happens to arrive as a PDF. A classifier
+    // failure must never block a real candidate, so any error here is swallowed and treated
+    // as "yes, keep going" — only a clear "no" suppresses candidate creation.
+    let attachmentIsCv = true;
+    try {
+      attachmentIsCv = await looksLikeCv(input.attachment.bytes, input.attachment.mimeType, input.attachment.fileName);
+    } catch {
+      /* best-effort */
+    }
+    if (!attachmentIsCv) {
+      await finalizeIntakeEvent(eventId, {
+        errorMessage: "Attachment does not appear to be a CV/resume (AI content check).",
         outcome: "ignored_unsupported_attachment",
       });
       return { outcome: "ignored_unsupported_attachment" };
