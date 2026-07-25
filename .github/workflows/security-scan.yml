@@ -1,0 +1,135 @@
+name: Security Scan (OSS)
+
+# GitHub Advanced Security (native code scanning + secret scanning alerts) is not
+# purchasable here: Phoenix-HR is a personal User account on GitHub Pro, and GHAS
+# is only sold to Team/Enterprise Cloud accounts (confirmed 2026-07-25 via
+# repos/{owner}/{repo} returning security_and_analysis: null and the code-scanning
+# default-setup endpoint 403'ing with "Code scanning is not enabled ... enable in
+# repository settings" — there is no such setting available on this plan).
+#
+# This workflow substitutes two open-source scanners that need no GitHub license:
+# gitleaks (secrets) and Semgrep (SAST). Both CLIs are installed directly rather
+# than via marketplace Actions, to avoid depending on a third-party Action's own
+# supply chain/licensing terms — gitleaks-action specifically went proprietary at
+# v2.0.0 (still free for personal-account repos, but the underlying gitleaks CLI
+# binary, downloaded below with a pinned checksum, carries no such caveat).
+#
+# Deliberately non-blocking for this initial rollout (gitleaks --exit-code 0,
+# semgrep without --error): first runs may surface pre-existing findings that need
+# triage before either can safely fail PRs. Once triaged, remove --exit-code 0 and
+# add --error to gate merges on new findings.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - codex/work-from-production
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  SEMGREP_VERSION: "1.171.0"
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      # --no-git: scan the checked-out working tree as plain files, not git history.
+      # Simpler and more robust than diffing PR base...head ranges, and behaves
+      # identically for both pull_request and push events. Trade-off: won't catch a
+      # secret that was added then removed within the same PR's history — acceptable
+      # for now; a scheduled full-history scan can be added later if wanted.
+      - name: Scan for secrets (gitleaks)
+        run: |
+          set -euo pipefail
+          ./gitleaks detect \
+            --source . \
+            --no-git \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks-report.sarif \
+            --exit-code 0
+          COUNT=$(jq '[.runs[]?.results[]?] | length' gitleaks-report.sarif)
+          {
+            echo "### Secret scan (gitleaks v${GITLEAKS_VERSION})"
+            echo "Findings: **${COUNT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::gitleaks found ${COUNT} potential secret(s) — see the gitleaks-report artifact"
+          fi
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+          retention-days: 14
+
+  sast-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install "semgrep==${SEMGREP_VERSION}"
+
+      - name: SAST scan (Semgrep)
+        run: |
+          set -euo pipefail
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/javascript \
+            --config=p/typescript \
+            --config=p/react \
+            --exclude=node_modules --exclude=.next --exclude=dist \
+            --metrics=off \
+            --sarif --output=semgrep-report.sarif \
+            .
+          COUNT=$(jq '[.runs[]?.results[]?] | length' semgrep-report.sarif)
+          {
+            echo "### SAST scan (Semgrep v${SEMGREP_VERSION})"
+            echo "Findings: **${COUNT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Semgrep found ${COUNT} potential issue(s) — see the semgrep-report artifact"
+          fi
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: semgrep-report
+          path: semgrep-report.sarif
+          retention-days: 14

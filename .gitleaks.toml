@@ -1,0 +1,25 @@
+title = "phoenix-workforce gitleaks config"
+
+[extend]
+# Start from gitleaks' built-in ruleset (AWS keys, private keys, generic
+# high-entropy tokens, etc.) and layer repo-specific path exclusions on top.
+useDefault = true
+
+[allowlist]
+# Applies to `regexes` below only — `paths` always matches the file path regardless.
+regexTarget = "line"
+paths = [
+  '''node_modules/''',
+  '''\.next/''',
+  '''dist/''',
+  '''pnpm-lock\.yaml''',
+]
+regexes = [
+  # This codebase names internal step/template/milestone identifiers "key"/"stepKey"/
+  # "templateKey" (e.g. `key: "p1_resignations"`, `stepKey === "p1_other_deductions"`,
+  # `templateKey: "probation_day30"`), which trips the generic-api-key rule on every
+  # occurrence -- these are plain code identifiers, not secrets. Targets the LINE
+  # (regexTarget=line above) so it only suppresses this specific "key"-named
+  # property/comparison shape, not any alphanumeric string anywhere.
+  '''(?i)key\s*(:|===)\s*"[a-zA-Z][a-zA-Z0-9_]*"''',
+]
