@@ -492,6 +492,11 @@ const defaultPermissionMatrix: PermissionMap = {
   "Talent Acquisition": {
     employee_documents: ["read", "create", "update", "export"],
     employee_profile: ["read", "update"],
+    // Required by the Private Calendar workspace load (getPrivateCalendarWorkspace
+    // asserts attendance:read). Self-scoped in practice — isPrivateCalendarGlobalViewer
+    // does not include this role, so this only unlocks her own attendance record, not
+    // company-wide attendance data (owner-requested 2026-07-25).
+    attendance: ["read"],
     leave: ["read", "update", "export"],
     // Self-service only (own payslip) — matches Financial Advisor's grant. No broader
     // payroll authority: Talent Acquisition must not inherit the retired HR Specialist
@@ -514,6 +519,12 @@ const defaultPermissionMatrix: PermissionMap = {
     // tool — deliberately NOT user_admin (see hardBoundaryAllowedActions: that stays
     // Super-Admin-only since it also covers role/scope/permission changes).
     account_activation: ["read", "update"],
+    // Planning Calendar only (owner-requested 2026-07-25) — isPlanItemVisibleToViewer
+    // narrows her to Head-Office-line plan items. The Weekly/Monthly Plan submission
+    // page shares this same resource but stays deliberately unlinked from her nav; this
+    // grant alone does not unlock submission (still blocked by weekly_plans:create and
+    // isWeeklyMonthlyPlanEligibleTitle).
+    weekly_plans: ["read"],
   },
   // Financial Advisor: executes approved requests (payroll runs, disbursements).
   // No approval authority on any resource — does not approve, only processes.

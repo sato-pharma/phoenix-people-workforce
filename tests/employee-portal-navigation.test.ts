@@ -136,8 +136,17 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");
   assert.equal(a3Account.showPlansTab, true, "A-3 should always see the Weekly / Monthly Plan tab");
+  assert.equal(a3Account.showPlanningCalendarTab, true, "A-3 should always see the Planning Calendar tab (split from showPlansTab, 2026-07-25)");
   assert.equal(a3Account.showReportItTab, true, "A-3 should see Report It");
   assert.equal(a3Account.showReportItDashboardTab, false, "A-3 Reports Dashboard is merged into the single Report It tab (no separate dashboard tab needed)");
+
+  // Owner-requested 2026-07-25: Talent Acquisition keeps the read-only, HO-scoped
+  // Planning Calendar but loses the Weekly/Monthly Plan submission tab (showPlansTab
+  // split from showPlanningCalendarTab specifically for this role).
+  const talentAcquisitionNav = resolveEmployeePortalNavVisibility("Talent Acquisition");
+  assert.equal(talentAcquisitionNav.showPlansTab, false, "Talent Acquisition should not see the Weekly / Monthly Plan tab");
+  assert.equal(talentAcquisitionNav.showPlanningCalendarTab, true, "Talent Acquisition should still see the Planning Calendar tab");
+  assert.equal(talentAcquisitionNav.showPrivateCalendarTab, true, "Talent Acquisition should see Private Calendar");
 
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
