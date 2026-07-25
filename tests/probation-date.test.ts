@@ -76,4 +76,27 @@ export function runProbationDateTests() {
   assert.equal(probationMilestoneDate("2026-01-01", 30), "2026-01-31", "day-30 milestone date");
   assert.equal(probationMilestoneDate("2026-01-01", 60), "2026-03-02", "day-60 milestone date");
   assert.equal(probationMilestoneDate("2026-01-01", 75), "2026-03-17", "day-75 milestone date");
+
+  // Cairo/UTC day-boundary regression: every reference-date default above resolves via the
+  // server's own clock unless explicitly overridden — this previously meant server-local/UTC
+  // midnight, not Cairo's. Cairo is ahead of UTC (EEST=+3 late Apr-late Oct, EET=+2 otherwise),
+  // so for a few hours after Cairo's local midnight, the UTC clock is still on the previous
+  // calendar day. These instants straddle that exact boundary in both seasons.
+  const eestBeforeCairoMidnight = new Date("2026-07-24T20:59:00Z"); // Cairo 23:59 Jul 24 (EEST)
+  const eestAfterCairoMidnight = new Date("2026-07-24T21:00:00Z"); // Cairo 00:00 Jul 25 (EEST)
+  assert.equal(currentProbationDay("2026-07-01", eestBeforeCairoMidnight), 24, "20:59 UTC (EEST): Cairo still Jul 24 -> probation day 24");
+  assert.equal(currentProbationDay("2026-07-01", eestAfterCairoMidnight), 25, "21:00 UTC (EEST): Cairo already Jul 25 -> probation day 25");
+  // hireDate 2026-04-26 + 90 days = 2026-07-25, landing exactly on this boundary.
+  assert.equal(probationDaysRemaining("2026-04-26", eestBeforeCairoMidnight), 1, "20:59 UTC (EEST): 1 day remaining per Cairo");
+  assert.equal(probationDaysRemaining("2026-04-26", eestAfterCairoMidnight), 0, "21:00 UTC (EEST): due today per Cairo");
+  assert.equal(isWithinProbationWindow("2026-04-26", eestBeforeCairoMidnight), true, "still within window per Cairo (1 day left)");
+  assert.equal(isWithinProbationWindow("2026-04-26", eestAfterCairoMidnight), false, "window already ended per Cairo (0 days left)");
+
+  const eetBeforeCairoMidnight = new Date("2026-01-15T21:59:00Z"); // Cairo 23:59 Jan 15 (EET)
+  const eetAfterCairoMidnight = new Date("2026-01-15T22:00:00Z"); // Cairo 00:00 Jan 16 (EET)
+  assert.equal(currentProbationDay("2026-01-01", eetBeforeCairoMidnight), 15, "21:59 UTC (EET): Cairo still Jan 15 -> probation day 15");
+  assert.equal(currentProbationDay("2026-01-01", eetAfterCairoMidnight), 16, "22:00 UTC (EET): Cairo already Jan 16 -> probation day 16");
+  // hireDate 2025-10-18 + 90 days = 2026-01-16, landing exactly on this boundary.
+  assert.equal(probationDaysRemaining("2025-10-18", eetBeforeCairoMidnight), 1, "21:59 UTC (EET): 1 day remaining per Cairo");
+  assert.equal(probationDaysRemaining("2025-10-18", eetAfterCairoMidnight), 0, "22:00 UTC (EET): due today per Cairo");
 }
