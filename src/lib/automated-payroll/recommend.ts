@@ -920,8 +920,9 @@ async function recommendVacation(
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {
     const member = byCompact.get(compact);
-    // Leavers are settled at resignation time (Part 1) — never here, to avoid double-deducting.
-    if (!member || member.lifecycle === "leaver") continue;
+    // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
+    // double-deducting the same days. See isSettledInPart1.
+    if (!member || isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
     const draft = drafts.get(compact);
     const amount = roundCurrency(total.v2Amount + total.crmAmount);
     const row = baseRow(member);
@@ -1000,8 +1001,9 @@ async function recommendCrm(
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {
     const member = byCompact.get(compact);
-    // Leavers are settled at resignation time (Part 1) — never here, to avoid double-deducting.
-    if (!member || member.lifecycle === "leaver") continue;
+    // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
+    // double-deducting the same days. See isSettledInPart1.
+    if (!member || isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
     const draft = drafts.get(compact);
     const value = roundCurrency(total.value);
     const row = baseRow(member);
@@ -1045,58 +1047,142 @@ function recommendManualDeductions(members: PopulationMember[], drafts: Map<stri
 }
 
 /**
- * Part 1's manual "Other deductions" step: 5 selectable categories per employee
- * (CRM, Unpaid Vacation, Day Without Record, Loan, Other), each with its own
- * days/value/reason. Pure manual entry (no automatic feeder) — HR fills in
- * whichever categories apply; the rest stay at 0/blank. Reduces Part 1 for
- * every employee once confirmed (see split.ts freezeFirstPart).
+ * THE PART 1 / PART 2 SPLIT RULE (owner-decided 2026-07-25). Whether an employee's
+ * CRM / unpaid-vacation deduction is settled in Part 1 rather than Part 2:
+ *
+ *  - leaver    → settled in Part 1 (they won't be present for Part 2 at all; their
+ *                CRM + vacation are auto-computed on the Resignations step).
+ *  - one_part  → settled in Part 1. They have no meaningful Second Part to net a
+ *                Part-2 deduction against, so deducting there clamps their Second
+ *                Part to 0 and strands the remainder in `overpaidResidual` (money
+ *                the company never recovers). Reducing the frozen First Part
+ *                directly — via the Part 1 manual tabs — actually lands.
+ *  - two_parts → NOT settled in Part 1; handled automatically in Part 2.
+ *
+ * This single predicate is deliberately used in BOTH directions so the two
+ * populations stay disjoint and no employee can be deducted twice for the same
+ * thing: the Part 1 manual tabs show only employees where this is true, and
+ * recommendVacation / recommendCrm (Part 2) skip exactly those same employees.
+ * Guarded by tests/automated-payroll-part1-scope.test.ts — if you change this,
+ * change both call sites or you reintroduce a double-deduction.
  */
-function recommendOtherDeductionsPart1(
+export function isSettledInPart1(
+  member: Pick<PopulationMember, "lifecycle">,
+  source: Pick<PayrollSalarySource, "paymentMode"> | undefined,
+): boolean {
+  return member.lifecycle === "leaver" || source?.paymentMode === "one_part";
+}
+
+function part1ManualDeductionBaseRow(
+  member: PopulationMember,
+  source: PayrollSalarySource | undefined,
+): StepRow {
+  const row = baseRow(member);
+  row.context = {
+    "Hire Date": member.employee.hireDate ?? "",
+    "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+  };
+  return row;
+}
+
+function recommendP1Crm(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   drafts: Map<string, DraftRow>,
 ): StepRow[] {
-  return members.map((member) => {
-    const draft = drafts.get(member.compact);
+  const rows: StepRow[] = [];
+  for (const member of members) {
     const source = lookupSource(sources, member.employee.hrId);
-    const row = baseRow(member);
-    row.context = {
-      "Hire Date": member.employee.hireDate ?? "",
-      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
-    };
-    row.recommended = {
-      p1odCrmDays: 0,
-      p1odCrmValue: 0,
-      p1odVacationDays: 0,
-      p1odVacationValue: 0,
-      p1odNoRecordDays: 0,
-      p1odNoRecordValue: 0,
-      p1odLoanDays: 0,
-      p1odLoanValue: 0,
-      p1odOtherDays: 0,
-      p1odOtherValue: 0,
-    };
+    if (!isSettledInPart1(member, source)) continue;
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    // Amount already settled for this employee on the Resignations step (leavers only —
+    // it auto-computes their CRM there). Read from the SAME draft column assemble.ts
+    // sums, so the warning reflects exactly what will actually be deducted. Drives the
+    // wizard's double-deduction warning via StepDefinition.conflictContextKey.
+    row.context["Settled in Resignations"] = roundCurrency(pick(draft?.crm, 0));
+    row.recommended = { p1odCrmDays: 0, p1odCrmValue: 0 };
     row.values = {
       p1odCrmDays: pick(draft?.p1odCrmDays, 0),
       p1odCrmValue: pick(draft?.p1odCrmValue, 0),
+    };
+    row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
+    rows.push(row);
+  }
+  return rows;
+}
+
+function recommendP1UnpaidVacation(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
+    if (!isSettledInPart1(member, source)) continue;
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    // See recommendP1Crm — same double-deduction guard, unpaid-vacation column.
+    row.context["Settled in Resignations"] = roundCurrency(pick(draft?.unpaidVacations, 0));
+    row.recommended = { p1odVacationDays: 0, p1odVacationValue: 0 };
+    row.values = {
       p1odVacationDays: pick(draft?.p1odVacationDays, 0),
       p1odVacationValue: pick(draft?.p1odVacationValue, 0),
+    };
+    row.reasons = { p1odVacationReason: draft?.p1odVacationReason ?? "" };
+    rows.push(row);
+  }
+  return rows;
+}
+
+function recommendP1NoRecord(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
+    if (!isSettledInPart1(member, source)) continue;
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    row.recommended = { p1odNoRecordDays: 0, p1odNoRecordValue: 0 };
+    row.values = {
       p1odNoRecordDays: pick(draft?.p1odNoRecordDays, 0),
       p1odNoRecordValue: pick(draft?.p1odNoRecordValue, 0),
+    };
+    row.reasons = { p1odNoRecordReason: draft?.p1odNoRecordReason ?? "" };
+    rows.push(row);
+  }
+  return rows;
+}
+
+function recommendP1OtherDeductions(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
+    if (!isSettledInPart1(member, source)) continue;
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    row.recommended = { p1odLoanDays: 0, p1odLoanValue: 0, p1odOtherDays: 0, p1odOtherValue: 0 };
+    row.values = {
       p1odLoanDays: pick(draft?.p1odLoanDays, 0),
       p1odLoanValue: pick(draft?.p1odLoanValue, 0),
       p1odOtherDays: pick(draft?.p1odOtherDays, 0),
       p1odOtherValue: pick(draft?.p1odOtherValue, 0),
     };
     row.reasons = {
-      p1odCrmReason: draft?.p1odCrmReason ?? "",
-      p1odVacationReason: draft?.p1odVacationReason ?? "",
-      p1odNoRecordReason: draft?.p1odNoRecordReason ?? "",
       p1odLoanReason: draft?.p1odLoanReason ?? "",
       p1odOtherReason: draft?.p1odOtherReason ?? "",
     };
-    return row;
-  });
+    rows.push(row);
+  }
+  return rows;
 }
 
 function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
@@ -1127,8 +1213,14 @@ export async function recommendStep(input: {
       return recommendResignations(input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
       return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
+    case "p1_crm":
+      return recommendP1Crm(input.members, input.sources, drafts);
+    case "p1_unpaid_vacation":
+      return recommendP1UnpaidVacation(input.members, input.sources, drafts);
+    case "p1_no_record":
+      return recommendP1NoRecord(input.members, input.sources, drafts);
     case "p1_other_deductions":
-      return recommendOtherDeductionsPart1(input.members, input.sources, drafts);
+      return recommendP1OtherDeductions(input.members, input.sources, drafts);
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts);
     case "p2_vacation":
