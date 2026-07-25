@@ -4,6 +4,7 @@ import { listAccountActivationEligibleUsers, setAccountActiveForRecruiting } fro
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,8 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     assertAuthenticated(access);
 
