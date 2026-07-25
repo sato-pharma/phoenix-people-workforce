@@ -92,11 +92,26 @@ function toSheetRecord(entry: AssembledRow): SalaryRecord {
   return { ...entry.row, batchId: "", employeeCode: entry.row.hrId, id: "" } as unknown as SalaryRecord;
 }
 
+/** Non-employees' contribution to whichever money column they're folded into, rounded once (matches the TOTALS row's own rounding). */
+function sumNonEmployeeTotal(nonEmployees: NonEmployeePayrollRow[]): number {
+  return Math.round(nonEmployees.reduce((sum, entry) => sum + entry.totalSalary, 0) * 100) / 100;
+}
+
 /**
  * Writes one branded payroll worksheet: brand band, bold header, zebra body,
  * money formatting, held rows in red, and a totals row. When `protect` is set,
  * every cell is locked except the appended `extraColumns` (the finance-edit
  * columns) — the finance-download variant.
+ *
+ * Non-Employees Payroll (owner rule 2026-07-26): people paid a monthly salary
+ * with no employee/HR_ID record are rendered as ADDITIONAL ROWS in this SAME
+ * table — under the same "Full Name"/"Arabic Name" headers, and their amount
+ * under whichever money column this sheet variant pays out (`nonEmployeeValueHeader`
+ * — "First Part" or "Month Salary") — not a separate section below. Every
+ * other column (HR_ID, Job Title, Base Salary, etc.) is blank for these rows
+ * since those concepts don't apply. Their amount is folded into the TOTALS
+ * row's sum for that one column. They still never touch AssembledRow/
+ * publishToPayslips — this is display-only, same as before.
  */
 export async function writePayrollWorksheet(
   workbook: ExcelJS.Workbook,
@@ -109,6 +124,8 @@ export async function writePayrollWorksheet(
     headers: PayrollSheetHeader[];
     extraColumns?: ExtraColumn[];
     protect?: boolean;
+    nonEmployees?: NonEmployeePayrollRow[];
+    nonEmployeeValueHeader?: "First Part" | "Month Salary";
   },
 ): Promise<{
   sheet: ExcelJS.Worksheet;
@@ -192,7 +209,54 @@ export async function writePayrollWorksheet(
     rowNumber += 1;
   });
 
-  // Totals over money columns.
+  // Non-Employees Payroll: additional rows in this SAME table, not a separate
+  // section (owner rule 2026-07-26). Only Full Name / Arabic Name / Bank
+  // details / the designated value column are populated; everything else
+  // (HR_ID, Job Title, Base Salary, etc.) is blank since it doesn't apply.
+  const nonEmployees = options.nonEmployees ?? [];
+  nonEmployees.forEach((entry, neIndex) => {
+    const excelRow = sheet.getRow(rowNumber);
+    const zebra = (rows.length + neIndex) % 2 === 1;
+
+    headers.forEach((header, ci) => {
+      const cell = excelRow.getCell(ci + 1);
+      let value: string | number = "";
+      if (header === "#") value = rows.length + neIndex + 1;
+      else if (header === "Month") value = run.month;
+      else if (header === "Year") value = run.year;
+      else if (header === "Full Name") value = entry.fullNameEn;
+      else if (header === "Arabic Name") value = entry.fullNameAr;
+      else if (header === options.nonEmployeeValueHeader) value = entry.totalSalary;
+      cell.value = value as ExcelJS.CellValue;
+      if (payrollMoneyHeaders.has(header) && typeof value === "number") cell.numFmt = VALUE_FMT;
+      cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
+      cell.alignment = { horizontal: payrollMoneyHeaders.has(header) ? "right" : "left", vertical: "middle" };
+      cell.border = gridBorder();
+      if (ci === executionColumnIndex) {
+        cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
+        cell.font = { ...cell.font, bold: true };
+      } else if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      if (options.protect) cell.protection = { locked: true };
+    });
+
+    extraColumns.forEach((column, ei) => {
+      const cell = excelRow.getCell(headers.length + ei + 1);
+      if (column.label === "Bank Name") cell.value = entry.bankName ?? "";
+      else if (column.label === "Bank Account") cell.value = entry.bankAccount ?? "";
+      else cell.value = "";
+      if (column.kind === "money") cell.numFmt = VALUE_FMT;
+      cell.border = gridBorder();
+      cell.alignment = { horizontal: column.kind === "money" ? "right" : "left", vertical: "middle" };
+      if (zebra) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      if (options.protect) cell.protection = { locked: false };
+    });
+
+    rowNumber += 1;
+  });
+
+  // Totals over money columns — includes non-employees' contribution to
+  // whichever one column their totalSalary was written under.
+  const nonEmployeeSum = sumNonEmployeeTotal(nonEmployees);
   const totalsRow = sheet.getRow(rowNumber);
   let firstPartTotal = 0;
   let monthSalaryTotal = 0;
@@ -204,7 +268,7 @@ export async function writePayrollWorksheet(
         const value = payrollSheetValue(toSheetRecord(entry), run.month, run.year, 0, header);
         return acc + (typeof value === "number" ? value : 0);
       }, 0);
-      const rounded = Math.round(sum * 100) / 100;
+      const rounded = Math.round((sum + (header === options.nonEmployeeValueHeader ? nonEmployeeSum : 0)) * 100) / 100;
       cell.value = rounded;
       cell.numFmt = VALUE_FMT;
       if (header === "First Part") firstPartTotal = rounded;
@@ -238,97 +302,6 @@ export async function writePayrollWorksheet(
   }
 
   return { sheet, nextRow: rowNumber + 1, firstPartTotal, monthSalaryTotal };
-}
-
-/**
- * Appends a "Non-Employees Payroll" mini-table below the Part 1 sheet's own
- * TOTALS row: people paid a monthly salary with no employee/HR_ID record (owner
- * rule 2026-07-25), entered fresh each run. Ends with a GRAND TOTAL that adds
- * their subtotal to the employee sheet's First Part total — deliberately the
- * only place these entries are combined with real payroll figures; they never
- * touch AssembledRow/publishToPayslips. No-op if the run has none.
- */
-export function appendNonEmployeesSection(
-  sheet: ExcelJS.Worksheet,
-  input: {
-    startRow: number;
-    rows: NonEmployeePayrollRow[];
-    /** The employee-side total this section adds to (First Part on the Part 1 sheet, Month Salary on the Full sheet). */
-    employeeTotal: number;
-    /** Names which employee total is being added, so the grand-total row can't mislead. */
-    employeeTotalLabel: string;
-  },
-): void {
-  if (input.rows.length === 0) return;
-  const labels = ["Full Name (EN)", "Full Name (AR)", "Bank Name", "Bank Account", "Total Salary"];
-  const totalColumn = labels.length; // "Total Salary" is the last column.
-
-  let rowNumber = input.startRow + 1; // blank spacer row before the section.
-  const captionCell = sheet.getRow(rowNumber).getCell(1);
-  captionCell.value = "Non-Employees Payroll (no employee/HR_ID record)";
-  captionCell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 11 };
-  rowNumber += 1;
-
-  const headerRow = sheet.getRow(rowNumber);
-  labels.forEach((label, index) => {
-    const cell = headerRow.getCell(index + 1);
-    cell.value = label;
-    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
-  });
-  rowNumber += 1;
-
-  let subtotal = 0;
-  input.rows.forEach((entry, index) => {
-    const excelRow = sheet.getRow(rowNumber);
-    const values: (string | number)[] = [
-      entry.fullNameEn,
-      entry.fullNameAr,
-      entry.bankName ?? "",
-      entry.bankAccount ?? "",
-      entry.totalSalary,
-    ];
-    values.forEach((value, ci) => {
-      const cell = excelRow.getCell(ci + 1);
-      cell.value = value as ExcelJS.CellValue;
-      const isMoney = ci + 1 === totalColumn;
-      if (isMoney) cell.numFmt = VALUE_FMT;
-      cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
-      cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle" };
-      cell.border = gridBorder();
-      if (index % 2 === 1) cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
-    });
-    subtotal = Math.round((subtotal + entry.totalSalary) * 100) / 100;
-    rowNumber += 1;
-  });
-
-  const subtotalRow = sheet.getRow(rowNumber);
-  subtotalRow.getCell(1).value = "NON-EMPLOYEES SUBTOTAL";
-  subtotalRow.getCell(totalColumn).value = subtotal;
-  subtotalRow.getCell(totalColumn).numFmt = VALUE_FMT;
-  [1, totalColumn].forEach((col) => {
-    const cell = subtotalRow.getCell(col);
-    cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
-    cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
-    cell.alignment = { horizontal: col === totalColumn ? "right" : "left", vertical: "middle" };
-  });
-  rowNumber += 1;
-
-  const grandTotal = Math.round((input.employeeTotal + subtotal) * 100) / 100;
-  const grandTotalRow = sheet.getRow(rowNumber);
-  grandTotalRow.getCell(1).value = `GRAND TOTAL (Employees ${input.employeeTotalLabel} + Non-Employees)`;
-  grandTotalRow.getCell(totalColumn).value = grandTotal;
-  grandTotalRow.getCell(totalColumn).numFmt = VALUE_FMT;
-  [1, totalColumn].forEach((col) => {
-    const cell = grandTotalRow.getCell(col);
-    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 11 };
-    cell.fill = { fgColor: { argb: EXECUTION_HEADER_FILL }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
-    cell.alignment = { horizontal: col === totalColumn ? "right" : "left", vertical: "middle" };
-  });
 }
 
 function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: string): Array<[string, string]> {
@@ -396,23 +369,21 @@ export async function buildFullSheetWorkbook(input: {
     valueLabel: "Total Month Salary",
     current: {
       headcount: input.rows.length,
-      totalValue: Math.round(input.rows.reduce((sum, entry) => sum + entry.row.monthSalary, 0) * 100) / 100,
+      totalValue:
+        Math.round(input.rows.reduce((sum, entry) => sum + entry.row.monthSalary, 0) * 100) / 100 +
+        sumNonEmployeeTotal(input.nonEmployees ?? []),
     },
     previous: input.previousSummary ?? null,
   });
-  const { sheet, nextRow, monthSalaryTotal } = await writePayrollWorksheet(workbook, {
+  await writePayrollWorksheet(workbook, {
     sheetName: "Payroll",
     title: "Full Monthly Sheet",
     subtitle: `${monthLabel(input.run.month, input.run.year)} · all employees`,
     run: input.run,
     rows: input.rows,
     headers: [...payrollSheetHeaders],
-  });
-  appendNonEmployeesSection(sheet, {
-    startRow: nextRow,
-    rows: input.nonEmployees ?? [],
-    employeeTotal: monthSalaryTotal,
-    employeeTotalLabel: "Month Salary",
+    nonEmployees: input.nonEmployees ?? [],
+    nonEmployeeValueHeader: "Month Salary",
   });
   return toBuffer(workbook);
 }
@@ -611,11 +582,13 @@ export async function buildPart1SheetWorkbook(input: {
     valueLabel: "Total First Part",
     current: {
       headcount: input.rows.length,
-      totalValue: Math.round(input.rows.reduce((sum, entry) => sum + entry.row.firstPart, 0) * 100) / 100,
+      totalValue:
+        Math.round(input.rows.reduce((sum, entry) => sum + entry.row.firstPart, 0) * 100) / 100 +
+        sumNonEmployeeTotal(input.nonEmployees ?? []),
     },
     previous: input.previousSummary ?? null,
   });
-  const { sheet, nextRow, firstPartTotal } = await writePayrollWorksheet(workbook, {
+  await writePayrollWorksheet(workbook, {
     sheetName: "Part 1",
     title: "Part 1 — First Installment",
     subtitle: `${monthLabel(input.run.month, input.run.year)}`,
@@ -623,12 +596,8 @@ export async function buildPart1SheetWorkbook(input: {
     rows: input.rows,
     headers: PART1_HEADERS,
     extraColumns: [...bankExtraColumns(), carryForwardExtraColumn()],
-  });
-  appendNonEmployeesSection(sheet, {
-    startRow: nextRow,
-    rows: input.nonEmployees ?? [],
-    employeeTotal: firstPartTotal,
-    employeeTotalLabel: "First Part",
+    nonEmployees: input.nonEmployees ?? [],
+    nonEmployeeValueHeader: "First Part",
   });
   addSalaryChangesSheet(workbook, {
     run: input.run,

@@ -1,0 +1,23 @@
+import { jsonError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
+import { buildCibSheet } from "@/lib/automated-payroll/run-service";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** CIB bank-transfer file download. ?month=&year=&scope=part1|part2 */
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    const url = new URL(request.url);
+    const month = Number(url.searchParams.get("month"));
+    const year = Number(url.searchParams.get("year"));
+    if (!Number.isInteger(month) || !Number.isInteger(year)) {
+      return jsonError(new Error("Validation: month and year are required."));
+    }
+    const scope = url.searchParams.get("scope") === "part2" ? "part2" : "part1";
+    const { buffer, fileName } = await buildCibSheet(access, { month, year }, scope);
+    return xlsxResponse(buffer, fileName);
+  } catch (error) {
+    return jsonError(error, "Failed to download the CIB sheet.");
+  }
+}
