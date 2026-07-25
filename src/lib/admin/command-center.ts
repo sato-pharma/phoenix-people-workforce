@@ -16,7 +16,6 @@ import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getPlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";
-import { buildRecruitmentOnboardingMetrics } from "@/lib/recruitment/onboarding-metrics";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
@@ -102,13 +101,6 @@ export type AdminCommandCenterData = {
       totalAmount: number;
       totalRows: number;
       reportCount: number;
-    };
-    recruitment: {
-      totalOffers: number;
-      pendingOffers: number;
-      acceptedOffers: number;
-      rejectedOffers: number;
-      acceptanceRate: number;
     };
     risk: {
       expiringContracts: number;
@@ -455,74 +447,6 @@ async function fetchExpenseSummary(accessContext: AccessContext): Promise<{
   }
 }
 
-async function fetchRecruitmentSummary(): Promise<{
-  totalOffers: number;
-  pendingOffers: number;
-  acceptedOffers: number;
-  rejectedOffers: number;
-  acceptanceRate: number;
-  error: string | null;
-}> {
-  const supabase = getSupabaseAdmin();
-  const empty = {
-    totalOffers: 0,
-    pendingOffers: 0,
-    acceptedOffers: 0,
-    rejectedOffers: 0,
-    acceptanceRate: 0,
-    error: null,
-  };
-
-  try {
-    const { data: rows, error } = await supabase
-      .from("job_offers")
-      .select("id,offer_code,candidate_name,candidate_email,candidate_phone,job_title,template_key,area_scope,area_id,department_id,line_id,manager_hr_id,position_id,salary_amount,start_date,expires_at,status,accepted_at,rejected_at,employee_hr_id,onboarding_status,created_at,updated_at")
-      .limit(5000);
-    if (error) throw error;
-
-    const offers = (rows ?? []).map((row) => ({
-      acceptedAt: row.accepted_at,
-      areaId: row.area_id,
-      areaScope: row.area_scope,
-      candidateEmail: row.candidate_email,
-      candidateName: row.candidate_name,
-      candidatePhone: row.candidate_phone,
-      createdAt: row.created_at,
-      departmentId: row.department_id,
-      departmentName: null,
-      employeeHrId: row.employee_hr_id,
-      expiresAt: row.expires_at,
-      id: row.id,
-      jobTitle: row.job_title,
-      lineId: row.line_id,
-      lineName: null,
-      managerHrId: row.manager_hr_id,
-      managerName: null,
-      offerCode: row.offer_code,
-      onboardingStatus: row.onboarding_status,
-      positionId: row.position_id,
-      rejectedAt: row.rejected_at,
-      salaryAmount: row.salary_amount,
-      startDate: row.start_date,
-      status: row.status,
-      templateKey: row.template_key,
-      updatedAt: row.updated_at,
-    }));
-    const recruitment = buildRecruitmentOnboardingMetrics({ offerRows: offers });
-
-    return {
-      totalOffers: recruitment.totalOffers,
-      pendingOffers: recruitment.pendingOffers,
-      acceptedOffers: recruitment.acceptedOffers,
-      rejectedOffers: recruitment.rejectedOffers,
-      acceptanceRate: recruitment.acceptanceRate,
-      error: null,
-    };
-  } catch {
-    return { ...empty, error: "Recruitment data unavailable." };
-  }
-}
-
 async function fetchRiskSummary(accessContext: AccessContext): Promise<{
   expiringContracts: number;
   probationEndings: number;
@@ -822,13 +746,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
             net: platformMetrics.payroll.net,
           }
         : { batchLabel: "Self only", employees: 0, flags: 0, gross: 0, net: 0 },
-      recruitment: {
-        acceptanceRate: platformMetrics.recruitment.acceptanceRate,
-        acceptedOffers: platformMetrics.recruitment.acceptedOffers,
-        pendingOffers: platformMetrics.recruitment.pendingOffers,
-        rejectedOffers: platformMetrics.recruitment.rejectedOffers,
-        totalOffers: platformMetrics.recruitment.totalOffers,
-      },
       risk: {
         expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,
         probationEndings: platformMetrics.lifecycleRisk.probationEndings,
@@ -884,7 +801,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   const attendanceAgent = await attendanceAgentPromise;
   if (!attendanceAgent) dataUnavailable.push("Attendance agent health unavailable.");
 
-  const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, recruitmentResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
+  const [payrollResult, salesResult, employeesResult, dataHealthResult, expensesResult, riskResult, salesHealthResult, eligibleResult, operationsResult] =
     await Promise.allSettled([
       showFinancialModules
         ? canUseCompanyPayrollSummary(accessContext)
@@ -899,7 +816,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       showFinancialModules
         ? fetchExpenseSummary(accessContext)
         : Promise.resolve({ approvedAmount: 0, error: null, reportCount: 0, totalAmount: 0, totalRows: 0 }),
-      fetchRecruitmentSummary(),
       fetchRiskSummary(accessContext),
       showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules
@@ -995,22 +911,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     dataUnavailable.push("Expense data unavailable.");
   }
 
-  // ── Recruitment ──────────────────────────────────────────────────────────
-  let recruitment: AdminCommandCenterData["overview"]["recruitment"] = {
-    totalOffers: 0,
-    pendingOffers: 0,
-    acceptedOffers: 0,
-    rejectedOffers: 0,
-    acceptanceRate: 0,
-  };
-  if (recruitmentResult.status === "fulfilled") {
-    const r = recruitmentResult.value;
-    if (r.error) dataUnavailable.push(r.error);
-    else recruitment = { totalOffers: r.totalOffers, pendingOffers: r.pendingOffers, acceptedOffers: r.acceptedOffers, rejectedOffers: r.rejectedOffers, acceptanceRate: r.acceptanceRate };
-  } else {
-    dataUnavailable.push("Recruitment data unavailable.");
-  }
-
   // ── Risk ─────────────────────────────────────────────────────────────────
   let risk: AdminCommandCenterData["overview"]["risk"] = {
     expiringContracts: 0,
@@ -1080,7 +980,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       payroll,
       sales,
       expenses,
-      recruitment,
       risk,
       leave,
       attendance,

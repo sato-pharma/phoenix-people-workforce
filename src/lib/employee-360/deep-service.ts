@@ -75,6 +75,17 @@ function achievement(sales: number, target: number): number | null {
   return target > 0 ? (sales / target) * 100 : null;
 }
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. A manager's teamHrIds (subject + whole org subtree, e.g. an NSM's line)
+// can reach hundreds-to-thousands of keys once expanded through hrIdLookupKeys, so any .in() built
+// from it must be chunked.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 // A manager's sales = the roll-up of their whole team (subject + all descendants).
 // For a rep, teamHrIds is just [self], so this is their own sales.
 //
@@ -103,17 +114,19 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   // .range() or the manager sales roll-up silently under-counts.
   const PAGE = 1000;
   let rows: SalesRow[] = [];
-  for (let from = 0; from < 100000; from += PAGE) {
-    const { data, error } = await supabase
-      .from("sales_records")
-      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-      .in("employee_hr_id", keys)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`Employee 360 sales: ${error.message}`);
-    const batch = (data ?? []) as SalesRow[];
-    rows = rows.concat(batch);
-    if (batch.length < PAGE) break;
+  for (const keyBatch of chunk(keys)) {
+    for (let from = 0; from < 100000; from += PAGE) {
+      const { data, error } = await supabase
+        .from("sales_records")
+        .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
+        .in("employee_hr_id", keyBatch)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`Employee 360 sales: ${error.message}`);
+      const batch = (data ?? []) as SalesRow[];
+      rows = rows.concat(batch);
+      if (batch.length < PAGE) break;
+    }
   }
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
@@ -343,13 +356,16 @@ async function getEmployeeCoaching(hrId: string, nameByHrId: Map<string, string>
 
   // competency + category aggregation across all of this rep's reports
   const reportIds = rows.map((r) => r.id);
-  const { data: itemData, error: itemError } = await supabase
-    .from("coaching_score_items")
-    .select("report_id,parameter_category,score_item_key,score_item_label,score")
-    .in("report_id", reportIds)
-    .limit(5000);
-  if (itemError) throw new Error(`Employee 360 coaching items: ${itemError.message}`);
-  const items = (itemData ?? []) as CoachingItemRow[];
+  const items: CoachingItemRow[] = [];
+  for (const batch of chunk(reportIds)) {
+    const { data: itemData, error: itemError } = await supabase
+      .from("coaching_score_items")
+      .select("report_id,parameter_category,score_item_key,score_item_label,score")
+      .in("report_id", batch)
+      .limit(5000);
+    if (itemError) throw new Error(`Employee 360 coaching items: ${itemError.message}`);
+    items.push(...((itemData ?? []) as CoachingItemRow[]));
+  }
 
   const compMap = new Map<string, { label: string; category: string; sum: number; count: number }>();
   const catMap = new Map<string, { sum: number; count: number }>();

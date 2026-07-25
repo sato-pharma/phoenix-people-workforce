@@ -306,12 +306,22 @@ async function attachDistributorCodes(pharmacies: DirectOrderPharmacy[]): Promis
   const ids = pharmacies.map((pharmacy) => pharmacy.id);
   if (ids.length === 0) return;
   const supabase = getSupabaseAdmin();
-  const [{ data: codeRows }, distNames] = await Promise.all([
-    supabase.from("direct_order_pharmacy_distributor_codes").select("*").in("pharmacy_id", ids),
+  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
+  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+  // HeadersOverflowError — company-wide report/pending scopes can reach that scale, so batch.
+  const codeRows: Array<Record<string, unknown>> = [];
+  const [, distNames] = await Promise.all([
+    (async () => {
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        const { data } = await supabase.from("direct_order_pharmacy_distributor_codes").select("*").in("pharmacy_id", batch);
+        codeRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+      }
+    })(),
     loadDistributorNames(),
   ]);
   const byPharmacy = new Map<string, DirectOrderPharmacyDistributorCode[]>();
-  for (const row of (codeRows ?? []) as Array<Record<string, unknown>>) {
+  for (const row of codeRows) {
     const pharmacyId = String(row.pharmacy_id);
     const list = byPharmacy.get(pharmacyId) ?? [];
     const distributorCode = String(row.distributor_code);
@@ -854,17 +864,22 @@ async function loadStepsForRequests(requestIds: string[]): Promise<Map<string, D
   const ids = Array.from(new Set(requestIds));
   if (ids.length === 0) return map;
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("direct_order_approval_steps")
-    .select("*")
-    .in("request_id", ids)
-    .order("step_order", { ascending: true });
-  if (error) throw error;
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const requestId = String(row.request_id);
-    const list = map.get(requestId) ?? [];
-    list.push(mapStepRow(row));
-    map.set(requestId, list);
+  // PostgREST folds every .in() value into the request URL; batch since `ids` can be every
+  // pending/company-wide request with no fixed cap.
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("direct_order_approval_steps")
+      .select("*")
+      .in("request_id", batch)
+      .order("step_order", { ascending: true });
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const requestId = String(row.request_id);
+      const list = map.get(requestId) ?? [];
+      list.push(mapStepRow(row));
+      map.set(requestId, list);
+    }
   }
   return map;
 }
@@ -874,9 +889,14 @@ async function loadPharmaciesByIds(pharmacyIds: string[]): Promise<Map<string, D
   const ids = Array.from(new Set(pharmacyIds.filter(Boolean)));
   if (ids.length === 0) return map;
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("direct_order_pharmacies").select("*").in("id", ids);
-  if (error) throw error;
-  const pharmacies = ((data ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
+  const data: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const { data: rows, error } = await supabase.from("direct_order_pharmacies").select("*").in("id", batch);
+    if (error) throw error;
+    data.push(...((rows ?? []) as Array<Record<string, unknown>>));
+  }
+  const pharmacies = data.map(mapPharmacyRow);
   await attachDistributorCodes(pharmacies);
   for (const pharmacy of pharmacies) map.set(pharmacy.id, pharmacy);
   return map;

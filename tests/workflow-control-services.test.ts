@@ -167,7 +167,6 @@ export function runWorkflowControlServicesTests() {
       "src/lib/outstation/service.ts",
       "src/lib/probation/service.ts",
       "src/lib/contracts/service.ts",
-      "src/lib/offers/service.ts",
       "src/lib/resignations/service.ts",
       "src/lib/marketing-requests/service.ts",
       "src/lib/coaching/service.ts",

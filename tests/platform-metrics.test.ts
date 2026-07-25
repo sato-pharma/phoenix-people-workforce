@@ -57,7 +57,6 @@ export function runPlatformMetricsTests() {
   assert.match(platformSource, /getPayrollDashboard/);
   assert.match(platformSource, /getSalesPlatformMetrics/);
   assert.match(platformSource, /getPayrollExpenseMetrics/);
-  assert.match(platformSource, /getOfferDashboard/);
   assert.match(platformSource, /getHiringDocumentsDashboard/);
   assert.match(platformSource, /buildRecruitmentOnboardingMetrics/);
   assert.match(platformSource, /getContractRenewalDashboardData/);
@@ -83,7 +82,5 @@ export function runPlatformMetricsTests() {
   assert.match(overviewSource, /platformMetrics\.sales\.salesValue/);
   assert.match(overviewSource, /platformMetrics\.payroll\.net/);
   assert.match(overviewSource, /platformMetrics\.expenses\.approvedAmount/);
-  assert.match(overviewSource, /platformMetrics\.recruitment\.acceptedOffers/);
   assert.match(overviewSource, /platformMetrics\.lifecycleRisk\.expiringContracts/);
-  assert.doesNotMatch(overviewSource, /import \{ getOfferDashboard \}/);
 }

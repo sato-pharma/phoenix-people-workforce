@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 // Rule 1 — a position vacancy must close ONLY when an employee is created
-// (manual add, bulk import, or convert). Sending an offer or creating a
-// requisition must never set a vacancy to 'filled'. This is a static-source
-// invariant so a future edit that closes a seat too early fails the suite.
+// (manual add, bulk import). Creating a requisition or marking an application
+// hired must never itself set a vacancy to 'filled' — that stays the
+// employee-creation flow's job. This is a static-source invariant so a future
+// edit that closes a seat too early fails the suite.
 
 function read(relativePath: string): string {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -20,14 +21,6 @@ function functionBody(source: string, signature: string): string {
 }
 
 export function runRecruitmentVacancyCloseInvariantTests() {
-  const offers = read("src/lib/offers/service.ts");
-  const createOffer = functionBody(offers, "export async function createOffer");
-  assert.doesNotMatch(
-    createOffer,
-    /status:\s*["']filled["']/,
-    "createOffer must only validate the vacancy, never set it to filled",
-  );
-
   // The requisition service must never write to the vacancy table (a comment
   // mentioning the table is fine; an actual query/write is not).
   const requisitions = read("src/lib/recruitment/requisitions.ts");
@@ -38,14 +31,15 @@ export function runRecruitmentVacancyCloseInvariantTests() {
   );
   assert.doesNotMatch(requisitions, /status:\s*["']filled["']/, "requisition service must not set a vacancy filled");
 
-  // Launching an offer from an application must not close the seat either.
+  // Marking an application hired must not close the seat itself — the employee
+  // record (created via the normal Add Employee flow) already did that.
   const applications = read("src/lib/recruitment/applications.ts");
-  const launch = functionBody(applications, "export async function launchOfferFromApplication");
-  assert.doesNotMatch(launch, /\.from\(\s*["']position_vacancies["']\s*\)/, "launchOfferFromApplication must not touch position_vacancies");
-  assert.doesNotMatch(launch, /status:\s*["']filled["']/, "launchOfferFromApplication must not set a vacancy filled");
+  const markHired = functionBody(applications, "export async function markApplicationHired");
+  assert.doesNotMatch(markHired, /\.from\(\s*["']position_vacancies["']\s*\)/, "markApplicationHired must not touch position_vacancies");
+  assert.doesNotMatch(markHired, /status:\s*["']filled["']/, "markApplicationHired must not set a vacancy filled");
 
-  // Positive anchor: the real closer exists (in the dedicated vacancies module,
-  // kept apart from service.ts's dynamic offer-letter-pdf.ts import) and is reused by the hire paths.
-  const vacancies = read("src/lib/offers/vacancies.ts");
-  assert.match(vacancies, /function closeVacancyForOffer/, "closeVacancyForOffer (the real closer) must exist");
+  // Positive anchor: the real closer exists (in its own module, apart from the
+  // recruitment/offers domain) and is reused by the employee-creation hire paths.
+  const closer = read("src/lib/employees/vacancy-closer.ts");
+  assert.match(closer, /function closeVacancyOnHire/, "closeVacancyOnHire (the real closer) must exist");
 }

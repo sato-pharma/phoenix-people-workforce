@@ -69,14 +69,6 @@ export type OverviewDashboardData = {
     trend: Array<{ period: string; sales: number; target: number }>;
     distribution: Array<{ name: string; value: number; color: string; percent: number }>;
   };
-  recruitment: {
-    acceptanceRate: number;
-    totalOffers: number;
-    pendingOffers: number;
-    acceptedOffers: number;
-    rejectedOffers: number;
-    pipeline: Array<{ name: string; value: number; color: string }>;
-  };
   risk: {
     expiringContracts: number;
     probationEndings: number;
@@ -379,18 +371,6 @@ export async function getOverviewDashboard(
         target: asNumber(row.target),
       })),
       distribution: salesDistribution,
-    },
-    recruitment: {
-      acceptanceRate: platformMetrics.recruitment.acceptanceRate,
-      totalOffers: platformMetrics.recruitment.totalOffers,
-      pendingOffers: platformMetrics.recruitment.pendingOffers,
-      acceptedOffers: platformMetrics.recruitment.acceptedOffers,
-      rejectedOffers: platformMetrics.recruitment.rejectedOffers,
-      pipeline: [
-        { name: "Accepted", value: platformMetrics.recruitment.acceptedOffers, color: "#10B981" },
-        { name: "Pending", value: platformMetrics.recruitment.pendingOffers, color: "#3B82F6" },
-        { name: "Rejected", value: platformMetrics.recruitment.rejectedOffers, color: "#EF4444" },
-      ]
     },
     risk: {
       expiringContracts: platformMetrics.lifecycleRisk.expiringContracts,

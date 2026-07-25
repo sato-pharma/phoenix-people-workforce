@@ -90,6 +90,14 @@ async function upsertRowsConcurrently<T>(
   return upserted;
 }
 
+/** Normalizes the vendor's contactGrade (A+/A/B/C) — sent with inconsistent casing and stray
+ * whitespace ("b", " A", "B   ") — to a clean uppercase/trimmed value. Empty string -> null, same
+ * "blank means no signal" convention as every other optional CRM field. */
+export function normalizeContactGrade(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
 // VENDOR TIMESTAMP INVARIANT (load-bearing — do not "helpfully" convert): iReports360 sends
 // `saveDate`/`checkDate`/`visitDate` as zone-less strings that are ALREADY Africa/Cairo wall-clock
 // (e.g. "2026-07-16T18:13:18", no offset). They are stored verbatim into `timestamptz` columns, so
@@ -110,6 +118,7 @@ export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
     comment: visit.comment,
     contact_crm_id: visit.contactID,
     contact_name: visit.contactName,
+    crm_contact_grade: normalizeContactGrade(visit.contactGrade),
     crm_region_id: visit.regionID,
     crm_region_name: visit.region,
     crm_save_date: visit.saveDate,

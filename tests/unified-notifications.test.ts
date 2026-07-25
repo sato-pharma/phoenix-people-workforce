@@ -98,7 +98,6 @@ export function runUnifiedNotificationsTests() {
     "src/lib/excuses/service.ts",
     "src/lib/internal-messages/service.ts",
     "src/lib/marketing-requests/service.ts",
-    "src/lib/offers/service.ts",
     "src/lib/probation/service.ts",
     "src/lib/resignations/service.ts",
     "src/lib/vacation/service.ts",

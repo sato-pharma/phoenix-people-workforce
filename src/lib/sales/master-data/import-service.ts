@@ -707,10 +707,13 @@ export async function relocateBrick(input: {
   actorLoginId: string;
   brickId: string;
   newBlockCode: string;
-}): Promise<{ error?: string; newBrickId?: string; success: boolean }> {
+  /** Optional rename applied atomically with the move (the UI lets both be edited in one save). */
+  newBrickName?: string;
+}): Promise<{ customersCascaded?: number; customersCascadeError?: string; error?: string; newBrickId?: string; success: boolean }> {
   const def = MASTER_DEFINITIONS.bricks;
   const brickId = String(input.brickId ?? "").trim();
   const newBlockCode = normalizeCode(input.newBlockCode);
+  const newBrickName = typeof input.newBrickName === "string" ? input.newBrickName.trim() : "";
   if (!brickId) return { success: false, error: "Brick ID is required." };
   if (!newBlockCode) return { success: false, error: "Block Code is required." };
 
@@ -757,13 +760,14 @@ export async function relocateBrick(input: {
   }
   const newBrickId = `${prefix}${nextSeq}`;
 
-  const derived = def.derive({ brick_name: String(existing.brick_name ?? "") });
+  const effectiveBrickName = newBrickName || String(existing.brick_name ?? "");
+  const derived = def.derive({ brick_name: effectiveBrickName });
   const newRow: Record<string, unknown> = {
     active: true,
     area_code: normalizeCode(block.area_code),
     block_code: newBlockCode,
     brick_id: newBrickId,
-    brick_name: existing.brick_name,
+    brick_name: effectiveBrickName,
     description: existing.description ?? "",
     normalized_description: existing.normalized_description ?? "",
     region_code: normalizeCode(block.region_code),
@@ -790,23 +794,57 @@ export async function relocateBrick(input: {
     };
   }
 
+  // The customer -> brick crosswalk (source_of_sales_customer_map) has no FK to bricks — it's a
+  // plain denormalized brick_id/area_code/region_code copy. The monthly import pipeline only loads
+  // ACTIVE bricks into its lookup map (see monthly-distributor-import.ts, .eq("active", true)), so
+  // without this cascade every customer still pointing at the now-deactivated old brickId would
+  // silently fail to resolve on the next import — not an error, just quietly unmapped. This must
+  // run in the same operation as the relocation, not as a separate step someone could forget.
+  let customersCascaded: number | undefined;
+  let customersCascadeError: string | undefined;
+  const { data: cascaded, error: cascadeError } = await supabase
+    .from("source_of_sales_customer_map")
+    .update({
+      area_code: normalizeCode(block.area_code),
+      brick_id: newBrickId,
+      region_code: normalizeCode(block.region_code),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("brick_id", brickId)
+    .select("id");
+  if (cascadeError) {
+    customersCascadeError = cascadeError.message;
+  } else {
+    customersCascaded = cascaded?.length ?? 0;
+  }
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: brickId,
     entityType: def.auditEntityType,
-    newValues: { active: false, master: "bricks", relocatedTo: newBrickId, source: "database_mapping_brick_relocate" },
+    newValues: {
+      active: false,
+      customersCascadeError,
+      customersCascaded,
+      master: "bricks",
+      relocatedTo: newBrickId,
+      source: "database_mapping_brick_relocate",
+    },
     oldValues: { active: true, block_code: currentBlockCode },
-    summary: `Database Mapping brick relocated — ${brickId} (block ${currentBlockCode}) deactivated, replaced by ${newBrickId} (block ${newBlockCode}).`,
+    summary: `Database Mapping brick relocated — ${brickId} (block ${currentBlockCode}) deactivated, replaced by ${newBrickId} (block ${newBlockCode}). Customer mappings updated: ${customersCascaded ?? "FAILED — " + customersCascadeError}.`,
   });
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: newBrickId,
     entityType: def.auditEntityType,
     newValues: { ...newRow, master: "bricks", relocatedFrom: brickId, source: "database_mapping_brick_relocate" },
-    summary: `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode}, replacing ${brickId}.`,
+    summary:
+      newBrickName && newBrickName !== String(existing.brick_name ?? "")
+        ? `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode} as "${newBrickName}", replacing ${brickId}.`
+        : `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode}, replacing ${brickId}.`,
   });
 
-  return { newBrickId, success: true };
+  return { customersCascaded, customersCascadeError, newBrickId, success: true };
 }
 
 function columnLabel(def: MasterDefinition, key: string) {

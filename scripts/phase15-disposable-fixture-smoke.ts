@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { getDataHealthStats } from "@/lib/admin/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { upsertEmployee } from "@/lib/employees/employee-directory";
-import { approveAcceptedOffer } from "@/lib/offers/service";
 import { importApprovedExpensesToPayroll } from "@/lib/outstation/expenses";
 import { createSalaryBatch, replaceSalaryBatch, runPayrollWorkflow } from "@/lib/payroll/service";
 import { runProbationWorkflow } from "@/lib/probation/service";
@@ -50,7 +49,6 @@ const tracked = {
   auditEntityIds: new Set<string>(),
   employeeHrIds: new Set<string>(),
   expenseTripIds: new Set<string>(),
-  offerIds: new Set<string>(),
   payrollBatchIds: new Set<string>(),
   salesBatchIds: new Set<string>(),
   vacancyCodes: new Set<string>(),
@@ -416,15 +414,22 @@ async function runWorkforceLifecycle(lookup: LookupContext) {
   const managerHrId = `${fixture}_MGR`;
   const hireHrId = `${fixture}_HIRE`;
   const termHrId = `${fixture}_TERM`;
-  const offerHrId = `${fixture}_OFFER`;
+  const activeHrId = `${fixture}_ACTIVE`;
 
-  [managerHrId, hireHrId, termHrId, offerHrId].forEach((hrId) => tracked.employeeHrIds.add(hrId));
+  [managerHrId, hireHrId, termHrId, activeHrId].forEach((hrId) => tracked.employeeHrIds.add(hrId));
   await upsertEmployee(employeeInput(managerHrId, `${fixture} Manager`, lookup));
 
   const manualVacancyCode = `${fixture}_MANUAL_VAC`;
   await createVacancy(manualVacancyCode, lookup, managerHrId);
   await upsertEmployee(employeeInput(hireHrId, `${fixture} Manual Hire`, lookup, managerHrId));
   await assertVacancyStatus(manualVacancyCode, "filled");
+
+  // Stays active through the downstream sales/payroll/vacation workflow checks below
+  // (unlike hireHrId/termHrId, which are resigned/terminated immediately after creation).
+  const activeVacancyCode = `${fixture}_ACTIVE_VAC`;
+  await createVacancy(activeVacancyCode, lookup, managerHrId);
+  await upsertEmployee(employeeInput(activeHrId, `${fixture} Active Hire`, lookup, managerHrId));
+  await assertVacancyStatus(activeVacancyCode, "filled");
 
   await resignEmployeeAndOpenVacancy(hireHrId, {
     effectiveDate: today,
@@ -451,42 +456,7 @@ async function runWorkforceLifecycle(lookup: LookupContext) {
   await assertTerminalEffectiveExclusion(termHrId, "terminated", "termination updates effective employee lifecycle");
   await assertAuditTrace(termHrId, "termination");
 
-  const offerVacancyCode = `${fixture}_OFFER_VAC`;
-  await createVacancy(offerVacancyCode, lookup, managerHrId);
-  const offerId = randomUUID();
-  tracked.offerIds.add(offerId);
-  tracked.auditEntityIds.add(offerId);
-  const { error: offerError } = await supabase.from("job_offers").insert({
-    accepted_at: new Date().toISOString(),
-    area_id: lookup.areaId,
-    area_scope: lookup.areaName,
-    candidate_email: `${fixture.toLowerCase()}@example.invalid`,
-    candidate_name: `${fixture} Offer Hire`,
-    department_id: lookup.departmentId,
-    expires_at: "2099-12-31",
-    id: offerId,
-    job_title: lookup.positionTitle,
-    line_id: lookup.lineId,
-    manager_hr_id: managerHrId,
-    offer_code: `${fixture}_OFFER`,
-    position_id: lookup.positionId,
-    salary_amount: 10000,
-    secure_token_hash: `${fixture}_TOKEN`,
-    start_date: "2026-06-01",
-    status: "accepted",
-    template_key: "standard",
-    token_last_four: "P015",
-  });
-  if (offerError) throw offerError;
-  await approveAcceptedOffer(offerId, actor, offerHrId);
-  await assertVacancyStatus(offerVacancyCode, "filled");
-  const offerEmployee = await selectMaybeSingle("employees", "hr_id,employment_status", "hr_id", offerHrId);
-  addCheck("accepted offer created employee", offerEmployee?.hr_id === offerHrId, offerEmployee);
-  const { data: offerLogs, error: offerLogError } = await supabase.from("job_offer_audit_logs").select("id").eq("offer_id", offerId).limit(1);
-  if (offerLogError) throw offerLogError;
-  addCheck("accepted offer domain audit trace exists", (offerLogs ?? []).length > 0, offerLogs);
-
-  return { managerHrId, activeEmployeeHrId: offerHrId };
+  return { managerHrId, activeEmployeeHrId: activeHrId };
 }
 
 async function runProbationTermination(lookup: LookupContext, managerHrId: string) {
@@ -770,7 +740,6 @@ async function cleanup() {
     ...trackedPayrollBatchIds,
     ...((oldFixturePayrollRows ?? []) as Array<{ id?: string }>).map((row) => row.id).filter((id): id is string => Boolean(id)),
   ]));
-  const offerIds = Array.from(tracked.offerIds);
   const vacationRequestIds = Array.from(tracked.vacationRequestIds);
   const expenseTripIds = Array.from(tracked.expenseTripIds);
   const auditEntityIds = Array.from(new Set([
@@ -797,9 +766,6 @@ async function cleanup() {
   await safeDelete("sales_audit_logs", "batch_id", salesBatchIds);
   await safeDelete("sales_records", "batch_id", salesBatchIds);
   await safeDelete("sales_import_batches", "id", salesBatchIds);
-
-  await safeDelete("job_offer_audit_logs", "offer_id", offerIds);
-  await safeDelete("job_offers", "id", offerIds);
 
   await safeDelete("probation_history", "employee_hr_id", employeeHrIds);
   await safeDelete("probation_evaluations", "employee_hr_id", employeeHrIds);

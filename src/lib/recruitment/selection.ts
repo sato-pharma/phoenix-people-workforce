@@ -46,7 +46,7 @@ export async function getRequisitionSelectionBoard(
 
   const supabase = recruitmentDb();
   const { data: appRows, error: appError } = await supabase
-    .from("recruitment_applications")
+    .from("ats_applications")
     .select("*")
     .eq("requisition_id", requisitionId)
     .in("stage", SELECTION_STAGES as readonly string[])
@@ -63,10 +63,10 @@ export async function getRequisitionSelectionBoard(
     { data: intRows, error: intError },
     { data: rejRows, error: rejError },
   ] = await Promise.all([
-    supabase.from("recruitment_candidates").select("*").in("id", candidateIds),
-    supabase.from("recruitment_interviews").select("*").in("application_id", appIds),
+    supabase.from("ats_candidates").select("*").in("id", candidateIds),
+    supabase.from("ats_interviews").select("*").in("application_id", appIds),
     supabase
-      .from("recruitment_applications")
+      .from("ats_applications")
       .select("candidate_id,stage")
       .in("candidate_id", candidateIds)
       .in("stage", ["application_rejected", "application_withdrawn"]),

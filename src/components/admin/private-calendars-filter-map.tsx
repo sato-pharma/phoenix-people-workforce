@@ -61,11 +61,14 @@ function setSizeWithoutBlank(input: Set<string>) {
 
 export function PrivateCalendarsFilterMap({
   initialWorkspace,
+  todayIso: todayIsoProp,
 }: {
   initialWorkspace: PlanningCalendarWorkspace;
+  /** Today's date as YYYY-MM-DD, computed once on the server to prevent SSR/hydration mismatch. */
+  todayIso: string;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
-  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedDate, setSelectedDate] = useState(todayIsoProp);
   const [nameFilter, setNameFilter] = useState(allValue);
   const [regionFilter, setRegionFilter] = useState(allValue);
   const [lineFilter, setLineFilter] = useState(allValue);
@@ -165,7 +168,7 @@ export function PrivateCalendarsFilterMap({
     [selectedDate, visibleItems],
   );
 
-  const today = todayIso();
+  const today = todayIsoProp;
 
   const hasActiveFilter =
     nameFilter !== allValue ||

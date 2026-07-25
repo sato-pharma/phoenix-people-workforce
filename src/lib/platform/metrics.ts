@@ -16,7 +16,6 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getHiringDocumentsDashboard } from "@/lib/hiring-documents/service";
 import { buildLifecycleRiskMetrics, type LifecycleRiskAlert } from "@/lib/lifecycle-risk/metrics";
 import { getEmailNotificationOutboxStats } from "@/lib/notifications/email";
-import { getOfferDashboard } from "@/lib/offers/service";
 import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getProbationRows } from "@/lib/probation/service";
@@ -82,21 +81,11 @@ export type PlatformMetrics = {
     readinessRate: number;
   };
   recruitment: {
-    acceptanceRate: number;
-    acceptedOffers: number;
-    acceptedToEmployeeConversions: number;
-    acceptedToEmployeeConversionRate: number;
     hiringDocumentReadinessRate: number;
     hiringDocumentsDue: number;
     hiringDocumentsMissing: number;
     hiringDocumentsPending: number;
     hiringDocumentsSubmitted: number;
-    pendingHrApprovalOffers: number;
-    pendingOffers: number;
-    rejectedOffers: number;
-    totalOffers: number;
-    vacancyLinkedOffers: number;
-    vacancyLinkageRate: number;
   };
   sales: {
     achievementRate: number;
@@ -173,21 +162,11 @@ const emptyPlatformMetrics = (): PlatformMetrics => ({
     readinessRate: 1,
   },
   recruitment: {
-    acceptanceRate: 0,
-    acceptedOffers: 0,
-    acceptedToEmployeeConversions: 0,
-    acceptedToEmployeeConversionRate: 0,
     hiringDocumentReadinessRate: 1,
     hiringDocumentsDue: 0,
     hiringDocumentsMissing: 0,
     hiringDocumentsPending: 0,
     hiringDocumentsSubmitted: 0,
-    pendingHrApprovalOffers: 0,
-    pendingOffers: 0,
-    rejectedOffers: 0,
-    totalOffers: 0,
-    vacancyLinkedOffers: 0,
-    vacancyLinkageRate: 1,
   },
   sales: {
     achievementRate: 0,
@@ -327,41 +306,24 @@ async function getExpenseMetrics(accessContext: AccessContext): Promise<Platform
 }
 
 async function getRecruitmentMetrics(accessContext: AccessContext): Promise<PlatformMetrics["recruitment"]> {
-  const canReadOffers = await canAccess(accessContext, "offers", "read");
   const canReadCompanyAggregates = canReadCompanyRecruitmentAggregates(accessContext);
-  if (!canReadOffers && !canReadCompanyAggregates) {
+  const canReadHiringDocuments = await canAccess(accessContext, "employee_documents", "read");
+  if (!canReadHiringDocuments && !canReadCompanyAggregates) {
     return emptyPlatformMetrics().recruitment;
   }
 
-  const canReadHiringDocuments = await canAccess(accessContext, "employee_documents", "read");
-  const [offers, hiringDocuments] = await Promise.all([
-    getOfferDashboard(),
-    canReadHiringDocuments || canReadCompanyAggregates
-      ? getHiringDocumentsDashboard().catch(() => null)
-      : Promise.resolve(null),
-  ]);
+  const hiringDocuments = await getHiringDocumentsDashboard().catch(() => null);
   const recruitment = buildRecruitmentOnboardingMetrics({
     hiringDocumentDefinitions: hiringDocuments?.documents,
     hiringDocumentEmployees: hiringDocuments?.employees,
-    offerRows: offers.rows,
   });
 
   return {
-    acceptanceRate: numberValue(recruitment.acceptanceRate),
-    acceptedOffers: recruitment.acceptedOffers,
-    acceptedToEmployeeConversions: recruitment.acceptedToEmployeeConversions,
-    acceptedToEmployeeConversionRate: numberValue(recruitment.acceptedToEmployeeConversionRate),
     hiringDocumentReadinessRate: numberValue(recruitment.hiringDocuments.readinessRate),
     hiringDocumentsDue: recruitment.hiringDocuments.dueDocuments,
     hiringDocumentsMissing: recruitment.hiringDocuments.missingDocuments,
     hiringDocumentsPending: recruitment.hiringDocuments.pendingDocuments,
     hiringDocumentsSubmitted: recruitment.hiringDocuments.submittedDocuments,
-    pendingHrApprovalOffers: recruitment.pendingHrApprovalOffers,
-    pendingOffers: recruitment.pendingOffers,
-    rejectedOffers: recruitment.rejectedOffers,
-    totalOffers: recruitment.totalOffers,
-    vacancyLinkedOffers: recruitment.vacancyLinkedOffers,
-    vacancyLinkageRate: numberValue(recruitment.vacancyLinkageRate),
   };
 }
 

@@ -1,12 +1,12 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-import { pickDepartmentSafeVacancy } from "../src/lib/offers/vacancy-matching.ts";
+import { pickDepartmentSafeVacancy } from "../src/lib/employees/vacancy-matching.ts";
 
 /**
- * WP-5 regression coverage: offer/import vacancy closure must be department-safe
+ * WP-5 regression coverage: hire-time vacancy closure must be department-safe
  * (no cross-department close on a shared line) and must clear the replacement
- * marker when a vacancy is filled. The offers service is env-bound (Supabase
+ * marker when a vacancy is filled. vacancy-closer.ts is env-bound (Supabase
  * client), so the pure selection rule is unit-tested directly and the fill
  * payload + caller wiring are locked via source assertions.
  */
@@ -59,41 +59,30 @@ export function runOfferVacancyMatchingTests() {
   );
   assert.equal(pickDepartmentSafeVacancy([], SALES), undefined, "no candidates -> nothing to close");
 
-  // -- Wiring: the vacancies module threads department and clears replacement on fill.
-  // (closeVacancyForOffer lives in offers/vacancies.ts, split out of offers/service.ts
-  // so employee-directory.ts never pulls that file's dynamic offer-letter-pdf.ts import
-  // into a client bundle — see vacancies.ts's header comment.)
-  const offerSource = readFileSync(
-    new URL("../src/lib/offers/vacancies.ts", import.meta.url),
+  // -- Wiring: the vacancy-closer module threads department and clears replacement on fill.
+  const closerSource = readFileSync(
+    new URL("../src/lib/employees/vacancy-closer.ts", import.meta.url),
     "utf8",
   );
-  assert.match(offerSource, /department_id\?: number \| null;/, "closeVacancyForOffer input must accept department_id");
+  assert.match(closerSource, /department_id\?: number \| null;/, "closeVacancyOnHire input must accept department_id");
   assert.match(
-    offerSource,
+    closerSource,
     /pickDepartmentSafeVacancy\(matches, input\.department_id\)/,
     "vacancy selection must use the department-safe picker",
   );
   assert.match(
-    offerSource,
+    closerSource,
     /id,replacement_for_hr_id,department_id/,
     "vacancy match query must select department_id for disambiguation",
   );
-  assert.match(offerSource, /filled_by_hr_id: filledByHrId/, "fill payload must set filled_by_hr_id");
-  assert.match(offerSource, /status: "filled"/, "fill payload must set status=filled");
-  assert.match(offerSource, /filled_at: filledByHrId \? new Date\(\)\.toISOString\(\) : null/, "fill payload must set filled_at");
+  assert.match(closerSource, /filled_by_hr_id: filledByHrId/, "fill payload must set filled_by_hr_id");
+  assert.match(closerSource, /status: "filled"/, "fill payload must set status=filled");
+  assert.match(closerSource, /filled_at: filledByHrId \? new Date\(\)\.toISOString\(\) : null/, "fill payload must set filled_at");
   assert.match(
-    offerSource,
+    closerSource,
     /replacement_for_hr_id: null,/,
     "fill payload must clear replacement_for_hr_id",
   );
-
-  // -- Wiring: offer approval is now handled atomically in SQL and must use department-safe vacancy matching.
-  const hardeningMigration = readFileSync(
-    new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260531235753_offer_lifecycle_10_10_hardening.sql", import.meta.url),
-    "utf8",
-  );
-  assert.match(hardeningMigration, /pv\.department_id = v_offer\.department_id/, "offer approval must match vacancy department");
-  assert.match(hardeningMigration, /Ambiguous vacancy match/, "legacy ambiguous vacancy matches must be rejected");
 
   const directorySource = readFileSync(
     new URL("../src/lib/employees/employee-directory.ts", import.meta.url),

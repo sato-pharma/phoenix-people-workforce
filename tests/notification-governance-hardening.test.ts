@@ -21,7 +21,6 @@ export function runNotificationGovernanceHardeningTests() {
   const outstationSource = source("src/lib/outstation/service.ts");
   const vacationSource = source("src/lib/vacation/service.ts");
   const accessRegistrySource = source("src/lib/security/access-registry.ts");
-  const offersSource = source("src/lib/offers/service.ts");
   const internalMessagesSource = source("src/lib/internal-messages/service.ts");
   const payrollExpensesSource = source("src/lib/outstation/expenses.ts");
 
@@ -72,21 +71,6 @@ export function runNotificationGovernanceHardeningTests() {
     "telegram retry-exhaustion fallback must log its swallowed failure",
   );
   assertContains(
-    offersSource,
-    /logNotificationSendFailure\("offers\.recordCandidateDecision\.accepted",\s*error\)/,
-    "offer candidate-accepted HR notification must log its swallowed failure",
-  );
-  assertContains(
-    offersSource,
-    /logNotificationSendFailure\("offers\.recordCandidateDecision\.rejected",\s*error\)/,
-    "offer candidate-rejected HR notification must log its swallowed failure",
-  );
-  assertContains(
-    offersSource,
-    /logNotificationSendFailure\("offers\.approveAcceptedOffer\.hireApproved",\s*error\)/,
-    "hire-approved notification must log its swallowed failure",
-  );
-  assertContains(
     internalMessagesSource,
     /logNotificationSendFailure\("internalMessages\.sendInternalMessage",\s*error\)/,
     "internal-message-sent notification must log its swallowed failure",
@@ -96,7 +80,6 @@ export function runNotificationGovernanceHardeningTests() {
     /logNotificationSendFailure\("payroll\.notifyExpensesAddedToPayroll",\s*error\)/,
     "added-to-payroll notification dispatch must log via the shared helper",
   );
-  assertNotContains(offersSource, /\.catch\(\(\) => undefined\)/, "offers notification sends must not swallow errors without logging");
   assertNotContains(internalMessagesSource, /\.catch\(\(\) => undefined\)/, "internal message notification send must not swallow errors without logging");
 
   assertContains(
@@ -372,11 +355,6 @@ export function runNotificationGovernanceHardeningTests() {
     accessRegistrySource,
     /pattern:\s*"\/api\/marketing-requests\/\*\*"[\s\S]*guard:\s*"domain-helper"/,
     "marketing action URLs must remain behind domain helper access control",
-  );
-  assertContains(
-    accessRegistrySource,
-    /pattern:\s*"\/api\/offers\/\*\*"[\s\S]*permission:\s*\{\s*resource:\s*"offers"/,
-    "offer lifecycle URLs must remain behind offer permissions",
   );
   assertContains(
     accessRegistrySource,

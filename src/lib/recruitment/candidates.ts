@@ -7,12 +7,17 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
+import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
   findMatchingCandidate,
+  normalizeEmail,
+  normalizeNationalId,
+  normalizePhone,
   type MatchableCandidate,
 } from "@/lib/recruitment/candidate-matching";
 import {
+  boolOrNull,
   mapApplication,
   mapApplicationEvent,
   mapCandidate,
@@ -35,6 +40,7 @@ import type {
   CreateCandidateInput,
   Interview,
   RecruitmentFile,
+  UpdateCandidateInput,
 } from "@/lib/recruitment/types";
 
 export type CandidateUpsertResult = {
@@ -53,6 +59,7 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     email_norm: keys.emailNorm,
     phone: textOrNull(input.phone),
     phone_norm: keys.phoneNorm,
+    address: textOrNull(input.address),
     governorate: textOrNull(input.governorate),
     current_employer: textOrNull(input.currentEmployer),
     years_experience: numberOrNull(input.yearsExperience),
@@ -62,14 +69,39 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     cv_reference_name: textOrNull(input.cvReferenceName),
     cv_external_url: textOrNull(input.cvExternalUrl),
     notes: textOrNull(input.notes),
+    faculty: textOrNull(input.faculty),
+    university: textOrNull(input.university),
+    has_prior_work_experience: boolOrNull(input.hasPriorWorkExperience),
+    has_medical_rep_experience: boolOrNull(input.hasMedicalRepExperience),
+    medical_rep_employer: textOrNull(input.medicalRepEmployer),
+    medical_rep_experience_from: textOrNull(input.medicalRepExperienceFrom),
+    medical_rep_experience_to: textOrNull(input.medicalRepExperienceTo),
+    position_specific_fields: input.positionSpecificFields ?? {},
     created_by: access.hrId ?? access.loginId ?? null,
   };
+}
+
+// Merges a position's "jsonb"-storage field values into whatever's already stored on the
+// candidate, leaving other keys untouched. Unexercised today — Medical Rep's fields are all
+// storage:"column" — this is the write path a future position's schema (cv-field-schemas.ts)
+// would use instead.
+export function applyPositionSpecificFields(
+  schema: CvPositionSchema,
+  existing: Record<string, unknown>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...existing };
+  for (const field of schema.fields) {
+    if (field.storage !== "jsonb") continue;
+    if (field.key in values) merged[field.key] = values[field.key];
+  }
+  return merged;
 }
 
 async function loadMatchKeys(): Promise<MatchableCandidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("id,national_id_norm,email_norm,phone_norm");
   if (error) throw error;
   return ((data ?? []) as CandidateDbRow[]).map((row) => ({
@@ -83,7 +115,7 @@ async function loadMatchKeys(): Promise<MatchableCandidate[]> {
 export async function listCandidates(): Promise<Candidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -93,7 +125,7 @@ export async function listCandidates(): Promise<Candidate[]> {
 export async function getCandidate(id: string): Promise<Candidate | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .select("*")
     .eq("id", id)
     .maybeSingle();
@@ -115,7 +147,7 @@ export type CandidateSearchFilters = { q?: string | null; status?: string | null
 
 export async function searchCandidates(filters: CandidateSearchFilters = {}): Promise<Candidate[]> {
   const supabase = recruitmentDb();
-  let query = supabase.from("recruitment_candidates").select("*").order("created_at", { ascending: false });
+  let query = supabase.from("ats_candidates").select("*").order("created_at", { ascending: false });
   const status = textOrNull(filters.status);
   const source = textOrNull(filters.source);
   if (status) query = query.eq("status", status);
@@ -139,12 +171,85 @@ export async function updateCandidateStatus(id: string, status: string): Promise
   if (!existing) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .update({ status: clean, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select("*")
     .single();
   if (error) throw error;
+  return mapCandidate(data as CandidateDbRow);
+}
+
+// Partial edit of a candidate's own fields (not status — see updateCandidateStatus).
+// An omitted key leaves that column untouched; an explicit `null` clears it. The
+// identity-match columns (national_id_norm/email_norm/phone_norm) are only recomputed
+// for whichever of nationalId/email/phone is actually present in this call, so editing
+// one identity field never wipes the norm of an untouched one.
+function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.fullName !== undefined) payload.full_name = String(input.fullName ?? "").trim();
+  if (input.nationalId !== undefined) {
+    payload.national_id = textOrNull(input.nationalId);
+    payload.national_id_norm = normalizeNationalId(input.nationalId);
+  }
+  if (input.email !== undefined) {
+    payload.email = textOrNull(input.email);
+    payload.email_norm = normalizeEmail(input.email);
+  }
+  if (input.phone !== undefined) {
+    payload.phone = textOrNull(input.phone);
+    payload.phone_norm = normalizePhone(input.phone);
+  }
+  if (input.address !== undefined) payload.address = textOrNull(input.address);
+  if (input.governorate !== undefined) payload.governorate = textOrNull(input.governorate);
+  if (input.currentEmployer !== undefined) payload.current_employer = textOrNull(input.currentEmployer);
+  if (input.yearsExperience !== undefined) payload.years_experience = numberOrNull(input.yearsExperience);
+  if (input.expectedSalary !== undefined) payload.expected_salary = numberOrNull(input.expectedSalary);
+  if (input.noticePeriod !== undefined) payload.notice_period = textOrNull(input.noticePeriod);
+  if (input.source !== undefined) payload.source = textOrNull(input.source);
+  if (input.cvReferenceName !== undefined) payload.cv_reference_name = textOrNull(input.cvReferenceName);
+  if (input.cvExternalUrl !== undefined) payload.cv_external_url = textOrNull(input.cvExternalUrl);
+  if (input.notes !== undefined) payload.notes = textOrNull(input.notes);
+  if (input.faculty !== undefined) payload.faculty = textOrNull(input.faculty);
+  if (input.university !== undefined) payload.university = textOrNull(input.university);
+  if (input.hasPriorWorkExperience !== undefined) {
+    payload.has_prior_work_experience = boolOrNull(input.hasPriorWorkExperience);
+  }
+  if (input.hasMedicalRepExperience !== undefined) {
+    payload.has_medical_rep_experience = boolOrNull(input.hasMedicalRepExperience);
+  }
+  if (input.medicalRepEmployer !== undefined) payload.medical_rep_employer = textOrNull(input.medicalRepEmployer);
+  if (input.medicalRepExperienceFrom !== undefined) {
+    payload.medical_rep_experience_from = textOrNull(input.medicalRepExperienceFrom);
+  }
+  if (input.medicalRepExperienceTo !== undefined) {
+    payload.medical_rep_experience_to = textOrNull(input.medicalRepExperienceTo);
+  }
+  if (input.positionSpecificFields !== undefined) {
+    payload.position_specific_fields = input.positionSpecificFields ?? {};
+  }
+  return payload;
+}
+
+export async function updateCandidate(id: string, input: UpdateCandidateInput): Promise<Candidate> {
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+  if (input.fullName !== undefined && !String(input.fullName ?? "").trim()) {
+    throw new Error("Candidate full name is required.");
+  }
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .update(updateCandidatePayload(input))
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error("Another candidate already has that National ID, email, or phone.");
+    }
+    throw error;
+  }
   return mapCandidate(data as CandidateDbRow);
 }
 
@@ -163,8 +268,8 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   const supabase = recruitmentDb();
 
   const [{ data: appRows, error: appError }, { data: fileRows, error: fileError }] = await Promise.all([
-    supabase.from("recruitment_applications").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
-    supabase.from("recruitment_files").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    supabase.from("ats_applications").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    supabase.from("ats_files").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
   ]);
   if (appError) throw appError;
   if (fileError) throw fileError;
@@ -177,7 +282,7 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   const jobTitleById = new Map<string, string>();
   if (reqIds.length > 0) {
     const { data: reqRows, error: reqError } = await supabase
-      .from("recruitment_requisitions")
+      .from("ats_requisitions")
       .select("id,job_title")
       .in("id", reqIds);
     if (reqError) throw reqError;
@@ -190,8 +295,8 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   let events: ApplicationEvent[] = [];
   if (appIds.length > 0) {
     const [{ data: intRows, error: intError }, { data: evtRows, error: evtError }] = await Promise.all([
-      supabase.from("recruitment_interviews").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
-      supabase.from("recruitment_application_events").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+      supabase.from("ats_interviews").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
+      supabase.from("ats_application_events").select("*").in("application_id", appIds).order("created_at", { ascending: false }),
     ]);
     if (intError) throw intError;
     if (evtError) throw evtError;
@@ -229,7 +334,7 @@ export async function deleteCandidate(access: AccessContext, id: string): Promis
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
-  const { error } = await supabase.from("recruitment_candidates").delete().eq("id", id);
+  const { error } = await supabase.from("ats_candidates").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -253,7 +358,7 @@ async function matchOrInsertCandidate(
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from("recruitment_candidates")
+    .from("ats_candidates")
     .insert(candidatePayload(input, access))
     .select("*")
     .single();
@@ -341,7 +446,7 @@ export async function importCandidatesWorkbook(
   const summary: CandidateImportSummary = { total: 0, created: 0, matched: 0, failed: 0, errors: [] };
 
   // Load the dedup key list ONCE for the whole batch (was previously reloaded — a full
-  // recruitment_candidates scan — inside createCandidate on every single row). Mutated in place
+  // ats_candidates scan — inside createCandidate on every single row). Mutated in place
   // by matchOrInsertCandidate as rows are created, so a later row in this same file can still
   // match an earlier row in the same file.
   const existingKeys = await loadMatchKeys();

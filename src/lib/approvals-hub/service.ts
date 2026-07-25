@@ -345,22 +345,36 @@ export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ c
 // fetchVacationStepsDirect), scoped only to the ids already in this responder's own history.
 export type ResponderHistoryItem = HistoricalApprovalItem & { subtype: string | null };
 
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. A long-tenured approver's own history can reach several hundred ids, so
+// these id-lookup helpers batch instead of passing the whole array in one .in() call.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 async function fetchVacationTypesForIds(ids: string[]): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  const { data } = await getSupabaseAdmin().from("v2_vacation_requests").select("id,vacation_type").in("id", ids);
   const map = new Map<string, string>();
-  for (const row of (data as Array<{ id: string; vacation_type: string }> | null) ?? []) {
-    map.set(row.id, vacationTypeLabel(row.vacation_type as VacationRequestRecord["vacationType"]));
+  if (ids.length === 0) return map;
+  for (const batch of chunk(ids)) {
+    const { data } = await getSupabaseAdmin().from("v2_vacation_requests").select("id,vacation_type").in("id", batch);
+    for (const row of (data as Array<{ id: string; vacation_type: string }> | null) ?? []) {
+      map.set(row.id, vacationTypeLabel(row.vacation_type as VacationRequestRecord["vacationType"]));
+    }
   }
   return map;
 }
 
 async function fetchExcuseTypesForIds(ids: string[]): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  const { data } = await getSupabaseAdmin().from("v2_excuse_requests").select("id,excuse_type").in("id", ids);
   const map = new Map<string, string>();
-  for (const row of (data as Array<{ id: string; excuse_type: string }> | null) ?? []) {
-    map.set(row.id, row.excuse_type === "morning" ? "Morning" : "Afternoon");
+  if (ids.length === 0) return map;
+  for (const batch of chunk(ids)) {
+    const { data } = await getSupabaseAdmin().from("v2_excuse_requests").select("id,excuse_type").in("id", batch);
+    for (const row of (data as Array<{ id: string; excuse_type: string }> | null) ?? []) {
+      map.set(row.id, row.excuse_type === "morning" ? "Morning" : "Afternoon");
+    }
   }
   return map;
 }
@@ -1287,11 +1301,13 @@ export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ cou
 // ── Plan history + My Requests (filtered from the shared cross-module sources) ─
 
 async function fetchPlanKindsForIds(ids: string[]): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  const { data } = await getSupabaseAdmin().from("employee_plan_headers").select("id,plan_kind").in("id", ids);
   const map = new Map<string, string>();
-  for (const row of (data as Array<{ id: string; plan_kind: string }> | null) ?? []) {
-    map.set(row.id, row.plan_kind === "monthly" ? "Monthly" : "Weekly");
+  if (ids.length === 0) return map;
+  for (const batch of chunk(ids)) {
+    const { data } = await getSupabaseAdmin().from("employee_plan_headers").select("id,plan_kind").in("id", batch);
+    for (const row of (data as Array<{ id: string; plan_kind: string }> | null) ?? []) {
+      map.set(row.id, row.plan_kind === "monthly" ? "Monthly" : "Weekly");
+    }
   }
   return map;
 }

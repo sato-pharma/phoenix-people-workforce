@@ -114,6 +114,16 @@ const vacationRetentionPoliciesTable = "v2_vacation_retention_policies";
 const vacationRetentionPurgeRunsTable = "v2_vacation_retention_purge_runs";
 export const vacationAttachmentBucket = "leave-attachments";
 const vacationAuditExportMaxRows = 5000;
+
+// PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
+// can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
+// HeadersOverflowError. getVacationReportData pages through the ENTIRE matching request set with
+// no upper bound, so any .in() keyed off its row ids must be chunked.
+function chunk<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 const sickAttachmentMaxUploadBytes = 20 * 1024 * 1024;
 const sickAttachmentAllowedContentTypes = new Set([
   "application/pdf",
@@ -1266,18 +1276,20 @@ async function fetchEvidenceReviewsForRequests(requestIds: string[]) {
   if (uniqueIds.length === 0) return byRequestId;
 
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from(vacationEvidenceReviewsTable)
-      .select("*")
-      .in("request_id", uniqueIds);
+    for (const batch of chunk(uniqueIds)) {
+      const { data, error } = await getSupabaseAdmin()
+        .from(vacationEvidenceReviewsTable)
+        .select("*")
+        .in("request_id", batch);
 
-    if (error) throwVacationDatabaseError(error);
+      if (error) throwVacationDatabaseError(error);
 
-    for (const row of (data ?? []) as VacationEvidenceReviewDbRow[]) {
-      const review = mapEvidenceReview(row);
-      const current = byRequestId.get(review.requestId) ?? [];
-      current.push(review);
-      byRequestId.set(review.requestId, current);
+      for (const row of (data ?? []) as VacationEvidenceReviewDbRow[]) {
+        const review = mapEvidenceReview(row);
+        const current = byRequestId.get(review.requestId) ?? [];
+        current.push(review);
+        byRequestId.set(review.requestId, current);
+      }
     }
   } catch (error) {
     if (!isVacationSchemaMissingError(error)) throw error;
@@ -1397,18 +1409,20 @@ async function fetchVacationEventsForRequests(requestIds: string[]) {
   const byRequestId = new Map<string, VacationTimelineEvent[]>();
   if (uniqueIds.length === 0) return byRequestId;
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationEventsTable)
-    .select("*")
-    .in("request_id", uniqueIds)
-    .order("created_at", { ascending: true });
-  if (error) throwVacationDatabaseError(error);
+  for (const batch of chunk(uniqueIds)) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationEventsTable)
+      .select("*")
+      .in("request_id", batch)
+      .order("created_at", { ascending: true });
+    if (error) throwVacationDatabaseError(error);
 
-  for (const row of (data ?? []) as VacationEventDbRow[]) {
-    const requestId = text(row.request_id);
-    const current = byRequestId.get(requestId) ?? [];
-    current.push(mapVacationEvent(row));
-    byRequestId.set(requestId, current);
+    for (const row of (data ?? []) as VacationEventDbRow[]) {
+      const requestId = text(row.request_id);
+      const current = byRequestId.get(requestId) ?? [];
+      current.push(mapVacationEvent(row));
+      byRequestId.set(requestId, current);
+    }
   }
   return byRequestId;
 }
@@ -1597,20 +1611,22 @@ async function fetchVacationApprovalStepsForRequest(requestId: string) {
 }
 
 async function fetchVacationApprovalStepsForRequests(requestIds: string[]) {
-  if (requestIds.length === 0) return new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationApprovalStepsTable)
-    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
-    .in("request_id", requestIds);
-  if (error) {
-    if (isVacationSchemaMissingError(error)) return new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
-    throwVacationDatabaseError(error);
-  }
   const byRequestId = new Map<string, Awaited<ReturnType<typeof fetchVacationApprovalStepsForRequest>>>();
-  for (const row of ((data ?? []) as VacationApprovalStepRow[]).map(mapVacationApprovalStep)) {
-    const current = byRequestId.get(row.requestId) ?? [];
-    current.push(row);
-    byRequestId.set(row.requestId, current);
+  if (requestIds.length === 0) return byRequestId;
+  for (const batch of chunk(requestIds)) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationApprovalStepsTable)
+      .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at")
+      .in("request_id", batch);
+    if (error) {
+      if (isVacationSchemaMissingError(error)) return byRequestId;
+      throwVacationDatabaseError(error);
+    }
+    for (const row of ((data ?? []) as VacationApprovalStepRow[]).map(mapVacationApprovalStep)) {
+      const current = byRequestId.get(row.requestId) ?? [];
+      current.push(row);
+      byRequestId.set(row.requestId, current);
+    }
   }
   return byRequestId;
 }

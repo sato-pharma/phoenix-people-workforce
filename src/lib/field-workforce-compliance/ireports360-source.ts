@@ -21,7 +21,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { scanVisitsForRange } from "@/lib/crm/reads";
+import { collapseDuplicateDoubleVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
@@ -664,6 +664,7 @@ export function visitFromMirrorRow(row: VisitsMirrorRow): FieldWorkforceMatrixVi
     comment: row.comment ?? null,
     contactID: row.contact_crm_id ?? null,
     contactName: row.contact_name ?? null,
+    contactGrade: null,
     customerName: null,
     doubleHrId: row.double_hr_id ?? null,
     doubleID: row.double_crm_id,
@@ -704,13 +705,18 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
   // cap WITHOUT an ORDER BY so the covering index ireports360_visits_visit_date_covering_idx can
   // serve each page as an index-only scan — keeping a full month (~90k rows) well within the 8s
   // statement timeout. Resigned/excluded agents are removed inside the read layer (single source).
-  return scanVisitsForRange<VisitsMirrorRow>({
+  const rows = await scanVisitsForRange<VisitsMirrorRow>({
     dateFrom: startDate,
     dateTo: endDate,
     columns:
       "agent_crm_id, agent_hr_id, agent_name, ampm, comment, contact_crm_id, contact_name, crm_save_date, " +
       "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
   });
+  // scanVisitsForRange (unlike crm/reads' getDoubleVisitRows) returns EVERY visit, single and
+  // double alike, so the collapse is applied here rather than inside the shared scanner — it must
+  // only ever touch the double-visit rows (see collapseDuplicateDoubleVisitSubmissions), and a
+  // rep's genuine single-agent visit count must never be affected by it.
+  return collapseDuplicateDoubleVisitSubmissions(rows);
 }
 
 function validateMonthYear(month: number, year: number): void {
