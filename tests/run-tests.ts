@@ -394,6 +394,7 @@ import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guar
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runActivityManagerViewAccessTests } from "./activity-manager-view-access.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
+import { runHiringDocumentsAccessTests } from "./hiring-documents-access.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
@@ -852,6 +853,7 @@ await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests)
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
+await runTest("hiring documents access (Talent Acquisition company-wide bypass)", runHiringDocumentsAccessTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
 await runTest("sos BI workbook export", runSosBiWorkbookTests);

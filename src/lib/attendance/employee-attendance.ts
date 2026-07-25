@@ -140,6 +140,11 @@ export type AttendanceReportTarget = {
  *
  *  - self — always.
  *  - whole-company viewers (Super Admin, CEO, or company/system scope) — anyone.
+ *  - SFE Manager / Training Manager — also whole-company: these are functional,
+ *    cross-line oversight roles with real attendance permissions (SFE Manager: full
+ *    CRUD; Training Manager: read) but no traditional direct-report chain to fall
+ *    back on, same gap class as the Head Office line-vs-reporting-edge issue fixed
+ *    elsewhere for these roles (see [[company-org-structure-head-office]]).
  *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
  *
  * Pure + exact-match; the security boundary for the manager view. Guests / no-scope
@@ -156,12 +161,15 @@ export function canViewEmployeeAttendanceReport(
 
   if (hrIdsMatch(caller, targetHrId)) return true; // self
 
-  // Whole-company visibility (CEO / Super Admin / company-or-system scope).
+  // Whole-company visibility (CEO / Super Admin / company-or-system scope, plus the
+  // functional head-office oversight roles that hold real attendance permissions).
   if (
     context.scope === "system" ||
     context.scope === "company" ||
     context.role === "Super Admin" ||
-    context.role === "CEO"
+    context.role === "CEO" ||
+    context.role === "SFE Manager" ||
+    context.role === "Training Manager"
   ) {
     return true;
   }
@@ -261,7 +269,9 @@ export async function resolveAttendanceScopeHrIds(context: AccessContext): Promi
     context.scope === "system" ||
     context.scope === "company" ||
     context.role === "Super Admin" ||
-    context.role === "CEO"
+    context.role === "CEO" ||
+    context.role === "SFE Manager" ||
+    context.role === "Training Manager"
   ) {
     return null;
   }

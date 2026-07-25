@@ -116,4 +116,43 @@ export async function runExpenseAccessScopeTests() {
     /PORTAL_HIERARCHY_EXPENSE_ROLES\.has\(accessContext\.role\)\s*\?\s*"HIERARCHY"/,
     "portal-hierarchy roles must resolve to the HIERARCHY (self + descendants) scope",
   );
+  assert.match(src, /export const PORTAL_HIERARCHY_EXPENSE_ROLES/, "the role set must be exported for reuse by expense-command.ts");
+
+  // --- Head Office audit regression guard (2026-07-25): the Expense Command dashboard
+  //     (a SEPARATE surface from the one above) must recognize the SAME hierarchy roles,
+  //     not just resolveScope's binary company/self — otherwise a Training Manager /
+  //     Marketing Manager / NSM / PM / GPM collapses to seeing only their own single row
+  //     (dropping their team's rows and pins entirely, not merely misclassifying them). ---
+  const expenseCommandSrc = readFileSync("src/lib/outstation/expense-command.ts", "utf8");
+  assert.match(
+    expenseCommandSrc,
+    /import \{ listUnifiedOutstationExpenses, PORTAL_HIERARCHY_EXPENSE_ROLES \} from "@\/lib\/outstation\/expenses"/,
+    "expense-command.ts must import the shared PORTAL_HIERARCHY_EXPENSE_ROLES set",
+  );
+  assert.match(
+    expenseCommandSrc,
+    /const hasWideVisibility = isAdmin \|\| PORTAL_HIERARCHY_EXPENSE_ROLES\.has\(access\.role\)/,
+    "hasWideVisibility must recognize hierarchy roles in addition to isAdmin",
+  );
+  const wideVisibilityGates = expenseCommandSrc.match(/hasWideVisibility\s*\?/g) ?? [];
+  assert.equal(
+    wideVisibilityGates.length,
+    3,
+    "hasWideVisibility must gate all 3 collapse points: scopedRequests, visibleEnriched, exposedRows",
+  );
+  assert.doesNotMatch(
+    expenseCommandSrc,
+    /const scopedRequests = isAdmin/,
+    "scopedRequests must no longer be gated by the narrower isAdmin alone",
+  );
+  assert.doesNotMatch(
+    expenseCommandSrc,
+    /const visibleEnriched = isAdmin/,
+    "visibleEnriched must no longer be gated by the narrower isAdmin alone",
+  );
+  assert.doesNotMatch(
+    expenseCommandSrc,
+    /const exposedRows: ExpenseCommandRow\[\] = isAdmin/,
+    "exposedRows must no longer be gated by the narrower isAdmin alone",
+  );
 }
