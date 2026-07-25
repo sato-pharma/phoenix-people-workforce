@@ -57,7 +57,12 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(canSeeEmployee(medicalRep, { hrId: "MR-2", managerHrId: "MR-1" }), false);
   assert.equal(canSeeEmployee(districtManager, { hrId: "MR-2", managerHrId: "DSM-1" }), true);
   assert.equal(talentAcquisition.scope, "self");
-  assert.equal(resolveNavigationMode(talentAcquisition), "admin");
+  // Owner-requested 2026-07-24: Talent Acquisition moved from the admin shell to the
+  // employee portal (portalNavigationRoles in permissions.ts). Scope stays "self" —
+  // her broader company-wide visibility is granted via targeted per-feature carve-outs
+  // (canSeeEmployee, canAccessCompanyOrganogram, canAccessCompanyVacancies, etc.), not a
+  // scope change, so payroll/sales access must stay exactly as narrow as before.
+  assert.equal(resolveNavigationMode(talentAcquisition), "employee-portal");
   assert.equal(await canAccess(talentAcquisition, "employee_profile", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "employee_profile", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "recruitment", "create"), true);
@@ -67,7 +72,10 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(talentAcquisition, "support_requests", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "export"), true);
-  assert.equal(await canAccess(talentAcquisition, "employees", "read"), false);
+  // Owner-requested 2026-07-24: full manage rights on the employee directory, matching
+  // Super Admin's action set — the hard boundary in hardBoundaryAllowedActions was
+  // relaxed to include Talent Acquisition specifically for this resource only.
+  assert.equal(await canAccess(talentAcquisition, "employees", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "admin", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "admin_access", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "permission_admin", "read"), false);

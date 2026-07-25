@@ -600,6 +600,7 @@ const employeePortalNavigationSectionSeeds = [
     items: [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
       { href: "/employee-portals/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile" }] },
+      { href: "/employee-portals/private-calendar", icon: CalendarDays, label: "Private Calendar", permissions: [{ resource: "employee_profile" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
@@ -656,6 +657,20 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests", action: "read" }], roles: ["Talent Acquisition"] },
     ],
     label: "Recruitment & Hiring",
+  },
+  // ── People Management: Talent Acquisition's company-wide HR tooling, separate
+  // from the Recruitment & Hiring pipeline tools above (app/employee-portals/
+  // {employees,contracts,resignations}/page.tsx). Vacancies Report reuses the
+  // href already catalogued above (line ~605) for the field-management roles.
+  {
+    id: "people-management",
+    items: [
+      { href: "/employee-portals/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/account-activation", icon: UserCog, label: "Account Activation", permissions: [{ resource: "account_activation", action: "read" }], roles: ["Talent Acquisition"] },
+    ],
+    label: "People Management",
   },
   {
     id: "sales-operations",
