@@ -15,11 +15,18 @@ import type {
   CoachingQuarterlySummaryRow,
   CoachingReportSummaryRow,
   CoachingScoreItemAverageScore,
+  CoachingTrainingManagerAreaComparisonRow,
   CoachingTrainingManagerComparison,
   CoachingTrainingManagerComparisonRow,
 } from "@/lib/coaching/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 
 type FilterOption = {
@@ -188,6 +195,26 @@ function zoneBand(zone: string | null | undefined): ScoreBand {
   if (zone === "green_zone") return { className: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "Meets" };
   if (zone === "excellence_zone") return { className: "border-amber-200 bg-amber-50 text-amber-800", label: "Exceeds" };
   return { className: "border-slate-200 bg-slate-50 text-slate-600", label: "Not scored" };
+}
+
+type PortalCardAccent = "amber" | "emerald" | "orange" | "rose" | "sky" | "slate";
+
+/** Reuse an already-computed score/zone band's label to pick the shared portal card's
+ * left-border accent colour, so every mobile card below stays tied to this file's own
+ * red/orange/emerald/amber scoring palette instead of a separate ad hoc colour scheme. */
+function bandAccent(band: ScoreBand): PortalCardAccent {
+  switch (band.label) {
+    case "Below":
+      return "rose";
+    case "Needs Work":
+      return "orange";
+    case "Meets":
+      return "emerald";
+    case "Exceeds":
+      return "amber";
+    default:
+      return "slate";
+  }
 }
 
 function completedReports(data: CoachingAnalyticsPayload) {
@@ -428,6 +455,16 @@ function TableToolbar({ children }: { children: ReactNode }) {
   );
 }
 
+/** Shared empty-state block for the responsive table/card pairs below — one node
+ * replaces both the mobile card list and the desktop table together when empty. */
+function TableEmptyNotice({ children }: { children: ReactNode }) {
+  return (
+    <div className="border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-3 py-7 text-center text-sm font-semibold text-[#64748B]">
+      {children}
+    </div>
+  );
+}
+
 // ── data builders ────────────────────────────────────────────────────────────
 
 function buildZoneData(data: CoachingAnalyticsPayload) {
@@ -525,6 +562,127 @@ function buildRepRows(data: CoachingAnalyticsPayload) {
   }).sort((left, right) => right.improvementScore - left.improvementScore);
 }
 
+// ── responsive card renderers (mobile equivalents of the report tables) ──────
+
+function AreaCoverageCard({ row }: { row: CoachingTrainingManagerAreaComparisonRow }) {
+  return (
+    <PortalRecordCard accent="sky" meta={`${formatNumber(row.totalReps)} reps in area`} title={row.areaName || "Not assigned"}>
+      <div className="space-y-3">
+        <CoverageRateBar rate={row.coachedRate} />
+        <PortalRecordFields
+          fields={[
+            { label: "Coached", value: <span className="font-black text-emerald-700">{formatNumber(row.coachedCount)}</span> },
+            { label: "Not Coached", value: <span className="font-black text-orange-700">{formatNumber(row.uncoachedCount)}</span> },
+          ]}
+        />
+      </div>
+    </PortalRecordCard>
+  );
+}
+
+function RepComparisonCard({ row }: { row: CoachingTrainingManagerComparisonRow }) {
+  return (
+    <PortalRecordCard
+      accent={row.status === "coached" ? "emerald" : "orange"}
+      meta={<span className="font-mono text-[11px] font-bold text-slate-400">{row.hrId}</span>}
+      status={
+        <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-[11px] font-black", coverageStatusClassName(row.status))}>
+          {coverageStatusLabel(row.status)}
+        </span>
+      }
+      title={row.medicalRepName}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Hiring Date", value: formatDate(row.hireDate) },
+          { label: "Area", value: row.areaName || "Not assigned" },
+          { label: "Line", value: row.lineName || "Not assigned" },
+          { label: "Team", value: row.teamName || "No team" },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
+type CategoryAverageRow = ReturnType<typeof buildCategoryAverages>[number];
+
+function SkillIndexCard({ row }: { row: CategoryAverageRow }) {
+  const band = scoreBand(row.value);
+  return (
+    <PortalRecordCard accent={bandAccent(band)} meta={`${formatNumber(row.reportCount)} reports`} status={<Band band={band} />} title={row.label}>
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-full bg-[#EEF2F7]">
+          <div className="h-full" style={{ background: scoreZoneColor(row.value), width: `${Math.min(100, row.value)}%` }} />
+        </div>
+        <span className="shrink-0 whitespace-nowrap text-right text-sm font-black tabular-nums text-[#0F172A]">{formatPercent(row.value)}</span>
+      </div>
+    </PortalRecordCard>
+  );
+}
+
+function ParameterDetailCard({ row }: { row: CoachingScoreItemAverageScore }) {
+  const band = scoreBand(row.averagePercent);
+  return (
+    <PortalRecordCard accent={bandAccent(band)} meta={row.parameterLabel} status={<Band band={band} />} title={row.scoreItemLabel}>
+      <PortalRecordFields
+        fields={[
+          { label: "Reports", value: formatNumber(row.reportCount) },
+          { label: "Avg Score", value: formatPercent(row.averagePercent) },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
+type RepRow = ReturnType<typeof buildRepRows>[number];
+
+function RepDetailCard({ coachingReportBase, row }: { coachingReportBase: string; row: RepRow }) {
+  const band = zoneBand(row.latestZone);
+  const trendUp = row.improvementScore > 0;
+  const trendDown = row.improvementScore < 0;
+  return (
+    <PortalRecordCard
+      accent={bandAccent(band)}
+      actions={
+        <Link
+          className="inline-flex w-full items-center justify-center gap-1.5 border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] transition hover:border-[#F97316]/60 hover:text-[#F97316]"
+          href={`${coachingReportBase}/${row.latestReportId}`}
+        >
+          View Latest Report
+        </Link>
+      }
+      meta={<span className="font-mono text-[11px] font-bold text-slate-400">{row.hrId}</span>}
+      status={
+        <span title={zoneLabel(row.latestZone)}>
+          <Band band={band} />
+        </span>
+      }
+      title={row.medicalRep}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Area", value: row.areaName || "Not assigned" },
+          { label: "Line", value: row.lineName || "Not assigned" },
+          { label: "Sessions", value: formatNumber(row.coachingCount) },
+          { label: "Last Coached", value: formatDate(row.lastCoachingDate) },
+          { label: "First Score", value: formatPercent(row.firstScore) },
+          { label: "Avg Score", value: formatPercent(row.averageScore) },
+          { label: "Latest Score", value: formatPercent(row.latestScore) },
+          {
+            label: "Trend",
+            value: (
+              <span className={cn("font-black tabular-nums", trendUp ? "text-emerald-700" : trendDown ? "text-rose-700" : "text-slate-400")}>
+                {trendUp ? "▲ +" : trendDown ? "▼ " : ""}
+                {formatNumber(row.improvementScore, 1)}
+              </span>
+            ),
+          },
+        ]}
+      />
+    </PortalRecordCard>
+  );
+}
+
 async function fetchAnalytics(filters: FilterState) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
@@ -576,36 +734,38 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
             />
           </div>
         </TableToolbar>
-        <div className="max-h-[440px] overflow-auto">
-          <table className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                <th className="px-3 py-2.5">Area</th>
-                <th className="px-2 py-2.5">Total</th>
-                <th className="px-2 py-2.5">Coached</th>
-                <th className="px-2 py-2.5">Not</th>
-                <th className="px-3 py-2.5">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAreaBreakdown.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-7 text-center text-sm font-semibold text-[#64748B]" colSpan={5}>
-                    No area coverage rows match the current filter.
-                  </td>
-                </tr>
-              ) : filteredAreaBreakdown.map((row) => (
-                <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.areaId ?? "none"}-${row.label}`}>
-                  <td className="whitespace-nowrap px-3 py-3 font-black text-[#0F172A]">{row.areaName || "Not assigned"}</td>
-                  <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.totalReps)}</td>
-                  <td className="px-2 py-3 text-center font-black tabular-nums text-emerald-700">{formatNumber(row.coachedCount)}</td>
-                  <td className="px-2 py-3 text-center font-black tabular-nums text-orange-700">{formatNumber(row.uncoachedCount)}</td>
-                  <td className="px-3 py-3"><CoverageRateBar rate={row.coachedRate} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PortalResponsiveDataList
+          empty={<TableEmptyNotice>No area coverage rows match the current filter.</TableEmptyNotice>}
+          getKey={(row) => `${row.areaId ?? "none"}-${row.label}`}
+          items={filteredAreaBreakdown}
+          renderCard={(row) => <AreaCoverageCard row={row} />}
+          renderTable={() => (
+            <div className="max-h-[440px] overflow-auto">
+              <PortalDesktopTable minWidth="100%">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr>
+                    <th className="px-3 py-2.5">Area</th>
+                    <th className="px-2 py-2.5">Total</th>
+                    <th className="px-2 py-2.5">Coached</th>
+                    <th className="px-2 py-2.5">Not</th>
+                    <th className="px-3 py-2.5">Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAreaBreakdown.map((row) => (
+                    <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.areaId ?? "none"}-${row.label}`}>
+                      <td className="whitespace-nowrap px-3 py-3 font-black text-[#0F172A]">{row.areaName || "Not assigned"}</td>
+                      <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.totalReps)}</td>
+                      <td className="px-2 py-3 text-center font-black tabular-nums text-emerald-700">{formatNumber(row.coachedCount)}</td>
+                      <td className="px-2 py-3 text-center font-black tabular-nums text-orange-700">{formatNumber(row.uncoachedCount)}</td>
+                      <td className="px-3 py-3"><CoverageRateBar rate={row.coachedRate} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            </div>
+          )}
+        />
       </ReportSection>
 
       <ReportSection title="Medical Rep Coaching Comparison" hint="coached vs not coached yet">
@@ -646,46 +806,48 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
             />
           </div>
         </TableToolbar>
-        <div className="max-h-[440px] overflow-auto">
-          <table className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                <th className="px-3 py-2.5">Medical Rep</th>
-                <th className="px-2 py-2.5">Status</th>
-                <th className="px-2 py-2.5">Hiring Date</th>
-                <th className="px-2 py-2.5">Area</th>
-                <th className="px-2 py-2.5">Line / Team</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredComparisonRows.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-7 text-center text-sm font-semibold text-[#64748B]" colSpan={5}>
-                    No comparison rows match the current filter.
-                  </td>
-                </tr>
-              ) : filteredComparisonRows.map((row) => (
-                <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.hrId}>
-                  <td className="px-3 py-3">
-                    <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRepName}</p>
-                    <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
-                  </td>
-                  <td className="px-2 py-3 text-center">
-                    <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-[11px] font-black", coverageStatusClassName(row.status))}>
-                      {coverageStatusLabel(row.status)}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{formatDate(row.hireDate)}</td>
-                  <td className="whitespace-nowrap px-2 py-3 font-semibold text-[#0F172A]">{row.areaName || "Not assigned"}</td>
-                  <td className="px-2 py-3">
-                    <p className="whitespace-nowrap font-semibold text-[#0F172A]">{row.lineName || "Not assigned"}</p>
-                    <p className="whitespace-nowrap text-[11px] font-bold text-[#94A3B8]">{row.teamName || "No team"}</p>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PortalResponsiveDataList
+          empty={<TableEmptyNotice>No comparison rows match the current filter.</TableEmptyNotice>}
+          getKey={(row) => row.hrId}
+          items={filteredComparisonRows}
+          renderCard={(row) => <RepComparisonCard row={row} />}
+          renderTable={() => (
+            <div className="max-h-[440px] overflow-auto">
+              <PortalDesktopTable minWidth="100%">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr>
+                    <th className="px-3 py-2.5">Medical Rep</th>
+                    <th className="px-2 py-2.5">Status</th>
+                    <th className="px-2 py-2.5">Hiring Date</th>
+                    <th className="px-2 py-2.5">Area</th>
+                    <th className="px-2 py-2.5">Line / Team</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredComparisonRows.map((row) => (
+                    <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.hrId}>
+                      <td className="px-3 py-3">
+                        <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRepName}</p>
+                        <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                      </td>
+                      <td className="px-2 py-3 text-center">
+                        <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-[11px] font-black", coverageStatusClassName(row.status))}>
+                          {coverageStatusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{formatDate(row.hireDate)}</td>
+                      <td className="whitespace-nowrap px-2 py-3 font-semibold text-[#0F172A]">{row.areaName || "Not assigned"}</td>
+                      <td className="px-2 py-3">
+                        <p className="whitespace-nowrap font-semibold text-[#0F172A]">{row.lineName || "Not assigned"}</p>
+                        <p className="whitespace-nowrap text-[11px] font-bold text-[#94A3B8]">{row.teamName || "No team"}</p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            </div>
+          )}
+        />
       </ReportSection>
     </div>
   );
@@ -864,41 +1026,43 @@ export function CoachingAnalyticsDashboard({
           {/* Skill index + quarterly trend */}
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <ReportSection title="Coaching Skill Index" hint="average score per coaching parameter">
-              <div className="max-h-[420px] overflow-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead className="sticky top-0 z-10">
-                    <tr>
-                      <th className="px-3 py-2.5">Parameter</th>
-                      <th className="px-2 py-2.5">Reports</th>
-                      <th className="px-2 py-2.5">Avg Score</th>
-                      <th className="px-3 py-2.5">Band</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {categoryAverages.length === 0 ? (
-                      <tr>
-                        <td className="px-3 py-7 text-center text-sm font-semibold text-[#64748B]" colSpan={4}>
-                          Parameter averages will appear after scored coaching reports are submitted.
-                        </td>
-                      </tr>
-                    ) : categoryAverages.map((row) => (
-                      <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.label}>
-                        <td className="px-3 py-3 font-black text-[#0F172A]">{row.label}</td>
-                        <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
-                        <td className="px-2 py-3">
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="h-2 w-full min-w-[60px] max-w-[120px] bg-[#EEF2F7]">
-                              <div className="h-full" style={{ background: scoreZoneColor(row.value), width: `${Math.min(100, row.value)}%` }} />
-                            </div>
-                            <span className="w-12 shrink-0 whitespace-nowrap text-right font-black tabular-nums text-[#0F172A]">{formatPercent(row.value)}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-center"><Band band={scoreBand(row.value)} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <PortalResponsiveDataList
+                empty={<TableEmptyNotice>Parameter averages will appear after scored coaching reports are submitted.</TableEmptyNotice>}
+                getKey={(row) => row.label}
+                items={categoryAverages}
+                renderCard={(row) => <SkillIndexCard row={row} />}
+                renderTable={() => (
+                  <div className="max-h-[420px] overflow-auto">
+                    <PortalDesktopTable minWidth="100%">
+                      <thead className="sticky top-0 z-10 bg-white">
+                        <tr>
+                          <th className="px-3 py-2.5">Parameter</th>
+                          <th className="px-2 py-2.5">Reports</th>
+                          <th className="px-2 py-2.5">Avg Score</th>
+                          <th className="px-3 py-2.5">Band</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {categoryAverages.map((row) => (
+                          <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.label}>
+                            <td className="px-3 py-3 font-black text-[#0F172A]">{row.label}</td>
+                            <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
+                            <td className="px-2 py-3">
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="h-2 w-full min-w-[60px] max-w-[120px] bg-[#EEF2F7]">
+                                  <div className="h-full" style={{ background: scoreZoneColor(row.value), width: `${Math.min(100, row.value)}%` }} />
+                                </div>
+                                <span className="w-12 shrink-0 whitespace-nowrap text-right font-black tabular-nums text-[#0F172A]">{formatPercent(row.value)}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-center"><Band band={scoreBand(row.value)} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </PortalDesktopTable>
+                  </div>
+                )}
+              />
             </ReportSection>
 
             <ReportSection title="Average Score by Quarter" hint="completed reports">
@@ -917,92 +1081,100 @@ export function CoachingAnalyticsDashboard({
           {/* Parameter detail (granular) */}
           {scoreItemRows.length > 0 ? (
             <ReportSection title="Parameter Detail" hint="average score per individual parameter">
-              <div className="max-h-[420px] overflow-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead className="sticky top-0 z-10">
-                    <tr>
-                      <th className="px-3 py-2.5">Parameter</th>
-                      <th className="px-3 py-2.5">Category</th>
-                      <th className="px-2 py-2.5">Reports</th>
-                      <th className="px-2 py-2.5">Avg Score</th>
-                      <th className="px-3 py-2.5">Band</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scoreItemRows.map((row) => (
-                      <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.scoreItemKey}>
-                        <td className="px-3 py-3 font-bold text-[#0F172A]">{row.scoreItemLabel}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-[13px] font-semibold text-[#64748B]">{row.parameterLabel}</td>
-                        <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
-                        <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averagePercent)}</td>
-                        <td className="px-3 py-3 text-center"><Band band={scoreBand(row.averagePercent)} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <PortalResponsiveDataList
+                empty={<TableEmptyNotice>Parameter detail will appear after scored coaching reports are submitted.</TableEmptyNotice>}
+                getKey={(row) => row.scoreItemKey}
+                items={scoreItemRows}
+                renderCard={(row) => <ParameterDetailCard row={row} />}
+                renderTable={() => (
+                  <div className="max-h-[420px] overflow-auto">
+                    <PortalDesktopTable minWidth="100%">
+                      <thead className="sticky top-0 z-10 bg-white">
+                        <tr>
+                          <th className="px-3 py-2.5">Parameter</th>
+                          <th className="px-3 py-2.5">Category</th>
+                          <th className="px-2 py-2.5">Reports</th>
+                          <th className="px-2 py-2.5">Avg Score</th>
+                          <th className="px-3 py-2.5">Band</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scoreItemRows.map((row) => (
+                          <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.scoreItemKey}>
+                            <td className="px-3 py-3 font-bold text-[#0F172A]">{row.scoreItemLabel}</td>
+                            <td className="whitespace-nowrap px-3 py-3 text-[13px] font-semibold text-[#64748B]">{row.parameterLabel}</td>
+                            <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
+                            <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averagePercent)}</td>
+                            <td className="px-3 py-3 text-center"><Band band={scoreBand(row.averagePercent)} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </PortalDesktopTable>
+                  </div>
+                )}
+              />
             </ReportSection>
           ) : null}
 
           {/* Per-rep detail */}
           <ReportSection title="Per-Rep Coaching Detail" hint="open a rep to view the latest report">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr>
-                    <th className="px-3 py-2.5">Medical Rep</th>
-                    <th className="px-2 py-2.5">Area</th>
-                    <th className="px-2 py-2.5">Line</th>
-                    <th className="px-2 py-2.5">Sessions</th>
-                    <th className="px-2 py-2.5">First</th>
-                    <th className="px-2 py-2.5">Avg</th>
-                    <th className="px-2 py-2.5">Latest</th>
-                    <th className="px-2 py-2.5">Trend</th>
-                    <th className="px-3 py-2.5">Band</th>
-                    <th className="px-2 py-2.5">Last Coached</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repRows.length === 0 ? (
+            <PortalResponsiveDataList
+              empty={<TableEmptyNotice>No per-rep coaching rows are available for the current filters.</TableEmptyNotice>}
+              getKey={(row) => `${row.hrId}-${row.lastCoachingDate ?? "none"}`}
+              items={repRows}
+              renderCard={(row) => <RepDetailCard coachingReportBase={coachingReportBase} row={row} />}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="100%">
+                  <thead>
                     <tr>
-                      <td className="px-3 py-7 text-center text-sm font-semibold text-[#64748B]" colSpan={10}>
-                        No per-rep coaching rows are available for the current filters.
-                      </td>
+                      <th className="px-3 py-2.5">Medical Rep</th>
+                      <th className="px-2 py-2.5">Area</th>
+                      <th className="px-2 py-2.5">Line</th>
+                      <th className="px-2 py-2.5">Sessions</th>
+                      <th className="px-2 py-2.5">First</th>
+                      <th className="px-2 py-2.5">Avg</th>
+                      <th className="px-2 py-2.5">Latest</th>
+                      <th className="px-2 py-2.5">Trend</th>
+                      <th className="px-3 py-2.5">Band</th>
+                      <th className="px-2 py-2.5">Last Coached</th>
                     </tr>
-                  ) : repRows.map((row) => (
-                    <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.hrId}-${row.lastCoachingDate ?? "none"}`}>
-                      <td className="px-3 py-3">
-                        <Link
-                          className="block outline-none transition hover:text-[#F97316] focus-visible:ring-2 focus-visible:ring-[#F97316]/30"
-                          href={`${coachingReportBase}/${row.latestReportId}`}
-                        >
-                          <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRep}</p>
-                          <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
-                        </Link>
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.areaName || "Not assigned"}</td>
-                      <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.lineName || "Not assigned"}</td>
-                      <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.coachingCount)}</td>
-                      <td className="px-2 py-3 text-center tabular-nums text-[#64748B]">{formatPercent(row.firstScore)}</td>
-                      <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averageScore)}</td>
-                      <td className="px-2 py-3 text-center tabular-nums text-[#0F172A]">{formatPercent(row.latestScore)}</td>
-                      <td className="px-2 py-3 text-center">
-                        <span
-                          className={cn(
-                            "whitespace-nowrap font-black tabular-nums",
-                            row.improvementScore > 0 ? "text-emerald-700" : row.improvementScore < 0 ? "text-rose-700" : "text-slate-400",
-                          )}
-                        >
-                          {row.improvementScore > 0 ? "▲ +" : row.improvementScore < 0 ? "▼ " : ""}{formatNumber(row.improvementScore, 1)}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-center" title={zoneLabel(row.latestZone)}><Band band={zoneBand(row.latestZone)} /></td>
-                      <td className="whitespace-nowrap px-2 py-3 text-center text-[13px] text-[#475569]">{formatDate(row.lastCoachingDate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {repRows.map((row) => (
+                      <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.hrId}-${row.lastCoachingDate ?? "none"}`}>
+                        <td className="px-3 py-3">
+                          <Link
+                            className="block outline-none transition hover:text-[#F97316] focus-visible:ring-2 focus-visible:ring-[#F97316]/30"
+                            href={`${coachingReportBase}/${row.latestReportId}`}
+                          >
+                            <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRep}</p>
+                            <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                          </Link>
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.areaName || "Not assigned"}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.lineName || "Not assigned"}</td>
+                        <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.coachingCount)}</td>
+                        <td className="px-2 py-3 text-center tabular-nums text-[#64748B]">{formatPercent(row.firstScore)}</td>
+                        <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averageScore)}</td>
+                        <td className="px-2 py-3 text-center tabular-nums text-[#0F172A]">{formatPercent(row.latestScore)}</td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={cn(
+                              "whitespace-nowrap font-black tabular-nums",
+                              row.improvementScore > 0 ? "text-emerald-700" : row.improvementScore < 0 ? "text-rose-700" : "text-slate-400",
+                            )}
+                          >
+                            {row.improvementScore > 0 ? "▲ +" : row.improvementScore < 0 ? "▼ " : ""}{formatNumber(row.improvementScore, 1)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center" title={zoneLabel(row.latestZone)}><Band band={zoneBand(row.latestZone)} /></td>
+                        <td className="whitespace-nowrap px-2 py-3 text-center text-[13px] text-[#475569]">{formatDate(row.lastCoachingDate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
           </ReportSection>
         </>
       )}

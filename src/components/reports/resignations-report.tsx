@@ -23,6 +23,13 @@ import {
   AdminTableShell,
   AdminSectionHeader,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalDesktopTable,
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -214,6 +221,363 @@ function getDaysTone(value: number | null) {
   if (value <= 7) return "danger";
   if (value <= 30) return "warning";
   return "neutral";
+}
+
+function daysLeftBadgeVariant(value: number | null): "neutral" | "warning" | "danger" {
+  const tone = getDaysTone(value);
+  return tone === "danger" ? "danger" : tone === "warning" ? "warning" : "neutral";
+}
+
+function resignationCardAccent(
+  status: ResignationStatus,
+): "amber" | "emerald" | "orange" | "rose" | "sky" | "slate" {
+  switch (status) {
+    case "submitted":
+      return "orange";
+    case "approved":
+    case "completed":
+      return "emerald";
+    case "rejected":
+    case "cancelled":
+      return "rose";
+    case "under_review":
+    default:
+      return "slate";
+  }
+}
+
+/** Mobile card for the Terminated Employees list — mirrors that table's five columns. */
+function TerminatedRecordCard({ record }: { record: ResignationRecord }) {
+  return (
+    <PortalRecordCard
+      accent="rose"
+      meta={
+        <>
+          <span className="block font-mono">{record.employeeHrId}</span>
+          <span className="mt-0.5 block">{record.jobTitle ?? "-"}</span>
+        </>
+      }
+      status={statusBadge(record.status)}
+      title={formatEmployeeDisplayName(record.employeeName)}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Line", value: record.lineName ?? "-" },
+          { label: "Effective", value: formatDate(record.effectiveDate) },
+        ]}
+      />
+      <p className="mt-2 rounded border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+        {record.reason ?? "-"}
+      </p>
+      {record.workflowNotes ? (
+        <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{record.workflowNotes}</p>
+      ) : null}
+    </PortalRecordCard>
+  );
+}
+
+/** Mobile card for a payroll-upload resignation candidate row in the Workflow Queue. */
+function PayrollCandidateRecordCard({
+  candidate,
+}: {
+  candidate: PayrollResignationCandidateRecord;
+}) {
+  const candidateSystemId = formatPayrollCandidateSystemId(candidate.id);
+
+  return (
+    <PortalRecordCard
+      accent="slate"
+      className="bg-[#FFF7ED]/40"
+      meta={
+        <>
+          <span className="block font-mono">{candidate.hrId || "No HR ID"}</span>
+          <span className="mt-0.5 block">{candidate.jobTitle ?? "-"}</span>
+        </>
+      }
+      status={<Badge variant="neutral">Payroll candidate</Badge>}
+      title={formatEmployeeDisplayName(candidate.employeeName)}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Line", value: candidate.lineName ?? "-" },
+          { label: "Area", value: candidate.areaName ?? "-" },
+          { label: "Last seen", value: formatDate(candidate.lastSeenAt.slice(0, 10)) },
+          { label: "Last payout", value: formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear) },
+        ]}
+      />
+      <p className="mt-2 rounded border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+        Payroll upload generated a resignation candidate. Hiring: {formatDate(candidate.hireDate)}.
+      </p>
+      <p className="mt-2 text-[11px] font-semibold text-slate-500">
+        System ID {candidateSystemId} · Source {candidate.sourceFileName ?? "-"} · Row {candidate.sourceRow ?? "-"}
+      </p>
+      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+        Updated {formatDate(candidate.updatedAt.slice(0, 10))} · No manual HR ID generation required.
+      </p>
+    </PortalRecordCard>
+  );
+}
+
+/**
+ * Workflow action buttons + inline date-edit panel for a resignation row. Shared between
+ * the desktop Workflow column and the mobile card's actions slot so both surfaces stay in
+ * lockstep with the exact same handlers/markup.
+ */
+function ResignationWorkflowActions({
+  busyAction,
+  editingDates,
+  onCancelDateEdit,
+  onRunAction,
+  onSaveDateEdit,
+  onStartDateEdit,
+  onUpdateEditingDate,
+  record,
+}: {
+  busyAction: string | null;
+  editingDates: { effectiveDate: string; recordId: string; submittedDate: string } | null;
+  onCancelDateEdit: () => void;
+  onRunAction: (
+    record: ResignationRecord,
+    action: ResignationWorkflowAction,
+    options?: { note?: string; rejectedReason?: string },
+  ) => Promise<void>;
+  onSaveDateEdit: (record: ResignationRecord) => Promise<void>;
+  onStartDateEdit: (record: ResignationRecord) => void;
+  onUpdateEditingDate: (key: "effectiveDate" | "submittedDate", value: string) => void;
+  record: ResignationRecord;
+}) {
+  const isBusy = Boolean(busyAction?.startsWith(`${record.id}:`));
+  const isEditingDates = editingDates?.recordId === record.id;
+
+  return (
+    <>
+      {isEditingDates && editingDates ? (
+        <div className="mb-3 min-w-[260px] rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                Submitted
+              </span>
+              <Input
+                className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
+                onChange={(event) => onUpdateEditingDate("submittedDate", event.target.value)}
+                type="date"
+                value={editingDates.submittedDate}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                Effective
+              </span>
+              <Input
+                className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
+                onChange={(event) => onUpdateEditingDate("effectiveDate", event.target.value)}
+                type="date"
+                value={editingDates.effectiveDate}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              className="h-8 gap-1.5 px-3 text-xs"
+              disabled={isBusy}
+              onClick={() => void onSaveDateEdit(record)}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save
+            </Button>
+            <Button
+              className="h-8 px-3 text-xs"
+              disabled={isBusy}
+              onClick={onCancelDateEdit}
+              variant="secondary"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          className="h-9 gap-1.5 px-3 text-xs"
+          disabled={isBusy}
+          onClick={() => onStartDateEdit(record)}
+          variant="secondary"
+        >
+          {isEditingDates ? <CalendarDays className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          Edit Dates
+        </Button>
+        {record.status === "submitted" ? (
+          <Button
+            className="h-9 px-3 text-xs"
+            disabled={isBusy}
+            onClick={() => void onRunAction(record, "mark_review")}
+            variant="secondary"
+          >
+            Review
+          </Button>
+        ) : null}
+        {record.status === "under_review" || record.status === "submitted" ? (
+          <>
+            <Button
+              className="h-9 px-3 text-xs"
+              disabled={isBusy}
+              onClick={() => void onRunAction(record, "approve")}
+            >
+              Approve
+            </Button>
+            <Button
+              className="h-9 px-3 text-xs"
+              disabled={isBusy}
+              onClick={() => {
+                const reason = window.prompt(
+                  "Why is this resignation being rejected?",
+                  record.rejectedReason ?? "",
+                );
+                if (reason === null) return;
+                void onRunAction(record, "reject", { rejectedReason: reason });
+              }}
+              variant="destructive"
+            >
+              Reject
+            </Button>
+          </>
+        ) : null}
+        {record.status === "approved" ? (
+          <>
+            <Button
+              className="h-9 px-3 text-xs"
+              disabled={isBusy}
+              onClick={() => void onRunAction(record, "complete")}
+            >
+              Complete
+            </Button>
+            <Button
+              className="h-9 px-3 text-xs"
+              disabled={isBusy}
+              onClick={() => void onRunAction(record, "reopen")}
+              variant="secondary"
+            >
+              Reopen
+            </Button>
+          </>
+        ) : null}
+        {(record.status === "rejected" || record.status === "cancelled") ? (
+          <Button
+            className="h-9 px-3 text-xs"
+            disabled={isBusy}
+            onClick={() => void onRunAction(record, "reopen")}
+            variant="secondary"
+          >
+            Reopen
+          </Button>
+        ) : null}
+        {record.status !== "completed" && record.status !== "cancelled" ? (
+          <Button
+            className="h-9 px-3 text-xs"
+            disabled={isBusy}
+            onClick={() => void onRunAction(record, "cancel")}
+            variant="secondary"
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/** Mobile card for a resignation workflow row in the Workflow Queue. */
+function ResignationRecordCard({
+  busyAction,
+  editingDates,
+  onCancelDateEdit,
+  onRunAction,
+  onSaveDateEdit,
+  onStartDateEdit,
+  onUpdateEditingDate,
+  record,
+}: {
+  busyAction: string | null;
+  editingDates: { effectiveDate: string; recordId: string; submittedDate: string } | null;
+  onCancelDateEdit: () => void;
+  onRunAction: (
+    record: ResignationRecord,
+    action: ResignationWorkflowAction,
+    options?: { note?: string; rejectedReason?: string },
+  ) => Promise<void>;
+  onSaveDateEdit: (record: ResignationRecord) => Promise<void>;
+  onStartDateEdit: (record: ResignationRecord) => void;
+  onUpdateEditingDate: (key: "effectiveDate" | "submittedDate", value: string) => void;
+  record: ResignationRecord;
+}) {
+  const daysLeft = daysUntil(record.effectiveDate);
+
+  return (
+    <PortalRecordCard
+      accent={resignationCardAccent(record.status)}
+      actions={
+        <ResignationWorkflowActions
+          busyAction={busyAction}
+          editingDates={editingDates}
+          onCancelDateEdit={onCancelDateEdit}
+          onRunAction={onRunAction}
+          onSaveDateEdit={onSaveDateEdit}
+          onStartDateEdit={onStartDateEdit}
+          onUpdateEditingDate={onUpdateEditingDate}
+          record={record}
+        />
+      }
+      meta={
+        <>
+          <span className="block font-mono">{record.employeeHrId}</span>
+          <span className="mt-0.5 block">{record.jobTitle ?? "-"}</span>
+        </>
+      }
+      status={statusBadge(record.status)}
+      title={formatEmployeeDisplayName(record.employeeName)}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Line", value: record.lineName ?? "-" },
+          { label: "Submitted", value: formatDate(record.submittedDate) },
+          { label: "Effective", value: formatDate(record.effectiveDate) },
+          {
+            label: "Days Left",
+            value: (
+              <div className="space-y-1">
+                <Badge variant={daysLeftBadgeVariant(daysLeft)}>
+                  {daysLeft === null ? "-" : `${daysLeft} days`}
+                </Badge>
+                <p className="text-[10px] font-semibold text-slate-400">
+                  {daysLeft === null ? "-" : daysLeft <= 7 ? "Escalation window" : "In progress"}
+                </p>
+              </div>
+            ),
+          },
+        ]}
+      />
+      <p className="mt-2 rounded border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+        {record.reason ?? "-"}
+      </p>
+      {record.rejectedReason ? (
+        <p className="mt-2 rounded border border-rose-100 bg-rose-50 px-2.5 py-2 text-xs font-semibold leading-5 text-rose-700">
+          Rejection: {record.rejectedReason}
+        </p>
+      ) : null}
+      <p className="mt-2 text-[11px] font-semibold text-slate-400">
+        Created by {record.createdBy ?? "-"} · Updated {formatDate(record.updatedAt.slice(0, 10))}
+      </p>
+      {record.workflowNotes ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-bold text-orange-600">View notes</summary>
+          <pre className="mt-2 whitespace-pre-wrap rounded border border-slate-100 bg-slate-50 p-2 text-[11px] text-slate-700">
+            {record.workflowNotes}
+          </pre>
+        </details>
+      ) : null}
+    </PortalRecordCard>
+  );
 }
 
 const emptyForm: CreateResignationInput = {
@@ -707,26 +1071,29 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           description="Employees terminated through probation or other lifecycle paths appear here without creating a separate termination system."
           title="Terminated Employees"
         />
-        <div className="overflow-x-auto bg-white/80">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
-              <tr className="border-b border-[#FED7AA]">
-                <th className={adminTableHeaderClassName}>Employee</th>
-                <th className={adminTableHeaderClassName}>Line</th>
-                <th className={adminTableHeaderClassName}>Effective</th>
-                <th className={adminTableHeaderClassName}>Reason / Reference</th>
-                <th className={adminTableHeaderClassName}>Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
-              {filteredTerminatedRecords.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-10 text-center text-sm text-[#64748B]" colSpan={5}>
-                    No terminated employees match the current filters.
-                  </td>
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No terminated employees match the current filters."
+              title="No terminated employees"
+            />
+          }
+          getKey={(record) => `terminated:${record.id}`}
+          items={filteredTerminatedRecords}
+          renderCard={(record) => <TerminatedRecordCard record={record} />}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="900px">
+              <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
+                <tr className="border-b border-[#FED7AA]">
+                  <th className={adminTableHeaderClassName}>Employee</th>
+                  <th className={adminTableHeaderClassName}>Line</th>
+                  <th className={adminTableHeaderClassName}>Effective</th>
+                  <th className={adminTableHeaderClassName}>Reason / Reference</th>
+                  <th className={adminTableHeaderClassName}>Status</th>
                 </tr>
-              ) : (
-                filteredTerminatedRecords.map((record) => (
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {filteredTerminatedRecords.map((record) => (
                   <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={`terminated:${record.id}`}>
                     <td className="px-3 py-4">
                       <p className="font-medium text-[#0F172A]">{formatEmployeeDisplayName(record.employeeName)}</p>
@@ -741,11 +1108,11 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                     </td>
                     <td className="px-3 py-4">{statusBadge(record.status)}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </Card>
 
       <AdminTableShell title="Create Resignation Workflow" description="Submit a new resignation record and initialize workflow tracking.">
@@ -883,30 +1250,48 @@ export function ResignationsReport({ initialData, initialError }: Props) {
           title="Workflow Queue"
         />
 
-        <div className="overflow-x-auto bg-white/80">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
-              <tr className="border-b border-[#FED7AA]">
-                <th className={adminTableHeaderClassName}>Employee</th>
-                <th className={adminTableHeaderClassName}>Line</th>
-                <th className={adminTableHeaderClassName}>Submitted</th>
-                <th className={adminTableHeaderClassName}>Effective</th>
-                <th className={adminTableHeaderClassName}>Days Left</th>
-                <th className={adminTableHeaderClassName}>Status</th>
-                <th className={adminTableHeaderClassName}>Reason</th>
-                <th className={adminTableHeaderClassName}>Audit</th>
-                <th className={adminTableHeaderClassName}>Workflow</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
-              {filteredWorkflowQueueRows.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-12 text-center text-sm text-[#64748B]" colSpan={9}>
-                    No resignation or payroll candidate rows match the current filters.
-                  </td>
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No resignation or payroll candidate rows match the current filters."
+              title="No workflow rows"
+            />
+          }
+          getKey={(row) => row.key}
+          items={filteredWorkflowQueueRows}
+          renderCard={(row) =>
+            row.kind === "payrollCandidate" ? (
+              <PayrollCandidateRecordCard candidate={row.candidate} />
+            ) : (
+              <ResignationRecordCard
+                busyAction={busyAction}
+                editingDates={editingDates}
+                onCancelDateEdit={() => setEditingDates(null)}
+                onRunAction={runAction}
+                onSaveDateEdit={saveDateEdit}
+                onStartDateEdit={startDateEdit}
+                onUpdateEditingDate={updateEditingDate}
+                record={row.record}
+              />
+            )
+          }
+          renderTable={() => (
+            <PortalDesktopTable minWidth="1280px">
+              <thead className="bg-[#FFF7ED]/80 text-xs uppercase tracking-[0.12em] text-[#64748B] backdrop-blur">
+                <tr className="border-b border-[#FED7AA]">
+                  <th className={adminTableHeaderClassName}>Employee</th>
+                  <th className={adminTableHeaderClassName}>Line</th>
+                  <th className={adminTableHeaderClassName}>Submitted</th>
+                  <th className={adminTableHeaderClassName}>Effective</th>
+                  <th className={adminTableHeaderClassName}>Days Left</th>
+                  <th className={adminTableHeaderClassName}>Status</th>
+                  <th className={adminTableHeaderClassName}>Reason</th>
+                  <th className={adminTableHeaderClassName}>Audit</th>
+                  <th className={adminTableHeaderClassName}>Workflow</th>
                 </tr>
-              ) : (
-                filteredWorkflowQueueRows.map((row) => {
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {filteredWorkflowQueueRows.map((row) => {
                   if (row.kind === "payrollCandidate") {
                     const { candidate } = row;
                     const candidateSystemId = formatPayrollCandidateSystemId(candidate.id);
@@ -959,8 +1344,6 @@ export function ResignationsReport({ initialData, initialError }: Props) {
 
                   const { record } = row;
                   const daysLeft = daysUntil(record.effectiveDate);
-                  const isBusy = busyAction?.startsWith(`${record.id}:`);
-                  const isEditingDates = editingDates?.recordId === record.id;
 
                   return (
                     <tr className="align-top transition-colors hover:bg-[#FFF7ED]/55" key={row.key}>
@@ -1004,146 +1387,24 @@ export function ResignationsReport({ initialData, initialError }: Props) {
                         ) : null}
                       </td>
                       <td className="px-3 py-4">
-                        {isEditingDates ? (
-                          <div className="mb-3 min-w-[260px] rounded-2xl border border-[#FED7AA] bg-[#FFF7ED] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              <label className="block">
-                                <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
-                                  Submitted
-                                </span>
-                                <Input
-                                  className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
-                                  onChange={(event) => updateEditingDate("submittedDate", event.target.value)}
-                                  type="date"
-                                  value={editingDates.submittedDate}
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
-                                  Effective
-                                </span>
-                                <Input
-                                  className="h-9 rounded-xl border-[#FDBA74] bg-white px-2 text-xs"
-                                  onChange={(event) => updateEditingDate("effectiveDate", event.target.value)}
-                                  type="date"
-                                  value={editingDates.effectiveDate}
-                                />
-                              </label>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <Button
-                                className="h-8 gap-1.5 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => void saveDateEdit(record)}
-                              >
-                                <Save className="h-3.5 w-3.5" />
-                                Save
-                              </Button>
-                              <Button
-                                className="h-8 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => setEditingDates(null)}
-                                variant="secondary"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            className="h-9 gap-1.5 px-3 text-xs"
-                            disabled={isBusy}
-                            onClick={() => startDateEdit(record)}
-                            variant="secondary"
-                          >
-                            {isEditingDates ? <CalendarDays className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-                            Edit Dates
-                          </Button>
-                          {record.status === "submitted" ? (
-                            <Button
-                              className="h-9 px-3 text-xs"
-                              disabled={isBusy}
-                              onClick={() => void runAction(record, "mark_review")}
-                              variant="secondary"
-                            >
-                              Review
-                            </Button>
-                          ) : null}
-                          {record.status === "under_review" || record.status === "submitted" ? (
-                            <>
-                              <Button
-                                className="h-9 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => void runAction(record, "approve")}
-                              >
-                                Approve
-                              </Button>
-                              <Button
-                                className="h-9 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => {
-                                  const reason = window.prompt(
-                                    "Why is this resignation being rejected?",
-                                    record.rejectedReason ?? "",
-                                  );
-                                  if (reason === null) return;
-                                  void runAction(record, "reject", { rejectedReason: reason });
-                                }}
-                                variant="destructive"
-                              >
-                                Reject
-                              </Button>
-                            </>
-                          ) : null}
-                          {record.status === "approved" ? (
-                            <>
-                              <Button
-                                className="h-9 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => void runAction(record, "complete")}
-                              >
-                                Complete
-                              </Button>
-                              <Button
-                                className="h-9 px-3 text-xs"
-                                disabled={isBusy}
-                                onClick={() => void runAction(record, "reopen")}
-                                variant="secondary"
-                              >
-                                Reopen
-                              </Button>
-                            </>
-                          ) : null}
-                          {(record.status === "rejected" || record.status === "cancelled") ? (
-                            <Button
-                              className="h-9 px-3 text-xs"
-                              disabled={isBusy}
-                              onClick={() => void runAction(record, "reopen")}
-                              variant="secondary"
-                            >
-                              Reopen
-                            </Button>
-                          ) : null}
-                          {record.status !== "completed" && record.status !== "cancelled" ? (
-                            <Button
-                              className="h-9 px-3 text-xs"
-                              disabled={isBusy}
-                              onClick={() => void runAction(record, "cancel")}
-                              variant="secondary"
-                            >
-                              Cancel
-                            </Button>
-                          ) : null}
-                        </div>
+                        <ResignationWorkflowActions
+                          busyAction={busyAction}
+                          editingDates={editingDates}
+                          onCancelDateEdit={() => setEditingDates(null)}
+                          onRunAction={runAction}
+                          onSaveDateEdit={saveDateEdit}
+                          onStartDateEdit={startDateEdit}
+                          onUpdateEditingDate={updateEditingDate}
+                          record={record}
+                        />
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </Card>
     </ResignationsPageShell>
   );
