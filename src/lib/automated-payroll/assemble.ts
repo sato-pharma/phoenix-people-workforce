@@ -30,6 +30,13 @@ export type AssembledRow = {
   compact: string;
   onHold: boolean;
   overpaidResidual: number;
+  /**
+   * Amount recovered THIS run from a previous run's overpayment (owner rule
+   * 2026-07-25). Already included in the row's deduction totals; surfaced
+   * separately so the sheet and UI can show it as its own line rather than
+   * burying a past month's correction inside "other deductions".
+   */
+  carriedForwardApplied: number;
   lifecycle: RowLifecycle;
   /** For the Part-1 sheet's bank columns — not part of the canonical salary_records payload. */
   bankName: string | null;
@@ -143,6 +150,12 @@ export function assembleRows(input: {
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
   period: PayrollPeriod;
+  /**
+   * Outstanding overpayments from PREVIOUS runs, keyed by compact HR id, to
+   * recover this month (see carry-forward.ts). Omitted for callers that only
+   * need this month's own figures, e.g. the Part-1 freeze pass.
+   */
+  carryForwardByCompact?: Map<string, number>;
 }): AssembledRow[] {
   const drafts = draftByCompact(input.draftRows);
   const results: AssembledRow[] = [];
@@ -186,7 +199,17 @@ export function assembleRows(input: {
     const manualOtherDeductions = num(draft?.manualOtherDeductions);
     // Special Situations amounts always count once in the whole-month total,
     // whichever installment HR routed them to (see specialRoutedToFirst doc).
-    const otherDeductionsTotal = roundCurrency(manualOtherDeductions + otherPart1Total + specialDeduction);
+    // A previous run's overpayment being recovered this month. Counts as a
+    // deduction exactly once, like every other component (see the
+    // deduction-counted-once test), and is clamped so it can never turn into a
+    // negative "addition" if the ledger ever holds a bad value.
+    const carriedForwardApplied = Math.max(
+      0,
+      roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0),
+    );
+    const otherDeductionsTotal = roundCurrency(
+      manualOtherDeductions + otherPart1Total + specialDeduction + carriedForwardApplied,
+    );
     const otherAdditionsTotal = specialAddition;
     const loans = 0;
 
@@ -263,6 +286,7 @@ export function assembleRows(input: {
       compact: member.compact,
       onHold,
       overpaidResidual: parts.overpaidResidual,
+      carriedForwardApplied,
       lifecycle: member.lifecycle,
       bankName: employee.bankName ?? null,
       bankAccount: employee.bankAccount ?? null,

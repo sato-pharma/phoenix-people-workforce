@@ -22,7 +22,7 @@ import {
 import type { AssembledRow } from "../assemble.ts";
 import { monthLabel } from "../notify.ts";
 import type { MonthlySalaryRun, NonEmployeePayrollRow } from "../types.ts";
-import { sortForExport } from "./export-order.ts";
+import { sortForExport, unlistedExportHrIds } from "./export-order.ts";
 
 const HELD_FILL = "FFFEE2E2";
 const HELD_TEXT = "FF991B1B";
@@ -74,6 +74,19 @@ export function bankExtraColumns(): ExtraColumn[] {
   ];
 }
 
+/**
+ * A previous month's overpayment being recovered this run (owner rule
+ * 2026-07-25). Shown as its own column so a past-month correction is legible
+ * to finance instead of silently inflating "other deductions".
+ */
+export function carryForwardExtraColumn(): ExtraColumn {
+  return {
+    label: "Recovered (prev. overpay)",
+    kind: "money",
+    value: (entry) => entry.carriedForwardApplied || "",
+  };
+}
+
 /** SalaryValidationRow → the SalaryRecord shape payrollSheetValue reads (batchId/id unused here). */
 function toSheetRecord(entry: AssembledRow): SalaryRecord {
   return { ...entry.row, batchId: "", employeeCode: entry.row.hrId, id: "" } as unknown as SalaryRecord;
@@ -100,7 +113,11 @@ export async function writePayrollWorksheet(
 ): Promise<{ sheet: ExcelJS.Worksheet; nextRow: number; firstPartTotal: number }> {
   const { run, headers } = options;
   // Owner-fixed HR-ID execution order (2026-07-24) — every downloaded sheet.
-  const rows = sortForExport(options.rows, (entry) => entry.row.hrId);
+  // Anyone the fixed list doesn't cover is grouped by line then hire date
+  // rather than dumped in arbitrary order (see sortForExport's doc comment).
+  const rows = sortForExport(options.rows, (entry) => entry.row.hrId, {
+    fallbackKey: (entry) => `${entry.row.line ?? ""}|${entry.row.hireDate ?? ""}|${entry.row.hrId}`,
+  });
   const extraColumns = options.extraColumns ?? [];
   const labels = [...headers, ...extraColumns.map((column) => column.label)];
   const colCount = labels.length;
@@ -304,7 +321,9 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
   const held = rows.filter((entry) => entry.onHold).length;
   const joiners = rows.filter((entry) => entry.lifecycle === "joiner").length;
   const leavers = rows.filter((entry) => entry.lifecycle === "leaver").length;
-  return [
+  const recovered = rows.reduce((sum, entry) => sum + entry.carriedForwardApplied, 0);
+  const unlisted = unlistedExportHrIds(rows, (entry) => entry.row.hrId);
+  const cover: Array<[string, string]> = [
     ["Period", monthLabel(run.month, run.year)],
     ["Scope", scopeLabel],
     ["Employees", String(rows.length)],
@@ -315,6 +334,18 @@ function coverRows(run: MonthlySalaryRun, rows: AssembledRow[], scopeLabel: stri
     ["Part 2 confirmed", run.part2ConfirmedAt ? "Yes" : "No"],
     ["Published", run.publishedAt ? "Yes" : "No"],
   ];
+  if (recovered > 0) {
+    cover.push(["Recovered (prev. overpayments)", String(Math.round(recovered * 100) / 100)]);
+  }
+  // Make the hand-maintained execution list's drift visible on the sheet
+  // itself, so it can't keep degrading unnoticed month after month.
+  if (unlisted.length > 0) {
+    cover.push([
+      "Not in fixed export order",
+      `${unlisted.length} employee(s) appended at the end — update FIXED_EXPORT_HR_ID_ORDER`,
+    ]);
+  }
+  return cover;
 }
 
 const CONFIDENTIAL_NOTE =
@@ -564,7 +595,7 @@ export async function buildPart1SheetWorkbook(input: {
     run: input.run,
     rows: input.rows,
     headers: PART1_HEADERS,
-    extraColumns: bankExtraColumns(),
+    extraColumns: [...bankExtraColumns(), carryForwardExtraColumn()],
   });
   appendNonEmployeesSection(sheet, {
     startRow: nextRow,

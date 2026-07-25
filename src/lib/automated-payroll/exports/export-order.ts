@@ -34,19 +34,49 @@ const ORDER_INDEX = new Map<string, number>(
 );
 
 /**
- * Sorts rows for export by the fixed HR-ID order above. Any HR ID not in the
- * list keeps its incoming relative order and is placed after every listed
- * employee (stable sort — Array.prototype.sort is stable per spec).
+ * Sorts rows for export by the fixed HR-ID order above.
+ *
+ * The owner's sequence stays authoritative for everyone it lists. Anyone NOT
+ * listed is placed after them — but ordered by `fallbackKey` (line, then hire
+ * date, then HR_ID) rather than by whatever arbitrary order they happened to
+ * arrive in. That matters because the list is hand-maintained and drifts: as of
+ * 2026-07-25 it held 123 IDs against 132 active employees, so every new hire
+ * lands in this tail until someone edits this file. Deterministic grouping
+ * keeps that tail readable for finance instead of random.
+ *
+ * Use `unlistedExportHrIds` to surface the drift itself — silently sorting it
+ * nicely is not the same as anyone knowing the list is stale.
  */
-export function sortForExport<T>(rows: readonly T[], hrIdOf: (row: T) => string): T[] {
+export function sortForExport<T>(
+  rows: readonly T[],
+  hrIdOf: (row: T) => string,
+  options?: { fallbackKey?: (row: T) => string },
+): T[] {
   const withRank = rows.map((row, originalIndex) => ({
     row,
     originalIndex,
     rank: ORDER_INDEX.get(compactHrKey(hrIdOf(row))) ?? Number.POSITIVE_INFINITY,
+    fallback: options?.fallbackKey ? options.fallbackKey(row) : "",
   }));
   withRank.sort((a, b) => {
     if (a.rank !== b.rank) return a.rank - b.rank;
+    // Only unlisted rows share a rank (POSITIVE_INFINITY); listed ranks are unique.
+    if (a.fallback !== b.fallback) return a.fallback < b.fallback ? -1 : 1;
     return a.originalIndex - b.originalIndex;
   });
   return withRank.map((entry) => entry.row);
+}
+
+/**
+ * HR IDs present in the run but missing from FIXED_EXPORT_HR_ID_ORDER, in the
+ * order they appear. Non-empty means the hand-maintained list has drifted and
+ * these people are being appended to the end of finance's sheet.
+ */
+export function unlistedExportHrIds<T>(rows: readonly T[], hrIdOf: (row: T) => string): string[] {
+  const unlisted: string[] = [];
+  for (const row of rows) {
+    const hrId = hrIdOf(row);
+    if (!ORDER_INDEX.has(compactHrKey(hrId))) unlisted.push(hrId);
+  }
+  return unlisted;
 }
