@@ -292,7 +292,7 @@ function notifySuperAdminsOfFeedbackAsync(submission: FeedbackSubmission): void 
       recipientHrIds.map((hrId) =>
         createSystemNotification({
           actorId: "system",
-          channels: ["email", "in_app"],
+          channels: ["email", "in_app", "push"],
           email: {
             ctaHref,
             ctaLabel: "View feedback",

@@ -103,7 +103,7 @@ export async function notifyPart1Ready(run: MonthlySalaryRun): Promise<void> {
     eventType: "automated_payroll_part1_ready",
     title: `${label} Payroll — Part 1 ready`,
     message: `${label} Automated Payroll Part 1 is HR-confirmed and ready for your review and finance execution. Open the finance tab to download the Part 1 sheet.`,
-    channels: ["in_app", "email"],
+    channels: ["in_app", "email", "push"],
   });
 }
 
@@ -115,7 +115,7 @@ export async function notifyPart2Ready(run: MonthlySalaryRun): Promise<void> {
     eventType: "automated_payroll_part2_ready",
     title: `${label} Payroll — Part 2 ready`,
     message: `${label} Automated Payroll Part 2 is HR-confirmed. The full monthly sheet is ready for review. Awaiting System Admin publish to payslips.`,
-    channels: ["in_app", "email", "telegram"],
+    channels: ["in_app", "email", "telegram", "push"],
   });
 }
 
@@ -127,6 +127,6 @@ export async function notifyPublished(run: MonthlySalaryRun): Promise<void> {
     eventType: "automated_payroll_published",
     title: `${label} Payroll — published to payslips`,
     message: `${label} Automated Payroll has been published to payslips.`,
-    channels: ["in_app", "email"],
+    channels: ["in_app", "email", "push"],
   });
 }

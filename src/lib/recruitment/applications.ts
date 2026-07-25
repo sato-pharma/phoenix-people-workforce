@@ -209,7 +209,7 @@ export async function createApplication(
       const candidate = await getCandidate(candidateId);
       await createSystemNotification({
         actionUrl: "/employee-portals/recruitment-candidates",
-        channels: ["in_app", "email"],
+        channels: ["in_app", "email", "push"],
         eventType: "candidate_assigned",
         message: `${candidate?.fullName ?? "A candidate"} has been assigned to your ${requisition.jobTitle} position.`,
         module: "recruitment",

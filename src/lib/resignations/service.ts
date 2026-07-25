@@ -1646,7 +1646,7 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
     for (const hrId of hrHrIds) {
       try {
         await createSystemNotification({
-          channels: ["email"],
+          channels: ["email", "push"],
           eventType: "resignation_sla_reminder",
           message: `${String(row.employee_name)}'s resignation (effective: ${String(row.effective_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"} with no final decision.`,
           metadata: { idempotencyKey: `resignation:${String(row.id)}:sla:${hrId}:${today}` },

@@ -35,7 +35,7 @@ export function runSupportRequestsNotificationsTests() {
   assert.match(service, /module: "support_requests"/, "support notification must use the support_requests module");
   assert.match(
     service,
-    /channels: \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram"\] : \["in_app", "telegram"\]/,
+    /channels: \(normalizeHrId\(recipient\.hrId\) \|\| recipient\.userId \|\| ""\) === primaryKey \? \["in_app", "email", "telegram", "push"\] : \["in_app", "telegram", "push"\]/,
     "support notification should route email to only the primary HR recipient",
   );
   assert.match(service, /priority: "high"/, "a new support ticket is action-required (high priority)");

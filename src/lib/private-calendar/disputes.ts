@@ -144,7 +144,7 @@ export async function submitPrivateCalendarDataDispute(
   await Promise.all(recipients.map((recipient) => createSystemNotification({
     actionUrl: "/admin/approvals-hub?tab=disputes",
     actorId: employeeHrId,
-    channels: ["email", "in_app"],
+    channels: ["email", "in_app", "push"],
     eventType: "private_calendar_dispute_submitted",
     message: `${input.employeeName ?? employeeHrId} flagged ${dispute.disputeDate} as inaccurate: "${claimText}"`,
     metadata: { disputeId: dispute.id, employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:submitted` },
@@ -247,7 +247,7 @@ export async function decidePrivateCalendarDataDispute(
 
   await createSystemNotification({
     actorId: adminHrId,
-    channels: ["email", "in_app"],
+    channels: ["email", "in_app", "push"],
     eventType: "private_calendar_dispute_decided",
     message: nextStatus === "accepted"
       ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction. Note: ${note}`

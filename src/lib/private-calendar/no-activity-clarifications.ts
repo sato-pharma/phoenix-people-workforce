@@ -161,7 +161,7 @@ export async function submitNoActivityClarification(
   await Promise.all(recipients.map((recipient) => createSystemNotification({
     actionUrl: "/admin/no-activity-days",
     actorId: employeeHrId,
-    channels: ["in_app"],
+    channels: ["in_app", "push"],
     eventType: "private_calendar_no_activity_clarified",
     message: `${input.employeeName ?? employeeHrId} clarified the No Activity day ${clarification.activityDate}.`,
     metadata: { clarificationId: clarification.id, employeeHrId, idempotencyKey: `private-calendar-no-activity:${clarification.id}:submitted` },
@@ -409,7 +409,7 @@ async function decideOneNoActivityDay(
 
   await createSystemNotification({
     actorId: adminHrId,
-    channels: ["email", "in_app"],
+    channels: ["email", "in_app", "push"],
     eventType: "private_calendar_no_activity_decided",
     message: input.resolution === "deducted"
       ? `${clarification.activityDate} was decided as No Activity — a deduction has been applied to payroll. Note: ${adminNote}`

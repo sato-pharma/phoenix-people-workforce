@@ -184,7 +184,7 @@ async function emitForTask(
         recipientHrId,
         // Telegram carries the full SLA reminder (E3); delivery still gated by the global switch, bot
         // token, and each recipient's per-user opt-in + connected chat (admin/DB, not code).
-        channels: ["in_app", "email", "telegram"],
+        channels: ["in_app", "email", "telegram", "push"],
         actionUrl: ctaUrl,
         email: {
           notificationType: "probation",

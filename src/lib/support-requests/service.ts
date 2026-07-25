@@ -178,7 +178,7 @@ async function notifyHrOfSupportRequest(request: SupportRequestRow): Promise<Sup
         createSystemNotification({
           actionUrl: SUPPORT_ADMIN_REVIEW_URL,
           category: "general",
-          channels: (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram"] : ["in_app", "telegram"],
+          channels: (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
           ...((normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey
             ? {
                 email: {

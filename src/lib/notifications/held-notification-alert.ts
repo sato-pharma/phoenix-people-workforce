@@ -156,8 +156,10 @@ export async function notifyNotificationHeld(input: HeldNotificationAlertInput):
         await createSystemNotification({
           actionUrl: "/admin/notification-confidence",
           actorId: "confidence-gate",
-          // in_app + telegram ONLY — see the file header. Never add "email" here.
-          channels: ["in_app", "telegram"],
+          // in_app + telegram + push, but never "email" — see the file header (email would
+          // recurse through the gate it's alerting about; push uses a separate OneSignal
+          // pipeline, so it's safe).
+          channels: ["in_app", "telegram", "push"],
           eventType: HELD_ALERT_EVENT_TYPE,
           message,
           metadata: {

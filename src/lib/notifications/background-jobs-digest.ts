@@ -119,7 +119,7 @@ export async function notifyBackgroundJobsRun(input: BackgroundJobsRunNotifyInpu
         await createSystemNotification({
           actionUrl: "/admin/data-backup",
           actorId: "background-jobs-cron",
-          channels: ["in_app", "telegram"],
+          channels: ["in_app", "telegram", "push"],
           eventType: `background_jobs_run_${input.status}`,
           message,
           metadata: {

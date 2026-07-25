@@ -1114,7 +1114,7 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
       {
         actionUrl,
         category: "general",
-        channels: ["email", "telegram"],
+        channels: ["email", "telegram", "push"],
         email: { metrics },
         eventType: "request_submitted",
         message: messageLines.join("\n"),
@@ -1155,7 +1155,7 @@ async function notifyOutstationDecision(input: {
       createSystemNotification({
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
         category: "general",
-        channels: ["in_app", "email", "telegram"],
+        channels: ["in_app", "email", "telegram", "push"],
         email: {
           metrics: [
             { label: "Employee", value: r.employeeName },
@@ -2711,7 +2711,7 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
     try {
       await createSystemNotificationForRecipients(
         {
-          channels: ["email"],
+          channels: ["email", "push"],
           eventType: "outstation_sla_reminder",
           message: `${String(row.employee_name)}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
           metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${today}` },

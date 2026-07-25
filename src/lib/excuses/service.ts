@@ -370,7 +370,7 @@ async function notifyHrVisibilityRecipients(input: {
     hrRecipients.map((hr) =>
       createSystemNotification({
         actionUrl: input.actionUrl,
-        channels: ["in_app", "telegram"],
+        channels: ["in_app", "telegram", "push"],
         eventType: input.eventType,
         message: input.message,
         metadata: {
@@ -405,7 +405,7 @@ async function notifyManagerOfExcuse(input: {
   await createSystemNotification({
     actionUrl: managerActionUrl,
     actorId: input.request.employeeHrId,
-    channels: ["in_app", "email", "telegram"],
+    channels: ["in_app", "email", "telegram", "push"],
     email: {
       ctaHref: managerActionUrl,
       ctaLabel: "Review in Action Center",
@@ -487,7 +487,7 @@ async function notifyDecisionRecipients(input: {
     await createSystemNotification({
       actionUrl,
       actorId: input.request.managerHrId,
-      channels: ["in_app", "email", "telegram"],
+      channels: ["in_app", "email", "telegram", "push"],
       email: {
         ctaHref: actionUrl,
         ctaLabel: "Open in Action Center",
@@ -1058,7 +1058,7 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
     if (ageDays < 2) continue;
     try {
       await createSystemNotification({
-        channels: ["in_app", "email", "telegram"],
+        channels: ["in_app", "email", "telegram", "push"],
         eventType: "excuse_sla_reminder",
         message: `${String(row.employee_name)}'s ${String(row.excuse_type)} excuse for ${String(row.excuse_date)} has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
         metadata: { idempotencyKey: `excuse:${String(row.id)}:sla:${String(row.manager_hr_id)}:${today}` },

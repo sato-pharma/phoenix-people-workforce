@@ -48,8 +48,8 @@ export function runOutstationNotificationsTests() {
   );
   assert.match(
     submitNotifySlice,
-    /channels:\s*\["email",\s*"telegram"\]/,
-    "submit notification must be delivered via email + Telegram",
+    /channels:\s*\["email",\s*"telegram",\s*"push"\]/,
+    "submit notification must be delivered via email + Telegram + push",
   );
   assert.match(
     submitNotifySlice,
