@@ -5,10 +5,12 @@ import {
   canAccess,
   canSeeEmployee,
   createAccessContext,
+  filterEmployeeDirectoryForAccess,
   getExpensesScope,
   getPayrollScope,
   getSalesScope,
   isRolePermissionWithinHardBoundary,
+  isSalaryRedactedForViewer,
   permissionMatrix,
   phoenixRoles,
   resolveNavigationMode,
@@ -16,6 +18,7 @@ import {
   type PermissionResource,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 
 export async function runPhase22RoleMatrixSecurityTests() {
   const phase22Smoke = readFileSync("scripts/phase22-role-matrix-security-smoke.ts", "utf8");
@@ -68,14 +71,79 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(talentAcquisition, "recruitment", "create"), true);
   assert.equal(await canAccess(talentAcquisition, "candidates", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "employee_documents", "update"), true);
+  // "create" was a same-day fix (2026-07-25) — the Request Leave page's
+  // getVacationRequestPageData asserts leave:create, and the original grant
+  // (read/update/export) omitted it, making the page unreachable.
+  assert.equal(await canAccess(talentAcquisition, "leave", "create"), true);
   assert.equal(await canAccess(talentAcquisition, "leave", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "read"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "update"), true);
   assert.equal(await canAccess(talentAcquisition, "support_requests", "export"), true);
+  // Owner-requested 2026-07-25: Private Calendar (self-scoped — isPrivateCalendarGlobalViewer
+  // does not include this role) and the read-only, Head-Office-scoped Planning Calendar.
+  assert.equal(await canAccess(talentAcquisition, "attendance", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "read"), true);
+  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "create"), false);
   // Owner-requested 2026-07-24: full manage rights on the employee directory, matching
   // Super Admin's action set — the hard boundary in hardBoundaryAllowedActions was
   // relaxed to include Talent Acquisition specifically for this resource only.
   assert.equal(await canAccess(talentAcquisition, "employees", "read"), true);
+
+  // Owner-requested 2026-07-25: even with full employee-directory read access,
+  // Talent Acquisition must not see real salary figures for a named set of
+  // senior employees (her own manager chain + a handful of other seniors).
+  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "B-10"), true, "her direct manager (HR Manager) is redacted");
+  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "AA"), true, "the CEO is redacted");
+  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "A-12"), true, "a named NSM is redacted");
+  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "A-16"), false, "her own record is not redacted");
+  assert.equal(isSalaryRedactedForViewer(superAdmin, "B-10"), false, "the redaction is Talent-Acquisition-specific, not global");
+
+  function salaryRow(hrId: string): EmployeeDirectoryRow {
+    return {
+      hrId,
+      baseSalary: 10000,
+      basicSalary: 7000,
+      extraCostOfLiving: 100,
+      fuelAllowance: 200,
+      grossSalary: 10300,
+      medicalInsurance: 50,
+      netSalary: 9500,
+      salaryDetails: [{ category: "earning", id: "x", label: "X", notes: null, value: "1", valueType: "amount" }],
+      socialInsurance: 300,
+      socialInsuranceWage: 8000,
+      taxes: 400,
+    } as EmployeeDirectoryRow;
+  }
+  const directory = {
+    employees: [salaryRow("B-10"), salaryRow("A-16")],
+    lookups: { managers: [] },
+    summary: {},
+  } as unknown as EmployeeDirectoryData;
+  const filteredForTalentAcquisition = filterEmployeeDirectoryForAccess(directory, talentAcquisition);
+  const redactedManager = filteredForTalentAcquisition.employees.find((row) => row.hrId === "B-10")!;
+  const ownRow = filteredForTalentAcquisition.employees.find((row) => row.hrId === "A-16")!;
+  assert.equal(redactedManager.baseSalary, null, "B-10's baseSalary is blanked for Talent Acquisition");
+  assert.equal(redactedManager.grossSalary, null, "B-10's grossSalary is blanked for Talent Acquisition");
+  assert.deepEqual(redactedManager.salaryDetails, null, "B-10's flexible salary details are blanked too");
+  assert.equal(ownRow.baseSalary, 10000, "her own salary is untouched by the redaction");
+  const filteredForSuperAdmin = filterEmployeeDirectoryForAccess(directory, superAdmin);
+  assert.equal(
+    filteredForSuperAdmin.employees.find((row) => row.hrId === "B-10")!.baseSalary,
+    10000,
+    "Super Admin still sees B-10's real salary — redaction does not mutate the underlying data",
+  );
+
+  // Read-side redaction alone is dangerous: Talent Acquisition's edit form for a
+  // redacted employee necessarily carries blanked salary values, so saving ANY
+  // unrelated field change would upsert nulls over the real figures unless the
+  // write path re-splices the current DB values in first. Regression-guard that
+  // the API route still does this — see app/api/employees/route.ts.
+  const employeesRouteSource = readFileSync("app/api/employees/route.ts", "utf8");
+  assert.match(
+    employeesRouteSource,
+    /isSalaryRedactedForViewer\(access, payload\.employee\.hrId\)/,
+    "employees API POST must re-check isSalaryRedactedForViewer before upsertEmployee, or a blanked read becomes a destructive write",
+  );
   assert.equal(await canAccess(talentAcquisition, "admin", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "admin_access", "read"), false);
   assert.equal(await canAccess(talentAcquisition, "permission_admin", "read"), false);

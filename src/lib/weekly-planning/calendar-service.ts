@@ -172,6 +172,10 @@ export type CalendarViewerContext = {
 //   - Regional Manager: same shape as District Manager (Training Manager + own-line Product
 //     Manager), PLUS their own line's Group Product Manager, PLUS the plans of the District
 //     Managers who report directly to them (not every District Manager on their line).
+//   - Talent Acquisition: unrestricted, same as Training Manager — she is a Head Office
+//     role serving all 3 sales lines (owner decision 2026-07-25), not a role confined to
+//     Head-Office-only scheduling. A same-day narrower rule (Head-Office-line plans plus
+//     one named PM exception) was reverted the same day once that concept was clarified.
 //   - Anyone else with calendar access (any role/line not named above) keeps the
 //     unrestricted default — only the roles above were narrowed.
 export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer: CalendarViewerContext): boolean {
@@ -215,7 +219,6 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
       itemReportsToViewer(item, viewer)
     );
   }
-
   return true;
 }
 

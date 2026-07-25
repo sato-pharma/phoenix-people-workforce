@@ -178,6 +178,7 @@ import { runEmployee360SalesMaskingTests } from "./employee-360-sales-masking.te
 import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.test.ts";
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
+import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runCustomerDirectoryTests } from "./customer-directory.test.ts";
@@ -647,6 +648,7 @@ await runTest("employee 360 sales confidential-product masking", runEmployee360S
 await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)", runEmployee360AccessTests);
+await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sos customer key", runSosCustomerKeyTests);

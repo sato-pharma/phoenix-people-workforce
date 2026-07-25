@@ -5,6 +5,7 @@ import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directo
 import {
   buildEmployee360Scope,
   canViewEmployee360Subject,
+  isCompany360Viewer,
   resolveEmployee360VisibleRows,
 } from "../src/lib/employee-360/access.ts";
 
@@ -43,6 +44,7 @@ const rows: EmployeeDirectoryRow[] = [
   row("C-1", "Chief Executive Officer", null, null, null),
   row("SA-1", "System Administrator", null, null, null),
   row("SFE-1", "SFE Manager", null, null, null),
+  row("TA-1", "Talent Acquisition", null, null, null),
   row("TM-1", "Training Manager", null, null, null),
   row("NSM-A", "National Sales Manager", null, 1, 1),
   row("RM-A", "Regional Manager", "NSM-A", 1, 1),
@@ -74,11 +76,34 @@ const ALL_REPS = new Set(["R1", "R2", "R3", "RP1"]);
 
 export async function runEmployee360AccessTests() {
   // ── Company-wide roles ──
-  for (const [role, hr] of [["CEO", "C-1"], ["Super Admin", "SA-1"], ["SFE Manager", "SFE-1"]] as const) {
+  for (const [role, hr] of [
+    ["CEO", "C-1"],
+    ["Super Admin", "SA-1"],
+    ["SFE Manager", "SFE-1"],
+    // Talent Acquisition (owner-requested 2026-07-25): company-wide like the other
+    // three, even though her own generic scope (scopeForRole) is "self" — Employee
+    // 360 grants this independently of that generic scope, see below.
+    ["Talent Acquisition", "TA-1"],
+  ] as const) {
     const v = await visible(ctx(role, hr, "company"));
     assert.deepEqual(v, ALL_FIELD, `${role} sees every field-force subject`);
     assert.ok(!v.has("F-1"), `${role} never sees the non-field Finance person as a subject`);
   }
+
+  // ── isCompany360Viewer: the standalone predicate the portal index page uses to
+  // decide whether a non-field-force self-record falls back to a browse-all list ──
+  assert.equal(isCompany360Viewer({ role: "CEO", scope: "company" }), true);
+  assert.equal(isCompany360Viewer({ role: "Super Admin", scope: "company" }), true);
+  // SFE Manager and Talent Acquisition's generic scopeForRole is "self" (they're
+  // not in permissions.ts's scopeForRole company/team/hierarchy/line branches) —
+  // asserting with scope:"self" here proves the grant is pure role-set membership,
+  // independent of the generic AccessScope value.
+  assert.equal(isCompany360Viewer({ role: "SFE Manager", scope: "self" }), true);
+  assert.equal(isCompany360Viewer({ role: "Talent Acquisition", scope: "self" }), true);
+  assert.equal(isCompany360Viewer({ role: "Medical Rep", scope: "self" }), false);
+  assert.equal(isCompany360Viewer({ role: "District Manager", scope: "team" }), false);
+  assert.equal(isCompany360Viewer({ role: "Finance Manager", scope: "self" }), false);
+  assert.equal(isCompany360Viewer({ role: "Employee", scope: "system" }), true, "the system service-account sentinel is always a company-wide viewer");
 
   // ── Training Manager: all Medical Reps + self, nobody else ──
   const tm = await visible(ctx("Training Manager", "TM-1", "company"));
