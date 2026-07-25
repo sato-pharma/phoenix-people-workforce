@@ -8,81 +8,36 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { getRequisition } from "@/lib/recruitment/requisitions";
+import {
+  mapOnboardingItemRow,
+  onboardingDocumentItems,
+  onboardingItemCategories,
+  onboardingItemStatuses,
+  onboardingJoiningItems,
+  terminalOnboardingStatuses,
+  documentsComplete,
+  type OnboardingItem,
+  type OnboardingItemCategory,
+  type OnboardingItemStatus,
+  type UpdateOnboardingItemInput,
+} from "@/lib/recruitment/onboarding-items";
 
-export const onboardingDocumentItems = [
-  { key: "national_id", label: "National ID" },
-  { key: "military_certificate", label: "Military Certificate" },
-  { key: "graduation_certificate", label: "Graduation Certificate" },
-  { key: "personal_photo", label: "Personal Photo" },
-  { key: "insurance_documents", label: "Insurance Documents" },
-] as const;
-
-export const onboardingJoiningItems = [
-  { key: "employee_id", label: "Employee ID" },
-  { key: "email_creation", label: "Email Creation" },
-  { key: "system_access", label: "System Access" },
-  { key: "payroll_setup", label: "Payroll Setup" },
-  { key: "manager_notification", label: "Manager Notification" },
-  { key: "orientation", label: "Orientation" },
-  { key: "policy_acknowledgment", label: "Policy Acknowledgment" },
-  { key: "team_introduction", label: "Team Introduction" },
-  { key: "training_assignment", label: "Training Assignment" },
-] as const;
-
-export const onboardingItemStatuses = [
-  "pending",
-  "missing",
-  "submitted",
-  "approved",
-  "rejected",
-  "waived",
-  "completed",
-] as const;
-export type OnboardingItemStatus = (typeof onboardingItemStatuses)[number];
-
-export const onboardingItemCategories = ["document", "joining"] as const;
-export type OnboardingItemCategory = (typeof onboardingItemCategories)[number];
-
-const terminalStatuses: readonly string[] = ["approved", "rejected", "waived", "completed"];
-
-export type OnboardingItem = {
-  id: string;
-  applicationId: string;
-  category: OnboardingItemCategory;
-  itemKey: string;
-  label: string;
-  status: OnboardingItemStatus;
-  fileId: string | null;
-  notes: string | null;
-  completedBy: string | null;
-  completedAt: string | null;
+// Re-exported for existing server-side consumers (API routes, applications.ts) — the
+// canonical definitions now live in onboarding-items.ts, a dependency-free sibling that
+// client components (RecruitmentWorkspace) import directly so they never pull this
+// file's server-only recruitment/requisitions -> employee-directory chain into the
+// browser bundle. See onboarding-items.ts for details.
+export {
+  onboardingDocumentItems,
+  onboardingItemCategories,
+  onboardingItemStatuses,
+  onboardingJoiningItems,
+  documentsComplete,
 };
+export type { OnboardingItem, OnboardingItemCategory, OnboardingItemStatus, UpdateOnboardingItemInput };
 
-export type UpdateOnboardingItemInput = {
-  status?: string | null;
-  fileId?: string | null;
-  notes?: string | null;
-};
-
-// Pure: required documents are complete when every document item is approved or waived.
-export function documentsComplete(statuses: readonly string[]): boolean {
-  return statuses.length > 0 && statuses.every((status) => status === "approved" || status === "waived");
-}
-
-function mapItem(row: Record<string, unknown>): OnboardingItem {
-  return {
-    id: String(row.id),
-    applicationId: String(row.application_id),
-    category: (textOrNull(row.category) ?? "document") as OnboardingItemCategory,
-    itemKey: String(row.item_key ?? ""),
-    label: String(row.label ?? ""),
-    status: (textOrNull(row.status) ?? "pending") as OnboardingItemStatus,
-    fileId: textOrNull(row.file_id),
-    notes: textOrNull(row.notes),
-    completedBy: textOrNull(row.completed_by),
-    completedAt: textOrNull(row.completed_at),
-  };
-}
+const mapItem = mapOnboardingItemRow;
+const terminalStatuses = terminalOnboardingStatuses;
 
 async function assertApplicationScope(access: AccessContext, applicationId: string): Promise<void> {
   const supabase = recruitmentDb();

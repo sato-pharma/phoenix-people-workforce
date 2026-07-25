@@ -27,7 +27,7 @@ import type { Candidate, Interview, InterviewType, RecruitmentActionKey, Recruit
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import { resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
-import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding";
+import { documentsComplete, type OnboardingItem } from "@/lib/recruitment/onboarding-items";
 import type { OfferLetterVersion } from "@/lib/recruitment/offer-letters";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { SearchableSelect } from "@/components/ui/searchable-select";
