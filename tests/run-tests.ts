@@ -433,6 +433,10 @@ import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts
 import { runAutomatedPayrollFingerprintAggregationTests } from "./automated-payroll-fingerprint-aggregation.test.ts";
 import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-order.test.ts";
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
+import { runAutomatedPayrollNonEmployeesTests } from "./automated-payroll-non-employees.test.ts";
+import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
+import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
+import { runAutomatedPayrollPopulationDiffTests } from "./automated-payroll-population-diff.test.ts";
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
@@ -490,6 +494,10 @@ await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconci
 await runTest("automated payroll fingerprint aggregation (rejected candidates excluded)", runAutomatedPayrollFingerprintAggregationTests);
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);
 await runTest("automated payroll Part 1/2 scope (no CRM/vacation double-deduction)", runAutomatedPayrollPart1ScopeTests);
+await runTest("automated payroll Non-Employees Payroll (xlsx section + grand total)", runAutomatedPayrollNonEmployeesTests);
+await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
+await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);
+await runTest("automated payroll population diff (silent-disappearance guard)", runAutomatedPayrollPopulationDiffTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
 await runTest("payroll engine hardening", runPayrollEngineHardeningTests);
 await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);

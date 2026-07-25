@@ -30,6 +30,7 @@ export type StepKey =
   | "p1_unpaid_vacation"
   | "p1_no_record"
   | "p1_other_deductions"
+  | "p1_special_situations"
   | "p1_holds"
   | "p2_expenses"
   | "p2_vacation"
@@ -46,6 +47,7 @@ export const PART1_STEP_KEYS: readonly StepKey[] = [
   "p1_unpaid_vacation",
   "p1_no_record",
   "p1_other_deductions",
+  "p1_special_situations",
   "p1_holds",
 ] as const;
 
@@ -127,6 +129,17 @@ export type DraftRow = {
   crm: number | null;
   manualOtherDeductions: number | null;
   manualReason: string | null;
+  /**
+   * Resignations-step-only: the editable day count behind `crm` (CRM no-activity
+   * days for the leaver's final settlement). Auto-calculates `crm` via Base/30 ×
+   * days when edited — safe because the leaver's system-recommended `crm` value
+   * already uses that exact formula (calculateDeductionAmountFromBaseSalary).
+   * There is deliberately NO equivalent for `unpaidVacations`: that figure is a
+   * composite of a balance-aware Phoenix-vacation amount plus a day-rate CRM-leave
+   * amount, not a flat day-rate — auto-calculating it from a single day count
+   * would silently produce a wrong number for a leaver's final settlement.
+   */
+  resignationCrmDays: number | null;
   // Part 1 — 4 manual deduction tabs (CRM, Unpaid Vacation, Day Without Record, and
   // Other deductions for Loan/Other), each category with its own optional days
   // (auto-calculates value via Base/30 × days), value (money — can be typed directly
@@ -150,6 +163,20 @@ export type DraftRow = {
   p1odOtherDays: number | null;
   p1odOtherValue: number | null;
   p1odOtherReason: string | null;
+  // Part 1 — Special Situations tab. Shows every employee regardless of payment
+  // mode (unlike the 4 tabs above). A day count auto-calculates its money value
+  // (Base/30 × days), same formula as the other Part 1 day-rate fields. One
+  // shared dropdown routes BOTH the deduction and the addition to whichever
+  // installment HR picks — there is deliberately no separate addition-routing
+  // field. Only "first" may be chosen before Part 1 is confirmed; once frozen,
+  // routing to "first" would silently change money already paid out, so the UI
+  // must stop offering that choice (see freezeFirstPart's "never recomputed"
+  // invariant).
+  specialDeductionDays: number | null;
+  specialDeductionValue: number | null;
+  specialAdditionDays: number | null;
+  specialAdditionValue: number | null;
+  specialSituationPart: "first" | "second" | null;
   // Frozen at Part 1 confirm — the first installment, never recomputed afterward.
   firstPartFrozen: number | null;
   // Hold — held employee still appears (red + flagged), excluded from publish.
@@ -175,6 +202,8 @@ export type StepEditInput = {
   values?: Record<string, number>;
   /** Per-field free-text reasons, keyed by a "text"-kind field's key. */
   reasons?: Record<string, string>;
+  /** Per-field dropdown choices, keyed by a "select"-kind field's key. */
+  selects?: Record<string, string>;
   reason?: string | null;
   onHold?: boolean;
 };
@@ -194,6 +223,8 @@ export type StepRow = {
   recommended: Record<string, number>;
   /** Per-field free-text reasons, keyed by a "text"-kind field's key. Only used by steps with such fields. */
   reasons?: Record<string, string>;
+  /** Per-field dropdown choices, keyed by a "select"-kind field's key. Only used by steps with such fields. */
+  selects?: Record<string, string>;
   reason: string | null;
   onHold: boolean;
   lifecycle?: RowLifecycle;
@@ -203,7 +234,7 @@ export type StepRow = {
 export type StepFieldSpec = {
   key: string;
   label: string;
-  kind: "money" | "days" | "text";
+  kind: "money" | "days" | "text" | "select";
   /** When true the field is a per-employee reason string, not a number. */
   reason?: boolean;
   /**
@@ -212,6 +243,8 @@ export type StepFieldSpec = {
    * the money field itself are left alone.
    */
   autoCalcMoneyKey?: string;
+  /** For a "select" field: the dropdown's choices. */
+  options?: { value: string; label: string }[];
 };
 
 export type StepDefinition = {
@@ -285,4 +318,34 @@ export type ReconciliationTotals = {
   splitMismatches: { hrId: string; firstPart: number; secondPart: number; monthSalary: number }[];
   /** Rows flagged part1_overpaid (Part-2 deductions exceeded the frozen first installment). */
   overpaid: { hrId: string; residual: number }[];
+};
+
+/**
+ * Non-Employees Payroll (owner rule 2026-07-25): people paid a monthly salary
+ * with NO employee/HR_ID record at all. A free-form, HR-authored list per run —
+ * added/removed manually each month, never derived from the employee
+ * population. Flat total only, no deductions/additions, no lifecycle. Kept
+ * deliberately separate from DraftRow/AssembledRow — these people must never
+ * generate a real employee salary_record; they are appended only to the
+ * exported Part 1 sheet's own section and its grand total.
+ */
+export type NonEmployeePayrollRow = {
+  id: string;
+  runId: string;
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName: string | null;
+  bankAccount: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NonEmployeePayrollInput = {
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
 };

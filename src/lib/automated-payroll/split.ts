@@ -139,6 +139,18 @@ export type FreezeFirstPartInput = {
   /** Confirmed Part-1 "Other deductions" step total (EGP) — reduces First Part for every employee. */
   otherPart1Deductions?: number;
   /**
+   * Special Situations step (owner rule 2026-07-25): a manual addition HR has
+   * explicitly routed to the First Part (only offered before Part 1 is
+   * confirmed — once frozen, First Part is never recomputed, so routing to
+   * "first" after confirm would silently change money already disbursed).
+   * The paired deduction, when routed to "first", is folded into
+   * `otherPart1Deductions` above instead — same treatment as the 4 other Part 1
+   * manual-deduction tabs. Anything routed to "second" instead flows through
+   * PartsAdditions.otherAdditions / PartsDeductions.otherDeductions in
+   * assembleParts, never here.
+   */
+  otherPart1Additions?: number;
+  /**
    * One-part employees only (owner rule 2026-07-24): they have no Second Part to
    * net medical insurance against, so it must come out of Part 1 directly.
    * Two-part employees are unaffected — their medical insurance stays netted
@@ -167,6 +179,7 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
   const mode = normalizePayrollPaymentMode(input.paymentMode);
   const fp = Math.max(0, roundCurrency(input.fingerprint));
   const otherP1 = Math.max(0, roundCurrency(input.otherPart1Deductions ?? 0));
+  const otherP1Additions = Math.max(0, roundCurrency(input.otherPart1Additions ?? 0));
   // One-part employees only — see FreezeFirstPartInput.medicalInsurance doc comment.
   const medical = mode === "two_parts" ? 0 : Math.max(0, roundCurrency(input.medicalInsurance ?? 0));
   const effNet = input.effective.net;
@@ -181,7 +194,7 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
     firstBeforeFp = effNet;
   }
 
-  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp - otherP1 - medical));
+  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp - otherP1 - medical + otherP1Additions));
   if (!isLeaver) return firstAfterFp;
 
   const leaverDeduction = Math.max(0, roundCurrency(input.leaverDeduction ?? 0));

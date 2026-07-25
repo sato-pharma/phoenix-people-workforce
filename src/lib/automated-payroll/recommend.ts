@@ -125,6 +125,22 @@ function buildSalarySource(employee: EmployeeDirectoryRow, period: PayrollPeriod
  * typically already flipped to resigned by the time payroll processes their exit
  * month), which is exactly why the Resignations step showed no rows.
  */
+/**
+ * True when dateText's year-month is strictly AFTER the given period — i.e. still in
+ * the future relative to the run being processed. Used to tell "already departed
+ * before this period" apart from "departing later, still owed this period's pay."
+ * Exported for tests.
+ */
+export function isAfterPeriod(dateText: string | null, period: PayrollPeriod): boolean {
+  if (!dateText) return false;
+  const match = /^(\d{4})-(\d{2})/.exec(dateText.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+  return year > period.year || (year === period.year && month > period.month);
+}
+
 export async function resolvePayrollPopulation(period: PayrollPeriod): Promise<PopulationMember[]> {
   const { members } = await resolvePayrollPopulationAndSources(period);
   return members;
@@ -148,9 +164,21 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
     const leaverLastWorkingDate = feeder?.leaverLastWorkingDate ?? null;
     const isLeaver = Boolean(leaverLastWorkingDate);
     const isJoiner = !isLeaver && isInPeriod(employee.hireDate, period);
+    // A resignation already SUBMITTED with a last working date in a LATER period is
+    // still serving notice — not yet departed as of THIS period. employment_status
+    // flips to a terminal value (e.g. "resigned") the moment the resignation is
+    // approved, often well before the employee's actual last day, and
+    // isPayrollIneligibleEmployee() alone can't distinguish "already left" from
+    // "leaving later" — only `leaverLastWorkingDate` (scoped to THIS period by
+    // buildFeederStates) can. Confirmed live 2026-07-25 against a real case: B-157
+    // had employment_status=resigned for the July run but last_working_date=2026-08-31
+    // — a full month of pay silently dropped from the entire population, every step,
+    // with no error or empty-state to notice it by.
+    const stillActiveThroughFutureExit = isAfterPeriod(employee.lastWorkingDate, period);
 
-    // Include: active/eligible employees, OR a leaver this month (even if terminal now).
-    if (isPayrollIneligibleEmployee(employee) && !isLeaver) continue;
+    // Include: active/eligible employees, a leaver this month (even if terminal now),
+    // or someone serving notice into a future month (still owed this month's pay).
+    if (isPayrollIneligibleEmployee(employee) && !isLeaver && !stillActiveThroughFutureExit) continue;
 
     members.push({
       employee,
@@ -628,13 +656,19 @@ async function recommendResignations(
       "Last Working Date": member.lastWorkingDate,
       Branch: settlement.branch === "on_or_before_25" ? "≤ 25th (Base prorated)" : "> 25th (Full)",
       "Days Worked": settlement.daysWorked,
-      "CRM No-Activity Days": noActivityDays,
       "Unpaid Vacation Days": roundCurrency(v2Days + crmLeaveUnpaidDays),
+      // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
+      // see step-definitions.ts) purely because the client-side Days→Value auto-calc
+      // reads row.context["Base Salary"] for CRM Days (Base/30 × days, unchanged formula).
+      // "Net Salary" is what HR actually sees displayed (owner request 2026-07-25).
+      "Base Salary": baseSalary,
+      "Net Salary": roundCurrency(source?.netSalary ?? 0),
     };
     row.recommended = {
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
+      resignationCrmDays: noActivityDays,
       crm: roundCurrency(crmValue),
       unpaidVacations: vacationValue,
     };
@@ -642,6 +676,7 @@ async function recommendResignations(
       baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
       ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
       fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
+      resignationCrmDays: pick(draft?.resignationCrmDays, noActivityDays),
       crm: pick(draft?.crm, roundCurrency(crmValue)),
       unpaidVacations: pick(draft?.unpaidVacations, vacationValue),
     };
@@ -1080,7 +1115,15 @@ function part1ManualDeductionBaseRow(
   const row = baseRow(member);
   row.context = {
     "Hire Date": member.employee.hireDate ?? "",
+    // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
+    // see step-definitions.ts) purely because the client-side Days→Value auto-calc
+    // reads row.context["Base Salary"] to compute Base/30 × days (recommendation-step.tsx
+    // setDaysValue) — that formula is untouched. "Net Salary" is the number HR actually
+    // sees displayed (owner request 2026-07-25: show Net, not Base, in the UI).
     "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+    "Net Salary": roundCurrency(source?.netSalary ?? 0),
+    // Blank for continuing (non-leaver) one-part employees — only leavers have one.
+    "Resignation Date": member.lastWorkingDate ?? "",
   };
   return row;
 }
@@ -1185,6 +1228,43 @@ function recommendP1OtherDeductions(
   return rows;
 }
 
+/**
+ * Special Situations (owner rule 2026-07-25): unlike the 4 manual deduction tabs
+ * above, this shows EVERY employee regardless of payment mode — it exists
+ * precisely for cases that fall outside the normal one-part/two-part rules. One
+ * shared "Apply To" choice per employee routes BOTH their deduction and their
+ * addition to the same installment (see split.ts's FreezeFirstPartInput doc and
+ * assemble.ts's specialRoutedToFirst). Defaults to "second" — the safer default,
+ * since it never touches the frozen First Part unless HR explicitly opts in.
+ */
+function recommendSpecialSituations(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
+    const draft = drafts.get(member.compact);
+    const row = part1ManualDeductionBaseRow(member, source);
+    row.recommended = {
+      specialDeductionDays: 0,
+      specialDeductionValue: 0,
+      specialAdditionDays: 0,
+      specialAdditionValue: 0,
+    };
+    row.values = {
+      specialDeductionDays: pick(draft?.specialDeductionDays, 0),
+      specialDeductionValue: pick(draft?.specialDeductionValue, 0),
+      specialAdditionDays: pick(draft?.specialAdditionDays, 0),
+      specialAdditionValue: pick(draft?.specialAdditionValue, 0),
+    };
+    row.selects = { specialSituationPart: draft?.specialSituationPart ?? "second" };
+    rows.push(row);
+  }
+  return rows;
+}
+
 function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
@@ -1221,6 +1301,8 @@ export async function recommendStep(input: {
       return recommendP1NoRecord(input.members, input.sources, drafts);
     case "p1_other_deductions":
       return recommendP1OtherDeductions(input.members, input.sources, drafts);
+    case "p1_special_situations":
+      return recommendSpecialSituations(input.members, input.sources, drafts);
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts);
     case "p2_vacation":
