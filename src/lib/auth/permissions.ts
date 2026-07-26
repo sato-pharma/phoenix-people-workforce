@@ -525,6 +525,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // grant alone does not unlock submission (still blocked by weekly_plans:create and
     // isWeeklyMonthlyPlanEligibleTitle).
     weekly_plans: ["read"],
+    // Portal parity (owner-requested 2026-07-24 expansion): Talent Acquisition submits
+    // probation feedback alongside HR — read access required to pass assertPermission on
+    // the /employee-portals/probation page. Write/admin actions remain restricted to
+    // isProbationAdministrator roles only.
+    probation: ["read"],
   },
   // Financial Advisor: executes approved requests (payroll runs, disbursements).
   // No approval authority on any resource — does not approve, only processes.
