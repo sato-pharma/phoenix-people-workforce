@@ -205,12 +205,22 @@ export type Candidate = {
   // their most recent inbound-intake event. Undefined for a manually-added candidate, or when the
   // list wasn't asked to load it. See src/lib/recruitment/candidate-source-context.ts.
   sourceContext?: CandidateSourceContext;
+  // The role the AI read from the CV as what this person is applying for, from their most recent
+  // extraction. The pool's "Applying for" column uses it as a fallback when the applicant didn't
+  // name a role in their email subject / WhatsApp message. Undefined when not loaded / never
+  // extracted. See loadAppliedPositionByCandidate in candidates.ts.
+  appliedPositionFromCv?: string | null;
 };
 
 export type CandidateSourceContext = {
   channel: "email" | "whatsapp" | null;
   shortLabel: string | null;
   detailLines: string[];
+  // When the applicant actually sent their CV: the email Date header / WhatsApp message timestamp
+  // (raw_metadata.sentAt on the intake event), falling back to when we received/processed it (the
+  // intake event's created_at) when the true send time wasn't captured. ISO string, or null for a
+  // manually-added candidate with no intake event. Rendered as the pool's "CV sent" column.
+  cvSentAt: string | null;
 };
 
 export type Application = {

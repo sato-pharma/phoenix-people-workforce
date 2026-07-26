@@ -63,7 +63,21 @@ export type SourceContextRow = {
   channel?: string | null;
   subject?: string | null;
   raw_metadata?: unknown;
+  // The intake event's own created_at (when we received/processed the CV) — the fallback for the
+  // "CV sent" date when raw_metadata.sentAt (the true send time) isn't present.
+  created_at?: string | null;
 };
+
+// The true "CV sent" time: the sender-stated send time captured on the intake event
+// (raw_metadata.sentAt — email Date header / WhatsApp message timestamp), else when we received
+// it (the event's created_at), else null.
+function sourceSentAt(row: SourceContextRow | null | undefined): string | null {
+  const meta = row?.raw_metadata as Record<string, unknown> | undefined;
+  const sentAt = typeof meta?.sentAt === "string" ? meta.sentAt.trim() : "";
+  if (sentAt) return sentAt;
+  const createdAt = typeof row?.created_at === "string" ? row.created_at.trim() : "";
+  return createdAt || null;
+}
 
 /**
  * Turns a candidate's most-recent intake event (from ats_candidate_source_context) into the
@@ -73,18 +87,19 @@ export type SourceContextRow = {
  */
 export function describeCandidateSource(row: SourceContextRow | null | undefined): CandidateSourceContext {
   const channel = row?.channel === "email" || row?.channel === "whatsapp" ? row.channel : null;
+  const cvSentAt = sourceSentAt(row);
 
   if (channel === "email") {
     const subject = cleanLine(row?.subject);
-    return { channel, detailLines: subject ? [subject] : [], shortLabel: subject };
+    return { channel, cvSentAt, detailLines: subject ? [subject] : [], shortLabel: subject };
   }
 
   if (channel === "whatsapp") {
     const context = parseStoredWhatsAppContext((row?.raw_metadata as Record<string, unknown> | undefined)?.sourceContext);
-    if (!context) return { channel, detailLines: [], shortLabel: null };
+    if (!context) return { channel, cvSentAt, detailLines: [], shortLabel: null };
     const detailLines = [...(context.caption ? [context.caption] : []), ...context.firstMessages];
-    return { channel, detailLines, shortLabel: detailLines[0] ?? null };
+    return { channel, cvSentAt, detailLines, shortLabel: detailLines[0] ?? null };
   }
 
-  return { channel: null, detailLines: [], shortLabel: null };
+  return { channel: null, cvSentAt, detailLines: [], shortLabel: null };
 }

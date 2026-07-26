@@ -59,13 +59,30 @@ export function runRecruitmentCandidateSourceContextTests() {
   // --- describeCandidateSource: email ----------------------------------------------------------
   assert.deepEqual(
     describeCandidateSource({ channel: "email", subject: "Application for Medical Rep" }),
-    { channel: "email", shortLabel: "Application for Medical Rep", detailLines: ["Application for Medical Rep"] },
+    { channel: "email", cvSentAt: null, shortLabel: "Application for Medical Rep", detailLines: ["Application for Medical Rep"] },
     "email uses the subject",
   );
   assert.deepEqual(
     describeCandidateSource({ channel: "email", subject: "   " }),
-    { channel: "email", shortLabel: null, detailLines: [] },
+    { channel: "email", cvSentAt: null, shortLabel: null, detailLines: [] },
     "blank email subject -> nothing to show",
+  );
+
+  // --- describeCandidateSource: cvSentAt (true send time, else receipt time) --------------------
+  assert.equal(
+    describeCandidateSource({
+      channel: "email",
+      subject: "x",
+      raw_metadata: { sentAt: "2026-07-20T09:00:00.000Z" },
+      created_at: "2026-07-26T12:00:00.000Z",
+    }).cvSentAt,
+    "2026-07-20T09:00:00.000Z",
+    "the captured send time (raw_metadata.sentAt) wins over our receipt time",
+  );
+  assert.equal(
+    describeCandidateSource({ channel: "email", subject: "x", created_at: "2026-07-26T12:00:00.000Z" }).cvSentAt,
+    "2026-07-26T12:00:00.000Z",
+    "with no captured send time, falls back to the intake event's created_at (receipt)",
   );
 
   // --- describeCandidateSource: whatsapp -------------------------------------------------------
@@ -80,6 +97,7 @@ export function runRecruitmentCandidateSourceContextTests() {
     describeCandidateSource(whatsappRow),
     {
       channel: "whatsapp",
+      cvSentAt: null,
       shortLabel: "My CV for the role",
       detailLines: ["My CV for the role", "Hello", "I'd like to apply"],
     },
@@ -91,30 +109,30 @@ export function runRecruitmentCandidateSourceContextTests() {
       channel: "whatsapp",
       raw_metadata: { sourceContext: { caption: null, firstMessages: ["Only a message"] } },
     }),
-    { channel: "whatsapp", shortLabel: "Only a message", detailLines: ["Only a message"] },
+    { channel: "whatsapp", cvSentAt: null, shortLabel: "Only a message", detailLines: ["Only a message"] },
     "whatsapp with no caption falls back to the first message as the label",
   );
 
   assert.deepEqual(
     describeCandidateSource({ channel: "whatsapp", raw_metadata: {} }),
-    { channel: "whatsapp", shortLabel: null, detailLines: [] },
+    { channel: "whatsapp", cvSentAt: null, shortLabel: null, detailLines: [] },
     "whatsapp with no stored sourceContext -> nothing (e.g. a forward with no caption or messages)",
   );
 
   // --- describeCandidateSource: defensive ------------------------------------------------------
   assert.deepEqual(
     describeCandidateSource(null),
-    { channel: null, shortLabel: null, detailLines: [] },
+    { channel: null, cvSentAt: null, shortLabel: null, detailLines: [] },
     "no intake event (manually-added candidate) -> empty context, never throws",
   );
   assert.deepEqual(
     describeCandidateSource({ channel: "unknown-channel", subject: "x" }),
-    { channel: null, shortLabel: null, detailLines: [] },
+    { channel: null, cvSentAt: null, shortLabel: null, detailLines: [] },
     "an unexpected channel is treated as no source",
   );
   assert.deepEqual(
     describeCandidateSource({ channel: "whatsapp", raw_metadata: "not-an-object" }),
-    { channel: "whatsapp", shortLabel: null, detailLines: [] },
+    { channel: "whatsapp", cvSentAt: null, shortLabel: null, detailLines: [] },
     "malformed raw_metadata never throws",
   );
 }

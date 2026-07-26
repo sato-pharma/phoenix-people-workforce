@@ -1383,6 +1383,61 @@ function CandidateActionsControl({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Candidate-pool cell helpers (shared by the desktop table and the mobile card).
+// ---------------------------------------------------------------------------
+
+// The channel a candidate's CV arrived through, normalized. Prefers the raw candidate.source
+// (always present) and falls back to the separately-loaded source-context channel.
+function candidateChannel(candidate: Candidate): "email" | "whatsapp" | null {
+  const raw = (candidate.source ?? "").toLowerCase();
+  if (raw === "whatsapp" || raw === "email") return raw;
+  return candidate.sourceContext?.channel ?? null;
+}
+
+// "Source" column — the contact detail from the channel the CV came through: the email address
+// for an emailed CV, the phone number for a WhatsApp one, falling back to whichever is on record.
+function candidateSourceContact(candidate: Candidate): string {
+  const channel = candidateChannel(candidate);
+  if (channel === "whatsapp") return candidate.phone ?? candidate.email ?? "—";
+  return candidate.email ?? candidate.phone ?? "—";
+}
+
+// "Applying for" column — the role the applicant is after. Inbound CVs carry no structured
+// position field; applicants state the role in the email subject / first WhatsApp message, so that
+// source text is the primary signal. When it's missing (e.g. a WhatsApp CV with no message, or a
+// vendor-ish subject that named no role), fall back to the role the AI read from the CV itself
+// (candidate.appliedPositionFromCv, loaded from the latest extraction).
+function candidateApplyingFor(candidate: Candidate): string {
+  return candidate.sourceContext?.shortLabel?.trim() || candidate.appliedPositionFromCv?.trim() || "—";
+}
+
+// "Subject / messages" column — the raw context exactly as stored on the intake event: the email
+// subject, or the first few WhatsApp messages the applicant sent (joined for a one-line cell).
+function candidateSubjectOrMessages(candidate: Candidate): string {
+  const lines = candidate.sourceContext?.detailLines ?? [];
+  if (lines.length) return lines.join(" · ");
+  return candidate.sourceContext?.shortLabel?.trim() || "—";
+}
+
+// "CV sent" column — when the applicant actually sent their CV: the email Date header / WhatsApp
+// message timestamp captured on the intake event (sourceContext.cvSentAt), falling back to when
+// their record was created for manually-added candidates. Rendered as a Cairo-local date (the app
+// reports times in Africa/Cairo).
+function candidateCvSentDate(candidate: Candidate): string {
+  const iso = candidate.sourceContext?.cvSentAt ?? candidate.createdAt;
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
 function CandidatePoolCard({
   candidate,
   canDelete,
@@ -1425,10 +1480,11 @@ function CandidatePoolCard({
     >
       <PortalRecordFields
         fields={[
-          { label: "Email", value: candidate.email ?? "—" },
-          { label: "Phone", value: candidate.phone ?? "—" },
+          { label: "Source", value: candidateSourceContact(candidate) },
+          { label: "Applying for", value: candidateApplyingFor(candidate) },
+          { label: "CV sent", value: candidateCvSentDate(candidate) },
           ...(candidate.sourceContext?.shortLabel
-            ? [{ label: "Source", value: candidate.sourceContext.shortLabel }]
+            ? [{ label: "Subject / messages", value: candidateSubjectOrMessages(candidate) }]
             : []),
         ]}
       />
@@ -1671,14 +1727,15 @@ function CandidatesTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1000px">
+            <PortalDesktopTable minWidth="1120px">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
-                  <th>Email</th>
-                  <th>Phone</th>
                   <th>Source</th>
+                  <th>Applying for</th>
+                  <th>CV sent</th>
+                  <th>Subject / messages</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1689,12 +1746,17 @@ function CandidatesTab({
                     <td className="px-3 py-2">
                       <StagePill tone="slate">{candidate.status}</StagePill>
                     </td>
-                    <td className="px-3 py-2">{candidate.email ?? "—"}</td>
-                    <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
-                    <td className="max-w-[220px] px-3 py-2">
+                    <td className="px-3 py-2 text-slate-600">{candidateSourceContact(candidate)}</td>
+                    <td className="max-w-[200px] px-3 py-2">
+                      <span className="block truncate text-slate-600" title={candidateApplyingFor(candidate)}>
+                        {candidateApplyingFor(candidate)}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{candidateCvSentDate(candidate)}</td>
+                    <td className="max-w-[240px] px-3 py-2">
                       {candidate.sourceContext?.shortLabel ? (
                         <span className="block truncate text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
-                          {candidate.sourceContext.shortLabel}
+                          {candidateSubjectOrMessages(candidate)}
                         </span>
                       ) : (
                         <span className="text-slate-400">—</span>

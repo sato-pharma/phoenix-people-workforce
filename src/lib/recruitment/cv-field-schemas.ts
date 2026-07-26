@@ -40,6 +40,18 @@ const medicalRepFields: CvFieldDefinition[] = [
     type: "string",
   },
   {
+    // Fallback source for the candidate-pool "Applying for" column when the applicant did NOT
+    // state a role in their email subject / WhatsApp message — see candidateApplyingFor in
+    // recruitment-workspace.tsx. Stored in position_specific_fields (jsonb), read back from the
+    // latest extraction for the list (loadAppliedPositionByCandidate in candidates.ts).
+    aiDescription:
+      "The specific job title or role this person is applying for or targeting, if stated anywhere in the CV (a career objective, professional summary, headline, or the title under their name). Use the exact role wording from the CV, e.g. 'Medical Representative', 'Product Manager', 'Quality Assurance Specialist'. Null if the CV does not state a target role.",
+    key: "appliedPosition",
+    label: "Applying for (from CV)",
+    storage: "jsonb",
+    type: "string",
+  },
+  {
     aiDescription: "Candidate's street/detailed address, distinct from governorate.",
     key: "address",
     label: "Address",

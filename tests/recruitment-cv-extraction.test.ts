@@ -9,6 +9,12 @@ import {
   readBoolField,
   readStringField,
 } from "../src/lib/recruitment/cv-extraction.ts";
+import {
+  arabicToWesternDigits,
+  normalizeCvFieldValue,
+  normalizeEmailValue,
+  normalizePhoneValue,
+} from "../src/lib/recruitment/cv-extraction-normalize.ts";
 import { cvPositionSchemas, getCvPositionSchema, listCvPositionSchemas } from "../src/lib/recruitment/cv-field-schemas.ts";
 import { detectCvFileKind } from "../src/lib/recruitment/cv-file-kind.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
@@ -89,6 +95,7 @@ export function runRecruitmentCvExtractionTests() {
     cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
     [
       "address",
+      "appliedPosition",
       "email",
       "faculty",
       "fullName",
@@ -105,7 +112,11 @@ export function runRecruitmentCvExtractionTests() {
   assert.equal(getCvPositionSchema("medical_rep")?.label, "Medical Rep");
   assert.equal(getCvPositionSchema("unknown_position"), null);
   for (const field of cvPositionSchemas.medical_rep.fields) {
-    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
+    // appliedPosition is the one field with no dedicated ats_candidates column — it rides in the
+    // generic position_specific_fields jsonb (and is read back from the extraction for the pool's
+    // "Applying for" fallback). Every other field maps to its own column.
+    const expectedStorage = field.key === "appliedPosition" ? "jsonb" : "column";
+    assert.equal(field.storage, expectedStorage, `${field.key} storage should be ${expectedStorage}`);
   }
 
   // --- District Manager field set — same fields as Medical Rep by design (District
@@ -123,7 +134,8 @@ export function runRecruitmentCvExtractionTests() {
     "District Manager reuses the exact same field array (not a duplicated copy) to guarantee zero drift",
   );
   for (const field of cvPositionSchemas.district_manager.fields) {
-    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
+    const expectedStorage = field.key === "appliedPosition" ? "jsonb" : "column";
+    assert.equal(field.storage, expectedStorage, `${field.key} storage should be ${expectedStorage}`);
   }
   assert.notEqual(
     cvPositionSchemas.district_manager.instructions,
@@ -172,6 +184,19 @@ export function runRecruitmentCvExtractionTests() {
       `${field.key} (${field.type}) has the wrong AI response value type`,
     );
   }
+
+  // --- Deterministic post-extraction normalization (cv-extraction-normalize.ts) ----------
+  assert.equal(arabicToWesternDigits("٠١٢٣٤٥٦٧٨٩"), "0123456789", "Arabic-Indic digits map to ASCII");
+  assert.equal(arabicToWesternDigits("۰۱۲۳۴۵۶۷۸۹"), "0123456789", "Eastern-Arabic/Persian digits map to ASCII");
+  assert.equal(arabicToWesternDigits("Cairo ٢٠٢٦"), "Cairo 2026", "only digits change; surrounding text is untouched");
+  assert.equal(normalizeEmailValue("  John.Doe@Example.COM "), "john.doe@example.com", "email is trimmed + lowercased");
+  assert.equal(normalizeEmailValue("<a@b.com>"), "a@b.com", "wrapping angle brackets stripped");
+  assert.equal(normalizePhoneValue("٠١٠ ١٢٣٤ ٥٦٧٨"), "01012345678", "Arabic phone digits + spaces canonicalized");
+  assert.equal(normalizePhoneValue("+20 (100) 123-4567"), "+201001234567", "leading + kept, separators removed");
+  assert.equal(normalizePhoneValue("n/a"), "", "a non-phone value collapses to empty");
+  assert.equal(normalizeCvFieldValue("email", " X@Y.io "), "x@y.io", "dispatch: email path");
+  assert.equal(normalizeCvFieldValue("phone", "٠١٢٣"), "0123", "dispatch: phone path");
+  assert.equal(normalizeCvFieldValue("fullName", "Ahmed ٢"), "Ahmed 2", "dispatch: other fields just get digit conversion + trim");
 
   // --- Migration (Phase 1 re-platform onto ats_ tables folded the original
   //     recruitment_candidate_cv_extraction + recruitment_position_schema_framework

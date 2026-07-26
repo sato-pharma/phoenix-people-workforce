@@ -26,6 +26,7 @@ import {
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
 import { getCandidate } from "@/lib/recruitment/candidates";
+import { normalizeCvFieldValue } from "@/lib/recruitment/cv-extraction-normalize";
 import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -150,6 +151,28 @@ export function buildVisionInput(bytes: Buffer, mimeType: string) {
       content: [
         { text: "Extract the candidate fields from this CV image.", type: "input_text" as const },
         { detail: "high" as const, image_url: `data:${mimeType};base64,${bytes.toString("base64")}`, type: "input_image" as const },
+      ],
+      role: "user" as const,
+    },
+  ];
+}
+
+// Sends the actual PDF to the model (OpenAI's input_file), so it reads the document's text AND
+// visual layout natively — the accurate read for multi-column resumes, tables, and Arabic RTL that
+// a flat text-layer scrambles or drops. Deliberately NOT server-side page rasterization: that
+// needs a native canvas the standalone build drops (see pdf-dommatrix-polyfill.ts). Used as the
+// richer second read when the cheap text-layer pass comes back weak or unsure (see
+// extractCvFieldsFromBytes), and as the only read when a PDF has no extractable text (scanned).
+export function buildDocumentFileInput(bytes: Buffer, fileName: string) {
+  return [
+    {
+      content: [
+        { text: "Extract the candidate fields from this CV document. Read every page.", type: "input_text" as const },
+        {
+          file_data: `data:application/pdf;base64,${bytes.toString("base64")}`,
+          filename: fileName?.trim() || "cv.pdf",
+          type: "input_file" as const,
+        },
       ],
       role: "user" as const,
     },
@@ -326,6 +349,81 @@ export function selectCvFile(files: readonly RecruitmentFile[], fileId?: string)
 // forwarded CV's OWN identity (name/email/phone) before deciding which candidate it belongs
 // to — see cv-intake-service.ts's "cv" identity source. The caller persists the very same
 // result afterwards via persistCvExtraction, so a bulk import still costs one AI call per CV.
+type ExtractionInput = string | ReturnType<typeof buildVisionInput> | ReturnType<typeof buildDocumentFileInput>;
+
+// Key identity/routing fields — if a cheap flat-text read leaves these missing or unsure, it's
+// worth a second, richer read of the actual document to get them right.
+const KEY_EXTRACTION_FIELDS = ["fullName", "email", "phone", "appliedPosition"] as const;
+
+function isPoorField(field: ExtractedField<string | boolean | null> | undefined): boolean {
+  return !field || field.value === null || field.value === "" || field.confidence !== "high";
+}
+
+// Whether a flat-text extraction is weak enough to justify re-reading the real document: barely any
+// text came out of the PDF (a garbled/scanned/empty text layer), or two-plus key fields are
+// missing/low-confidence.
+function shouldRereadDocument(fields: ExtractedCandidateFields, cleanedText: string): boolean {
+  if (cleanedText.trim().length < 200) return true;
+  return KEY_EXTRACTION_FIELDS.filter((key) => isPoorField(fields[key])).length >= 2;
+}
+
+// A present value beats null; high confidence beats low; on a tie the document read wins (it saw
+// the real file, not a flat text dump).
+function fieldScore(field: ExtractedField<string | boolean | null> | undefined): number {
+  if (!field) return 0;
+  const hasValue = field.value !== null && field.value !== "" ? 2 : 0;
+  return hasValue + (field.confidence === "high" ? 1 : 0);
+}
+
+function mergeExtractions(
+  primary: ExtractedCandidateFields,
+  secondary: ExtractedCandidateFields,
+  schema: CvPositionSchema,
+): ExtractedCandidateFields {
+  const merged: ExtractedCandidateFields = {};
+  for (const field of schema.fields) {
+    const a = primary[field.key];
+    const b = secondary[field.key];
+    merged[field.key] = fieldScore(b) >= fieldScore(a) ? (b ?? a) : (a ?? b);
+  }
+  return merged;
+}
+
+function parseExtractionFields(outputText: string, schema: CvPositionSchema): ExtractedCandidateFields {
+  const parsed = parseAiJson(outputText);
+  const fields: ExtractedCandidateFields = {};
+  for (const field of schema.fields) {
+    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
+  }
+  return fields;
+}
+
+async function runExtractionPass(
+  schema: CvPositionSchema,
+  aiInput: ExtractionInput,
+  purpose: string,
+): Promise<{ fields: ExtractedCandidateFields; model: string }> {
+  try {
+    const response = await createOpenAiResponseText({
+      input: aiInput,
+      instructions: schema.instructions,
+      maxOutputTokens: 2_000,
+      model: OPENAI_COPILOT_DEFAULT_MODEL,
+      purpose,
+      reasoning: { effort: "medium" },
+      text: buildExtractionTextFormat(schema),
+      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
+    });
+    return { fields: parseExtractionFields(response.outputText, schema), model: response.model };
+  } catch (error) {
+    if (error instanceof PhoenixOpenAiError) throw cvExtractionErrorFromOpenAi(error);
+    throw new CvExtractionError(
+      "ai_failed",
+      `Could not reach the extraction service: ${error instanceof Error ? error.message : "network error"}`,
+    );
+  }
+}
+
 export async function extractCvFieldsFromBytes(input: {
   bytes: Buffer;
   mimeType: string;
@@ -344,51 +442,67 @@ export async function extractCvFieldsFromBytes(input: {
   }
 
   const fileKind = detectCvFileKind(input.mimeType, input.fileName);
-  let aiInput: string | ReturnType<typeof buildVisionInput>;
+
+  // Pass 1: an image is read directly; a PDF/DOCX reads its text layer first (cheap, no image
+  // tokens). A PDF whose text layer is empty (scanned-into-a-PDF) skips straight to the document read.
+  //
+  // High-accuracy mode (RECRUITMENT_CV_HIGH_ACCURACY_READ=true) skips the cheap text-only pass for
+  // PDFs and reads the actual document up front — GPT gets the text AND every page's visual layout
+  // in a single pass (best accuracy on multi-column/table/Arabic CVs, at more tokens per CV). Off by
+  // default: the text-first path plus its weak-text fallback already handles most CVs for far less.
+  const highAccuracyRead = process.env.RECRUITMENT_CV_HIGH_ACCURACY_READ === "true";
+  let cleanedText = "";
+  let firstInput: ExtractionInput;
+  let firstIsDocumentRead = false;
   if (fileKind === "image") {
-    aiInput = buildVisionInput(input.bytes, input.mimeType);
+    firstInput = buildVisionInput(input.bytes, input.mimeType);
+    firstIsDocumentRead = true;
+  } else if (fileKind === "pdf" && highAccuracyRead) {
+    firstInput = buildDocumentFileInput(input.bytes, input.fileName);
+    firstIsDocumentRead = true;
   } else {
     const rawText = await extractRawTextFromFile(input.bytes, input.mimeType, input.fileName);
-    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
-    if (!cleanedText) {
-      throw new CvExtractionError(
-        "unsupported_file",
-        "No readable text was found in this CV file.",
+    cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
+    if (cleanedText) {
+      firstInput = `CV text:\n\n${cleanedText}`;
+    } else if (fileKind === "pdf") {
+      firstInput = buildDocumentFileInput(input.bytes, input.fileName);
+      firstIsDocumentRead = true;
+    } else {
+      throw new CvExtractionError("unsupported_file", "No readable text was found in this CV file.");
+    }
+  }
+
+  let { fields, model } = await runExtractionPass(schema, firstInput, "recruitment-cv-extraction");
+
+  // Fallback + low-confidence second look: only a PDF can be re-read as a real document (a DOCX has
+  // no image form; an image was already read directly). When the cheap text pass was weak or unsure
+  // on key fields, re-read the actual PDF (text + layout) and keep the better value per field.
+  // Best-effort — a failed second read leaves the first-pass result untouched.
+  if (fileKind === "pdf" && !firstIsDocumentRead && shouldRereadDocument(fields, cleanedText)) {
+    try {
+      const second = await runExtractionPass(
+        schema,
+        buildDocumentFileInput(input.bytes, input.fileName),
+        "recruitment-cv-extraction-document",
       );
+      fields = mergeExtractions(fields, second.fields, schema);
+      model = second.model;
+    } catch {
+      /* keep the first-pass result */
     }
-    aiInput = `CV text:\n\n${cleanedText}`;
   }
 
-  let outputText: string;
-  let model: string;
-  try {
-    const response = await createOpenAiResponseText({
-      input: aiInput,
-      instructions: schema.instructions,
-      maxOutputTokens: 2_000,
-      model: OPENAI_COPILOT_DEFAULT_MODEL,
-      purpose: "recruitment-cv-extraction",
-      reasoning: { effort: "medium" },
-      text: buildExtractionTextFormat(schema),
-      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
-    });
-    outputText = response.outputText;
-    model = response.model;
-  } catch (error) {
-    if (error instanceof PhoenixOpenAiError) {
-      throw cvExtractionErrorFromOpenAi(error);
-    }
-    throw new CvExtractionError(
-      "ai_failed",
-      `Could not reach the extraction service: ${error instanceof Error ? error.message : "network error"}`,
-    );
-  }
-
-  const parsed = parseAiJson(outputText);
-  const fields: ExtractedCandidateFields = {};
+  // Deterministic cleanup on the final values (Arabic-Indic digits → ASCII, phone/email canonical) —
+  // improves readability and, since candidate dedup keys off email/phone, matching accuracy too.
   for (const field of schema.fields) {
-    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
+    const current = fields[field.key];
+    if (field.type === "string" && current && typeof current.value === "string") {
+      const normalized = normalizeCvFieldValue(field.key, current.value);
+      fields[field.key] = { ...current, value: normalized.length ? normalized : null };
+    }
   }
+
   return { fields, model, positionKey: schema.positionKey };
 }
 

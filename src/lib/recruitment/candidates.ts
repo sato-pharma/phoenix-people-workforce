@@ -124,13 +124,39 @@ async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_candidate_source_context")
-    .select("candidate_id,channel,subject,raw_metadata")
+    .select("candidate_id,channel,subject,raw_metadata,created_at")
     .in("candidate_id", ids);
   if (error || !data) return map;
   for (const row of data as SourceContextRow[]) {
     const candidateId = textOrNull((row as { candidate_id?: unknown }).candidate_id);
     if (!candidateId) continue;
     map.set(candidateId, describeCandidateSource(row));
+  }
+  return map;
+}
+
+// Loads each candidate's AI-read "applying for" role from their most-recent CV extraction, keyed
+// by candidate id. This is the fallback the pool's "Applying for" column uses when the applicant
+// didn't state a role in their email subject / WhatsApp message. Best-effort, same posture as
+// loadSourceContextByCandidate: the extraction's `extracted_fields` jsonb stores each field as
+// {value, confidence}; we take the most recent non-empty appliedPosition value.
+async function loadAppliedPositionByCandidate(ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (ids.length === 0) return map;
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidate_cv_extractions")
+    .select("candidate_id,extracted_fields,created_at")
+    .in("candidate_id", ids)
+    .order("created_at", { ascending: false });
+  if (error || !data) return map;
+  for (const row of data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>) {
+    const candidateId = textOrNull(row.candidate_id);
+    if (!candidateId || map.has(candidateId)) continue; // ordered newest-first → first wins
+    const fields = row.extracted_fields as Record<string, unknown> | null;
+    const field = fields?.appliedPosition as { value?: unknown } | undefined;
+    const value = typeof field?.value === "string" ? field.value.trim() : "";
+    if (value) map.set(candidateId, value);
   }
   return map;
 }
@@ -143,10 +169,16 @@ export async function listCandidates(): Promise<Candidate[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
-  const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  const ids = candidates.map((candidate) => candidate.id);
+  const [sourceContext, appliedPositions] = await Promise.all([
+    loadSourceContextByCandidate(ids),
+    loadAppliedPositionByCandidate(ids),
+  ]);
   for (const candidate of candidates) {
     const context = sourceContext.get(candidate.id);
     if (context) candidate.sourceContext = context;
+    const applied = appliedPositions.get(candidate.id);
+    if (applied) candidate.appliedPositionFromCv = applied;
   }
   return candidates;
 }

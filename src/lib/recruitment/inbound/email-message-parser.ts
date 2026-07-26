@@ -86,8 +86,13 @@ export function parseInboundEmailMessage(
   const notes = (mail.text ?? "").trim().slice(0, 500) || null;
   const providerMessageId = mail.messageId?.trim() || `email:${context.mailboxLabel}:uid:${context.uid}`;
   const isImport = isEmailImportSender(email, options?.importSenders);
+  // The email's own Date header — when the applicant actually sent the CV, which can predate when
+  // our poller picked it up (the candidate-pool "CV sent" column prefers this over our processing
+  // time; see describeCandidateSource / candidateCvSentDate).
+  const sentAt = mail.date instanceof Date && !Number.isNaN(mail.date.getTime()) ? mail.date.toISOString() : null;
   const rawMetadata: Record<string, unknown> = {
     from: email,
+    ...(sentAt ? { sentAt } : {}),
     ...(ignoredAttachmentCount > 0 ? { ignoredAttachmentCount } : {}),
     ...(isImport ? { bulkImport: true } : {}),
   };

@@ -34,6 +34,9 @@ export type ParsedWhatsAppMessage = {
   // import routing keys off the configured sender allowlist below, which does not depend on
   // Meta populating this field.
   forwarded: boolean;
+  // When the applicant actually sent the message, from Meta's `timestamp` (Unix seconds). ISO
+  // string, or null if absent/unparseable. Surfaced as the candidate-pool "CV sent" date.
+  sentAt: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -83,12 +86,17 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
             }
           : null;
 
+        // Meta sends `timestamp` as Unix seconds (string). Convert to ISO; ignore if missing/bad.
+        const tsSeconds = Number(asString(message?.timestamp));
+        const sentAt = Number.isFinite(tsSeconds) && tsSeconds > 0 ? new Date(tsSeconds * 1000).toISOString() : null;
+
         messages.push({
           contactName: contactNameByWaId.get(from) ?? null,
           document,
           forwarded: asRecord(message?.context)?.forwarded === true,
           from,
           messageType,
+          sentAt,
           text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
           wamid,
         });
@@ -140,6 +148,7 @@ export function buildWhatsAppIntakeInput(
   const rawMetadata: Record<string, unknown> = {
     messageType: message.messageType,
     wa_id: message.from,
+    ...(message.sentAt ? { sentAt: message.sentAt } : {}),
     ...(message.forwarded ? { forwarded: true } : {}),
     ...(isImport ? { bulkImport: true } : {}),
   };
