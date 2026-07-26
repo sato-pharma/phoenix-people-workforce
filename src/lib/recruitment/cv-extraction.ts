@@ -237,7 +237,7 @@ export function parseAiJson(text: string): Record<string, unknown> {
       }
     }
   }
-  throw new CvExtractionError("ai_failed", "The AI reply was not in the expected format. Try again.");
+  throw new CvExtractionError("ai_failed", "The reply was not in the expected format. Try again.");
 }
 
 export function readStringField(parsed: Record<string, unknown>, key: string): ExtractedField<string | null> {
@@ -281,7 +281,7 @@ function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionErr
     case "not_configured":
       return new CvExtractionError(
         "ai_not_configured",
-        "The AI assistant is not configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+        "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
       );
     case "quota_exceeded":
       return new CvExtractionError(
@@ -293,11 +293,13 @@ function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionErr
     case "auth_failed":
       return new CvExtractionError("ai_failed", "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.");
     case "timeout":
-      return new CvExtractionError("ai_failed", "Could not reach the AI service: request timed out.");
+      return new CvExtractionError("ai_failed", "Could not reach the extraction service: request timed out.");
     case "failed":
       return new CvExtractionError(
         "ai_failed",
-        error.status ? `The AI service returned ${error.status}. Try again.` : `Could not reach the AI service: ${error.message}`,
+        error.status
+          ? `The extraction service returned ${error.status}. Try again.`
+          : `Could not reach the extraction service: ${error.message}`,
       );
   }
 }
@@ -337,7 +339,7 @@ export async function extractCvFieldsFromBytes(input: {
   if (!hasOpenAiApiKey()) {
     throw new CvExtractionError(
       "ai_not_configured",
-      "The AI assistant is not configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
     );
   }
 
@@ -378,7 +380,7 @@ export async function extractCvFieldsFromBytes(input: {
     }
     throw new CvExtractionError(
       "ai_failed",
-      `Could not reach the AI service: ${error instanceof Error ? error.message : "network error"}`,
+      `Could not reach the extraction service: ${error instanceof Error ? error.message : "network error"}`,
     );
   }
 
@@ -429,7 +431,7 @@ export async function extractCandidateFieldsFromCv(
   if (!hasOpenAiApiKey()) {
     throw new CvExtractionError(
       "ai_not_configured",
-      "The AI assistant is not configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
     );
   }
 
@@ -443,7 +445,7 @@ export async function extractCandidateFieldsFromCv(
       "no_cv_file",
       options?.fileId
         ? "The specified CV file was not found for this candidate."
-        : "Upload a CV file for this candidate before running AI extraction.",
+        : "Upload a CV file for this candidate before running extraction.",
     );
   }
 
@@ -451,7 +453,7 @@ export async function extractCandidateFieldsFromCv(
   if (!downloaded || downloaded.kind !== "binary") {
     throw new CvExtractionError(
       "no_cv_file",
-      "This candidate's CV is a link, not an uploaded file — AI extraction needs the actual file.",
+      "This candidate's CV is a link, not an uploaded file — extraction needs the actual file.",
     );
   }
 

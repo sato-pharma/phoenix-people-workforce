@@ -1,13 +1,13 @@
 "use client";
 
-// Recruitment / ATS — drag-and-drop review board for AI CV extraction.
+// Recruitment / ATS — drag-and-drop review board for CV extraction.
 //
-// One draggable "chip" per string field the AI extracted (its value, plus a low-confidence
+// One draggable "chip" per string field that was extracted (its value, plus a low-confidence
 // badge). Each field also has a droppable slot; dropping a chip into a slot assigns that
 // value to that field — dropping onto an occupied slot swaps the bumped chip back to the
-// unassigned pool. "AI Populate" resets every slot to the AI's own field-to-value mapping
+// unassigned pool. "Populate" resets every slot to the original field-to-value mapping
 // (the default state on load). Clicking a chip switches it into an inline text edit so the
-// VALUE itself can be corrected, not just which slot it sits in. Boolean fields (AI
+// VALUE itself can be corrected, not just which slot it sits in. Boolean fields (extracted
 // judgments, not extracted text) are plain Yes/No/Not-stated selects, not draggable chips.
 //
 // Schema-driven (src/lib/recruitment/cv-field-schemas.ts) — works for any position's field
@@ -133,7 +133,7 @@ export function CvExtractionReviewBoard({
     return map;
   }, [fields, stringFields]);
 
-  // Default state: every field's slot holds its own chip — "AI Populate" resets to this.
+  // Default state: every field's slot holds its own chip — "Populate" resets to this.
   const defaultAssignment = useMemo(() => {
     const assignment: Record<string, string | null> = {};
     for (const field of stringFields) assignment[field.key] = field.key;
@@ -229,10 +229,10 @@ export function CvExtractionReviewBoard({
       <div className="space-y-3 rounded border border-slate-200 bg-slate-50/60 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Drag a field into the right column, or drag one out to leave it blank. AI Populate resets everything to the AI&apos;s own guess.
+            Drag a field into the right column, or drag one out to leave it blank. Populate resets everything to the original suggested values.
           </p>
           <Button onClick={applyAiPopulate} size="sm" type="button" variant="secondary">
-            AI Populate
+            Populate
           </Button>
         </div>
         {error ? <p className="text-xs text-rose-600">{error}</p> : null}

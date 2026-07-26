@@ -36,9 +36,9 @@ export default async function CvExtractionAnalyticsPage() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">CV Extraction — AI Accuracy</h1>
+        <h1 className="text-lg font-semibold text-slate-900">CV Extraction Accuracy</h1>
         <p className="text-sm text-slate-500">
-          Reviewed extractions only. Shows how often Talent Acquisition corrected each AI-proposed field before
+          Reviewed extractions only. Shows how often Talent Acquisition corrected each proposed field before
           saving, by position — a high correction rate flags a field worth revisiting.
         </p>
       </div>

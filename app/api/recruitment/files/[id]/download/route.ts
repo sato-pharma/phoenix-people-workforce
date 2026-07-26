@@ -17,10 +17,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (download.kind === "external") {
       return NextResponse.redirect(download.url);
     }
+    // "inline" lets a PDF render inside an <iframe> (the in-app preview) instead of the browser
+    // force-downloading it — Chrome/Edge do that for ANY iframe navigation to an "attachment"
+    // response, so the two callers genuinely need different dispositions on the same bytes.
+    const inline = new URL(request.url).searchParams.get("disposition") === "inline";
     return new NextResponse(download.bytes as unknown as BodyInit, {
       headers: {
         "Content-Type": download.mimeType,
-        "Content-Disposition": `attachment; filename="${download.fileName.replace(/"/g, "")}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${download.fileName.replace(/"/g, "")}"`,
       },
     });
   } catch (error) {

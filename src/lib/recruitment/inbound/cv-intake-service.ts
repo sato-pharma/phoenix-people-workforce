@@ -232,7 +232,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     }
     if (!attachmentIsCv) {
       await finalizeIntakeEvent(eventId, {
-        errorMessage: "Attachment does not appear to be a CV/resume (AI content check).",
+        errorMessage: "Attachment does not appear to be a CV/resume (automated content check).",
         outcome: "ignored_unsupported_attachment",
       });
       return { outcome: "ignored_unsupported_attachment" };

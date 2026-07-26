@@ -238,7 +238,6 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
           fileName={cvFile.fileName}
           mimeType={cvFile.mimeType}
           onClose={() => setPreviewOpen(false)}
-          previewTextUrl={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}/preview-text`}
         />
       ) : null}
 
