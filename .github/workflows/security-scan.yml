@@ -1,11 +1,13 @@
 name: Security Scan (OSS)
 
 # GitHub Advanced Security (native code scanning + secret scanning alerts) is not
-# purchasable here: Phoenix-HR is a personal User account on GitHub Pro, and GHAS
-# is only sold to Team/Enterprise Cloud accounts (confirmed 2026-07-25 via
-# repos/{owner}/{repo} returning security_and_analysis: null and the code-scanning
-# default-setup endpoint 403'ing with "Code scanning is not enabled ... enable in
-# repository settings" — there is no such setting available on this plan).
+# purchasable here: Gawish-1997 is a personal User account, and GHAS is only sold to
+# Team/Enterprise Cloud accounts (confirmed 2026-07-25 under the previous owner and
+# RE-confirmed 2026-07-26 after the transfer to Gawish-1997 — repos/{owner}/{repo}
+# still returns security_and_analysis: null and the code-scanning default-setup
+# endpoint still 403s with "Code scanning is not enabled ... enable in repository
+# settings"; there is no such setting available on a personal account). Moving to an
+# organization would make it purchasable at $19-30/active committer/month.
 #
 # This workflow substitutes two open-source scanners that need no GitHub license:
 # gitleaks (secrets) and Semgrep (SAST). Both CLIs are installed directly rather

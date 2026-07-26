@@ -9,7 +9,11 @@ updates:
     # compromised/unstable release has time to be caught and pulled upstream.
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 5
+    # Lowered 5 -> 3 on 2026-07-26: every open Dependabot PR costs a CI run (~8.8
+    # runner-min) plus a Security Scan run (~3.4) on each push it receives, and a
+    # backlog of 5 simultaneous dependency PRs was a meaningful share of the Actions
+    # bill. Three at a time still keeps updates flowing; the rest just queue.
+    open-pull-requests-limit: 3
     labels:
       - dependencies
     ignore:
@@ -30,6 +34,6 @@ updates:
       day: monday
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2 # lowered from 3 — same Actions-cost reason as the npm limit above
     labels:
       - dependencies

@@ -9,7 +9,7 @@ name: CI (docs-only fallback)
 # PRs (code + docs), both this workflow and ci.yml trigger; all must succeed,
 # which is correct.
 #
-# See https://github.com/Phoenix-HR/phoenix-people-workforce/issues/679
+# See https://github.com/Gawish-1997/phoenix-people-workforce/issues/679
 
 on:
   pull_request:
