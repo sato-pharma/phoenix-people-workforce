@@ -48,6 +48,8 @@ function formatDate(value: string): string {
 function payrollColumnLabel(column: DeductionPayrollColumn) {
   if (column === "crm") return "CRM";
   if (column === "finger_print") return "Finger Print";
+  if (column === "loans") return "Loan";
+  if (column === "other_deductions") return "Other";
   return "Unpaid Vacations";
 }
 

@@ -10,10 +10,8 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import {
-  compactDeductionHrId,
-  listPublishedDeductionsForPortal,
-} from "@/lib/deductions-governance/service";
+import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { getPortalDeductions } from "@/lib/deductions/portal.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +34,9 @@ export default async function DeductionsPortalPage(props: DeductionsPortalPagePr
     ? rawMonthKey.trim()
     : undefined;
 
-  let data: Awaited<ReturnType<typeof listPublishedDeductionsForPortal>>;
+  let data: Awaited<ReturnType<typeof getPortalDeductions>>;
   try {
-    data = await listPublishedDeductionsForPortal({ access, monthKey });
+    data = await getPortalDeductions({ access, monthKey });
   } catch (error) {
     return (
       <EmployeePortalEmptyState

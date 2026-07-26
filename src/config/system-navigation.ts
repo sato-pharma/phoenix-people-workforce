@@ -1465,6 +1465,13 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["CEO"],
   },
   {
+    href: "/admin/deductions",
+    icon: ReceiptText,
+    label: "Deductions",
+    description: "New unified source of truth for every payroll deduction (Phase 1 preview — feeds nothing live yet).",
+    permissions: [{ resource: "deductions", action: "read" }],
+  },
+  {
     href: "/admin/no-activity-days",
     icon: CalendarX2,
     label: "No Activity Days",
