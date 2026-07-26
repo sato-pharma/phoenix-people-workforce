@@ -9,9 +9,11 @@ import {
   CIB_DEBIT_CREDIT,
   CIB_DETAILS_ID,
   CIB_REASON_CODE,
+  cibRowsForNonEmployees,
   cibRowsForScope,
   formatCibAmount,
 } from "../src/lib/automated-payroll/exports/cib-sheet.ts";
+import type { NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 import type { SalaryValidationRow } from "../src/lib/payroll/salary-import.ts";
 
 /**
@@ -79,6 +81,26 @@ function buildAssembledRow(overrides: {
   };
 }
 
+function buildNonEmployeeRow(overrides: {
+  fullNameEn?: string;
+  totalSalary?: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
+}): NonEmployeePayrollRow {
+  return {
+    id: "id",
+    runId: "run",
+    fullNameAr: "اسم",
+    fullNameEn: overrides.fullNameEn ?? "Non Employee Person",
+    totalSalary: overrides.totalSalary ?? 3000,
+    bankName: overrides.bankName === undefined ? "CIB" : overrides.bankName,
+    bankAccount: overrides.bankAccount === undefined ? "100222220001" : overrides.bankAccount,
+    createdBy: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
 export async function runAutomatedPayrollCibSheetTests() {
   // ---- constants pinned to the real, bank-accepted reference file ------------
   assert.equal(CIB_DETAILS_ID, "D");
@@ -109,6 +131,23 @@ export async function runAutomatedPayrollCibSheetTests() {
   const part2Rows = cibRowsForScope(allRows, "part2");
   assert.equal(part2Rows.length, 1, "only normalRow has a nonzero Part-2 amount");
   assert.equal(part2Rows[0].salary, 6200);
+
+  // ---- cibRowsForNonEmployees: a completely separate data source from
+  // AssembledRow (owner-reported 2026-07-26: they were silently missing from
+  // the real bank file because cibRowsForScope never sees them at all) -------
+  const neNormal = buildNonEmployeeRow({ fullNameEn: "Freelance Person" });
+  const neNonCib = buildNonEmployeeRow({ bankName: "FAB" });
+  const neNoAccount = buildNonEmployeeRow({ bankAccount: "" });
+  const neZeroSalary = buildNonEmployeeRow({ totalSalary: 0 });
+  const allNonEmployees = [neNormal, neNonCib, neNoAccount, neZeroSalary];
+
+  const nePart1 = cibRowsForNonEmployees(allNonEmployees, "part1");
+  assert.equal(nePart1.length, 1, "only the real CIB-bank, nonzero, has-account row survives");
+  assert.equal(nePart1[0].fullName, "Freelance Person");
+  assert.equal(nePart1[0].salary, 3000);
+
+  const nePart2 = cibRowsForNonEmployees(allNonEmployees, "part2");
+  assert.deepEqual(nePart2, [], "non-employees never appear on Part 2 — their whole salary pays with Part 1");
 
   // ---- buildCibSheetWorkbook: exact schema + exact values --------------------
   const buffer = await buildCibSheetWorkbook({
