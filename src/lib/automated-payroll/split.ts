@@ -153,16 +153,25 @@ export type FreezeFirstPartInput = {
   /**
    * One-part employees only (owner rule 2026-07-24): they have no Second Part to
    * net medical insurance against, so it must come out of Part 1 directly.
-   * Two-part employees are unaffected — their medical insurance stays netted
-   * against Second Part exactly as before.
+   * Continuing (non-leaver) two-part employees are unaffected — their medical
+   * insurance stays netted against a real future Second Part exactly as before.
+   * A two-part LEAVER gets a THIRD treatment (owner rule 2026-07-26): folded
+   * into the `leaverDeduction` shortfall-netting below instead of subtracted
+   * here directly, because at this point in the function a two-part leaver's
+   * eventual Second Part isn't known yet — it might still be large enough to
+   * absorb medical insurance normally, or (Amany/Eman's case) the whole
+   * settlement collapses into First Part, leaving no Second Part to net
+   * against and no next month to carry an unrecovered residual to.
    */
   medicalInsurance?: number;
   /**
-   * Leaver only (owner rule 2026-07-20): their CRM no-activity + unpaid-vacation
-   * deduction, computed and confirmed at resignation time — a leaver won't be present
-   * for the whole-company Part-2 CRM/Vacation steps, so it's settled here instead.
-   * Netted against their own remaining Second Part first; any shortfall spills into
-   * First Part, since — unlike a continuing employee — a leaver has no next month to
+   * Leaver only (owner rule 2026-07-20, extended 2026-07-26 to include medical
+   * insurance for two-part leavers — see medicalInsurance's own doc comment):
+   * their CRM no-activity + unpaid-vacation deduction, computed and confirmed
+   * at resignation time — a leaver won't be present for the whole-company
+   * Part-2 CRM/Vacation steps, so it's settled here instead. Netted against
+   * their own remaining Second Part first; any shortfall spills into First
+   * Part, since — unlike a continuing employee — a leaver has no next month to
    * carry an unresolved residual to. Ignored for non-leavers.
    */
   leaverDeduction?: number;
@@ -171,17 +180,21 @@ export type FreezeFirstPartInput = {
 /**
  * The frozen First Part (first installment), computed at Part-1 confirm.
  *  two_parts: min(Basic, effNet) − fingerprint   (Basic anchor: leaver → full base, else effective base)
- *  one_part:  effNet − fingerprint                (full net in Part 1, per owner rule)
+ *  one_part:  effNet − fingerprint − medical insurance (full net in Part 1, per owner rule)
  * Clamped to ≥ 0, then — leavers only — reduced further by whatever part of
- * `leaverDeduction` their own Second Part can't absorb.
+ * `leaverDeduction` (CRM/vacation, plus medical insurance for a two-part
+ * leaver) their own Second Part can't absorb.
  */
 export function freezeFirstPart(input: FreezeFirstPartInput): number {
   const mode = normalizePayrollPaymentMode(input.paymentMode);
   const fp = Math.max(0, roundCurrency(input.fingerprint));
   const otherP1 = Math.max(0, roundCurrency(input.otherPart1Deductions ?? 0));
   const otherP1Additions = Math.max(0, roundCurrency(input.otherPart1Additions ?? 0));
+  const medicalInsurance = Math.max(0, roundCurrency(input.medicalInsurance ?? 0));
   // One-part employees only — see FreezeFirstPartInput.medicalInsurance doc comment.
-  const medical = mode === "two_parts" ? 0 : Math.max(0, roundCurrency(input.medicalInsurance ?? 0));
+  // Two-part employees (leaver or not) skip this; a two-part leaver's medical
+  // insurance is instead folded into the leaverDeduction shortfall below.
+  const medicalDirect = mode === "two_parts" ? 0 : medicalInsurance;
   const effNet = input.effective.net;
   const isLeaver = input.effective.lifecycle === "leaver";
 
@@ -194,10 +207,17 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
     firstBeforeFp = effNet;
   }
 
-  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp - otherP1 - medical + otherP1Additions));
+  const firstAfterFp = Math.max(0, roundCurrency(firstBeforeFp - fp - otherP1 - medicalDirect + otherP1Additions));
   if (!isLeaver) return firstAfterFp;
 
-  const leaverDeduction = Math.max(0, roundCurrency(input.leaverDeduction ?? 0));
+  // A two-part leaver's medical insurance was deliberately skipped above
+  // (medicalDirect === 0 for two_parts) — fold it in here instead, alongside
+  // CRM/vacation, so ALL of a leaver's own deductions net against their
+  // remaining Second Part first, with any shortfall — including medical
+  // insurance the collapsed settlement leaves no Second Part to absorb —
+  // coming out of First Part now instead of a next month that never comes.
+  const medicalForLeaverNetting = mode === "two_parts" ? medicalInsurance : 0;
+  const leaverDeduction = Math.max(0, roundCurrency((input.leaverDeduction ?? 0) + medicalForLeaverNetting));
   if (leaverDeduction === 0) return firstAfterFp;
 
   const provisionalSecond = Math.max(0, roundCurrency(effNet - firstAfterFp));
