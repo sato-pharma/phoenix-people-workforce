@@ -75,15 +75,11 @@ const ALL_FIELD = new Set(
 const ALL_REPS = new Set(["R1", "R2", "R3", "RP1"]);
 
 export async function runEmployee360AccessTests() {
-  // ── Company-wide roles ──
+  // ── Company-wide roles (whole company, every field-force family) ──
   for (const [role, hr] of [
     ["CEO", "C-1"],
     ["Super Admin", "SA-1"],
     ["SFE Manager", "SFE-1"],
-    // Talent Acquisition (owner-requested 2026-07-25): company-wide like the other
-    // three, even though her own generic scope (scopeForRole) is "self" — Employee
-    // 360 grants this independently of that generic scope, see below.
-    ["Talent Acquisition", "TA-1"],
   ] as const) {
     const v = await visible(ctx(role, hr, "company"));
     assert.deepEqual(v, ALL_FIELD, `${role} sees every field-force subject`);
@@ -109,6 +105,22 @@ export async function runEmployee360AccessTests() {
   const tm = await visible(ctx("Training Manager", "TM-1", "company"));
   assert.deepEqual(tm, new Set(["TM-1", ...ALL_REPS]), "TM sees all Medical Reps + self only");
   assert.ok(!tm.has("DM-A") && !tm.has("NSM-A") && !tm.has("PM-A"), "TM does NOT see managers/PMs");
+
+  // ── Talent Acquisition (owner-requested 2026-07-26, narrowing the prior
+  // 2026-07-25 whole-company grant): all Medical Reps, nobody else — same shape as
+  // Training Manager, not the CEO/SFE/SA whole-company set. TA-1's own row is
+  // excluded here (as TM-1's would be too) because resolveEmployee360VisibleRows
+  // only ever lists field-force subjects, and "Talent Acquisition" isn't one of
+  // the six covered job titles; her own-record access is still granted separately
+  // by the hrIdsMatch self-check in canViewEmployee360Subject. ──
+  const ta = await visible(ctx("Talent Acquisition", "TA-1", "self"));
+  assert.deepEqual(ta, ALL_REPS, "TA sees all Medical Reps, nobody else");
+  assert.ok(!ta.has("DM-A") && !ta.has("NSM-A") && !ta.has("PM-A"), "TA does NOT see managers/PMs");
+  assert.equal(
+    canViewEmployee360Subject(ctx("Talent Acquisition", "TA-1", "self"), row("TA-1", "Talent Acquisition", null, null, null), await buildEmployee360Scope(rows, ctx("Talent Acquisition", "TA-1", "self"))),
+    true,
+    "TA can still open her own (non-field-force) record",
+  );
 
   // ── NSM (line 1): their whole line, department-safe; not the other line ──
   const nsmA = await visible(ctx("National Sales Manager", "NSM-A", "line"));

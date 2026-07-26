@@ -6,9 +6,10 @@
 // deliberately does NOT touch the global `canSeeEmployee` (which also guards
 // payroll/directory/other sensitive surfaces and must stay narrow).
 //
-// Scope per role (owner-confirmed 2026-07-18):
+// Scope per role (owner-confirmed 2026-07-18; Talent Acquisition narrowed to
+// Medical Reps only 2026-07-26):
 //   CEO · SFE Manager · Super Admin (+ system)  → whole company
-//   Training Manager                            → all Medical Reps + self only
+//   Training Manager · Talent Acquisition       → all Medical Reps + self only
 //   Regional Manager                            → their full multi-level hierarchy + self
 //   National Sales Manager · Product Manager · Group Product Manager → their line + self
 //   District Manager · Manager                  → their direct team + self
@@ -33,7 +34,10 @@ import {
 } from "@/lib/workforce/hierarchy-resolver";
 
 /** Roles that see the WHOLE company in Employee 360. */
-const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin", "Talent Acquisition"]);
+const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin"]);
+
+/** Roles restricted to Medical Reps only (+ self), company-wide — no line/hierarchy scope. */
+const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>(["Training Manager", "Talent Acquisition"]);
 
 /** The subset of an employee row the 360 scope check needs. */
 export type Employee360SubjectRow = Pick<
@@ -57,13 +61,19 @@ export function isEmployee360Subject(
 }
 
 /**
- * True when this viewer sees the WHOLE company in Employee 360. A company-wide
- * viewer whose own record isn't itself field-force (e.g. Talent Acquisition) gets
- * a browse-all list instead of an out-of-scope card when they open their own
- * profile — see the employee-portal Employee 360 page.
+ * True when this viewer's own non-field-force record should fall back to a
+ * browse-all-visible-subjects list instead of an out-of-scope card when they
+ * open their own profile — see the employee-portal Employee 360 page. This
+ * covers both whole-company viewers (CEO / SFE Manager / Super Admin) and
+ * Medical-Rep-only viewers (Talent Acquisition); which subjects actually show
+ * up in that list is still decided by `canViewEmployee360Subject`.
  */
 export function isCompany360Viewer(context: Pick<AccessContext, "role" | "scope">): boolean {
-  return context.scope === "system" || COMPANY_360_ROLES.has(context.role);
+  return (
+    context.scope === "system" ||
+    COMPANY_360_ROLES.has(context.role) ||
+    MEDICAL_REP_ONLY_360_ROLES.has(context.role)
+  );
 }
 
 /** Precomputed lookups a scope decision reuses across many subjects. */
@@ -132,8 +142,10 @@ export function canViewEmployee360Subject(
 
   const role = context.role;
 
-  // Training Manager oversees the coachable pool: all Medical Reps (+ self above).
-  if (role === "Training Manager") {
+  // Training Manager oversees the coachable pool; Talent Acquisition's Employee 360
+  // access is narrowed to the same pool (owner-requested 2026-07-26). Both see every
+  // Medical Rep company-wide (+ self above) and nobody else.
+  if (MEDICAL_REP_ONLY_360_ROLES.has(role)) {
     return resolveEmployee360RoleCategory(subject.jobTitle ?? subject.positionTitle) === "medical-rep";
   }
 
