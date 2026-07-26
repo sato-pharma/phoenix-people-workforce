@@ -39,7 +39,7 @@ import {
   upsertStepState,
 } from "./draft-store.ts";
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
-import { monthLabel, notifyPart1Ready, notifyPart2Ready, notifyPublished } from "./notify.ts";
+import { monthLabel, notifyPart1Ready, notifyPart1SubmittedForReview, notifyPart2Ready, notifyPublished } from "./notify.ts";
 import {
   actorId,
   assertAutomatedPayrollFinanceActor,
@@ -484,6 +484,46 @@ export async function confirmPart1(access: AccessContext, runId: string): Promis
     detail: { frozenEmployees: patches.length },
   });
   await notifyPart1Ready(updated);
+  await notifyPart1SubmittedForReview(updated);
+  return updated;
+}
+
+/**
+ * Reopen a Part-1-confirmed run back to Part 1, so HR can correct upstream
+ * data (e.g. an employee's base salary) and re-freeze accurate First Part
+ * values. Clears every draft row's frozen First Part alongside the run's
+ * confirmation stamp — a stale frozen value from before the correction must
+ * not survive to Part 2. Step confirmations (PART1_STEP_KEYS) are left
+ * intact: re-confirming recomputes straight from current source data, and
+ * HR does not need to re-click through every tab to get there.
+ */
+export async function unconfirmPart1(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  assertActiveRun(run);
+  if (run.phase !== "part2") {
+    throw new Error("Conflict: Part 1 is not currently confirmed.");
+  }
+
+  const draftRows = await listDraftRows(runId);
+  const patches: DraftRowPatch[] = draftRows.map((row) => ({
+    employeeHrId: row.employeeHrId,
+    firstPartFrozen: null,
+    editedBy: actorId(access),
+  }));
+  await upsertDraftRows(runId, patches);
+
+  const updated = await updateRun(runId, {
+    phase: "part1",
+    part1ConfirmedAt: null,
+    part1ConfirmedBy: null,
+  });
+  await writeAutomatedPayrollAudit({
+    runId,
+    actorHrId: actorId(access),
+    action: "part1_unconfirmed",
+    detail: { unfrozenEmployees: patches.length },
+  });
   return updated;
 }
 

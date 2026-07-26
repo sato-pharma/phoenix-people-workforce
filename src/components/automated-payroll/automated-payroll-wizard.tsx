@@ -421,14 +421,30 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                     <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">
                       Part 2 — Full sheet
                     </div>
-                    <Button
-                      size="sm"
-                      className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
-                      disabled={busy || !part2AllConfirmed || run.phase !== "part2"}
-                      onClick={() => void confirmPart2WithOverpaidGate(run.id)}
-                    >
-                      Confirm Part 2
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {run.phase === "part2" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-red-300 text-red-700 hover:bg-red-50"
+                          disabled={busy}
+                          onClick={() => {
+                            if (!window.confirm("Unconfirm Part 1? This clears every employee's frozen First Part so it can be recomputed from current data.")) return;
+                            void post(`/api/automated-payroll/runs/${run.id}/part1/unconfirm`, "Part 1 unconfirmed. First Part values cleared for recompute.");
+                          }}
+                        >
+                          Unconfirm Part 1
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+                        disabled={busy || !part2AllConfirmed || run.phase !== "part2"}
+                        onClick={() => void confirmPart2WithOverpaidGate(run.id)}
+                      >
+                        Confirm Part 2
+                      </Button>
+                    </div>
                   </div>
                   {renderStepPills(PART2_STEP_KEYS)}
                 </div>
