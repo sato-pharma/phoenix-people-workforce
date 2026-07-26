@@ -90,14 +90,22 @@ export function runRecruitmentWhatsAppIntakeTests() {
   assert.equal(documentMsg.from, "201001234567");
   assert.equal(documentMsg.contactName, "Jane Doe");
   assert.equal(documentMsg.messageType, "document");
-  assert.deepEqual(documentMsg.document, { filename: "cv.pdf", mediaId: "MEDIA123", mimeType: "application/pdf" });
+  assert.deepEqual(documentMsg.document, { caption: null, filename: "cv.pdf", mediaId: "MEDIA123", mimeType: "application/pdf" });
+  assert.equal(documentMsg.text, null, "a document message carries no text body");
 
-  // Text message (no document attachment at all).
+  // A document caption is captured (shown as part of the candidate's source context).
+  const [captionedMsg] = parseWhatsAppWebhookPayload(
+    documentMessagePayload({ document: { caption: "My CV", filename: "cv.pdf", id: "MEDIA123", mime_type: "application/pdf" } }),
+  );
+  assert.equal(captionedMsg.document?.caption, "My CV");
+
+  // Text message (no document attachment at all) — its body is captured for buffering.
   const [textMsg] = parseWhatsAppWebhookPayload(
-    documentMessagePayload({ document: undefined, text: { body: "hi" }, type: "text" }),
+    documentMessagePayload({ document: undefined, text: { body: "hi there" }, type: "text" }),
   );
   assert.equal(textMsg.messageType, "text");
   assert.equal(textMsg.document, null, "a non-document message never carries a document field, even if one is present in the raw payload");
+  assert.equal(textMsg.text, "hi there", "a text message's body is captured");
 
   // Image message — also never treated as a document (no OCR support).
   const [imageMsg] = parseWhatsAppWebhookPayload(
@@ -167,7 +175,7 @@ export function runRecruitmentWhatsAppIntakeTests() {
   // number, which is what would collapse them into a single candidate.
   const importOptions = { importSenders: ["201001234567"] };
   const imported = buildWhatsAppIntakeInput(
-    { ...documentMsg, contactName: "Omar (old phone)", document: { filename: "Ahmed Mahmoud CV.pdf", mediaId: "M1", mimeType: "application/pdf" } },
+    { ...documentMsg, contactName: "Omar (old phone)", document: { caption: null, filename: "Ahmed Mahmoud CV.pdf", mediaId: "M1", mimeType: "application/pdf" } },
     { bytes: Buffer.from("fake"), fileName: "Ahmed Mahmoud CV.pdf", mimeType: "application/pdf" },
     importOptions,
   );
@@ -183,7 +191,7 @@ export function runRecruitmentWhatsAppIntakeTests() {
   assert.equal((imported.rawMetadata as { bulkImport?: boolean }).bulkImport, true);
 
   const genericFilename = buildWhatsAppIntakeInput(
-    { ...documentMsg, document: { filename: "document.pdf", mediaId: "M2", mimeType: "application/pdf" } },
+    { ...documentMsg, document: { caption: null, filename: "document.pdf", mediaId: "M2", mimeType: "application/pdf" } },
     null,
     importOptions,
   );
@@ -194,7 +202,7 @@ export function runRecruitmentWhatsAppIntakeTests() {
   );
 
   const datestampFilename = buildWhatsAppIntakeInput(
-    { ...documentMsg, document: { filename: "20260115.pdf", mediaId: "M3", mimeType: "application/pdf" } },
+    { ...documentMsg, document: { caption: null, filename: "20260115.pdf", mediaId: "M3", mimeType: "application/pdf" } },
     null,
     importOptions,
   );

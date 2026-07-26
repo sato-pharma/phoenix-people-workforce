@@ -201,6 +201,16 @@ export type Candidate = {
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+  // Where this candidate's CV came from (email subject, or first WhatsApp messages), derived from
+  // their most recent inbound-intake event. Undefined for a manually-added candidate, or when the
+  // list wasn't asked to load it. See src/lib/recruitment/candidate-source-context.ts.
+  sourceContext?: CandidateSourceContext;
+};
+
+export type CandidateSourceContext = {
+  channel: "email" | "whatsapp" | null;
+  shortLabel: string | null;
+  detailLines: string[];
 };
 
 export type Application = {
