@@ -191,6 +191,97 @@ export function runAutomatedPayrollSplitTests() {
     BASIC,
   );
 
+  // ---- two-part LEAVER medical insurance (owner rule 2026-07-26): folded into
+  // the SAME shortfall-netting as leaverDeduction, not deferred to a Second
+  // Part that may not exist — a leaver has no next month to recover an
+  // un-netted medical insurance amount via carry-forward. ---------------------
+
+  // Real case: leaverEarly's settlement (net=20000) already exactly equals its
+  // own Basic-anchor first part (min(21000,20000)=20000), so provisional Second
+  // headroom is ALREADY ZERO before any deduction — the exact "gets it all in
+  // First Part, no Second Part" shape (Amany/Eman). Medical insurance must now
+  // come straight out of First Part, not vanish into an unrecoverable residual.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverEarly,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      medicalInsurance: 400,
+    }),
+    19600, // 20000 - 400, headroom was already 0
+  );
+
+  // Medical insurance ADDS to CRM/vacation in the same shortfall pool, not a
+  // separate independent deduction — both must come out of the same First Part.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverEarly,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      leaverDeduction: 2000,
+      medicalInsurance: 400,
+    }),
+    17600, // 20000 - 2000 - 400
+  );
+
+  // leaverLate has real Second-Part headroom (10500) — medical insurance that
+  // fits inside it must NOT touch First Part (matches the existing
+  // leaverDeduction-fits-headroom case above, same mechanism, same numbers).
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverLate,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      medicalInsurance: 400,
+    }),
+    21000,
+  );
+
+  // Combined CRM/vacation (10000) + medical (3000) = 13000 exceeds the 10500
+  // headroom by 2500 -> that shortfall (not the whole 13000) spills into First.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverLate,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      leaverDeduction: 10000,
+      medicalInsurance: 3000,
+    }),
+    18500, // 21000 - 2500
+  );
+
+  // One-part leavers are UNCHANGED: medical insurance still comes out of First
+  // Part directly (the pre-existing owner rule 2026-07-24), exactly once — not
+  // ALSO folded into the leaver shortfall pool, which would double-count it.
+  assert.equal(
+    freezeFirstPart({
+      effective: leaverEarly,
+      fullBaseSalary: BASE,
+      paymentMode: "one_part",
+      fingerprint: 0,
+      medicalInsurance: 400,
+    }),
+    19600, // 20000 - 400, taken directly — same number, but via the OTHER path
+  );
+
+  // Continuing (non-leaver) two-part employees are UNCHANGED: medical insurance
+  // has zero effect on First Part regardless of amount — still deferred
+  // entirely to a real future Second Part.
+  assert.equal(
+    freezeFirstPart({
+      effective: regular,
+      fullBaseSalary: BASE,
+      paymentMode: "two_parts",
+      fingerprint: 0,
+      medicalInsurance: 5000,
+    }),
+    BASIC,
+  );
+
   // ---- assembleParts: First + Second == Total; FP counted once (Part 1) ----
   const frozen = freezeFirstPart({
     effective: regular,
