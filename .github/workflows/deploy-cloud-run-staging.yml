@@ -27,33 +27,31 @@ name: Deploy to Google Cloud Run (Staging)
 # rejects for non-allowlisted referrers). See AGENTS.md § Stable Environment Facts
 # for the staging project details.
 #
-# The workflow_run gate (`if` below) only skips when prod's job itself never ran
-# (conclusion "skipped", meaning the upstream CI run it depends on failed). A prod
-# deploy *attempt* that failed does not block staging: if prod failed AFTER pushing
-# its image, the image exists and staging deploys it (staging still re-validates
-# independently via its own no-traffic-deploy + smoke-test gate); if prod failed
-# BEFORE the image was pushed, the fallback step below still finds prod's last
-# good image and deploys that instead of failing outright.
+# Image resolution stays two-tiered ("Resolve image" then "Fall back to the most
+# recently pushed prod image") and matters MORE on a schedule than it did on the old
+# workflow_run chain: this workflow computes sha-<tip of main>, but there is no longer
+# any guarantee prod has built that exact commit by the time staging runs -- main may
+# have advanced since prod's last batch, or its CI may be red. When the exact tag is
+# absent, falling back to the newest sha-* image in Artifact Registry is what "build
+# once, deploy twice" means in practice: deploy whatever prod last really shipped,
+# not necessarily today's exact commit SHA. (The same fallback previously covered
+# workflow_run head_sha drift across chained hops -- confirmed 2026-07-19, staging run
+# 29699355042, where prod promoted sha-e6332965 while this workflow computed the newer
+# sha-ba17ae71 and failed because that exact tag did not exist.)
 #
-# Image resolution is two-tiered ("Resolve image" then "Fall back to the most
-# recently pushed prod image"): workflow_run-triggered runs report head_sha as
-# the target branch's tip at trigger time, not the commit the upstream run
-# actually processed (documented GitHub Actions behavior) -- and that can drift
-# across chained workflow_run hops (CI -> prod deploy -> this workflow) whenever
-# commits land in quick succession or CI gets manually re-run against an older
-# commit. When that happens, the exact sha-<commit> tag this workflow computes
-# may not be the tag prod actually pushed, even though prod deployed
-# successfully seconds earlier (confirmed 2026-07-19, staging run 29699355042:
-# prod's run genuinely built and promoted sha-e6332965 while this workflow
-# computed the newer sha-ba17ae71 and failed when that exact tag didn't exist).
-# Falling back to the newest sha-* image in Artifact Registry is what "build
-# once, deploy twice" actually means in practice: deploy whatever prod's last
-# run really shipped, not necessarily today's exact commit SHA.
+# Staging still re-validates whatever image it picks independently, via its own
+# no-traffic tag deploy + smoke test before promoting traffic.
+#
+# CADENCE (changed 2026-07-26): this used to chain off EVERY production deploy via
+# `workflow_run`, which meant ~15 staging deploys/day purely because prod deployed 15 times.
+# That was pure cost with no safety value: staging deploys the image prod ALREADY built and
+# ALREADY promoted, so it is a post-production mirror, not a pre-production gate — nothing
+# gates on it, and a stale staging never blocks a prod release. It now refreshes once daily
+# and on demand. To put a specific commit on staging immediately, use the Run workflow button
+# (optionally with build_from_source=true for a commit prod never built).
 on:
-  workflow_run:
-    workflows: ["Deploy to Google Cloud Run"]
-    types: [completed]
-    branches: [main]
+  schedule:
+    - cron: "40 3 * * *" # daily 03:40 UTC, offset from the 05:17 security scan and 07:00 drift check
   workflow_dispatch:
     inputs:
       build_from_source:
@@ -97,9 +95,9 @@ env:
 
 jobs:
   deploy:
-    # Gate: skip only when prod's own job never ran (its upstream CI failed); a
-    # prod deploy *attempt* that failed still lets staging try independently.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'skipped' }}
+    # No job-level gate: both triggers (daily schedule, manual dispatch) are always
+    # intended to run. The old `if` here existed only to skip runs chained off a prod
+    # deploy whose own job never started, which cannot happen without workflow_run.
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
@@ -109,8 +107,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Deploy the exact commit CI validated (workflow_run), else the dispatched ref.
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # Scheduled runs check out the default branch tip; dispatched runs the chosen ref.
+          ref: ${{ github.ref }}
 
       - name: Authenticate to Google Cloud
         id: auth
@@ -127,7 +125,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_from_source != true }}
         run: |
           set -euo pipefail
-          RAW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          RAW_SHA="${{ github.sha }}"
           SHA_TAG="sha-$(echo "$RAW_SHA" | cut -c1-8)"
           IMAGE="${{ env.PROD_IMAGE_PATH }}:$SHA_TAG"
           if gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
@@ -135,7 +133,7 @@ jobs:
             echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
             echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           else
-            echo "Image $IMAGE not found under the exact commit tag — will fall back to the latest prod image (see next step; this is expected when workflow_run head_sha has drifted, not necessarily a failed prod push)."
+            echo "Image $IMAGE not found under the exact commit tag — will fall back to the latest prod image (see next step; expected whenever main has advanced past prod's last deploy, not necessarily a failed prod push)."
           fi
 
       - name: Fall back to the most recently pushed prod image
@@ -251,8 +249,12 @@ jobs:
           SENTRY_ORG: phoenix-workforce
           SENTRY_PROJECT: phx-b9
         with:
+          # `release` replaces the deprecated `version` input; ignore_missing stops sentry-cli
+          # from failing this step when the previous release's commit isn't resolvable in this
+          # clone's history (see the matching comment in deploy-cloud-run.yml).
           environment: staging
-          version: ${{ steps.image.outputs.sha_tag || steps.image_fallback.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}
+          release: ${{ steps.image.outputs.sha_tag || steps.image_fallback.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}
+          ignore_missing: true
 
       - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
         # Staging chains off every prod deploy (see header comment above), so it
