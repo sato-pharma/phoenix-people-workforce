@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 
 import {
   buildWhatsAppIntakeInput,
+  isWhatsAppImportSender,
+  parseWhatsAppImportSenders,
   parseWhatsAppWebhookPayload,
 } from "../src/lib/recruitment/inbound/whatsapp-payload-parser.ts";
 import {
@@ -125,6 +127,8 @@ export function runRecruitmentWhatsAppIntakeTests() {
   assert.equal(withAttachment.providerMessageId, "wamid.ABC123");
   assert.ok(withAttachment.attachment);
 
+  assert.equal(withAttachment.identitySource, "sender", "a direct applicant's own number is their real contact detail");
+
   const noNameMessage = { ...documentMsg, contactName: null };
   const fallback = buildWhatsAppIntakeInput(noNameMessage, null);
   assert.equal(
@@ -133,4 +137,76 @@ export function runRecruitmentWhatsAppIntakeTests() {
     "no self-reported profile name -> a clearly-flagged placeholder, not a silent blank",
   );
   assert.equal(fallback.attachment, null, "a failed/skipped media download flows through as null, not a crash");
+
+  // --- Forwarded flag -------------------------------------------------------------------------
+  assert.equal(documentMsg.forwarded, false, "an ordinary message is not marked forwarded");
+  const [forwardedMsg] = parseWhatsAppWebhookPayload(
+    documentMessagePayload({ context: { forwarded: true } }),
+  );
+  assert.equal(forwardedMsg.forwarded, true, "Meta's context.forwarded is captured for the audit trail");
+
+  // --- parseWhatsAppImportSenders -------------------------------------------------------------
+  assert.deepEqual(parseWhatsAppImportSenders(null), [], "unset env var -> no import senders");
+  assert.deepEqual(parseWhatsAppImportSenders("  "), []);
+  assert.deepEqual(parseWhatsAppImportSenders("+201001234567, 201119998888 ,"), ["+201001234567", "201119998888"]);
+
+  // --- isWhatsAppImportSender -----------------------------------------------------------------
+  assert.equal(isWhatsAppImportSender("201001234567", ["+20 100 123 4567"]), true, "formatting/spacing is ignored");
+  assert.equal(
+    isWhatsAppImportSender("201001234567", ["01001234567"]),
+    true,
+    "a number configured in local Egyptian form still matches the international form Meta reports — a silent miss here would merge an entire import onto one profile",
+  );
+  assert.equal(isWhatsAppImportSender("201001234567", ["201119998888"]), false, "an unrelated number is not an import sender");
+  assert.equal(isWhatsAppImportSender("201001234567", []), false, "no configured senders -> nothing is an import");
+  assert.equal(isWhatsAppImportSender("201001234567", undefined), false);
+  assert.equal(isWhatsAppImportSender("123", ["123"]), false, "too few digits to identify a number -> never matches");
+
+  // --- Bulk import mode ------------------------------------------------------------------------
+  // The whole point: 100 CVs forwarded from ONE old handset must not all inherit that handset's
+  // number, which is what would collapse them into a single candidate.
+  const importOptions = { importSenders: ["201001234567"] };
+  const imported = buildWhatsAppIntakeInput(
+    { ...documentMsg, contactName: "Omar (old phone)", document: { filename: "Ahmed Mahmoud CV.pdf", mediaId: "M1", mimeType: "application/pdf" } },
+    { bytes: Buffer.from("fake"), fileName: "Ahmed Mahmoud CV.pdf", mimeType: "application/pdf" },
+    importOptions,
+  );
+  assert.equal(imported.identitySource, "cv", "an import reads identity from the CV, not the forwarding account");
+  assert.equal(imported.candidate.phone, null, "the forwarder's number must never become the candidate's phone");
+  assert.equal(imported.candidate.email, null);
+  assert.equal(
+    imported.candidate.fullName,
+    "Ahmed Mahmoud CV",
+    "the document filename is the name of last resort when the CV itself cannot be read",
+  );
+  assert.equal(imported.senderIdentifier, "+201001234567", "the forwarding account is still recorded for the audit trail");
+  assert.equal((imported.rawMetadata as { bulkImport?: boolean }).bulkImport, true);
+
+  const genericFilename = buildWhatsAppIntakeInput(
+    { ...documentMsg, document: { filename: "document.pdf", mediaId: "M2", mimeType: "application/pdf" } },
+    null,
+    importOptions,
+  );
+  assert.equal(
+    genericFilename.candidate.fullName,
+    "WhatsApp Import (d.ABC123)",
+    "a filename that describes the file rather than the person falls back to a flagged placeholder",
+  );
+
+  const datestampFilename = buildWhatsAppIntakeInput(
+    { ...documentMsg, document: { filename: "20260115.pdf", mediaId: "M3", mimeType: "application/pdf" } },
+    null,
+    importOptions,
+  );
+  assert.match(datestampFilename.candidate.fullName, /^WhatsApp Import \(/, "a date-stamped filename is not a person's name");
+
+  // A real applicant messaging in directly is completely unaffected by import mode being on.
+  const directDuringImport = buildWhatsAppIntakeInput(
+    { ...documentMsg, from: "201119998888" },
+    null,
+    importOptions,
+  );
+  assert.equal(directDuringImport.identitySource, "sender");
+  assert.equal(directDuringImport.candidate.phone, "+201119998888");
+  assert.equal((directDuringImport.rawMetadata as { bulkImport?: boolean }).bulkImport, undefined);
 }

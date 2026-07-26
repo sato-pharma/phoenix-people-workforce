@@ -14,12 +14,28 @@
 // a retried webhook delivery or a re-run cron poll can never create a second candidate for the
 // same inbound message.
 //
+// One deliberate exception to that claim — see claimIntakeEvent: a row still sitting in
+// 'processing' long after its run should have finished belongs to an attempt that died mid-way
+// (a Cloud Run timeout during a burst, a crash). Those are re-claimable, because otherwise the
+// idempotency guard would turn a crashed attempt into a permanently swallowed CV.
+//
+// Identity normally comes from the sender (see InboundCvIdentitySource). A bulk forward-import
+// flips that to the CV itself, because every forwarded message reports the forwarding account
+// as its sender and would otherwise collapse onto one candidate.
+//
 // Runs as systemAccessContext — there is no logged-in user behind an inbound email or
 // WhatsApp message.
 
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { createCandidate } from "@/lib/recruitment/candidates";
-import { extractCandidateFieldsFromCv, looksLikeCv } from "@/lib/recruitment/cv-extraction";
+import {
+  candidateIdentityFromCvFields,
+  extractCandidateFieldsFromCv,
+  extractCvFieldsFromBytes,
+  looksLikeCv,
+  persistCvExtraction,
+  type CvFieldExtraction,
+} from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -34,6 +50,17 @@ export type InboundCvAttachment = {
   bytes: Buffer;
 };
 
+// Where the candidate's identity comes from.
+//
+// "sender" (the default, and what every live applicant uses) trusts the transmitting address:
+// a real applicant's own email address or WhatsApp number IS their contact detail.
+//
+// "cv" is for bulk forward-imports — an old WhatsApp/mailbox being migrated in. Every forwarded
+// message carries the FORWARDER's address, so trusting the sender would match all of them onto
+// a single candidate. Instead the CV is read first and the candidate built from what the
+// document says about itself.
+export type InboundCvIdentitySource = "sender" | "cv";
+
 export type InboundCvIntakeInput = {
   channel: InboundCvChannel;
   // The idempotency key — an email's Message-ID header, or WhatsApp's wamid. Required.
@@ -44,6 +71,8 @@ export type InboundCvIntakeInput = {
   senderDisplayName?: string | null;
   subject?: string | null;
   candidate: { fullName: string; email?: string | null; phone?: string | null; notes?: string | null };
+  // Defaults to "sender" — existing callers and every live applicant are unaffected.
+  identitySource?: InboundCvIdentitySource;
   // null => nothing usable arrived with this message (a plain-text reply, an image, etc.) —
   // logged and ignored, no candidate, no notification.
   attachment: InboundCvAttachment | null;
@@ -72,8 +101,27 @@ function maxInboundCvBytes(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_INBOUND_CV_BYTES;
 }
 
-// Returns the claimed event's id, or null if (channel, provider_message_id) already exists —
+// How long an event may sit in 'processing' before a later delivery may take it over. Comfortably
+// longer than the webhook/poller ceiling (maxDuration = 300s), so this can only ever fire for a
+// run that truly died — never for one still legitimately working.
+const STALE_PROCESSING_CLAIM_MS = 15 * 60 * 1000;
+
+export function isStaleProcessingClaim(
+  row: { outcome?: string | null; updatedAt?: string | null; createdAt?: string | null },
+  nowMs: number,
+): boolean {
+  if (row.outcome !== "processing") return false;
+  const stamp = Date.parse(String(row.updatedAt ?? row.createdAt ?? ""));
+  return Number.isFinite(stamp) && nowMs - stamp > STALE_PROCESSING_CLAIM_MS;
+}
+
+// Returns the claimed event's id, or null if (channel, provider_message_id) is already claimed —
 // i.e. this exact message is already being/been processed by another run.
+//
+// The one case that DOES re-claim: a row abandoned in 'processing'. The unique index alone would
+// treat a crashed or timed-out attempt as "already handled" forever, so Meta's redelivery would
+// return ignored_duplicate and the CV would vanish without ever becoming a candidate. That is a
+// real risk during a bulk import, where a burst of AI extractions can outrun the request budget.
 async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -91,11 +139,33 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | n
     })
     .select("id")
     .maybeSingle();
-  if (error) {
-    if ((error as { code?: string }).code === "23505") return null;
-    throw error;
+  if (!error) return data ? String((data as { id: unknown }).id) : null;
+  if ((error as { code?: string }).code !== "23505") throw error;
+
+  const { data: existing, error: existingError } = await supabase
+    .from("ats_cv_intake_events")
+    .select("id,outcome,created_at,updated_at")
+    .eq("channel", input.channel)
+    .eq("provider_message_id", input.providerMessageId)
+    .maybeSingle();
+  if (existingError || !existing) return null;
+
+  const row = existing as { id: unknown; outcome?: string | null; created_at?: string | null; updated_at?: string | null };
+  if (!isStaleProcessingClaim({ createdAt: row.created_at, outcome: row.outcome, updatedAt: row.updated_at }, Date.now())) {
+    return null;
   }
-  return data ? String((data as { id: unknown }).id) : null;
+
+  // Re-stamp updated_at as part of the takeover so two concurrent retries cannot both proceed:
+  // the second one re-reads a now-fresh timestamp and backs off.
+  const { data: reclaimed, error: reclaimError } = await supabase
+    .from("ats_cv_intake_events")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", row.id)
+    .eq("outcome", "processing")
+    .select("id")
+    .maybeSingle();
+  if (reclaimError || !reclaimed) return null;
+  return String((reclaimed as { id: unknown }).id);
 }
 
 async function finalizeIntakeEvent(
@@ -168,12 +238,35 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { outcome: "ignored_unsupported_attachment" };
     }
 
+    // Bulk forward-import: read the CV BEFORE the candidate exists, so the profile is built
+    // from the applicant's own name/email/phone rather than the forwarding account's. Best-effort
+    // — candidateIdentityFromCvFields turns a failed read into null match keys, which yields a
+    // separate profile for Talent Acquisition to complete, never a merge onto the forwarder.
+    let identity = {
+      email: input.candidate.email ?? null,
+      fullName: input.candidate.fullName,
+      phone: input.candidate.phone ?? null,
+    };
+    let preExtraction: CvFieldExtraction | null = null;
+    if (input.identitySource === "cv") {
+      try {
+        preExtraction = await extractCvFieldsFromBytes({
+          bytes: input.attachment.bytes,
+          fileName: input.attachment.fileName,
+          mimeType: input.attachment.mimeType,
+        });
+      } catch {
+        /* best-effort */
+      }
+      identity = candidateIdentityFromCvFields(preExtraction, input.candidate.fullName);
+    }
+
     const { candidate, created, matchReason } = await createCandidate(
       {
-        email: input.candidate.email ?? null,
-        fullName: input.candidate.fullName,
+        email: identity.email,
+        fullName: identity.fullName,
         notes: input.candidate.notes ?? null,
-        phone: input.candidate.phone ?? null,
+        phone: identity.phone,
         source: input.channel,
       },
       systemAccessContext,
@@ -210,8 +303,19 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
 
     // Best-effort — an AI/extraction failure must never undo the candidate/file that already
     // exist; Talent Acquisition can always run extraction manually from the review board.
+    // A CV-sourced import already ran the AI above to learn who this is, so it only persists
+    // that same result here — one extraction per CV either way, never two.
     try {
-      await extractCandidateFieldsFromCv(candidate.id, systemAccessContext, defaultCvPositionKey, { fileId });
+      if (preExtraction) {
+        await persistCvExtraction({
+          access: systemAccessContext,
+          candidateId: candidate.id,
+          extraction: preExtraction,
+          fileId,
+        });
+      } else {
+        await extractCandidateFieldsFromCv(candidate.id, systemAccessContext, defaultCvPositionKey, { fileId });
+      }
     } catch {
       /* best-effort */
     }

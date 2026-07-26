@@ -57,6 +57,14 @@ export type CvExtractionResult = {
   fields: ExtractedCandidateFields;
 };
 
+// The AI half of an extraction, before it is tied to a candidate/file row. Split out so a
+// CV can be read while no candidate exists yet — see extractCvFieldsFromBytes.
+export type CvFieldExtraction = {
+  model: string;
+  positionKey: string;
+  fields: ExtractedCandidateFields;
+};
+
 // Bounds AI token cost/abuse regardless of the source file's size — a CV is a couple of
 // pages; this comfortably covers even a verbose one.
 const MAX_CV_TEXT_CHARS = 20_000;
@@ -248,6 +256,26 @@ export function readBoolField(parsed: Record<string, unknown>, key: string): Ext
   };
 }
 
+// Pure — reads the identity a CV states about ITSELF (the three shared fields every position
+// schema declares) so a candidate can be created from the document rather than from whoever
+// transmitted it. Used by bulk forward-imports, where the sending number belongs to the person
+// doing the forwarding and is identical across every message.
+//
+// A missing/failed extraction deliberately yields null email AND null phone rather than falling
+// back to the sender's details: with no match keys at all, candidate matching cannot merge this
+// CV into an unrelated profile, so the worst case is a correctly-separate record that Talent
+// Acquisition completes by hand — never a silent collapse of many applicants into one.
+export function candidateIdentityFromCvFields(
+  extraction: { fields: ExtractedCandidateFields } | null,
+  fallbackFullName: string,
+): { fullName: string; email: string | null; phone: string | null } {
+  const read = (key: string): string | null => {
+    const value = extraction?.fields?.[key]?.value;
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  };
+  return { email: read("email"), fullName: read("fullName") ?? fallbackFullName, phone: read("phone") };
+}
+
 function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionError {
   switch (error.code) {
     case "not_configured":
@@ -291,12 +319,109 @@ export function selectCvFile(files: readonly RecruitmentFile[], fileId?: string)
 // Public API.
 // ---------------------------------------------------------------------------
 
+// Runs the schema-driven extraction against raw CV bytes, with no candidate or uploaded-file
+// row required. Split out of extractCandidateFieldsFromCv so inbound intake can read a
+// forwarded CV's OWN identity (name/email/phone) before deciding which candidate it belongs
+// to — see cv-intake-service.ts's "cv" identity source. The caller persists the very same
+// result afterwards via persistCvExtraction, so a bulk import still costs one AI call per CV.
+export async function extractCvFieldsFromBytes(input: {
+  bytes: Buffer;
+  mimeType: string;
+  fileName: string;
+  positionKey?: string;
+}): Promise<CvFieldExtraction> {
+  const schema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
+  if (!schema) {
+    throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${input.positionKey}".`);
+  }
+  if (!hasOpenAiApiKey()) {
+    throw new CvExtractionError(
+      "ai_not_configured",
+      "The AI assistant is not configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+    );
+  }
+
+  const fileKind = detectCvFileKind(input.mimeType, input.fileName);
+  let aiInput: string | ReturnType<typeof buildVisionInput>;
+  if (fileKind === "image") {
+    aiInput = buildVisionInput(input.bytes, input.mimeType);
+  } else {
+    const rawText = await extractRawTextFromFile(input.bytes, input.mimeType, input.fileName);
+    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
+    if (!cleanedText) {
+      throw new CvExtractionError(
+        "unsupported_file",
+        "No readable text was found in this CV file.",
+      );
+    }
+    aiInput = `CV text:\n\n${cleanedText}`;
+  }
+
+  let outputText: string;
+  let model: string;
+  try {
+    const response = await createOpenAiResponseText({
+      input: aiInput,
+      instructions: schema.instructions,
+      maxOutputTokens: 2_000,
+      model: OPENAI_COPILOT_DEFAULT_MODEL,
+      purpose: "recruitment-cv-extraction",
+      reasoning: { effort: "medium" },
+      text: buildExtractionTextFormat(schema),
+      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
+    });
+    outputText = response.outputText;
+    model = response.model;
+  } catch (error) {
+    if (error instanceof PhoenixOpenAiError) {
+      throw cvExtractionErrorFromOpenAi(error);
+    }
+    throw new CvExtractionError(
+      "ai_failed",
+      `Could not reach the AI service: ${error instanceof Error ? error.message : "network error"}`,
+    );
+  }
+
+  const parsed = parseAiJson(outputText);
+  const fields: ExtractedCandidateFields = {};
+  for (const field of schema.fields) {
+    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
+  }
+  return { fields, model, positionKey: schema.positionKey };
+}
+
+// Writes an already-computed extraction to the audit table against a candidate + file.
+export async function persistCvExtraction(input: {
+  candidateId: string;
+  fileId: string;
+  extraction: CvFieldExtraction;
+  access: AccessContext;
+}): Promise<string> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidate_cv_extractions")
+    .insert({
+      ai_model: input.extraction.model,
+      candidate_id: input.candidateId,
+      created_by: input.access.hrId ?? input.access.loginId ?? null,
+      extracted_fields: input.extraction.fields,
+      file_id: input.fileId,
+      position_key: input.extraction.positionKey,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return String((data as { id: unknown }).id);
+}
+
 export async function extractCandidateFieldsFromCv(
   candidateId: string,
   access: AccessContext,
   positionKey: string = defaultCvPositionKey,
   options?: { fileId?: string },
 ): Promise<CvExtractionResult> {
+  // Schema/key are validated up front (before the candidate and file lookups below) so the
+  // error a caller sees for a misconfigured server stays the same as it has always been.
   const schema = getCvPositionSchema(positionKey);
   if (!schema) {
     throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${positionKey}".`);
@@ -330,69 +455,15 @@ export async function extractCandidateFieldsFromCv(
     );
   }
 
-  const fileKind = detectCvFileKind(downloaded.mimeType, downloaded.fileName);
-  let input: string | ReturnType<typeof buildVisionInput>;
-  if (fileKind === "image") {
-    input = buildVisionInput(downloaded.bytes, downloaded.mimeType);
-  } else {
-    const rawText = await extractRawTextFromFile(downloaded.bytes, downloaded.mimeType, downloaded.fileName);
-    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
-    if (!cleanedText) {
-      throw new CvExtractionError(
-        "unsupported_file",
-        "No readable text was found in this CV file.",
-      );
-    }
-    input = `CV text:\n\n${cleanedText}`;
-  }
+  const extraction = await extractCvFieldsFromBytes({
+    bytes: downloaded.bytes,
+    fileName: downloaded.fileName,
+    mimeType: downloaded.mimeType,
+    positionKey: schema.positionKey,
+  });
+  const extractionId = await persistCvExtraction({ access, candidateId, extraction, fileId: cvFile.id });
 
-  let outputText: string;
-  let model: string;
-  try {
-    const response = await createOpenAiResponseText({
-      input,
-      instructions: schema.instructions,
-      maxOutputTokens: 2_000,
-      model: OPENAI_COPILOT_DEFAULT_MODEL,
-      purpose: "recruitment-cv-extraction",
-      reasoning: { effort: "medium" },
-      text: buildExtractionTextFormat(schema),
-      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
-    });
-    outputText = response.outputText;
-    model = response.model;
-  } catch (error) {
-    if (error instanceof PhoenixOpenAiError) {
-      throw cvExtractionErrorFromOpenAi(error);
-    }
-    throw new CvExtractionError(
-      "ai_failed",
-      `Could not reach the AI service: ${error instanceof Error ? error.message : "network error"}`,
-    );
-  }
-
-  const parsed = parseAiJson(outputText);
-  const fields: ExtractedCandidateFields = {};
-  for (const field of schema.fields) {
-    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
-  }
-
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_candidate_cv_extractions")
-    .insert({
-      ai_model: model,
-      candidate_id: candidateId,
-      created_by: access.hrId ?? access.loginId ?? null,
-      extracted_fields: fields,
-      file_id: cvFile.id,
-      position_key: schema.positionKey,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-
-  return { extractionId: String((data as { id: unknown }).id), fields, model, positionKey: schema.positionKey };
+  return { extractionId, fields: extraction.fields, model: extraction.model, positionKey: extraction.positionKey };
 }
 
 // Called once Talent Acquisition saves the reviewed/corrected fields onto the candidate,

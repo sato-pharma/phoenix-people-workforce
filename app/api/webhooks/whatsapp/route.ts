@@ -3,12 +3,19 @@ import { NextResponse } from "next/server";
 import { logError, logWarning } from "@/lib/observability/log";
 import { ingestInboundCv } from "@/lib/recruitment/inbound/cv-intake-service";
 import { downloadWhatsAppMedia } from "@/lib/recruitment/inbound/whatsapp-media";
-import { buildWhatsAppIntakeInput, parseWhatsAppWebhookPayload } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
+import {
+  buildWhatsAppIntakeInput,
+  parseWhatsAppImportSenders,
+  parseWhatsAppWebhookPayload,
+} from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// A bulk CV import delivers many document messages in quick succession and each one costs an AI
+// extraction, so the batch loop below needs the same 300s ceiling the cron routes use. At 60s a
+// burst would be cut off mid-message (see the stale-claim recovery in cv-intake-service.ts).
+export const maxDuration = 300;
 
 // Meta's one-time webhook verification handshake — dormant (403s) until WHATSAPP_WEBHOOK_VERIFY_TOKEN
 // is configured and the same value is entered into the Meta App dashboard's webhook config.
@@ -58,6 +65,9 @@ export async function POST(request: Request) {
   }
 
   const messages = parseWhatsAppWebhookPayload(payload);
+  // Accounts whose messages are a bulk CV migration rather than direct applications. Unset in
+  // normal operation; set only while an old WhatsApp is being imported, then removed again.
+  const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
   const outcomes: Array<{ wamid: string; outcome: string }> = [];
 
   // Always resolve to 200 quickly — Meta retry-storms a webhook that doesn't ack fast, and one
@@ -81,6 +91,7 @@ export async function POST(request: Request) {
         downloaded
           ? { bytes: downloaded.bytes, fileName: message.document?.filename ?? "cv", mimeType: downloaded.mimeType }
           : null,
+        { importSenders },
       );
       const result = await ingestInboundCv({ channel: "whatsapp", ...input });
       outcomes.push({ outcome: result.outcome, wamid: message.wamid });

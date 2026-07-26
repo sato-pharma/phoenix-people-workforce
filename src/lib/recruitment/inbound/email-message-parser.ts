@@ -4,6 +4,7 @@
 import type { ParsedMail } from "mailparser";
 
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
 import type { InboundCvAttachment, InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
 
 function titleCaseFromLocalPart(address: string): string {
@@ -43,35 +44,87 @@ function pickCvAttachment(
   };
 }
 
+/** Splits the configured comma-separated import-sender list (env var) into entries. */
+export const parseEmailImportSenders = parseImportSenderList;
+
+/**
+ * Whether this message came from an address configured as a bulk CV import source (an old
+ * mailbox being migrated in), rather than a direct applicant emailing the recruitment mailbox.
+ * Case-insensitive — email addresses are.
+ */
+export function isEmailImportSender(email: string | null, importSenders?: readonly string[]): boolean {
+  if (!email) return false;
+  const sender = email.trim().toLowerCase();
+  if (!sender) return false;
+  return (importSenders ?? []).some((entry) => entry.trim().toLowerCase() === sender);
+}
+
 /**
  * Maps a parsed email (mailparser's ParsedMail) plus which mailbox/UID it came from into an
  * inbound-CV-intake input (minus `channel`, which the caller — the IMAP poller — already knows
  * is `"email"`). Pure and defensive: a message with no From header, no attachments, or no
  * Message-ID still produces a valid result rather than throwing.
+ *
+ * `options.importSenders` lists addresses whose messages are bulk CV imports rather than direct
+ * applications — an old careers mailbox being forwarded in. Forwarding an email replaces the
+ * From header with the forwarder's own address (the original applicant's address only survives,
+ * unreliably, inside the quoted body text), so trusting it here would collapse every forwarded
+ * CV onto one candidate — the same failure the WhatsApp import path exists to avoid. For those
+ * senders no identity is taken from the message at all; intake reads the CV instead
+ * (identitySource: "cv").
  */
 export function parseInboundEmailMessage(
   mail: ParsedMail,
   context: { mailboxLabel: string; uid: number },
+  options?: { importSenders?: readonly string[] },
 ): Omit<InboundCvIntakeInput, "channel"> {
   const fromEntry = Array.isArray(mail.from?.value) ? mail.from.value[0] : undefined;
   const email = fromEntry?.address?.trim().toLowerCase() || null;
   const displayName = fromEntry?.name?.trim() || null;
-  const fullName = displayName || (email ? titleCaseFromLocalPart(email) : "Unknown Applicant");
 
   const { attachment, ignoredAttachmentCount } = pickCvAttachment(mail.attachments);
   const notes = (mail.text ?? "").trim().slice(0, 500) || null;
   const providerMessageId = mail.messageId?.trim() || `email:${context.mailboxLabel}:uid:${context.uid}`;
+  const isImport = isEmailImportSender(email, options?.importSenders);
+  const rawMetadata: Record<string, unknown> = {
+    from: email,
+    ...(ignoredAttachmentCount > 0 ? { ignoredAttachmentCount } : {}),
+    ...(isImport ? { bulkImport: true } : {}),
+  };
 
+  // senderIdentifier stays the forwarding address either way — it genuinely transmitted this
+  // message, and the intake-events log needs it to trace an import back to its source.
+  if (isImport) {
+    return {
+      attachment,
+      candidate: {
+        email: null,
+        fullName:
+          nameFromAttachmentFilename(attachment?.fileName ?? null) ??
+          `Email Import (${providerMessageId.replace(/[<>]/g, "").slice(-8)})`,
+        notes: null,
+        phone: null,
+      },
+      identitySource: "cv",
+      mailboxLabel: context.mailboxLabel,
+      providerMessageId,
+      providerUid: String(context.uid),
+      rawMetadata,
+      senderDisplayName: displayName,
+      senderIdentifier: email ?? displayName ?? "unknown",
+      subject: mail.subject?.trim() || null,
+    };
+  }
+
+  const fullName = displayName || (email ? titleCaseFromLocalPart(email) : "Unknown Applicant");
   return {
     attachment,
     candidate: { email, fullName, notes, phone: null },
+    identitySource: "sender",
     mailboxLabel: context.mailboxLabel,
     providerMessageId,
     providerUid: String(context.uid),
-    rawMetadata: {
-      from: email,
-      ...(ignoredAttachmentCount > 0 ? { ignoredAttachmentCount } : {}),
-    },
+    rawMetadata,
     senderDisplayName: displayName,
     senderIdentifier: email ?? fullName,
     subject: mail.subject?.trim() || null,
