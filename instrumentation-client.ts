@@ -9,12 +9,32 @@ Sentry.init({
     process.env.NEXT_PUBLIC_SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // Do not ship anything from local `next dev` — see the longer rationale in
+  // sentry.server.config.ts. The opt-in flag needs the NEXT_PUBLIC_ prefix here because the
+  // server-only SENTRY_ENABLE_IN_DEV is never inlined into the client bundle.
+  enabled:
+    process.env.NODE_ENV === "production" ||
+    process.env.NEXT_PUBLIC_SENTRY_ENABLE_IN_DEV === "true",
+
   // Without this, local `next dev` and production share one bucket in Sentry — dev-only
   // noise (e.g. transient Fast Refresh/webpack HMR glitches) shows up as "High priority"
   // production issues (confirmed: PHX-B9-4/5/6 were all local dev-server errors). NODE_ENV
   // is one of the few env vars Next.js always inlines into the client bundle too, so this
   // needs no new build-time ARG/ENV plumbing.
-  environment: process.env.NODE_ENV === "development" ? "development" : "production",
+  //
+  // The hostname check is the browser-side counterpart to the server config's K_SERVICE
+  // check: NODE_ENV is "production" in any built bundle, including the one CI's
+  // preview-smoke job serves from http://localhost:3000 on a GitHub runner, so NODE_ENV
+  // alone would file CI errors as production. K_SERVICE is server-only and never reaches
+  // the client bundle, so here the tell is that a production build is being served from
+  // localhost — CI or a local `next start`. See sentry.server.config.ts (PHX-B9-10).
+  environment:
+    process.env.NODE_ENV === "development"
+      ? "development"
+      : typeof window !== "undefined" &&
+          /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(window.location.hostname)
+        ? "ci"
+        : "production",
 
   // NEXT_PUBLIC_COMMIT_SHA is baked in at build time (see Dockerfile) — matches the
   // same $SHA_TAG used for next.config.ts's withSentryConfig release + the server/edge

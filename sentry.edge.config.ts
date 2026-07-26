@@ -10,18 +10,28 @@ Sentry.init({
     process.env.SENTRY_DSN ??
     "https://0cb6a7f804dcba65701b98bffa914f27@o4511776154583040.ingest.de.sentry.io/4511777616298064",
 
+  // Do not ship anything from local `next dev` — see the longer rationale in
+  // sentry.server.config.ts. SENTRY_ENABLE_IN_DEV=true opts a local session back in.
+  enabled:
+    process.env.NODE_ENV === "production" || process.env.SENTRY_ENABLE_IN_DEV === "true",
+
   // Without this, local `next dev` and production share one bucket in Sentry — dev-only
   // noise (e.g. transient Fast Refresh/webpack HMR glitches) shows up as "High priority"
   // production issues (confirmed: PHX-B9-4/5/6 were all local dev-server errors).
   // K_SERVICE is Cloud Run's auto-injected service name — "phoenix-hr-staging" for
   // staging, "phoenix-hr" for production (both run the identical built image; NODE_ENV
-  // alone can't tell them apart since staging reuses the prod build).
+  // alone can't tell them apart since staging reuses the prod build). Absent K_SERVICE
+  // means a production build running somewhere that is not Cloud Run — CI's preview-smoke
+  // job or a local `next start` — which must NOT report as production. See the longer
+  // explanation in sentry.server.config.ts (PHX-B9-10).
   environment:
     process.env.NODE_ENV !== "production"
       ? "development"
-      : process.env.K_SERVICE === "phoenix-hr-staging"
-        ? "staging"
-        : "production",
+      : !process.env.K_SERVICE
+        ? "ci"
+        : process.env.K_SERVICE === "phoenix-hr-staging"
+          ? "staging"
+          : "production",
 
   // COMMIT_SHA is set as a runtime env var at deploy time (deploy-cloud-run.yml/
   // deploy-cloud-run-staging.yml); NEXT_PUBLIC_COMMIT_SHA is the build-time fallback.
