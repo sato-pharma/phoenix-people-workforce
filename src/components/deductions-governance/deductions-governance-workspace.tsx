@@ -809,7 +809,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [payrollPreview, setPayrollPreview] = useState<PayrollPreviewPayload["preview"] | null>(null);
   const [syncStatus, setSyncStatus] = useState<
-    | { kind: "success"; created: number; skippedExisting: number; sourceTotal: number; warnings: number }
+    | { kind: "success"; created: number; skippedExisting: number; skippedCovered: number; sourceTotal: number; warnings: number }
     | { kind: "error"; message: string }
     | null
   >(null);
@@ -884,6 +884,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
         sourceTotal?: number;
         created?: number;
         skippedExisting?: number;
+        sources?: { attendanceDevice?: { skippedCovered?: number } };
         warnings?: string[];
       };
       if (!response.ok || !payload.success) {
@@ -897,6 +898,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
         kind: "success",
         created: payload.created ?? 0,
         skippedExisting: payload.skippedExisting ?? 0,
+        skippedCovered: payload.sources?.attendanceDevice?.skippedCovered ?? 0,
         sourceTotal: payload.sourceTotal ?? 0,
         warnings: Array.isArray(payload.warnings) ? payload.warnings.length : 0,
       });
@@ -1144,7 +1146,7 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
           )}
           <p>
             {syncStatus.kind === "success"
-              ? `Synced ${formatNumber(syncStatus.created)} new candidate(s). Skipped ${formatNumber(syncStatus.skippedExisting)} existing. Source rows: ${formatNumber(syncStatus.sourceTotal)}. Warnings: ${formatNumber(syncStatus.warnings)}.`
+              ? `Synced ${formatNumber(syncStatus.created)} new candidate(s). Skipped ${formatNumber(syncStatus.skippedExisting)} existing, ${formatNumber(syncStatus.skippedCovered)} covered by leave/excuse/CRM. Source rows: ${formatNumber(syncStatus.sourceTotal)}. Warnings: ${formatNumber(syncStatus.warnings)}.`
               : `Sync failed: ${syncStatus.message}`}
           </p>
         </AdminCallout>

@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import {
   calculateDeductionAmountFromBaseSalary,
@@ -153,6 +154,98 @@ export async function runDeductionsGovernanceCompletionTests(): Promise<void> {
     assert.equal(__attendanceDeviceConnectorTestables.isDeductionEligibleRow({ jobTitle: "" }), false);
     assert.equal(__vacationDeductionConnectorTestables.unpaidDays("2.333"), 2.33);
     assert.equal(__vacationDeductionConnectorTestables.unpaidDays(null), 0);
+  }
+
+  // CRM/leave/excuse-aware gating (2026-07-24 fix): syncAttendanceDeviceDeductionCandidates
+  // must not draft a candidate for a day covered by an approved leave/excuse or a CRM-recorded
+  // leave/field-visit — the fingerprint report itself has no awareness of any of these (only a
+  // narrow "attendance exceptions" table and half-day vacations), so without this gate a field
+  // rep with a real CRM-logged visit that day could still get a wrongly-approved-looking
+  // deduction candidate. isCandidateDayCovered reuses reconcileDay's own universal-cancel
+  // precedence (digest-reconcile.ts) rather than re-deriving it.
+  {
+    const notCovered = __attendanceDeviceConnectorTestables.isCandidateDayCovered({
+      hasApprovedLeave: false,
+      hasApprovedExcuse: false,
+      hasCrmLeave: false,
+      hasCrmFieldVisit: false,
+    });
+    assert.equal(notCovered, false, "a day with none of the four signals must still be judged (create a candidate)");
+
+    assert.equal(
+      __attendanceDeviceConnectorTestables.isCandidateDayCovered({
+        hasApprovedLeave: true,
+        hasApprovedExcuse: false,
+        hasCrmLeave: false,
+        hasCrmFieldVisit: false,
+      }),
+      true,
+      "an approved full-day leave must cancel the candidate",
+    );
+    assert.equal(
+      __attendanceDeviceConnectorTestables.isCandidateDayCovered({
+        hasApprovedLeave: false,
+        hasApprovedExcuse: true,
+        hasCrmLeave: false,
+        hasCrmFieldVisit: false,
+      }),
+      true,
+      "an approved excuse must cancel the candidate",
+    );
+    assert.equal(
+      __attendanceDeviceConnectorTestables.isCandidateDayCovered({
+        hasApprovedLeave: false,
+        hasApprovedExcuse: false,
+        hasCrmLeave: true,
+        hasCrmFieldVisit: false,
+      }),
+      true,
+      "a CRM-recorded leave day must cancel the candidate even with no matching Phoenix vacation_requests row",
+    );
+    assert.equal(
+      __attendanceDeviceConnectorTestables.isCandidateDayCovered({
+        hasApprovedLeave: false,
+        hasApprovedExcuse: false,
+        hasCrmLeave: false,
+        hasCrmFieldVisit: true,
+      }),
+      true,
+      "a real CRM field visit (regular visit or CP-type activity) must cancel the candidate — this is the confirmed B-155 2026-07-13 gap",
+    );
+  }
+
+  // Wiring regression guard: syncAttendanceDeviceDeductionCandidates itself is entirely
+  // Supabase-backed (report + three day-maps) and cannot be unit-tested without DB infra —
+  // matching the established pattern for this domain (see attendance-employee-day-report.test.ts),
+  // this pins the exact source wiring so the CRM/leave/excuse gate above can't silently stop
+  // being called from the sync path.
+  {
+    const source = readFileSync("src/lib/deductions-governance/connectors/attendance-device.ts", "utf8");
+    assert.match(
+      source,
+      /getApprovedLeaveDayMap\(\{ dateFromIso: range\.start, dateToIso: range\.end, employeeHrIds: candidateHrIds \}\)/,
+      "must fetch approved full-day leave for the candidates' own hrIds/month range",
+    );
+    assert.match(
+      source,
+      /getApprovedExcuseDayMap\(\{ dateFromIso: range\.start, dateToIso: range\.end, employeeHrIds: candidateHrIds \}\)/,
+      "must fetch approved excuses for the candidates' own hrIds/month range",
+    );
+    assert.match(
+      source,
+      /getCrmActivityDayMaps\(\{ dateFromIso: range\.start, dateToIso: range\.end, employeeHrIds: candidateHrIds \}\)/,
+      "must fetch CRM leave/field-visit activity for the candidates' own hrIds/month range",
+    );
+    assert.match(
+      source,
+      /const covered = isCandidateDayCovered\(\{[\s\S]*?\}\);\s*if \(covered\) \{\s*skippedCovered \+= 1;\s*continue;\s*\}/,
+      "a covered candidate must be skipped (not drafted) before drafts.push",
+    );
+    // The gate must run BEFORE drafts.push, not after — otherwise a covered day would still
+    // reach insertDeductionCandidateDrafts.
+    const gateIndex = source.indexOf("if (covered) {");
+    const pushIndex = source.indexOf("drafts.push({");
+    assert.ok(gateIndex > 0 && pushIndex > gateIndex, "the covered-day skip must come before drafts.push");
   }
 
   // Payroll preview: add-on-top totals (existing + applied = resulting), amount-added delta,
