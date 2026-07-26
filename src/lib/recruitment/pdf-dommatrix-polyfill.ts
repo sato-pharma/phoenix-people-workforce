@@ -15,6 +15,17 @@
 // both plain-text and vector-graphics/clipping-path PDFs).
 //
 // Must be imported before "pdf-parse" so this runs first (see cv-extraction.ts import order).
+//
+// Second gap in the same tracer (2026-07): pdfjs-dist's legacy build also dynamically
+// `import()`s its own sibling "pdf.worker.mjs" file to run its Node "fake worker" (pdfjs-dist
+// always disables real Worker threads in Node and runs the same parsing code in-process
+// instead). That import is deliberately marked /*webpackIgnore*/ /*@vite-ignore*/, which hides
+// it from Next's file-tracer the same way the native canvas addon was hidden above — the
+// tracer copies the statically-imported pdf.mjs but drops pdf.worker.mjs, so every extraction
+// hard-failed in production with `Setting up fake worker failed: Cannot find module
+// '.../pdfjs-dist/legacy/build/pdf.worker.mjs'`. Unlike the DOMMatrix gap, there's no pure-JS
+// substitute for a worker's parsing code, so this one is fixed by telling the tracer about the
+// file directly — see `outputFileTracingIncludes` in next.config.ts.
 import CSSMatrix from "dommatrix";
 
 type GlobalWithDOMMatrix = typeof globalThis & { DOMMatrix?: unknown };

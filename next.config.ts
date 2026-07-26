@@ -121,6 +121,20 @@ const nextConfig: NextConfig = {
   // Marking them external makes API routes `require()` them natively from node_modules
   // instead, so the on-disk .afm lookups keep working.
   serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth"],
+  // pdf-parse's local PDF text extraction (src/lib/recruitment/cv-extraction.ts) runs on
+  // pdfjs-dist's "legacy" build. In Node, pdfjs-dist always disables real Worker threads and
+  // instead dynamically `import()`s its own sibling "legacy/build/pdf.worker.mjs" file to run
+  // the same parsing code in-process (see PDFWorker#setupFakeWorker in pdfjs-dist). That import
+  // is deliberately marked with /*webpackIgnore*/ /*@vite-ignore*/ so bundlers don't touch it —
+  // which also makes it invisible to Next's production file-tracer (`.next/standalone`; see
+  // pdf-dommatrix-polyfill.ts for the sibling gap the same tracer left in this dependency). The
+  // tracer follows the static `import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs"` and
+  // copies pdf.mjs, but never sees pdf.worker.mjs, so every PDF extraction hard-fails in
+  // production with "Setting up fake worker failed: Cannot find module '.../pdf.worker.mjs'"
+  // (confirmed fatal: pdfjs-dist has no other Node code path once that promise rejects).
+  outputFileTracingIncludes: {
+    "/api/**/*": ["./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   experimental: {
     serverActions: {
       allowedOrigins: [
