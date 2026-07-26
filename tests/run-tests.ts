@@ -437,6 +437,9 @@ import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
 import { runAutomatedPayrollNonEmployeesTests } from "./automated-payroll-non-employees.test.ts";
 import { runAutomatedPayrollFabSheetTests } from "./automated-payroll-fab-sheet.test.ts";
+import { runAutomatedPayrollNotifyGovernanceTests } from "./automated-payroll-notify-governance.test.ts";
+import { runAutomatedPayrollNotifyPart1ReviewTests } from "./automated-payroll-notify-part1-review.test.ts";
+import { runAutomatedPayrollUnconfirmPart1Tests } from "./automated-payroll-unconfirm-part1.test.ts";
 import { runAutomatedPayrollResignationCrmTests } from "./automated-payroll-resignation-crm.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
@@ -502,6 +505,9 @@ await runTest("automated payroll export order (fixed HR-ID sequence)", runAutoma
 await runTest("automated payroll Part 1/2 scope (no CRM/vacation double-deduction)", runAutomatedPayrollPart1ScopeTests);
 await runTest("automated payroll Non-Employees Payroll (inline rows + accurate Executive Summary)", runAutomatedPayrollNonEmployeesTests);
 await runTest("automated payroll FAB bank-transfer sheet (schema + filtering)", runAutomatedPayrollFabSheetTests);
+await runTest("automated payroll notify governance (authorizedRecipient fix)", runAutomatedPayrollNotifyGovernanceTests);
+await runTest("automated payroll notify Part 1 review email (To Adel+Ahmed, Cc Anwar)", runAutomatedPayrollNotifyPart1ReviewTests);
+await runTest("automated payroll unconfirm Part 1 (phase guard, clear frozen values, audit)", runAutomatedPayrollUnconfirmPart1Tests);
 await runTest("automated payroll Resignations CRM deduction (unified month-days rate)", runAutomatedPayrollResignationCrmTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
