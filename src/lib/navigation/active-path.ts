@@ -57,6 +57,26 @@ export function moduleIdAllowed(moduleIds: ModuleIdLookup, item: NavigationSecti
   return moduleIds.includes(item.moduleId);
 }
 
+// Some hrefs are intentionally listed in more than one section with mutually-exclusive
+// role/excludedRoles gates (e.g. Organogram: CEO-only in Command Center, everyone-else
+// in People Management) so exactly one copy is visible to any given role. The system
+// administrator workspace bypasses that gating entirely so Super Admin can reach every
+// item — which would otherwise surface both copies at once. Dedupe by href, keeping
+// each href's first (highest-tier) occurrence.
+function dedupeSectionsByHref(sections: readonly NavigationSection[]): NavigationSection[] {
+  const seen = new Set<string>();
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (seen.has(item.href)) return false;
+        seen.add(item.href);
+        return true;
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
 export function getSections(
   sections: readonly NavigationSection[],
   mode: NavigationMode,
@@ -66,7 +86,7 @@ export function getSections(
   isSystemAdministratorWorkspace = false,
 ): NavigationSection[] {
   const visible = isSystemAdministratorWorkspace
-    ? sections.map((section) => ({ ...section, items: [...section.items] }))
+    ? dedupeSectionsByHref(sections)
     : sections
         .map((section) => ({
           ...section,
