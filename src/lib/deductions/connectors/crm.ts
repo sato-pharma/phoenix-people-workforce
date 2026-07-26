@@ -214,7 +214,7 @@ type LeaverVisitRow = {
  * category; see the Vacation connectors instead). Bounded to
  * [max(hireDate, periodStart), lastWorkingDate], not the whole month.
  */
-async function collectLeaverCrmCandidate(input: {
+function collectLeaverCrmCandidate(input: {
   hrId: string;
   crmId: string | null;
   jobTitle: string | null;
@@ -223,7 +223,16 @@ async function collectLeaverCrmCandidate(input: {
   month: number;
   year: number;
   baseSalary: number | null;
-}): Promise<DeductionsCandidateDraft | null> {
+  // Both are fetched ONCE by the caller and shared across every leaver. They used to be
+  // fetched in here, per leaver: the visit scan is not filtered by employee (ownership is
+  // decided client-side by the isMine test below), so each leaver re-downloaded the entire
+  // company's visits for its span and discarded ~99% of them — N full scans of the visit
+  // mirror. Holidays were worse-looking still: identical arguments every time, so N
+  // byte-identical queries. Together they were the bulk of the 300s timeout this connector
+  // caused. This function is now synchronous, which is what removes the await-in-loop.
+  visits: LeaverVisitRow[];
+  holidayDates: Set<string>;
+}): DeductionsCandidateDraft | null {
   if (!isFieldWorkforceComplianceEligibleTitle(input.jobTitle)) return null;
 
   const monthStr = String(input.month).padStart(2, "0");
@@ -237,17 +246,12 @@ async function collectLeaverCrmCandidate(input: {
   const hrKey = canonicalHrIdKey(input.hrId) ?? "";
   const crmIdText = input.crmId != null ? String(input.crmId).trim() : "";
 
-  const [visits, holidayResult] = await Promise.all([
-    scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
-      dateFrom: loopStart,
-      dateTo: loopEnd,
-      columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
-    }),
-    getConfirmedNationalHolidays({ month: input.month, year: input.year }),
-  ]);
-
+  // input.visits spans the whole month, not just [loopStart, loopEnd]. That is harmless:
+  // the no-activity loop below only walks this leaver's own span, so any visit dated
+  // outside it is simply never consulted. The isMine test is unchanged from when this
+  // scanned per-leaver — ownership semantics are identical, only the fetching moved.
   const byDay = new Map<string, LeaverVisitRow[]>();
-  for (const visit of visits) {
+  for (const visit of input.visits) {
     const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "") ?? "";
     const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "") ?? "";
     const isMine =
@@ -263,17 +267,10 @@ async function collectLeaverCrmCandidate(input: {
     byDay.set(dateIso, list);
   }
 
-  const holidayDates = new Set<string>();
-  for (const holiday of holidayResult.holidays) {
-    for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
-      holidayDates.add(date);
-    }
-  }
-
   const noActivityDates: string[] = [];
   for (const dateIso of eachDateInclusive(loopStart, loopEnd)) {
     if (isFieldWorkforceWeeklyOff({ dateIso, title: input.jobTitle })) continue;
-    if (holidayDates.has(dateIso)) continue;
+    if (input.holidayDates.has(dateIso)) continue;
     const dayVisits = byDay.get(dateIso) ?? [];
     // A day with ANY recorded visit is never "no activity" — matches
     // computeLeaverCrmDates exactly.
@@ -402,12 +399,38 @@ export async function collectCrmCandidates(input: {
       .in("hr_id", Array.from(leaverRoster.values(), (entry) => entry.hrId));
     if (error) throw new Error(`Failed to load leaver employee records: ${error.message}`);
 
+    // ONE month-wide visit scan and ONE holidays fetch for the entire leaver population,
+    // instead of one of each per leaver. The scan cannot be narrowed server-side because
+    // ownership is decided by the client-side isMine test (hr_id OR crm_id, on either the
+    // agent or double slot), so the only way to avoid N scans is to fetch once and reuse.
+    // Widened to the full period because each leaver has a different truncated span and this
+    // has to cover their union; the per-leaver loop still walks only its own span.
+    const monthStr = String(input.month).padStart(2, "0");
+    const periodStart = `${input.year}-${monthStr}-01`;
+    const periodEnd = `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
+    const [leaverVisits, holidayResult] = await Promise.all([
+      scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
+        dateFrom: periodStart,
+        dateTo: periodEnd,
+        columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
+      }),
+      getConfirmedNationalHolidays({ month: input.month, year: input.year }),
+    ]);
+    // Expanded once rather than rebuilt inside every leaver's call.
+    const holidayDates = new Set<string>();
+    for (const holiday of holidayResult.holidays) {
+      for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
+        holidayDates.add(date);
+      }
+    }
+
     for (const employeeRow of (data ?? []) as Array<{ hr_id: string; crm_id: string | null; job_title: string | null; hire_date: string | null }>) {
       const key = canonicalHrIdKey(employeeRow.hr_id) ?? "";
       const roster = key ? leaverRoster.get(key) : undefined;
       if (!roster) continue;
       const compactKey = compactDeductionsHrId(employeeRow.hr_id);
-      const draft = await collectLeaverCrmCandidate({
+      // No await: the two queries this used to make per leaver are now hoisted above.
+      const draft = collectLeaverCrmCandidate({
         hrId: roster.hrId,
         crmId: employeeRow.crm_id,
         jobTitle: employeeRow.job_title,
@@ -416,6 +439,8 @@ export async function collectCrmCandidates(input: {
         month: input.month,
         year: input.year,
         baseSalary: compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null,
+        visits: leaverVisits,
+        holidayDates,
       });
       if (draft) leaverDrafts.push(draft);
     }
