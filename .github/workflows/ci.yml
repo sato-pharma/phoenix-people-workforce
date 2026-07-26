@@ -11,7 +11,6 @@ on:
     branches:
       - main
       - master
-      - codex/work-from-production
   workflow_dispatch:
     inputs:
       full_e2e:
@@ -100,7 +99,15 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nextjs-build
-          path: .next
+          # Exclude .next/cache: it is the webpack/build cache (usually the bulk of
+          # .next by size) and only speeds up *subsequent builds*. The preview-smoke
+          # job downloads this artifact and runs the built app on it — runtime reads
+          # .next/{server,static,BUILD_ID,*.json}, never .next/cache. Dropping it
+          # shrinks each upload (~146MB → tens of MB) and the billed Actions storage
+          # that scales with artifact size, with zero effect on the smoke test.
+          path: |
+            .next
+            !.next/cache
           include-hidden-files: true
           retention-days: 1
 
