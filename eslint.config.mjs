@@ -50,6 +50,10 @@ const eslintConfig = defineConfig([
     "output/**",
     "outputs/**",
     "templates/**",
+    // Vendored pdf.js browser build + worker, served as static assets for the recruitment CV
+    // viewer (see scripts/sync-pdfjs-assets.mjs). Minified third-party code — linting it produces
+    // thousands of irrelevant findings, same rationale as build/** above.
+    "public/pdfjs/**",
   ]),
 ]);
 
