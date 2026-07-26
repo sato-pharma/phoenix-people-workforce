@@ -1427,6 +1427,9 @@ function CandidatePoolCard({
         fields={[
           { label: "Email", value: candidate.email ?? "—" },
           { label: "Phone", value: candidate.phone ?? "—" },
+          ...(candidate.sourceContext?.shortLabel
+            ? [{ label: "Source", value: candidate.sourceContext.shortLabel }]
+            : []),
         ]}
       />
     </PortalRecordCard>
@@ -1668,13 +1671,14 @@ function CandidatesTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="860px">
+            <PortalDesktopTable minWidth="1000px">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
                   <th>Email</th>
                   <th>Phone</th>
+                  <th>Source</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1687,6 +1691,15 @@ function CandidatesTab({
                     </td>
                     <td className="px-3 py-2">{candidate.email ?? "—"}</td>
                     <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
+                    <td className="max-w-[220px] px-3 py-2">
+                      {candidate.sourceContext?.shortLabel ? (
+                        <span className="block truncate text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
+                          {candidate.sourceContext.shortLabel}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <CandidateActionsControl
                         candidate={candidate}
@@ -1730,6 +1743,21 @@ function CandidatesTab({
               Close
             </Button>
           </div>
+
+          {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {profile.candidate.sourceContext.channel === "email" ? "Email subject" : "First WhatsApp messages"}
+              </p>
+              <div className="mt-1 space-y-1">
+                {profile.candidate.sourceContext.detailLines.map((line, index) => (
+                  <p key={index} className="text-xs text-slate-700">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {canManage && profile.files.some((file) => file.kind === "cv") ? (
             <div className="space-y-2">

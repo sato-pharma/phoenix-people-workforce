@@ -16,6 +16,9 @@ export type ParsedWhatsAppDocument = {
   mediaId: string;
   mimeType: string;
   filename: string | null;
+  // The caption typed on the document itself, if any (Meta puts it on the media node). Shown as
+  // part of the candidate's "source" context.
+  caption: string | null;
 };
 
 export type ParsedWhatsAppMessage = {
@@ -24,6 +27,9 @@ export type ParsedWhatsAppMessage = {
   contactName: string | null;
   messageType: string;
   document: ParsedWhatsAppDocument | null;
+  // For a plain "text" message, its body — buffered per sender so the first few messages can be
+  // shown next to the candidate once their CV document arrives. Null for non-text messages.
+  text: string | null;
   // Meta sets context.forwarded on a forwarded message. Captured for the audit trail only —
   // import routing keys off the configured sender allowlist below, which does not depend on
   // Meta populating this field.
@@ -70,6 +76,7 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
         const mediaId = asString(documentNode?.id);
         const document: ParsedWhatsAppDocument | null = mediaId
           ? {
+              caption: asString(documentNode?.caption),
               filename: asString(documentNode?.filename),
               mediaId,
               mimeType: asString(documentNode?.mime_type) ?? "application/octet-stream",
@@ -82,6 +89,7 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
           forwarded: asRecord(message?.context)?.forwarded === true,
           from,
           messageType,
+          text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
           wamid,
         });
       }

@@ -7,6 +7,7 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
+import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
@@ -37,6 +38,7 @@ import type {
   Application,
   ApplicationEvent,
   Candidate,
+  CandidateSourceContext,
   CreateCandidateInput,
   Interview,
   RecruitmentFile,
@@ -112,6 +114,27 @@ async function loadMatchKeys(): Promise<MatchableCandidate[]> {
   }));
 }
 
+// Loads each candidate's most-recent intake event (from the ats_candidate_source_context view)
+// and reduces it to the display shape, keyed by candidate id. Best-effort: if the view is missing
+// (migration not yet applied) or the query fails, returns an empty map so candidates still list —
+// the source column simply shows nothing rather than breaking the page.
+async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, CandidateSourceContext>> {
+  const map = new Map<string, CandidateSourceContext>();
+  if (ids.length === 0) return map;
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidate_source_context")
+    .select("candidate_id,channel,subject,raw_metadata")
+    .in("candidate_id", ids);
+  if (error || !data) return map;
+  for (const row of data as SourceContextRow[]) {
+    const candidateId = textOrNull((row as { candidate_id?: unknown }).candidate_id);
+    if (!candidateId) continue;
+    map.set(candidateId, describeCandidateSource(row));
+  }
+  return map;
+}
+
 export async function listCandidates(): Promise<Candidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -119,7 +142,13 @@ export async function listCandidates(): Promise<Candidate[]> {
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  for (const candidate of candidates) {
+    const context = sourceContext.get(candidate.id);
+    if (context) candidate.sourceContext = context;
+  }
+  return candidates;
 }
 
 export async function getCandidate(id: string): Promise<Candidate | null> {
@@ -265,6 +294,8 @@ export type CandidateProfile = {
 export async function getCandidateProfile(id: string): Promise<CandidateProfile | null> {
   const candidate = await getCandidate(id);
   if (!candidate) return null;
+  const context = (await loadSourceContextByCandidate([id])).get(id);
+  if (context) candidate.sourceContext = context;
   const supabase = recruitmentDb();
 
   const [{ data: appRows, error: appError }, { data: fileRows, error: fileError }] = await Promise.all([
