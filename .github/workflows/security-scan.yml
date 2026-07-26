@@ -21,11 +21,15 @@ name: Security Scan (OSS)
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-      - master
-      - codex/work-from-production
+  # Previously also ran on every push to main/master/codex/work-from-production.
+  # Semgrep (5 rulesets) + gitleaks over the whole tree made per-push scanning one of
+  # the heaviest repeat Actions costs (~15 main pushes/day x ~10 runner-min ~= 4,500
+  # Actions-min/month) AND redundant: every change reaches main through a PR, which is
+  # already scanned above. Main is now covered by a daily scheduled full scan instead
+  # of per-push. Direct pushes to main are against policy; a hotfix pushed straight to
+  # main is caught by the next daily run, or scan on demand via workflow_dispatch.
+  schedule:
+    - cron: "17 5 * * *" # daily 05:17 UTC, offset from the 07:00 migration-drift cron
   workflow_dispatch:
 
 concurrency:
