@@ -8,6 +8,8 @@
 // image, audio, etc.) are still returned here (so the webhook can log/ignore them via the same
 // ingestInboundCv path with attachment: null), just without a `document` field.
 
+import { normalizePhone } from "@/lib/recruitment/candidate-matching";
+import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
 import type { InboundCvAttachment, InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
 
 export type ParsedWhatsAppDocument = {
@@ -22,6 +24,10 @@ export type ParsedWhatsAppMessage = {
   contactName: string | null;
   messageType: string;
   document: ParsedWhatsAppDocument | null;
+  // Meta sets context.forwarded on a forwarded message. Captured for the audit trail only —
+  // import routing keys off the configured sender allowlist below, which does not depend on
+  // Meta populating this field.
+  forwarded: boolean;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -73,6 +79,7 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
         messages.push({
           contactName: contactNameByWaId.get(from) ?? null,
           document,
+          forwarded: asRecord(message?.context)?.forwarded === true,
           from,
           messageType,
           wamid,
@@ -84,23 +91,78 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
   return messages;
 }
 
+/** Splits the configured comma-separated import-sender list (env var) into entries. */
+export const parseWhatsAppImportSenders = parseImportSenderList;
+
+// Last 9 significant digits, so a number configured in local form (01001234567) still matches
+// the international form Meta reports (201001234567). Being format-tolerant matters here: a
+// silently non-matching entry would send an entire bulk import down the normal sender path and
+// merge every forwarded CV onto one candidate — the exact failure this feature exists to avoid.
+function phoneTail(value: string): string | null {
+  const digits = normalizePhone(value)?.replace(/^0+/, "") ?? null;
+  return digits && digits.length >= 9 ? digits.slice(-9) : null;
+}
+
+/**
+ * Whether this message came from an account configured as a bulk CV import source (an old
+ * WhatsApp being migrated in), rather than from an applicant messaging the business directly.
+ */
+export function isWhatsAppImportSender(from: string, importSenders?: readonly string[]): boolean {
+  const sender = phoneTail(from);
+  if (!sender) return false;
+  return (importSenders ?? []).some((entry) => phoneTail(entry) === sender);
+}
+
 /**
  * Turns a parsed message plus its already-downloaded attachment (or null, for a non-document
  * message / a download that failed) into an inbound-CV-intake input. Pure — the caller has
  * already done any async media download.
+ *
+ * `options.importSenders` lists accounts whose messages are bulk CV imports rather than direct
+ * applications. For those, the sender describes the person doing the forwarding, so no identity
+ * is taken from it at all and intake reads the CV instead (identitySource: "cv").
  */
 export function buildWhatsAppIntakeInput(
   message: ParsedWhatsAppMessage,
   attachment: InboundCvAttachment | null,
+  options?: { importSenders?: readonly string[] },
 ): Omit<InboundCvIntakeInput, "channel"> {
   const phone = `+${message.from}`;
-  const fullName = message.contactName || `WhatsApp Applicant (${phone})`;
+  const isImport = isWhatsAppImportSender(message.from, options?.importSenders);
+  const rawMetadata: Record<string, unknown> = {
+    messageType: message.messageType,
+    wa_id: message.from,
+    ...(message.forwarded ? { forwarded: true } : {}),
+    ...(isImport ? { bulkImport: true } : {}),
+  };
+
+  // senderIdentifier stays the forwarding account either way — it is genuinely who transmitted
+  // this message, and the intake-events log needs it to trace an import back to its source.
+  if (isImport) {
+    return {
+      attachment,
+      candidate: {
+        email: null,
+        fullName:
+          nameFromAttachmentFilename(message.document?.filename ?? null) ??
+          `WhatsApp Import (${message.wamid.slice(-8)})`,
+        notes: null,
+        phone: null,
+      },
+      identitySource: "cv",
+      providerMessageId: message.wamid,
+      rawMetadata,
+      senderDisplayName: message.contactName,
+      senderIdentifier: phone,
+    };
+  }
 
   return {
     attachment,
-    candidate: { email: null, fullName, notes: null, phone },
+    candidate: { email: null, fullName: message.contactName || `WhatsApp Applicant (${phone})`, notes: null, phone },
+    identitySource: "sender",
     providerMessageId: message.wamid,
-    rawMetadata: { messageType: message.messageType, wa_id: message.from },
+    rawMetadata,
     senderDisplayName: message.contactName,
     senderIdentifier: phone,
   };

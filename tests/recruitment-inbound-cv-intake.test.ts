@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { selectCvFile } from "../src/lib/recruitment/cv-extraction.ts";
+import { candidateIdentityFromCvFields, selectCvFile } from "../src/lib/recruitment/cv-extraction.ts";
+import { isStaleProcessingClaim } from "../src/lib/recruitment/inbound/cv-intake-service.ts";
 import type { RecruitmentFile } from "../src/lib/recruitment/types.ts";
 
 function read(relativePath: string): string {
@@ -52,6 +53,71 @@ export function runRecruitmentInboundCvIntakeTests() {
     "a fileId matching a non-cv-kind file is rejected — only kind:'cv' counts",
   );
   assert.equal(selectCvFile([]), null, "no files at all yields null");
+
+  // --- candidateIdentityFromCvFields (bulk forward-import identity) ---------------------------
+  const field = (value: string | boolean | null) => ({ confidence: "high" as const, value });
+
+  assert.deepEqual(
+    candidateIdentityFromCvFields(
+      { fields: { email: field("Ahmed@Example.COM "), fullName: field(" Ahmed Mahmoud "), phone: field("01001234567") } },
+      "fallback",
+    ),
+    { email: "Ahmed@Example.COM", fullName: "Ahmed Mahmoud", phone: "01001234567" },
+    "the CV's own details win over the fallback, trimmed",
+  );
+
+  assert.deepEqual(
+    candidateIdentityFromCvFields(null, "WhatsApp Import (d.ABC123)"),
+    { email: null, fullName: "WhatsApp Import (d.ABC123)", phone: null },
+    "a failed extraction yields NO match keys — the CV gets its own profile instead of merging onto the forwarder",
+  );
+
+  assert.deepEqual(
+    candidateIdentityFromCvFields({ fields: { email: field(null), fullName: field("   "), phone: field(null) } }, "fallback"),
+    { email: null, fullName: "fallback", phone: null },
+    "blank/whitespace values are treated as absent, never as an empty-string match key",
+  );
+
+  assert.equal(
+    candidateIdentityFromCvFields({ fields: { fullName: field(true) } }, "fallback").fullName,
+    "fallback",
+    "a non-string value never becomes a name",
+  );
+
+  // --- isStaleProcessingClaim -----------------------------------------------------------------
+  // The idempotency claim writes 'processing' BEFORE any work. Without this recovery a run that
+  // died mid-message (a timeout during a bulk-import burst) would make every later redelivery
+  // return ignored_duplicate, silently losing that CV forever.
+  const now = Date.parse("2026-07-26T12:00:00.000Z");
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+
+  assert.equal(
+    isStaleProcessingClaim({ outcome: "processing", updatedAt: at(30) }, now),
+    true,
+    "a run abandoned in 'processing' well past the request ceiling is re-claimable",
+  );
+  assert.equal(
+    isStaleProcessingClaim({ outcome: "processing", updatedAt: at(2) }, now),
+    false,
+    "a run still legitimately working is never stolen",
+  );
+  assert.equal(
+    isStaleProcessingClaim({ createdAt: at(30), outcome: "processing", updatedAt: null }, now),
+    true,
+    "created_at is used when updated_at is absent",
+  );
+  for (const outcome of ["candidate_created", "candidate_matched", "ignored_duplicate", "error"]) {
+    assert.equal(
+      isStaleProcessingClaim({ outcome, updatedAt: at(999) }, now),
+      false,
+      `a finished '${outcome}' event stays claimed forever — re-processing it would duplicate work`,
+    );
+  }
+  assert.equal(
+    isStaleProcessingClaim({ outcome: "processing", updatedAt: "not-a-date" }, now),
+    false,
+    "an unparseable timestamp is not treated as stale",
+  );
 
   // --- Migration: ats_cv_intake_events + ats_email_intake_cursors (folded into the
   //     Phase 1 re-platform migration, since neither table had reached production yet) ------

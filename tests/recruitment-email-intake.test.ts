@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 
 import { parseRecruitmentEmailInboxesConfig } from "../src/lib/recruitment/inbound/email-mailboxes-config.ts";
-import { parseInboundEmailMessage } from "../src/lib/recruitment/inbound/email-message-parser.ts";
+import {
+  isEmailImportSender,
+  parseEmailImportSenders,
+  parseInboundEmailMessage,
+} from "../src/lib/recruitment/inbound/email-message-parser.ts";
 
 function fakeAttachment(overrides: Record<string, unknown> = {}) {
   return {
@@ -73,6 +77,7 @@ export function runRecruitmentEmailIntakeTests() {
   assert.ok(result1.attachment);
   assert.equal(result1.attachment?.fileName, "cv.pdf");
   assert.equal(result1.candidate.notes, "Hello, please find my CV attached.");
+  assert.equal(result1.identitySource, "sender", "a direct applicant's own email is their real contact detail");
 
   // No display name -> title-cased local-part fallback.
   const noDisplayName = fakeMail({
@@ -137,4 +142,63 @@ export function runRecruitmentEmailIntakeTests() {
   const longBody = fakeMail({ attachments: [fakeAttachment()], text: "x".repeat(1000) });
   const result8 = parseInboundEmailMessage(longBody as never, { mailboxLabel: "careers", uid: 12 });
   assert.equal(result8.candidate.notes?.length, 500);
+
+  // --- parseEmailImportSenders / isEmailImportSender ------------------------------------------
+  assert.deepEqual(parseEmailImportSenders(null), [], "unset env var -> no import senders");
+  assert.deepEqual(parseEmailImportSenders("old-careers@example.com, Old-HR@Example.com ,"), [
+    "old-careers@example.com",
+    "Old-HR@Example.com",
+  ]);
+
+  assert.equal(isEmailImportSender("old-careers@example.com", ["old-careers@example.com"]), true);
+  assert.equal(
+    isEmailImportSender("OLD-CAREERS@EXAMPLE.COM", ["old-careers@example.com"]),
+    true,
+    "email addresses are matched case-insensitively",
+  );
+  assert.equal(isEmailImportSender("someone-else@example.com", ["old-careers@example.com"]), false);
+  assert.equal(isEmailImportSender(null, ["old-careers@example.com"]), false, "no From address -> never an import sender");
+  assert.equal(isEmailImportSender("old-careers@example.com", []), false, "no configured senders -> nothing is an import");
+  assert.equal(isEmailImportSender("old-careers@example.com", undefined), false);
+
+  // --- Bulk import mode ------------------------------------------------------------------------
+  // The point: forwarding 100 emails from ONE old mailbox must not all inherit that mailbox's
+  // From address, which is what would collapse them into a single candidate.
+  const importOptions = { importSenders: ["old-careers@satopharma.com"] };
+  const importedMail = fakeMail({
+    attachments: [fakeAttachment({ filename: "Ahmed Mahmoud CV.pdf" })],
+    from: { html: "", text: "", value: [{ address: "old-careers@satopharma.com", name: "Omar (old mailbox)" }] },
+    messageId: "<fwd123@mail.example.com>",
+    text: "---------- Forwarded message ---------",
+  });
+  const imported = parseInboundEmailMessage(importedMail as never, { mailboxLabel: "careers", uid: 50 }, importOptions);
+  assert.equal(imported.identitySource, "cv", "an import reads identity from the CV, not the forwarding mailbox");
+  assert.equal(imported.candidate.email, null, "the forwarder's address must never become the candidate's email");
+  assert.equal(imported.candidate.phone, null);
+  assert.equal(imported.candidate.notes, null, "the forwarder's own quoted-forward body is not the candidate's notes");
+  assert.equal(
+    imported.candidate.fullName,
+    "Ahmed Mahmoud CV",
+    "the attachment filename is the name of last resort when the CV itself cannot be read",
+  );
+  assert.equal(imported.senderIdentifier, "old-careers@satopharma.com", "the forwarding address is still recorded for the audit trail");
+  assert.equal((imported.rawMetadata as { bulkImport?: boolean }).bulkImport, true);
+
+  const genericFilenameMail = fakeMail({
+    attachments: [fakeAttachment({ filename: "Attachment.pdf" })],
+    from: { html: "", text: "", value: [{ address: "old-careers@satopharma.com", name: null }] },
+    messageId: "<fwd456789abc@mail.example.com>",
+  });
+  const genericFilename = parseInboundEmailMessage(genericFilenameMail as never, { mailboxLabel: "careers", uid: 51 }, importOptions);
+  assert.match(
+    genericFilename.candidate.fullName,
+    /^Email Import \(/,
+    "a filename that describes the file rather than the person falls back to a flagged placeholder",
+  );
+
+  // A real applicant emailing in directly is completely unaffected by import mode being on.
+  const directDuringImport = parseInboundEmailMessage(withNameAndCv as never, { mailboxLabel: "careers", uid: 52 }, importOptions);
+  assert.equal(directDuringImport.identitySource, "sender");
+  assert.equal(directDuringImport.candidate.email, "jane.doe@example.com");
+  assert.equal((directDuringImport.rawMetadata as { bulkImport?: boolean }).bulkImport, undefined);
 }

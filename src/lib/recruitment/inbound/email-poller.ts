@@ -22,7 +22,7 @@ import {
   loadConfiguredMailboxes,
   type RecruitmentMailboxConfig,
 } from "@/lib/recruitment/inbound/email-mailboxes-config";
-import { parseInboundEmailMessage } from "@/lib/recruitment/inbound/email-message-parser";
+import { parseEmailImportSenders, parseInboundEmailMessage } from "@/lib/recruitment/inbound/email-message-parser";
 
 type CursorRow = { imap_uidvalidity: string | number | null; last_processed_uid: string | number | null };
 
@@ -65,6 +65,9 @@ export type MailboxPollSummary = {
 
 async function pollMailbox(config: RecruitmentMailboxConfig): Promise<MailboxPollSummary> {
   const summary: MailboxPollSummary = { mailboxLabel: config.label, messagesSeen: 0, results: [] };
+  // Addresses whose messages are a bulk CV migration rather than direct applications. Unset in
+  // normal operation; set only while an old mailbox is being forwarded in, then removed again.
+  const importSenders = parseEmailImportSenders(process.env.RECRUITMENT_EMAIL_IMPORT_SENDERS);
   const client = new ImapFlow({
     auth: { pass: config.password, user: config.user },
     host: config.host,
@@ -96,7 +99,7 @@ async function pollMailbox(config: RecruitmentMailboxConfig): Promise<MailboxPol
           if (message.source) {
             try {
               const mail = await simpleParser(message.source);
-              const parsed = parseInboundEmailMessage(mail, { mailboxLabel: config.label, uid: message.uid });
+              const parsed = parseInboundEmailMessage(mail, { mailboxLabel: config.label, uid: message.uid }, { importSenders });
               const result = await ingestInboundCv({ channel: "email", ...parsed });
               summary.results.push({ outcome: result.outcome, uid: message.uid });
             } catch {
