@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
+import type { NonEmployeePayrollRow } from "../types.ts";
 
 /**
  * CIB (Commercial International Bank) bulk-credit template. Schema AND
@@ -55,6 +56,29 @@ export function cibRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"):
       fullName: entry.row.fullName,
       bankAccount: (entry.bankAccount ?? "").trim(),
       salary: scope === "part1" ? entry.row.firstPart : entry.row.secondPart,
+    }))
+    .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
+}
+
+/**
+ * CIB-bank Non-Employees Payroll rows (people paid a monthly salary with no
+ * employee/HR_ID record — owner rule 2026-07-25/26 misses this without it, since
+ * they are a completely separate data source from AssembledRow and don't run
+ * through cibRowsForScope at all). Their whole totalSalary pays out with Part 1
+ * (same rule as the internal review sheets — see sheet.ts's
+ * writePayrollWorksheet), so they only ever appear on the "part1" scope.
+ */
+export function cibRowsForNonEmployees(
+  nonEmployees: NonEmployeePayrollRow[],
+  scope: "part1" | "part2",
+): CibSheetRow[] {
+  if (scope !== "part1") return [];
+  return nonEmployees
+    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "CIB")
+    .map((entry) => ({
+      fullName: entry.fullNameEn,
+      bankAccount: (entry.bankAccount ?? "").trim(),
+      salary: entry.totalSalary,
     }))
     .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
 }

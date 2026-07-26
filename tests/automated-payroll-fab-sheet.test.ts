@@ -10,8 +10,10 @@ import {
   FAB_CURRENCY,
   FAB_TITLE,
   FAB_TRNS_DESC,
+  fabRowsForNonEmployees,
   fabRowsForScope,
 } from "../src/lib/automated-payroll/exports/fab-sheet.ts";
+import type { NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 import type { SalaryValidationRow } from "../src/lib/payroll/salary-import.ts";
 
 /**
@@ -80,6 +82,26 @@ function buildAssembledRow(overrides: {
   };
 }
 
+function buildNonEmployeeRow(overrides: {
+  fullNameEn?: string;
+  totalSalary?: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
+}): NonEmployeePayrollRow {
+  return {
+    id: "id",
+    runId: "run",
+    fullNameAr: "اسم",
+    fullNameEn: overrides.fullNameEn ?? "Non Employee Person",
+    totalSalary: overrides.totalSalary ?? 3000,
+    bankName: overrides.bankName === undefined ? "FAB" : overrides.bankName,
+    bankAccount: overrides.bankAccount === undefined ? "007111110001" : overrides.bankAccount,
+    createdBy: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
 async function readCells(buffer: Buffer): Promise<string[][]> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
@@ -137,6 +159,26 @@ export async function runAutomatedPayrollFabSheetTests() {
     "zero-amount rows must never appear in the sheet, including a fully-settled-in-Part-1 leaver",
   );
   assert.equal(part2Rows.length, 2, "only lowercaseFabRow and normalRow have a nonzero Part-2 amount");
+
+  // ---- fabRowsForNonEmployees: a completely separate data source from
+  // AssembledRow (owner-reported 2026-07-26: they were silently missing from
+  // the real bank file because fabRowsForScope never sees them at all) --------
+  const neNormal = buildNonEmployeeRow({ fullNameEn: "Freelance Person" });
+  const neNonFab = buildNonEmployeeRow({ bankName: "CIB" });
+  const neNullBank = buildNonEmployeeRow({ bankName: null });
+  const neNoAccount = buildNonEmployeeRow({ bankAccount: "" });
+  const neZeroSalary = buildNonEmployeeRow({ totalSalary: 0 });
+  const neLowercase = buildNonEmployeeRow({ fullNameEn: "Lowercase Bank Person", bankName: "fab" });
+  const allNonEmployees = [neNormal, neNonFab, neNullBank, neNoAccount, neZeroSalary, neLowercase];
+
+  const nePart1 = fabRowsForNonEmployees(allNonEmployees, "part1");
+  assert.equal(nePart1.length, 2, "only the two real FAB-bank, nonzero, has-account rows survive");
+  assert.ok(nePart1.some((r) => r.fullName === "Freelance Person"));
+  assert.ok(nePart1.some((r) => r.fullName === "Lowercase Bank Person"));
+  assert.equal(nePart1.find((r) => r.fullName === "Freelance Person")?.salary, 3000);
+
+  const nePart2 = fabRowsForNonEmployees(allNonEmployees, "part2");
+  assert.deepEqual(nePart2, [], "non-employees never appear on Part 2 — their whole salary pays with Part 1");
 
   // ---- buildFabSheetWorkbook: exact schema, exact constants, exact values ----
   const buffer = await buildFabSheetWorkbook({

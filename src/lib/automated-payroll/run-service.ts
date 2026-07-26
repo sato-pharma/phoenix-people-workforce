@@ -9,8 +9,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assembleRows, computeFrozenFirstParts, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
-import { buildCibSheetWorkbook, cibRowsForScope } from "./exports/cib-sheet.ts";
-import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForScope } from "./exports/fab-sheet.ts";
+import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "./exports/cib-sheet.ts";
+import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fabRowsForScope } from "./exports/fab-sheet.ts";
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
@@ -1034,7 +1034,15 @@ export async function buildFabSheet(
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
   const rows = assembleRows({ members, sources, draftRows, period: period2 });
-  const fabRows = fabRowsForScope(rows, scope);
+  // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
+  // is a separate data source from AssembledRow — fabRowsForScope never sees
+  // them, so they'd silently be missing from the real bank file without this
+  // (owner-reported 2026-07-26). Only appear on "part1": their whole
+  // totalSalary pays out with Part 1, same as the internal review sheets.
+  const fabRows = [
+    ...fabRowsForScope(rows, scope),
+    ...fabRowsForNonEmployees(await getNonEmployeePayrollRows(run.id), scope),
+  ];
   if (fabRows.length === 0) {
     throw new Error("Conflict: no FAB-bank employees with a payable amount for this part.");
   }
@@ -1071,7 +1079,12 @@ export async function buildCibSheet(
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
   const rows = assembleRows({ members, sources, draftRows, period: period2 });
-  const cibRows = cibRowsForScope(rows, scope);
+  // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
+  // source that cibRowsForScope never sees on its own.
+  const cibRows = [
+    ...cibRowsForScope(rows, scope),
+    ...cibRowsForNonEmployees(await getNonEmployeePayrollRows(run.id), scope),
+  ];
   if (cibRows.length === 0) {
     throw new Error("Conflict: no CIB-bank employees with a payable amount for this part.");
   }

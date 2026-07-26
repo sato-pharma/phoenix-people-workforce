@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../assemble.ts";
-import type { PayrollPeriod } from "../types.ts";
+import type { NonEmployeePayrollRow, PayrollPeriod } from "../types.ts";
 
 /**
  * FAB (First Abu Dhabi Bank / FABMISR) bulk salary-transfer upload file.
@@ -49,6 +49,29 @@ export function fabRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"):
       fullName: entry.row.fullName,
       bankAccount: (entry.bankAccount ?? "").trim(),
       salary: scope === "part1" ? entry.row.firstPart : entry.row.secondPart,
+    }))
+    .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
+}
+
+/**
+ * FAB-bank Non-Employees Payroll rows (people paid a monthly salary with no
+ * employee/HR_ID record — owner rule 2026-07-25/26 misses this without it, since
+ * they are a completely separate data source from AssembledRow and don't run
+ * through fabRowsForScope at all). Their whole totalSalary pays out with Part 1
+ * (same rule as the internal review sheets — see sheet.ts's
+ * writePayrollWorksheet), so they only ever appear on the "part1" scope.
+ */
+export function fabRowsForNonEmployees(
+  nonEmployees: NonEmployeePayrollRow[],
+  scope: "part1" | "part2",
+): FabSheetRow[] {
+  if (scope !== "part1") return [];
+  return nonEmployees
+    .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "FAB")
+    .map((entry) => ({
+      fullName: entry.fullNameEn,
+      bankAccount: (entry.bankAccount ?? "").trim(),
+      salary: entry.totalSalary,
     }))
     .filter((entry) => entry.salary > 0 && entry.bankAccount.length > 0);
 }
