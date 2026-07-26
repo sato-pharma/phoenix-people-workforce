@@ -131,7 +131,16 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
 
 export type FreezeFirstPartInput = {
   effective: EffectiveSalary;
-  /** Full master Base — the Basic anchor for a leaver uses the full base (owner Rule 2). */
+  /**
+   * Full master Base — the Basic anchor for the min(Basic, effNet) two_parts
+   * split, for every lifecycle. A leaver already used the full base (owner
+   * Rule 2); a joiner must too (bug fixed 2026-07-26, Ahmed Nagy PD-0006
+   * case): anchoring on the PRORATED mid-month base instead scaled 70% down
+   * twice — once from the anchor, once from effNet already being prorated —
+   * so a joiner whose prorated net fell below 70% of their real monthly base
+   * got an incorrectly-shrunk split instead of everything landing in First
+   * Part as intended.
+   */
   fullBaseSalary: number;
   paymentMode: PayrollPaymentMode | string | null;
   /** Confirmed Part-1 fingerprint deduction (EGP). */
@@ -179,7 +188,7 @@ export type FreezeFirstPartInput = {
 
 /**
  * The frozen First Part (first installment), computed at Part-1 confirm.
- *  two_parts: min(Basic, effNet) − fingerprint   (Basic anchor: leaver → full base, else effective base)
+ *  two_parts: min(Basic, effNet) − fingerprint   (Basic anchor: always the full master base, regardless of lifecycle)
  *  one_part:  effNet − fingerprint − medical insurance (full net in Part 1, per owner rule)
  * Clamped to ≥ 0, then — leavers only — reduced further by whatever part of
  * `leaverDeduction` (CRM/vacation, plus medical insurance for a two-part
@@ -200,8 +209,7 @@ export function freezeFirstPart(input: FreezeFirstPartInput): number {
 
   let firstBeforeFp: number;
   if (mode === "two_parts") {
-    const anchorBase = isLeaver ? input.fullBaseSalary : input.effective.base;
-    const basic = calculateBasicSalary({ baseSalary: anchorBase });
+    const basic = calculateBasicSalary({ baseSalary: input.fullBaseSalary });
     firstBeforeFp = Math.min(basic, effNet);
   } else {
     firstBeforeFp = effNet;
