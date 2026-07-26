@@ -187,6 +187,44 @@ export async function resolveSessionState(
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
+  // CI smoke mode: the login route issues a real signed JWT but deliberately
+  // skips inserting an app_sessions row so CI never pollutes production audit
+  // tables. All subsequent Supabase admin lookups would therefore fail (session
+  // not found, missing key, etc.). Short-circuit here using the already-verified
+  // JWT payload — verifySessionToken above has already checked the HMAC
+  // signature and token expiry, so the payload is trustworthy.
+  // Gated identically to the ciSmokeMode check in app/api/auth/login/route.ts
+  // (APP_ENV !== "production" && PHOENIX_CI_SMOKE_LOGIN === "true") so it can
+  // never activate in a real production deployment.
+  if (process.env.APP_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true") {
+    const now = new Date().toISOString();
+    const syntheticAppSession: AppSessionRow = {
+      absolute_expires_at: new Date(payload.exp * 1000).toISOString(),
+      created_at: now,
+      hr_id: payload.hrId,
+      id: payload.sid,
+      idle_expires_at: new Date(payload.exp * 1000).toISOString(),
+      last_seen_at: now,
+      login_id: payload.loginId,
+      revoked_at: null,
+      revoked_reason: null,
+      role: payload.role,
+      session_version: payload.ver,
+      supabase_session_available: null,
+      supabase_session_required: null,
+    };
+    return {
+      access: createAccessContext({
+        hrId: payload.hrId,
+        loginId: payload.loginId,
+        role: payload.role,
+        source: "session",
+      }),
+      appSession: syntheticAppSession,
+      payload,
+    };
+  }
+
   const supabase = getSupabaseAdmin();
 
   // Parallelization invariant: the three lookups below (app_sessions via
