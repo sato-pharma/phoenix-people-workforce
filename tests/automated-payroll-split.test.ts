@@ -151,6 +151,31 @@ export function runAutomatedPayrollSplitTests() {
     0,
   );
 
+  // ---- freezeFirstPart: joiner Basic anchor uses the FULL base, not the -----
+  // prorated one (bug fixed 2026-07-26, Ahmed Nagy PD-0006 case). Before the
+  // fix, anchorBase used effective.base (already prorated), so a joiner's
+  // Basic got scaled down TWICE — once from the anchor, once from effNet
+  // already being prorated — silently shrinking First Part below what 70% of
+  // their real monthly base should have allowed.
+  //
+  // joinerLate: prorated base=15000, net=15750. Full-base Basic = 0.70×30000 =
+  // 21000. min(21000, 15750) = 15750 → the WHOLE prorated net lands in First
+  // Part (the owner's "if working days value is less than 70% of base salary
+  // then all in 1st part" rule). The old buggy anchor (0.70×15000=10500)
+  // would have produced 10500 instead — a materially wrong, smaller number.
+  assert.equal(
+    freezeFirstPart({ effective: joinerLate, fullBaseSalary: BASE, paymentMode: "two_parts", fingerprint: 0 }),
+    15750,
+  );
+
+  // joinerEarly: prorated base=21000, net=22500. Full-base Basic = 21000 still
+  // caps it: min(21000, 22500) = 21000. The old buggy anchor
+  // (0.70×21000=14700) would have produced 14700 instead — again wrong.
+  assert.equal(
+    freezeFirstPart({ effective: joinerEarly, fullBaseSalary: BASE, paymentMode: "two_parts", fingerprint: 0 }),
+    21000,
+  );
+
   // ---- leaver-only netting (owner rule 2026-07-20): CRM+vacation deduction --
   // leaverLate: net=31500 (full base+ecol+fuel, after-25th branch), Basic=21000
   // (min(21000,31500)=21000) → provisional Second headroom = 31500-21000 = 10500.
