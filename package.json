@@ -83,6 +83,7 @@
     "validate:env": "node scripts/validate-env.mjs",
     "sync:main": "node scripts/sync-main.mjs",
     "worktree:sync-env": "node scripts/sync-worktree-env.mjs",
+    "sync:pdfjs-assets": "node scripts/sync-pdfjs-assets.mjs",
     "coverage": "c8 --reporter=text --reporter=html --reporter=json node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
     "ci": "pnpm run check:routes && pnpm run check:migrations && pnpm run check:no-stale-domains && pnpm run lint && pnpm exec next typegen && pnpm run typecheck && pnpm run test && pnpm run build"
   },
@@ -116,6 +117,7 @@
     "openai": "^6.48.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "5.4.296",
     "pdfmake": "^0.3.11",
     "postgres": "^3.4.9",
     "puppeteer-core": "^25.3.0",
