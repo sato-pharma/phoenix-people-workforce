@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 require("dotenv").config({ path: ".env.local" });
 
-const { Client } = require("pg");
+// postgres.js, not `pg`. This script used to `require("pg")`, which has never been a
+// dependency of this repo — so it died at load with MODULE_NOT_FOUND before running a single
+// query. `postgres` IS a dependency and is what the other two SUPABASE_DB_URL scripts
+// (audit-image-evidence-storage.ts, phase21-security-readiness-smoke.ts) already use, so
+// standardising on it keeps one Postgres driver instead of adding a second.
+const postgres = require("postgres");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
 const path = require("path");
@@ -99,12 +104,16 @@ async function main() {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const client = new Client({
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+  // ssl: "require" encrypts but does not verify the cert chain — the direct equivalent of
+  // the previous pg `ssl: { rejectUnauthorized: false }`, and what Supabase's pooler needs.
+  // prepare: false so this works through Supabase's TRANSACTION pooler (port 6543) as well
+  // as the session pooler (5432); transaction mode rejects prepared statements.
+  // postgres.js connects lazily, so there is no explicit connect() step.
+  const db = postgres(DATABASE_URL, {
+    ssl: "require",
+    max: 1,
+    prepare: false,
   });
-
-  await client.connect();
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
@@ -283,8 +292,10 @@ async function main() {
 
   for (const [sheetName, sql] of Object.entries(queries)) {
     try {
-      const result = await client.query(sql);
-      addRowsSheet(workbook, sheetName, result.rows);
+      // .unsafe() runs a plain SQL string (these queries are static, not user input);
+      // postgres.js resolves to the row array itself, not a { rows } wrapper.
+      const result = await db.unsafe(sql);
+      addRowsSheet(workbook, sheetName, result);
       console.log(`Added ${sheetName}`);
     } catch (error) {
       addRowsSheet(workbook, sheetName, [{ error: error.message }]);
@@ -292,7 +303,7 @@ async function main() {
     }
   }
 
-  const tablesResult = await client.query(`
+  const tablesResult = await db.unsafe(`
     SELECT table_schema, table_name
     FROM information_schema.tables
     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
@@ -300,7 +311,7 @@ async function main() {
     ORDER BY table_schema, table_name;
   `);
 
-  for (const table of tablesResult.rows) {
+  for (const table of tablesResult) {
     const schema = table.table_schema;
     const tableName = table.table_name;
 
@@ -309,11 +320,11 @@ async function main() {
     const sheetName = `data_${schema}_${tableName}`;
 
     try {
-      const countResult = await client.query(
+      const countResult = await db.unsafe(
         `SELECT COUNT(*)::int AS row_count FROM "${schema}"."${tableName}";`
       );
 
-      const rowCount = countResult.rows[0].row_count;
+      const rowCount = countResult[0].row_count;
 
       if (rowCount > 100000) {
         addRowsSheet(workbook, sheetName, [
@@ -329,12 +340,12 @@ async function main() {
         continue;
       }
 
-      const dataResult = await client.query(
+      const dataResult = await db.unsafe(
         `SELECT * FROM "${schema}"."${tableName}" LIMIT 100000;`
       );
 
-      addRowsSheet(workbook, sheetName, dataResult.rows);
-      console.log(`Exported data ${schema}.${tableName} rows=${dataResult.rows.length}`);
+      addRowsSheet(workbook, sheetName, dataResult);
+      console.log(`Exported data ${schema}.${tableName} rows=${dataResult.length}`);
     } catch (error) {
       addRowsSheet(workbook, sheetName, [
         {
@@ -349,7 +360,7 @@ async function main() {
   }
 
   await workbook.xlsx.writeFile(OUTPUT_FILE);
-  await client.end();
+  await db.end();
 
   console.log("");
   console.log("DONE");
