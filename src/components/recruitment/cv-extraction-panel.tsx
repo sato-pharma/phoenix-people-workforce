@@ -60,7 +60,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
 
       const extraction = await postJson(`/api/recruitment/candidates/${newCandidateId}/cv-extract`, { positionKey });
       const extractedFields = extraction.fields as ExtractedCandidateFields | undefined;
-      if (!extractedFields) throw new Error("The AI did not return any fields.");
+      if (!extractedFields) throw new Error("No fields were returned. Try again.");
 
       setCandidateId(newCandidateId);
       setExtractionId(typeof extraction.extractionId === "string" ? extraction.extractionId : null);
@@ -70,7 +70,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
     } catch (caught) {
       // A partially-created stub candidate (e.g. upload succeeded but extraction failed) is
       // left as-is — Talent Acquisition can still find it in the pool and finish it manually.
-      setError(caught instanceof Error ? caught.message : "AI CV extraction failed.");
+      setError(caught instanceof Error ? caught.message : "CV extraction failed.");
       setStage("idle");
     } finally {
       setBusy(false);
@@ -133,7 +133,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
         </select>
         <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" type="file" />
         <Button disabled={busy} onClick={() => void startFromCv()} variant="secondary">
-          {busy ? "Reading CV…" : "Create from CV (AI)"}
+          {busy ? "Reading CV…" : "Create from CV"}
         </Button>
         {error ? <p className="text-xs text-rose-600">{error}</p> : null}
       </div>

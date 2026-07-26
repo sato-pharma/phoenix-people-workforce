@@ -86,7 +86,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
 
         const extraction = await postJson(`/api/recruitment/candidates/${candidate.id}/cv-extract`, { positionKey });
         const fields = extraction.fields as ExtractedCandidateFields | undefined;
-        if (!fields) throw new Error("The AI did not return any fields.");
+        if (!fields) throw new Error("No fields were returned. Try again.");
 
         updateItem(item.id, {
           candidateId: candidate.id,
@@ -95,7 +95,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
           status: "done",
         });
       } catch (caught) {
-        updateItem(item.id, { error: caught instanceof Error ? caught.message : "AI CV extraction failed.", status: "error" });
+        updateItem(item.id, { error: caught instanceof Error ? caught.message : "CV extraction failed.", status: "error" });
       }
     }
     setRunning(false);
@@ -142,7 +142,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
         </select>
         <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" multiple type="file" />
         <Button disabled={running} onClick={() => void startBatch()} variant="secondary">
-          {running ? "Processing batch…" : "Create from CVs (AI, bulk)"}
+          {running ? "Processing batch…" : "Create from CVs (bulk)"}
         </Button>
       </div>
 

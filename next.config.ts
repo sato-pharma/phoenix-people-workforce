@@ -164,6 +164,30 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
         source: "/:path*",
       },
+      // CvPreviewModal renders a candidate's CV inline via <iframe src={ourOwnDownloadRoute}> —
+      // the global X-Frame-Options: DENY / frame-ancestors 'none' above blocks that outright,
+      // even same-origin, so the preview silently failed to render (Chrome: net::ERR_BLOCKED_BY_RESPONSE)
+      // regardless of Content-Disposition. These two file-serving routes are the only ones this
+      // app ever needs to frame, and only from itself — scope the loosening to exactly that
+      // (frame-ancestors 'self' + X-Frame-Options: SAMEORIGIN), not weakened for anything else.
+      // A CSP consisting of only frame-ancestors is deliberate here too: these routes return raw
+      // file bytes (PDF/image), never HTML that executes script, so script-src/connect-src/etc.
+      // have nothing to protect on this response — restating the full site-wide CSP would be
+      // dead weight, not defense in depth.
+      {
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+        source: "/api/recruitment/files/:id/download",
+      },
+      {
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+        source: "/api/recruitment/hiring-manager/candidates/:candidateId/files/:fileId",
+      },
       ...(process.env.NODE_ENV === "production"
         ? [{ source: "/_next/static/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] }]
         : []),

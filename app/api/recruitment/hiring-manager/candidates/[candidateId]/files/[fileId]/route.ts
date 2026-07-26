@@ -22,9 +22,13 @@ export async function GET(
     if (download.kind === "external") {
       return NextResponse.redirect(download.url);
     }
+    // See app/api/recruitment/files/[id]/download/route.ts's sibling comment — CvPreviewModal
+    // is shared by both routes and needs this to render a PDF inline instead of forcing a
+    // browser download.
+    const inline = new URL(request.url).searchParams.get("disposition") === "inline";
     return new NextResponse(download.bytes as unknown as BodyInit, {
       headers: {
-        "Content-Disposition": `attachment; filename="${download.fileName.replace(/"/g, "")}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${download.fileName.replace(/"/g, "")}"`,
         "Content-Type": download.mimeType,
       },
     });

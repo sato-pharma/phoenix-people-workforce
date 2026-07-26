@@ -54,7 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               : 502;
       return NextResponse.json({ error: error.code, message: error.message, success: false }, { status });
     }
-    const message = error instanceof Error ? error.message : "AI CV extraction failed.";
+    const message = error instanceof Error ? error.message : "CV extraction failed.";
     return NextResponse.json({ error: "ai_failed", message, success: false }, { status: 500 });
   }
 }

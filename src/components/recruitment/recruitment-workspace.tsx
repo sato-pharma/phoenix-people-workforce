@@ -37,6 +37,7 @@ import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
+import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
@@ -1463,6 +1464,7 @@ function CandidatesTab({
   const [startReq, setStartReq] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
+  const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
   const [retryExtraction, setRetryExtraction] = useState<{ fields: ExtractedCandidateFields; extractionId: string | null } | null>(
     null,
@@ -1482,6 +1484,7 @@ function CandidatesTab({
 
   const openProfile = async (id: string) => {
     setProfile(null);
+    setViewCvFile(null);
     setError(null);
     setRetryExtraction(null);
     setRetryError(null);
@@ -1503,7 +1506,7 @@ function CandidatesTab({
     if (profile) profilePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [profile]);
 
-  // Re-run AI extraction on a candidate that already has a CV on file — for one manually
+  // Re-run extraction on a candidate that already has a CV on file — for one manually
   // created, or where the first extraction pass wasn't saved as-is. Reuses the same
   // cv-extract endpoint and drag-and-drop review board as the "create from CV" flow.
   const startRetryExtraction = async (candidateId: string, positionKey: string) => {
@@ -1516,12 +1519,12 @@ function CandidatesTab({
         method: "POST",
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "AI CV extraction failed.");
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "CV extraction failed.");
       const fields = data.fields as ExtractedCandidateFields | undefined;
-      if (!fields) throw new Error("The AI did not return any fields.");
+      if (!fields) throw new Error("No fields were returned. Try again.");
       setRetryExtraction({ extractionId: typeof data.extractionId === "string" ? data.extractionId : null, fields });
     } catch (caught) {
-      setRetryError(caught instanceof Error ? caught.message : "AI CV extraction failed.");
+      setRetryError(caught instanceof Error ? caught.message : "CV extraction failed.");
     } finally {
       setRetryBusy(false);
     }
@@ -1615,7 +1618,7 @@ function CandidatesTab({
           </div>
           <div className="border-t border-slate-100 p-5">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Or let AI read a Medical Rep CV
+              Or extract from a Medical Rep CV
             </p>
             <CvExtractionPanel
               onCreated={(id) => {
@@ -1718,6 +1721,7 @@ function CandidatesTab({
               variant="ghost"
               onClick={() => {
                 setProfile(null);
+                setViewCvFile(null);
                 setRetryExtraction(null);
                 setRetryError(null);
                 setRetryPositionKey(defaultCvPositionKey);
@@ -1749,7 +1753,7 @@ function CandidatesTab({
                     size="sm"
                     variant="secondary"
                   >
-                    {retryBusy ? "Reading CV…" : "AI extract from CV"}
+                    {retryBusy ? "Reading CV…" : "Extract from CV"}
                   </Button>
                 </div>
               ) : null}
@@ -1824,11 +1828,22 @@ function CandidatesTab({
               {profile.files.length === 0 ? (
                 <p className="text-xs text-slate-400">No files</p>
               ) : (
-                profile.files.map((file) => (
-                  <p key={file.id} className="text-xs text-slate-600">
-                    {file.fileName}
-                  </p>
-                ))
+                profile.files.map((file) =>
+                  file.kind === "cv" && detectCvFileKind(file.mimeType ?? "", file.fileName) !== "unsupported" ? (
+                    <button
+                      className="block text-left text-xs text-orange-600 underline-offset-2 hover:underline"
+                      key={file.id}
+                      onClick={() => setViewCvFile(file)}
+                      type="button"
+                    >
+                      {file.fileName}
+                    </button>
+                  ) : (
+                    <p className="text-xs text-slate-600" key={file.id}>
+                      {file.fileName}
+                    </p>
+                  ),
+                )
               )}
               {profile.candidate.cvExternalUrl ? (
                 <a className="text-xs text-orange-600" href={profile.candidate.cvExternalUrl} target="_blank" rel="noreferrer">
@@ -1850,6 +1865,16 @@ function CandidatesTab({
             </div>
           </div>
           {profile.candidate.notes ? <p className="text-xs text-slate-600">Notes: {profile.candidate.notes}</p> : null}
+
+          {viewCvFile ? (
+            <CvPreviewModal
+              downloadUrl={`/api/recruitment/files/${viewCvFile.id}/download`}
+              fileName={viewCvFile.fileName}
+              mimeType={viewCvFile.mimeType}
+              onClose={() => setViewCvFile(null)}
+              sidePanel={<CandidateFieldsPanel candidate={profile.candidate} schema={getCvPositionSchema(defaultCvPositionKey)!} />}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -2122,7 +2147,6 @@ function FilesSection({
           fileName={previewFile.fileName}
           mimeType={previewFile.mimeType}
           onClose={() => setPreviewFile(null)}
-          previewTextUrl={`/api/recruitment/files/${previewFile.id}/preview-text`}
         />
       ) : null}
       {canUpload ? (

@@ -64,7 +64,7 @@ export function CvExtractionAnalyticsView({ data }: { data: CvExtractionAccuracy
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
         No reviewed extractions yet. Accuracy stats appear once Talent Acquisition has saved at least one
-        AI-extracted candidate.
+        extracted candidate.
       </div>
     );
   }
