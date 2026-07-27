@@ -9,11 +9,6 @@ export const deductionSourceModules = [
   "PAYROLL_ADJUSTMENT",
   "EXPENSE_RECOVERY",
   "OTHER",
-  // Rows sourced from the unified Deductions module (src/lib/deductions/),
-  // not this legacy governance module — a distinct value on purpose, so a
-  // reader can tell at a glance which pipeline produced a given portal row
-  // during the dual-read transition period.
-  "DEDUCTIONS_MODULE",
 ] as const;
 export type DeductionSourceModule = (typeof deductionSourceModules)[number];
 
@@ -32,17 +27,6 @@ export const deductionTypes = [
   "expense_recovery",
   "salary_adjustment",
   "other",
-  // The unified Deductions module's own 7 category slugs, used verbatim as
-  // the deductionType for rows sourced from that module (see DEDUCTIONS_MODULE
-  // above) — deliberately not force-mapped onto the legacy, finer-grained
-  // vocabulary above, which encodes a precision (late_arrival vs short_hours
-  // vs missing_punch, etc.) the new connectors don't distinguish.
-  "fingerprint",
-  "crm",
-  "no_records_activity",
-  "unpaid_vacation",
-  "insufficient_balance_vacation",
-  "loan",
 ] as const;
 export type DeductionType = (typeof deductionTypes)[number];
 
@@ -111,13 +95,6 @@ export const deductionPayrollColumns = [
   "crm",
   "finger_print",
   "unpaid_vacations",
-  // The unified Deductions module's other 2 real salary_records columns
-  // (src/lib/deductions/calculations.ts's DEDUCTIONS_CATEGORY_CONFIG) — this
-  // legacy governance module never produced a Loan or catch-all Other
-  // candidate, so it never needed these until the portal started reading rows
-  // sourced from the new module too.
-  "loans",
-  "other_deductions",
 ] as const;
 export type DeductionPayrollColumn = (typeof deductionPayrollColumns)[number];
 

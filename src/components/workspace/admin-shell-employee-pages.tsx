@@ -58,8 +58,7 @@ import {
   getPayslipPortalData,
   getDsmTeamPerformance,
 } from "@/lib/employee-portal/service";
-import { compactDeductionHrId } from "@/lib/deductions-governance/service";
-import { getPortalDeductions } from "@/lib/deductions/portal.ts";
+import { compactDeductionHrId, listPublishedDeductionsForPortal } from "@/lib/deductions-governance/service";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
@@ -339,7 +338,7 @@ export async function WorkspacePayslipsPage() {
 export async function WorkspaceDeductionsPage({ searchParams }: { searchParams: SearchParams }) {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
   const monthKey = firstParam(searchParams.monthKey)?.trim() || undefined;
-  const data = await getPortalDeductions({ access, monthKey }).catch((error) => ({ error }));
+  const data = await listPublishedDeductionsForPortal({ access, monthKey }).catch((error) => ({ error }));
   if ("error" in data) {
     return (
       <WorkspaceUnavailable
