@@ -3,11 +3,7 @@ import { NextResponse } from "next/server";
 import { logError, logWarning } from "@/lib/observability/log";
 import { assembleWhatsAppSourceContext, MAX_WHATSAPP_SOURCE_MESSAGES } from "@/lib/recruitment/candidate-source-context";
 import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
-import {
-  bufferWhatsAppMessage,
-  sweepOldWhatsAppMessages,
-  takeRecentWhatsAppMessages,
-} from "@/lib/recruitment/inbound/whatsapp-message-buffer";
+import { bufferWhatsAppMessage, takeRecentWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import {
   isWhatsAppImportSender,
   parseWhatsAppImportSenders,
@@ -75,9 +71,8 @@ export async function POST(request: Request) {
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
   const outcomes: Array<{ wamid: string; outcome: string }> = [];
 
-  // Opportunistic retention sweep of the text-message buffer — cheap, keeps it from growing if a
-  // sender's CV never arrives. Best-effort; must not affect message processing.
-  await sweepOldWhatsAppMessages().catch(() => {});
+  // (The text-buffer retention sweep runs on the inbound-intake cron tick now, not here — keeping
+  // the webhook's work minimal so it acks even faster.)
 
   // Resolve to 200 quickly. Each message is either buffered (text) or enqueued (a CV document);
   // the enqueue is idempotent on the wamid, so a Meta retry of the whole payload is safe.
