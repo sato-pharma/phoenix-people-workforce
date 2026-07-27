@@ -557,6 +557,7 @@ function employeeValues(
     ...(record.mobileNumber ? { mobile_number: truncate(record.mobileNumber, 40) } : {}),
     ...(record.nameAr ? { name_ar: truncate(record.nameAr, 220) } : {}),
     ...(record.regionName ? { region_name: truncate(record.regionName, 160) } : {}),
+    ...(record.regionCode ? { region_code: truncate(record.regionCode, 40) } : {}),
     ...(record.workEmail ? { work_email: truncate(record.workEmail, 255) } : {}),
   };
 
@@ -661,6 +662,7 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
     message.includes("payment_mode") ||
     message.includes("payroll_eligible") ||
     message.includes("region_name") ||
+    message.includes("region_code") ||
     message.includes("residence_address") ||
     message.includes("residence_area") ||
     message.includes("residence_city") ||
@@ -694,6 +696,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     payment_mode,
     payroll_eligible,
     region_name,
+    region_code,
     residence_address,
     residence_area,
     residence_city,
@@ -724,6 +727,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void payment_mode;
   void payroll_eligible;
   void region_name;
+  void region_code;
   void residence_address;
   void residence_area;
   void residence_city;

@@ -1,3 +1,4 @@
+import { loadRegionCrosswalk } from "@/lib/employees/region-resolver";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isActiveImportEmployee } from "@/lib/imports/employee-lifecycle";
 import type {
@@ -354,6 +355,7 @@ export async function loadEmployeeImportExistingState(
     lineState,
     positionState,
     activeDepartments,
+    regionCrosswalk,
   ] = await Promise.all([
     loadCodeSet(supabase, "departments"),
     loadAreaState(supabase),
@@ -361,6 +363,9 @@ export async function loadEmployeeImportExistingState(
     loadCodeLookup(supabase, "lines"),
     loadPositionState(supabase),
     loadActiveDepartments(supabase),
+    // Degrade gracefully: if the au crosswalk views can't be read, skip region derivation rather
+    // than failing the whole import (the validator keeps each row's free-text region_name).
+    loadRegionCrosswalk(supabase).catch(() => undefined),
   ]);
   const employees = await loadEmployeeState(supabase, {
     areaIdToCode: areaState.areaIdToCode,
@@ -378,6 +383,7 @@ export async function loadEmployeeImportExistingState(
     departmentNameToCode: activeDepartments.nameToCode,
     lineCodes: lineState.codes,
     canonicalAreas: canonicalAreaState.canonicalAreas,
+    regionCrosswalk,
     positionCodes: positionState.positionCodes,
     ...teamState,
   };

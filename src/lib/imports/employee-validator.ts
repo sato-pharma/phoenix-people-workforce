@@ -1,4 +1,5 @@
-﻿import { canonicalHrIdKey, hrIdsMatch, resolveStoredHrId } from "@/lib/hr-id";
+﻿import { resolveRegionFromCrosswalk } from "@/lib/employees/region-resolver";
+import { canonicalHrIdKey, hrIdsMatch, resolveStoredHrId } from "@/lib/hr-id";
 import {
   createEmployeeColumnLookup,
   requiredEmployeeImportFields,
@@ -225,6 +226,7 @@ function buildRecord(
     departmentName: organization.department.displayName,
     lineName: organization.line.displayName,
     regionName: normalizeTextValue(valueFor(row, mapping, "region")),
+    regionCode: null,
     areaName: organization.area.displayName,
     teamName: organization.team.displayName,
     positionTitle: organization.position.displayName,
@@ -711,6 +713,10 @@ export function validateEmployeeImportRows(
     canonicalAreaByKey.set(normalizeDepartmentLookupKey(canonicalArea.name), canonicalArea);
   }
 
+  // au (line, area) -> region crosswalk. When present, each employee row's region is derived from
+  // its resolved (line, area) — the authoritative sales geography — instead of the free-text column.
+  const regionCrosswalk = options.existingState?.regionCrosswalk;
+
   for (const record of records) {
     if (record.rowType === "employee" && !record.hrId) {
       validationErrors.push({
@@ -772,6 +778,22 @@ export function validateEmployeeImportRows(
     const areaError = resolveCanonicalArea(record, canonicalAreaByKey);
     if (areaError) {
       validationErrors.push(areaError);
+    }
+
+    // Derive the operational region from the resolved (line, area) via the au crosswalk — the
+    // authoritative sales geography — rather than trusting the drift-prone Region column. The SAME
+    // area can map to different regions across lines by design, so this keys on both. Only sales
+    // seats resolve; non-sales rows (e.g. Head Office) keep their file region_name and a null code.
+    if (record.rowType === "employee" && regionCrosswalk) {
+      const resolvedRegion = resolveRegionFromCrosswalk(
+        record.codes.lineCode,
+        record.codes.areaCode,
+        regionCrosswalk,
+      );
+      if (resolvedRegion) {
+        record.regionCode = resolvedRegion.regionCode;
+        record.regionName = resolvedRegion.regionName ?? record.regionName;
+      }
     }
 
     const teamError = resolveGlobalTeam(record, options);

@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 
+import { buildRegionCrosswalk } from "../src/lib/employees/region-resolver.ts";
 import { validateEmployeeImportRows } from "../src/lib/imports/employee-validator.ts";
 import { createOrgCode } from "../src/lib/imports/org-rule-engine.ts";
 
@@ -219,4 +220,32 @@ export function runEmployeeImportSeatValidationTests() {
     existingCrmUsernameOwner.validationErrors.some((issue) => issue.code === "crm_username_already_assigned"),
     true,
   );
+
+  // Region derivation from the au (line, area) crosswalk: the resolved region overrides the
+  // drift-prone free-text Region column, and the region code is captured.
+  const regionCrosswalk = buildRegionCrosswalk(
+    [
+      {
+        line_code: createOrgCode("Pedia"),
+        area_code: canonicalAreas[0].code,
+        area_name: "Cairo",
+        operational_region_code: "CA",
+      },
+    ],
+    [{ region_code: "CA", region_name: "Cairo Region" }],
+  );
+  const derivedRegion = validateEmployeeImportRows(
+    [employeeRow({ HR_ID: "T-020", Area: "Cairo", Line: "Pedia", Region: "Free Text Region" })],
+    { existingState: { canonicalAreas, regionCrosswalk } },
+  );
+  assert.equal(derivedRegion.rowsToInsert[0].regionCode, "CA");
+  assert.equal(derivedRegion.rowsToInsert[0].regionName, "Cairo Region");
+
+  // Without a crosswalk, the region column is preserved verbatim and no code is derived.
+  const withoutCrosswalk = validateEmployeeImportRows(
+    [employeeRow({ HR_ID: "T-021", Area: "Cairo", Line: "Pedia", Region: "Free Text Region" })],
+    { existingState: { canonicalAreas } },
+  );
+  assert.equal(withoutCrosswalk.rowsToInsert[0].regionCode, null);
+  assert.equal(withoutCrosswalk.rowsToInsert[0].regionName, "Free Text Region");
 }
