@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, TriangleAlert, X } from "lucide-react";
 
 import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
@@ -16,7 +16,7 @@ import type {
 // Value import from the dependency-free sibling file, NOT master.ts itself — master.ts pulls in
 // the Supabase admin client + employee-directory/PDF chain, which must never reach this "use
 // client" component's bundle (see CRM_MASTER_DATASETS' own doc comment).
-import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
+import { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
 function datasetLabel(dataset: CrmMasterDataset): string {
   return CRM_MASTER_DATASETS.find((tab) => tab.id === dataset)?.label ?? dataset;
@@ -141,16 +141,21 @@ function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown
   );
 }
 
+const FILTER_FIELD = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+const FILTER_INPUT = "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+
 export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const isCheckins = data.dataset === "checkins";
+  const isVacations = data.dataset === "vacations";
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState(data.search ?? "");
   const [fromText, setFromText] = useState(data.dateFrom ?? "");
   const [toText, setToText] = useState(data.dateTo ?? "");
-  const [agentText, setAgentText] = useState(data.agentHrId ?? "");
   const [visitTypeText, setVisitTypeText] = useState(data.visitType ?? "");
   const [ampmValue, setAmpmValue] = useState<CrmMasterAmpm>(data.ampm);
   const [mappingValue, setMappingValue] = useState<CrmMasterMappingStatus>(data.mappingStatus);
@@ -159,18 +164,8 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   const [hireToText, setHireToText] = useState(data.hireTo ?? "");
   const [minDurationText, setMinDurationText] = useState(data.minDuration != null ? String(data.minDuration) : "");
   const [halfDaysOnly, setHalfDaysOnly] = useState(data.halfDaysOnly);
-  const advancedActive =
-    Boolean(data.agentHrId) ||
-    data.ampm !== "all" ||
-    Boolean(data.visitType) ||
-    data.mappingStatus !== "all" ||
-    Boolean(data.line) ||
-    Boolean(data.hireFrom) ||
-    Boolean(data.hireTo) ||
-    data.minDuration != null ||
-    data.halfDaysOnly;
-  const [showAdvanced, setShowAdvanced] = useState(advancedActive);
   const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Navigation responsiveness: a pending transition dims the table while filters/pagination/page
   // size round-trip to the server (tab switching itself is now CrmTabBar's own concern).
@@ -239,7 +234,9 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
   function applyFilters() {
     navigate({
-      agentHrId: agentText || null,
+      // Agent HR ID is intentionally NOT its own control any more — the Search box now covers agent
+      // AND double HR IDs (see the server `or` expression). A legacy `agentHrId` URL param is left
+      // untouched here and shown as a removable chip.
       ampm: ampmValue === "all" ? null : ampmValue,
       dateFrom: fromText || null,
       dateTo: toText || null,
@@ -259,7 +256,6 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     setSearchText("");
     setFromText("");
     setToText("");
-    setAgentText("");
     setVisitTypeText("");
     setAmpmValue("all");
     setMappingValue("all");
@@ -285,6 +281,35 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     });
   }
 
+  // Remove one active filter (from its chip). The table remounts on navigation (page.tsx keys on the
+  // URL-derived inputs), so the local input state re-seeds automatically — no need to reset it here.
+  function clearFilters(keys: string[]) {
+    const next: Record<string, string | null> = { page: null };
+    for (const key of keys) next[key] = null;
+    navigate(next);
+  }
+
+  // The active-filter chips, derived from the APPLIED values (data.*), not the local input state.
+  const activeChips: Array<{ id: string; label: string; keys: string[] }> = [];
+  if (data.search) activeChips.push({ id: "search", label: `Search: "${data.search}"`, keys: ["search"] });
+  if (data.dateFrom || data.dateTo)
+    activeChips.push({ id: "date", label: `Date: ${data.dateFrom ?? "…"} → ${data.dateTo ?? "…"}`, keys: ["dateFrom", "dateTo"] });
+  if (data.agentHrId) activeChips.push({ id: "agentHrId", label: `Agent HR ID: ${data.agentHrId}`, keys: ["agentHrId"] });
+  if (data.line) activeChips.push({ id: "line", label: `Line: ${data.line}`, keys: ["line"] });
+  if (data.hireFrom || data.hireTo)
+    activeChips.push({ id: "hire", label: `Hired: ${data.hireFrom ?? "…"} → ${data.hireTo ?? "…"}`, keys: ["hireFrom", "hireTo"] });
+  if (data.ampm !== "all") activeChips.push({ id: "ampm", label: `AM/PM: ${data.ampm}`, keys: ["ampm"] });
+  if (data.visitType) activeChips.push({ id: "visitType", label: `Visit Type: ${data.visitType}`, keys: ["visitType"] });
+  if (data.mappingStatus !== "all")
+    activeChips.push({
+      id: "mappingStatus",
+      label: `Mapping: ${data.mappingStatus === "agent_mapped" ? "Agent mapped" : "Agent unmapped"}`,
+      keys: ["mappingStatus"],
+    });
+  if (data.minDuration != null)
+    activeChips.push({ id: "minDuration", label: `Min duration: ${data.minDuration}d`, keys: ["minDuration"] });
+  if (data.halfDaysOnly) activeChips.push({ id: "halfDaysOnly", label: "Half-days only", keys: ["halfDaysOnly"] });
+
   function toggleRaw(id: string) {
     setExpanded((prev) => {
       const nextSet = new Set(prev);
@@ -299,13 +324,14 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
   async function handleExport() {
     if (exportBusy || data.totalCount === 0) return;
     setExportBusy(true);
+    setExportError(null);
     try {
       const params = new URLSearchParams(searchParams.toString());
       params.set("dataset", data.dataset);
       params.delete("page");
       params.delete("pageSize");
       const response = await fetch(`/api/admin/crm/master-export?${params.toString()}`);
-      if (!response.ok) throw new Error("Export failed");
+      if (!response.ok) throw new Error(`Export request failed (${response.status})`);
       const payload = (await response.json()) as { rows: Array<Record<string, unknown>>; truncated: boolean };
       const columns: ExportColumn[] = data.columns.map((col) => ({ key: col.key, label: col.label }));
       const rows: ExportRow[] = payload.rows.map((row) => {
@@ -317,11 +343,16 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
         columns,
         rows,
         sheetName: datasetLabel(data.dataset),
-        subtitle: payload.truncated ? "Capped at the first 50,000 rows" : undefined,
+        subtitle: payload.truncated
+          ? `Capped at the first ${CRM_MASTER_EXPORT_MAX_ROWS.toLocaleString()} rows — narrow the date range to export the rest`
+          : undefined,
         title: `CRM — ${datasetLabel(data.dataset)}`,
       });
     } catch (error) {
       console.error("CRM master export failed:", error);
+      setExportError(
+        error instanceof Error ? error.message : "Export failed. Try narrowing the filters and exporting again.",
+      );
     } finally {
       setExportBusy(false);
     }
@@ -329,83 +360,36 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
 
   return (
     <div className="space-y-4">
-      {/* Basic filters */}
-      <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white p-4">
-        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          From
-          <input
-            className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-            onChange={(event) => setFromText(event.target.value)}
-            type="date"
-            value={fromText}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          To
-          <input
-            className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-            onChange={(event) => setToText(event.target.value)}
-            type="date"
-            value={toText}
-          />
-        </label>
-        <label className="flex flex-1 flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Search
-          <div className="flex items-center gap-2 border border-slate-200 px-2 py-1.5 focus-within:border-orange-400">
-            <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
-            <input
-              className="w-full text-sm text-slate-800 focus:outline-none"
-              onChange={(event) => setSearchText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") applyFilters();
-              }}
-              placeholder={data.dataset === "checkins" ? "Agent HR ID, contact, address…" : "Agent, contact, customer, comment, HR ID…"}
-              type="search"
-              value={searchText}
-            />
-          </div>
-        </label>
-        <button
-          className={`inline-flex items-center gap-2 border px-3 py-2 text-xs font-bold transition ${
-            showAdvanced || advancedActive
-              ? "border-orange-300 bg-orange-50 text-orange-700"
-              : "border-slate-200 text-slate-600 hover:bg-slate-50"
-          }`}
-          onClick={() => setShowAdvanced((value) => !value)}
-          type="button"
-        >
-          <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-          Advanced
-        </button>
-        <button className="bg-orange-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-orange-700" onClick={applyFilters} type="button">
-          Apply
-        </button>
-        <button
-          className="border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
-          onClick={resetFilters}
-          type="button"
-        >
-          Reset
-        </button>
-      </div>
-
-      {/* Advanced filters */}
-      {showAdvanced ? (
-        <div className="flex flex-wrap items-end gap-3 border border-orange-200 bg-orange-50/40 p-4">
-          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Agent HR ID
-            <input
-              className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-              onChange={(event) => setAgentText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") applyFilters();
-              }}
-              placeholder="e.g. B-107"
-              type="text"
-              value={agentText}
-            />
+      {/* Unified filter panel — one bar, one Apply/Reset, removable active-filter chips. The former
+          separate "Agent HR ID" box is folded into Search, which now matches agent AND double HR IDs
+          server-side, so a single field covers every identity lookup. */}
+      <div className="space-y-3 border border-slate-200 bg-white p-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <label className={FILTER_FIELD}>
+            From
+            <input className={FILTER_INPUT} onChange={(event) => setFromText(event.target.value)} type="date" value={fromText} />
           </label>
-          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <label className={FILTER_FIELD}>
+            To
+            <input className={FILTER_INPUT} onChange={(event) => setToText(event.target.value)} type="date" value={toText} />
+          </label>
+          <label className={`${FILTER_FIELD} col-span-2`}>
+            Search
+            <div className="flex items-center gap-2 border border-slate-200 px-2 py-1.5 focus-within:border-orange-400">
+              <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
+              <input
+                className="w-full text-sm text-slate-800 focus:outline-none"
+                onChange={(event) => setSearchText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applyFilters();
+                }}
+                placeholder={isCheckins ? "Agent HR ID, contact, address…" : "Agent, double, contact, customer, comment, HR ID…"}
+                type="search"
+                value={searchText}
+              />
+            </div>
+          </label>
+          <label className={FILTER_FIELD}>
             Line
             <select
               className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -438,7 +422,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               value={hireToText}
             />
           </label>
-          {data.dataset !== "checkins" ? (
+          {!isCheckins ? (
             <>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 AM/PM
@@ -481,7 +465,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               </label>
             </>
           ) : null}
-          {data.dataset === "vacations" ? (
+          {isVacations ? (
             <>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Min Duration (days)
@@ -509,11 +493,43 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
               </label>
             </>
           ) : null}
-          <button className="bg-orange-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-orange-700" onClick={applyFilters} type="button">
-            Apply filters
-          </button>
         </div>
-      ) : null}
+
+        {/* Active-filter chips + one Apply / Reset for the whole panel. Chips are derived from the
+            APPLIED filters (data.*) and each removes just its own filter. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {activeChips.length === 0 ? (
+              <span className="text-xs text-slate-400">No filters applied</span>
+            ) : (
+              activeChips.map((chip) => (
+                <button
+                  className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-100"
+                  key={chip.id}
+                  onClick={() => clearFilters(chip.keys)}
+                  title="Remove this filter"
+                  type="button"
+                >
+                  {chip.label}
+                  <X aria-hidden="true" className="h-3 w-3" />
+                </button>
+              ))
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              onClick={resetFilters}
+              type="button"
+            >
+              Reset
+            </button>
+            <button className="bg-orange-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-orange-700" onClick={applyFilters} type="button">
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Count + page size + pagination */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
@@ -535,6 +551,11 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
           {isPending ? (
             <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
               <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Updating…
+            </span>
+          ) : null}
+          {exportError ? (
+            <span className="inline-flex items-center gap-1 font-semibold text-rose-600" title={exportError}>
+              <TriangleAlert aria-hidden="true" className="h-3.5 w-3.5" /> Export failed — {exportError}
             </span>
           ) : null}
         </p>
