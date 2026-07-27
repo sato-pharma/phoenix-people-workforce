@@ -126,3 +126,42 @@ export async function loadRegionCrosswalk(
     (regionResult.data ?? []) as RegionRow[],
   );
 }
+
+// Pure: choose the region fields to persist. When the (line, area) resolves, the au region is
+// authoritative and overrides the free-text name; otherwise the fallback name is kept with no code.
+export function employeeRegionFields(
+  resolved: ResolvedEmployeeRegion | null,
+  fallbackRegionName: string | null,
+): { region_name: string | null; region_code: string | null } {
+  if (resolved) {
+    return {
+      region_name: resolved.regionName ?? fallbackRegionName,
+      region_code: resolved.regionCode,
+    };
+  }
+  return { region_name: fallbackRegionName, region_code: null };
+}
+
+// Resolve an employee's region from their stored line_id + area_id: looks up the area/line codes,
+// then the au crosswalk. Returns null when either id is missing/unknown or the (line, area) pair is
+// not a sales seat (e.g. Head Office) — callers then keep the free-text region and store no code.
+export async function resolveRegionByIds(
+  lineId: number | null,
+  areaId: number | null,
+  supabase: SupabaseClient = getSupabaseAdmin(),
+): Promise<ResolvedEmployeeRegion | null> {
+  if (!lineId || !areaId) {
+    return null;
+  }
+  const [areaResult, lineResult] = await Promise.all([
+    supabase.from("areas").select("code").eq("id", areaId).maybeSingle(),
+    supabase.from("lines").select("code").eq("id", lineId).maybeSingle(),
+  ]);
+  const areaCode = (areaResult.data as { code?: string | null } | null)?.code ?? null;
+  const lineCode = (lineResult.data as { code?: string | null } | null)?.code ?? null;
+  if (!areaCode || !lineCode) {
+    return null;
+  }
+  const crosswalk = await loadRegionCrosswalk(supabase);
+  return resolveRegionFromCrosswalk(lineCode, areaCode, crosswalk);
+}
