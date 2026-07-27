@@ -2,6 +2,14 @@
 -- and exposes the crm_contact_grade column added in 20260724160000_crm_contact_grade.sql.
 -- PostgreSQL resolves SELECT v.* at view-creation time; the view must be recreated
 -- after any new column is added to the underlying table.
+--
+-- DROP first: the prior view listed has_checkin BEFORE the (later-added) vendor columns, so a bare
+-- CREATE OR REPLACE fails with 42P16 "cannot change name of view column has_checkin to crm_region_id"
+-- (it cannot reorder existing columns). Dropping first sidesteps that. The view has no dependents.
+-- Applied to staging + prod 2026-07-27 (reconcile_visits_effective_view_vstar); this file makes the
+-- same definition reproducible on a fresh reset.
+
+drop view if exists public.ireports360_visits_effective;
 
 create or replace view public.ireports360_visits_effective
   with (security_invoker = true)
