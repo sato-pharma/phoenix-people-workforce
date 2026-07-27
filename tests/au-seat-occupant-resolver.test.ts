@@ -81,7 +81,10 @@ export function runAuSeatOccupantResolverTests() {
     "au.f_monthly_achievement",
     "au.f_seat_occupant_asof",
     "au.f_line_area_map_asof",
+    "au.sync_area_state_for_seat",
+    "au.f_line_area_occupancy_drift",
     "public.au_v_line_area_map",
+    "public.au_v_line_area_occupancy_drift",
     "public.phx_resign_employee_and_open_vacancy",
   ]) {
     assert.ok(
@@ -187,5 +190,104 @@ export function runAuSeatOccupantResolverTests() {
   assert.ok(
     /effective_to\s+is\s+null/.test(resign.body) && resign.body.includes("au.resign_occupant"),
     "phx_resign_employee_and_open_vacancy must close the OPEN span via au.resign_occupant",
+  );
+
+  // ── 7. area_state follows the seat, in BOTH directions ──────────────────────
+  // Vacating a seat without releasing its area left six July-2026 rep areas reading
+  // 'occupied' with nobody in them. Fixing only the resign side would have inverted the
+  // same bug on the next hire, so both transitions are pinned here together.
+  const flat = (name: string) => latest.get(name)!.body.replace(/\s+/g, " ");
+
+  const sync = flat("au.sync_area_state_for_seat");
+  for (const [pattern, why] of [
+    [
+      /m\.effective_to\s+is\s+null/,
+      "au.line_area_map is period-versioned — only the row in force may move; a superseded mapping is history",
+    ],
+    [
+      /m\.rep_seat_id\s*=\s*p_seat_id/,
+      "the match must key on rep_seat_id — the exact FK au.f_monthly_attribution dereferences, and the reason " +
+        "the Others rows (rep_seat_id IS NULL on every one) are excluded structurally rather than by convention",
+    ],
+    [
+      /m\.area_state\s*=\s*p_from_state/,
+      "the from-state guard is what makes 'other_permanent' / 'other_line_specific' unreachable even if an " +
+        "Others row ever acquired a rep seat — those areas are never hired into and must keep their state",
+    ],
+    [
+      /seat_tier\s*=\s*'rep'/,
+      "only REP seats may move an area's state — a departing DM/RSM/NSM leaves their areas still staffed, and " +
+        "their own vacancy is already represented by the seat (au.v_org_tree / au.v_org_structure_kpis)",
+    ],
+  ] as Array<[RegExp, string]>) {
+    assert.ok(pattern.test(sync), `au.sync_area_state_for_seat must keep the guard: ${why}`);
+  }
+
+  const transitions: Array<[string, string]> = [
+    ["au.resign_occupant", "'occupied', 'vacant_will_hire'"],
+    ["au.hire_into_seat", "'vacant_will_hire', 'occupied'"],
+  ];
+  for (const [name, args] of transitions) {
+    const body = flat(name);
+    assert.ok(
+      body.includes(`au.sync_area_state_for_seat(p_seat_id, ${args})`),
+      `${name} must move the area through au.sync_area_state_for_seat(p_seat_id, ${args}) — otherwise a vacated ` +
+        "area keeps reading as staffed (or, on the hire side, a filled area keeps reading as vacant)",
+    );
+    assert.ok(
+      !/update\s+au\.line_area_map/.test(body),
+      `${name} must not write au.line_area_map directly — one guarded helper, not a second copy of the ` +
+        "predicate (the six-copy occupancy window is exactly what PR #1395 had to consolidate)",
+    );
+  }
+
+  // Transfers inherit the maintenance by composition (resign(from) then hire(to)).
+  assert.ok(
+    !/\bau\.line_area_map\b/.test(flat("au.transfer_occupant")),
+    "au.transfer_occupant must keep inheriting area_state maintenance from au.resign_occupant + " +
+      "au.hire_into_seat rather than carrying a third copy of the update",
+  );
+
+  // ── 8. The reconciler that would have caught this in July ───────────────────
+  const drift = flat("au.f_line_area_occupancy_drift");
+  for (const kind of [
+    "occupied_but_seat_vacant",
+    "vacant_but_seat_occupied",
+    "staffable_row_without_rep_seat",
+    "other_row_with_rep_seat",
+    "rep_seat_absent_from_map",
+    "seat_label_asserts_occupancy",
+  ]) {
+    assert.ok(
+      drift.includes(`'${kind}'`),
+      `au.f_line_area_occupancy_drift must still report '${kind}' — the first two are the bug and its inverse, ` +
+        "the rest are the shapes that let either one hide behind a row with nothing to reconcile against",
+    );
+  }
+  assert.ok(
+    flat("public.au_v_line_area_occupancy_drift").includes("au.f_line_area_occupancy_drift()"),
+    "public.au_v_line_area_occupancy_drift is how scripts/au-line-area-occupancy-reconcile-check.ts reads the " +
+      "reconciler — the au schema is not exposed on PostgREST, so the wrapper must stay",
+  );
+
+  // ── 9. Occupancy is DERIVED into the label, never stored in it ──────────────
+  // au.seats.seat_label baked '(VACANT)' in at seed time and nothing maintained it, so
+  // SEAT-PED-DM-CA still read "PEDIA Cairo DM (VACANT)" after PD-0006 was seated —
+  // the area_state bug one column over. The label is now a NAME; the state is computed
+  // from the open occupancy span at read time, where it cannot go stale.
+  const orgTree = flat("au.v_org_tree");
+  assert.ok(
+    /case\s+when\s+o\.occupant_hr_id\s+is\s+null\s+then\s+t\.seat_label\s*\|\|/.test(orgTree),
+    "au.v_org_tree must derive seat_display_label from the OPEN occupancy span — storing an occupancy " +
+      "suffix in au.seats.seat_label is what made SEAT-PED-DM-CA read VACANT while PD-0006 sat in it",
+  );
+  assert.ok(
+    orgTree.includes("as seat_display_label"),
+    "au.v_org_tree must still expose seat_display_label — it is the only non-stale seat label",
+  );
+  assert.ok(
+    flat("public.au_v_org_tree").includes("au.v_org_tree"),
+    "public.au_v_org_tree must be re-created alongside au.v_org_tree — `select *` is expanded at create " +
+      "time, so the wrapper does not pick up seat_display_label on its own",
   );
 }
