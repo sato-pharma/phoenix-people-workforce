@@ -248,6 +248,7 @@ import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
 import { runMarketingRoiFacetsTests } from "./marketing-roi-facets.test.ts";
 import { runMarketingRoiExportWorkbookTests } from "./marketing-roi-export-workbook.test.ts";
 import { runMarketingRoiAttributionConsistencyTests } from "./marketing-roi-attribution-consistency.test.ts";
+import { runMarketingRoiActualsToggleParityTests } from "./marketing-roi-actuals-toggle-parity.test.ts";
 import {
   runMarketingCoverageReportAccessTests,
   runMarketingCoverageReportReachabilityTests,
@@ -746,6 +747,7 @@ await runTest("marketing coverage report analytics (rollup/trend/outlier)", runM
 await runTest("marketing coverage distributor rollup (weighted cost/required-ROI split)", runMarketingCoverageDistributorRollupTests);
 await runTest("marketing coverage URL filter state (shareable link round-trip)", runMarketingCoverageUrlStateTests);
 await runTest("marketing ROI attribution consistency (no brick/geography fallback across all paths)", runMarketingRoiAttributionConsistencyTests);
+await runTest("marketing ROI actuals toggle parity (includeRestricted must not silently drop direct-order sales)", runMarketingRoiActualsToggleParityTests);
 await runTest("weekly sales BI export workbook (xlsx builds + clean)", runWeeklyExportTests);
 await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
