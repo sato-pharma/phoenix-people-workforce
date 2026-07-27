@@ -105,6 +105,24 @@ export async function enqueueInbound(input: {
   return { enqueued: Array.isArray(data) && data.length > 0 };
 }
 
+/**
+ * Manually re-queue a dead-lettered row (admin "retry" action): resets it to queued with a fresh
+ * attempt budget and an immediate next_attempt_at. Only a `dead` row is eligible — a queued/
+ * processing row is already in flight. Returns whether a row was actually re-queued.
+ */
+export async function requeueInbound(id: string): Promise<boolean> {
+  const supabase = recruitmentDb();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("ats_inbound_intake_queue")
+    .update({ attempts: 0, finished_at: null, last_error: null, next_attempt_at: now, status: "queued", updated_at: now })
+    .eq("id", id)
+    .eq("status", "dead")
+    .select("id");
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
 /** Atomically claim up to `limit` ready rows (queued+due, or a stale 'processing' left by a crash). */
 export async function claimNextInbound(limit: number): Promise<InboundQueueRow[]> {
   const supabase = recruitmentDb();

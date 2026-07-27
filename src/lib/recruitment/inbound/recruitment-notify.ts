@@ -142,3 +142,34 @@ export async function notifyInboundIntakeDeadLetter(input: {
     recipientHrIds,
   );
 }
+
+/**
+ * Alerts on a SURGE of errors/dead-letters over a short window — the "something is systematically
+ * wrong" signal a per-message dead-letter alert can't give (each of those is a single CV).
+ * Throttled to once per Cairo day so a persistent problem reminds without spamming.
+ */
+export async function notifyInboundIntakeSpike(
+  input: { errors: number; deadLettered: number; windowLabel: string },
+  now: Date = new Date(),
+): Promise<void> {
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/recruitment",
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_inbound_intake_spike",
+      message: `${input.errors} error(s) and ${input.deadLettered} dead-letter(s) in the last ${input.windowLabel} — inbound CV processing may be systematically failing.`,
+      metadata: {
+        deadLettered: input.deadLettered,
+        errors: input.errors,
+        idempotencyKey: `inbound-intake-spike:${cairoDateKey(now)}`,
+      },
+      module: "recruitment",
+      priority: "high",
+      title: "Inbound CV intake error spike",
+    },
+    recipientHrIds,
+  );
+}

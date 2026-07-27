@@ -15,6 +15,7 @@ import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitme
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
+import { fetchCvFromUrl } from "@/lib/recruitment/inbound/cv-link";
 import { ingestInboundCv, maxInboundCvBytes, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
 import { notifyInboundIntakeDeadLetter } from "@/lib/recruitment/inbound/recruitment-notify";
 import {
@@ -110,7 +111,18 @@ async function processEmailRow(payload: EmailQueuePayload): Promise<InboundCvInt
   // a mid-batch failure re-queues the whole row and the already-done attachments no-op on retry.
   let last: InboundCvIntakeResult = { outcome: "ignored_no_attachment" };
   for (const input of inputs) {
-    const result = await ingestInboundCv({ channel: "email", ...input, reclaim: true });
+    // CV-as-link (E3): no attachment, but an allowlisted share link was found in the body — fetch
+    // it (size/type/redirect-guarded) and treat it as the CV. A failed/unsafe fetch just falls back
+    // to no-attachment.
+    let finalInput = input;
+    const cvLinkUrl = (input.rawMetadata as { cvLinkUrl?: string } | undefined)?.cvLinkUrl;
+    if (!input.attachment && typeof cvLinkUrl === "string") {
+      const fetched = await fetchCvFromUrl(cvLinkUrl, maxInboundCvBytes());
+      if (fetched) {
+        finalInput = { ...input, attachment: { bytes: fetched.bytes, fileName: fetched.fileName, mimeType: fetched.mimeType } };
+      }
+    }
+    const result = await ingestInboundCv({ channel: "email", ...finalInput, reclaim: true });
     if (result.outcome === "error") throw new IntakeErrorOutcome("Email");
     last = result;
   }
