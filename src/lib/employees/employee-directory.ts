@@ -10,6 +10,7 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { sharedIdentityGroups } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
+import { employeeRegionFields, resolveRegionByIds } from "@/lib/employees/region-resolver";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { logError } from "@/lib/observability/log";
@@ -1790,8 +1791,15 @@ async function employeePayload(
   const payrollEligible = lifecycleActive ? input.payrollEligible !== false : false;
   const compensation = resolveEmployeeCompensationInput(input);
 
+  // Region is authoritative from the au sales geography: derive it from (line, area) and persist the
+  // code + precise name so an employee's region can never drift from their sales area. Non-sales
+  // rows (e.g. Head Office) keep the submitted free-text region and store no code.
+  const areaId = numberOrNull(input.areaId);
+  const derivedRegion = await resolveRegionByIds(lineId, areaId);
+  const regionFields = employeeRegionFields(derivedRegion, compact(input.regionName));
+
   return {
-    area_id: numberOrNull(input.areaId),
+    area_id: areaId,
     bank_account: compact(input.bankAccount),
     bank_name: compact(input.bankName),
     base_salary: compensation.baseSalary,
@@ -1829,7 +1837,8 @@ async function employeePayload(
     residence_address: compact(input.residenceAddress),
     residence_area: compact(input.residenceArea),
     residence_city: compact(input.residenceCity),
-    region_name: compact(input.regionName),
+    region_name: regionFields.region_name,
+    region_code: regionFields.region_code,
     social_insurance: numberOrNull(input.socialInsurance),
     social_insurance_status: normalizeEnrollmentStatus(input.socialInsuranceStatus),
     social_insurance_number: compact(input.socialInsuranceNumber),
@@ -2253,6 +2262,14 @@ export async function bulkUpdateEmployees(
     await assertActiveCanonicalArea(numberOrNull(values.areaId));
   }
 
+  // When a bulk edit sets BOTH line and area, every selected employee lands on the same sales seat,
+  // so derive the region once and apply it. If only one of the two changes, the region can't be
+  // derived uniformly (the other varies per employee) and is left untouched.
+  const bulkDerivedRegion =
+    values.areaId !== undefined && values.lineId !== undefined
+      ? await resolveRegionByIds(numberOrNull(values.lineId), numberOrNull(values.areaId))
+      : null;
+
   const payload = {
     ...(values.areaId !== undefined ? { area_id: numberOrNull(values.areaId) } : {}),
     ...(values.departmentId !== undefined
@@ -2266,6 +2283,12 @@ export async function bulkUpdateEmployees(
         }
       : {}),
     ...(values.lineId !== undefined ? { line_id: numberOrNull(values.lineId) } : {}),
+    ...(bulkDerivedRegion
+      ? {
+          region_code: bulkDerivedRegion.regionCode,
+          ...(bulkDerivedRegion.regionName ? { region_name: bulkDerivedRegion.regionName } : {}),
+        }
+      : {}),
     ...(values.managerHrId !== undefined
       ? { manager_hr_id: normalizeHrId(values.managerHrId) }
       : {}),

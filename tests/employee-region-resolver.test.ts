@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 
 import {
   buildRegionCrosswalk,
+  employeeRegionFields,
   lineAreaKey,
   resolveRegionFromCrosswalk,
 } from "../src/lib/employees/region-resolver.ts";
@@ -65,4 +66,20 @@ export function runEmployeeRegionResolverTests() {
 
   // Key helper normalizes both parts.
   assert.equal(lineAreaKey(" Pedia ", " D14 "), "pedia::d14");
+
+  // employeeRegionFields (what the write path persists): a resolved region overrides the free-text
+  // fallback name and carries the code; an unresolved region keeps the fallback and stores no code.
+  assert.deepEqual(
+    employeeRegionFields({ regionCode: "D1", regionName: "Delta (1)", areaName: "Tanta" }, "Free Text"),
+    { region_name: "Delta (1)", region_code: "D1" },
+  );
+  assert.deepEqual(
+    employeeRegionFields({ regionCode: "ZZ", regionName: null, areaName: "x" }, "Fallback Name"),
+    { region_name: "Fallback Name", region_code: "ZZ" },
+  );
+  assert.deepEqual(employeeRegionFields(null, "Kept Free Text"), {
+    region_name: "Kept Free Text",
+    region_code: null,
+  });
+  assert.deepEqual(employeeRegionFields(null, null), { region_name: null, region_code: null });
 }
