@@ -34,6 +34,12 @@ export type ParsedWhatsAppMessage = {
   // import routing keys off the configured sender allowlist below, which does not depend on
   // Meta populating this field.
   forwarded: boolean;
+  // The BUSINESS number this message was delivered TO (Meta's value.metadata). Once more than one
+  // intake line feeds the same webhook (e.g. a second HR number in coexistence mode), this is the
+  // only thing that tells apart which line a CV arrived on — the sender/from is the applicant, not
+  // the receiving number. Null when Meta omits metadata (older payload shapes / test fixtures).
+  deliveredToPhoneNumberId: string | null;
+  deliveredToDisplayNumber: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -54,6 +60,12 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
     for (const change of changes) {
       const value = asRecord(asRecord(change)?.value);
       if (!value) continue;
+
+      // Which business line this batch was delivered to. Meta puts it once per change, so it
+      // applies to every message in this value block.
+      const metadata = asRecord(value.metadata);
+      const deliveredToPhoneNumberId = asString(metadata?.phone_number_id);
+      const deliveredToDisplayNumber = asString(metadata?.display_phone_number);
 
       const contactNameByWaId = new Map<string, string>();
       const contacts = Array.isArray(value.contacts) ? value.contacts : [];
@@ -85,6 +97,8 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
 
         messages.push({
           contactName: contactNameByWaId.get(from) ?? null,
+          deliveredToDisplayNumber,
+          deliveredToPhoneNumberId,
           document,
           forwarded: asRecord(message?.context)?.forwarded === true,
           from,
@@ -142,6 +156,10 @@ export function buildWhatsAppIntakeInput(
     wa_id: message.from,
     ...(message.forwarded ? { forwarded: true } : {}),
     ...(isImport ? { bulkImport: true } : {}),
+    // Recorded on every intake event so the two lines are distinguishable in the data and a
+    // future per-number silence check can query it. Only present when Meta supplied metadata.
+    ...(message.deliveredToPhoneNumberId ? { deliveredToPhoneNumberId: message.deliveredToPhoneNumberId } : {}),
+    ...(message.deliveredToDisplayNumber ? { deliveredToDisplayNumber: message.deliveredToDisplayNumber } : {}),
   };
 
   // senderIdentifier stays the forwarding account either way — it is genuinely who transmitted

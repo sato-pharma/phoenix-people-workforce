@@ -146,6 +146,37 @@ export function runRecruitmentWhatsAppIntakeTests() {
   );
   assert.equal(fallback.attachment, null, "a failed/skipped media download flows through as null, not a crash");
 
+  // --- Receiving (business) number capture ----------------------------------------------------
+  // With two intake lines on one webhook, the ONLY signal for which line a CV came in on is Meta's
+  // value.metadata — the sender/from is the applicant, not the receiving number.
+  assert.equal(documentMsg.deliveredToPhoneNumberId, null, "no metadata in the payload -> null, never a crash");
+  assert.equal(documentMsg.deliveredToDisplayNumber, null);
+
+  const withMetadataPayload = documentMessagePayload();
+  (withMetadataPayload.entry[0].changes[0].value as { metadata?: unknown }).metadata = {
+    display_phone_number: "+20 11 59888247",
+    phone_number_id: "2000000000000",
+  };
+  const [deliveredMsg] = parseWhatsAppWebhookPayload(withMetadataPayload);
+  assert.equal(deliveredMsg.deliveredToPhoneNumberId, "2000000000000", "the receiving line's phone_number_id is captured");
+  assert.equal(deliveredMsg.deliveredToDisplayNumber, "+20 11 59888247");
+
+  const deliveredInput = buildWhatsAppIntakeInput(deliveredMsg, null);
+  assert.equal(
+    (deliveredInput.rawMetadata as { deliveredToPhoneNumberId?: string }).deliveredToPhoneNumberId,
+    "2000000000000",
+    "the receiving line is recorded on the intake event so the two lines are distinguishable in the data",
+  );
+  assert.equal(
+    (deliveredInput.rawMetadata as { deliveredToDisplayNumber?: string }).deliveredToDisplayNumber,
+    "+20 11 59888247",
+  );
+  assert.equal(
+    (withAttachment.rawMetadata as { deliveredToPhoneNumberId?: string }).deliveredToPhoneNumberId,
+    undefined,
+    "when Meta omitted metadata the key is left off entirely, not written as null",
+  );
+
   // --- Forwarded flag -------------------------------------------------------------------------
   assert.equal(documentMsg.forwarded, false, "an ordinary message is not marked forwarded");
   const [forwardedMsg] = parseWhatsAppWebhookPayload(

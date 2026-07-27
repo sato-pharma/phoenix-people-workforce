@@ -6,6 +6,13 @@ import {
   parseEmailImportSenders,
   parseInboundEmailMessage,
 } from "../src/lib/recruitment/inbound/email-message-parser.ts";
+import {
+  junkCursorLabel,
+  pickJunkFolder,
+  planFolderPoll,
+  summarizePollFailures,
+  type MailboxPollSummary,
+} from "../src/lib/recruitment/inbound/email-poll-planner.ts";
 
 function fakeAttachment(overrides: Record<string, unknown> = {}) {
   return {
@@ -201,4 +208,122 @@ export function runRecruitmentEmailIntakeTests() {
   assert.equal(directDuringImport.identitySource, "sender");
   assert.equal(directDuringImport.candidate.email, "jane.doe@example.com");
   assert.equal((directDuringImport.rawMetadata as { bulkImport?: boolean }).bulkImport, undefined);
+
+  // --- pickJunkFolder --------------------------------------------------------------------------
+  // Applicant mail (unknown sender + attachment) is exactly what spam filters act on, so an
+  // INBOX-only poll silently loses real candidates. Finding the junk folder is step one.
+  assert.equal(
+    pickJunkFolder([
+      { name: "INBOX", path: "INBOX" },
+      { name: "Bulk Mail", path: "Bulk Mail", specialUse: "\\Junk" },
+    ]),
+    "Bulk Mail",
+    "SPECIAL-USE \\Junk is the reliable signal and wins",
+  );
+  assert.equal(
+    pickJunkFolder([
+      { name: "INBOX", path: "INBOX" },
+      { name: "Bulk Mail", path: "Bulk Mail" },
+    ]),
+    "Bulk Mail",
+    "Yahoo's 'Bulk Mail' is matched by name when SPECIAL-USE is not advertised",
+  );
+  assert.equal(pickJunkFolder([{ name: "Spam", path: "[Gmail]/Spam" }]), "[Gmail]/Spam", "name matching uses name, path is returned");
+  assert.equal(pickJunkFolder([{ name: "Junk Email", path: "Junk Email" }]), "Junk Email");
+  assert.equal(
+    pickJunkFolder([
+      { name: "INBOX", path: "INBOX" },
+      { name: "Bulk Offers From Suppliers", path: "Bulk Offers From Suppliers" },
+    ]),
+    null,
+    "a user folder that merely starts with 'Bulk' is not the spam folder",
+  );
+  assert.equal(pickJunkFolder([{ name: "INBOX", path: "INBOX" }]), null, "no junk folder -> INBOX only, not a crash");
+
+  assert.equal(junkCursorLabel("hr"), "hr:junk", "junk keeps its own cursor row so INBOX's is untouched");
+
+  // --- planFolderPoll --------------------------------------------------------------------------
+  // A first-ever poll must NOT walk the whole folder. When the backfill window turns up nothing,
+  // the cursor still has to jump to the end, or the next run would look like a first run forever
+  // and eventually re-ingest the entire mailbox.
+  const firstRunEmpty = planFolderPoll({
+    candidateUids: [],
+    isFirstRun: true,
+    lastProcessedUid: 0,
+    maxMessages: 40,
+    uidNext: 20910,
+  });
+  assert.deepEqual(firstRunEmpty.uids, []);
+  assert.equal(firstRunEmpty.baselineUid, 20909, "an empty first run writes off everything already in the folder");
+  assert.equal(firstRunEmpty.backlogRemaining, false);
+
+  const firstRunWithMail = planFolderPoll({
+    candidateUids: [905, 903, 904],
+    isFirstRun: true,
+    lastProcessedUid: 0,
+    maxMessages: 40,
+    uidNext: 906,
+  });
+  assert.deepEqual(firstRunWithMail.uids, [903, 904, 905], "UIDs are processed in ascending order");
+  assert.equal(firstRunWithMail.baselineUid, 902, "the cursor never jumps past mail this run is about to read");
+
+  // A normal run only looks past the cursor, even if the server's `uid:N:*` search hands back the
+  // highest existing UID when N is beyond the end (a real IMAP range quirk).
+  const steadyState = planFolderPoll({
+    candidateUids: [20909],
+    isFirstRun: false,
+    lastProcessedUid: 20909,
+    maxMessages: 40,
+    uidNext: 20910,
+  });
+  assert.deepEqual(steadyState.uids, [], "already-processed UIDs are filtered out");
+  assert.equal(steadyState.baselineUid, 20909, "an idle run leaves the cursor exactly where it was");
+
+  // The cap bounds one run; the remainder is a backlog for the next one, never a skip.
+  const capped = planFolderPoll({
+    candidateUids: [1, 2, 3, 4, 5],
+    isFirstRun: false,
+    lastProcessedUid: 0,
+    maxMessages: 2,
+    uidNext: 6,
+  });
+  assert.deepEqual(capped.uids, [1, 2], "the oldest messages are taken first so nothing is stranded");
+  assert.equal(capped.backlogRemaining, true);
+
+  // --- summarizePollFailures -------------------------------------------------------------------
+  // The bug this guards: a mailbox that cannot be reached used to produce HTTP 200 + a green cron
+  // monitor, so inbound CV intake could be dead for days while every dashboard said it was fine.
+  assert.deepEqual(summarizePollFailures([]), [], "no mailboxes configured is the inert state, not a failure");
+
+  const healthy: MailboxPollSummary = {
+    folders: [{ backlogRemaining: false, cursorLabel: "hr", folderPath: "INBOX", messagesSeen: 1, results: [] }],
+    mailboxLabel: "hr",
+  };
+  assert.deepEqual(summarizePollFailures([healthy]), []);
+
+  const deadMailbox: MailboxPollSummary = {
+    connectionError: "Invalid credentials (AUTHENTICATIONFAILED)",
+    folders: [],
+    mailboxLabel: "careers",
+  };
+  assert.deepEqual(summarizePollFailures([deadMailbox]), ["careers: Invalid credentials (AUTHENTICATIONFAILED)"]);
+
+  const partialFolderFailure: MailboxPollSummary = {
+    folders: [
+      { backlogRemaining: false, cursorLabel: "hr", folderPath: "INBOX", messagesSeen: 2, results: [] },
+      { backlogRemaining: false, cursorLabel: "hr:junk", error: "Mailbox does not exist", folderPath: "Bulk Mail", messagesSeen: 0, results: [] },
+    ],
+    mailboxLabel: "hr",
+  };
+  assert.deepEqual(
+    summarizePollFailures([partialFolderFailure]),
+    ["hr/Bulk Mail: Mailbox does not exist"],
+    "a junk-folder failure is reported even when INBOX succeeded",
+  );
+
+  assert.deepEqual(
+    summarizePollFailures([{ connectionError: "ETIMEDOUT", folders: [{ backlogRemaining: false, cursorLabel: "hr", error: "x", folderPath: "INBOX", messagesSeen: 0, results: [] }], mailboxLabel: "hr" }]),
+    ["hr: ETIMEDOUT"],
+    "one outage is reported once, not repeated per folder underneath it",
+  );
 }
