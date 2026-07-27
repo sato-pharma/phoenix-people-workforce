@@ -123,6 +123,28 @@ export async function requeueInbound(id: string): Promise<boolean> {
   return Array.isArray(data) && data.length > 0;
 }
 
+export type DeadLetteredInboundRow = {
+  id: string;
+  channel: string;
+  provider_message_id: string;
+  last_error: string | null;
+  attempts: number;
+  created_at: string;
+};
+
+/** The dead-lettered rows for the admin intake-health panel (newest first). */
+export async function listDeadLetteredInbound(limit = 50): Promise<DeadLetteredInboundRow[]> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_inbound_intake_queue")
+    .select("id,channel,provider_message_id,last_error,attempts,created_at")
+    .eq("status", "dead")
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, limit));
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as DeadLetteredInboundRow[];
+}
+
 /** Atomically claim up to `limit` ready rows (queued+due, or a stale 'processing' left by a crash). */
 export async function claimNextInbound(limit: number): Promise<InboundQueueRow[]> {
   const supabase = recruitmentDb();

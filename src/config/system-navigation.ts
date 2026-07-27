@@ -1582,6 +1582,14 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },
+  {
+    href: "/recruitment/intake-health",
+    icon: HeartPulse,
+    label: "Inbound Intake Health",
+    description: "WhatsApp + email CV intake funnel, capture rate, and any dead-lettered CVs to retry.",
+    permissions: [{ resource: "recruitment" }],
+    roles: hrAuthorityNavigationRoles,
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── People Management hub (app/(admin)/admin/people-management/page.tsx) ────────
