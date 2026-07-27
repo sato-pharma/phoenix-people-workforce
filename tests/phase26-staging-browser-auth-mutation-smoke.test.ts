@@ -6,7 +6,10 @@ export function runPhase26StagingBrowserAuthMutationSmokeTests() {
 
   assert.match(smoke, /chromium/);
   assert.match(smoke, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
-  assert.match(smoke, /approvedSandboxRef = "oaifhavixhdtwmseshff"/);
+  // The approved staging target must come from the environment and fail closed when absent.
+  // Pinning a literal ref here is what let the retired sandbox rot in place unnoticed.
+  assert.match(smoke, /PHOENIX_APPROVED_STAGING_REF is required/);
+  assert.doesNotMatch(smoke, /= "oaifhavixhdtwmseshff"/);
   assert.match(smoke, /blockedProductionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(smoke, /PHOENIX_STAGING_DATABASE_URL/);
   assert.match(smoke, /PHASE26-/);

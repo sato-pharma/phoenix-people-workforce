@@ -10,19 +10,22 @@
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
 //     --env-file=.env.staging.rls.local scripts/sync-sales-pharmacy-codes-into-marketing.ts
 //
-// The target DB URL is read from PHOENIX_SYNC_DATABASE_URL, then
-// PHOENIX_NEW_STAGING_DATABASE_URL, then DATABASE_URL. Production (ozucdzovmcqvepbozvqf) is
-// refused unless PHOENIX_CONFIRM_PRODUCTION_SYNC=true is set explicitly.
+// The target DB URL is read from PHOENIX_SYNC_DATABASE_URL, then PHOENIX_STAGING_DATABASE_URL,
+// then the legacy PHOENIX_NEW_STAGING_DATABASE_URL, then DATABASE_URL. Production
+// (ozucdzovmcqvepbozvqf) is refused unless PHOENIX_CONFIRM_PRODUCTION_SYNC=true is set explicitly.
 import postgres from "postgres";
 
 const url =
   process.env.PHOENIX_SYNC_DATABASE_URL ??
+  process.env.PHOENIX_STAGING_DATABASE_URL ??
+  // Historical name from the 2026-07-11 staging migration. It still points at the archived
+  // project in some local .env.staging.rls.local files, so it is consulted last.
   process.env.PHOENIX_NEW_STAGING_DATABASE_URL ??
   process.env.DATABASE_URL ??
   "";
 
 if (!url) {
-  console.log("ABORT: no database URL set (PHOENIX_SYNC_DATABASE_URL / PHOENIX_NEW_STAGING_DATABASE_URL / DATABASE_URL).");
+  console.log("ABORT: no database URL set (PHOENIX_SYNC_DATABASE_URL / PHOENIX_STAGING_DATABASE_URL / PHOENIX_NEW_STAGING_DATABASE_URL / DATABASE_URL).");
   process.exit(1);
 }
 

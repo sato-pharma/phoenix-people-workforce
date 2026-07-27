@@ -26,7 +26,6 @@ type Check = {
 };
 
 const localEnvPath = ".env.staging.rls.local";
-const approvedSandboxRef = "oaifhavixhdtwmseshff";
 const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 
 const roles: PhoenixRole[] = [
@@ -157,6 +156,20 @@ function requiredEnv(name: string) {
   return value;
 }
 
+// This is the allowlist gate, so it carries no baked-in default. It used to compare against the
+// retired oaifhavixhdtwmseshff sandbox, which is no longer on the Supabase account: that turned
+// any run into a confusing "not the approved sandbox" refusal against a ref nobody recognises,
+// instead of naming the actual problem here.
+function approvedStagingRef() {
+  const ref = process.env.PHOENIX_APPROVED_STAGING_REF?.trim();
+  if (!ref) {
+    throw new Error(
+      "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  return ref;
+}
+
 function stagingUrl() {
   const confirm = requiredEnv("PHOENIX_CONFIRM_STAGING_RLS_RUN");
   if (confirm !== "YES_STAGING_ONLY") {
@@ -173,7 +186,7 @@ function stagingUrl() {
   if (url.includes(blockedProductionRef) || hostname.includes(blockedProductionRef)) {
     throw new Error("Refusing Phoenix production Supabase project.");
   }
-  if (hostname !== `${approvedSandboxRef}.supabase.co`) {
+  if (hostname !== `${approvedStagingRef()}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   return url;

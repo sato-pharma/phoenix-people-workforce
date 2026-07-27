@@ -31,7 +31,6 @@ const migrationPath = "supabase/20260511_phoenix_role_alignment.sql";
 const harnessPath = "tests/scripts/phoenix-staging-rls-harness.ts";
 const runnerPath = "tests/scripts/phoenix-staging-role-alignment-runner.ts";
 const localEnvPath = ".env.staging.rls.local";
-const approvedSandboxRef = "oaifhavixhdtwmseshff";
 const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 const mutationsEnabled = process.argv.includes("--mutations");
 if (process.argv.includes("--local") && !process.env.PHOENIX_STAGING_ENVIRONMENT) {
@@ -144,8 +143,18 @@ function requiredEnv(name: string) {
   return value;
 }
 
+// This is the allowlist gate, so it carries no baked-in default. It used to fall back to the
+// retired oaifhavixhdtwmseshff sandbox, which is no longer on the Supabase account: a missing
+// setting therefore surfaced further down as a confusing "not the approved sandbox" refusal
+// against a ref nobody recognises, instead of naming the actual problem here.
 function approvedStagingRef() {
-  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || approvedSandboxRef;
+  const ref = process.env.PHOENIX_APPROVED_STAGING_REF?.trim();
+  if (!ref) {
+    throw new Error(
+      "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  return ref;
 }
 
 function validTestUser(users: Record<string, unknown>, role: string) {

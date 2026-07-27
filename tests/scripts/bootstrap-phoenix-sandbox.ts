@@ -11,8 +11,6 @@ type MigrationResult = {
 };
 
 const localEnvPath = ".env.staging.rls.local";
-const sandboxRef = "oaifhavixhdtwmseshff";
-const sandboxUrl = `https://${sandboxRef}.supabase.co`;
 const productionRef = "ozucdzovmcqvepbozvqf";
 const requiredTables = [
   "employees",
@@ -73,6 +71,20 @@ function requiredEnv(name: string) {
   return value;
 }
 
+// This is the allowlist gate, so it carries no baked-in default. It used to be pinned to the
+// retired oaifhavixhdtwmseshff sandbox, which is no longer on the Supabase account: that turned
+// any run into a confusing "not the approved sandbox" refusal against a ref nobody recognises,
+// instead of naming the actual problem here.
+function sandboxRef() {
+  const ref = process.env.PHOENIX_APPROVED_STAGING_REF?.trim();
+  if (!ref) {
+    throw new Error(
+      "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  return ref;
+}
+
 function assertSafety() {
   if (requiredEnv("PHOENIX_CONFIRM_STAGING_RLS_RUN") !== "YES_STAGING_ONLY") {
     throw new Error("PHOENIX_CONFIRM_STAGING_RLS_RUN must be YES_STAGING_ONLY.");
@@ -91,9 +103,11 @@ function assertSafety() {
     throw new Error("PHOENIX_STAGING_ENVIRONMENT must be staging/dev/test/local.");
   }
 
+  const approvedRef = sandboxRef();
+  const sandboxUrl = `https://${approvedRef}.supabase.co`;
   const supabaseUrl = requiredEnv("PHOENIX_STAGING_SUPABASE_URL");
   const supabaseHostname = new URL(supabaseUrl).hostname.toLowerCase();
-  if (supabaseUrl !== sandboxUrl || supabaseHostname !== `${sandboxRef}.supabase.co`) {
+  if (supabaseUrl !== sandboxUrl || supabaseHostname !== `${approvedRef}.supabase.co`) {
     throw new Error("Refusing any Supabase URL except the approved Phoenix RLS testing sandbox.");
   }
   if (supabaseUrl.includes(productionRef)) {
@@ -105,14 +119,14 @@ function assertSafety() {
   if (databaseUrl.includes(productionRef)) {
     throw new Error("Refusing Phoenix HR production database URL.");
   }
-  if (!databaseUrl.includes(sandboxRef)) {
+  if (!databaseUrl.includes(approvedRef)) {
     throw new Error("Database URL must contain the approved sandbox ref.");
   }
 
   const databaseHostname = new URL(databaseUrl).hostname.toLowerCase();
-  const directHost = databaseHostname === `db.${sandboxRef}.supabase.co`;
+  const directHost = databaseHostname === `db.${approvedRef}.supabase.co`;
   const poolerHost =
-    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${sandboxRef}`);
+    databaseHostname.endsWith(".pooler.supabase.com") && databaseUrl.includes(`postgres.${approvedRef}`);
   if (!directHost && !poolerHost) {
     throw new Error("Database URL must target the approved sandbox direct host or pooler user.");
   }
@@ -184,7 +198,7 @@ async function applyMigration(sql: postgres.Sql, file: string): Promise<Migratio
       await tx.unsafe(source);
       await tx`
         insert into public._phoenix_rls_sandbox_bootstrap_marker (sandbox_ref, migration_file, status, detail)
-        values (${sandboxRef}, ${file}, 'applied', 'completed')
+        values (${sandboxRef()}, ${file}, 'applied', 'completed')
       `;
     });
     return { detail: "applied", file, status: "PASS" };

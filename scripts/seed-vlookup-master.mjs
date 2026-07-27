@@ -13,7 +13,7 @@
 //   node scripts/seed-vlookup-master.mjs [--dry-run] [--production] [--excel path/to/Vlookup-Masterrr.xlsx]
 //
 //   --dry-run     Print what would be inserted without touching the DB
-//   --production  Target production Supabase (default = staging izhmxvgiktiafqusolot)
+//   --production  Target production Supabase (default = staging cifwmndunmlxjhyjugxa)
 //   --excel       Optional workbook path; defaults to Desktop/Mapping/Vlookup-Masterrr.xlsx
 
 import { createClient } from "@supabase/supabase-js";
@@ -25,8 +25,20 @@ import { basename, resolve } from "node:path";
 
 const CHUNK = 500;
 
-const STAGING_URL = "https://izhmxvgiktiafqusolot.supabase.co";
-const STAGING_REF = "izhmxvgiktiafqusolot";
+// Current staging project (see AGENTS.md § Stable Environment Facts). The previous staging
+// ref izhmxvgiktiafqusolot was decommissioned and no longer resolves.
+const STAGING_URL = "https://cifwmndunmlxjhyjugxa.supabase.co";
+const STAGING_REF = "cifwmndunmlxjhyjugxa";
+
+// Staging URL + service-role key are read as a matched pair so a key can never end up paired
+// with a different project's URL. PHOENIX_NEW_STAGING_* is a historical name from the
+// 2026-07-11 staging migration and still points at the archived project in some local
+// .env.staging.rls.local files, so it is consulted last.
+const STAGING_ENV_SOURCES = [
+  { url: "STAGING_SUPABASE_URL", key: "STAGING_SERVICE_ROLE_KEY" },
+  { url: "PHOENIX_STAGING_SUPABASE_URL", key: "PHOENIX_STAGING_SUPABASE_SERVICE_ROLE_KEY" },
+  { url: "PHOENIX_NEW_STAGING_SUPABASE_URL", key: "PHOENIX_NEW_STAGING_SUPABASE_SERVICE_ROLE_KEY" },
+];
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -139,6 +151,37 @@ loadEnvFile(".env.staging.rls.local");
 
 // ── Resolve Supabase connection ────────────────────────────────────────────────
 
+function projectRefFromUrl(url) {
+  const match = /^https:\/\/([a-z0-9]+)\.supabase\.co/i.exec(String(url ?? "").trim());
+  return match ? match[1] : "";
+}
+
+// Legacy Supabase service-role keys are JWTs whose payload names the project they belong to.
+// Reading that claim lets us refuse a key issued for a different (e.g. archived) project
+// before any write happens. Only the ref is ever logged — never the key itself.
+function projectRefFromServiceRoleKey(key) {
+  const parts = String(key ?? "").split(".");
+  if (parts.length !== 3) return ""; // opaque sb_secret_* key — carries no embedded ref
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return typeof payload.ref === "string" ? payload.ref : "";
+  } catch {
+    return "";
+  }
+}
+
+function assertKeyMatchesProject(key, expectedRef, label) {
+  const keyRef = projectRefFromServiceRoleKey(key);
+  if (!keyRef) {
+    console.warn(`WARN: could not read a project ref from the ${label} service-role key — relying on the target URL guard.`);
+    return;
+  }
+  if (keyRef !== expectedRef) {
+    console.error(`ERROR: the ${label} service-role key belongs to project ${keyRef}, but the target is ${expectedRef}. Refusing to run.`);
+    process.exit(1);
+  }
+}
+
 function resolveConnection() {
   const prodUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const prodKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -148,31 +191,40 @@ function resolveConnection() {
       console.error("ERROR: Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY for production.");
       process.exit(1);
     }
+    const prodRef = projectRefFromUrl(prodUrl);
+    if (prodRef) assertKeyMatchesProject(prodKey, prodRef, "production");
     return { url: prodUrl, key: prodKey, label: "PRODUCTION" };
   }
 
-  // Staging: prefer STAGING_* env vars, fall back to detecting staging URL
-  const stagingUrl =
-    process.env.STAGING_SUPABASE_URL ??
-    process.env.PHOENIX_NEW_STAGING_SUPABASE_URL ??
-    process.env.PHOENIX_STAGING_SUPABASE_URL ??
-    STAGING_URL;
-  const stagingKey =
-    process.env.STAGING_SERVICE_ROLE_KEY ??
-    process.env.PHOENIX_NEW_STAGING_SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.PHOENIX_STAGING_SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Staging: take the first configured (URL, key) pair, skipping any pair whose URL names a
+  // project other than STAGING_REF. There is deliberately no fall back to the production
+  // SUPABASE_SERVICE_ROLE_KEY — it can never be a valid credential for the staging project.
+  let stagingUrl = "";
+  let stagingKey = "";
+  let stagingKeyVar = "";
+  for (const source of STAGING_ENV_SOURCES) {
+    const url = (process.env[source.url] ?? "").trim();
+    const key = (process.env[source.key] ?? "").trim();
+    if (!key) continue;
+    if (url && !url.includes(STAGING_REF)) continue; // pair belongs to another project
+    stagingUrl = url || STAGING_URL;
+    stagingKey = key;
+    stagingKeyVar = source.key;
+    break;
+  }
 
   if (!stagingKey) {
-    console.error("ERROR: Missing staging service role key. Set STAGING_SERVICE_ROLE_KEY or PHOENIX_NEW_STAGING_SUPABASE_SERVICE_ROLE_KEY.");
+    const names = STAGING_ENV_SOURCES.map((source) => source.key).join(" or ");
+    console.error(`ERROR: Missing a service-role key for staging ${STAGING_REF}. Set ${names} (alongside its matching *_URL) in .env.staging.rls.local.`);
     process.exit(1);
   }
   if (!stagingUrl.includes(STAGING_REF)) {
     console.error(`ERROR: Refusing non-production run because target URL is not staging ${STAGING_REF}.`);
     process.exit(1);
   }
+  assertKeyMatchesProject(stagingKey, STAGING_REF, `staging (${stagingKeyVar})`);
 
-  return { url: stagingUrl, key: stagingKey, label: `STAGING (${STAGING_REF})` };
+  return { url: stagingUrl, key: stagingKey, label: `STAGING (${STAGING_REF} via ${stagingKeyVar})` };
 }
 
 // ── Upsert helper with chunking ────────────────────────────────────────────────
