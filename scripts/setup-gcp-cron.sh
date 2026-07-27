@@ -29,7 +29,8 @@ fi
 
 echo "Setting up Google Cloud Scheduler for Phoenix Workforce..."
 
-# ATTEMPT-DEADLINE NOTE (added 2026-07-25): the 5 jobs below hit routes declaring
+# ATTEMPT-DEADLINE NOTE (added 2026-07-25; +inbound-intake 2026-07-27): the 300s-route jobs below
+# (including phoenix-inbound-intake) hit routes declaring
 # `export const maxDuration = 300` (their real ceiling is Cloud Run's own service
 # request-timeoutSeconds, also 300s — confirmed live). Left unset, gcloud/the Scheduler API
 # default attemptDeadline to 180s for an HTTP target — nobody chose that value, it was simply
@@ -133,6 +134,20 @@ gcloud scheduler jobs create http phoenix-recruitment-email-intake \
     --uri="${SERVICE_URL}/api/cron/recruitment-email-intake" \
     --http-method=GET \
     --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --time-zone="Africa/Cairo" \
+    --location="${SCHEDULER_LOCATION}" \
+    --project="${PROJECT_ID}"
+
+# 8. Inbound CV Intake Worker (every 2 min). Drains ats_inbound_intake_queue — the WhatsApp webhook
+# and the email poll only enqueue; this does the media download + AI + candidate creation with
+# retries/dead-letter. Frequent so a queued CV becomes a candidate within ~2 minutes. Clean no-op
+# when the queue is empty. Added 2026-07-27.
+gcloud scheduler jobs create http phoenix-inbound-intake \
+    --schedule="*/2 * * * *" \
+    --uri="${SERVICE_URL}/api/cron/inbound-intake" \
+    --http-method=GET \
+    --headers="Authorization=Bearer ${CRON_SECRET}" \
+    --attempt-deadline="330s" \
     --time-zone="Africa/Cairo" \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"

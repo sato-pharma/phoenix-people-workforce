@@ -2,16 +2,13 @@ import { NextResponse } from "next/server";
 
 import { logError, logWarning } from "@/lib/observability/log";
 import { assembleWhatsAppSourceContext, MAX_WHATSAPP_SOURCE_MESSAGES } from "@/lib/recruitment/candidate-source-context";
-import { ingestInboundCv } from "@/lib/recruitment/inbound/cv-intake-service";
-import { downloadWhatsAppMedia } from "@/lib/recruitment/inbound/whatsapp-media";
+import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
 import {
   bufferWhatsAppMessage,
-  clearWhatsAppMessages,
   sweepOldWhatsAppMessages,
   takeRecentWhatsAppMessages,
 } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import {
-  buildWhatsAppIntakeInput,
   isWhatsAppImportSender,
   parseWhatsAppImportSenders,
   parseWhatsAppWebhookPayload,
@@ -20,10 +17,12 @@ import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// A bulk CV import delivers many document messages in quick succession and each one costs an AI
-// extraction, so the batch loop below needs the same 300s ceiling the cron routes use. At 60s a
-// burst would be cut off mid-message (see the stale-claim recovery in cv-intake-service.ts).
-export const maxDuration = 300;
+// The webhook now only ENQUEUES — no media download, no AI — so it acks in well under a second even
+// during a bulk-forward burst. That is deliberate: Meta disables a webhook that keeps exceeding its
+// short delivery timeout, so doing the heavy work here (the pre-queue design) was a self-inflicted
+// Meta-block risk. The durable worker (intake-worker.ts, phoenix-inbound-intake cron) does the
+// download + extraction + candidate creation, with retries. 60s is ample headroom for enqueue-only.
+export const maxDuration = 60;
 
 // Meta's one-time webhook verification handshake — dormant (403s) until WHATSAPP_WEBHOOK_VERIFY_TOKEN
 // is configured and the same value is entered into the Meta App dashboard's webhook config.
@@ -73,23 +72,19 @@ export async function POST(request: Request) {
   }
 
   const messages = parseWhatsAppWebhookPayload(payload);
-  // Accounts whose messages are a bulk CV migration rather than direct applications. Unset in
-  // normal operation; set only while an old WhatsApp is being imported, then removed again.
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
   const outcomes: Array<{ wamid: string; outcome: string }> = [];
 
   // Opportunistic retention sweep of the text-message buffer — cheap, keeps it from growing if a
-  // sender's CV never arrives. Best-effort; a failure here must not affect message processing.
+  // sender's CV never arrives. Best-effort; must not affect message processing.
   await sweepOldWhatsAppMessages().catch(() => {});
 
-  // Always resolve to 200 quickly — Meta retry-storms a webhook that doesn't ack fast, and one
-  // message's failure must never block the rest of the batch (each is independently idempotent
-  // via ingestInboundCv's provider_message_id claim, so a later retry of the whole payload is safe).
+  // Resolve to 200 quickly. Each message is either buffered (text) or enqueued (a CV document);
+  // the enqueue is idempotent on the wamid, so a Meta retry of the whole payload is safe.
   for (const message of messages) {
     try {
-      // A plain text message is buffered (so the first few can be shown next to the candidate
-      // once their CV arrives) and then handled through the normal path, which logs it as
-      // ignored_no_attachment. Buffering is best-effort — never fail the message over it.
+      // A plain text message is buffered so its first few lines can be shown next to the candidate
+      // once their CV document arrives. Buffering is best-effort — never fail the message over it.
       if (message.text) {
         await bufferWhatsAppMessage(message.from, message.text).catch((bufferError) => {
           logError("WhatsApp message buffering failed", {
@@ -99,65 +94,56 @@ export async function POST(request: Request) {
         });
       }
 
-      let downloaded: { bytes: Buffer; mimeType: string } | null = null;
-      if (message.document) {
-        try {
-          downloaded = await downloadWhatsAppMedia(message.document.mediaId);
-        } catch (mediaError) {
-          logError("WhatsApp media download failed", {
-            error: mediaError,
-            labels: { event: "whatsapp_media_download_failed", wamid: message.wamid },
-          });
-        }
+      // Only a CV-carrying document is queued for processing. A message with no document is
+      // ignored here (no queue row, no event) — text is already buffered above.
+      if (!message.document) {
+        outcomes.push({ outcome: message.text ? "buffered" : "ignored", wamid: message.wamid });
+        continue;
       }
+
+      // Snapshot the source context NOW (caption + the sender's preceding messages), so it reflects
+      // what was true when the CV arrived — not minutes later when the worker runs. Preceding
+      // messages are skipped for a bulk forward-import (they belong to the forwarder, not the
+      // applicant); the per-CV caption is still kept. Best-effort.
       const isImport = isWhatsAppImportSender(message.from, importSenders);
-      const input = buildWhatsAppIntakeInput(
-        message,
-        downloaded
-          ? { bytes: downloaded.bytes, fileName: message.document?.filename ?? "cv", mimeType: downloaded.mimeType }
-          : null,
-        { importSenders },
-      );
-
-      // On a CV document, attach the caption plus — for a direct applicant only — the messages they
-      // sent just before it, so the candidate list/profile can show where the CV came from.
-      // Best-effort: the context is a nicety, never a reason to drop a CV.
-      //
-      // Preceding messages are deliberately SKIPPED for a bulk forward-import: those texts belong to
-      // the forwarding account, not the applicant, so attaching the same handful to every forwarded
-      // CV would be noise. The per-CV caption, however, is still meaningful and is kept.
-      if (message.document) {
-        try {
-          const buffered = isImport ? [] : await takeRecentWhatsAppMessages(message.from, MAX_WHATSAPP_SOURCE_MESSAGES);
-          const sourceContext = assembleWhatsAppSourceContext(message.document.caption, buffered);
-          if (sourceContext) {
-            input.rawMetadata = { ...(input.rawMetadata ?? {}), sourceContext };
-          }
-        } catch (contextError) {
-          logError("WhatsApp source-context assembly failed", {
-            error: contextError,
-            labels: { event: "whatsapp_source_context_failed", wamid: message.wamid },
-          });
-        }
+      let sourceContext = null;
+      try {
+        const buffered = isImport ? [] : await takeRecentWhatsAppMessages(message.from, MAX_WHATSAPP_SOURCE_MESSAGES);
+        sourceContext = assembleWhatsAppSourceContext(message.document.caption, buffered);
+      } catch (contextError) {
+        logError("WhatsApp source-context assembly failed", {
+          error: contextError,
+          labels: { event: "whatsapp_source_context_failed", wamid: message.wamid },
+        });
       }
 
-      const result = await ingestInboundCv({ channel: "whatsapp", ...input });
-      outcomes.push({ outcome: result.outcome, wamid: message.wamid });
-
-      // Once a direct applicant's CV produced/matched a candidate, consume their buffered messages
-      // so a later CV from the same number doesn't re-inherit stale context. Never clear on an
-      // import (the forwarder's buffer isn't per-candidate and shouldn't drive this).
-      if (
-        message.document &&
-        !isImport &&
-        (result.outcome === "candidate_created" || result.outcome === "candidate_matched")
-      ) {
-        await clearWhatsAppMessages(message.from).catch(() => {});
-      }
+      const { enqueued } = await enqueueInbound({
+        channel: "whatsapp",
+        payload: {
+          caption: message.document.caption,
+          contactName: message.contactName,
+          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+          filename: message.document.filename,
+          forwarded: message.forwarded,
+          from: message.from,
+          kind: "whatsapp",
+          mediaId: message.document.mediaId,
+          messageType: message.messageType,
+          mimeType: message.document.mimeType,
+          sourceContext,
+          wamid: message.wamid,
+        },
+        providerMessageId: message.wamid,
+        source: "whatsapp_webhook",
+      });
+      outcomes.push({ outcome: enqueued ? "enqueued" : "duplicate", wamid: message.wamid });
     } catch (error) {
-      logError("WhatsApp inbound CV intake failed for a message", {
+      // A failed enqueue is the only thing that could lose a message now. Log it loudly; returning
+      // non-200 would make Meta retry the whole payload (safe — enqueue is idempotent).
+      logError("WhatsApp webhook failed to enqueue a message", {
         error,
-        labels: { event: "whatsapp_intake_failed", wamid: message.wamid },
+        labels: { event: "whatsapp_enqueue_failed", wamid: message.wamid },
       });
       outcomes.push({ outcome: "error", wamid: message.wamid });
     }
