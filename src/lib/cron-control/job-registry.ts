@@ -11,7 +11,8 @@ export type CronJobKey =
   | "phoenix-ireports360-sync"
   | "phoenix-reconcile-visits"
   | "phoenix-ireports360-live-sync"
-  | "phoenix-recruitment-email-intake";
+  | "phoenix-recruitment-email-intake"
+  | "phoenix-inbound-intake";
 
 export type CronJobRegistryEntry = {
   gcpJobName: CronJobKey;
@@ -61,8 +62,15 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
     gcpJobName: "phoenix-recruitment-email-intake",
     label: "Recruitment Email Intake",
     description:
-      "Polls the configured careers@/hr@ mailboxes (INBOX and the junk/spam folder) via IMAP every 10 minutes for inbound candidate CVs, and health-checks the sibling WhatsApp intake channel on the same tick; a clean no-op when no mailboxes are configured.",
+      "Polls the configured careers@/hr@ mailboxes (INBOX and the junk/spam folder) via IMAP every 10 minutes, enqueuing each new message for the inbound-intake worker, and health-checks the sibling WhatsApp intake channel on the same tick; a clean no-op when no mailboxes are configured.",
     route: "/api/cron/recruitment-email-intake",
+  },
+  {
+    gcpJobName: "phoenix-inbound-intake",
+    label: "Inbound CV Intake Worker",
+    description:
+      "Drains the inbound-CV intake queue every 2 minutes: downloads WhatsApp media / re-fetches emails, runs AI extraction + candidate creation, and retries or dead-letters failures. A clean no-op when the queue is empty.",
+    route: "/api/cron/inbound-intake",
   },
 ] as const;
 

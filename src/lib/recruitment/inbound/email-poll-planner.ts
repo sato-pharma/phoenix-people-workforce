@@ -10,15 +10,15 @@
 //     a capped run must leave the remainder for the next run instead of skipping past it.
 //   - WHAT COUNTS AS FAILURE. A mailbox that cannot be reached is an outage, not a quiet 200.
 
-import type { InboundCvIntakeOutcome } from "@/lib/recruitment/inbound/cv-intake-service";
-
 export type FolderPollSummary = {
   folderPath: string;
   cursorLabel: string;
   messagesSeen: number;
   /** True when the per-run cap left messages behind — they are picked up by the next run. */
   backlogRemaining: boolean;
-  results: Array<{ uid: number; outcome: InboundCvIntakeOutcome | "error" }>;
+  // The poll only ENQUEUES now (the durable worker does the fetch + AI + candidate creation), so a
+  // result is "enqueued" (a new queue row) or "duplicate" (already queued — an idempotent re-poll).
+  results: Array<{ uid: number; outcome: "enqueued" | "duplicate" }>;
   error?: string;
 };
 
@@ -34,6 +34,13 @@ export type MailboxPollSummary = {
  */
 export function junkCursorLabel(mailboxLabel: string): string {
   return `${mailboxLabel}:junk`;
+}
+
+// The queue dedupe key for an email. UIDVALIDITY is included so a server-side mailbox rebuild
+// (which resets UIDs to 1) can't map a brand-new message onto an old message's key and have the
+// queue's unique index silently drop it as a duplicate.
+export function emailQueueKey(cursorLabel: string, uidValidity: bigint | number, uid: number): string {
+  return `email:${cursorLabel}:${String(uidValidity)}:${uid}`;
 }
 
 // Yahoo (the live provider here) names its spam folder "Bulk Mail"; Gmail uses "[Gmail]/Spam",

@@ -77,6 +77,13 @@ export type InboundCvIntakeInput = {
   // logged and ignored, no candidate, no notification.
   attachment: InboundCvAttachment | null;
   rawMetadata?: Record<string, unknown>;
+  // Set by the durable intake worker when RE-processing a queued item after a prior failure. The
+  // queue (ats_inbound_intake_queue) is the single-flight authority in that path — SKIP LOCKED
+  // guarantees one worker per message — so the event's own claim must NOT treat a leftover
+  // 'processing'/'error' row from the failed attempt as "already handled". Without this, a retry
+  // would dedupe to ignored_duplicate and the failed upload/extract would never actually re-run.
+  // A row that already SUCCEEDED (candidate_created/matched) is still never re-claimed.
+  reclaim?: boolean;
 };
 
 export type InboundCvIntakeOutcome =
@@ -151,17 +158,22 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | n
   if (existingError || !existing) return null;
 
   const row = existing as { id: unknown; outcome?: string | null; created_at?: string | null; updated_at?: string | null };
-  if (!isStaleProcessingClaim({ createdAt: row.created_at, outcome: row.outcome, updatedAt: row.updated_at }, Date.now())) {
-    return null;
-  }
+  // A row that already produced a candidate is terminal — never re-run it, even on an explicit
+  // reclaim, so a duplicate delivery can't spawn a second candidate.
+  if (row.outcome === "candidate_created" || row.outcome === "candidate_matched") return null;
 
-  // Re-stamp updated_at as part of the takeover so two concurrent retries cannot both proceed:
-  // the second one re-reads a now-fresh timestamp and backs off.
+  // Two ways a leftover row is legitimately re-claimable: the worker asked (input.reclaim — the
+  // queue is the single-flight authority), or it's a stale 'processing' row from a crashed run.
+  const eligible = input.reclaim === true || isStaleProcessingClaim({ createdAt: row.created_at, outcome: row.outcome, updatedAt: row.updated_at }, Date.now());
+  if (!eligible) return null;
+
+  // Reset it to 'processing' and clear any prior error, re-stamping updated_at as part of the
+  // takeover. The not-in guard means a candidate produced by a concurrent run can never be clobbered.
   const { data: reclaimed, error: reclaimError } = await supabase
     .from("ats_cv_intake_events")
-    .update({ updated_at: new Date().toISOString() })
+    .update({ error_message: null, outcome: "processing", updated_at: new Date().toISOString() })
     .eq("id", row.id)
-    .eq("outcome", "processing")
+    .not("outcome", "in", "(candidate_created,candidate_matched)")
     .select("id")
     .maybeSingle();
   if (reclaimError || !reclaimed) return null;

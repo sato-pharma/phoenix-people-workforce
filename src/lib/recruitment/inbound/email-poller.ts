@@ -9,22 +9,26 @@
 // (channel, provider_message_id) claim in ats_cv_intake_events is the safety net against
 // reprocessing in that edge case.
 //
+// The poll only DISCOVERS + ENQUEUES now: it searches for new UIDs and drops a lightweight row
+// into ats_inbound_intake_queue for each. The durable worker (intake-worker.ts) re-fetches the
+// message by UID and does the parse + AI + candidate creation, with retries. That keeps this cron
+// fast and cheap (no per-message fetch, no AI in the 120s route) and gives every email the same
+// retry/dead-letter safety net as WhatsApp.
+//
 // Polls the junk/spam folder as well as INBOX. Applicant CVs arrive from addresses the mailbox
 // has never corresponded with, carrying attachments — exactly the profile consumer spam filters
 // act on — so an INBOX-only poll silently loses real candidates with no trace anywhere. Each
 // folder keeps its OWN cursor row: INBOX under the bare mailbox label (so the live cursor keeps
 // working untouched) and junk under "<label>:junk".
-//
-// Processes mailboxes, folders, and messages within a folder sequentially — bounds concurrent
-// IMAP connections and AI-extraction load, same reasoning as the bulk CV upload panel's
-// sequential per-file processing.
 
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { ingestInboundCv } from "@/lib/recruitment/inbound/cv-intake-service";
+import type { InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
+import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
 import {
+  emailQueueKey,
   junkCursorLabel,
   pickJunkFolder,
   planFolderPoll,
@@ -94,7 +98,7 @@ async function saveCursor(cursorLabel: string, uidValidity: bigint, lastProcesse
 async function pollFolder(
   client: ImapFlow,
   target: { cursorLabel: string; folderPath: string },
-  options: { importSenders: readonly string[]; mailboxLabel: string },
+  options: { mailboxLabel: string },
 ): Promise<FolderPollSummary> {
   const summary: FolderPollSummary = {
     backlogRemaining: false,
@@ -138,26 +142,20 @@ async function pollFolder(
     });
     summary.backlogRemaining = plan.backlogRemaining;
 
+    // Enqueue one durable row per new UID — no source fetch, no parse, no AI here. The worker
+    // re-fetches by UID and does the heavy lifting. The queue key carries UIDVALIDITY so a rebuilt
+    // mailbox (UIDs reset) can't collide a fresh message onto an old row's dedupe key.
     let maxUidProcessed = plan.baselineUid;
-    if (plan.uids.length > 0) {
-      for await (const message of client.fetch(plan.uids, { source: true }, { uid: true })) {
-        summary.messagesSeen += 1;
-        if (message.source) {
-          try {
-            const mail = await simpleParser(message.source);
-            const parsed = parseInboundEmailMessage(
-              mail,
-              { mailboxLabel: options.mailboxLabel, uid: message.uid },
-              { importSenders: options.importSenders },
-            );
-            const result = await ingestInboundCv({ channel: "email", ...parsed });
-            summary.results.push({ outcome: result.outcome, uid: message.uid });
-          } catch {
-            summary.results.push({ outcome: "error", uid: message.uid });
-          }
-        }
-        maxUidProcessed = Math.max(maxUidProcessed, message.uid);
-      }
+    for (const uid of plan.uids) {
+      summary.messagesSeen += 1;
+      const { enqueued } = await enqueueInbound({
+        channel: "email",
+        payload: { kind: "email", folderPath: target.folderPath, mailboxLabel: options.mailboxLabel, messageId: null, uid },
+        providerMessageId: emailQueueKey(target.cursorLabel, mailbox.uidValidity, uid),
+        source: "email_poll",
+      });
+      summary.results.push({ outcome: enqueued ? "enqueued" : "duplicate", uid });
+      maxUidProcessed = Math.max(maxUidProcessed, uid);
     }
 
     await saveCursor(target.cursorLabel, mailbox.uidValidity, maxUidProcessed);
@@ -172,9 +170,6 @@ async function pollFolder(
 
 async function pollMailbox(config: RecruitmentMailboxConfig): Promise<MailboxPollSummary> {
   const summary: MailboxPollSummary = { folders: [], mailboxLabel: config.label };
-  // Addresses whose messages are a bulk CV migration rather than direct applications. Unset in
-  // normal operation; set only while an old mailbox is being forwarded in, then removed again.
-  const importSenders = parseEmailImportSenders(process.env.RECRUITMENT_EMAIL_IMPORT_SENDERS);
   const client = new ImapFlow({
     auth: { pass: config.password, user: config.user },
     host: config.host,
@@ -197,7 +192,7 @@ async function pollMailbox(config: RecruitmentMailboxConfig): Promise<MailboxPol
     }
 
     for (const target of targets) {
-      summary.folders.push(await pollFolder(client, target, { importSenders, mailboxLabel: config.label }));
+      summary.folders.push(await pollFolder(client, target, { mailboxLabel: config.label }));
     }
 
     await client.logout();
@@ -220,4 +215,61 @@ export async function pollAllRecruitmentMailboxes(): Promise<MailboxPollSummary[
     summaries.push(await pollMailbox(mailbox));
   }
   return summaries;
+}
+
+export class EmailMailboxNotConfiguredError extends Error {
+  constructor(mailboxLabel: string) {
+    super(`Mailbox "${mailboxLabel}" is no longer configured.`);
+    this.name = "EmailMailboxNotConfiguredError";
+  }
+}
+
+/**
+ * Re-fetch and parse a single email by UID, for the durable worker. Returns the intake input, or
+ * `null` when the message no longer exists (deleted, or UIDVALIDITY changed) — a terminal
+ * not-found the worker treats as done, not a retryable failure. Throws on a genuine connection
+ * error (retryable) or when the mailbox has been un-configured.
+ *
+ * `importSenders` is read here (worker time), not at enqueue time, so toggling the bulk-import env
+ * takes effect on the next drain without re-queuing.
+ */
+export async function fetchAndParseEmailByUid(
+  mailboxLabel: string,
+  folderPath: string,
+  uid: number,
+): Promise<Omit<InboundCvIntakeInput, "channel"> | null> {
+  const config = loadConfiguredMailboxes().find((mailbox) => mailbox.label === mailboxLabel);
+  if (!config) throw new EmailMailboxNotConfiguredError(mailboxLabel);
+
+  const importSenders = parseEmailImportSenders(process.env.RECRUITMENT_EMAIL_IMPORT_SENDERS);
+  const client = new ImapFlow({
+    auth: { pass: config.password, user: config.user },
+    host: config.host,
+    logger: false,
+    port: config.port,
+    secure: config.secure,
+  });
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(folderPath, { readOnly: true });
+    try {
+      const message = await client.fetchOne(String(uid), { source: true }, { uid: true });
+      if (!message || typeof message === "boolean" || !message.source) return null;
+      const mail = await simpleParser(message.source);
+      return parseInboundEmailMessage(mail, { mailboxLabel, uid }, { importSenders });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      try {
+        client.close();
+      } catch {
+        /* already closed */
+      }
+    }
+  }
 }

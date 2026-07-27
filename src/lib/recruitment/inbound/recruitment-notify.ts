@@ -107,3 +107,38 @@ export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth
     recipientHrIds,
   );
 }
+
+/**
+ * Alerts Talent Acquisition that an inbound CV exhausted its retries and dead-lettered — a real
+ * applicant the automated pipeline could not process, needing manual review. Reaches a phone
+ * (Telegram + push), not just Sentry. A message dead-letters exactly once, and the idempotencyKey
+ * is per (channel, providerMessageId), so this fires exactly once per lost CV — no throttle needed,
+ * no risk of spamming. Best-effort; never let alerting failure affect the worker.
+ */
+export async function notifyInboundIntakeDeadLetter(input: {
+  channel: string;
+  providerMessageId: string;
+  error: string;
+}): Promise<void> {
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  const channelLabel = input.channel === "whatsapp" ? "WhatsApp" : "email";
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/recruitment",
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_inbound_intake_dead_letter",
+      message: `A ${channelLabel} CV could not be processed after several automatic retries and needs manual review.`,
+      metadata: {
+        error: input.error.slice(0, 500),
+        idempotencyKey: `inbound-intake-dead:${input.channel}:${input.providerMessageId}`,
+        providerMessageId: input.providerMessageId,
+      },
+      module: "recruitment",
+      priority: "high",
+      title: "Inbound CV needs manual review",
+    },
+    recipientHrIds,
+  );
+}
