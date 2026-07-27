@@ -1056,6 +1056,22 @@ export function validateEmployeeImportRows(
     }
   }
 
+  // Map every uploaded employee to the seat their row lands on. The existing-seat check below uses
+  // this to tell a genuine double-book from a legitimate relocation: when the current DB owner of a
+  // seat is themselves moved to a DIFFERENT seat in this same upload, they vacate the old seat, so
+  // the incoming employee may take it. First occurrence wins (a duplicate HR_ID is flagged
+  // separately, and an employee only holds one seat).
+  const uploadedSeatKeyByHrIdKey = new Map<string, string | null>();
+  for (const record of records) {
+    if (record.rowType !== "employee" || !record.hrId) {
+      continue;
+    }
+    const hrIdKey = canonicalHrIdKey(record.hrId);
+    if (hrIdKey && !uploadedSeatKeyByHrIdKey.has(hrIdKey)) {
+      uploadedSeatKeyByHrIdKey.set(hrIdKey, employeeOrgSeatKey(record));
+    }
+  }
+
   for (const record of records) {
     if (record.hrId && duplicateHrIdSet.has(canonicalHrIdKey(record.hrId)!)) {
       validationErrors.push({
@@ -1132,12 +1148,27 @@ export function validateEmployeeImportRows(
       }
 
       if (record.hrId && existingSeatOwner && !hrIdsMatch(existingSeatOwner, record.hrId)) {
-        validationErrors.push({
-          rowNumber: record.rowNumber,
-          field: "area",
-          code: "duplicate_employee_org_seat_existing",
-          message: `Duplicate employee seat already exists for HR_ID ${existingSeatOwner}. The uploaded row has the same title, position, area, region, and line (${employeeOrgSeatLabel(record)}).`,
-        });
+        // Relocation-aware: skip the block when the current DB seat-owner is being moved to a
+        // DIFFERENT seat in this same upload — they are vacating this seat, so the incoming
+        // employee legitimately takes it. Only a genuine double-book is flagged: the current owner
+        // stays in this seat, or is absent from the upload and therefore keeps it. (This is the
+        // recurring false positive: a rep is reassigned to a new brick and the master's replacement
+        // was rejected against the stale pre-import DB snapshot.)
+        const existingOwnerKey = canonicalHrIdKey(existingSeatOwner);
+        const existingOwnerUploadedSeat = existingOwnerKey
+          ? uploadedSeatKeyByHrIdKey.get(existingOwnerKey)
+          : undefined;
+        const existingOwnerRelocatedElsewhere =
+          typeof existingOwnerUploadedSeat === "string" && existingOwnerUploadedSeat !== seatKey;
+
+        if (!existingOwnerRelocatedElsewhere) {
+          validationErrors.push({
+            rowNumber: record.rowNumber,
+            field: "area",
+            code: "duplicate_employee_org_seat_existing",
+            message: `Duplicate employee seat already exists for HR_ID ${existingSeatOwner}. The uploaded row has the same title, position, area, region, and line (${employeeOrgSeatLabel(record)}).`,
+          });
+        }
       }
     }
   }
