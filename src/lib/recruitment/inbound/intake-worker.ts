@@ -12,9 +12,9 @@
 
 import { logError, logWarning } from "@/lib/observability/log";
 import { clearWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
-import { downloadWhatsAppMedia } from "@/lib/recruitment/inbound/whatsapp-media";
-import { fetchAndParseEmailByUid } from "@/lib/recruitment/inbound/email-poller";
-import { ingestInboundCv, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
+import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
+import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
+import { ingestInboundCv, maxInboundCvBytes, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
 import { notifyInboundIntakeDeadLetter } from "@/lib/recruitment/inbound/recruitment-notify";
 import {
   buildWhatsAppIntakeInput,
@@ -49,8 +49,16 @@ class IntakeErrorOutcome extends Error {
 
 async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<InboundCvIntakeResult> {
   // A document/image with a failed media download now THROWS -> retried, never silently recorded
-  // as ignored_no_attachment (the pre-queue bug that lost CVs on a transient Meta 5xx).
-  const downloaded = await downloadWhatsAppMedia(payload.mediaId);
+  // as ignored_no_attachment (the pre-queue bug that lost CVs on a transient Meta 5xx). An
+  // oversized file is different: it will never be a valid CV, so it's terminal (ignored), not a
+  // retry — the size guard rejects it before the bytes are even pulled into memory.
+  let downloaded: { bytes: Buffer; mimeType: string };
+  try {
+    downloaded = await downloadWhatsAppMedia(payload.mediaId, { maxBytes: maxInboundCvBytes() });
+  } catch (error) {
+    if (error instanceof WhatsAppMediaTooLargeError) return { outcome: "ignored_unsupported_attachment" };
+    throw error;
+  }
 
   const message: ParsedWhatsAppMessage = {
     contactName: payload.contactName,
@@ -87,13 +95,20 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
 }
 
 async function processEmailRow(payload: EmailQueuePayload): Promise<InboundCvIntakeResult> {
-  const parsed = await fetchAndParseEmailByUid(payload.mailboxLabel, payload.folderPath, payload.uid);
-  // Message no longer exists (deleted, or UIDVALIDITY changed) — terminal, nothing to retry.
-  if (!parsed) return { outcome: "ignored_no_attachment" };
+  // One email can carry several CVs (agency/referral) — each usable attachment becomes its own
+  // candidate. Empty => the message no longer exists (deleted / UIDVALIDITY changed): terminal.
+  const inputs = await fetchAndParseEmailMessagesByUid(payload.mailboxLabel, payload.folderPath, payload.uid);
+  if (inputs.length === 0) return { outcome: "ignored_no_attachment" };
 
-  const result = await ingestInboundCv({ channel: "email", ...parsed, reclaim: true });
-  if (result.outcome === "error") throw new IntakeErrorOutcome("Email");
-  return result;
+  // Each attachment has its own provider_message_id, so ingestInboundCv dedupes them independently;
+  // a mid-batch failure re-queues the whole row and the already-done attachments no-op on retry.
+  let last: InboundCvIntakeResult = { outcome: "ignored_no_attachment" };
+  for (const input of inputs) {
+    const result = await ingestInboundCv({ channel: "email", ...input, reclaim: true });
+    if (result.outcome === "error") throw new IntakeErrorOutcome("Email");
+    last = result;
+  }
+  return last;
 }
 
 export type InboundDrainOutcome = {

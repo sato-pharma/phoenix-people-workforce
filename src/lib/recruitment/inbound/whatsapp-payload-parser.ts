@@ -2,11 +2,11 @@
 // nested entry[].changes[].value.messages[] structure and matches each message to its sender's
 // self-reported profile name via the sibling contacts[] array (matched by wa_id).
 //
-// Only `type: "document"` messages carry a CV candidate — the actual media download (async,
-// Graph API) happens separately (whatsapp-media.ts, called from the webhook route) so this
-// module stays pure and unit-testable with plain fixture objects. Non-document messages (text,
-// image, audio, etc.) are still returned here (so the webhook can log/ignore them via the same
-// ingestInboundCv path with attachment: null), just without a `document` field.
+// A CV arrives as a `type: "document"` message OR a `type: "image"` message — applicants very
+// commonly PHOTOGRAPH their CV rather than attach a file, and the downstream vision path reads
+// images natively. Both carry a downloadable media id (the actual download happens later in the
+// worker), so both produce a `document` ref here; an image simply has no filename. Other message
+// types (text, audio, video, …) carry no `document` and are ignored by the webhook.
 
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
 import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
@@ -84,14 +84,21 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
         if (!wamid || !from) continue;
 
         const messageType = asString(message?.type) ?? "unknown";
-        const documentNode = messageType === "document" ? asRecord(message?.document) : null;
-        const mediaId = asString(documentNode?.id);
+        // A document OR an image (photographed CV) both carry a CV. The image node has the same
+        // id/mime_type/caption shape as document, just no filename.
+        const mediaNode =
+          messageType === "document"
+            ? asRecord(message?.document)
+            : messageType === "image"
+              ? asRecord(message?.image)
+              : null;
+        const mediaId = asString(mediaNode?.id);
         const document: ParsedWhatsAppDocument | null = mediaId
           ? {
-              caption: asString(documentNode?.caption),
-              filename: asString(documentNode?.filename),
+              caption: asString(mediaNode?.caption),
+              filename: asString(mediaNode?.filename),
               mediaId,
-              mimeType: asString(documentNode?.mime_type) ?? "application/octet-stream",
+              mimeType: asString(mediaNode?.mime_type) ?? "application/octet-stream",
             }
           : null;
 

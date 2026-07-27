@@ -107,11 +107,14 @@ export function runRecruitmentWhatsAppIntakeTests() {
   assert.equal(textMsg.document, null, "a non-document message never carries a document field, even if one is present in the raw payload");
   assert.equal(textMsg.text, "hi there", "a text message's body is captured");
 
-  // Image message — also never treated as a document (no OCR support).
+  // Image message (a photographed CV) IS now treated as a CV — applicants commonly photo their CV,
+  // and the vision path reads it downstream. The image node maps to the same document ref shape,
+  // just with no filename.
   const [imageMsg] = parseWhatsAppWebhookPayload(
-    documentMessagePayload({ document: undefined, image: { id: "IMG1", mime_type: "image/jpeg" }, type: "image" }),
+    documentMessagePayload({ document: undefined, image: { caption: "my cv", id: "IMG1", mime_type: "image/jpeg" }, type: "image" }),
   );
-  assert.equal(imageMsg.document, null);
+  assert.deepEqual(imageMsg.document, { caption: "my cv", filename: null, mediaId: "IMG1", mimeType: "image/jpeg" });
+  assert.equal(imageMsg.messageType, "image");
 
   // No matching contact profile -> contactName is null, not a crash.
   const noContactPayload = documentMessagePayload();

@@ -103,7 +103,7 @@ export type InboundCvIntakeResult = {
 
 const DEFAULT_MAX_INBOUND_CV_BYTES = 15 * 1024 * 1024;
 
-function maxInboundCvBytes(): number {
+export function maxInboundCvBytes(): number {
   const raw = Number(process.env.RECRUITMENT_INBOUND_CV_MAX_BYTES);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_INBOUND_CV_BYTES;
 }
