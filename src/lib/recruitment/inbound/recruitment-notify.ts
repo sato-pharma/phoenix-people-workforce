@@ -10,6 +10,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import type { InboundCvChannel } from "@/lib/recruitment/inbound/cv-intake-service";
+import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 
 async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
   const supabase = getSupabaseAdmin();
@@ -58,6 +59,50 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
       module: "recruitment",
       priority: "normal",
       title: input.created ? "New candidate from inbound CV" : "New CV for existing candidate",
+    },
+    recipientHrIds,
+  );
+}
+
+/**
+ * Pushes a WhatsApp-intake-down alert to the Talent Acquisition reviewers via Telegram + push (and
+ * in-app), not just Sentry — so a Meta-side block on the number reaches a phone the way it never
+ * did on 2026-07-26, when the channel was silently dead for ~19 hours.
+ *
+ * Throttled to one alert per status per Cairo day via a stable idempotencyKey: the health check
+ * runs every 10 minutes, and without this a persistent outage would fan out the same push every
+ * run. The first detection each day still fires within ~10 minutes; it then stays quiet until the
+ * status changes or the day rolls over (a daily reminder while it remains broken).
+ *
+ * A no-op for a healthy or not-configured channel, and best-effort — an alerting failure must
+ * never itself break the cron that raised it.
+ */
+export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth, now: Date = new Date()): Promise<void> {
+  if (health.status !== "api_unreachable" && health.status !== "silent") return;
+
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  const title = health.status === "api_unreachable" ? "WhatsApp CV intake is DOWN" : "WhatsApp CV intake has gone quiet";
+  const numbersDown = health.probes.filter((probe) => !probe.ok).map((probe) => probe.displayNumber ?? probe.phoneNumberId);
+
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/recruitment",
+      // Explicit: this must reach a phone, so force Telegram + push alongside in-app regardless of
+      // the module's default channel policy.
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_whatsapp_intake_unhealthy",
+      message: health.detail,
+      metadata: {
+        apiError: health.apiError,
+        idempotencyKey: `whatsapp-intake-health:${health.status}:${cairoDateKey(now)}`,
+        numbersDown,
+        status: health.status,
+      },
+      module: "recruitment",
+      priority: "high",
+      title,
     },
     recipientHrIds,
   );

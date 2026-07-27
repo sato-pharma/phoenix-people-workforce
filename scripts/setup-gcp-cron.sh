@@ -119,9 +119,15 @@ gcloud scheduler jobs create http phoenix-ireports360-live-sync \
     --location="${SCHEDULER_LOCATION}" \
     --project="${PROJECT_ID}"
 
-# 7. Recruitment Email-Intake Poll (every 10 min, :04/:14/.../:54 Cairo — minute offset 4 avoids
-# every other job). Polls the configured careers@/hr@ mailboxes (RECRUITMENT_EMAIL_INBOXES_JSON)
-# for candidate CVs via IMAP; a clean no-op if that env var is unset. Added 2026-07-24.
+# 7. Recruitment Inbound-CV Poll (every 10 min, :04/:14/.../:54 Cairo — minute offset 4 avoids
+# every other job). Polls the configured careers@/hr@ mailboxes (RECRUITMENT_EMAIL_INBOXES_JSON),
+# INBOX and the junk/spam folder, for candidate CVs via IMAP; a clean no-op if that env var is
+# unset. Added 2026-07-24.
+# Since 2026-07-27 it also health-checks the sibling WhatsApp channel on the same tick. WhatsApp
+# has no cron of its own — its webhook only runs when Meta calls it — so when Meta blocked API
+# access on 2026-07-26 the channel went dead with zero signal for ~19 hours. Piggybacking here
+# buys 10-minute detection without an eighth scheduler job. The job NAME stays
+# ...-email-intake because renaming a Cloud Scheduler job means delete + recreate.
 gcloud scheduler jobs create http phoenix-recruitment-email-intake \
     --schedule="4-59/10 * * * *" \
     --uri="${SERVICE_URL}/api/cron/recruitment-email-intake" \

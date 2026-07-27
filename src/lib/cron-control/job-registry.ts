@@ -60,7 +60,8 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
   {
     gcpJobName: "phoenix-recruitment-email-intake",
     label: "Recruitment Email Intake",
-    description: "Polls the configured careers@/hr@ mailboxes via IMAP every 10 minutes for inbound candidate CVs; a clean no-op when no mailboxes are configured.",
+    description:
+      "Polls the configured careers@/hr@ mailboxes (INBOX and the junk/spam folder) via IMAP every 10 minutes for inbound candidate CVs, and health-checks the sibling WhatsApp intake channel on the same tick; a clean no-op when no mailboxes are configured.",
     route: "/api/cron/recruitment-email-intake",
   },
 ] as const;
