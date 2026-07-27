@@ -721,37 +721,39 @@ export async function loadActuals(
     }
   };
 
-  if (excludeCodes.length > 0) {
-    // Masking required. Prefer the v2 RPC (exact). If unavailable, fall back to the
-    // base RPC for requests WITHOUT confidential products and withhold the rest, so
-    // a non-revealing viewer can never see a confidential-inflated number.
-    try {
-      for (const part of chunk(requestIds, 300)) {
-        const { data, error } = await supabase.rpc("phx_marketing_request_roi_actuals_v2", {
-          p_request_ids: part,
-          p_exclude_product_codes: excludeCodes,
-        });
-        if (error) throw error;
-        ingest((data ?? []) as ActualsRow[]);
-      }
-      return { byRequest, masked: false };
-    } catch {
-      // v2 not deployed yet — caller withholds confidential-bearing requests.
-      for (const part of chunk(requestIds, 300)) {
-        const { data, error } = await supabase.rpc("phx_marketing_request_roi_actuals", { p_request_ids: part });
-        if (error) throw error;
-        ingest((data ?? []) as ActualsRow[]);
-      }
-      return { byRequest, masked: true };
+  // Always prefer the v2 RPC — even when excludeCodes is empty (CEO/Super Admin with "include
+  // restricted" ticked). v2 is not just "v1 + masking": since the 2026-07-19 Phase-D migration
+  // (20260719151000_marketing_roi_actuals_v2_direct_branch.sql) it also carries the
+  // track_direct_sales direct-order branch that v1 never received. Calling v1 directly whenever
+  // there was nothing to mask used to be a safe, byte-identical shortcut — the original masking
+  // migration's own comment documented "passing an empty array reproduces the base RPC exactly"
+  // — but Phase-D silently broke that equivalence, so the shortcut made this report's total flip
+  // between two different attribution engines depending purely on the includeRestricted toggle.
+  // Fall back to v1 only when v2 itself errors (e.g. not deployed yet), never as a deliberate
+  // no-masking-needed shortcut.
+  try {
+    for (const part of chunk(requestIds, 300)) {
+      const { data, error } = await supabase.rpc("phx_marketing_request_roi_actuals_v2", {
+        p_request_ids: part,
+        p_exclude_product_codes: excludeCodes,
+      });
+      if (error) throw error;
+      ingest((data ?? []) as ActualsRow[]);
     }
+    return { byRequest, masked: false };
+  } catch {
+    // v2 not deployed yet. When masking was actually required, withhold confidential-bearing
+    // requests (masked: true) so a non-revealing viewer can never see a confidential-inflated
+    // number. When masking was NOT required, v1 is still a strictly-worse read (missing
+    // direct-order sales) but there is no further fallback — masked stays false since nothing
+    // needed withholding.
+    for (const part of chunk(requestIds, 300)) {
+      const { data, error } = await supabase.rpc("phx_marketing_request_roi_actuals", { p_request_ids: part });
+      if (error) throw error;
+      ingest((data ?? []) as ActualsRow[]);
+    }
+    return { byRequest, masked: excludeCodes.length > 0 };
   }
-
-  for (const part of chunk(requestIds, 300)) {
-    const { data, error } = await supabase.rpc("phx_marketing_request_roi_actuals", { p_request_ids: part });
-    if (error) throw error;
-    ingest((data ?? []) as ActualsRow[]);
-  }
-  return { byRequest, masked: false };
 }
 
 /**

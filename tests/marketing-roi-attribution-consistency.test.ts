@@ -1,51 +1,73 @@
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
 
-// Proves every Marketing ROI actual-sales path uses identical attribution logic — exact
-// customer-code match only, no brick/geography fallback — by reading the migration SQL text
+// Proves every Marketing ROI actual-sales path uses identical CUSTOMER-MATCH attribution logic —
+// exact customer-code match only, no brick/geography fallback — by reading the migration SQL text
 // directly (same "migration readiness" convention as workflow-control-migration-readiness.test.ts).
 // This is a static-source lock, not a live-DB test: it prevents a future migration from silently
 // reintroducing the fallback path that caused phx_refresh_marketing_roi_facts to disagree with
 // phx_marketing_request_roi_actuals / _v2 / phx_marketing_request_view_sales in production.
+//
+// A SEPARATE axis — whether a path also includes the 2026-07-19 Phase-D track_direct_sales
+// direct-order branch — is NOT yet consistent across every path: phx_marketing_request_roi_
+// actuals_v2 and phx_refresh_marketing_roi_facts have it, phx_marketing_request_roi_actuals (v1)
+// and phx_marketing_roi_customer_dashboard do not. testCustomerDashboardIsExactOnlyAndLocksDirect
+// BranchGap() below pins the latter as a known, tracked gap rather than silently passing either
+// way.
 
 const FALLBACK_CTE_RE = /\b(fallback_bricks|fallback_hits)\s+as\b/i;
 const BRICK_JOIN_RE = /\br\.brick_id\s*=\s*(fb|tp)\.brick_id\b/i;
 
-function migrationsDirUrl() {
-  return new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
-}
+// Scanned in this order — archive first, then the live directory — because the archive holds
+// every migration up to the 2026-07-11 baseline cut (its latest filename timestamp is
+// 2026-07-08), and every migration under supabase/migrations/ is chronologically AFTER that cut
+// (its earliest is the 2026-07-11 baseline itself). Concatenating each directory's own
+// lexically-sorted (= chronological) file list is therefore equivalent to one global
+// chronological scan, without needing to merge-sort by timestamp across directories.
+const MIGRATION_DIRS = [
+  new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url),
+  new URL("../supabase/migrations/", import.meta.url),
+];
 
-function allMigrationFiles(): string[] {
-  return readdirSync(migrationsDirUrl())
-    .filter((f) => f.endsWith(".sql"))
-    .sort(); // filenames are YYYYMMDDHHMMSS_name.sql — lexical sort is chronological.
+type MigrationFile = { dir: URL; name: string };
+
+function allMigrationFiles(): MigrationFile[] {
+  return MIGRATION_DIRS.flatMap((dir) =>
+    readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort() // filenames are YYYYMMDDHHMMSS_name.sql — lexical sort is chronological within a dir.
+      .map((name) => ({ dir, name })),
+  );
 }
 
 /**
  * Resolves the function body Postgres would actually have live today, by scanning every
- * migration in chronological order and keeping the LAST `create or replace function
- * public.<name>(` block found — mirroring how CREATE OR REPLACE actually behaves.
+ * migration (archive, then supabase/migrations/) in chronological order and keeping the LAST
+ * `create [or replace] function public.<name>(` block found — mirroring how CREATE OR REPLACE
+ * actually behaves. Both forms are matched because the 2026-07-11 baseline
+ * (20260711135352_phoenix_production_schema_baseline.sql) is a pg_dump that defines every
+ * function with bare `CREATE FUNCTION`, not `CREATE OR REPLACE FUNCTION`.
  */
 function resolveLatestFunctionBody(funcName: string): { file: string; body: string } {
-  const startRe = new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${funcName}\\s*\\(`, "i");
+  const startRe = new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+public\\.${funcName}\\s*\\(`, "i");
   let latest: { file: string; body: string } | null = null;
-  for (const file of allMigrationFiles()) {
-    const sql = readFileSync(new URL(file, migrationsDirUrl()), "utf8");
+  for (const { dir, name } of allMigrationFiles()) {
+    const sql = readFileSync(new URL(name, dir), "utf8");
     const match = startRe.exec(sql);
     if (!match) continue;
     const rest = sql.slice(match.index);
-    // The dollar-quote tag varies across migrations ($func$, $function$, $$, ...) — capture the
-    // actual tag used right after `as`, then find that SAME tag's closing occurrence.
+    // The dollar-quote tag varies across migrations ($func$, $function$, $$, $_$, ...) — capture
+    // the actual tag used right after `as`, then find that SAME tag's closing occurrence.
     const tagMatch = /\bas\s+(\$[a-zA-Z_]*\$)/i.exec(rest);
-    assert.ok(tagMatch, `${funcName}: found CREATE OR REPLACE in ${file} but no dollar-quoted body start`);
+    assert.ok(tagMatch, `${funcName}: found CREATE [OR REPLACE] FUNCTION in ${name} but no dollar-quoted body start`);
     const tag = tagMatch[1]!;
     const afterOpen = rest.slice(tagMatch.index! + tagMatch[0].length);
     const closeIdx = afterOpen.indexOf(tag);
-    assert.ok(closeIdx >= 0, `${funcName}: found opening tag ${tag} in ${file} but no matching closing tag`);
+    assert.ok(closeIdx >= 0, `${funcName}: found opening tag ${tag} in ${name} but no matching closing tag`);
     const bodyEnd = tagMatch.index! + tagMatch[0].length + closeIdx + tag.length;
-    latest = { body: rest.slice(0, bodyEnd), file };
+    latest = { body: rest.slice(0, bodyEnd), file: name };
   }
-  assert.ok(latest, `${funcName}: at least one CREATE OR REPLACE FUNCTION found across migrations`);
+  assert.ok(latest, `${funcName}: at least one CREATE [OR REPLACE] FUNCTION found across migrations`);
   return latest!;
 }
 
@@ -60,6 +82,7 @@ export function runMarketingRoiAttributionConsistencyTests() {
   testCurrentViewSalesIsExactOnlyAndReconciles();
   testRefreshFactsFixMigrationRemovesFallback();
   testFastRpcHasNoOwnAttributionLogic();
+  testCustomerDashboardIsExactOnlyAndLocksDirectBranchGap();
 }
 
 function testCurrentRoiActualsIsExactOnly() {
@@ -118,12 +141,12 @@ function testCurrentViewSalesIsExactOnlyAndReconciles() {
 }
 
 function testRefreshFactsFixMigrationRemovesFallback() {
-  const files = allMigrationFiles().filter((f) => /roi_attribution_consistency/.test(f));
+  const files = allMigrationFiles().filter((f) => /roi_attribution_consistency/.test(f.name));
   assert.equal(files.length, 1, "exactly one roi_attribution_consistency migration exists");
   const migrationFile = files[0]!;
-  assert.match(migrationFile, /^\d{14}_marketing_roi_attribution_consistency\.sql$/, "filename convention");
+  assert.match(migrationFile.name, /^\d{14}_marketing_roi_attribution_consistency\.sql$/, "filename convention");
 
-  const sql = readFileSync(new URL(migrationFile, migrationsDirUrl()), "utf8");
+  const sql = readFileSync(new URL(migrationFile.name, migrationFile.dir), "utf8");
   assert.match(sql, /create\s+or\s+replace\s+function\s+public\.phx_refresh_marketing_roi_facts\s*\(/i, "redefines phx_refresh_marketing_roi_facts");
 
   // The attribution-consistency migration need not stay the LATEST definition forever — a later
@@ -134,9 +157,20 @@ function testRefreshFactsFixMigrationRemovesFallback() {
   const { body } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
   assertNoFallbackLogic(body, "phx_refresh_marketing_roi_facts");
 
-  // all_hits must resolve to exact_hits only — no union with any fallback set.
-  assert.match(body, /all_hits\s+as\s+materialized\s*\(\s*select\s+\*\s+from\s+exact_hits\s*\)/i, "all_hits is exact_hits only, no union");
-  assert.doesNotMatch(body, /union\s+all/i, "no UNION ALL remains (that was the fallback-merge point)");
+  // all_hits must resolve to exact_hits, optionally unioned with ONLY the Phase-D direct_hits
+  // branch (approved Direct Order Request sales, see 20260719152000_marketing_roi_refresh_facts_
+  // direct_branch.sql) — never with any OTHER source. This is a shape-lock, not just a name
+  // check: the regex only names exact_hits/direct_hits in this exact structure, so a reintroduced
+  // brick/geography fallback branch (whatever it's named) would have to satisfy this same regex
+  // and fails closed. The un-narrowed "no UNION ALL anywhere" check this replaces was too strict
+  // once Phase-D legitimately added a union; the real invariant — no fallback_bricks/fallback_hits
+  // CTE, no brick_id-based join — is what assertNoFallbackLogic (FALLBACK_CTE_RE / BRICK_JOIN_RE)
+  // above already guards.
+  assert.match(
+    body,
+    /all_hits\s+as\s+materialized\s*\(\s*select\s+\*\s+from\s+exact_hits\s*(?:union\s+all\s+select\s+\*\s+from\s+direct_hits\s*)?\)/i,
+    "all_hits resolves to exact_hits, optionally unioned with direct_hits only — no other source",
+  );
 
   // attribution_quality collapses to the same 2-branch shape as v1/v2/view_sales.
   assert.match(
@@ -177,4 +211,36 @@ function testFastRpcHasNoOwnAttributionLogic() {
   ]) {
     assert.match(body, new RegExp(`from\\s+${factTable}\\b`, "i"), `fast RPC reads ${factTable}`);
   }
+}
+
+function testCustomerDashboardIsExactOnlyAndLocksDirectBranchGap() {
+  const { body } = resolveLatestFunctionBody("phx_marketing_roi_customer_dashboard");
+  assertNoFallbackLogic(body, "phx_marketing_roi_customer_dashboard");
+  assert.match(
+    body,
+    /lower\(btrim\(regexp_replace\(coalesce\(r\.client_code,\s*''\),\s*'\\s\+',\s*' ',\s*'g'\)\)\)\s*=\s*tp\.customer_code/i,
+    "customer dashboard uses the same exact client_code match",
+  );
+  assert.match(body, /b\.status\s*=\s*'validated'/i, "customer dashboard gates on validated batch");
+  assert.match(body, /r\.validation_state\s*=\s*'valid'/i, "customer dashboard gates on valid rows");
+
+  // KNOWN GAP (found 2026-07-27, not yet fixed): unlike phx_marketing_request_roi_actuals_v2 and
+  // phx_refresh_marketing_roi_facts, this function has NO Phase-D direct_hits branch — so for any
+  // track_direct_sales campaign it disagrees with ROI Tracking about the sales total. This matters
+  // because phx_marketing_roi_customer_dashboard is the DEFAULT engine behind the Marketing ROI &
+  // Customer Intelligence dashboard (getSalesMarketingDashboardSnapshot in
+  // sales-marketing-intelligence/service.ts) whenever NEXT_PUBLIC_SMI_USE_FACT_TABLES !== "true"
+  // — i.e. in the default/current configuration; only the opt-in fast path
+  // (getSalesMarketingDashboardFast -> phx_marketing_roi_fast, reading facts populated by
+  // phx_refresh_marketing_roi_facts) sees direct-order sales.
+  //
+  // This assertion LOCKS today's actual shape (exact_hits only, no union) — it is a deliberate
+  // pin, not an endorsement. If a future migration adds a direct_hits branch to close the gap,
+  // this specific assertion must be updated in the SAME change: that forced touch is the point,
+  // so the gap can't be closed silently without someone re-checking the dashboard-selection logic.
+  assert.match(
+    body,
+    /all_hits\s+as\s+materialized\s*\(\s*select\s+\*\s+from\s+exact_hits\s*\)/i,
+    "phx_marketing_roi_customer_dashboard currently has NO direct_hits branch (known gap vs v2/refresh_facts — update this lock if that changes)",
+  );
 }
