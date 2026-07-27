@@ -1,4 +1,5 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isActiveImportEmployee } from "@/lib/imports/employee-lifecycle";
 import type {
   ExistingEmployeeOrgSeat,
   ExistingImportState,
@@ -8,24 +9,6 @@ import { createOrgCode } from "@/lib/imports/org-rule-engine";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupabaseClient = ReturnType<typeof getSupabaseAdmin>;
-
-const activeImportEmployeeStatuses = new Set(["active", "on_leave"]);
-
-function normalizeStatus(value: unknown) {
-  return String(value ?? "active").trim().toLowerCase() || "active";
-}
-
-function isActiveImportEmployee(row: {
-  employment_status?: string | null;
-  organogram_visible?: boolean | null;
-  payroll_eligible?: boolean | null;
-}) {
-  return (
-    activeImportEmployeeStatuses.has(normalizeStatus(row.employment_status)) &&
-    row.organogram_visible !== false &&
-    row.payroll_eligible !== false
-  );
-}
 
 async function loadCodeSet(supabase: SupabaseClient, table: string) {
   const { data, error } = await supabase.from(table).select("code");

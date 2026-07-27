@@ -41,6 +41,27 @@ function compactCodePart(value: string | null) {
   return value?.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") ?? null;
 }
 
+// Parse a spreadsheet yes/no-style flag into a boolean. Returns null when the cell is blank or
+// unrecognized, so callers can tell "not provided" apart from an explicit true/false and avoid
+// clobbering a value the org set deliberately (e.g. an executive's payroll_eligible=false).
+function parseImportBooleanFlag(value: string | null): boolean | null {
+  if (value === null) {
+    return null;
+  }
+
+  const text = value.trim().toLowerCase();
+
+  if (["yes", "y", "true", "1", "eligible", "visible", "active", "enabled"].includes(text)) {
+    return true;
+  }
+
+  if (["no", "n", "false", "0", "ineligible", "hidden", "inactive", "disabled"].includes(text)) {
+    return false;
+  }
+
+  return null;
+}
+
 function vacancyCodeFor(record: VacantPositionImportRecord) {
   return generateVacancySeatCode({
     areaCode: compactCodePart(record.codes.areaCode),
@@ -482,12 +503,33 @@ function employeeValues(
     positionIds: IdMap;
     teamIds: IdMap;
   },
+  options: { isExisting: boolean },
 ) {
+  // organogram_visible / payroll_eligible are lifecycle-orthogonal flags the org sets
+  // deliberately (e.g. the CEO and other executives are intentionally payroll_eligible=false).
+  // NEVER force them true on an update — that silently puts payroll-excluded executives back on
+  // payroll. Honour an explicit value from the file; otherwise default only for brand-new hires
+  // and leave existing employees exactly as they are.
+  const organogramVisibleFlag = parseImportBooleanFlag(record.organogramVisible);
+  const payrollEligibleFlag = parseImportBooleanFlag(record.payrollEligible);
+  const lifecycleFlags: { organogram_visible?: boolean; payroll_eligible?: boolean } = {};
+
+  if (organogramVisibleFlag !== null) {
+    lifecycleFlags.organogram_visible = organogramVisibleFlag;
+  } else if (!options.isExisting) {
+    lifecycleFlags.organogram_visible = true;
+  }
+
+  if (payrollEligibleFlag !== null) {
+    lifecycleFlags.payroll_eligible = payrollEligibleFlag;
+  } else if (!options.isExisting) {
+    lifecycleFlags.payroll_eligible = true;
+  }
+
   const values = {
     full_name: truncate(record.fullName, 220) ?? record.hrId ?? "Unknown",
     hr_id: record.hrId as string,
-    organogram_visible: true,
-    payroll_eligible: true,
+    ...lifecycleFlags,
     updated_at: new Date().toISOString(),
     ...(record.birthDate ? { birth_date: record.birthDate } : {}),
     ...(record.codes.areaCode && ids.areaIds.has(record.codes.areaCode)
@@ -709,7 +751,11 @@ async function upsertEmployees(
   const existingHrIds = await existingEmployeeHrIds(supabase, hrIds);
 
   if (employeeRecords.length > 0) {
-    const values = employeeRecords.map((record) => employeeValues(record, ids));
+    const values = employeeRecords.map((record) =>
+      employeeValues(record, ids, {
+        isExisting: existingHrIds.has(record.hrId as string),
+      }),
+    );
     let { error } = await supabase.from("employees").upsert(
       values,
       { onConflict: "hr_id" },
