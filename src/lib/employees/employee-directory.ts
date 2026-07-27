@@ -110,6 +110,7 @@ export type EmployeeDirectoryRow = {
   residenceLatitude: number | null;
   residenceLongitude: number | null;
   regionName: string | null;
+  regionCode?: string | null;
   resignationDate: string | null;
   salaryDetails?: EmployeeSalaryDetail[] | null;
   socialInsurance: number | null;
@@ -254,6 +255,7 @@ type EmployeeDbRow = {
   payment_mode?: string | null;
   position_id: number | null;
   region_name?: string | null;
+  region_code?: string | null;
   resignation_date?: string | null;
   residence_address?: string | null;
   residence_area?: string | null;
@@ -932,6 +934,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const joinedSelect = [
     baseEmployeeSelect,
     "region_name",
+    "region_code",
     "birth_date",
     `employee_compensation!employee_compensation_employee_hr_id_fkey(${compensationSelect()})`,
     "departments!employees_department_id_fkey(name)",
@@ -960,7 +963,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     // Fallback if joined query fails due to schema/relationship issues.
     // Only selects columns confirmed present in the employees table â€” do NOT add
     // columns here that belong to a feature branch or migration that may be reverted.
-    const FALLBACK_EMPLOYEE_SELECT = `${baseEmployeeSelect},region_name,birth_date`;
+    const FALLBACK_EMPLOYEE_SELECT = `${baseEmployeeSelect},region_name,region_code,birth_date`;
     const fallbackParams = new URLSearchParams({
       select: FALLBACK_EMPLOYEE_SELECT,
       order: "full_name.asc",
@@ -1111,6 +1114,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
+        regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
         socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1271,6 +1275,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         residenceLatitude: residence?.residence_latitude ?? null,
         residenceLongitude: residence?.residence_longitude ?? null,
         regionName: row.region_name ?? null,
+        regionCode: row.region_code ?? null,
         resignationDate: row.resignation_date ?? null,
         socialInsurance: row.social_insurance ?? comp?.social_insurance ?? null,
         socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1390,6 +1395,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
+      regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? compensation?.social_insurance ?? null,
       socialInsuranceWage: row.social_insurance_wage ?? null,
@@ -1554,6 +1560,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       residenceLatitude: residence?.residence_latitude ?? null,
       residenceLongitude: residence?.residence_longitude ?? null,
       regionName: row.region_name ?? null,
+      regionCode: row.region_code ?? null,
       resignationDate: row.resignation_date ?? null,
       socialInsurance: row.social_insurance ?? null,
       socialInsuranceWage: row.social_insurance_wage ?? null,
