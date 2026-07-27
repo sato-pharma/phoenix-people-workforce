@@ -70,6 +70,69 @@ export function runEmployeeImportSeatValidationTests() {
     true,
   );
 
+  // Relocation-aware existing-seat check: when the current DB seat-owner is moved to a DIFFERENT
+  // seat in the SAME upload, they vacate their old seat, so a new employee taking that seat must
+  // NOT be blocked. This is the recurring false positive — a rep is reassigned to a new brick and
+  // the master's replacement was rejected against the stale pre-import DB snapshot.
+  const relocatedOwner = validateEmployeeImportRows(
+    [
+      // T-000 (the current "Cairo" seat owner) is moved to "Giza" in this same file...
+      employeeRow({ HR_ID: "T-000", Area: "Giza", "Full Name": "Relocating Rep", Region: "Giza" }),
+      // ...and T-100 takes over the "Cairo" seat T-000 just vacated.
+      employeeRow({ HR_ID: "T-100", Area: "Cairo", "Full Name": "Replacement Rep", Region: "Cairo" }),
+    ],
+    {
+      existingState: {
+        canonicalAreas,
+        employeeOrgSeats: [
+          {
+            areaCode: canonicalAreas[0].code, // "Cairo"
+            hrId: "T-000",
+            jobTitle: "Medical Representative",
+            lineCode: createOrgCode("Pedia"),
+            positionCode: createOrgCode("Medical Representative"),
+            regionName: "Cairo",
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(
+    relocatedOwner.validationErrors.some((issue) => issue.code.startsWith("duplicate_employee_org_seat")),
+    false,
+  );
+  assert.equal(relocatedOwner.failedRows, 0);
+
+  // Genuine double-book still blocks: the current owner STAYS in the seat (present in the upload at
+  // the same seat) and a second, different employee also claims it.
+  const doubleBookedSeat = validateEmployeeImportRows(
+    [
+      employeeRow({ HR_ID: "T-000", Area: "Cairo", Region: "Cairo" }), // stays put in the existing seat
+      employeeRow({ HR_ID: "T-200", Area: "Cairo", "Full Name": "Second Rep", Region: "Cairo" }),
+    ],
+    {
+      existingState: {
+        canonicalAreas,
+        employeeOrgSeats: [
+          {
+            areaCode: canonicalAreas[0].code, // "Cairo"
+            hrId: "T-000",
+            jobTitle: "Medical Representative",
+            lineCode: createOrgCode("Pedia"),
+            positionCode: createOrgCode("Medical Representative"),
+            regionName: "Cairo",
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(
+    doubleBookedSeat.validationErrors.some((issue) => issue.code.startsWith("duplicate_employee_org_seat")),
+    true,
+  );
+
   const differentRegion = validateEmployeeImportRows(
     [
       employeeRow({ HR_ID: "T-004", Region: "Cairo" }),
