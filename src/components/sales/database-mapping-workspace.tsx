@@ -30,7 +30,7 @@ import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { formatCurrency, formatNumber } from "@/lib/sales/format";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import {
@@ -93,6 +93,9 @@ function displayCell(column: { key: string; type: MasterColumnType }, row: Maste
   const value = row[column.key];
   if (value === null || value === undefined || value === "") return "-";
   if (column.type === "number") return formatCurrency(Number(value));
+  // Stored as a fraction (0.0341); shown as "3.41%". Two digits because the source ratios carry
+  // two decimal places of percent and one digit would collapse distinct areas onto the same label.
+  if (column.type === "percent") return formatPercent(Number(value), { digits: 2 });
   return String(value);
 }
 
@@ -122,13 +125,19 @@ function ColumnField({
       .map((row) => ({ code: String(row[parentDef.keyColumn]), name: String(row[parentDef.keyColumn]) }));
     return <MappingCombobox onChange={onChange} options={parentOptions} placeholder={`Select ${parentDef.label}`} value={value} />;
   }
+  const numeric = column.type === "number" || column.type === "percent";
   return (
     <input
       className={cn(fieldInputClass, "w-48")}
       disabled={disabled}
+      max={column.type === "percent" ? 1 : undefined}
+      min={column.type === "percent" ? 0 : undefined}
       onChange={(event) => onChange(event.target.value)}
-      placeholder={column.label}
-      type={column.type === "number" ? "number" : "text"}
+      // Percent is entered as the stored fraction, so spell that out — the field shows 0.0341, not
+      // 3.41, and a whole-number percent is rejected by the 0..1 bound rather than stored as 341%.
+      placeholder={column.type === "percent" ? `${column.label} (0.0341 = 3.41%)` : column.label}
+      step={column.type === "percent" ? 0.0001 : undefined}
+      type={numeric ? "number" : "text"}
       value={value}
     />
   );
