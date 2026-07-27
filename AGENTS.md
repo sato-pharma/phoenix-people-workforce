@@ -34,9 +34,12 @@
   any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.)
 - Vercel project: `phoenix-workforce` (legacy references only — hosting migrated to GCP Cloud Run)
 - Vercel scope: `phoenix-hr-workspace-s-projects`
-- Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, created
-  2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
-  ref `izhmxvgiktiafqusolot`, is paused/decommissioned)
+- Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1,
+  created 2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
+  ref `izhmxvgiktiafqusolot`, is GONE — as of 2026-07-27 `list_projects` returns only
+  `cifwmndunmlxjhyjugxa` and `ozucdzovmcqvepbozvqf`, so that old ref resolves to nothing. Treat any
+  doc, script, or prompt still naming it as stale. `scripts/staging-safe-rebuild.ts` is the one
+  deliberate exception: its `currentStagingRef` pins the archived ref on purpose and says so.)
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY` (added 2026-07-18): the staging
   project's service-role key, used only by `.github/workflows/ci.yml`'s `preview-smoke` job so the
   Playwright login-smoke test (CI_SMOKE_LOGIN_ID account) writes its expected session-rejection
@@ -208,7 +211,8 @@ git diff --cached
 ## Supabase And Data Safety
 
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
-- Before any database action, print and verify the exact project ref. Staging is `izhmxvgiktiafqusolot`; production is `ozucdzovmcqvepbozvqf`.
+- Before any database action, print and verify the exact project ref. Staging is `cifwmndunmlxjhyjugxa`; production is `ozucdzovmcqvepbozvqf`. Resolve the ref with `list_projects` rather than trusting any ref pasted in a prompt or copied from an older doc — this line previously named a long-deleted staging project, so the "verify the ref" step confirmed a dead value and the obvious recovery ("staging must be the other one") pointed at production.
+- Both Supabase MCP servers (`supabase-staging` and `supabase-production`) can see BOTH projects. The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.
 - Applying any migration requires explicit approval. Production requires a separate production-specific approval.
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
 - Verify RLS, grants, RPC authorization, service-role boundaries, and browser-role exposure whenever permissions or data access change.
