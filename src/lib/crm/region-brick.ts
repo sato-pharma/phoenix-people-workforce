@@ -151,6 +151,85 @@ export async function getAllCrmRegionsForTemplate(): Promise<CrmRegionTemplateRo
     .sort((a, b) => b.visitCount - a.visitCount);
 }
 
+/** One active Phoenix brick, pre-joined up its full geography chain (block -> area -> region) with
+ * both codes AND names — the reference list embedded in the Region Mapping template so that typing a
+ * Brick ID auto-fills every geography column via an in-sheet VLOOKUP. The geography is deliberately
+ * line-independent: every area serves all product lines (verified — each of the 42 areas maps to all
+ * lines), so a brick alone fully determines block/area/region; there is no per-line rollup to pick. */
+export type CrmBrickReferenceRow = {
+  areaCode: string;
+  areaName: string;
+  blockCode: string;
+  blockName: string;
+  brickId: string;
+  brickName: string;
+  regionCode: string;
+  regionName: string;
+};
+
+/** Every ACTIVE brick from source_of_sales_bricks, joined to the block/area/region masters for their
+ * display names. Small masters (bricks ~1.1k, blocks/areas/regions ≤ a few hundred), joined in
+ * memory. Name lookups degrade to "" on a missing/failed master read (names are cosmetic); a bricks
+ * read error throws (the reference would otherwise be silently empty). Sorted region → area → block →
+ * brick so the reference sheet reads as a clean geography tree. */
+export async function getActiveBricksForTemplateReference(): Promise<CrmBrickReferenceRow[]> {
+  const supabase = getSupabaseAdmin();
+  const [bricksRes, blocksRes, areasRes, regionsRes] = await Promise.all([
+    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, block_code, area_code, region_code, active"),
+    supabase.from("source_of_sales_blocks").select("block_code, description"),
+    supabase.from("source_of_sales_areas").select("area_code, area_name"),
+    supabase.from("source_of_sales_regions").select("region_code, region_name"),
+  ]);
+  if (bricksRes.error) throw new Error(bricksRes.error.message);
+
+  const blockName = new Map<string, string>();
+  for (const b of (blocksRes.data ?? []) as Array<{ block_code: string | null; description: string | null }>) {
+    if (b.block_code) blockName.set(b.block_code, b.description ?? "");
+  }
+  const areaName = new Map<string, string>();
+  for (const a of (areasRes.data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
+    if (a.area_code) areaName.set(a.area_code, a.area_name ?? "");
+  }
+  const regionName = new Map<string, string>();
+  for (const r of (regionsRes.data ?? []) as Array<{ region_code: string | null; region_name: string | null }>) {
+    if (r.region_code) regionName.set(r.region_code, r.region_name ?? "");
+  }
+
+  const rows: CrmBrickReferenceRow[] = ((bricksRes.data ?? []) as Array<{
+    active: boolean | null;
+    area_code: string | null;
+    block_code: string | null;
+    brick_id: string | null;
+    brick_name: string | null;
+    region_code: string | null;
+  }>)
+    .filter((b) => b.brick_id && (b.active ?? true))
+    .map((b) => {
+      const blockCode = b.block_code ?? "";
+      const areaCode = b.area_code ?? "";
+      const regionCode = b.region_code ?? "";
+      return {
+        areaCode,
+        areaName: areaName.get(areaCode) ?? "",
+        blockCode,
+        blockName: blockName.get(blockCode) ?? "",
+        brickId: b.brick_id as string,
+        brickName: b.brick_name ?? "",
+        regionCode,
+        regionName: regionName.get(regionCode) ?? "",
+      };
+    });
+
+  rows.sort(
+    (a, b) =>
+      a.regionName.localeCompare(b.regionName) ||
+      a.areaName.localeCompare(b.areaName) ||
+      a.blockCode.localeCompare(b.blockCode) ||
+      a.brickId.localeCompare(b.brickId, undefined, { numeric: true }),
+  );
+  return rows;
+}
+
 /**
  * Records an admin's decision for one CRM region:
  * - "ignored": stores the decision only — the region drops out of getUnmappedCrmRegions, on
