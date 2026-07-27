@@ -190,11 +190,15 @@ export async function buildMasterWorkbook(
       cell.font = { name: "Calibri", size: 10.5, color: { argb: SLATE } };
       cell.alignment = {
         vertical: "middle",
-        horizontal: column.type === "number" ? "right" : "left",
+        horizontal: column.type === "number" || column.type === "percent" ? "right" : "left",
         wrapText: false,
       };
       cell.border = gridBorder();
       if (column.type === "number") cell.numFmt = "#,##0.00";
+      // A real Excel percent format over the stored fraction: 0.0341 shows as "3.41%", and anything
+      // the owner types back into the cell ("3.41" or "3.41%") is stored by Excel as 0.0341 — so the
+      // round-trip preserves the fraction convention without asking them to think in fractions.
+      if (column.type === "percent") cell.numFmt = "0.00%";
       cell.protection = { locked: column.locked };
       if (column.lookup) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COMPUTED_FILL } };
@@ -235,9 +239,13 @@ export async function buildMasterWorkbook(
         cell.protection = { locked: false };
       }
       cell.font = { name: "Calibri", size: 10.5, color: { argb: SLATE } };
-      cell.alignment = { vertical: "middle", horizontal: column.type === "number" ? "right" : "left" };
+      cell.alignment = { vertical: "middle", horizontal: column.type === "number" || column.type === "percent" ? "right" : "left" };
       cell.border = gridBorder();
       if (column.type === "number") cell.numFmt = "#,##0.00";
+      // A real Excel percent format over the stored fraction: 0.0341 shows as "3.41%", and anything
+      // the owner types back into the cell ("3.41" or "3.41%") is stored by Excel as 0.0341 — so the
+      // round-trip preserves the fraction convention without asking them to think in fractions.
+      if (column.type === "percent") cell.numFmt = "0.00%";
     });
   }
 

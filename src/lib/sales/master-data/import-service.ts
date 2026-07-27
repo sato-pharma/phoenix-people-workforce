@@ -110,8 +110,32 @@ function findSheet(workbook: ExcelJS.Workbook, def: MasterDefinition) {
 
 function typeValue(column: MasterColumn, raw: string): string | number {
   if (column.type === "number") return parseMasterNumber(raw);
+  // A blank percent stays "" (→ cleared/omitted) instead of becoming NaN. Unlike `number`, this
+  // column is nullable, so an empty cell is a legitimate value, not a broken one.
+  if (column.type === "percent") return normalizeDisplay(raw) === "" ? "" : parseMasterNumber(raw);
   if (column.type === "code") return normalizeCode(raw);
   return normalizeDisplay(raw);
+}
+
+/**
+ * Range check for `percent` columns. Blank is allowed (the column is nullable); anything present
+ * must be a fraction in 0..1. This is the guard that catches a whole-number percent — typing 3.41
+ * instead of 0.0341 would otherwise store a 341% market share.
+ */
+function percentInvalidReason(column: MasterColumn, value: string | number): string | null {
+  if (column.type !== "percent" || value === "") return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return `${column.label} must be a number.`;
+  }
+  if (value < 0 || value > 1) {
+    return `${column.label} must be a fraction between 0 and 1 — enter 0.0341 for 3.41% (in Excel, a % -formatted cell does this for you).`;
+  }
+  return null;
+}
+
+/** Blank percent clears the column, rather than writing "" into a numeric field. */
+function writableValue(column: MasterColumn, value: string | number): string | number | null {
+  return column.type === "percent" && value === "" ? null : value;
 }
 
 /** Resolves a value against `column.allowedValues` (case/whitespace-insensitive), returning the
@@ -311,6 +335,11 @@ export async function importMasterWorkbook(input: {
           invalid = `${column.label} must be a non-negative number.`;
           break;
         }
+        const percentProblem = percentInvalidReason(column, value);
+        if (percentProblem) {
+          invalid = percentProblem;
+          break;
+        }
         if (column.required && (value === "" || value === null)) {
           invalid = `${column.label} is required.`;
           break;
@@ -324,7 +353,7 @@ export async function importMasterWorkbook(input: {
           updatePayload[column.key] = canonical;
           continue;
         }
-        updatePayload[column.key] = value;
+        updatePayload[column.key] = writableValue(column, value);
       }
       if (invalid) {
         blockedRows.push({ key, reason: invalid, row: rowNumber });
@@ -353,6 +382,12 @@ export async function importMasterWorkbook(input: {
           invalid = `${column.label} is required to add a new row.`;
           break;
         }
+      }
+      // Range-checked even when optional — a new row may still carry a bad ratio.
+      const percentProblem = percentInvalidReason(column, value);
+      if (percentProblem) {
+        invalid = percentProblem;
+        break;
       }
       if (column.allowedValues && typeof value === "string" && value !== "") {
         const canonical = matchAllowedValue(column, value);
@@ -474,6 +509,12 @@ export async function addSingleMasterRow(input: {
         break;
       }
     }
+    // Range-checked even when optional — a new row may still carry a bad ratio.
+    const percentProblem = percentInvalidReason(column, value);
+    if (percentProblem) {
+      invalid = percentProblem;
+      break;
+    }
     if (column.allowedValues && typeof value === "string" && value !== "") {
       const canonical = matchAllowedValue(column, value);
       if (!canonical) {
@@ -576,6 +617,10 @@ export async function updateSingleMasterRow(input: {
     if (column.type === "number" && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
       return { success: false, error: `${column.label} must be a non-negative number.` };
     }
+    const percentProblem = percentInvalidReason(column, value);
+    if (percentProblem) {
+      return { success: false, error: percentProblem };
+    }
     if (column.required && (value === "" || value === null)) {
       return { success: false, error: `${column.label} is required.` };
     }
@@ -589,7 +634,7 @@ export async function updateSingleMasterRow(input: {
       }
       updatePayload[column.key] = canonical;
     } else {
-      updatePayload[column.key] = value;
+      updatePayload[column.key] = writableValue(column, value);
     }
     changedColumns += 1;
   }

@@ -19,7 +19,13 @@ import { OFFICIAL_LINE_VALUES } from "@/lib/sales/official-lines";
 
 export type MasterKey = "regions" | "areas" | "blocks" | "bricks" | "products" | "distributors";
 
-export type MasterColumnType = "code" | "text" | "number";
+/**
+ * `percent` is a nullable ratio stored as a FRACTION (0.0341 = 3.41%), rendered as a true Excel
+ * percentage in the export and as "3.41%" in the console. It is deliberately NOT `number`:
+ * `number` is money (rendered as EGP, formatted #,##0.00, and required non-negative), which would
+ * both display a ratio as currency and round 0.0341 down to 0.03 on export.
+ */
+export type MasterColumnType = "code" | "text" | "number" | "percent";
 
 /** A master row as returned to the client (DB column -> value). */
 export type MasterRowRecord = Record<string, string | number | boolean | null>;
@@ -118,11 +124,13 @@ const REGIONS: MasterDefinition = {
   label: "Region Master",
   sheetName: "Region Master",
   title: "Region Master",
-  description: "Top-level sales regions. Code and name are locked; only the description can be edited.",
+  description:
+    "Top-level sales regions. Code and name are locked; description and IMS Ratio can be edited. IMS Ratio is set ONLY for regions tracked as one indivisible share — today that is OT (\"Others\") alone, at 4.97%; every other region's share is the sum of its areas.",
   columns: [
     { key: "region_code", label: "Region Code", locked: true, required: true, type: "code" },
     { key: "region_name", label: "Region Name", locked: true, required: true, type: "text" },
     { key: "description", label: "Description", locked: false, required: false, type: "text" },
+    { key: "ims_ratio", label: "IMS Ratio", locked: false, required: false, type: "percent" },
   ],
   parents: [],
   displayLookups: [],
@@ -137,11 +145,13 @@ const AREAS: MasterDefinition = {
   label: "Area Master",
   sheetName: "Area Master",
   title: "Area Master",
-  description: "Areas mapped to their parent region. Edit Region Code to re-parent an area.",
+  description:
+    "Areas mapped to their parent region. Edit Region Code to re-parent an area. IMS Ratio is this area's market share — leave it BLANK for OT (\"Others\") areas, whose 4.97% share is held once on the OT region row and must never be split per area.",
   columns: [
     { key: "area_code", label: "Area Code", locked: true, required: true, type: "code" },
     { key: "area_name", label: "Area Name", locked: true, required: true, type: "text" },
     { key: "region_code", label: "Region Code", locked: false, required: true, type: "code" },
+    { key: "ims_ratio", label: "IMS Ratio", locked: false, required: false, type: "percent" },
   ],
   parents: [{ parentMaster: "regions", codeColumn: "region_code", parentKeyColumn: "region_code" }],
   displayLookups: [
