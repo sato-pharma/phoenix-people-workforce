@@ -11,8 +11,9 @@
 // attempt rather than dedupe it away.
 
 import { logError, logWarning } from "@/lib/observability/log";
-import { clearWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
+import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
+import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
 import { ingestInboundCv, maxInboundCvBytes, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
 import { notifyInboundIntakeDeadLetter } from "@/lib/recruitment/inbound/recruitment-notify";
@@ -83,13 +84,18 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   const result = await ingestInboundCv({ channel: "whatsapp", ...input, reclaim: true });
   if (result.outcome === "error") throw new IntakeErrorOutcome("WhatsApp");
 
+  const isImport = isWhatsAppImportSender(payload.from, importSenders);
   // Consume the sender's buffered messages once a direct applicant's CV produced/matched a
   // candidate, so a later CV from the same number doesn't re-inherit stale context.
-  if (
-    !isWhatsAppImportSender(payload.from, importSenders) &&
-    (result.outcome === "candidate_created" || result.outcome === "candidate_matched")
-  ) {
+  if (!isImport && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
     await clearWhatsAppMessages(payload.from).catch(() => {});
+  }
+
+  // Acknowledge a genuinely NEW direct applicant (flag-gated; strict no-op when off). Never on an
+  // import (that's a forwarder, not the applicant) and never on a match (they already applied).
+  // Best-effort — an acknowledgement must never affect the CV that was already captured.
+  if (!isImport && result.outcome === "candidate_created" && isWhatsAppAutoReplyEnabled()) {
+    await sendWhatsAppCvAcknowledgement({ phoneNumberId: payload.deliveredToPhoneNumberId, toWaId: payload.from }).catch(() => {});
   }
   return result;
 }
@@ -127,6 +133,10 @@ export type InboundDrainResult = { processed: number; results: InboundDrainOutco
  */
 export async function drainInboundIntake(maxItems: number = maxItemsPerRun()): Promise<InboundDrainResult> {
   const results: InboundDrainOutcome[] = [];
+
+  // Retention sweep of the WhatsApp text buffer runs here (once per tick) rather than on the
+  // webhook hot path — best-effort, never blocks the drain.
+  await sweepOldWhatsAppMessages().catch(() => {});
 
   for (let i = 0; i < maxItems; i += 1) {
     const [row] = await claimNextInbound(1);

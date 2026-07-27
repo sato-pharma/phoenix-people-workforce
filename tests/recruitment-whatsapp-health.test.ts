@@ -6,9 +6,11 @@ import {
   cairoHour,
   evaluateWhatsAppIntakeHealth,
   isCairoBusinessHours,
+  isNumberSilent,
   resolveConfiguredPhoneNumberIds,
   type WhatsAppNumberProbe,
 } from "../src/lib/recruitment/inbound/whatsapp-health.ts";
+import { autoReplyConfig, isWhatsAppAutoReplyEnabled } from "../src/lib/recruitment/inbound/whatsapp-reply.ts";
 
 // 2026-07-27 is inside Egypt's summer time (UTC+3 since the DST reinstatement), so 09:00 UTC is
 // 12:00 Cairo. Using a real instant rather than a hand-built offset keeps this honest if the
@@ -174,4 +176,70 @@ export function runRecruitmentWhatsAppHealthTests() {
     "a: API access blocked. (code 200); +20 11 59888247: number status is RESTRICTED",
     "every failing line is reported; the id is used when Meta returned no display number",
   );
+
+  // --- isNumberSilent (per-line silence) --------------------------------------------------------
+  // Catches a single line that goes quiet while others stay busy — a channel-wide check would miss it.
+  assert.equal(
+    isNumberSilent({ lastInboundAt: new Date(CAIRO_NOON.getTime() - 30 * 3_600_000), now: CAIRO_NOON, ok: true, thresholdHours: 24 }),
+    true,
+    "a healthy line silent 30h during business hours is flagged",
+  );
+  assert.equal(
+    isNumberSilent({ lastInboundAt: null, now: CAIRO_NOON, ok: true, thresholdHours: 24 }),
+    false,
+    "no history on this line -> never a regression (a freshly-added line stays inert)",
+  );
+  assert.equal(
+    isNumberSilent({ lastInboundAt: new Date(CAIRO_NOON.getTime() - 30 * 3_600_000), now: CAIRO_NOON, ok: false, thresholdHours: 24 }),
+    false,
+    "a DOWN line is api_unreachable, not silence — one incident reported once",
+  );
+  assert.equal(
+    isNumberSilent({ lastInboundAt: new Date(CAIRO_MIDNIGHT_ISH.getTime() - 30 * 3_600_000), now: CAIRO_MIDNIGHT_ISH, ok: true, thresholdHours: 24 }),
+    false,
+    "silence outside Cairo business hours is normal",
+  );
+  assert.equal(
+    isNumberSilent({ lastInboundAt: new Date(CAIRO_NOON.getTime() - 23 * 3_600_000), now: CAIRO_NOON, ok: true, thresholdHours: 24 }),
+    false,
+    "just under the threshold is still fine",
+  );
+
+  // --- WhatsApp auto-reply gate (OFF by default) ------------------------------------------------
+  // Outbound messaging drives quality rating, so acknowledgement ships dormant: it must be inert
+  // unless the flag AND an approved template AND a token are all present.
+  const savedEnabled = process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_ENABLED;
+  const savedTemplate = process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_TEMPLATE;
+  const savedLang = process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_LANG;
+  const savedToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  try {
+    delete process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_ENABLED;
+    delete process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_TEMPLATE;
+    delete process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_LANG;
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+    assert.equal(autoReplyConfig().enabled, false, "default is OFF");
+    assert.equal(autoReplyConfig().languageCode, "en", "language defaults to en");
+    assert.equal(isWhatsAppAutoReplyEnabled(), false, "nothing configured -> inert");
+
+    process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_ENABLED = "true";
+    assert.equal(isWhatsAppAutoReplyEnabled(), false, "flag on but no template/token -> still inert");
+
+    process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_TEMPLATE = "cv_received";
+    assert.equal(isWhatsAppAutoReplyEnabled(), false, "template but no token -> still inert");
+
+    process.env.WHATSAPP_ACCESS_TOKEN = "tok";
+    process.env.RECRUITMENT_WHATSAPP_AUTOREPLY_LANG = "ar";
+    assert.equal(isWhatsAppAutoReplyEnabled(), true, "flag + template + token -> enabled");
+    assert.equal(autoReplyConfig().languageCode, "ar");
+    assert.equal(autoReplyConfig().templateName, "cv_received");
+  } finally {
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore("RECRUITMENT_WHATSAPP_AUTOREPLY_ENABLED", savedEnabled);
+    restore("RECRUITMENT_WHATSAPP_AUTOREPLY_TEMPLATE", savedTemplate);
+    restore("RECRUITMENT_WHATSAPP_AUTOREPLY_LANG", savedLang);
+    restore("WHATSAPP_ACCESS_TOKEN", savedToken);
+  }
 }

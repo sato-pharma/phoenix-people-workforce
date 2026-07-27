@@ -40,7 +40,27 @@ export type WhatsAppNumberProbe = {
   displayNumber: string | null;
   /** Meta's own error text (or a status like "number status is FLAGGED") when unhealthy, else null. */
   error: string | null;
+  /** Last inbound CV recorded on THIS line (ISO), populated by checkWhatsAppIntakeHealth. */
+  lastInboundAt?: string | null;
 };
+
+/**
+ * Whether one line is "silent" — the API says the number is healthy, yet it has stopped receiving.
+ * Only counts when the line HAS received before (no history = a freshly-added line, not a
+ * regression) and only during Cairo business hours. Pure, so the rule is testable. A down line is
+ * NOT "silent" here — that is already reported as api_unreachable, and double-reporting one incident
+ * is just noise.
+ */
+export function isNumberSilent(input: {
+  ok: boolean;
+  lastInboundAt: Date | null;
+  now: Date;
+  thresholdHours: number;
+}): boolean {
+  if (!input.ok || !input.lastInboundAt) return false;
+  const hours = (input.now.getTime() - input.lastInboundAt.getTime()) / (60 * 60 * 1000);
+  return hours > input.thresholdHours && isCairoBusinessHours(input.now);
+}
 
 export type WhatsAppIntakeHealthCore = {
   status: WhatsAppIntakeHealthStatus;
@@ -235,13 +255,32 @@ async function lastInboundWhatsAppAt(): Promise<Date | null> {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+// Last inbound CV that arrived ON a specific line, via the deliveredToPhoneNumberId now stamped on
+// every WhatsApp intake event's raw_metadata. Returns null for a line with no such history yet.
+async function lastInboundWhatsAppAtByNumber(phoneNumberId: string): Promise<Date | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_cv_intake_events")
+    .select("created_at")
+    .eq("channel", "whatsapp")
+    .eq("raw_metadata->>deliveredToPhoneNumberId", phoneNumberId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const raw = (data as { created_at?: string } | null)?.created_at;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 /**
- * Composes the per-number API probes + the (channel-wide) silence window into one reportable
- * status. The silence check stays channel-wide for now: per-number silence needs a history of
- * `deliveredToPhoneNumberId` on the intake events (captured from this change onward — see the
- * payload parser), which a freshly-added number won't have yet. The per-number API probe already
- * catches a block/restriction on either line immediately; per-number silence is the next step
- * once both lines have accumulated events.
+ * Composes the per-number API probes + a channel-wide silence window + a PER-NUMBER silence check
+ * into one reportable status. Per-number silence uses the `deliveredToPhoneNumberId` stamped on each
+ * intake event, so a line that goes quiet while another stays busy is caught (a channel-wide check
+ * would miss it). A line with no history yet is never flagged, so a freshly-added number stays
+ * inert until it has actually received. Order of precedence: a failed API probe (api_unreachable)
+ * outranks any silence, since a block already explains the silence.
  */
 export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise<WhatsAppIntakeHealth> {
   const configured = Boolean(process.env.WHATSAPP_ACCESS_TOKEN?.trim()) && resolveConfiguredPhoneNumberIds().length > 0;
@@ -258,18 +297,44 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
     };
   }
 
+  const threshold = silenceAlertHours();
   const [probes, lastInbound] = await Promise.all([
     probeAllWhatsAppNumbers(),
     lastInboundWhatsAppAt().catch(() => null),
   ]);
 
+  // Attach each line's own last-inbound (best-effort — a query failure just leaves it null/uncheckable).
+  const enriched: WhatsAppNumberProbe[] = await Promise.all(
+    probes.map(async (probe) => {
+      const at = await lastInboundWhatsAppAtByNumber(probe.phoneNumberId).catch(() => null);
+      return { ...probe, lastInboundAt: at ? at.toISOString() : null };
+    }),
+  );
+
   const core = evaluateWhatsAppIntakeHealth({
-    apiError: aggregateProbeError(probes),
+    apiError: aggregateProbeError(enriched),
     configured: true,
     lastInboundAt: lastInbound,
     now,
-    silenceThresholdHours: silenceAlertHours(),
+    silenceThresholdHours: threshold,
   });
 
-  return { ...core, probes };
+  // Per-number silence only escalates when the channel otherwise looks OK — a block/restriction is
+  // already reported as api_unreachable, and the channel-wide "silent" already covers a total stop.
+  if (core.status === "ok") {
+    const silentLines = enriched.filter((probe) =>
+      isNumberSilent({ lastInboundAt: probe.lastInboundAt ? new Date(probe.lastInboundAt) : null, now, ok: probe.ok, thresholdHours: threshold }),
+    );
+    if (silentLines.length > 0) {
+      const labels = silentLines.map((probe) => probe.displayNumber ?? probe.phoneNumberId).join(", ");
+      return {
+        ...core,
+        detail: `Line(s) ${labels} have gone quiet (>${threshold}h) while the API is healthy — check that line's webhook routing.`,
+        probes: enriched,
+        status: "silent",
+      };
+    }
+  }
+
+  return { ...core, probes: enriched };
 }
