@@ -455,6 +455,7 @@ import { runAutomatedPayrollPopulationDiffTests } from "./automated-payroll-popu
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
+import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -928,6 +929,7 @@ await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns m
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
+await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
