@@ -39,7 +39,7 @@ import {
   loadConfiguredMailboxes,
   type RecruitmentMailboxConfig,
 } from "@/lib/recruitment/inbound/email-mailboxes-config";
-import { parseEmailImportSenders, parseInboundEmailMessage } from "@/lib/recruitment/inbound/email-message-parser";
+import { parseEmailImportSenders, parseInboundEmailMessages } from "@/lib/recruitment/inbound/email-message-parser";
 
 export { summarizePollFailures, type FolderPollSummary, type MailboxPollSummary } from "@/lib/recruitment/inbound/email-poll-planner";
 
@@ -225,19 +225,20 @@ export class EmailMailboxNotConfiguredError extends Error {
 }
 
 /**
- * Re-fetch and parse a single email by UID, for the durable worker. Returns the intake input, or
- * `null` when the message no longer exists (deleted, or UIDVALIDITY changed) — a terminal
- * not-found the worker treats as done, not a retryable failure. Throws on a genuine connection
- * error (retryable) or when the mailbox has been un-configured.
+ * Re-fetch and parse a single email by UID, for the durable worker. Returns one intake input PER
+ * usable CV attachment (an agency mail with several CVs → several candidates), or an EMPTY array
+ * when the message no longer exists (deleted, or UIDVALIDITY changed) — a terminal not-found the
+ * worker treats as done, not a retryable failure. Throws on a genuine connection error (retryable)
+ * or when the mailbox has been un-configured.
  *
  * `importSenders` is read here (worker time), not at enqueue time, so toggling the bulk-import env
  * takes effect on the next drain without re-queuing.
  */
-export async function fetchAndParseEmailByUid(
+export async function fetchAndParseEmailMessagesByUid(
   mailboxLabel: string,
   folderPath: string,
   uid: number,
-): Promise<Omit<InboundCvIntakeInput, "channel"> | null> {
+): Promise<Array<Omit<InboundCvIntakeInput, "channel">>> {
   const config = loadConfiguredMailboxes().find((mailbox) => mailbox.label === mailboxLabel);
   if (!config) throw new EmailMailboxNotConfiguredError(mailboxLabel);
 
@@ -255,9 +256,9 @@ export async function fetchAndParseEmailByUid(
     const lock = await client.getMailboxLock(folderPath, { readOnly: true });
     try {
       const message = await client.fetchOne(String(uid), { source: true }, { uid: true });
-      if (!message || typeof message === "boolean" || !message.source) return null;
+      if (!message || typeof message === "boolean" || !message.source) return [];
       const mail = await simpleParser(message.source);
-      return parseInboundEmailMessage(mail, { mailboxLabel, uid }, { importSenders });
+      return parseInboundEmailMessages(mail, { mailboxLabel, uid }, { importSenders });
     } finally {
       lock.release();
     }

@@ -15,8 +15,21 @@ function accessToken(): string {
 
 type WhatsAppMediaUrlResponse = { url?: string; mime_type?: string; file_size?: number };
 
-/** Step 1: resolve a media id to its short-lived (~5 min) download URL + MIME type. */
-async function fetchWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mimeType: string }> {
+// Thrown when Meta reports (or the actual bytes reveal) a media file over the accepted CV size. A
+// distinct type so the worker can treat it as TERMINAL (this file will never be a valid CV) rather
+// than a retryable download failure.
+export class WhatsAppMediaTooLargeError extends Error {
+  constructor(
+    readonly sizeBytes: number,
+    readonly maxBytes: number,
+  ) {
+    super(`WhatsApp media is ${sizeBytes} bytes, over the ${maxBytes}-byte limit.`);
+    this.name = "WhatsAppMediaTooLargeError";
+  }
+}
+
+/** Step 1: resolve a media id to its short-lived (~5 min) download URL + MIME type + size. */
+async function fetchWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken()}` },
   });
@@ -25,7 +38,12 @@ async function fetchWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mi
   }
   const body = (await response.json()) as WhatsAppMediaUrlResponse;
   if (!body.url) throw new Error(`WhatsApp media lookup returned no URL for media id ${mediaId}.`);
-  return { mimeType: body.mime_type || "application/octet-stream", url: body.url };
+  const fileSize = Number(body.file_size);
+  return {
+    fileSize: Number.isFinite(fileSize) && fileSize > 0 ? fileSize : null,
+    mimeType: body.mime_type || "application/octet-stream",
+    url: body.url,
+  };
 }
 
 /** Step 2: download the actual bytes from the short-lived URL (also bearer-authenticated). */
@@ -37,8 +55,22 @@ async function downloadWhatsAppMediaBytes(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
-export async function downloadWhatsAppMedia(mediaId: string): Promise<{ bytes: Buffer; mimeType: string }> {
-  const { url, mimeType } = await fetchWhatsAppMediaUrl(mediaId);
+/**
+ * `opts.maxBytes` (when given) rejects an oversized file BEFORE downloading it, using Meta's
+ * reported file_size — so a huge/abusive attachment never gets pulled into the worker's memory.
+ * The post-download check is a backstop for when Meta omits file_size.
+ */
+export async function downloadWhatsAppMedia(
+  mediaId: string,
+  opts?: { maxBytes?: number },
+): Promise<{ bytes: Buffer; mimeType: string }> {
+  const { url, mimeType, fileSize } = await fetchWhatsAppMediaUrl(mediaId);
+  if (opts?.maxBytes && fileSize !== null && fileSize > opts.maxBytes) {
+    throw new WhatsAppMediaTooLargeError(fileSize, opts.maxBytes);
+  }
   const bytes = await downloadWhatsAppMediaBytes(url);
+  if (opts?.maxBytes && bytes.length > opts.maxBytes) {
+    throw new WhatsAppMediaTooLargeError(bytes.length, opts.maxBytes);
+  }
   return { bytes, mimeType };
 }

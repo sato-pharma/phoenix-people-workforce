@@ -5,6 +5,7 @@ import {
   isEmailImportSender,
   parseEmailImportSenders,
   parseInboundEmailMessage,
+  parseInboundEmailMessages,
 } from "../src/lib/recruitment/inbound/email-message-parser.ts";
 import {
   junkCursorLabel,
@@ -208,6 +209,53 @@ export function runRecruitmentEmailIntakeTests() {
   assert.equal(directDuringImport.identitySource, "sender");
   assert.equal(directDuringImport.candidate.email, "jane.doe@example.com");
   assert.equal((directDuringImport.rawMetadata as { bulkImport?: boolean }).bulkImport, undefined);
+
+  // --- parseInboundEmailMessages (multi-CV fan-out) -------------------------------------------
+  // An agency/referral email with several CVs must become several candidates, not lose all but the
+  // first. Each attachment gets its own idempotency key so they dedupe independently.
+  const twoCvMail = fakeMail({
+    attachments: [
+      fakeAttachment({ contentType: "image/png", filename: "logo.png", related: true }), // inline logo — never a CV
+      fakeAttachment({ filename: "cv-1.pdf" }),
+      fakeAttachment({
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename: "cv-2.docx",
+      }),
+    ],
+    from: { html: "", text: "", value: [{ address: "agency@example.com", name: "Agency" }] },
+    messageId: "<multi@mail.example.com>",
+  });
+  const fannedOut = parseInboundEmailMessages(twoCvMail as never, { mailboxLabel: "careers", uid: 60 });
+  assert.equal(fannedOut.length, 2, "two usable CVs -> two intake inputs; the inline logo is excluded");
+  assert.equal(fannedOut[0].providerMessageId, "<multi@mail.example.com>", "the first CV keeps the bare Message-ID");
+  assert.equal(fannedOut[1].providerMessageId, "<multi@mail.example.com>#1", "further CVs are suffixed so they dedupe independently");
+  assert.equal(fannedOut[0].attachment?.fileName, "cv-1.pdf");
+  assert.equal(fannedOut[1].attachment?.fileName, "cv-2.docx");
+  assert.equal(fannedOut[0].candidate.email, "agency@example.com", "a direct sender's identity is shared across their attachments");
+  assert.equal((fannedOut[1].rawMetadata as { attachmentIndex?: number }).attachmentIndex, 1);
+
+  // A mail with no usable attachment still yields exactly one input (attachment: null) so the
+  // ignored event is logged, same as the single path.
+  const noCvFanned = parseInboundEmailMessages(fakeMail({ attachments: [] }) as never, { mailboxLabel: "hr", uid: 61 });
+  assert.equal(noCvFanned.length, 1);
+  assert.equal(noCvFanned[0].attachment, null);
+
+  // A bulk forward-import carrying several CVs reads each one's identity from ITS OWN CV, so the
+  // two forwarded CVs become two distinct candidates instead of collapsing onto the forwarder.
+  const importedMulti = parseInboundEmailMessages(
+    fakeMail({
+      attachments: [fakeAttachment({ filename: "Ahmed Mahmoud CV.pdf" }), fakeAttachment({ filename: "Sara Ali CV.pdf" })],
+      from: { html: "", text: "", value: [{ address: "old-careers@satopharma.com", name: "Old Mailbox" }] },
+      messageId: "<fwd-multi@mail.example.com>",
+    }) as never,
+    { mailboxLabel: "careers", uid: 62 },
+    { importSenders: ["old-careers@satopharma.com"] },
+  );
+  assert.equal(importedMulti.length, 2);
+  assert.equal(importedMulti[0].identitySource, "cv");
+  assert.equal(importedMulti[0].candidate.fullName, "Ahmed Mahmoud CV");
+  assert.equal(importedMulti[1].candidate.fullName, "Sara Ali CV", "each forwarded CV is named from its own file, not merged");
+  assert.equal(importedMulti[0].candidate.email, null, "the forwarder's address never becomes a candidate's email");
 
   // --- pickJunkFolder --------------------------------------------------------------------------
   // Applicant mail (unknown sender + attachment) is exactly what spam filters act on, so an
