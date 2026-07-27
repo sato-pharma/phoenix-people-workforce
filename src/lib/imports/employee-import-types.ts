@@ -1,3 +1,5 @@
+import type { RegionCrosswalk } from "@/lib/employees/region-resolver";
+
 export type EmployeeImportField =
   | "hrId"
   | "crmId"
@@ -114,6 +116,7 @@ export type EmployeeImportRecord = {
   departmentName: string | null;
   lineName: string | null;
   regionName: string | null;
+  regionCode: string | null;
   areaName: string | null;
   teamName: string | null;
   positionTitle: string | null;
@@ -222,6 +225,12 @@ export type ExistingImportState = {
   areaCodes?: Set<string>;
   /** The fixed 42 canonical areas (au model). Import maps sales-line areas to these or rejects. */
   canonicalAreas?: Array<{ code: string; name: string }>;
+  /**
+   * au (line, area) -> region crosswalk. When present, the validator derives each employee row's
+   * region (code + precise name) from their resolved (line, area) instead of trusting the
+   * drift-prone free-text Region column. Absent -> region derivation is skipped (region_name kept).
+   */
+  regionCrosswalk?: RegionCrosswalk;
   teamCodes?: Set<string>;
   teamCodeToTeam?: Map<string, ExistingTeamLookup>;
   teamNameAreaToTeam?: Map<string, ExistingTeamLookup>;
