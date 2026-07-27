@@ -18,8 +18,12 @@ name: Deploy to Google Cloud Run
 # enforces the CI gate; tick `force` only to override it in an emergency.
 on:
   schedule:
-    # 00/04/08/12/16/20 UTC = 02/06/10/14/18/22 Cairo. GitHub may delay cron under load.
-    - cron: "0 */4 * * *"
+    # Every 2h: 00/02/04/.../22 UTC = 02/04/06/.../00 Cairo. Widened from the original
+    # 4-hourly on 2026-07-26 — 4h meant a merge could sit unshipped for most of a working
+    # day, which was too coarse in practice. Cost: roughly double the deploy runs, since the
+    # number of builds tracks the number of scheduled windows that find a new commit, not the
+    # number of commits. GitHub may delay cron under load; a late run is normal, not a fault.
+    - cron: "0 */2 * * *"
   workflow_dispatch:
     inputs:
       force:
