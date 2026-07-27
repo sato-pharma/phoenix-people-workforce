@@ -28,3 +28,13 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
 ];
+
+/**
+ * Max rows a single XLSX export builds. Shared by the server (the export row-fetch cap in
+ * master.ts) and the client (the "capped" banner text) so the number can't drift between them.
+ * Deliberately well below the raw table size: the styled workbook is built in memory in one pass,
+ * and a benchmark of the builder put ~20k rows × ~40 cols at ~22s / ~370MB — a reliable ceiling —
+ * whereas 50k took ~41s / ~920MB and hung in production. Narrow the date range to export beyond it.
+ * (A future streaming/server-side export can lift this — see the export route notes.)
+ */
+export const CRM_MASTER_EXPORT_MAX_ROWS = 20000;

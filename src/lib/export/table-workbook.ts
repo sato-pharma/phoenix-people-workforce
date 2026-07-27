@@ -97,20 +97,29 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
   });
   headerRow.height = 22;
 
-  // Data rows
+  // Data rows. Style objects are hoisted and SHARED by reference across every cell instead of
+  // allocated per cell — for a large export (e.g. the CRM Visits tab, tens of thousands of rows ×
+  // ~25 columns) the old per-cell allocation created millions of throwaway style objects, which was
+  // the dominant memory/time cost behind the export hanging. ExcelJS reads these at write time, so
+  // sharing one frozen instance is safe and identical in output.
   const firstDataRow = 4;
+  const dataFont = { name: "Calibri", size: 10.5, color: { argb: SLATE } } as const;
+  const dataBorder = gridBorder();
+  const alignLeft = { vertical: "middle", horizontal: "left", wrapText: false } as const;
+  const alignRight = { vertical: "middle", horizontal: "right", wrapText: false } as const;
+  const zebraFill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } } as const;
+  const colAlign = input.columns.map((col) => (col.numeric ? alignRight : alignLeft));
   input.rows.forEach((row, r) => {
     const excelRow = sheet.getRow(firstDataRow + r);
+    const zebra = r % 2 === 1;
     input.columns.forEach((col, i) => {
       const cell = excelRow.getCell(i + 1);
       const raw = row[col.key];
       cell.value = raw === null || raw === undefined ? "" : raw;
-      cell.font = { name: "Calibri", size: 10.5, color: { argb: SLATE } };
-      cell.alignment = { vertical: "middle", horizontal: col.numeric ? "right" : "left", wrapText: false };
-      cell.border = gridBorder();
-      if (r % 2 === 1) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } };
-      }
+      cell.font = dataFont;
+      cell.alignment = colAlign[i];
+      cell.border = dataBorder;
+      if (zebra) cell.fill = zebraFill;
     });
   });
 
@@ -135,9 +144,13 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
     });
   }
 
-  // Column widths
+  // Column widths — estimated from a bounded sample of rows (not all of them). On a tens-of-thousands
+  // -row export the full O(rows × cols) scan was itself a measurable cost; the first N rows give an
+  // effectively identical width for a display grid.
+  const WIDTH_SAMPLE = 1000;
+  const widthRows = input.rows.length > WIDTH_SAMPLE ? input.rows.slice(0, WIDTH_SAMPLE) : input.rows;
   input.columns.forEach((col, i) => {
-    const longest = input.rows.reduce((max, row) => {
+    const longest = widthRows.reduce((max, row) => {
       const value = row[col.key];
       return Math.max(max, value === null || value === undefined ? 0 : String(value).length);
     }, col.label.length);

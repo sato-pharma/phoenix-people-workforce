@@ -18,9 +18,9 @@ import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcluded
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
-import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
+import { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export { CRM_MASTER_DATASETS, type CrmMasterDataset };
+export { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset };
 
 /** Confidence labels for a detected triple visit — shared by the Triple Visits tab column and the
  * Double Visits "Triple?" flag so both read identically. */
@@ -441,6 +441,22 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     row.checkin_lon = best.lon;
     row.checkin_address = best.address;
     row.checkin_synced_at = best.synced_at;
+  }
+}
+
+/** Set the "Logged/save" visit time from crm_save_date only (no check-in query) — for the two
+ * No-Check-in tabs, whose rows have no matching GPS check-in by definition. `visit_time` is a
+ * DERIVED field (not in VISIT_SELECT), so without this those tabs rendered a blank Visit Time even
+ * though a real save-time is available; the neighbouring CRM Save Date column was already populated,
+ * making the gap visibly inconsistent. */
+function attachSaveTierVisitTime(rows: CrmMasterRow[]): void {
+  for (const row of rows) {
+    const saveTier = resolveVisitTime({
+      nearestCheckinTime: null,
+      crmSaveDate: typeof row.crm_save_date === "string" ? row.crm_save_date : null,
+    });
+    row.visit_time = saveTier.time;
+    row.visit_time_source = visitTimeSourceLabel(saveTier.source);
   }
 }
 
@@ -1134,8 +1150,12 @@ function applyMasterFilters(
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
   if (isVisits && visitType) {
-    const escaped = sanitizeSearch(visitType);
-    if (escaped) q = q.ilike("visit_type_description", `%${escaped}%`);
+    // Exact match on the stored description. The dropdown offers the stable vendor enum
+    // (CRM_VISIT_TYPE_OPTIONS), which maps 1:1 to the descriptions actually present, so an exact
+    // match always resolves. Deliberately NOT sanitizeSearch()+ilike: that stripped parentheses,
+    // turning "Campaign (Prospection)" into the pattern "%Campaign  Prospection%" which matched 0 of
+    // ~29k rows. sanitizeSearch stays only on the free-text search box (paren-harmless there).
+    q = q.eq("visit_type_description", visitType);
   }
   if (isVisits && mappingStatus === "agent_mapped") q = q.not("agent_hr_id", "is", null);
   if (isVisits && mappingStatus === "agent_unmapped") q = q.is("agent_hr_id", null);
@@ -1144,7 +1164,9 @@ function applyMasterFilters(
     if (escaped) {
       const orExpr = isCheckins
         ? `agent_hr_id.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,address.ilike.%${escaped}%`
-        : `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%,agent_hr_id.ilike.%${escaped}%,comment.ilike.%${escaped}%`;
+        // Includes double_hr_id so the unified Search box fully covers what the separate "Agent HR
+        // ID" box used to (it matched agent_hr_id OR double_hr_id) — the redesign folds them into one.
+        : `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%,agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%,comment.ilike.%${escaped}%`;
       q = q.or(orExpr);
     }
   }
@@ -1159,6 +1181,9 @@ async function attachDerived(
   range: { dateFrom: string | null; dateTo: string | null },
 ): Promise<void> {
   if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
+  // The two No-Check-in tabs never correlate a check-in (they're defined by NOT having one), so seed
+  // the Logged/save visit time directly — otherwise the Visit Time column renders blank for them.
+  else if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") attachSaveTierVisitTime(rows);
   if (dataset === "double_visits") {
     // Flag the double visits that are actually part of a triple (third person stacked that day).
     const { byVisitId } = await computeTriplesInRange(range);
@@ -1402,7 +1427,7 @@ export async function getCrmMasterExportRows(
 
   const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
-  const MAX_ROWS = 50000;
+  const MAX_ROWS = CRM_MASTER_EXPORT_MAX_ROWS;
   const rows: CrmMasterRow[] = [];
   let truncated = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
