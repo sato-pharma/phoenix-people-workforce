@@ -7,7 +7,10 @@ export function runStagingExecutiveDashboardMigrationReconciliationTests() {
 
   assert.match(script, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
   assert.match(script, /YES_STAGING_ONLY/);
-  assert.match(script, /approvedStagingRef = "oaifhavixhdtwmseshff"/);
+  // The approved staging target must come from the environment and fail closed when absent.
+  // Pinning a literal ref here is what let the retired sandbox rot in place unnoticed.
+  assert.match(script, /PHOENIX_APPROVED_STAGING_REF is required/);
+  assert.doesNotMatch(script, /= "oaifhavixhdtwmseshff"/);
   assert.match(script, /blockedProductionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(script, /20260602082351_executive_dashboard_snapshot\.sql/);
   assert.match(script, /PHOENIX_CONFIRM_STAGING_BACKUP/);

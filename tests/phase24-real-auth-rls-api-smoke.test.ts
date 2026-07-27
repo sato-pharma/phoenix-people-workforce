@@ -8,7 +8,10 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
 
   assert.match(smoke, /signInWithPassword/);
   assert.match(smoke, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
-  assert.match(smoke, /approvedSandboxRef = "oaifhavixhdtwmseshff"/);
+  // The approved staging target must come from the environment and fail closed when absent.
+  // Pinning a literal ref here is what let the retired sandbox rot in place unnoticed.
+  assert.match(smoke, /PHOENIX_APPROVED_STAGING_REF is required/);
+  assert.doesNotMatch(smoke, /= "oaifhavixhdtwmseshff"/);
   assert.match(smoke, /blockedProductionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(smoke, /PHOENIX_RLS_TEST_USERS_JSON/);
   assert.match(smoke, /current_phoenix_role/);

@@ -84,7 +84,6 @@ type ReconciliationReport = {
 };
 
 const localEnvPath = ".env.staging.rls.local";
-const approvedStagingRef = "oaifhavixhdtwmseshff";
 const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 const targetVersion = "20260602082351";
 const targetMigrationFile = "20260602082351_executive_dashboard_snapshot.sql";
@@ -145,6 +144,20 @@ function requiredEnv(name: string) {
   return value;
 }
 
+// This is the allowlist gate, so it carries no baked-in default. It used to compare against the
+// retired oaifhavixhdtwmseshff sandbox, which is no longer on the Supabase account: that turned
+// any run into a confusing "not the approved staging project" refusal against a ref nobody
+// recognises, instead of naming the actual problem here.
+function approvedStagingRef() {
+  const ref = process.env.PHOENIX_APPROVED_STAGING_REF?.trim();
+  if (!ref) {
+    throw new Error(
+      "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  return ref;
+}
+
 function assertStagingTarget() {
   const confirm = requiredEnv("PHOENIX_CONFIRM_STAGING_RLS_RUN");
   if (confirm !== "YES_STAGING_ONLY") {
@@ -170,7 +183,8 @@ function assertStagingTarget() {
     throw new Error("Refusing Phoenix production Supabase project or database.");
   }
 
-  if (!supabaseHost.includes(approvedStagingRef) && !databaseUrl.includes(approvedStagingRef)) {
+  const approvedRef = approvedStagingRef();
+  if (!supabaseHost.includes(approvedRef) && !databaseUrl.includes(approvedRef)) {
     throw new Error("Refusing any target except the approved Phoenix staging Supabase project.");
   }
 

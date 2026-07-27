@@ -38,7 +38,6 @@ type SchemaAlignment = {
 };
 
 const localEnvPath = ".env.staging.rls.local";
-const approvedSandboxRef = "oaifhavixhdtwmseshff";
 const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 const phaseTag = `PHASE25-${Date.now()}`;
 
@@ -88,8 +87,18 @@ function requiredEnv(name: string) {
   return value;
 }
 
+// This is the allowlist gate, so it carries no baked-in default. It used to fall back to the
+// retired oaifhavixhdtwmseshff sandbox, which is no longer on the Supabase account: a missing
+// setting therefore surfaced further down as a confusing "not the approved sandbox" refusal
+// against a ref nobody recognises, instead of naming the actual problem here.
 function approvedStagingRef() {
-  return process.env.PHOENIX_APPROVED_STAGING_REF?.trim() || approvedSandboxRef;
+  const ref = process.env.PHOENIX_APPROVED_STAGING_REF?.trim();
+  if (!ref) {
+    throw new Error(
+      "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  return ref;
 }
 
 function stagingUrl() {
