@@ -30,6 +30,9 @@ registry-key alias, and route/app-shell ownership rules — are documented in
 ### Employees and Lifecycle
 
 - Employee data powers directory, lifecycle events, resignation handling, and vacancy creation
+- Vacancy is represented in **two deliberately separate models** — `public.position_vacancies`
+  (what we are recruiting for) and the `au` seat model (which sales area is staffed, and when).
+  See [Two vacancy models](area-unification/vacancy-models.md) before changing either
 - Imports and bulk actions bring operational data into the platform
 - Arabic name fields already exist in the model and affect future localization requirements
 

@@ -50,6 +50,7 @@ These scripts validate database state and RLS policies. They connect to Supabase
 | `db:validate:role-alignment:local:dry-run` | Local role alignment (dry run) | Caution | Local |
 | `db:validate:role-alignment:local:mutations` | Local role alignment with mutations | Caution | Local |
 | `db:preflight:role-alignment:production` | Production role alignment preflight | **Danger** | Production |
+| `db:au:reconcile-area-state` | Reconcile `au.line_area_map.area_state` against `au.occupancy_history` — read-only, exits 1 on drift (see [vacancy-models.md](area-unification/vacancy-models.md)) | Caution | Whichever project the env points at |
 | `db:staging:rebuild:plan` | Print safe fresh-staging rebuild plan and git status | Safe | Local |
 | `db:staging:rebuild:archive-current` | Create an archive-preserved metadata manifest while keeping old staging online | Caution | Staging |
 | `db:staging:rebuild:backup-current` | Optional full dump export when Supabase CLI dumps are known to complete | Caution | Staging |
