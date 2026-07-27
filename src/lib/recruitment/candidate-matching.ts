@@ -69,3 +69,51 @@ export function findMatchingCandidate(
   }
   return null;
 }
+
+// --- Advisory fuzzy dedup (NEVER auto-merges) ------------------------------------------------
+// The exact-key identity rule above is LOCKED and stays the only thing that merges records. This is
+// a SOFT signal only — to flag "this might be the same person who also applied elsewhere" so a human
+// can look, catching the same applicant arriving via email and WhatsApp (different keys, same
+// person). It must never drive a merge, because a name or phone-tail collision is not proof.
+
+export function normalizeNameForMatch(value: string | null | undefined): string | null {
+  const cleaned = String(value ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // strip Latin diacritics; Arabic is left intact
+    .replace(/[^a-z؀-ۿ\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length >= 4 ? cleaned : null; // too short to be a meaningful name signal
+}
+
+// Last 9 significant digits — matches a number stored locally (01001234567) against Meta's
+// international form (201001234567). Mirrors whatsapp-payload-parser's phoneTail intent.
+export function phoneTailForMatch(value: string | null | undefined): string | null {
+  const digits = normalizePhone(value)?.replace(/^0+/, "") ?? null;
+  return digits && digits.length >= 9 ? digits.slice(-9) : null;
+}
+
+export type SoftDuplicateMatch = { id: string; reason: "name" | "phone_tail" };
+export type SoftMatchableCandidate = { id: string; fullName?: string | null; phoneNorm?: string | null };
+
+/**
+ * The first existing candidate that SOFT-matches by phone-tail (stronger) or, failing that, by
+ * normalized full name. Advisory only — surface it as a "possible duplicate" flag, never a merge.
+ */
+export function findPossibleDuplicate(
+  existing: readonly SoftMatchableCandidate[],
+  input: { fullName?: string | null; phone?: string | null },
+): SoftDuplicateMatch | null {
+  const tail = phoneTailForMatch(input.phone);
+  if (tail) {
+    const hit = existing.find((row) => phoneTailForMatch(row.phoneNorm) === tail);
+    if (hit) return { id: hit.id, reason: "phone_tail" };
+  }
+  const name = normalizeNameForMatch(input.fullName);
+  if (name) {
+    const hit = existing.find((row) => normalizeNameForMatch(row.fullName) === name);
+    if (hit) return { id: hit.id, reason: "name" };
+  }
+  return null;
+}

@@ -9,8 +9,25 @@ import {
   summarizePollFailures,
   type MailboxPollSummary,
 } from "@/lib/recruitment/inbound/email-poller";
-import { notifyWhatsAppIntakeUnhealthy } from "@/lib/recruitment/inbound/recruitment-notify";
+import { getInboundIntakeAnalytics, shouldAlertIntakeSpike } from "@/lib/recruitment/inbound/intake-analytics";
+import { notifyInboundIntakeSpike, notifyWhatsAppIntakeUnhealthy } from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
+
+const DEFAULT_SPIKE_THRESHOLD = 8;
+
+// Best-effort surge guard: a burst of errors/dead-letters over the last hour means processing is
+// systematically failing (vs one bad CV). Throttled to once/day inside the notify. Never fatal.
+async function reportInboundIntakeSpike(): Promise<void> {
+  const rawThreshold = Number(process.env.RECRUITMENT_INBOUND_SPIKE_THRESHOLD);
+  const threshold = Number.isFinite(rawThreshold) && rawThreshold > 0 ? Math.floor(rawThreshold) : DEFAULT_SPIKE_THRESHOLD;
+  const analytics = await getInboundIntakeAnalytics(1 / 24); // last hour
+  if (shouldAlertIntakeSpike({ deadLettered: analytics.deadLettered, errors: analytics.errors, threshold })) {
+    logError("Inbound CV intake error spike", {
+      labels: { deadLettered: analytics.deadLettered, errors: analytics.errors, event: "inbound_intake_spike", job: "recruitment-email-intake" },
+    });
+    await notifyInboundIntakeSpike({ deadLettered: analytics.deadLettered, errors: analytics.errors, windowLabel: "hour" });
+  }
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +108,13 @@ export async function GET(request: Request) {
       labels: { event: "whatsapp_health_check_failed", job: "recruitment-email-intake" },
     });
     return null;
+  });
+
+  await reportInboundIntakeSpike().catch((error) => {
+    logError("Inbound intake spike check failed to run", {
+      error,
+      labels: { event: "inbound_spike_check_failed", job: "recruitment-email-intake" },
+    });
   });
 
   try {

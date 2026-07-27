@@ -4,6 +4,7 @@
 import type { ParsedMail } from "mailparser";
 
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { extractAllowlistedCvUrl } from "@/lib/recruitment/inbound/cv-link";
 import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
 import type { InboundCvAttachment, InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
 
@@ -173,7 +174,12 @@ export function parseInboundEmailMessages(
 ): Array<Omit<InboundCvIntakeInput, "channel">> {
   const id = emailIdentity(mail, context, options);
   const usable = pickCvAttachments(mail.attachments);
-  if (usable.length === 0) return [buildEmailIntakeInput(id, null, id.providerMessageIdBase, context, {})];
+  if (usable.length === 0) {
+    // No attachment — but the CV may be a share LINK in the body. Record an allowlisted URL (if
+    // any) so the worker can fetch it; a non-import only (a forwarder's link isn't the applicant's).
+    const cvLinkUrl = id.isImport ? null : extractAllowlistedCvUrl(mail.text ?? null, mail.html);
+    return [buildEmailIntakeInput(id, null, id.providerMessageIdBase, context, cvLinkUrl ? { cvLinkUrl } : {})];
+  }
   return usable.map((attachment, index) =>
     buildEmailIntakeInput(
       id,
