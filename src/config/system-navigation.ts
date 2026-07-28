@@ -53,6 +53,7 @@ import {
   Trash2,
   UserCog,
   UsersRound,
+  Waypoints,
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -529,6 +530,13 @@ const adminNavigationSectionSeeds = [
       { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "import", resource: "sales" }] },
     ],
     label: "Targets",
+  },
+  {
+    id: "sales-territory-management",
+    items: [
+      { href: "/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }] },
+    ],
+    label: "Territory Management",
   },
   {
     id: "sales-analytics",

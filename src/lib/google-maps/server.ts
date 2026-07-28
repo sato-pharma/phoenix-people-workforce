@@ -329,6 +329,95 @@ export type GeocodeComponents = {
   markaz: string | null;
 };
 
+// ── Places text search (what Google Maps the app actually uses) ──────────────
+// The Geocoding API is built for street addresses and is poor at Egyptian district names: asked
+// for "الحضرة الجديدة" it returned an electronics shop in Montaza, 8.5 km from the real district,
+// flagged partial_match. Places text search finds the district — but ranks businesses NAMED after
+// it above the place itself, so the first result is often a restaurant or hotel. Scanning for the
+// first genuinely geographic result fixes both problems:
+//   الحضرة الجديدة → result[2] "Al Hadrah" (locality)
+//   العصافرة بحرى  → result[7] "Asafra"    (neighborhood)
+// Measured against the old geocoded pins this moved سفاجا 314 km, الاقصر 180 km, الزرقا 64 km.
+
+const GEOGRAPHIC_PLACE_TYPES = new Set([
+  "administrative_area_level_2",
+  "administrative_area_level_3",
+  "locality",
+  "neighborhood",
+  "postal_town",
+  "sublocality",
+  "sublocality_level_1",
+]);
+
+export type PlaceMatch = {
+  formattedAddress: string | null;
+  /** True when the match is a real place (locality/neighborhood/…), false for a business. */
+  isGeographic: boolean;
+  lat: number;
+  lng: number;
+  name: string | null;
+  types: string[];
+};
+
+/**
+ * Text-search a place, preferring a genuinely geographic result over a business that merely
+ * shares the name. Returns null when nothing is found. Uses Places API (New) — the legacy
+ * Places endpoints are disabled on the Phoenix key.
+ */
+export async function googlePlacesTextSearch(searchText: string): Promise<PlaceMatch | null> {
+  const key = getServerKey();
+  if (!key || !searchText.trim()) return null;
+
+  const response = await postJsonWithHttpsFallback("https://places.googleapis.com/v1/places:searchText", {
+    body: JSON.stringify({ languageCode: "en", maxResultCount: 10, regionCode: "EG", textQuery: searchText }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.types",
+    },
+    method: "POST",
+  });
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    places?: Array<{
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
+      types?: string[];
+    }>;
+  };
+  const places = payload.places ?? [];
+  if (places.length === 0) return null;
+
+  const toMatch = (place: (typeof places)[number]): PlaceMatch | null => {
+    const lat = place.location?.latitude;
+    const lng = place.location?.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const types = place.types ?? [];
+    return {
+      formattedAddress: place.formattedAddress ?? null,
+      isGeographic: types.some((type) => GEOGRAPHIC_PLACE_TYPES.has(type)),
+      lat: Number(lat),
+      lng: Number(lng),
+      name: place.displayName?.text ?? null,
+      types,
+    };
+  };
+
+  for (const place of places) {
+    const match = toMatch(place);
+    if (match?.isGeographic) return match;
+  }
+  // No real place in the list — the top business is still usually inside the district, but the
+  // caller must treat it as lower confidence (isGeographic = false).
+  for (const place of places) {
+    const match = toMatch(place);
+    if (match) return match;
+  }
+  return null;
+}
+
 // One Geocoding call returning coordinates + admin level 1/2 together (the older helpers each
 // discard part of the payload, forcing double billing when both are needed).
 export async function googleGeocodeComponents(searchText: string): Promise<GeocodeComponents | null> {
