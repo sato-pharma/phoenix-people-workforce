@@ -89,6 +89,15 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read the selected file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function getDurationSummary(start: string, end: string) {
   if (!start || !end) {
     return "Select from date and to date";
@@ -1160,16 +1169,32 @@ export function MobileOutstationWizard({
       return;
     }
 
+    if (!isOffline && isTicketBased && ticketFiles.length === 0) {
+      setMessage("Upload the ticket before submitting this train or bus request.");
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
     try {
       const endpoint = isOffline ? "/api/outstation/sync-offline" : "/api/outstation/submit";
+      // Ticket files are uploaded on the online path only; the offline path cannot carry them.
+      const ticketAttachments =
+        !isOffline && isTicketBased && ticketFiles.length > 0
+          ? await Promise.all(
+              ticketFiles.map(async (file) => ({
+                dataUrl: await fileToDataUrl(file),
+                name: file.name,
+              })),
+            )
+          : undefined;
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
           carEvidenceImageDataUrl:
             transportationType === "car" ? carEvidence?.imageDataUrl : undefined,
           claimedTotalAmount: calculation?.expectedTotalAmount ?? 0,
+          ticketAttachments,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",

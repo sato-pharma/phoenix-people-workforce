@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { submitOutstationRequest } from "@/lib/outstation/service";
+import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   parseCarEvidenceImageDataUrl,
@@ -33,7 +34,10 @@ function outstationSubmitStatus(error: unknown) {
     message.includes("not linked") ||
     message.includes("not available") ||
     message.includes("not eligible") ||
-    message.includes("requires")
+    message.includes("requires") ||
+    message.includes("too large") ||
+    message.includes("must be") ||
+    message.includes("empty")
   ) {
     return 400;
   }
@@ -50,7 +54,18 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
-    const result = await submitOutstationRequest(access, {
+    const rawTicketAttachments = Array.isArray(body.ticketAttachments)
+      ? (body.ticketAttachments as Array<Record<string, unknown>>)
+      : [];
+    const ticketAttachments = rawTicketAttachments.map((entry) =>
+      parseOutstationTicketAttachmentDataUrl({
+        dataUrl: String(entry.dataUrl ?? ""),
+        fileName: String(entry.name ?? ""),
+      }),
+    );
+    const result = await submitOutstationRequest(
+      access,
+      {
       amWorkload: typeof body.amWorkload === "number" ? body.amWorkload : 0,
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
@@ -78,7 +93,9 @@ export async function POST(request: Request) {
       tripStartDate: String(body.tripStartDate ?? ""),
       attachmentCount: Number(body.attachmentCount ?? 0),
       carEvidenceImageDataUrl: parseCarEvidenceImageDataUrl(body),
-    });
+      },
+      { ticketAttachments },
+    );
 
     return NextResponse.json(result);
   } catch (error) {
