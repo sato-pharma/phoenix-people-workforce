@@ -189,7 +189,20 @@ const nextConfig: NextConfig = {
         source: "/api/recruitment/hiring-manager/candidates/:candidateId/files/:fileId",
       },
       ...(process.env.NODE_ENV === "production"
-        ? [{ source: "/_next/static/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] }]
+        ? [
+            { source: "/_next/static/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+            // Next's public/ default (Cache-Control: public, max-age=0) forces Cloud CDN — which
+            // sits in front of this origin with cacheMode: USE_ORIGIN_HEADERS — to revalidate
+            // with origin on essentially every request. Confirmed via Cloud Run request logs
+            // (2026-07-26/28, 5 revisions) that near-simultaneous revalidation GETs from
+            // "Cloud-CDN-Google (GFE/2.0)" for /brand/identity-watermark.png intermittently 500
+            // at the origin; not user-visible (CDN's serveWhileStale keeps serving the last good
+            // copy) but it pollutes error logs/alerts. A bounded max-age (not `immutable`, since
+            // these filenames aren't content-hashed) cuts origin revalidation traffic from
+            // "every request" to "about once a day," which removes the trigger almost entirely,
+            // while capping worst-case staleness if a brand asset is ever replaced in place.
+            { source: "/brand/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
+          ]
         : []),
     ];
   },
