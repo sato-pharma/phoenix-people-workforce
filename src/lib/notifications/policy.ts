@@ -121,7 +121,14 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "marketing_requests.request_completed": { channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.request_rejected": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
   "marketing_requests.request_returned": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["request_owner"], telegramAllowed: true },
-  "marketing_requests.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["workflow_step_approver"], telegramAllowed: true },
+  // Goes to the REQUESTER as a submission confirmation, not the approver. createMarketingRequestDraft
+  // emits request_assigned (recipientStrategy: assigned_approver + cc) immediately before this one,
+  // with the SAME currentStep.assignedHrId — so while this row also targeted workflow_step_approver,
+  // every submission sent that one person two of everything (2 emails, 2 bell items, 2 Telegram
+  // messages, 2 pushes) milliseconds apart. Different eventTypes mean different idempotency keys, so
+  // no dedup layer could collapse them. The metadata already carried requestOwnerHrId, which is the
+  // audience this event's wording ("<code> was submitted by <name>") was always written for.
+  "marketing_requests.request_submitted": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["request_owner"], telegramAllowed: true },
   // Safety-net fallback for any marketing_requests eventType not covered by one of the
   // exact keys above, so a future/uncovered event type still gets the full channel set
   // instead of silently falling back to the bare in_app+email default.
