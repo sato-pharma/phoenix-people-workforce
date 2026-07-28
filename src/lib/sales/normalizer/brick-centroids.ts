@@ -1,4 +1,5 @@
-import { googleGeocodeComponents, hasGoogleServerKey } from "@/lib/google-maps/server";
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
+import { googleGeocodeComponents, googlePlacesTextSearch, hasGoogleServerKey } from "@/lib/google-maps/server";
 import {
   hasLocationIqKey,
   locationIqForwardGeocode,
@@ -68,7 +69,29 @@ type BrickGeoComponents = { governorate: string | null; lat: number; lng: number
 async function resolveBrickGeo(
   searchText: string,
   brickRegionCode: string,
-): Promise<{ geo: BrickGeoComponents; passesGate: boolean; provider: "locationiq" | "google" } | null> {
+): Promise<{ geo: BrickGeoComponents; passesGate: boolean; provider: "locationiq" | "google" | "google_places" } | null> {
+  // PLACES FIRST. The Geocoding API is built for street addresses and mangles Egyptian district
+  // names — asked for "الحضرة الجديدة" it returned an electronics shop in Montaza, 8.5 km from the
+  // real district, with partial_match set. Places text search (what Google Maps itself uses) finds
+  // the district, and taking the first GEOGRAPHIC hit skips the businesses named after it.
+  // Verified against stored pins: سفاجا moved 314 km, الاقصر 180 km, الزرقا 64 km.
+  if (hasGoogleServerKey()) {
+    const place = await googlePlacesTextSearch(searchText);
+    // Only a real place is trusted here. A business that merely shares the name usually sits in
+    // the right district, but it is not the district — let the geocoders argue about those.
+    if (place?.isGeographic) {
+      const geo: BrickGeoComponents = {
+        governorate: resolveGovernorate(place.formattedAddress),
+        lat: place.lat,
+        lng: place.lng,
+        markaz: place.name,
+      };
+      if (centroidPassesRegionGate(geo.governorate, brickRegionCode)) {
+        return { geo, passesGate: true, provider: "google_places" };
+      }
+    }
+  }
+
   const locationIqResult = await locationIqForwardGeocode(searchText);
   if (scoreForwardConfidence(locationIqResult) >= LOCATIONIQ_CONFIDENCE_THRESHOLD && locationIqResult?.lat && locationIqResult?.lon) {
     const geo: BrickGeoComponents = {
@@ -229,8 +252,19 @@ export type BuildBrickCentroidsResult = {
   geocoded: number;
   mismatched: number;
   remaining: number;
+  sharedFallback: number;
   skippedExisting: number;
 };
+
+/**
+ * When Google cannot find a brick name it silently returns the city or governorate CENTRE. That
+ * point passes the region gate (it IS in the right governorate) but locates nothing — in
+ * production one pin was carrying 16 different bricks, and 302 of 699 "usable" centroids sat on
+ * 94 shared points. A coordinate already claimed by another brick is therefore never `success`.
+ */
+function coordinateKey(lat: number, lng: number): string {
+  return `${lat},${lng}`;
+}
 
 export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> {
   const supabase = getSupabaseAdmin();
@@ -238,7 +272,19 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
   const bricks = refs.bricks ?? [];
   const existing = await loadBrickCentroids();
 
-  const summary: BuildBrickCentroidsResult = { fieldGps: 0, geocoded: 0, mismatched: 0, remaining: 0, skippedExisting: 0 };
+  const summary: BuildBrickCentroidsResult = {
+    fieldGps: 0,
+    geocoded: 0,
+    mismatched: 0,
+    remaining: 0,
+    sharedFallback: 0,
+    skippedExisting: 0,
+  };
+
+  // Coordinates already claimed by a brick. Seeded from the cache and extended as this run
+  // writes, so a fallback point is caught both against history and within the same batch.
+  const claimedCoordinates = new Set<string>();
+  for (const [, centroid] of existing) claimedCoordinates.add(coordinateKey(centroid.lat, centroid.lng));
 
   // Pass 1 — field-GPS enrichment (free). Overrides google centroids, never overrides field_gps.
   const fieldGps = await collectFieldGpsCentroids();
@@ -280,7 +326,12 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
     const batch = toGeocode.slice(index, index + GEOCODE_CONCURRENCY);
     const geocoded = await Promise.all(
       batch.map(async (brick) => {
-        const searchText = [brick.brickName, brick.areaName].map((s) => String(s ?? "").trim()).filter(Boolean).join(", ");
+        // Brick name ONLY. The area name is a Phoenix internal label ("Alex Center", "Dakahlia 2"),
+        // not a place any map knows, and appending it actively degrades the match: bare
+        // "الحضرة الجديدة" resolves to the Al Hadrah locality, while adding "Alex Center" returns a
+        // sports venue, and "الزرقا, Port said - Domiat" returns a city-hall office instead of the
+        // town. Region correctness is enforced by centroidPassesRegionGate, not by the query text.
+        const searchText = String(brick.brickName ?? "").trim();
         try {
           return { brick, resolved: await resolveBrickGeo(searchText, brick.regionCode) };
         } catch {
@@ -292,19 +343,26 @@ export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> 
     for (const { brick, resolved } of geocoded) {
       if (!resolved) continue; // failures retry on the next build run
       const { geo, passesGate, provider } = resolved;
+      const key = coordinateKey(geo.lat, geo.lng);
+      const isSharedFallback = claimedCoordinates.has(key);
+      claimedCoordinates.add(key);
+
+      // Region gate first (wrong governorate is the worse error), then the shared-pin check.
+      const status = !passesGate ? "region_mismatch" : isSharedFallback ? "shared_fallback" : "success";
       upserts.push({
         address_text: null,
         area: geo.markaz,
         city: geo.governorate,
         geocode_provider: provider,
-        geocode_status: passesGate ? "success" : "region_mismatch",
+        geocode_status: status,
         label: brick.brickName || brick.brickId,
         latitude: geo.lat,
         longitude: geo.lng,
         source_key: brick.brickId,
         source_type: SOURCE_TYPE,
       });
-      if (passesGate) summary.geocoded += 1;
+      if (status === "success") summary.geocoded += 1;
+      else if (status === "shared_fallback") summary.sharedFallback += 1;
       else summary.mismatched += 1;
     }
     if (upserts.length > 0) {
