@@ -43,7 +43,7 @@ import {
   normalizeProductNameKey,
   restrictedProductNameSet,
 } from "@/lib/sales/access-scope";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Marketing ROI Filter-Engine — server data layer.
@@ -1495,14 +1495,23 @@ export async function getMarketingRequestViewSales(
   // Detail rows via the rolled-up, confidential-masked RPC.
   const range = parseViewSalesRange(fromInput, toInput);
   const excludeCodes = reveal ? [] : RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase());
-  const salesResult = await supabase.rpc("phx_marketing_request_view_sales", {
-    p_request_id: cleanId,
-    p_from_period: range.from,
-    p_to_period: range.to,
-    p_exclude_product_codes: excludeCodes,
-  });
-  if (salesResult.error) throw salesResult.error;
-  const rows: MarketingRoiViewSalesRow[] = ((salesResult.data ?? []) as ViewSalesDbRow[]).map((row) => ({
+  // rpcAll, not a bare .rpc(): this returns per-invoice-line detail over a multi-month ROI window
+  // and feeds both the View Sales screen and its XLSX export. PostgREST caps every response at
+  // db-max-rows (1000) with no error, so a wide request would silently lose lines and the totals
+  // derived from them would be understated. rpcAll pages only when an exact count proves a cap was
+  // hit. Ordered for deterministic paging.
+  const salesRows = await rpcAll<ViewSalesDbRow>(
+    supabase,
+    "phx_marketing_request_view_sales",
+    {
+      p_request_id: cleanId,
+      p_from_period: range.from,
+      p_to_period: range.to,
+      p_exclude_product_codes: excludeCodes,
+    },
+    ["invoice_period", "product_code", "customer_code", "distributor_code"],
+  );
+  const rows: MarketingRoiViewSalesRow[] = salesRows.map((row) => ({
     distributorCode: row.distributor_code,
     distributorName: row.distributor_name ?? row.distributor_code,
     invoicePeriod: row.invoice_period,

@@ -50,7 +50,7 @@ import {
   RESTRICTED_PRODUCT_CODES,
   restrictedProductNameSet,
 } from "@/lib/sales/access-scope";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Marketing Coverage Report — server data layer.
@@ -973,11 +973,17 @@ export async function loadMarketingCoverageExportSalesDetail(
   const rows: MarketingCoverageExportSalesDetailRow[] = [];
   for (const part of chunk(requests.map((row) => row.requestId), EXPORT_SALES_DETAIL_CHUNK_SIZE)) {
     if (part.length === 0) continue;
-    const { data, error } = await supabase.rpc("phx_marketing_coverage_export_sales_detail", {
-      p_request_ids: part,
-      p_exclude_product_codes: excludeCodes,
-    });
-    if (error) throw error;
+    // rpcAll, not a bare .rpc(): PostgREST caps every response at db-max-rows (1000), and a
+    // truncated export is silent — the workbook's own footnotes would report the cut-down count
+    // as authoritative. rpcAll asks for an exact count and only pages when the count proves a cap
+    // was hit, so it costs one extra round-trip's worth of counting and nothing else under the cap.
+    // Ordered for deterministic paging.
+    const data = await rpcAll(
+      supabase,
+      "phx_marketing_coverage_export_sales_detail",
+      { p_request_ids: part, p_exclude_product_codes: excludeCodes },
+      ["request_id", "invoice_period", "product_code", "customer_code"],
+    );
     for (const dbRow of (data ?? []) as Array<{
       request_id: string;
       distributor_code: string | null;
