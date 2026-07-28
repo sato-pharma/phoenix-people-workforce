@@ -167,15 +167,33 @@ export type CrmBrickReferenceRow = {
   regionName: string;
 };
 
-/** Every ACTIVE brick from source_of_sales_bricks, joined to the block/area/region masters for their
- * display names. Small masters (bricks ~1.1k, blocks/areas/regions ≤ a few hundred), joined in
- * memory. Name lookups degrade to "" on a missing/failed master read (names are cosmetic); a bricks
- * read error throws (the reference would otherwise be silently empty). Sorted region → area → block →
- * brick so the reference sheet reads as a clean geography tree. */
+/**
+ * The bricks an admin may map a CRM region TO — i.e. the CURRENT geography, joined to the
+ * block/area/region masters for their display names.
+ *
+ * "Active" alone is NOT the right filter here. The owner's standing rule is ADD+UPDATE only, never
+ * retire a brick (retiring orphans historical customer/sales rows), so superseded bricks from the
+ * pre-rebuild era stay `active = true` forever. Offering those as mapping targets is wrong — a new
+ * mapping must never point at a replaced brick ("no old brick is ever a target").
+ *
+ * The rebuild imports (2026-07-23/24/27) stamp `effective_from`; the legacy June import left it
+ * null. So the rule is applied PER AREA: an area that was rebuilt offers only its rebuilt bricks,
+ * while an area the rebuild never touched (the Others/OT areas — North & South Sinai, New Valley,
+ * Hurgada, Luxor, Aswan, Ismailia) keeps its existing bricks, since those are the only bricks it
+ * has. A blanket `effective_from is not null` filter would silently drop those 7 areas entirely.
+ * Verified against production 2026-07-28: 1,036 active → 746 offered, still covering all 48 areas.
+ *
+ * Small masters (bricks ~1k, blocks/areas/regions ≤ a few hundred), joined in memory. Name lookups
+ * degrade to "" on a missing/failed master read (names are cosmetic); a bricks read error throws
+ * (the reference would otherwise be silently empty). Sorted region → area → block → brick so the
+ * reference sheet reads as a clean geography tree.
+ */
 export async function getActiveBricksForTemplateReference(): Promise<CrmBrickReferenceRow[]> {
   const supabase = getSupabaseAdmin();
   const [bricksRes, blocksRes, areasRes, regionsRes] = await Promise.all([
-    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, block_code, area_code, region_code, active"),
+    supabase
+      .from("source_of_sales_bricks")
+      .select("brick_id, brick_name, block_code, area_code, region_code, active, effective_from"),
     supabase.from("source_of_sales_blocks").select("block_code, description"),
     supabase.from("source_of_sales_areas").select("area_code, area_name"),
     supabase.from("source_of_sales_regions").select("region_code, region_name"),
@@ -195,15 +213,29 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
     if (r.region_code) regionName.set(r.region_code, r.region_name ?? "");
   }
 
-  const rows: CrmBrickReferenceRow[] = ((bricksRes.data ?? []) as Array<{
+  const allBricks = (bricksRes.data ?? []) as Array<{
     active: boolean | null;
     area_code: string | null;
     block_code: string | null;
     brick_id: string | null;
     brick_name: string | null;
+    effective_from: string | null;
     region_code: string | null;
-  }>)
-    .filter((b) => b.brick_id && (b.active ?? true))
+  }>;
+
+  // Areas the geography rebuild actually touched (any active brick carrying an effective_from).
+  // Only those areas drop their pre-rebuild bricks; an untouched area keeps everything it has.
+  const rebuiltAreas = new Set<string>();
+  for (const b of allBricks) {
+    if (b.area_code && b.effective_from && (b.active ?? true)) rebuiltAreas.add(b.area_code);
+  }
+
+  const rows: CrmBrickReferenceRow[] = allBricks
+    .filter((b) => {
+      if (!b.brick_id || !(b.active ?? true)) return false;
+      const areaCode = b.area_code ?? "";
+      return b.effective_from != null || !rebuiltAreas.has(areaCode);
+    })
     .map((b) => {
       const blockCode = b.block_code ?? "";
       const areaCode = b.area_code ?? "";
