@@ -31,6 +31,7 @@ export function ExtraTicketRowEditor({
   onAdded: () => void;
 }) {
   const [rows, setRows] = useState<TicketRow[]>([{ ...emptyRow }]);
+  const [destination, setDestination] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -57,6 +58,10 @@ export function ExtraTicketRowEditor({
       setMessage({ text: "Enter a cost (greater than zero) for every ticket.", ok: false });
       return;
     }
+    if (!destination.trim()) {
+      setMessage({ text: "Enter where the extra leg is going.", ok: false });
+      return;
+    }
     if (!reason.trim()) {
       setMessage({ text: "Add a short reason for the extra tickets.", ok: false });
       return;
@@ -73,7 +78,7 @@ export function ExtraTicketRowEditor({
         })),
       );
       const response = await fetch(`/api/outstation/${requestId}/extra-ticket`, {
-        body: JSON.stringify({ tickets, reason }),
+        body: JSON.stringify({ destination, reason, tickets }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -83,6 +88,7 @@ export function ExtraTicketRowEditor({
         return;
       }
       setRows([{ ...emptyRow }]);
+      setDestination("");
       setReason("");
       setMessage({ text: `${tickets.length} ticket(s) added and the total was updated.`, ok: true });
       onAdded();
@@ -136,8 +142,16 @@ export function ExtraTicketRowEditor({
 
       <input
         className="mt-3 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+        onChange={(event) => setDestination(event.target.value)}
+        placeholder="Where is this extra leg going? — e.g. Sohag"
+        type="text"
+        value={destination}
+      />
+
+      <input
+        className="mt-2 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
         onChange={(event) => setReason(event.target.value)}
-        placeholder="Reason — e.g. extra leg Assiut → Sohag and back"
+        placeholder="Reason — e.g. unplanned extra leg to visit a client"
         type="text"
         value={reason}
       />

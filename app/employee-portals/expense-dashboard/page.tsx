@@ -9,7 +9,10 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
-import { getOwnPendingOutstationReviewRequests } from "@/lib/outstation/service";
+import {
+  getOwnOutstationTicketCounts,
+  getOwnPendingOutstationReviewRequests,
+} from "@/lib/outstation/service";
 import { PendingReviewRequestsCard } from "@/components/outstation/pending-review-requests-card";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
@@ -60,7 +63,10 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  const pendingReviewRequests = await getOwnPendingOutstationReviewRequests(access).catch(() => []);
+  const [pendingReviewRequests, ticketCountsByRequestId] = await Promise.all([
+    getOwnPendingOutstationReviewRequests(access).catch(() => []),
+    getOwnOutstationTicketCounts(access).catch(() => ({})),
+  ]);
   const hasWorkloadRows = Boolean(data.workload?.expenseRows?.length);
 
   if (!hasWorkloadRows && pendingReviewRequests.length === 0) {
@@ -86,6 +92,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
             adminKeyCards={null}
             data={{ workload: data.workload }}
             showHero={false}
+            ticketCountsByRequestId={ticketCountsByRequestId}
             viewerHrId={access.hrId}
           />
         ) : null}
