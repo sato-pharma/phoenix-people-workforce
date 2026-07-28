@@ -14,6 +14,7 @@ import {
 } from "@/lib/google-maps/browser";
 import type {
   BrickSearchHit,
+  ScopeOverviewLine,
   TerritoryArea,
   TerritoryFilters,
   TerritoryMap,
@@ -61,6 +62,8 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
   // the previous selection's map lingering while the next one loads.
   const [loadedKey, setLoadedKey] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [scopeOverview, setScopeOverview] = useState<ScopeOverviewLine[] | null>(null);
+  const [scopeOpen, setScopeOpen] = useState(true);
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<GoogleMapHandle | null>(null);
@@ -69,6 +72,22 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
     markers: [],
   });
   const [maps, setMaps] = useState<MapsNamespace | null>(null);
+
+  // ── scope overview: "this is your patch" the moment the module opens ────────
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/territory-management/scope")
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Failed to load scope."))))
+      .then((body: { lines: ScopeOverviewLine[] }) => {
+        if (!cancelled) setScopeOverview(body.lines ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setScopeOverview([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── filters ───────────────────────────────────────────────────────────────
   // Selection resets live in the change handlers, not here — resetting state inside an effect
@@ -380,6 +399,55 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
         <Card className="border-destructive/40 bg-destructive/5 p-3 text-sm">{error}</Card>
       ) : null}
 
+      {/* Your scope, as a hierarchy, the moment the module opens — before picking anything. */}
+      <Card className="p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setScopeOpen((current) => !current)}
+          type="button"
+        >
+          <div>
+            <h2 className="font-semibold">Your scope</h2>
+            <p className="text-muted-foreground text-sm">
+              Every line, region and area you can see here, and how many bricks each area carries.
+            </p>
+          </div>
+          <span className="text-muted-foreground text-sm">{scopeOpen ? "Hide ▲" : "Show ▼"}</span>
+        </button>
+
+        {scopeOpen ? (
+          scopeOverview == null ? (
+            <p className="text-muted-foreground mt-3 text-sm">Loading your scope…</p>
+          ) : scopeOverview.length === 0 ? (
+            <p className="text-muted-foreground mt-3 text-sm">
+              No sales territory is assigned to you yet — contact HR/your admin.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {scopeOverview.map((line) => (
+                <div key={line.lineCode}>
+                  <p className="font-medium">{line.lineName}</p>
+                  <ul className="mt-1 border-l pl-3">
+                    {line.regions.map((region) => (
+                      <li className="mt-2 border-l pl-3" key={region.regionCode}>
+                        <p className="text-sm font-medium">{region.regionName}</p>
+                        <ul className="mt-1 grid gap-x-4 gap-y-1 border-l pl-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {region.areas.map((area) => (
+                            <li className="text-muted-foreground text-sm" key={area.areaCode}>
+                              {area.areaName} <span className="text-xs">({area.brickCount} bricks)</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )
+        ) : null}
+      </Card>
+
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1 text-sm">
@@ -416,7 +484,7 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
               <option value="">Select a region…</option>
               {lineFilters.regions.map((region) => (
                 <option key={region.regionCode} value={region.regionCode}>
-                  {region.regionCode} ({region.areaCount} areas)
+                  {region.regionName} ({region.areaCount} areas)
                 </option>
               ))}
             </select>
@@ -516,7 +584,7 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
                       >
                         <span className="font-medium">{hit.brickName}</span>
                         <span className="text-muted-foreground text-xs">
-                          {hit.areaName} · {hit.regionCode} · block {hit.blockCode}
+                          {hit.areaName} · {hit.regionName} · block {hit.blockCode}
                           {hit.lat == null ? " · no pin yet" : ""}
                         </span>
                       </button>
@@ -634,6 +702,36 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
               </ul>
             </div>
           ) : null}
+
+          {(() => {
+            const rec = data?.residence.find((r) => r.areaCode === area.areaCode);
+            if (!rec) return null;
+            const [best, ...runnersUp] = rec.options;
+            return (
+              <div className="border-t pt-2 text-sm">
+                <p className="font-medium">Best residence for a Medical Rep hired here: {best.brickName}</p>
+                <ul className="text-muted-foreground list-disc pl-5">
+                  {best.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+                {runnersUp.length > 0 ? (
+                  <details className="text-muted-foreground mt-1">
+                    <summary className="cursor-pointer text-xs">Runner-up options</summary>
+                    <ul className="mt-1 list-disc pl-5">
+                      {runnersUp.map((option) => (
+                        <li key={option.brickId}>
+                          <span className="font-medium">{option.brickName}</span>:{" "}
+                          {option.reasons.join(" ")}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+                {rec.warning ? <p className="text-xs italic">{rec.warning}</p> : null}
+              </div>
+            );
+          })()}
         </Card>
       ))}
 

@@ -20,7 +20,7 @@ export default async function TerritoryManagementPage() {
   try {
     // Server-side gate. The nav hides this link for roles without sales read, but that is UX only.
     await assertPermission(access, "sales", "read");
-    filters = await loadTerritoryFilters(null);
+    filters = await loadTerritoryFilters(null, access);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Territory Management.";
   }

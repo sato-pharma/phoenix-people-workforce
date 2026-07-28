@@ -556,7 +556,11 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-territory-management",
     items: [
-      { href: "/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }] },
+      // District Manager / Regional Manager / National Sales Manager land in the employee-portal
+      // shell (resolveNavigationMode) — their entry point is /employee-portals/territory-management
+      // just above. Restricting `roles` here to the admin-shell roles keeps this link from being
+      // shown to someone who would just be redirected straight past it.
+      { href: "/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
     ],
     label: "Territory Management",
   },
@@ -714,6 +718,10 @@ const employeePortalNavigationSectionSeeds = [
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.
       { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Territory & Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      // Portal-shell counterpart of /sales/territory-management — same component, own-scope data.
+      // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
+      // other, which is a District-Manager-and-up decision, not a single rep's own area view.
+      { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
     ],
     label: "Sales Operations",
   },
