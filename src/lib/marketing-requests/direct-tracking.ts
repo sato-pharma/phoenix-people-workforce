@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assertMarketingWorkspaceAccess } from "@/lib/marketing-requests/service";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -24,6 +25,13 @@ export async function getMarketingRequestDirectTracking(
   access: AccessContext,
   requestId: string,
 ): Promise<MarketingDirectTrackingState> {
+  // This previously used `access` only to compute the cosmetic `canManage` flag, so it had no
+  // authorization at all. resolveAccessContext() never throws for a missing session — it returns
+  // a guest context — which made this the one marketing read an UNAUTHENTICATED caller could
+  // reach, yielding a request-existence oracle plus the campaign's direct-tracking setting from
+  // an RLS-bypassing service-role read. Gate it like every other marketing read.
+  assertMarketingWorkspaceAccess(access);
+
   const cleanId = String(requestId ?? "").trim();
   if (!cleanId) throw new Error("Marketing request id is required.");
   const supabase = getSupabaseAdmin();

@@ -11,6 +11,7 @@ import ExcelJS from "exceljs";
 import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib/auth/permissions";
 import { forbiddenError } from "@/lib/http/api-errors";
 import { normalizeMarketingLookupKey } from "@/lib/marketing-requests/reference-importer";
+import { resolveStoredEmployeeHrId } from "@/lib/marketing-requests/service";
 import { DISTRIBUTOR_ID_TO_REGISTRY_NAME } from "@/lib/marketing-requests/roi-sheet-import";
 import { calculateMarketingRoiPreview, roundMarketingMoney } from "@/lib/marketing-requests/roi";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -113,7 +114,13 @@ export type BulkImportResult = {
 // Template generation
 // ---------------------------------------------------------------------------
 
-export async function generateBulkUploadTemplate(): Promise<ArrayBuffer> {
+export async function generateBulkUploadTemplate(access: AccessContext): Promise<ArrayBuffer> {
+  // Same gate as preview/execute — the template is only reachable from the Super-Admin-only
+  // bulk-upload page, so a non-Super-Admin fetching it is never a legitimate call.
+  if (!canAccessSystemAdministratorWorkspace(access)) {
+    throw forbiddenError("Only Super Admin users can download the bulk import template.");
+  }
+
   const wb = new ExcelJS.Workbook();
   wb.creator = "Phoenix Workforce";
 
@@ -738,7 +745,21 @@ function previewRow(row: BulkUploadRow, lookups: LookupMaps): BulkImportPreviewR
   };
 }
 
-export async function buildBulkImportPreview(rows: BulkUploadRow[]): Promise<BulkImportPreview> {
+/**
+ * Preview is NOT a read-only formatting pass — it resolves every uploaded row against live
+ * marketing master data and hands back customer ids, distributor-code ids and product rows
+ * INCLUDING factoryPrice. It therefore carries the same Super-Admin gate as the execute path:
+ * previously it took no AccessContext at all, so any authenticated user of any role could POST
+ * a crafted sheet and enumerate the customer / product / pharmacy masters and their pricing.
+ */
+export async function buildBulkImportPreview(
+  rows: BulkUploadRow[],
+  access: AccessContext,
+): Promise<BulkImportPreview> {
+  if (!canAccessSystemAdministratorWorkspace(access)) {
+    throw forbiddenError("Only Super Admin users can preview bulk marketing request imports.");
+  }
+
   const lookups = await loadLookupMaps();
   const previewRows = rows.map((row) => previewRow(row, lookups));
 
@@ -774,6 +795,13 @@ export async function executeBulkImport(
   if (!canAccessSystemAdministratorWorkspace(access)) {
     throw forbiddenError("Only Super Admin users can execute bulk marketing request imports.");
   }
+
+  // `access.hrId` is ALWAYS lower-cased (createAccessContext runs it through normalizeHrId,
+  // which lower-cases for COMPARISON). marketing_requests.created_by_hr_id / updated_by_hr_id
+  // and marketing_request_approval_steps.decision_by_hr_id are case-sensitive FKs to the
+  // upper-cased employees(hr_id), so writing the raw value made a Super Admin "B-157" store
+  // "b-157" -> FK violation -> import_marketing_request_atomic rolled the whole row back.
+  const actorStoredHrId = resolveStoredEmployeeHrId(access.hrId);
 
   const supabase = getSupabaseAdmin();
   const lookups = await loadLookupMaps();
@@ -839,8 +867,8 @@ export async function executeBulkImport(
         status: resolved.importStatus === "approved" ? "approved" : "pending_approval",
         submitted_at: requestDateTs,
         approved_at: resolved.importStatus === "approved" ? requestDateTs : null,
-        created_by_hr_id: access.hrId,
-        updated_by_hr_id: access.hrId,
+        created_by_hr_id: actorStoredHrId,
+        updated_by_hr_id: actorStoredHrId,
       };
 
       // Product rows. value_share comes from the batch ROI calc across all of the
@@ -882,7 +910,7 @@ export async function executeBulkImport(
           ? "approved"
           : (idx === 0 ? "current" : "pending"),
         decision_at: resolved.importStatus === "approved" ? requestDateTs : null,
-        decision_by_hr_id: resolved.importStatus === "approved" ? access.hrId : null,
+        decision_by_hr_id: resolved.importStatus === "approved" ? actorStoredHrId : null,
         decision_note: resolved.importStatus === "approved" ? "Imported via bulk upload" : null,
       }));
 
