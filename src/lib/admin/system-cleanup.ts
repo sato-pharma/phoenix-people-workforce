@@ -166,7 +166,10 @@ function normalizeReason(value: unknown) {
 }
 
 function optionalCleanupNote(value: unknown) {
-  return normalizeReason(value) || DEFAULT_CLEANUP_NOTE;
+  const normalized = normalizeReason(value);
+  // admin_cleanup_events_reason_check requires char_length(btrim(reason)) >= 10;
+  // a short-but-nonempty note must fall back too, not just a blank one.
+  return normalized.length >= 10 ? normalized : DEFAULT_CLEANUP_NOTE;
 }
 
 function ensureRecordId(value: unknown) {
