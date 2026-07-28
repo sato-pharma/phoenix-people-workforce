@@ -68,8 +68,9 @@ export async function POST(
       amount: Number(entry.amount ?? 0),
     }));
     const result = await addExtraTicketsToOwnOutstationRequest(id, access, {
-      tickets,
+      destination: String(body.destination ?? ""),
       reason: String(body.reason ?? ""),
+      tickets,
     });
 
     return NextResponse.json({ request: result });

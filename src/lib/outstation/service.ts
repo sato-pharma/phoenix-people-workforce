@@ -1724,6 +1724,31 @@ export async function getOwnPendingOutstationReviewRequests(
 }
 
 /**
+ * Extra-ticket count for each of the caller's OWN train/bus requests, keyed by
+ * request id. Powers the "Extra Tickets" tracking column on the employee
+ * portal's Expense Dashboard table — the ledger row data (ExpenseRow) has no
+ * ticket count of its own, so the dashboard looks it up here.
+ */
+export async function getOwnOutstationTicketCounts(
+  access: AccessContext,
+): Promise<Record<number, number>> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) return {};
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .in("transportation_type", ["train", "bus"]);
+  if (error || !data) return {};
+  const counts: Record<number, number> = {};
+  for (const row of (data as Array<Record<string, unknown>>).map(mapOutstationRequestRow)) {
+    if (normalizeHrIdForAccess(row.employeeHrId) !== callerHrId) continue;
+    counts[row.id] = row.ticketAttachmentPaths.length;
+  }
+  return counts;
+}
+
+/**
  * Employee self-service: add ONE OR MORE extra tickets (each an attachment +
  * cost) plus a shared reason to their own already-submitted train/bus request —
  * e.g. an unplanned multi-leg trip needing several ticket legs. The summed extra
@@ -1736,6 +1761,7 @@ export async function addExtraTicketsToOwnOutstationRequest(
   requestId: number,
   access: AccessContext,
   input: {
+    destination: string;
     tickets: Array<{ ticket: OutstationTicketAttachmentUploadInput; amount: number }>;
     reason: string;
   },
@@ -1771,6 +1797,10 @@ export async function addExtraTicketsToOwnOutstationRequest(
     throw new Error("Enter a valid cost greater than zero for every ticket.");
   }
   const extraTotal = roundMoney(amounts.reduce((sum, amount) => sum + amount, 0));
+  const destination = cleanText(input.destination);
+  if (!destination) {
+    throw new Error("A destination for the extra ticket(s) is required.");
+  }
   const reason = cleanText(input.reason);
   if (!reason) {
     throw new Error("A reason for the extra tickets is required.");
@@ -1804,7 +1834,7 @@ export async function addExtraTicketsToOwnOutstationRequest(
 
     const mergedPaths = [...existing.ticketAttachmentPaths, ...uploaded.map((a) => a.path)];
     const mergedMetadata = [...existing.ticketAttachmentMetadata, ...uploaded];
-    const noteLine = `${uploaded.length} extra ticket(s) added (${formatEgp(extraTotal)}): ${reason}`;
+    const noteLine = `${uploaded.length} extra ticket(s) added to ${destination} (${formatEgp(extraTotal)}): ${reason}`;
     const newNotes = existing.notes ? `${existing.notes}\n${noteLine}` : noteLine;
     const now = new Date().toISOString();
 
@@ -1841,6 +1871,7 @@ export async function addExtraTicketsToOwnOutstationRequest(
       entityId: String(updated.id),
       entityType: "outstation_request",
       newValues: {
+        destination,
         extraTicketCount: uploaded.length,
         extraTicketTotal: extraTotal,
         newExpectedTotal: updated.expectedTotalAmount,
@@ -1849,7 +1880,7 @@ export async function addExtraTicketsToOwnOutstationRequest(
         source: "employee_extra_ticket",
         status: updated.status,
       },
-      summary: `Employee added ${uploaded.length} extra ticket(s) (${formatEgp(extraTotal)}) to outstation request ${updated.id}.`,
+      summary: `Employee added ${uploaded.length} extra ticket(s) to ${destination} (${formatEgp(extraTotal)}) on outstation request ${updated.id}.`,
     });
 
     return updated;

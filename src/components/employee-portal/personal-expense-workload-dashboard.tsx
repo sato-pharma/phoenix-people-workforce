@@ -730,12 +730,16 @@ export function PersonalExpenseWorkloadDashboard({
   data,
   showHero = true,
   submitExpenseHref = "/employee-portals/submit-expense",
+  ticketCountsByRequestId,
   viewerHrId,
 }: {
   adminKeyCards?: WorkloadAdminKeyCards | null;
   data: Pick<MedicalRepPortalData, "workload">;
   showHero?: boolean;
   submitExpenseHref?: string;
+  /** Extra-ticket count per outstation request id, for the "Extra Tickets"
+   *  tracking column. Omit to render that column as "—" throughout. */
+  ticketCountsByRequestId?: Record<number, number>;
   /** Enables the self-service "add extra ticket" control on the viewer's own
    *  train/bus rows. Omit (default) to keep the dashboard read-only — e.g. an
    *  admin/manager view of someone else's expenses should never pass this. */
@@ -2041,13 +2045,14 @@ export function PersonalExpenseWorkloadDashboard({
                   <th className={`${cellPaddingClass} text-right`}>{header("km", "KM")}</th>
                   <th className={cellPaddingClass}>{header("status", "Status")}</th>
                   <th className={cellPaddingClass}>{header("transportationType", "Transport")}</th>
+                  <th className={`${cellPaddingClass} text-center`}>Extra Tickets</th>
                   <th className={`${cellPaddingClass} w-8`}><span className="sr-only">Details</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={11}>
+                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={12}>
                       No trips match your filters.
                     </td>
                   </tr>
@@ -2093,6 +2098,13 @@ export function PersonalExpenseWorkloadDashboard({
                           <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
                             {trip.transportationType || "N/A"}
                           </td>
+                          <td className={`text-center text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                            {(() => {
+                              const requestId = parseOutstationRequestId(trip.tripId);
+                              const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
+                              return count != null ? `${count} ticket${count === 1 ? "" : "s"}` : "—";
+                            })()}
+                          </td>
                           <td className={`w-8 ${cellPaddingClass}`}>
                             <ChevronDown
                               className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
@@ -2101,7 +2113,7 @@ export function PersonalExpenseWorkloadDashboard({
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td className="border-b border-slate-200 p-0" colSpan={11}>
+                            <td className="border-b border-slate-200 p-0" colSpan={12}>
                               <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
                                 <div className="grid gap-4 text-[12px] sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
@@ -2223,7 +2235,7 @@ export function PersonalExpenseWorkloadDashboard({
                   <td className={`${cellPaddingClass} text-right text-[12px] font-semibold text-slate-700`}>
                     {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
                   </td>
-                  <td colSpan={3} />
+                  <td colSpan={4} />
                 </tr>
               </tfoot>
           </PortalDesktopTable>
@@ -2299,6 +2311,16 @@ export function PersonalExpenseWorkloadDashboard({
                           <p className="text-slate-500">Allowance</p>
                           <p className="font-semibold text-slate-800">
                             {formatMoney(trip.allowance)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Extra tickets</p>
+                          <p className="font-semibold text-slate-800">
+                            {(() => {
+                              const requestId = parseOutstationRequestId(trip.tripId);
+                              const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
+                              return count != null ? count : "—";
+                            })()}
                           </p>
                         </div>
                       </div>
