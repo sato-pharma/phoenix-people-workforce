@@ -97,8 +97,31 @@ const gate = (gov, region, areaName) => {
 
 const KEY = envVar("GOOGLE_MAPS_SERVER_KEY");
 
+// A transient API failure must never silently downgrade a brick. Returning null on a 429/5xx made
+// the resolver fall back to whatever the other provider said — that is how خورشيد resolved
+// correctly in a 141-brick run and wrongly in a 781-brick one, with no error surfacing anywhere.
+const apiFailures = { geocode: 0, places: 0 };
+
+async function fetchWithRetry(url, init, kind, attempts = 6) {
+  let wait = 400;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+      // 4xx other than 429 will not improve on retry.
+      if (res.status !== 429 && res.status < 500) return res;
+    } catch { /* network blip — retry */ }
+    if (attempt < attempts) {
+      await new Promise((r) => setTimeout(r, wait));
+      wait *= 2;
+    }
+  }
+  apiFailures[kind] += 1;
+  return null;
+}
+
 async function places(q) {
-  const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+  const res = await fetchWithRetry("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -110,8 +133,8 @@ async function places(q) {
     // it caught خورشيد being resolved 14 km away to "An Nagaa Al Gadid", and it separates
     // سيدي بشر بحري from سيدي بشر قبلي, which an English query collapses onto one pin.
     body: JSON.stringify({ textQuery: q, languageCode: "ar", regionCode: "EG", maxResultCount: 10 }),
-  });
-  if (!res.ok) return null;
+  }, "places");
+  if (!res || !res.ok) return null;
   const ps = (await res.json()).places ?? [];
   const pick = (p) => {
     const lat = p.location?.latitude, lng = p.location?.longitude;
@@ -165,8 +188,8 @@ async function forwardGeocode(name, governorate) {
   url.searchParams.set("components", governorate ? `country:EG|administrative_area:${governorate}` : "country:EG");
   url.searchParams.set("language", "en");
   url.searchParams.set("key", KEY);
-  const res = await fetch(url.toString(), { cache: "no-store" });
-  if (!res.ok) return null;
+  const res = await fetchWithRetry(url.toString(), { cache: "no-store" }, "geocode");
+  if (!res || !res.ok) return null;
   const body = await res.json();
   const r = body.results?.[0];
   const loc = r?.geometry?.location;
@@ -310,6 +333,13 @@ async function resolveBrick(b, areaGov) {
     try { consider(await places(`${b.brick_name}, Egypt`), "places"); } catch { /* ignore */ }
   }
 
+  if (process.env.DEBUG_BRICK && b.brick_id === process.env.DEBUG_BRICK) {
+    console.error(`DEBUG ${b.brick_id} "${b.brick_name}" areaGov=${areaGov} candidates=${candidates.length}`);
+    for (const x of candidates) {
+      console.error(`   via=${x.via} score=${x.score} matched=${x.matched} name="${x.c.name}" gov=${x.gov} addr="${String(x.c.addr).slice(0, 70)}"`);
+    }
+  }
+
   if (candidates.length === 0) return { b, m: null, gov: null, ok: false, via: "none" };
   candidates.sort((x, y) => y.score - x.score);
   const best = candidates[0];
@@ -319,8 +349,8 @@ async function resolveBrick(b, areaGov) {
 // ── Pass 1: learn each area's governorate from its own bricks ────────────────
 console.error("pass 1 — probing areas…");
 const probes = [];
-for (let i = 0; i < bricks.length; i += 8) {
-  probes.push(...(await Promise.all(bricks.slice(i, i + 8).map(probeBrick))));
+for (let i = 0; i < bricks.length; i += 4) {
+  probes.push(...(await Promise.all(bricks.slice(i, i + 4).map(probeBrick))));
   if (i % 320 === 0) console.error(`  probe ${Math.min(i + 8, bricks.length)}/${bricks.length}`);
 }
 
@@ -345,8 +375,8 @@ console.error(`pass 1 done — governorate resolved for ${areaGovernorate.size} 
 // ── Pass 2: resolve every brick inside its area's governorate ────────────────
 console.error("pass 2 — resolving bricks…");
 const results = [];
-for (let i = 0; i < bricks.length; i += 8) {
-  const batch = bricks.slice(i, i + 8);
+for (let i = 0; i < bricks.length; i += 4) {
+  const batch = bricks.slice(i, i + 4);
   results.push(...(await Promise.all(batch.map((b) => {
     const areaGov = areaGovernorate.get(b.area_code);
     // No governorate learned for this area — fall back to the pass-1 probe, still region-gated.
@@ -451,7 +481,10 @@ left join public.source_of_sales_bricks b on b.brick_id = i.source_key
 on conflict (source_type, source_key) do update set
   latitude = excluded.latitude, longitude = excluded.longitude,
   geocode_status = excluded.geocode_status, geocode_provider = excluded.geocode_provider,
-  city = excluded.city, area = excluded.area, updated_at = now();
+  city = excluded.city, area = excluded.area, updated_at = now()
+-- NEVER overwrite a hand-placed pin. A person who knows the ground outranks any geocoder, so a
+-- rebuild must leave provider='manual' rows exactly as they are.
+where public.geo_locations.geocode_provider is distinct from 'manual';
 `;
 
 writeFileSync(outFile, statement, "utf8");
@@ -474,4 +507,6 @@ if (applyIdx !== -1) {
   }
 }
 
-console.log(JSON.stringify({ region, total: results.length, success, shared_fallback: shared, region_mismatch: mismatch, no_result: none, out: outFile }, null, 2));
+// api_failures MUST be zero. Anything above zero means some bricks were resolved from only one
+// provider and may have silently taken the weaker answer — do not trust the output until it is 0.
+console.log(JSON.stringify({ region, total: results.length, success, shared_fallback: shared, region_mismatch: mismatch, no_result: none, api_failures: apiFailures, out: outFile }, null, 2));

@@ -23,9 +23,9 @@ export async function GET(request: Request) {
     if (!lineCode) throw new Error("Invalid request: lineCode is required.");
     if (areaCodes.length === 0) throw new Error("Invalid request: at least one area is required.");
 
-    // The service re-checks every requested area against the line's own area map, so a forged
-    // areaCode cannot widen scope.
-    return NextResponse.json(await loadTerritoryMap({ areaCodes, lineCode }));
+    // The service re-checks every requested area against the line's own area map AND the caller's
+    // own region scope, so a forged areaCode cannot widen scope beyond either.
+    return NextResponse.json(await loadTerritoryMap({ access, areaCodes, lineCode }));
   } catch (error) {
     return jsonError(error, "Failed to load territory map.");
   }

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     await assertPermission(access, "sales", "read");
 
     const lineCode = new URL(request.url).searchParams.get("lineCode");
-    return NextResponse.json(await loadTerritoryFilters(lineCode));
+    return NextResponse.json(await loadTerritoryFilters(lineCode, access));
   } catch (error) {
     return jsonError(error, "Failed to load territory filters.");
   }

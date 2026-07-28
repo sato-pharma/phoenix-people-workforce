@@ -1,5 +1,9 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import type { AccessContext } from "@/lib/auth/permissions";
+import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
+import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Territory Management — geographic view of how a line's bricks are allocated across its areas.
 //
@@ -19,8 +23,8 @@ import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 const PAGE = 1000;
 
 export type TerritoryLine = { lineCode: string; lineName: string };
-export type TerritoryRegion = { regionCode: string; areaCount: number };
-export type TerritoryArea = { areaCode: string; areaName: string; regionCode: string };
+export type TerritoryRegion = { areaCount: number; regionCode: string; regionName: string };
+export type TerritoryArea = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 
 export type TerritoryFilters = {
   lines: TerritoryLine[];
@@ -41,6 +45,7 @@ export type TerritoryBrick = {
   lat: number;
   lng: number;
   regionCode: string;
+  regionName: string;
 };
 
 export type UnlocatedBrick = {
@@ -94,6 +99,7 @@ export type TerritoryMap = {
   areas: AreaCluster[];
   bricks: TerritoryBrick[];
   coverage: { located: number; missing: number; sharedFallback: number; total: number; wrongRegion: number };
+  residence: ResidenceRecommendation[];
   unlocated: UnlocatedBrick[];
 };
 
@@ -138,9 +144,84 @@ async function loadLineAreaRows(lineCode: string): Promise<Row[]> {
   });
 }
 
-export async function loadTerritoryFilters(lineCode: string | null): Promise<TerritoryFilters> {
-  const lines = Object.entries(LINE_LABELS).map(([code, name]) => ({ lineCode: code, lineName: name }));
+/**
+ * "Others" is a holding bucket for retired, overseas and non-field territory rather than somewhere
+ * a rep is ever hired to cover. Its bricks are also the sparsest and least reliably geocoded, so
+ * offering it here would invite allocation analysis on areas nobody actually works.
+ */
+const EXCLUDED_REGION_CODE = "OT";
+
+export type TerritoryScope = {
+  /** null = every field line is visible (CEO / SFE Manager / Super Admin: company-wide). */
+  lineCodes: Set<string> | null;
+  /** null = every region within the allowed lines is visible. */
+  regionCodes: Set<string> | null;
+};
+
+/**
+ * Which lines and regions the caller may see, reusing the same scope machinery already proven out
+ * by the Territory & Sales Drilldown (src/lib/sales/territory/root-scope.ts) rather than a second,
+ * parallel notion of "scope". District Manager and Regional Manager are narrowed to their own
+ * region; National Sales Manager to their own line (every region within it); CEO, SFE Manager and
+ * Super Admin see everything. A role this cannot place at all (e.g. Medical Rep, who has no area-
+ * management use for this module) fails closed to "nothing" rather than defaulting open.
+ */
+export async function resolveTerritoryScope(access: AccessContext): Promise<TerritoryScope> {
+  const salesScope = await resolveSalesAccessScope(access);
+  if (salesScope.canViewAllSales) return { lineCodes: null, regionCodes: null };
+
+  const lineCodes = salesScope.allowedLineNames
+    ? new Set(
+        Object.entries(LINE_LABELS)
+          .filter(([, name]) =>
+            [...salesScope.allowedLineNames as Set<string>].some(
+              (allowed) => allowed.trim().toLowerCase() === name.trim().toLowerCase(),
+            ))
+          .map(([code]) => code),
+      )
+    : null;
+
+  // National Sales Manager: LINE scope, allowedRegionNames is null — every region within the line.
+  if (access.role !== "Regional Manager" && !salesScope.allowedRegionNames) {
+    return { lineCodes, regionCodes: null };
+  }
+
+  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+
+  // Regional Manager's real coverage (their own region plus any they stand in for) is richer than
+  // the single canonical name computeSalesAccessScope derives, so use the dedicated resolver —
+  // the same one root-scope.ts relies on for the Drilldown module.
+  if (access.role === "Regional Manager") {
+    const regionCodes = await resolveRegionalManagerRegionCodes(access, salesScope, references);
+    return { lineCodes, regionCodes: new Set([...regionCodes].map((code) => code.toUpperCase())) };
+  }
+
+  const codeByCanonicalName = new Map(
+    references.regions.map((region) => [canonicalizeRegionName(region.regionName), region.regionCode.toUpperCase()]),
+  );
+  const regionCodes = new Set(
+    [...(salesScope.allowedRegionNames as Set<string>)]
+      .map((name) => codeByCanonicalName.get(canonicalizeRegionName(name)))
+      .filter((code): code is string => Boolean(code)),
+  );
+  return { lineCodes, regionCodes };
+}
+
+export async function loadTerritoryFilters(lineCode: string | null, access?: AccessContext): Promise<TerritoryFilters> {
+  const scope = access ? await resolveTerritoryScope(access) : { lineCodes: null, regionCodes: null };
+
+  const lines = Object.entries(LINE_LABELS)
+    .filter(([code]) => !scope.lineCodes || scope.lineCodes.has(code))
+    .map(([code, name]) => ({ lineCode: code, lineName: name }));
+
   if (!lineCode || !LINE_LABELS[lineCode]) return { areas: [], lines, regions: [] };
+  // A line outside the caller's own scope is refused even if it was passed in explicitly — the
+  // dropdown never offers it, but a hand-crafted request must not be able to read it either.
+  if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return { areas: [], lines, regions: [] };
+
+  const regionNameByCode = new Map(
+    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+  );
 
   const rows = await loadLineAreaRows(lineCode);
   const areas: TerritoryArea[] = [];
@@ -148,11 +229,15 @@ export async function loadTerritoryFilters(lineCode: string | null): Promise<Ter
   for (const row of rows) {
     const areaCode = str(row.area_code);
     if (!areaCode || seen.has(areaCode)) continue;
+    const regionCode = str(row.operational_region_code);
+    if (regionCode === EXCLUDED_REGION_CODE) continue;
+    if (scope.regionCodes && !scope.regionCodes.has(regionCode.toUpperCase())) continue;
     seen.add(areaCode);
     areas.push({
       areaCode,
       areaName: str(row.area_name) || areaCode,
-      regionCode: str(row.operational_region_code),
+      regionCode,
+      regionName: regionNameByCode.get(regionCode.toUpperCase()) || regionCode,
     });
   }
   areas.sort((a, b) => a.areaCode.localeCompare(b.areaCode));
@@ -163,10 +248,68 @@ export async function loadTerritoryFilters(lineCode: string | null): Promise<Ter
     regionCounts.set(area.regionCode, (regionCounts.get(area.regionCode) ?? 0) + 1);
   }
   const regions = [...regionCounts.entries()]
-    .map(([regionCode, areaCount]) => ({ areaCount, regionCode }))
+    .map(([regionCode, areaCount]) => ({ areaCount, regionCode, regionName: regionNameByCode.get(regionCode.toUpperCase()) || regionCode }))
     .sort((a, b) => a.regionCode.localeCompare(b.regionCode));
 
   return { areas, lines, regions };
+}
+
+export type ScopeOverviewArea = { areaCode: string; areaName: string; brickCount: number };
+export type ScopeOverviewRegion = { areas: ScopeOverviewArea[]; regionCode: string; regionName: string };
+export type ScopeOverviewLine = { lineCode: string; lineName: string; regions: ScopeOverviewRegion[] };
+
+/**
+ * The caller's own scope — every line, region, area and brick count they can see — as a
+ * hierarchy, meant to orient someone the moment they open the module: "this is your patch,"
+ * before they pick anything. Deliberately separate from loadTerritoryFilters (which is scoped to
+ * ONE chosen line): this covers every line the caller has, since the point is to show the whole
+ * shape of their scope at a glance, not force picking a line first just to see it.
+ */
+export async function loadTerritoryScopeOverview(access: AccessContext): Promise<ScopeOverviewLine[]> {
+  const filtersPerLine = await Promise.all(
+    Object.keys(LINE_LABELS).map((lineCode) => loadTerritoryFilters(lineCode, access)),
+  );
+
+  const allAreaIds = new Set<string>();
+  for (const filters of filtersPerLine) for (const area of filters.areas) allAreaIds.add(area.areaCode);
+  const brickCountByArea = new Map<string, number>();
+  if (allAreaIds.size > 0) {
+    const rows = await pageAll<Row>(async (from, to) => {
+      const { data, error } = await getSupabaseAdmin()
+        .from("source_of_sales_bricks")
+        .select("area_code")
+        .in("area_code", [...allAreaIds])
+        .eq("active", true)
+        .range(from, to);
+      return error ? null : (data as Row[] | null);
+    });
+    for (const row of rows) {
+      const code = str(row.area_code);
+      brickCountByArea.set(code, (brickCountByArea.get(code) ?? 0) + 1);
+    }
+  }
+
+  const out: ScopeOverviewLine[] = [];
+  const lineNamesByCode = Object.fromEntries(
+    Object.entries(LINE_LABELS).map(([code, name]) => [code, name] as const),
+  );
+  Object.keys(LINE_LABELS).forEach((lineCode, i) => {
+    const filters = filtersPerLine[i];
+    if (filters.areas.length === 0) return; // this line is out of scope entirely — omit it, don't show an empty branch
+    const byRegion = new Map<string, ScopeOverviewRegion>();
+    for (const area of filters.areas) {
+      let region = byRegion.get(area.regionCode);
+      if (!region) {
+        region = { areas: [], regionCode: area.regionCode, regionName: area.regionName };
+        byRegion.set(area.regionCode, region);
+      }
+      region.areas.push({ areaCode: area.areaCode, areaName: area.areaName, brickCount: brickCountByArea.get(area.areaCode) ?? 0 });
+    }
+    const regions = [...byRegion.values()].sort((a, b) => a.regionName.localeCompare(b.regionName));
+    for (const region of regions) region.areas.sort((a, b) => a.areaName.localeCompare(b.areaName));
+    out.push({ lineCode, lineName: lineNamesByCode[lineCode], regions });
+  });
+  return out;
 }
 
 // ── geometry ────────────────────────────────────────────────────────────────
@@ -175,6 +318,157 @@ function centreOf(points: LatLng[]): LatLng | null {
   const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
   const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
   return { lat, lng };
+}
+
+/**
+ * How far a Medical Rep can reasonably reach and return from in a working day. Used only to
+ * describe an option ("covers 9 of 11 bricks"), never to disqualify one.
+ */
+const DAILY_REACH_KM = 40;
+
+export type ResidenceOption = {
+  averageKm: number;
+  brickId: string;
+  brickName: string;
+  farthestBrickName: string;
+  farthestKm: number;
+  lat: number;
+  lng: number;
+  /** Ranked, human-readable justification — why this beat the alternatives. */
+  reasons: string[];
+  /** Total distance to every brick in the area. This is the quantity being minimised. */
+  totalKm: number;
+  withinReach: number;
+};
+
+export type ResidenceRecommendation = {
+  areaCode: string;
+  areaName: string;
+  consideredBricks: number;
+  /** Bricks left out because their pin is town-level only — stated, never silently dropped. */
+  excludedBricks: number;
+  options: ResidenceOption[];
+  warning: string | null;
+};
+
+/**
+ * Where should a rep hired for this area live?
+ *
+ * This is the 1-median problem: find the point minimising TOTAL travel to every brick. Two
+ * deliberate choices:
+ *
+ *  - Candidates are the area's own bricks, not the free-floating geometric optimum. The true
+ *    1-median frequently lands in farmland or the middle of a lake; a rep has to live somewhere
+ *    that exists. Every brick is a real populated place, so scoring bricks against each other
+ *    gives an answer that can actually be acted on.
+ *  - Total distance is minimised rather than the worst single trip. Minimising the worst trip
+ *    optimises for the rare bad day; minimising the total optimises for every ordinary one, which
+ *    is what actually determines how many calls a rep can make in a week.
+ *
+ * Only bricks with a trustworthy pin take part. A brick sitting on a shared town centre would drag
+ * the answer toward that town for no real reason, so it is excluded and reported.
+ */
+export function recommendResidence(
+  areaCode: string,
+  areaName: string,
+  bricks: TerritoryBrick[],
+  excludedBricks = 0,
+): ResidenceRecommendation | null {
+  const usable = bricks.filter((b) => b.areaCode === areaCode && Number.isFinite(b.lat) && Number.isFinite(b.lng));
+  if (usable.length === 0) return null;
+
+  if (usable.length === 1) {
+    const only = usable[0];
+    return {
+      areaCode,
+      areaName,
+      consideredBricks: 1,
+      excludedBricks,
+      options: [{
+        averageKm: 0,
+        brickId: only.brickId,
+        brickName: only.brickName,
+        farthestBrickName: only.brickName,
+        farthestKm: 0,
+        lat: only.lat,
+        lng: only.lng,
+        reasons: [`${only.brickName} is the only brick in this area with a confirmed location.`],
+        totalKm: 0,
+        withinReach: 1,
+      }],
+      warning: excludedBricks > 0
+        ? `Only one of this area's bricks has a confirmed location, so this is not a real comparison.`
+        : null,
+    };
+  }
+
+  const scored = usable.map((home) => {
+    let totalKm = 0;
+    let farthestKm = 0;
+    let farthestBrickName = home.brickName;
+    let withinReach = 0;
+    for (const other of usable) {
+      if (other.brickId === home.brickId) {
+        withinReach += 1;
+        continue;
+      }
+      const d = haversineKm(home.lat, home.lng, other.lat, other.lng);
+      totalKm += d;
+      if (d <= DAILY_REACH_KM) withinReach += 1;
+      if (d > farthestKm) {
+        farthestKm = d;
+        farthestBrickName = other.brickName;
+      }
+    }
+    return {
+      averageKm: totalKm / (usable.length - 1),
+      brickId: home.brickId,
+      brickName: home.brickName,
+      farthestBrickName,
+      farthestKm,
+      lat: home.lat,
+      lng: home.lng,
+      reasons: [] as string[],
+      totalKm,
+      withinReach,
+    };
+  }).sort((a, b) => a.totalKm - b.totalKm);
+
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const best = scored[0];
+  const runnerUp = scored[1];
+  const worst = scored[scored.length - 1];
+
+  best.reasons = [
+    `Shortest total travel: ${round(best.totalKm)} km to reach all ${usable.length} bricks — ` +
+      `${round(runnerUp.totalKm - best.totalKm)} km less than the next best (${runnerUp.brickName}) ` +
+      `and ${round(worst.totalKm - best.totalKm)} km less than the worst choice (${worst.brickName}).`,
+    `Average trip is ${round(best.averageKm)} km; the longest single trip is ` +
+      `${round(best.farthestKm)} km, to ${best.farthestBrickName}.`,
+    `${best.withinReach} of ${usable.length} bricks are within ${DAILY_REACH_KM} km — ` +
+      `reachable and returnable in a working day.`,
+  ];
+
+  for (const option of scored.slice(1, 3)) {
+    option.reasons = [
+      `${round(option.totalKm - best.totalKm)} km more total travel than ${best.brickName}.`,
+      `Longest single trip ${round(option.farthestKm)} km, to ${option.farthestBrickName}.`,
+      `${option.withinReach} of ${usable.length} bricks within ${DAILY_REACH_KM} km.`,
+    ];
+  }
+
+  return {
+    areaCode,
+    areaName,
+    consideredBricks: usable.length,
+    excludedBricks,
+    options: scored.slice(0, 3),
+    warning: excludedBricks > 0
+      ? `${excludedBricks} brick${excludedBricks === 1 ? "" : "s"} in this area ` +
+        `${excludedBricks === 1 ? "has" : "have"} no confirmed location and ${excludedBricks === 1 ? "was" : "were"} ` +
+        `left out of this calculation.`
+      : null,
+  };
 }
 
 /** Andrew's monotone chain. Returns [] for fewer than 3 points (nothing to shade). */
@@ -247,24 +541,40 @@ function pairStats(bricks: TerritoryBrick[]): { meanKm: number | null; spreadKm:
 
 // ── map data ────────────────────────────────────────────────────────────────
 export async function loadTerritoryMap(params: {
+  access?: AccessContext;
   areaCodes: string[];
   lineCode: string;
 }): Promise<TerritoryMap> {
-  const { areaCodes, lineCode } = params;
+  const { access, areaCodes, lineCode } = params;
   const empty: TerritoryMap = {
     areas: [],
     bricks: [],
     coverage: { located: 0, missing: 0, sharedFallback: 0, total: 0, wrongRegion: 0 },
+    residence: [],
     unlocated: [],
   };
   if (!LINE_LABELS[lineCode] || areaCodes.length === 0) return empty;
 
-  // Only areas this line actually carries — an area code from the client is never trusted.
+  const scope = access ? await resolveTerritoryScope(access) : { lineCodes: null, regionCodes: null };
+  if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return empty;
+
+  // Only areas this line actually carries — an area code from the client is never trusted. A
+  // Regional/District Manager's own region further narrows this: a hand-crafted request for an
+  // area code in the right line but the wrong region must not leak that region's geography either.
   const allowed = await loadLineAreaRows(lineCode);
   const areaNames = new Map<string, string>();
-  for (const row of allowed) areaNames.set(str(row.area_code), str(row.area_name) || str(row.area_code));
+  for (const row of allowed) {
+    const areaCode = str(row.area_code);
+    const regionCode = str(row.operational_region_code).toUpperCase();
+    if (scope.regionCodes && !scope.regionCodes.has(regionCode)) continue;
+    areaNames.set(areaCode, str(row.area_name) || areaCode);
+  }
   const requested = areaCodes.filter((code) => areaNames.has(code));
   if (requested.length === 0) return empty;
+
+  const regionNameByCode = new Map(
+    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+  );
 
   const brickRows = await pageAll<Row>(async (from, to) => {
     const { data, error } = await getSupabaseAdmin()
@@ -317,6 +627,7 @@ export async function loadTerritoryMap(params: {
         lat: centroid.lat,
         lng: centroid.lng,
         regionCode: str(row.region_code),
+        regionName: regionNameByCode.get(str(row.region_code).toUpperCase()) || str(row.region_code),
       });
     } else if (!centroid) {
       unlocated.push({ ...base, reason: "missing" });
@@ -398,6 +709,14 @@ export async function loadTerritoryMap(params: {
     });
   }
 
+  const unlocatedCountByArea = new Map<string, number>();
+  for (const brick of unlocated) {
+    unlocatedCountByArea.set(brick.areaCode, (unlocatedCountByArea.get(brick.areaCode) ?? 0) + 1);
+  }
+  const residence = requested
+    .map((areaCode) => recommendResidence(areaCode, areaNames.get(areaCode) ?? areaCode, bricks, unlocatedCountByArea.get(areaCode) ?? 0))
+    .filter((rec): rec is ResidenceRecommendation => rec !== null);
+
   return {
     areas,
     bricks,
@@ -408,6 +727,7 @@ export async function loadTerritoryMap(params: {
       total: brickRows.length,
       wrongRegion: unlocated.filter((b) => b.reason === "wrong-region").length,
     },
+    residence,
     unlocated,
   };
 }
@@ -430,6 +750,7 @@ export type BrickSearchHit = {
   /** How the current pin was obtained — 'manual' means a person placed it. */
   provider: string | null;
   regionCode: string;
+  regionName: string;
   status: string | null;
 };
 
@@ -472,10 +793,15 @@ export async function searchBricks(query: string, limit = 20): Promise<BrickSear
     .select("area_code, area_name");
   for (const row of (areaRows ?? []) as Row[]) areaNames.set(str(row.area_code), str(row.area_name));
 
+  const regionNameByCode = new Map(
+    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+  );
+
   return rows.map((row) => {
     const brickId = str(row.brick_id);
     const pin = pins.get(brickId);
     const areaCode = str(row.area_code);
+    const regionCode = str(row.region_code);
     return {
       areaCode,
       areaName: areaNames.get(areaCode) ?? areaCode,
@@ -485,7 +811,8 @@ export async function searchBricks(query: string, limit = 20): Promise<BrickSear
       lat: pin?.lat ?? null,
       lng: pin?.lng ?? null,
       provider: pin?.provider ?? null,
-      regionCode: str(row.region_code),
+      regionCode,
+      regionName: regionNameByCode.get(regionCode.toUpperCase()) || regionCode,
       status: pin?.status ?? null,
     };
   });
