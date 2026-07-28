@@ -140,21 +140,25 @@ export function ExtraTicketRowEditor({
         Add another ticket
       </button>
 
-      <input
-        className="mt-3 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
-        onChange={(event) => setDestination(event.target.value)}
-        placeholder="Where is this extra leg going? — e.g. Sohag"
-        type="text"
-        value={destination}
-      />
+      <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+        Destination:
+        <input
+          className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+          onChange={(event) => setDestination(event.target.value)}
+          type="text"
+          value={destination}
+        />
+      </label>
 
-      <input
-        className="mt-2 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
-        onChange={(event) => setReason(event.target.value)}
-        placeholder="Reason — e.g. unplanned extra leg to visit a client"
-        type="text"
-        value={reason}
-      />
+      <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
+        Note:
+        <input
+          className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+          onChange={(event) => setReason(event.target.value)}
+          type="text"
+          value={reason}
+        />
+      </label>
 
       <div className="mt-3 flex items-center gap-3">
         <button
