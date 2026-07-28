@@ -1723,49 +1723,6 @@ export async function getOwnPendingOutstationReviewRequests(
     }));
 }
 
-export type OwnTicketExpenseRequest = {
-  id: number;
-  tripStartDate: string;
-  tripEndDate: string;
-  destination: string;
-  transportationType: string;
-  total: number;
-  status: string;
-  ticketCount: number;
-};
-
-/**
- * The caller's OWN train/bus requests that can still receive an extra ticket
- * (not rejected). Used to power the "+ extra ticket" control on the portal.
- */
-export async function getOwnTicketExpenseRequests(
-  access: AccessContext,
-): Promise<OwnTicketExpenseRequest[]> {
-  const callerHrId = normalizeHrIdForAccess(access.hrId);
-  if (!callerHrId) return [];
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .select("*")
-    .in("transportation_type", ["train", "bus"])
-    .order("created_at", { ascending: false });
-  if (error || !data) return [];
-  return (data as Array<Record<string, unknown>>)
-    .map(mapOutstationRequestRow)
-    .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
-    .filter((row) => !row.status.startsWith("rejected"))
-    .map((row) => ({
-      id: row.id,
-      tripStartDate: row.tripStartDate,
-      tripEndDate: row.tripEndDate,
-      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
-      transportationType: row.transportationType,
-      total: row.claimedTotalAmount || row.expectedTotalAmount || 0,
-      status: row.status,
-      ticketCount: row.ticketAttachmentPaths.length,
-    }));
-}
-
 /**
  * Employee self-service: add ONE OR MORE extra tickets (each an attachment +
  * cost) plus a shared reason to their own already-submitted train/bus request —

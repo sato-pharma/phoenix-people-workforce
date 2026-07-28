@@ -9,12 +9,8 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
-import {
-  getOwnPendingOutstationReviewRequests,
-  getOwnTicketExpenseRequests,
-} from "@/lib/outstation/service";
+import { getOwnPendingOutstationReviewRequests } from "@/lib/outstation/service";
 import { PendingReviewRequestsCard } from "@/components/outstation/pending-review-requests-card";
-import { ExtraTicketManager } from "@/components/outstation/extra-ticket-manager";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
 export const dynamic = "force-dynamic";
@@ -64,13 +60,10 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  const [pendingReviewRequests, ticketRequests] = await Promise.all([
-    getOwnPendingOutstationReviewRequests(access).catch(() => []),
-    getOwnTicketExpenseRequests(access).catch(() => []),
-  ]);
+  const pendingReviewRequests = await getOwnPendingOutstationReviewRequests(access).catch(() => []);
   const hasWorkloadRows = Boolean(data.workload?.expenseRows?.length);
 
-  if (!hasWorkloadRows && pendingReviewRequests.length === 0 && ticketRequests.length === 0) {
+  if (!hasWorkloadRows && pendingReviewRequests.length === 0) {
     return (
       <EmployeePortalEmptyState
         message="No visible outstation expense records are available for your expense scope yet."
@@ -88,12 +81,12 @@ export default async function EmployeePortalExpenseDashboardPage() {
     >
       <div className="space-y-5">
         <PendingReviewRequestsCard requests={pendingReviewRequests} />
-        <ExtraTicketManager requests={ticketRequests} />
         {hasWorkloadRows ? (
           <PersonalExpenseWorkloadDashboard
             adminKeyCards={null}
             data={{ workload: data.workload }}
             showHero={false}
+            viewerHrId={access.hrId}
           />
         ) : null}
       </div>
