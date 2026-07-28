@@ -43,6 +43,9 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
     }
+    // The prior lack of any server-side log meant a real 500 here was only ever visible in the
+    // browser network tab, never in Cloud Run logs — log it so future failures are diagnosable.
+    console.error("[sales/master-workbook/export] failed:", error);
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Export failed." }, { status: 500 });
   }
 }

@@ -98,8 +98,15 @@ const _ALIAS_CACHE_TTL = 5 * 60 * 1000;
 
 // Infer WHICH distributor each alias came from by matching the alias text against the original raw
 // columns preserved in import_rows.raw_row (e.g. PS "Mat. Code"/"Sal. Dist. Desc.", IS "Item Code"/
-// "Territory Name"). Read-only; pages with bounded memory (processes + discards each batch of pages).
-async function buildAliasDistributorMaps(supabase: SupabaseAdmin): Promise<{ product: Map<string, Set<string>>; territory: Map<string, Set<string>> }> {
+// "Territory Name"). Read-only; pages with bounded memory via the shared selectAll() pager.
+//
+// Scoped to VALIDATED batches only (same set the rest of the workbook reads) — this used to scan
+// every row ever imported, including drafts/rejected batches, which on a 300MB+ table pushed the
+// export past its time budget and 500'd (see /sales/database-mapping export incident 2026-07-27).
+async function buildAliasDistributorMaps(
+  supabase: SupabaseAdmin,
+  validatedBatchIds: string[],
+): Promise<{ product: Map<string, Set<string>>; territory: Map<string, Set<string>> }> {
   if (_aliasCache && Date.now() - _aliasCache.ts < _ALIAS_CACHE_TTL) {
     return { product: _aliasCache.product, territory: _aliasCache.territory };
   }
@@ -114,31 +121,27 @@ async function buildAliasDistributorMaps(supabase: SupabaseAdmin): Promise<{ pro
     set.add(dist);
   };
 
-  const head = await supabase.from("source_of_sales_import_rows").select("id", { count: "exact", head: true });
-  if (head.error) return { product, territory };
-  const total = head.count ?? 0;
-  const pageSize = 1000;
-  const offsets: number[] = [];
-  for (let from = 0; from < total; from += pageSize) offsets.push(from);
+  if (validatedBatchIds.length === 0) {
+    _aliasCache = { ts: Date.now(), product, territory };
+    return { product, territory };
+  }
 
-  const concurrency = 6;
-  for (let i = 0; i < offsets.length; i += concurrency) {
-    const pages = await Promise.all(offsets.slice(i, i + concurrency).map(async (from) => {
-      const result = await supabase.from("source_of_sales_import_rows").select("distributor_code,raw_row").order("id", { ascending: true }).range(from, from + pageSize - 1);
-      return result.error ? [] : ((result.data ?? []) as Array<Record<string, unknown>>);
-    }));
-    for (const page of pages) {
-      for (const r of page) {
-        const rr = r.raw_row;
-        if (!rr || typeof rr !== "object") continue;
-        const profile = profileByCode.get(String(r.distributor_code ?? "").toUpperCase());
-        if (!profile) continue;
-        const lc: Record<string, string> = {};
-        for (const k of Object.keys(rr as Record<string, unknown>)) lc[k.toLowerCase()] = String((rr as Record<string, unknown>)[k] ?? "");
-        for (const col of profile.productColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(product, v, profile.distributorName); }
-        for (const col of profile.territoryColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(territory, v, profile.distributorName); }
-      }
-    }
+  const rows = await selectAll(
+    supabase,
+    "source_of_sales_import_rows",
+    "distributor_code,raw_row",
+    "id",
+    { column: "batch_id", values: validatedBatchIds },
+  );
+  for (const r of rows) {
+    const rr = r.raw_row;
+    if (!rr || typeof rr !== "object") continue;
+    const profile = profileByCode.get(String(r.distributor_code ?? "").toUpperCase());
+    if (!profile) continue;
+    const lc: Record<string, string> = {};
+    for (const k of Object.keys(rr as Record<string, unknown>)) lc[k.toLowerCase()] = String((rr as Record<string, unknown>)[k] ?? "");
+    for (const col of profile.productColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(product, v, profile.distributorName); }
+    for (const col of profile.territoryColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(territory, v, profile.distributorName); }
   }
   _aliasCache = { ts: Date.now(), product, territory };
   return { product, territory };
@@ -238,7 +241,7 @@ export async function buildMasterWorkbookBuffer(
       validatedBatchIds.length > 0 ? { column: "batch_id", values: validatedBatchIds } : undefined,
     ),
     selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period"),
-    buildAliasDistributorMaps(supabase),
+    buildAliasDistributorMaps(supabase, validatedBatchIds),
   ]);
 
   // Confidential products (LA003 / LA004) are included only for CEO / Super Admin. Filtering the
