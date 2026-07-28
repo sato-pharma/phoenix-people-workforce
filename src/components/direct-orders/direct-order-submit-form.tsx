@@ -104,6 +104,8 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
       return pharmacyId;
     }
     if (!newName.trim()) throw new Error("New pharmacy name is required.");
+    if (!newDoctor.trim()) throw new Error("Doctor name is required.");
+    if (!newAddress.trim()) throw new Error("Pharmacy address is required.");
     const pairs = distRows
       .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
       .filter((row) => row.distributorCode && row.customerCode);
@@ -116,8 +118,8 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
         brickId: newBrickId || null,
         areaCode: selectedBrick?.areaCode ?? null,
         regionCode: selectedBrick?.regionCode ?? null,
-        doctorName: newDoctor.trim() || null,
-        pharmacyAddress: newAddress.trim() || null,
+        doctorName: newDoctor.trim(),
+        pharmacyAddress: newAddress.trim(),
         distributorCodes: pairs,
       }),
     });
@@ -302,8 +304,8 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
                 {selectedBrick ? (
                   <p className="text-[11px] text-slate-500">Area {selectedBrick.areaCode} · Region {selectedBrick.regionCode}</p>
                 ) : null}
-                <input className={inputClass()} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name (optional)" />
-                <input className={inputClass()} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address (optional)" />
+                <input className={inputClass()} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
+                <input className={inputClass()} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
 
                 {/* Mandatory ≥1 distributor + customer code */}
                 <div className="border border-[#eef1f3] p-2">
