@@ -1479,7 +1479,39 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
 // ROI" section (see adminNavigationSectionSeeds above, now collapsed to one
 // link). Employee-portal marketing/ROI navigation (Marketing Manager/PM/GPM's
 // own workspace) is a separate, unrelated section and is untouched.
+/**
+ * Archived Marketing Requests — a SEPARATE module from the live marketing one.
+ *
+ * Owner decision 2026-07-28: from 2026-08-01 every marketing request is submitted in Phoenix, and
+ * Phoenix data is materially more accurate because it is validated at entry. The historical
+ * Excel-imported set is kept in its own module with its own ROI so legacy data quality can never
+ * drag down live performance. Split at the data layer by marketing_requests.origin.
+ *
+ * NOTE: "Archived" here is PROVENANCE (came from Excel), not the status='archived' lifecycle state.
+ */
+export const archivedMarketingPageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/archived-marketing-requests",
+    icon: Archive,
+    label: "Archived ROI Tracking",
+    description: "Historical marketing requests imported from Excel, with their own ROI tracking — kept apart from live Phoenix performance.",
+    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
+  },
+];
+
 export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
+  // Listed first deliberately: this is the intended single source of truth for marketing ROI.
+  // It composes the same authoritative engine as ROI Tracking (getMarketingRoiReport) rather than
+  // adding a fifth opinion, and additionally surfaces the pharmacy code-reference quality signal
+  // that no other surface shows. The three ROI entries below it remain live until the owner
+  // confirms this one replaces them.
+  {
+    href: "/admin/marketing-roi-tracker",
+    icon: Target,
+    label: "ROI Tracker",
+    description: "Every request with its forecast, attributed sales, products, target pharmacies and approval chain — one place, one set of numbers.",
+    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
+  },
   {
     href: "/admin/sales-marketing-intelligence",
     icon: ChartColumnBig,
@@ -1865,6 +1897,7 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: attendanceManagementPageItems, label: "Attendance Management" },
   { items: payrollManagementPageItems, label: "Payroll Management" },
   { items: marketingRoiPageItems, label: "Marketing & ROI" },
+  { items: archivedMarketingPageItems, label: "Archived Marketing Requests" },
   { items: recruitmentHiringPageItems, label: "Recruitment & Hiring" },
   { items: peopleManagementPageItems, label: "People Management" },
   { items: outstationExpensesPageItems, label: "Outstation Expenses" },

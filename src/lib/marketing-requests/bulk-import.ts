@@ -869,6 +869,8 @@ export async function executeBulkImport(
         approved_at: resolved.importStatus === "approved" ? requestDateTs : null,
         created_by_hr_id: actorStoredHrId,
         updated_by_hr_id: actorStoredHrId,
+        // Provenance seam: bulk XLSX upload belongs to the Archived module, not the live one.
+        origin: "xlsx_import",
       };
 
       // Product rows. value_share comes from the batch ROI calc across all of the
