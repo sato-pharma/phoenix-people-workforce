@@ -5,6 +5,47 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
 
+/**
+ * THE AMBIGUOUS NAME RULE: a place name that resolves to two different targets must resolve to
+ * NOTHING, never to whichever row happened to be read last.
+ *
+ * Egypt reuses place names across governorates — الصالحية is in both Sharkia and Qena, الرحمانية in
+ * both Behira and Kafr El-Sheikh, ابراهيميه in both Alexandria and Sharkia, مصطفى كامل is a street
+ * in Alexandria and a square downtown. Those are real, distinct bricks and are deliberately kept
+ * separate.
+ *
+ * The alias table's unique index is on (normalized_alias, target_type, target_code), so it happily
+ * holds ONE name pointing at TWO bricks. A plain `.set()` then silently keeps whichever row the
+ * database returned last, and every sale carrying that name lands in the wrong area — credited to
+ * the wrong rep, in the wrong district manager's numbers, with nothing to show it happened.
+ *
+ * Dropping the key instead sends the row to review, which is the standing rule: an ambiguous
+ * territory label is never auto-resolved. Same shape as the customer-map collision handling in
+ * loadCrosswalks, and as `detectDistributor`'s tie -> `best: null`.
+ */
+export function buildAliasIndex<T>(
+  rows: Array<Record<string, unknown>>,
+  valueOf: (row: Record<string, unknown>) => T,
+  identityOf: (value: T) => string,
+): { conflicts: Set<string>; index: Map<string, T> } {
+  const index = new Map<string, T>();
+  const conflicts = new Set<string>();
+  for (const row of rows) {
+    const key = normalizeAliasKey(row.alias);
+    if (!key || conflicts.has(key)) continue;
+    const value = valueOf(row);
+    const existing = index.get(key);
+    if (existing === undefined) {
+      index.set(key, value);
+    } else if (identityOf(existing) !== identityOf(value)) {
+      // Two different targets for one name: neither wins.
+      index.delete(key);
+      conflicts.add(key);
+    }
+  }
+  return { conflicts, index };
+}
+
 // Read EVERY active row of an alias / crosswalk table, paging past PostgREST's 1000-row default cap.
 // Without this, large tables (territory aliases + customer_map have thousands of rows) silently
 // truncate to the first 1000, so freshly-saved mappings (highest ids, past row 1000) would never load
@@ -86,21 +127,24 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     const key = normalizeAliasKey(row.alias); const code = normalizeCodeKey(row.product_code);
     if (dist && key && code) productAliasByKey.set(`${dist} ${key}`, code);
   }
-  const territoryAliasByKey = new Map<string, { targetType: string; targetCode: string }>();
-  for (const row of terrA) {
-    const key = normalizeAliasKey(row.alias);
-    if (key) territoryAliasByKey.set(key, { targetType: String(row.target_type ?? "brick").toLowerCase(), targetCode: String(row.target_code ?? "") });
-  }
-  const areaAliasByKey = new Map<string, { areaCode: string; regionCode: string }>();
-  for (const row of areaA) {
-    const key = normalizeAliasKey(row.alias);
-    if (key) areaAliasByKey.set(key, { areaCode: String(row.area_code ?? ""), regionCode: String(row.region_code ?? "") });
-  }
-  const regionAliasByKey = new Map<string, string>();
-  for (const row of regionA) {
-    const key = normalizeAliasKey(row.alias);
-    if (key) regionAliasByKey.set(key, normalizeCodeKey(row.region_code));
-  }
+  const territory = buildAliasIndex(
+    terrA,
+    (row) => ({ targetType: String(row.target_type ?? "brick").toLowerCase(), targetCode: String(row.target_code ?? "") }),
+    (v) => `${v.targetType} ${v.targetCode}`,
+  );
+  const territoryAliasByKey = territory.index;
+
+  const area = buildAliasIndex(
+    areaA,
+    (row) => ({ areaCode: String(row.area_code ?? ""), regionCode: String(row.region_code ?? "") }),
+    (v) => `${v.areaCode} ${v.regionCode}`,
+  );
+  const areaAliasByKey = area.index;
+
+  const region = buildAliasIndex(regionA, (row) => normalizeCodeKey(row.region_code), (v) => v);
+  const regionAliasByKey = region.index;
+
+  const ambiguousAliasKeys = new Set<string>([...territory.conflicts, ...area.conflicts, ...region.conflicts]);
   const customerBrickByKey = new Map<string, string>();
   // Numeric-canonical customer index (collision-safe): tolerates leading-zero / number-vs-text drift.
   const customerBrickByCanonicalKey = new Map<string, string>();
@@ -119,5 +163,5 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     else if (existing !== brick) { customerBrickByCanonicalKey.delete(ckey); customerCanonConflict.add(ckey); }
   }
 
-  return { areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }
