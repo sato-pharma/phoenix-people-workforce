@@ -104,6 +104,13 @@ export type OutstationCaptureResult = {
   durationMinutes: number | null;
   eligibilityReason: string;
   eligibilityStatus: OutstationEligibilityStatus;
+  /**
+   * True when the residence-vs-destination governorate rule could NOT be
+   * confirmed (either governorate was unresolved). Such a request is not
+   * auto-paid — it is held for Super Admin review. Optional so existing
+   * result mocks / stored drafts stay valid; the server always sets it.
+   */
+  governorateReviewRequired?: boolean;
   employeeHrId: string;
   employeeName: string;
   employeeRole: string;
