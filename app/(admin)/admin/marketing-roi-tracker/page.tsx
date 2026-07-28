@@ -18,7 +18,7 @@ export default async function AdminMarketingRoiTrackerPage() {
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
-      <MarketingRoiTracker basePath="/admin" />
+      <MarketingRoiTracker />
     </div>
   );
 }

@@ -52,6 +52,8 @@ export type RoiTrackerPharmacyRow = {
   pharmacyName: string;
   customerCode: string;
   distributorCode: string | null;
+  /** Resolved from the Source-of-Sales distributor master; falls back to the code. */
+  distributorName: string | null;
   trackingStatus: string | null;
   /** matched | ambiguous | not_found | pending (pending = never validated). */
   referenceStatus: string;
@@ -137,6 +139,29 @@ async function loadPharmacyReferenceState(): Promise<Map<string, string>> {
 }
 
 /**
+ * Distributor code -> display name, from the Source-of-Sales distributor master.
+ *
+ * The target-pharmacy record carries only a distributor CODE, which is unreadable in an export.
+ * One small query for the whole page; unknown codes fall back to the code itself rather than
+ * going blank, so a distributor missing from the master is still visible.
+ */
+async function loadDistributorNames(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_distributors")
+    .select("distributor_code, distributor_name");
+  if (error) throw error;
+
+  const byCode = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ distributor_code: string | null; distributor_name: string | null }>) {
+    const key = (row.distributor_code ?? "").trim().toUpperCase();
+    const name = (row.distributor_name ?? "").trim();
+    if (key && name) byCode.set(key, name);
+  }
+  return byCode;
+}
+
+/**
  * The complete ROI picture for every request the caller may see, under `filters`.
  *
  * Access, scoping and masking are enforced inside getMarketingRoiReport — this function must
@@ -172,8 +197,8 @@ export async function getMarketingRoiTracker(
     };
   }
 
-  // Detail + reference state in parallel — neither depends on the other.
-  const [detail, referenceByCode] = await Promise.all([
+  // Detail + reference state + distributor names in parallel — none depends on the others.
+  const [detail, referenceByCode, distributorNameByCode] = await Promise.all([
     loadMarketingRoiExportDetail(
       report.rows.map((row) => ({ requestCode: row.requestCode, requestId: row.requestId })),
       report.includedRestricted,
@@ -181,6 +206,11 @@ export async function getMarketingRoiTracker(
     loadPharmacyReferenceState().catch((error) => {
       // The reference signal is an enhancement, never a reason to fail the whole report.
       logRoiServiceFailure("getMarketingRoiTracker:loadPharmacyReferenceState", error, { role: access.role });
+      return new Map<string, string>();
+    }),
+    loadDistributorNames().catch((error) => {
+      // Same rule: a readable distributor name is a nicety; losing it must not fail the report.
+      logRoiServiceFailure("getMarketingRoiTracker:loadDistributorNames", error, { role: access.role });
       return new Map<string, string>();
     }),
   ]);
@@ -203,9 +233,13 @@ export async function getMarketingRoiTracker(
   for (const pharmacy of detail.pharmacies) {
     const key = (pharmacy.customerCode ?? "").trim().toLowerCase();
     const referenceStatus = referenceByCode.get(key) ?? "pending";
+    const distributorCode = pharmacy.distributorCode;
     const enriched: RoiTrackerPharmacyRow = {
       customerCode: pharmacy.customerCode,
-      distributorCode: pharmacy.distributorCode,
+      distributorCode,
+      distributorName: distributorCode
+        ? distributorNameByCode.get(distributorCode.trim().toUpperCase()) ?? distributorCode
+        : null,
       pharmacyName: pharmacy.pharmacyName,
       referenceStatus,
       referenceSuspect: SUSPECT_REFERENCE_STATES.has(referenceStatus),
