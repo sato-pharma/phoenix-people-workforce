@@ -57,6 +57,31 @@ export function runOutstationNotificationsTests() {
     "submit notification eventType must be request_submitted",
   );
 
+  // ── Regression guard (2026-07-28): submit alert metrics must not render blank ──
+  // The OUTSTATION email template's {{line}}/{{area}}/{{managerName}}/{{approvalFlow}}/
+  // {{status}} tokens look up these exact metric labels via metricValue() — losing any
+  // of them silently blanks that row in a live email to Super Admin + CEO.
+  assert.match(submitNotifySlice, /label: "Line"/, "metrics must include a standalone Line label");
+  assert.match(submitNotifySlice, /label: "Area"/, "metrics must include a standalone Area label");
+  assert.match(submitNotifySlice, /label: "Manager"/, "metrics must include a Manager label");
+  assert.match(submitNotifySlice, /label: "Approval Flow"/, "metrics must include an Approval Flow label");
+  assert.match(
+    submitNotifySlice,
+    /label: "Status",\s*value: "Submitted"/,
+    "metrics must include an explicit Status label (the {{status}} token has no other source)",
+  );
+  // Trip start/end must be human-formatted, not the raw ISO timestamp stored on the request.
+  assert.match(
+    submitNotifySlice,
+    /label: "Trip start",\s*value: formatDateValue\(request\.tripStartDate\)/,
+    "Trip start must be formatted via formatDateValue, not the raw ISO string",
+  );
+  assert.match(
+    submitNotifySlice,
+    /label: "Trip end",\s*value: formatDateValue\(request\.tripEndDate\)/,
+    "Trip end must be formatted via formatDateValue, not the raw ISO string",
+  );
+
   const submitAlertLookupSlice = functionSlice(service, "async function resolveOutstationSubmitAlertHrIds");
   assert.match(
     submitAlertLookupSlice,

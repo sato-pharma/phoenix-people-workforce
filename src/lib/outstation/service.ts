@@ -24,6 +24,7 @@ import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classific
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { formatDateValue } from "@/lib/i18n/format";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
@@ -1059,20 +1060,37 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
     const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
     const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
+    const tripLength = request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)`;
+
+    const directory = await getEmployeeDirectory();
+    const employeeRow = directory.employees.find(
+      (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(request.employeeHrId),
+    );
+    const managerName = text(employeeRow?.managerName) || "—";
 
     const metrics = [
       { label: "Employee", value: `${request.employeeName} (${request.employeeHrId})` },
       { label: "Role", value: request.employeeRole },
-      { label: "Line / Area", value: `${text(request.employeeLine) || "—"} / ${text(request.employeeArea) || "—"}` },
+      // Separate "Line"/"Area" labels (replacing the old combined "Line / Area" one) are what
+      // the OUTSTATION email template's {{line}}/{{area}} tokens look up via metricValue() —
+      // the combined label alone left those tokens rendering blank.
+      { label: "Line", value: text(request.employeeLine) || "—" },
+      { label: "Area", value: text(request.employeeArea) || "—" },
+      { label: "Manager", value: managerName },
       { label: "Transportation", value: request.transportationType },
       { label: "Expense type", value: request.expenseType },
       // "Amount" and "Trip start"/"Trip end" (not a combined "Trip dates") are the exact
       // labels the OUTSTATION email template's amount/startDate/endDate tokens look up via
       // metricValue() — using different labels here left those tokens rendering blank.
+      // Formatted (not raw ISO) since the template renders these directly into "{{startDate}}
+      // to {{endDate}}" text.
       { label: "Amount", value: claimedAmount },
-      { label: "Trip start", value: request.tripStartDate },
-      { label: "Trip end", value: request.tripEndDate },
-      { label: "Trip length", value: request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)` },
+      { label: "Trip start", value: formatDateValue(request.tripStartDate) },
+      { label: "Trip end", value: formatDateValue(request.tripEndDate) },
+      // "Duration" (in addition to "Trip length") is what the OUTSTATION template's
+      // {{duration}} token looks up.
+      { label: "Trip length", value: tripLength },
+      { label: "Duration", value: tripLength },
       { label: "Destination", value: destination },
       {
         label: "Distance from residence",
@@ -1090,6 +1108,13 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
         label: "Approval recommendation",
         value: `${request.approvalRecommendation} — ${text(request.approvalReason) || "—"}`,
       },
+      // This request auto-decides on submit (no human pre-approval gate); the OUTSTATION
+      // template's {{approvalFlow}} token describes that process, not a per-request value.
+      {
+        label: "Approval Flow",
+        value: "Automatic — no manager approval step; Super Admin can review and override afterward in the Expense Command Center.",
+      },
+      { label: "Status", value: "Submitted" },
       {
         label: "Territory validation",
         value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
@@ -1106,7 +1131,7 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
     // second wall of text made the email read as duplicated content.
     const messageLines = [
       `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
-      `Trip: ${request.tripStartDate} to ${request.tripEndDate} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Trip: ${formatDateValue(request.tripStartDate)} to ${formatDateValue(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
       `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
     ];
 
