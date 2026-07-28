@@ -22,6 +22,7 @@ const SAFE_OVERRIDE_RE = /--\s*SAFE:/i;
 const GRANDFATHERED_DUPLICATE_TIMESTAMPS = new Set([
   '20260616120000', // attendance_deferred_atomic_ops / dv_non_mr_status / position_vacancies_status_integrity
   '20260617130000', // coaching_scale_5 / product_aliases_per_distributor
+  '20260728100000', // au_resign_vacate_all_open_seats (#1416) / restore_report_rpc_statement_timeouts (#1415) — authored in parallel, each green alone, collided at merge; BOTH already applied to prod under distinct schema_migrations versions (20260728092516 / 20260728091832), so renaming either would desync migration history
 ]);
 
 let errors = 0;
