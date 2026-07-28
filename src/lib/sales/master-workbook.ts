@@ -83,12 +83,16 @@ async function selectAll(
   inFilter?: { column: string; values: string[] },
 ): Promise<Row[]> {
   if (!inFilter || inFilter.values.length === 0) return selectAllOneBatch(supabase, table, columns, order, inFilter);
-  const rows: Row[] = [];
+  // Accumulate as an array-of-batches and flatten once at the end — NOT `rows.push(...batch)`,
+  // which spreads every element as an individual push() argument and throws "RangeError: Maximum
+  // call stack size exceeded" once a single batch's row count crosses V8's argument-count ceiling
+  // (confirmed: reproduced on source_of_sales_import_rows at ~218k rows / a single 89-batch group).
+  const batches: Row[][] = [];
   for (let i = 0; i < inFilter.values.length; i += 100) {
     const batchValues = inFilter.values.slice(i, i + 100);
-    rows.push(...await selectAllOneBatch(supabase, table, columns, order, { column: inFilter.column, values: batchValues }));
+    batches.push(await selectAllOneBatch(supabase, table, columns, order, { column: inFilter.column, values: batchValues }));
   }
-  return rows;
+  return batches.flat();
 }
 
 // Module-level cache for alias maps — these are structurally stable (same column headers appear in
