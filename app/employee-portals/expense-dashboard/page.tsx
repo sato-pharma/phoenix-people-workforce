@@ -9,6 +9,8 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { getOwnPendingOutstationReviewRequests } from "@/lib/outstation/service";
+import { PendingReviewRequestsCard } from "@/components/outstation/pending-review-requests-card";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +60,10 @@ export default async function EmployeePortalExpenseDashboardPage() {
     );
   }
 
-  if (!data.workload?.expenseRows?.length) {
+  const pendingReviewRequests = await getOwnPendingOutstationReviewRequests(access).catch(() => []);
+  const hasWorkloadRows = Boolean(data.workload?.expenseRows?.length);
+
+  if (!hasWorkloadRows && pendingReviewRequests.length === 0) {
     return (
       <EmployeePortalEmptyState
         message="No visible outstation expense records are available for your expense scope yet."
@@ -74,11 +79,16 @@ export default async function EmployeePortalExpenseDashboardPage() {
       errorBoundaryTitle="Expense Dashboard unavailable"
       title="Expense Dashboard"
     >
-      <PersonalExpenseWorkloadDashboard
-        adminKeyCards={null}
-        data={{ workload: data.workload }}
-        showHero={false}
-      />
+      <div className="space-y-5">
+        <PendingReviewRequestsCard requests={pendingReviewRequests} />
+        {hasWorkloadRows ? (
+          <PersonalExpenseWorkloadDashboard
+            adminKeyCards={null}
+            data={{ workload: data.workload }}
+            showHero={false}
+          />
+        ) : null}
+      </div>
     </EmployeePortalPageShell>
   );
 }

@@ -37,6 +37,7 @@ import type {
 } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import type { ManagerAreaRepOption } from "@/lib/outstation/area-rep-options";
 
 
 type MedicalTripOption = {
@@ -406,6 +407,7 @@ async function drawCarEvidenceWatermark(
 }
 
 export function MobileOutstationWizard({
+  areaRepOptions = [],
   employeeHrId,
   employeeName,
   employeeRole,
@@ -415,6 +417,7 @@ export function MobileOutstationWizard({
   residenceSummary,
   showIntro = true,
 }: {
+  areaRepOptions?: ManagerAreaRepOption[];
   employeeHrId: string;
   employeeName: string;
   employeeRole: string;
@@ -439,6 +442,7 @@ export function MobileOutstationWizard({
   const [pmWorkload, setPmWorkload] = useState("");
   const [notes, setNotes] = useState("");
   const [medicalTripHrId, setMedicalTripHrId] = useState("");
+  const [selectedAreaCode, setSelectedAreaCode] = useState("");
   const [captured, setCaptured] = useState<OutstationCaptureResult | null>(null);
   const [carEvidence, setCarEvidence] = useState<CarEvidenceState | null>(null);
   const [carEvidenceDraftId, setCarEvidenceDraftId] = useState(() => buildDraftId());
@@ -460,8 +464,22 @@ export function MobileOutstationWizard({
   const lastCalculationKeyRef = useRef("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  // When the manager's areas are known (sales seat model), they pick an AREA and
+  // the occupying rep is resolved automatically. Otherwise (roles not modelled
+  // in the seat tree) the wizard keeps its legacy free-text rep picker.
+  const useAreaRepPicker = areaRepOptions.length > 0;
+  const selectedAreaOption =
+    areaRepOptions.find((option) => option.areaCode === selectedAreaCode) ?? null;
   const selectedMedicalTripName =
-    medicalTripOptions.find((option) => option.hrId === medicalTripHrId)?.name ?? null;
+    medicalTripOptions.find((option) => option.hrId === medicalTripHrId)?.name ??
+    selectedAreaOption?.repName ??
+    null;
+
+  function handleAreaSelection(areaCode: string) {
+    setSelectedAreaCode(areaCode);
+    const option = areaRepOptions.find((entry) => entry.areaCode === areaCode) ?? null;
+    setMedicalTripHrId(option?.repHrId ?? "");
+  }
   // transportIcon was removed when WizardStep migrated from icon containers
   // to numbered indices (visual polish — no logic change).
   const isTicketBased = transportationType === "train" || transportationType === "bus";
@@ -494,7 +512,7 @@ export function MobileOutstationWizard({
     closePermissionPrompt();
     setMessage(
       kind === "camera"
-        ? "Camera permission was declined. Car evidence cannot be captured without camera access."
+        ? "Camera permission was declined. The car photo cannot be captured without camera access."
         : "Location permission was declined. This expense cannot continue without GPS access.",
     );
   }
@@ -529,6 +547,7 @@ export function MobileOutstationWizard({
     setAmWorkload("");
     setPmWorkload("");
     setMedicalTripHrId("");
+    setSelectedAreaCode("");
     setMeetingAmount("");
     setNotes("");
     setOtherAmount("");
@@ -1062,7 +1081,7 @@ export function MobileOutstationWizard({
       return;
     }
     if (!videoRef.current || !carEvidenceStreamRef.current) {
-      setMessage("Open the camera before capturing evidence.");
+      setMessage("Open the camera before capturing the photo.");
       return;
     }
 
@@ -1114,7 +1133,7 @@ export function MobileOutstationWizard({
         requestId: carEvidence?.requestId ?? null,
       });
       stopCarEvidenceCamera();
-      setMessage("Live car evidence captured. This photo is attached to this request.");
+      setMessage("Live car photo captured. This photo is attached to this request.");
     } catch (error) {
       const typedError = error as GeolocationPositionError | DOMException | Error;
       if (isDeniedPermissionError(typedError)) {
@@ -1123,7 +1142,7 @@ export function MobileOutstationWizard({
         return;
       }
       setMessage(
-        typedError instanceof Error ? typedError.message : "Unable to capture live car evidence.",
+        typedError instanceof Error ? typedError.message : "Unable to capture the live car photo.",
       );
     } finally {
       setIsCapturingCarEvidence(false);
@@ -1137,7 +1156,7 @@ export function MobileOutstationWizard({
     }
 
     if (transportationType === "car" && !hasCarEvidence) {
-      setMessage("Capture live camera evidence before submitting this car request.");
+      setMessage("Capture the live car photo before submitting this car request.");
       return;
     }
 
@@ -1398,25 +1417,50 @@ export function MobileOutstationWizard({
             </SearchableSelect>
           </Field>
 
-          <Field label="Medical Representative">
-            <SearchableSelect
-              className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
-              disabled={medicalTripOptions.length === 0}
-              onChange={(event) => setMedicalTripHrId(event.target.value)}
-              value={medicalTripHrId}
-            >
-              <option value="">
-                {medicalTripOptions.length === 0
-                  ? "No medical representatives in team"
-                  : "Select medical representative"}
-              </option>
-              {medicalTripOptions.map((option) => (
-                <option key={option.hrId} value={option.hrId}>
-                  {formatEmployeeDisplayName(option.name)}
+          {useAreaRepPicker ? (
+            <Field label="Area">
+              <SearchableSelect
+                className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+                onChange={(event) => handleAreaSelection(event.target.value)}
+                value={selectedAreaCode}
+              >
+                <option value="">Select area</option>
+                {areaRepOptions.map((option) => (
+                  <option key={option.areaCode} value={option.areaCode}>
+                    {option.areaName}
+                    {option.isVacant ? " (vacant)" : ""}
+                  </option>
+                ))}
+              </SearchableSelect>
+              {selectedAreaOption ? (
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  {selectedAreaOption.repHrId
+                    ? `Medical rep: ${formatEmployeeDisplayName(selectedAreaOption.repName)}`
+                    : "No medical rep is currently assigned to this area."}
+                </p>
+              ) : null}
+            </Field>
+          ) : (
+            <Field label="Medical Representative">
+              <SearchableSelect
+                className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 disabled:bg-slate-50 disabled:text-slate-400"
+                disabled={medicalTripOptions.length === 0}
+                onChange={(event) => setMedicalTripHrId(event.target.value)}
+                value={medicalTripHrId}
+              >
+                <option value="">
+                  {medicalTripOptions.length === 0
+                    ? "No medical representatives in team"
+                    : "Select medical representative"}
                 </option>
-              ))}
-            </SearchableSelect>
-          </Field>
+                {medicalTripOptions.map((option) => (
+                  <option key={option.hrId} value={option.hrId}>
+                    {formatEmployeeDisplayName(option.name)}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </Field>
+          )}
 
           {transportationType === "car" ? (
             <Field label="Kilometer Reading">
@@ -1656,7 +1700,7 @@ export function MobileOutstationWizard({
       {transportationType === "car" ? (
         <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-            Car live evidence
+            Car live photo
           </span>
           <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
             Capture one live photo from device camera
@@ -1667,7 +1711,7 @@ export function MobileOutstationWizard({
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Live Camera Evidence
+                Live Camera Photo
               </span>
               <button
                 className="flex min-h-12 w-full items-center justify-center gap-3 rounded-md bg-orange-500 px-5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:bg-orange-300"
@@ -1694,7 +1738,7 @@ export function MobileOutstationWizard({
             </label>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Evidence status
+                Photo status
               </p>
               <p className="mt-2 text-sm font-semibold text-slate-900">
                 {hasCarEvidence ? "One live camera photo captured" : "No live camera photo captured"}
@@ -1717,7 +1761,7 @@ export function MobileOutstationWizard({
               />
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-950 p-4">
                 <p className="text-sm font-semibold text-white">
-                  Frame the car clearly, then capture the evidence photo.
+                  Frame the car clearly, then capture the photo.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1744,14 +1788,14 @@ export function MobileOutstationWizard({
             <div className="relative mt-4 overflow-hidden rounded-md border border-slate-200">
               {/* eslint-disable-next-line @next/next/no-img-element -- Local camera data URLs cannot be optimized by Next Image. */}
               <img
-                alt="Live car evidence preview"
+                alt="Live car photo preview"
                 className="h-auto w-full object-cover"
                 src={carEvidence.imageDataUrl}
               />
             </div>
           ) : carEvidence ? (
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Live evidence metadata is restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
+              Live photo details are restored, but the image preview cannot be restored. Re-capture the photo before submitting if needed.
             </div>
           ) : null}
         </Card>
@@ -1897,7 +1941,7 @@ function permissionPromptCopy(kind: PermissionPromptKind, blocked?: boolean) {
       badge: blocked ? "Location blocked" : "Location permission",
       description: blocked
         ? "Location is blocked by the browser for this website. Open browser settings, change location to Allow for this site, return here, then retry."
-        : "Phoenix will request the real browser location permission now and attach the GPS position to this car evidence photo.",
+        : "Phoenix will request the real browser location permission now and attach the GPS position to this car photo.",
       title: blocked ? "Location permission blocked" : "Location permission required",
     };
   }

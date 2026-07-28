@@ -10,6 +10,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getOutstationEmployeeContext } from "@/lib/outstation/service";
+import { getManagerAreaRepOptions } from "@/lib/outstation/area-rep-options";
 
 // NOTE: dir="auto", print stylesheet, prefers-reduced-motion, and a
 // page-level WorkspaceErrorBoundary are now provided automatically by
@@ -62,11 +63,13 @@ export default async function EmployeePortalSubmitExpensePage() {
     redirect("/employee-portals/expenses");
   }
 
-  const [portalDataResult, outstationContextResult, teamPerformanceResult] = await Promise.allSettled([
-    getEmployeePortalShellData(access),
-    getOutstationEmployeeContext(access),
-    getDsmTeamPerformance(access),
-  ]);
+  const [portalDataResult, outstationContextResult, teamPerformanceResult, areaRepOptionsResult] =
+    await Promise.allSettled([
+      getEmployeePortalShellData(access),
+      getOutstationEmployeeContext(access),
+      getDsmTeamPerformance(access),
+      getManagerAreaRepOptions(access),
+    ]);
 
   if (portalDataResult.status === "rejected") {
     return (
@@ -98,6 +101,8 @@ export default async function EmployeePortalSubmitExpensePage() {
       hrId: member.hrId,
       name: member.name,
     })) ?? [];
+  const areaRepOptions =
+    areaRepOptionsResult.status === "fulfilled" ? areaRepOptionsResult.value : [];
 
   return (
     <EmployeePortalPageShell
@@ -107,6 +112,7 @@ export default async function EmployeePortalSubmitExpensePage() {
       title="Submit Expense"
     >
       <MobileOutstationWizard
+        areaRepOptions={areaRepOptions}
         employeeHrId={access.hrId ?? portalData.employee.hrId}
         employeeName={employeeName}
         employeeRole={employeeRole}
