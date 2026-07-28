@@ -2971,7 +2971,16 @@ function buildPharmacyCodeReferenceResult(matches: Array<{ id: number | string }
   };
 }
 
-async function resolvePharmacyCodeReference(params: {
+/**
+ * Looks a (distributor, normalized pharmacy code) pair up in the marketing pharmacy code
+ * reference database and reports matched / ambiguous / not_found.
+ *
+ * Exported so the bulk ROI sheet importer can run the SAME check the Customer Validation UI
+ * runs. It previously hardcoded `reference_status: "pending"` and never called this, which is
+ * why 286 of 287 links in production carry `pending` with `reference_match_count = 0` — the
+ * reference database has 20,097 rows and had effectively never been consulted.
+ */
+export async function resolvePharmacyCodeReference(params: {
   distributorId: number;
   normalizedPharmacyCode: string;
   supabase: SupabaseClient;
