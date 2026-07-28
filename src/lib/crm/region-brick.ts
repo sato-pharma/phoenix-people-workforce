@@ -168,6 +168,34 @@ export type CrmBrickReferenceRow = {
 };
 
 /**
+ * Bulk source_file values known to be the pre-rebuild legacy master, never a valid signal that a
+ * brick is current. Everything else — including a brand-new one-off `source_file` that never
+ * stamped `effective_from` (e.g. a same-day correction dropped straight into prod) — counts as
+ * current. See isCurrentlyTaggedBrick's doc comment for why this is safer than trusting
+ * `effective_from` alone.
+ */
+const LEGACY_SOURCE_FILES = new Set<string>(["Vlookup-Masterrr.xlsx"]);
+
+/**
+ * True if this brick carries a positive "this is current geography" signal, independent of the
+ * per-area fallback below. Two signals, either one suffices:
+ *  - `effective_from` is stamped — the 2026-07-23/24/27 rebuild imports all set this.
+ *  - its `source_file` is anything other than the known legacy bulk master — catches a one-off
+ *    row added straight to prod (a manual fix, a same-day patch) that never stamped
+ *    `effective_from`. Verified 2026-07-28: every distinct source_file besides
+ *    `Vlookup-Masterrr.xlsx` is either effective_from-tagged already, or a small (1-2 row)
+ *    legitimate one-off addition — never a bulk legacy re-import.
+ * Relying on `effective_from` alone silently hid a brand-new brick the moment its area had
+ * already been rebuilt once before (the new row and the old legacy rows became indistinguishable
+ * — both lacked effective_from). This is the bug the 2026-07-28 "new bricks missing from the
+ * template" report traced to.
+ */
+function isCurrentlyTaggedBrick(b: { effective_from: string | null; source_file: string | null }): boolean {
+  if (b.effective_from != null) return true;
+  return b.source_file != null && !LEGACY_SOURCE_FILES.has(b.source_file);
+}
+
+/**
  * The bricks an admin may map a CRM region TO — i.e. the CURRENT geography, joined to the
  * block/area/region masters for their display names.
  *
@@ -176,12 +204,13 @@ export type CrmBrickReferenceRow = {
  * pre-rebuild era stay `active = true` forever. Offering those as mapping targets is wrong — a new
  * mapping must never point at a replaced brick ("no old brick is ever a target").
  *
- * The rebuild imports (2026-07-23/24/27) stamp `effective_from`; the legacy June import left it
- * null. So the rule is applied PER AREA: an area that was rebuilt offers only its rebuilt bricks,
- * while an area the rebuild never touched (the Others/OT areas — North & South Sinai, New Valley,
- * Hurgada, Luxor, Aswan, Ismailia) keeps its existing bricks, since those are the only bricks it
- * has. A blanket `effective_from is not null` filter would silently drop those 7 areas entirely.
- * Verified against production 2026-07-28: 1,036 active → 746 offered, still covering all 48 areas.
+ * The rule is applied PER AREA via isCurrentlyTaggedBrick: an area that was rebuilt offers only
+ * its currently-tagged bricks, while an area the rebuild never touched (the Others/OT areas —
+ * North & South Sinai, New Valley, Hurgada, Luxor, Aswan, Ismailia) keeps its existing bricks,
+ * since those are the only bricks it has. A blanket "must be tagged current" filter would silently
+ * drop those areas entirely.
+ * Verified against production 2026-07-28: 912 active → 751 offered, still covering all 48 areas
+ * (includes the 2 brand-new same-day bricks that effective_from alone would have hidden).
  *
  * Small masters (bricks ~1k, blocks/areas/regions ≤ a few hundred), joined in memory. Name lookups
  * degrade to "" on a missing/failed master read (names are cosmetic); a bricks read error throws
@@ -193,7 +222,7 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
   const [bricksRes, blocksRes, areasRes, regionsRes] = await Promise.all([
     supabase
       .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, block_code, area_code, region_code, active, effective_from"),
+      .select("brick_id, brick_name, block_code, area_code, region_code, active, effective_from, source_file"),
     supabase.from("source_of_sales_blocks").select("block_code, description"),
     supabase.from("source_of_sales_areas").select("area_code, area_name"),
     supabase.from("source_of_sales_regions").select("region_code, region_name"),
@@ -221,20 +250,21 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
     brick_name: string | null;
     effective_from: string | null;
     region_code: string | null;
+    source_file: string | null;
   }>;
 
-  // Areas the geography rebuild actually touched (any active brick carrying an effective_from).
-  // Only those areas drop their pre-rebuild bricks; an untouched area keeps everything it has.
+  // Areas the geography rebuild actually touched (any active brick with a positive current-tag
+  // signal). Only those areas drop their pre-rebuild bricks; an untouched area keeps everything.
   const rebuiltAreas = new Set<string>();
   for (const b of allBricks) {
-    if (b.area_code && b.effective_from && (b.active ?? true)) rebuiltAreas.add(b.area_code);
+    if (b.area_code && (b.active ?? true) && isCurrentlyTaggedBrick(b)) rebuiltAreas.add(b.area_code);
   }
 
   const rows: CrmBrickReferenceRow[] = allBricks
     .filter((b) => {
       if (!b.brick_id || !(b.active ?? true)) return false;
       const areaCode = b.area_code ?? "";
-      return b.effective_from != null || !rebuiltAreas.has(areaCode);
+      return isCurrentlyTaggedBrick(b) || !rebuiltAreas.has(areaCode);
     })
     .map((b) => {
       const blockCode = b.block_code ?? "";
@@ -277,7 +307,7 @@ export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; c
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("source_of_sales_bricks")
-    .select("brick_id, area_code, region_code, active, effective_from");
+    .select("brick_id, area_code, region_code, active, effective_from, source_file");
   if (error) throw new Error(error.message);
 
   const allBricks = (data ?? []) as Array<{
@@ -286,20 +316,21 @@ export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; c
     brick_id: string | null;
     effective_from: string | null;
     region_code: string | null;
+    source_file: string | null;
   }>;
 
   const allKnown = new Set<string>();
   const rebuiltAreas = new Set<string>();
   for (const b of allBricks) {
     if (b.brick_id) allKnown.add(b.brick_id);
-    if (b.area_code && b.effective_from && (b.active ?? true)) rebuiltAreas.add(b.area_code);
+    if (b.area_code && (b.active ?? true) && isCurrentlyTaggedBrick(b)) rebuiltAreas.add(b.area_code);
   }
 
   const current = new Map<string, CurrentBrickInfo>();
   for (const b of allBricks) {
     if (!b.brick_id || !(b.active ?? true)) continue;
     const areaCode = b.area_code ?? "";
-    const isCurrent = b.effective_from != null || !rebuiltAreas.has(areaCode);
+    const isCurrent = isCurrentlyTaggedBrick(b) || !rebuiltAreas.has(areaCode);
     if (isCurrent) current.set(b.brick_id, { areaCode: b.area_code, regionCode: b.region_code });
   }
 
