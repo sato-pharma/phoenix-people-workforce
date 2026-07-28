@@ -18,6 +18,7 @@ import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcluded
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
+import { brickMatchConfidence, loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
 export { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset };
@@ -112,6 +113,20 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "checkin_lat", kind: "coord", label: "Check-in Latitude" },
   { key: "checkin_lon", kind: "coord", label: "Check-in Longitude" },
   { key: "checkin_address", kind: "text", label: "Check-in Address" },
+  {
+    key: "geo_brick",
+    kind: "text",
+    label: "Brick (GPS)",
+    note: "The Phoenix brick this visit physically happened in, resolved from the matched GPS check-in's coordinates by nearest brick centre — NOT from the CRM region or any address text. Blank when the visit has no matching check-in (only Regular visits carry a contact) — that is exactly the set the 'Regular · No Check-in' tab lists. Read together with the Confidence column.",
+  },
+  { key: "geo_area", kind: "text", label: "Area (GPS)", note: "The area of the GPS-resolved brick." },
+  { key: "geo_region", kind: "text", label: "Region (GPS)", note: "The region of the GPS-resolved brick." },
+  {
+    key: "geo_confidence",
+    kind: "text",
+    label: "Confidence / Note",
+    note: "How far the matched check-in is from the centre of the brick it resolved to. High (≤1km) = inside/next to that brick. Good (≤3km). Review (≤10km) = verify before relying on it. Weak (>10km) = the nearest known brick centre is far away, treat the brick as a hint. '—' means this visit had no matching GPS check-in to resolve from.",
+  },
   { key: "checkin_synced_at", kind: "datetime", label: "Check-in Synced At" },
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
@@ -129,13 +144,29 @@ export const CRM_CHECKIN_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "lat", kind: "coord", label: "Latitude" },
   { key: "lon", kind: "coord", label: "Longitude" },
   { key: "address", kind: "text", label: "Address" },
+  {
+    key: "geo_brick",
+    kind: "text",
+    label: "Brick (GPS)",
+    note: "The Phoenix brick this check-in physically happened in, resolved from its GPS coordinates by nearest brick centre (source_of_sales_bricks + their geocoded centroids) — NOT from the address text. Only active bricks are ever proposed. Always read it together with the Confidence column: a nearest-centroid match is exact in dense areas and approximate where brick centres are far apart.",
+  },
+  { key: "geo_area", kind: "text", label: "Area (GPS)", note: "The area of the GPS-resolved brick." },
+  { key: "geo_region", kind: "text", label: "Region (GPS)", note: "The region of the GPS-resolved brick." },
+  {
+    key: "geo_confidence",
+    kind: "text",
+    label: "Confidence / Note",
+    note: "How far this check-in is from the centre of the brick it was matched to. High (≤1km) = inside/next to that brick. Good (≤3km). Review (≤10km) = verify before relying on it. Weak (>10km) = the nearest known brick centre is far away, so treat the brick as a hint only. '—' means the check-in has no usable coordinates, or no brick centroids are available yet.",
+  },
   { key: "synced_at", kind: "datetime", label: "Synced At", note: "When Phoenix pulled this record from the CRM into its mirror (Cairo time)." },
 ];
 
 /** Vacation / issue tabs reuse the visit fields WITHOUT the nearest-check-in block (those records
  * have no check-in). Derived so the base column set stays defined in one place. */
 const CRM_VISIT_BASE_COLUMNS: readonly CrmMasterColumn[] = CRM_VISIT_COLUMNS.filter(
-  (col) => !col.key.startsWith("checkin_"),
+  // Also drops the geo_* columns: those are derived FROM the matched check-in, so on the
+  // "No Check-in" tabs (whose whole definition is having none) they could only ever be empty.
+  (col) => !col.key.startsWith("checkin_") && !col.key.startsWith("geo_"),
 );
 
 /** The "Triple?" flag shown on the Double Visits tab: set when a double visit is part of a triple
@@ -357,6 +388,12 @@ const CHECKIN_MERGE_KEYS = [
   "checkin_lon",
   "checkin_address",
   "checkin_synced_at",
+  // GPS-derived geography of the matched check-in (see attachNearestCheckins): null for a visit
+  // with no matching check-in, which is the honest answer — that visit has no verified location.
+  "geo_brick",
+  "geo_area",
+  "geo_region",
+  "geo_confidence",
 ] as const;
 
 /**
@@ -409,6 +446,9 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     return;
   }
 
+  // Brick centroids for the GPS-geography columns below (cached; empty list = columns stay null).
+  const centroids = await loadBrickCentroids();
+
   // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
   // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
   const index = indexCheckinsByAgentContactDay(data);
@@ -441,6 +481,16 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     row.checkin_lon = best.lon;
     row.checkin_address = best.address;
     row.checkin_synced_at = best.synced_at;
+    // The matched check-in is this visit's only GPS-verified position, so it is also the only
+    // trustworthy source for the visit's real geography — resolve it to a Phoenix brick. Visits
+    // without a matching check-in keep null here rather than borrowing geography they can't prove.
+    const geo = centroids.length > 0 ? resolveBrickForPoint(best.lat, best.lon, centroids) : null;
+    if (geo) {
+      row.geo_brick = [geo.brickId, geo.brickName].filter(Boolean).join(" · ");
+      row.geo_area = geo.areaName;
+      row.geo_region = geo.regionName;
+      row.geo_confidence = brickMatchConfidence(geo.distanceKm);
+    }
   }
 }
 
@@ -747,6 +797,26 @@ function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, Bri
     row.phx_brick_id = mapping?.brickId ?? null;
     row.phx_area_id = mapping?.areaId ?? null;
     row.phx_region_id = mapping?.regionId ?? null;
+  }
+}
+
+/**
+ * Check-ins only: resolve each row's GPS coordinates to the nearest Phoenix brick, filling the
+ * Brick/Area/Region (GPS) columns plus the human "Confidence / Note" distance label. A check-in is
+ * the one CRM record that always has real coordinates but carries no Phoenix geography of its own,
+ * so this is derived here rather than stored. Best-effort: with no centroids (or no coordinates on a
+ * row) the columns stay null and render "—" — never a fabricated brick.
+ */
+async function attachGeoBrick(rows: CrmMasterRow[]): Promise<void> {
+  const centroids = await loadBrickCentroids();
+  for (const row of rows) {
+    const lat = typeof row.lat === "number" ? row.lat : null;
+    const lon = typeof row.lon === "number" ? row.lon : null;
+    const hit = centroids.length > 0 ? resolveBrickForPoint(lat, lon, centroids) : null;
+    row.geo_brick = hit ? [hit.brickId, hit.brickName].filter(Boolean).join(" · ") : null;
+    row.geo_area = hit?.areaName ?? null;
+    row.geo_region = hit?.regionName ?? null;
+    row.geo_confidence = hit ? brickMatchConfidence(hit.distanceKm) : null;
   }
 }
 
@@ -1180,6 +1250,10 @@ async function attachDerived(
   rows: CrmMasterRow[],
   range: { dateFrom: string | null; dateTo: string | null },
 ): Promise<void> {
+  // Check-ins carry real GPS but no Phoenix geography — resolve their brick/area/region from the
+  // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
+  // (attachBrickMapping below), so this is deliberately check-ins-only.
+  if (dataset === "checkins") await attachGeoBrick(rows);
   if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
   // The two No-Check-in tabs never correlate a check-in (they're defined by NOT having one), so seed
   // the Logged/save visit time directly — otherwise the Visit Time column renders blank for them.
