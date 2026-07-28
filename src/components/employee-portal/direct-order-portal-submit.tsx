@@ -28,6 +28,7 @@ import type {
 } from "@/lib/direct-orders/types";
 
 type ProductOption = { productCode: string; productName: string; line: string; factoryPrice: number; publicPrice: number | null };
+type AreaOption = { areaCode: string; areaName: string; regionCode: string };
 type BrickOption = { brickId: string; brickName: string; areaCode: string; regionCode: string };
 type DistributorOption = { distributorCode: string; distributorName: string };
 export type SubmitFormCaps = {
@@ -38,6 +39,7 @@ export type SubmitFormCaps = {
 
 type Props = {
   products: ProductOption[];
+  areas: AreaOption[];
   bricks: BrickOption[];
   distributors: DistributorOption[];
   caps: SubmitFormCaps;
@@ -66,7 +68,7 @@ function StatusPill({ status }: { status: string }) {
 
 const fieldLabelClassName = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
 
-export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, initialPharmacies, myRequests }: Props) {
+export function DirectOrderPortalSubmit({ products, areas, bricks, distributors, caps, initialPharmacies, myRequests }: Props) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -87,6 +89,7 @@ export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, 
   const [pharmacyMode, setPharmacyMode] = useState<"existing" | "new">(initialPharmacies.length ? "existing" : "new");
   const [pharmacyId, setPharmacyId] = useState(initialPharmacies[0]?.id ?? "");
   const [newName, setNewName] = useState("");
+  const [newAreaCode, setNewAreaCode] = useState("");
   const [newBrickId, setNewBrickId] = useState("");
   const [newDoctor, setNewDoctor] = useState("");
   const [newAddress, setNewAddress] = useState("");
@@ -114,6 +117,10 @@ export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, 
     : dealType === "discount"
       ? computeDiscountSalesValue({ qty: qtyNum, publicPrice: product.publicPrice ?? 0, discountPct: discountNum })
       : computeDirectOrderSalesValue({ qty: qtyNum, factoryPrice: product.factoryPrice });
+  const visibleBricks = useMemo(
+    () => (newAreaCode ? bricks.filter((b) => b.areaCode === newAreaCode) : []),
+    [bricks, newAreaCode],
+  );
   const selectedBrick = bricks.find((b) => b.brickId === newBrickId) ?? null;
 
   const readyToSubmit = !busy && !!product && qtyNum > 0 && /^\d{4}-\d{2}-\d{2}$/.test(collectionDate);
@@ -128,6 +135,8 @@ export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, 
       return pharmacyId;
     }
     if (!newName.trim()) throw new Error("New pharmacy name is required.");
+    if (!newDoctor.trim()) throw new Error("Doctor name is required.");
+    if (!newAddress.trim()) throw new Error("Pharmacy address is required.");
     const pairs = distRows
       .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
       .filter((row) => row.distributorCode && row.customerCode);
@@ -140,8 +149,8 @@ export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, 
         brickId: newBrickId || null,
         areaCode: selectedBrick?.areaCode ?? null,
         regionCode: selectedBrick?.regionCode ?? null,
-        doctorName: newDoctor.trim() || null,
-        pharmacyAddress: newAddress.trim() || null,
+        doctorName: newDoctor.trim(),
+        pharmacyAddress: newAddress.trim(),
         distributorCodes: pairs,
       }),
     });
@@ -319,19 +328,39 @@ export function DirectOrderPortalSubmit({ products, bricks, distributors, caps, 
             ) : (
               <div className="space-y-2">
                 <input className={portalInputClassName} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pharmacy name *" />
-                <select className={portalInputClassName} value={newBrickId} onChange={(e) => setNewBrickId(e.target.value)}>
-                  <option value="">Select brick (sets area/region)...</option>
-                  {bricks.map((b) => (
+                <select
+                  className={portalInputClassName}
+                  value={newAreaCode}
+                  onChange={(e) => {
+                    setNewAreaCode(e.target.value);
+                    setNewBrickId("");
+                  }}
+                >
+                  <option value="">Select area...</option>
+                  {areas.map((a) => (
+                    <option key={a.areaCode} value={a.areaCode}>
+                      {a.areaName} -- {a.areaCode}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={portalInputClassName}
+                  value={newBrickId}
+                  onChange={(e) => setNewBrickId(e.target.value)}
+                  disabled={!newAreaCode}
+                >
+                  <option value="">{newAreaCode ? "Select brick..." : "Select an area first..."}</option>
+                  {visibleBricks.map((b) => (
                     <option key={b.brickId} value={b.brickId}>
-                      {b.brickName} -- {b.areaCode}
+                      {b.brickName}
                     </option>
                   ))}
                 </select>
                 {selectedBrick ? (
                   <p className="text-[11px] text-slate-500">Area {selectedBrick.areaCode} - Region {selectedBrick.regionCode}</p>
                 ) : null}
-                <input className={portalInputClassName} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name (optional)" />
-                <input className={portalInputClassName} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address (optional)" />
+                <input className={portalInputClassName} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
+                <input className={portalInputClassName} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
 
                 <div className="rounded border border-slate-100 bg-slate-50 p-3">
                   <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes *</p>
