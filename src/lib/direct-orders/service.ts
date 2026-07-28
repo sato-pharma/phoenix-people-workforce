@@ -11,7 +11,9 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { validationError } from "@/lib/http/api-errors";
 import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -353,6 +355,10 @@ export async function createDirectOrderPharmacy(
   await assertPermission(access, "direct_orders", "create");
   const name = input.pharmacyName?.trim();
   if (!name) badRequest("Pharmacy name is required.");
+  const doctorName = input.doctorName?.trim();
+  if (!doctorName) badRequest("Doctor name is required.");
+  const pharmacyAddress = input.pharmacyAddress?.trim();
+  if (!pharmacyAddress) badRequest("Pharmacy address is required.");
 
   // ≥1 distributor + customer code is now mandatory; one code per distributor.
   const byDistributor = new Map<string, string>();
@@ -373,8 +379,8 @@ export async function createDirectOrderPharmacy(
       brick_id: input.brickId ?? null,
       area_code: input.areaCode ?? null,
       region_code: input.regionCode ?? null,
-      doctor_name: input.doctorName ?? null,
-      pharmacy_address: input.pharmacyAddress ?? null,
+      doctor_name: doctorName,
+      pharmacy_address: pharmacyAddress,
       created_by_hr_id: access.hrId,
     })
     .select("*")
@@ -1064,14 +1070,50 @@ export async function listDirectOrderProductOptions(access?: AccessContext): Pro
     .sort((a, b) => a.productName.localeCompare(b.productName));
 }
 
-/** Bricks for the new-pharmacy form (picking a brick auto-derives its area + region). */
-export async function listDirectOrderBrickOptions(): Promise<
-  Array<{ brickId: string; brickName: string; areaCode: string; regionCode: string }>
-> {
+/**
+ * Areas + bricks for the new-pharmacy form (picking a brick auto-derives its area + region).
+ * Region-scoped to the requester when `access` is given — District/Regional Manager see only
+ * their own region's areas+bricks (the same region-level granularity resolveSalesAccessScope
+ * already applies everywhere else in Sales); National Sales Manager/Product Manager/Group
+ * Product Manager are LINE-scoped (nationwide, no region restriction) since Direct Orders'
+ * line restriction already gates the PRODUCT (resolveDirectOrderRequesterLineName), not the
+ * pharmacy's geography. Omit `access` for an unscoped listing.
+ */
+export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext): Promise<{
+  areas: Array<{ areaCode: string; areaName: string; regionCode: string }>;
+  bricks: Array<{ brickId: string; brickName: string; areaCode: string; regionCode: string }>;
+}> {
   const ref = await loadSalesReferenceData({ includeCustomerBricks: false });
-  return (ref.bricks ?? [])
-    .map((b) => ({ brickId: b.brickId, brickName: b.brickName, areaCode: b.areaCode, regionCode: b.regionCode }))
+
+  let regionCodesInScope: Set<string> | null = null;
+  if (access) {
+    const salesScope = await resolveSalesAccessScope(access);
+    if (salesScope.allowedRegionNames) {
+      regionCodesInScope =
+        access.role === "Regional Manager"
+          ? new Set(
+              [...(await resolveRegionalManagerRegionCodes(access, salesScope, ref))].map((code) => code.toUpperCase()),
+            )
+          : new Set(
+              (ref.regions ?? [])
+                .filter((region) => salesScope.allowedRegionNames!.has(canonicalizeRegionName(region.regionName)))
+                .map((region) => region.regionCode.toUpperCase()),
+            );
+    }
+  }
+
+  const areas = (ref.areas ?? [])
+    .filter((area) => !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()))
+    .map((area) => ({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode }))
+    .sort((a, b) => a.areaName.localeCompare(b.areaName));
+  const areaCodesInScope = new Set(areas.map((area) => area.areaCode.toUpperCase()));
+
+  const bricks = (ref.bricks ?? [])
+    .filter((brick) => areaCodesInScope.has(brick.areaCode.toUpperCase()))
+    .map((brick) => ({ brickId: brick.brickId, brickName: brick.brickName, areaCode: brick.areaCode, regionCode: brick.regionCode }))
     .sort((a, b) => (a.brickName || a.brickId).localeCompare(b.brickName || b.brickId));
+
+  return { areas, bricks };
 }
 
 export async function getDirectOrderApprovalDetail(

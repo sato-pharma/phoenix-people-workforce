@@ -4,7 +4,7 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { DirectOrderPortalSubmit } from "@/components/employee-portal/direct-order-portal-submit";
 import { loadDirectOrderCaps } from "@/lib/direct-orders/caps";
 import {
-  listDirectOrderBrickOptions,
+  listDirectOrderAreaAndBrickOptions,
   listDirectOrderDistributorOptions,
   listDirectOrderProductOptions,
   listMyDirectOrderPharmacies,
@@ -20,9 +20,9 @@ export default async function PortalDirectOrdersPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/admin/direct-orders");
   const canSubmit = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
-  const [products, bricks, distributors, pharmacies, myRequests, capsData] = await Promise.all([
+  const [products, areaBrickOptions, distributors, pharmacies, myRequests, capsData] = await Promise.all([
     listDirectOrderProductOptions(access),
-    listDirectOrderBrickOptions(),
+    listDirectOrderAreaAndBrickOptions(access),
     listDirectOrderDistributorOptions(),
     listMyDirectOrderPharmacies(access),
     listMyDirectOrders(access),
@@ -40,7 +40,7 @@ export default async function PortalDirectOrdersPage() {
       description="Submit a direct (company) order for approval up your management line to the CEO."
     >
       {canSubmit ? (
-        <DirectOrderPortalSubmit products={products} bricks={bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
+        <DirectOrderPortalSubmit products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
       ) : (
         <p className="rounded border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
           Your role cannot submit direct orders. Approvers review them under Approvals Hub &gt; Direct Orders Approvals.
