@@ -29,6 +29,12 @@ export type OutstationTicketAttachmentUpload = {
   size: number;
 };
 
+/** A ticket attachment before the employee/request identity is attached. */
+export type OutstationTicketAttachmentUploadInput = Omit<
+  OutstationTicketAttachmentUpload,
+  "employeeHrId" | "requestDraftId"
+>;
+
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
   const normalized = String(value ?? "")
     .trim()
@@ -104,6 +110,42 @@ export async function uploadOutstationCarEvidenceImage(params: {
   }
 
   return path;
+}
+
+/**
+ * Decode a client-supplied ticket data URL (`data:<mime>;base64,<payload>`) into
+ * an upload-ready attachment. Validates the MIME type and 5MB size cap up front
+ * so an invalid ticket is rejected before any storage write. Mirrors the
+ * car-evidence data-URL parser so the manager submit route stays JSON.
+ */
+export function parseOutstationTicketAttachmentDataUrl(input: {
+  dataUrl: string;
+  fileName: string;
+}): OutstationTicketAttachmentUploadInput {
+  const match = /^data:([a-z0-9.+/-]+);base64,([a-zA-Z0-9+/=]+)$/i.exec(input.dataUrl.trim());
+  if (!match) {
+    throw new Error("Ticket attachment must be an uploaded PDF, JPG, or PNG file.");
+  }
+
+  const contentType = match[1].toLowerCase();
+  if (!TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES.has(contentType)) {
+    throw new Error("Ticket attachment must be a PDF, JPG, or PNG file.");
+  }
+
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length === 0) {
+    throw new Error("Ticket attachment is empty. Upload a valid ticket attachment.");
+  }
+  if (bytes.length > TICKET_ATTACHMENT_MAX_UPLOAD_BYTES) {
+    throw new Error("Ticket attachment is too large. Maximum size is 5MB.");
+  }
+
+  return {
+    bytes,
+    contentType,
+    fileName: input.fileName.trim() || "ticket-attachment",
+    size: bytes.length,
+  };
 }
 
 export async function uploadOutstationTicketAttachments(
