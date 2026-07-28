@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     if (access.source === "guest") {
       throw unauthorizedError();
     }
-    const buffer = await generateBulkUploadTemplate();
+    const buffer = await generateBulkUploadTemplate(access);
     return new Response(buffer, {
       status: 200,
       headers: {
@@ -84,8 +84,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ result }, { status: 200 });
     }
 
-    // Default: preview
-    const preview = await buildBulkImportPreview(rows);
+    // Default: preview — gated on Super Admin inside the service, same as execute.
+    const preview = await buildBulkImportPreview(rows, access);
     return NextResponse.json({ preview }, { status: 200 });
   } catch (error) {
     const { code, message, status } = bulkApiError(error, "Bulk upload failed.");
