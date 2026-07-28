@@ -1,8 +1,10 @@
 // Downscale + recompress oversized static assets to sizes appropriate for how
 // they actually render, then overwrite them in place. Covers the admin sidebar
 // brand PNGs (rail mark shipped 1254×1254 for a 44px slot; lockup shipped
-// 1870px wide for a ~280px header) and employee profile-photo JPGs that ship
-// far larger than the ~320×360 avatar slot they render into
+// 1870px wide for a ~280px header), the PhoenixSignatureCard corner watermark
+// (shipped 1536×1024 for a decorative accent that never renders past ~460px
+// tall), and employee profile-photo JPGs that ship far larger than the
+// ~320×360 avatar slot they render into
 // (src/components/employee-portal/... PhoenixIdentityCard), both bloating the
 // repo and the image optimizer.
 //
@@ -23,6 +25,11 @@ const publicDir = path.join(root, "public");
 const targets = [
   { dir: "brand", file: "phoenix-rail-mark.png", resize: { width: 128, height: 128 } }, // renders 44×44
   { dir: "brand", file: "phoenix-sidebar-lockup.png", resize: { width: 640 } },         // renders ~280px wide
+  // PhoenixSignatureCard watermark — height-driven (width: auto in CSS). Renders
+  // 153px tall on the fixed 150px mobile banner, and scales with the desktop
+  // card's container width up to ~460px tall in the widest real case (sidebar
+  // collapsed, ≥1580px viewport).
+  { dir: "brand", file: "identity-watermark.png", resize: { height: 900 } },
   // Employee profile photos — render at ~320×360 in PhoenixIdentityCard.
   { dir: "images/hr", file: "B-100.jpg", resize: { width: 720 } },
   { dir: "images/hr", file: "B-85.jpg", resize: { width: 720 } },
