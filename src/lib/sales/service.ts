@@ -624,13 +624,17 @@ async function readAllSupabaseRows(
   if (chunkIndex === -1) return readAllSupabaseRowsOneBatch(supabase, table, options);
 
   const targetFilter = inFilters[chunkIndex];
-  const rows: Array<Record<string, unknown>> = [];
+  // Accumulate as an array-of-batches and flatten once at the end — NOT `rows.push(...batch)`,
+  // which spreads every element as an individual push() argument and throws "RangeError: Maximum
+  // call stack size exceeded" once a single batch's row count crosses V8's argument-count ceiling
+  // (same bug as master-workbook.ts's selectAll(), see PR #1406).
+  const batches: Array<Array<Record<string, unknown>>> = [];
   for (let i = 0; i < targetFilter.values.length; i += 100) {
     const batchValues = targetFilter.values.slice(i, i + 100);
     const batchFilters = inFilters.map((filter, idx) => (idx === chunkIndex ? { ...filter, values: batchValues } : filter));
-    rows.push(...await readAllSupabaseRowsOneBatch(supabase, table, { ...options, inFilters: batchFilters }));
+    batches.push(await readAllSupabaseRowsOneBatch(supabase, table, { ...options, inFilters: batchFilters }));
   }
-  return rows;
+  return batches.flat();
 }
 
 function parseSalesPeriods(filters: SalesDashboardFilters) {
