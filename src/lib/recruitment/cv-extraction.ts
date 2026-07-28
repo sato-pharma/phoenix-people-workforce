@@ -63,6 +63,10 @@ export type CvFieldExtraction = {
   model: string;
   positionKey: string;
   fields: ExtractedCandidateFields;
+  // Whether the document actually IS a CV/resume — returned by the same call that extracts the
+  // fields (see is_cv in the schema), so inbound intake gets the "is this a CV" gate for free
+  // instead of a second, separate classification call. Fails OPEN (true) if the model omits it.
+  isCv: boolean;
 };
 
 // Bounds AI token cost/abuse regardless of the source file's size — a CV is a couple of
@@ -91,8 +95,14 @@ function fieldSchemaProperty(field: CvFieldDefinition) {
   } as const;
 }
 
+// The is_cv gate rides on the SAME structured-output call as the field extraction, so inbound
+// intake no longer needs a separate classification round-trip (halved latency per CV). Its type
+// is a plain boolean (not the {value,confidence} field shape) — it's a screening decision, not an
+// extracted candidate field, and must never appear in the applied-fields audit.
+type ExtractionSchemaProperty = ReturnType<typeof fieldSchemaProperty> | { type: "boolean" };
+
 export function buildExtractionTextFormat(schema: CvPositionSchema) {
-  const properties: Record<string, ReturnType<typeof fieldSchemaProperty>> = {};
+  const properties: Record<string, ExtractionSchemaProperty> = { is_cv: { type: "boolean" as const } };
   for (const field of schema.fields) {
     properties[field.key] = fieldSchemaProperty(field);
   }
@@ -102,7 +112,7 @@ export function buildExtractionTextFormat(schema: CvPositionSchema) {
       schema: {
         additionalProperties: false,
         properties,
-        required: schema.fields.map((field) => field.key),
+        required: ["is_cv", ...schema.fields.map((field) => field.key)],
         type: "object" as const,
       },
       strict: true as const,
@@ -110,6 +120,15 @@ export function buildExtractionTextFormat(schema: CvPositionSchema) {
     },
   };
 }
+
+// Prepended to the per-position extraction instructions so the single call also screens out
+// non-CVs (invoices, vendor offers, brochures, contracts) that arrive at a recruitment inbox.
+const CV_EXTRACTION_CLASSIFICATION_PREAMBLE =
+  "First decide whether this document is a CV/resume from a person applying for a job (any " +
+  "language/layout). Set is_cv=false for anything else — invoices, vendor/supplier offers or " +
+  "registration letters, brochures, contracts, or other business correspondence — and in that " +
+  "case the extracted fields may be left null. If it IS a CV, set is_cv=true and extract the " +
+  "fields as described below.\n\n";
 
 // ---------------------------------------------------------------------------
 // Raw text extraction (local — PDF via pdf-parse, DOCX via mammoth).
@@ -364,7 +383,7 @@ export async function extractCvFieldsFromBytes(input: {
   try {
     const response = await createOpenAiResponseText({
       input: aiInput,
-      instructions: schema.instructions,
+      instructions: CV_EXTRACTION_CLASSIFICATION_PREAMBLE + schema.instructions,
       maxOutputTokens: 2_000,
       model: OPENAI_COPILOT_DEFAULT_MODEL,
       purpose: "recruitment-cv-extraction",
@@ -389,7 +408,9 @@ export async function extractCvFieldsFromBytes(input: {
   for (const field of schema.fields) {
     fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
   }
-  return { fields, model, positionKey: schema.positionKey };
+  // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
+  // treated as "yes, it's a CV" so an AI quirk never drops a real applicant.
+  return { fields, isCv: parsed.is_cv !== false, model, positionKey: schema.positionKey };
 }
 
 // Writes an already-computed extraction to the audit table against a candidate + file.

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   candidateMatchKeys,
+  findDuplicateFlags,
   findMatchingCandidate,
   normalizeEmail,
   normalizeNationalId,
@@ -97,4 +98,22 @@ export function runRecruitmentCandidateMatchingTests() {
     /const existingKeys = await loadMatchKeys\(\);\s*return matchOrInsertCandidate\(input, access, existingKeys\);/,
     "the single-candidate API still loads a fresh key list per call — correct for one row per request",
   );
+
+  // --- findDuplicateFlags (advisory soft-dup markers, O(n)) -------------------------------------
+  // The same person applying via email AND WhatsApp gets different exact keys but should be flagged
+  // for a human to eyeball — never auto-merged.
+  const dupPool = [
+    { fullName: "Ahmed Ali", id: "c1", phoneNorm: "201001234567" }, // email application
+    { fullName: "Ahmed Aly", id: "c2", phoneNorm: "01001234567" }, // whatsapp — same number, spelling drift
+    { fullName: "Mona Hassan", id: "c3", phoneNorm: "201119998888" },
+    { fullName: "mona  hassan", id: "c4", phoneNorm: null }, // same name, no phone
+    { fullName: "Unique Person", id: "c5", phoneNorm: "201230000000" },
+  ];
+  const flags = findDuplicateFlags(dupPool);
+  assert.deepEqual(flags.get("c1"), { id: "c2", reason: "phone_tail" }, "shared phone-tail flags c1 -> c2");
+  assert.deepEqual(flags.get("c2"), { id: "c1", reason: "phone_tail" }, "the flag is mutual");
+  assert.deepEqual(flags.get("c3"), { id: "c4", reason: "name" }, "shared normalized name flags c3 -> c4");
+  assert.deepEqual(flags.get("c4"), { id: "c3", reason: "name" });
+  assert.equal(flags.has("c5"), false, "a candidate matching no one is never flagged");
+  assert.equal(findDuplicateFlags([{ fullName: "Solo", id: "x", phoneNorm: "201000000000" }]).size, 0, "a pool of one has no duplicates");
 }

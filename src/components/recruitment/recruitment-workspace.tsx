@@ -1430,6 +1430,14 @@ function CandidatePoolCard({
           ...(candidate.sourceContext?.shortLabel
             ? [{ label: "Source", value: candidate.sourceContext.shortLabel }]
             : []),
+          ...(candidate.possibleDuplicate
+            ? [
+                {
+                  label: "⚠ Possible duplicate",
+                  value: candidate.possibleDuplicate.reason === "phone_tail" ? "shares a phone number" : "shares a name",
+                },
+              ]
+            : []),
         ]}
       />
     </PortalRecordCard>

@@ -157,8 +157,15 @@ export function runRecruitmentCvExtractionTests() {
   assert.equal(jsonSchema.additionalProperties, false);
   assert.deepEqual(
     [...jsonSchema.required].sort(),
-    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
-    "every field must be required in the AI response — no optional fields",
+    ["is_cv", ...cvPositionSchemas.medical_rep.fields.map((field) => field.key)].sort(),
+    "every field plus the merged is_cv gate must be required in the AI response — no optional fields",
+  );
+  // is_cv rides on the same call (S3: classify + extract in one round-trip) as a plain boolean,
+  // NOT the {value,confidence} field shape — it's a screening flag, never an extracted field.
+  assert.deepEqual(
+    (jsonSchema.properties as unknown as Record<string, { type: string }>).is_cv,
+    { type: "boolean" },
+    "is_cv must be a plain boolean, not a {value,confidence} field",
   );
   for (const field of cvPositionSchemas.medical_rep.fields) {
     const property = jsonSchema.properties[field.key];
