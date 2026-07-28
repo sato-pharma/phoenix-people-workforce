@@ -1,10 +1,12 @@
 "use client";
 
-import { Plus, Ticket } from "lucide-react";
+import { Plus, Ticket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { OwnTicketExpenseRequest } from "@/lib/outstation/service";
+
+type TicketRow = { file: File | null; amount: string };
 
 function formatEgp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -39,73 +41,92 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+const emptyRow: TicketRow = { file: null, amount: "" };
+
 /**
- * Lets an employee add ONE extra ticket (attachment + cost + reason) to their
- * own already-submitted train/bus request — e.g. an unplanned extra leg. The
- * cost is added to the request total; the allowance is never affected.
+ * The employee's own train/bus requests, shown as rows. Each row opens inline so
+ * the employee can add ONE OR MORE extra tickets (each with its own file + cost)
+ * plus a reason directly on that request — e.g. an unplanned multi-leg trip. The
+ * summed cost is added to that request's total; the allowance is never affected.
  */
 export function ExtraTicketManager({ requests }: { requests: OwnTicketExpenseRequest[] }) {
   const router = useRouter();
   const [openId, setOpenId] = useState<number | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [amount, setAmount] = useState("");
+  const [rows, setRows] = useState<TicketRow[]>([{ ...emptyRow }]);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ id: number; text: string; ok: boolean } | null>(null);
 
   if (requests.length === 0) return null;
 
-  function resetForm() {
-    setFile(null);
-    setAmount("");
+  function reset() {
+    setRows([{ ...emptyRow }]);
     setReason("");
   }
 
   function toggle(id: number) {
     setMessage(null);
-    if (openId === id) {
-      setOpenId(null);
-      resetForm();
-    } else {
-      setOpenId(id);
-      resetForm();
-    }
+    setOpenId((current) => (current === id ? null : id));
+    reset();
+  }
+
+  function updateRow(index: number, patch: Partial<TicketRow>) {
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+
+  function addRow() {
+    setRows((current) => [...current, { ...emptyRow }]);
+  }
+
+  function removeRow(index: number) {
+    setRows((current) => (current.length <= 1 ? current : current.filter((_, i) => i !== index)));
   }
 
   async function submit(requestId: number) {
-    if (!file) {
-      setMessage({ id: requestId, text: "Select the ticket file to upload.", ok: false });
+    const filled = rows.filter((row) => row.file);
+    if (filled.length === 0) {
+      setMessage({ id: requestId, text: "Attach at least one ticket file.", ok: false });
       return;
     }
-    if (!(Number(amount) > 0)) {
-      setMessage({ id: requestId, text: "Enter the ticket cost (greater than zero).", ok: false });
+    if (filled.some((row) => !(Number(row.amount) > 0))) {
+      setMessage({ id: requestId, text: "Enter a cost (greater than zero) for every ticket.", ok: false });
       return;
     }
     if (!reason.trim()) {
-      setMessage({ id: requestId, text: "Add a short reason for the extra ticket.", ok: false });
+      setMessage({ id: requestId, text: "Add a short reason for the extra tickets.", ok: false });
       return;
     }
 
     setBusy(true);
     setMessage(null);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const tickets = await Promise.all(
+        filled.map(async (row) => ({
+          dataUrl: await fileToDataUrl(row.file as File),
+          name: (row.file as File).name,
+          amount: Number(row.amount),
+        })),
+      );
       const response = await fetch(`/api/outstation/${requestId}/extra-ticket`, {
-        body: JSON.stringify({ dataUrl, name: file.name, amount: Number(amount), reason }),
+        body: JSON.stringify({ tickets, reason }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
       if (!response.ok) {
-        setMessage({ id: requestId, text: payload.message ?? "Unable to add the ticket.", ok: false });
+        setMessage({ id: requestId, text: payload.message ?? "Unable to add the tickets.", ok: false });
         return;
       }
       setOpenId(null);
-      resetForm();
-      setMessage({ id: requestId, text: "Extra ticket added and the total was updated.", ok: true });
+      reset();
+      setMessage({
+        id: requestId,
+        text: `${tickets.length} ticket(s) added and the total was updated.`,
+        ok: true,
+      });
       router.refresh();
     } catch {
-      setMessage({ id: requestId, text: "Unable to add the ticket.", ok: false });
+      setMessage({ id: requestId, text: "Unable to add the tickets.", ok: false });
     } finally {
       setBusy(false);
     }
@@ -116,21 +137,22 @@ export function ExtraTicketManager({ requests }: { requests: OwnTicketExpenseReq
       <div className="flex items-center gap-2">
         <Ticket className="h-4 w-4 text-orange-600" />
         <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-          Train / bus tickets
+          My train / bus requests
         </span>
       </div>
       <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-500">
-        Add an extra ticket to a train or bus request — for example an unplanned extra leg. The
-        ticket cost is added to the request total. Already-paid requests cannot be changed.
+        Open a request to add extra tickets — e.g. an unplanned extra leg. Upload each ticket with
+        its cost; the amounts are added to that request&apos;s total. Already-paid requests cannot
+        be changed.
       </p>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200">
         {requests.map((request) => {
           const isOpen = openId === request.id;
           const rowMessage = message?.id === request.id ? message : null;
           return (
-            <div key={request.id} className="rounded-md border border-slate-200 bg-white p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <div key={request.id} className="bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-slate-900">{request.destination}</p>
                   <p className="mt-0.5 text-xs font-semibold text-slate-500">
@@ -147,51 +169,68 @@ export function ExtraTicketManager({ requests }: { requests: OwnTicketExpenseReq
                     type="button"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    {isOpen ? "Close" : "Extra ticket"}
+                    {isOpen ? "Close" : "Add tickets"}
                   </button>
                 </div>
               </div>
 
               {isOpen ? (
-                <div className="mt-3 grid gap-3 rounded-md border border-orange-100 bg-orange-50/40 p-3 sm:grid-cols-2">
-                  <label className="block text-xs font-semibold text-slate-600">
-                    Ticket file (PDF, JPG, PNG)
-                    <input
-                      accept="application/pdf,image/jpeg,image/png"
-                      className="mt-1 block w-full text-xs text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-orange-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700"
-                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                      type="file"
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold text-slate-600">
-                    Ticket cost (EGP)
-                    <input
-                      className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
-                      min="0"
-                      onChange={(event) => setAmount(event.target.value)}
-                      placeholder="EGP"
-                      type="number"
-                      value={amount}
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
-                    Reason
-                    <input
-                      className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
-                      onChange={(event) => setReason(event.target.value)}
-                      placeholder="e.g. extra leg Assiut → Sohag and back"
-                      type="text"
-                      value={reason}
-                    />
-                  </label>
-                  <div className="sm:col-span-2">
+                <div className="border-t border-orange-100 bg-orange-50/40 px-3 py-3 sm:px-4">
+                  <div className="space-y-2">
+                    {rows.map((row, index) => (
+                      <div key={index} className="flex flex-wrap items-center gap-2">
+                        <input
+                          accept="application/pdf,image/jpeg,image/png"
+                          className="min-w-0 flex-1 text-xs text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-orange-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700"
+                          onChange={(event) => updateRow(index, { file: event.target.files?.[0] ?? null })}
+                          type="file"
+                        />
+                        <input
+                          className="h-9 w-28 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+                          min="0"
+                          onChange={(event) => updateRow(index, { amount: event.target.value })}
+                          placeholder="EGP"
+                          type="number"
+                          value={row.amount}
+                        />
+                        <button
+                          aria-label="Remove ticket"
+                          className="rounded-md border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40"
+                          disabled={rows.length <= 1}
+                          onClick={() => removeRow(index)}
+                          type="button"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-orange-700 hover:underline"
+                    onClick={addRow}
+                    type="button"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add another ticket
+                  </button>
+
+                  <input
+                    className="mt-3 h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="Reason — e.g. extra leg Assiut → Sohag and back"
+                    type="text"
+                    value={reason}
+                  />
+
+                  <div className="mt-3">
                     <button
                       className="inline-flex items-center gap-1 rounded-md bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
                       disabled={busy}
                       onClick={() => void submit(request.id)}
                       type="button"
                     >
-                      {busy ? "Adding…" : "Add ticket to this request"}
+                      {busy ? "Adding…" : "Add tickets to this request"}
                     </button>
                   </div>
                 </div>
@@ -199,7 +238,7 @@ export function ExtraTicketManager({ requests }: { requests: OwnTicketExpenseReq
 
               {rowMessage ? (
                 <p
-                  className={`mt-2 text-xs font-semibold ${
+                  className={`px-3 pb-3 text-xs font-semibold sm:px-4 ${
                     rowMessage.ok ? "text-emerald-700" : "text-rose-700"
                   }`}
                 >

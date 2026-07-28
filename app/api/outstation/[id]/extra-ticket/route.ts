@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { addExtraTicketToOwnOutstationRequest } from "@/lib/outstation/service";
+import { addExtraTicketsToOwnOutstationRequest } from "@/lib/outstation/service";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -51,13 +51,24 @@ export async function POST(
     }
 
     const body = (await request.json()) as Record<string, unknown>;
-    const ticket = parseOutstationTicketAttachmentDataUrl({
-      dataUrl: String(body.dataUrl ?? ""),
-      fileName: String(body.name ?? ""),
-    });
-    const result = await addExtraTicketToOwnOutstationRequest(id, access, {
-      ticket,
-      amount: Number(body.amount ?? 0),
+    const rawTickets = Array.isArray(body.tickets)
+      ? (body.tickets as Array<Record<string, unknown>>)
+      : [];
+    if (rawTickets.length === 0) {
+      return NextResponse.json(
+        { error: "no_tickets", message: "Upload at least one ticket to add." },
+        { status: 400 },
+      );
+    }
+    const tickets = rawTickets.map((entry) => ({
+      ticket: parseOutstationTicketAttachmentDataUrl({
+        dataUrl: String(entry.dataUrl ?? ""),
+        fileName: String(entry.name ?? ""),
+      }),
+      amount: Number(entry.amount ?? 0),
+    }));
+    const result = await addExtraTicketsToOwnOutstationRequest(id, access, {
+      tickets,
       reason: String(body.reason ?? ""),
     });
 
