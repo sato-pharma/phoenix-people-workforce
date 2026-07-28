@@ -55,25 +55,68 @@ from the open occupancy span at read time. Hard-coding state into a text column 
 the bug; a derived value cannot go stale. `au.f_line_area_occupancy_drift()` reports
 `seat_label_asserts_occupancy` if anyone re-introduces one.
 
-## Known remaining gap — the larger half (NOT fixed here)
+## Hires now reach the seat model — for the REPLACEMENT case (2026-07-28)
 
-`au.hire_into_seat` has **no application caller**. The only `au` RPC the app invokes is
-`au.resign_occupant`, via `public.phx_resign_employee_and_open_vacancy` from
-`src/lib/resignations/service.ts`. As of 2026-07-27 `au.occupancy_history` holds 132
-`seed_baseline` rows, 7 `resignation_rpc` rows, and exactly **one** `hire_rpc` row —
-occupancy_id 143, created by hand that day to seat PD-0006 (Pedia Cairo DSM) on
-`SEAT-PED-DM-CA`.
+Shipped in `supabase/migrations/20260728010000_au_wire_hire_into_seat_on_vacancy_fill.sql`.
+`au.hire_into_seat` had **no application caller** at all until this — the only `au` RPC the app
+invoked was `au.resign_occupant`, via `public.phx_resign_employee_and_open_vacancy`. As of
+2026-07-27 `au.occupancy_history` held 132 `seed_baseline` rows, 7 `resignation_rpc` rows, and
+exactly **one** `hire_rpc` row — occupancy_id 143, created by hand that day to seat PD-0006
+(Pedia Cairo DSM) on `SEAT-PED-DM-CA`.
 
-So **resignations flow into the seat model automatically; hires do not.** A new hire gets no
-occupancy row unless somebody runs the RPC manually. Today the seat model is otherwise
-re-aligned to reality only by the Phase-9 reconcile
-(`20260718130000_au_occupancy_reconcile_from_master_phase9.sql`), which vacates stale occupants
-but never fills a seat.
+The fix does **not** attempt to resolve a seat from an employee's line/area/job_title. There is
+no title -> `seat_tier` (REP/DM/RSM/NSM) mapping anywhere in this codebase, and
+`src/lib/employees/access-role.ts` states outright why one shouldn't be invented: *"a job title
+is descriptive only and is NEVER a permission source... Auto-provisioned accounts therefore
+always start at the least-privilege role."* Building a string-matching heuristic here would have
+been the first thing in this codebase to trust `job_title` for something consequential.
 
-That is why the hire-side half of this migration is a latch rather than a repair: it is correct
-and it must ship with the resign side (otherwise the bug simply inverts on the first hire), but
-it will not do useful work at scale until something calls it. **Wiring hires into the seat model
-is the single largest outstanding item in this area** and is deliberately out of scope here.
+Instead it uses a link that already exists and needs no guessing:
+`public.position_vacancies.replacement_for_hr_id` — "HR_ID of the resigned/terminated employee
+whose position opened this vacancy" — set by the same resignation flow that vacates the
+predecessor's `au` seat. A trigger on `position_vacancies` (`AFTER UPDATE`, firing only when
+`status` transitions to `'filled'` for a vacancy that has a predecessor) resolves that
+predecessor's **last occupied seat** via `au.f_last_occupied_seat_by_hr_id` and re-occupies it
+with the new hire via `au.hire_into_seat` — exactly the "seat continuity" the lifecycle RPCs were
+designed for. Verified read-only against production before shipping: all six real open
+replacement vacancies from the original `area_state` bug resolve, via nothing but occupancy
+history, to exactly the six seats already fixed.
+
+**Deliberately still out of scope:**
+
+- **Brand-new headcount** (a vacancy with no `replacement_for_hr_id`, i.e. real growth beyond the
+  132 seeded seats) — there is no seat to inherit and no safe way to pick one. No-ops silently.
+- **Employee transfers** between seats while remaining employed — `au.transfer_occupant` still
+  has no application caller either. A separate gap; this migration does not add one.
+- **Retroactive backfill** — the six vacancies above are still open as of this writing. When one
+  is genuinely filled, the trigger handles it going forward; nothing was replayed for the past.
+
+**Newly discovered while designing this fix (not fixed here — out of scope, narrow):** the
+seat-resignation lookup inside `public.phx_resign_employee_and_open_vacancy` —
+```sql
+select seat_id into v_seat_id from au.occupancy_history
+where occupant_canonical_hr_id = ... and effective_to is null and node_type = 'person'
+limit 1;
+```
+has no `order by`. This is safe today because exactly one seat model role,
+`SEAT-AIF-ADM-UE-1` (the sole `ACTING_DM`, occupant `B-1`), holds **two simultaneously open**
+person spans — their original REP seat plus the acting-DM seat. If that specific person ever
+resigns, this `limit 1` could non-deterministically vacate only one of the two seats, leaving the
+other showing them as occupant forever — the exact "vacated seat still reads as staffed" defect
+class this whole area has been about, just on the resign side instead of the hire side. Blast
+radius is exactly one seat today (the only multi-seat occupant in the model). Worth an `order by`
+fix whenever that RPC is next touched; not bundled into this PR since it wasn't asked for and
+nothing has actually broken yet.
+
+**Observability limit, stated honestly:** `closeVacancyOnHire()` clears `replacement_for_hr_id`
+to `NULL` in the same update that sets `status='filled'` — so by the time anything reads the
+closed vacancy row, the link this trigger depends on is already gone. The trigger writes a
+`public.audit_logs` row on both success and failure so the outcome is durably recorded regardless
+— but `au.f_line_area_occupancy_drift()` cannot detect "this trigger silently failed to fire":
+if it never ran, both `au.line_area_map` and `au.occupancy_history` simply keep agreeing the seat
+is vacant, indistinguishable from it genuinely still being open. No drift kind claims to catch
+this; that would be false confidence, not a real check. The audit log plus the trigger's own
+correctness are the actual safety net.
 
 ## The decision to make (deliberately deferred)
 
@@ -82,8 +125,8 @@ options, honestly stated:
 
 1. **Keep both, reconcile automatically** (status quo + this PR). Cheapest, lowest risk. Each
    model stays good at its own job; the drift reconciler is the safety net. Cost: two things to
-   keep right, and the hire gap above stays open until someone wires new hires into
-   `au.hire_into_seat`.
+   keep right, and brand-new-headcount hires still don't reach the seat model (replacement hires
+   now do, per the section above).
 2. **Make `area_state` fully derived.** Replace the stored column with a view/generated
    expression over `au.occupancy_history`, so drift becomes structurally impossible. Blocked
    today by `carries_target`, which is `generated always as (area_state in ('occupied',
