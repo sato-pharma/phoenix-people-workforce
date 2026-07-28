@@ -353,6 +353,10 @@ export async function importRoiSheetRequests(opts: {
           {
             request_code: requestCode,
             requester_hr_id: requesterHrId,
+            // Provenance seam (see 20260728124544_marketing_requests_origin_split.sql): everything
+            // this importer writes belongs to the Archived Marketing Requests module, never to the
+            // live Phoenix one. Stamped explicitly rather than relying on the column default.
+            origin: "xlsx_import",
             // The request belongs to its requester, not the admin running the import —
             // stamp created/updated_by with the requester (matches the normal create flow).
             created_by_hr_id: requesterHrId,
