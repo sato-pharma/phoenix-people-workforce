@@ -10,6 +10,8 @@ import {
   type ImsAreaRow,
   type ImsRegionRow,
 } from "../src/lib/sales/ims-ratio.ts";
+import { MASTER_DEFINITIONS } from "../src/lib/sales/master-data/definitions.ts";
+import { othersRuleInvalidReason } from "../src/lib/sales/master-data/import-service.ts";
 
 // Drift guard for the Source-of-Sales IMS (market share) ratios.
 //
@@ -218,6 +220,43 @@ export function runSalesImsRatioTests() {
 
   // The migration must self-verify on apply, so a bad load fails loudly instead of landing.
   assert.ok(/raise exception/i.test(sql), "the migration must assert its own totals on apply");
+
+  // ── Write-time guard on the Others rule ────────────────────────────────────
+  // summarizeImsRatios only DETECTS a broken model, after the fact. othersRuleInvalidReason is what
+  // stops one being written: the 0..1 percent bound happily accepts 0.02 on an OT area, which is a
+  // perfectly valid fraction and still pushes the model past 1.
+  const areasDef = MASTER_DEFINITIONS.areas;
+  const imsColumn = areasDef.columns.find((column) => column.key === "ims_ratio");
+  assert.ok(imsColumn, "the areas master must still declare an ims_ratio column");
+  assert.equal(imsColumn.type, "percent", "ims_ratio must stay a percent column");
+  assert.equal(imsColumn.locked, false, "ims_ratio must stay editable — the owner edits it in the UI");
+
+  const otRow = { area_code: "OT5", region_code: IMS_OTHERS_REGION_CODE };
+  const nonOtRow = { area_code: "AB1", region_code: "AB" };
+
+  assert.ok(
+    othersRuleInvalidReason(areasDef, imsColumn, 0.02, otRow),
+    "a ratio on an OT area must be rejected even though 0.02 is a valid fraction",
+  );
+  assert.equal(
+    othersRuleInvalidReason(areasDef, imsColumn, "", otRow),
+    null,
+    "clearing an OT area's ratio must stay allowed — NULL is the correct state",
+  );
+  assert.equal(
+    othersRuleInvalidReason(areasDef, imsColumn, 0.02, nonOtRow),
+    null,
+    "non-OT areas must still accept a per-area ratio",
+  );
+  assert.ok(
+    othersRuleInvalidReason(areasDef, imsColumn, 0.02, { area_code: "OT5", region_code: " ot " }),
+    "region_code must be compared after normalizeCode, so ' ot ' is caught like 'OT'",
+  );
+  assert.equal(
+    othersRuleInvalidReason(MASTER_DEFINITIONS.regions, imsColumn, 0.0497, { region_code: IMS_OTHERS_REGION_CODE }),
+    null,
+    "the OT REGION row is exactly where the Others share belongs — never blocked",
+  );
 
   console.log("sales IMS ratio tests passed");
 }

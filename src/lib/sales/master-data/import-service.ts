@@ -2,6 +2,7 @@ import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { IMS_OTHERS_REGION_CODE } from "@/lib/sales/ims-ratio";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -131,6 +132,28 @@ function percentInvalidReason(column: MasterColumn, value: string | number): str
     return `${column.label} must be a fraction between 0 and 1 — enter 0.0341 for 3.41% (in Excel, a % -formatted cell does this for you).`;
   }
   return null;
+}
+
+/**
+ * THE OTHERS RULE (see src/lib/sales/ims-ratio.ts): the OT ("Others") region's IMS share is one
+ * indivisible figure on the REGION row, and every OT *area* must keep `ims_ratio` NULL — OT's area
+ * list is volatile (3 areas → 9 in a single day), so a per-area split would have to be re-derived
+ * every time that set changes.
+ *
+ * Nothing in the schema ties the region figure to the area figures, so `percentInvalidReason`'s
+ * 0..1 bound is not enough: typing a perfectly valid 0.02 into an OT area silently pushes the model
+ * past 1. This is the only write-time guard on that invariant.
+ */
+export function othersRuleInvalidReason(
+  def: MasterDefinition,
+  column: MasterColumn,
+  value: string | number,
+  row: Record<string, string>,
+): string | null {
+  if (def.master !== "areas" || column.key !== "ims_ratio") return null;
+  if (value === "" || value === null) return null;
+  if (normalizeCode(row.region_code ?? "") !== IMS_OTHERS_REGION_CODE) return null;
+  return `${column.label} must stay empty for ${IMS_OTHERS_REGION_CODE} ("Others") areas — the Others share is held once on the ${IMS_OTHERS_REGION_CODE} region row, never split across its areas.`;
 }
 
 /** Blank percent clears the column, rather than writing "" into a numeric field. */
@@ -335,7 +358,7 @@ export async function importMasterWorkbook(input: {
           invalid = `${column.label} must be a non-negative number.`;
           break;
         }
-        const percentProblem = percentInvalidReason(column, value);
+        const percentProblem = percentInvalidReason(column, value) ?? othersRuleInvalidReason(def, column, value, effective);
         if (percentProblem) {
           invalid = percentProblem;
           break;
@@ -384,7 +407,7 @@ export async function importMasterWorkbook(input: {
         }
       }
       // Range-checked even when optional — a new row may still carry a bad ratio.
-      const percentProblem = percentInvalidReason(column, value);
+      const percentProblem = percentInvalidReason(column, value) ?? othersRuleInvalidReason(def, column, value, effective);
       if (percentProblem) {
         invalid = percentProblem;
         break;
@@ -510,7 +533,7 @@ export async function addSingleMasterRow(input: {
       }
     }
     // Range-checked even when optional — a new row may still carry a bad ratio.
-    const percentProblem = percentInvalidReason(column, value);
+    const percentProblem = percentInvalidReason(column, value) ?? othersRuleInvalidReason(def, column, value, input.row);
     if (percentProblem) {
       invalid = percentProblem;
       break;
@@ -617,7 +640,7 @@ export async function updateSingleMasterRow(input: {
     if (column.type === "number" && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
       return { success: false, error: `${column.label} must be a non-negative number.` };
     }
-    const percentProblem = percentInvalidReason(column, value);
+    const percentProblem = percentInvalidReason(column, value) ?? othersRuleInvalidReason(def, column, value, effective);
     if (percentProblem) {
       return { success: false, error: percentProblem };
     }
