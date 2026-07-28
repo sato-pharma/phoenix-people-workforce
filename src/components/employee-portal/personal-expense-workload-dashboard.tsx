@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Bar,
   BarChart,
@@ -47,6 +48,7 @@ import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
 import { extractKnownPlace } from "@/lib/utils/places";
 import { canonicalizeTransport, resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manager";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -213,6 +215,26 @@ function mapStatusCategory(value: string) {
   if (normalized.includes("pending")) return "Pending";
   if (normalized.includes("approved")) return "Confirmed by HR";
   return "Other";
+}
+
+/** Recovers the numeric outstation_expense_requests.id from a ledger tripId
+ *  built by outstationPayrollTripId ("OUTSTATION-<id>"). Rows sourced from
+ *  historical/Excel-imported payroll expenses never match this shape, so they
+ *  correctly never qualify for the self-service extra-ticket control below. */
+function parseOutstationRequestId(tripId: string): number | null {
+  const match = /^OUTSTATION-(\d+)$/.exec(String(tripId ?? "").trim());
+  return match ? Number(match[1]) : null;
+}
+
+/** Returns the request id when the VIEWER may add an extra ticket to this row
+ *  right here (own request, train/bus, not already declined) — a UI hint only;
+ *  the server independently re-validates ownership/transport/payroll-lock. */
+function extraTicketEligibleId(trip: ExpenseRow, viewerHrId: string | null | undefined): number | null {
+  if (!viewerHrId) return null;
+  if (trip.hrId.trim().toLowerCase() !== viewerHrId.trim().toLowerCase()) return null;
+  if (trip.transportationType !== "Train" && trip.transportationType !== "Bus") return null;
+  if (mapStatusCategory(trip.status) === "Declined") return null;
+  return parseOutstationRequestId(trip.tripId);
 }
 
 /* Flat, square premium status pill (replaces the gradient/ring/shadow Badge). */
@@ -708,12 +730,18 @@ export function PersonalExpenseWorkloadDashboard({
   data,
   showHero = true,
   submitExpenseHref = "/employee-portals/submit-expense",
+  viewerHrId,
 }: {
   adminKeyCards?: WorkloadAdminKeyCards | null;
   data: Pick<MedicalRepPortalData, "workload">;
   showHero?: boolean;
   submitExpenseHref?: string;
+  /** Enables the self-service "add extra ticket" control on the viewer's own
+   *  train/bus rows. Omit (default) to keep the dashboard read-only — e.g. an
+   *  admin/manager view of someone else's expenses should never pass this. */
+  viewerHrId?: string | null;
 }) {
+  const router = useRouter();
   /* -------- data normalization (UNCHANGED LOGIC) -------- */
   const rows: ExpenseRow[] = useMemo(() => {
     const source = data.workload?.expenseRows ?? [];
@@ -782,6 +810,7 @@ export function PersonalExpenseWorkloadDashboard({
   const [searchSortDirection, setSearchSortDirection] = useState<SortDirection>("desc");
   const [density, setDensity] = useState<"compact" | "comfortable">("comfortable");
   const [expandedTripKey, setExpandedTripKey] = useState<string | null>(null);
+  const [expandedTicketTripId, setExpandedTicketTripId] = useState<string | null>(null);
   // Page size — bumps to 25 automatically once dataset crosses 200 rows
   // so big histories paginate less without exploding DOM size on mobile.
   const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(() =>
@@ -2141,6 +2170,36 @@ export function PersonalExpenseWorkloadDashboard({
                                     </div>
                                   )}
                                 </div>
+                                {(() => {
+                                  const ticketRequestId = extraTicketEligibleId(trip, viewerHrId);
+                                  if (ticketRequestId == null) return null;
+                                  const isTicketOpen = expandedTicketTripId === trip.tripId;
+                                  return (
+                                    <div className="mt-4 border-t border-slate-200 pt-4">
+                                      <button
+                                        className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                                        onClick={() =>
+                                          setExpandedTicketTripId((prev) => (prev === trip.tripId ? null : trip.tripId))
+                                        }
+                                        type="button"
+                                      >
+                                        <PlusCircle className="h-3.5 w-3.5" />
+                                        {isTicketOpen ? "Close" : "Add tickets"}
+                                      </button>
+                                      {isTicketOpen && (
+                                        <div className="mt-3 max-w-xl">
+                                          <ExtraTicketRowEditor
+                                            onAdded={() => {
+                                              setExpandedTicketTripId(null);
+                                              router.refresh();
+                                            }}
+                                            requestId={ticketRequestId}
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </td>
                           </tr>
@@ -2243,6 +2302,36 @@ export function PersonalExpenseWorkloadDashboard({
                           </p>
                         </div>
                       </div>
+                      {(() => {
+                        const ticketRequestId = extraTicketEligibleId(trip, viewerHrId);
+                        if (ticketRequestId == null) return null;
+                        const isTicketOpen = expandedTicketTripId === trip.tripId;
+                        return (
+                          <div className="mt-3 border-t border-slate-200 pt-3">
+                            <button
+                              className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                              onClick={() =>
+                                setExpandedTicketTripId((prev) => (prev === trip.tripId ? null : trip.tripId))
+                              }
+                              type="button"
+                            >
+                              <PlusCircle className="h-3.5 w-3.5" />
+                              {isTicketOpen ? "Close" : "Add tickets"}
+                            </button>
+                            {isTicketOpen && (
+                              <div className="mt-3">
+                                <ExtraTicketRowEditor
+                                  onAdded={() => {
+                                    setExpandedTicketTripId(null);
+                                    router.refresh();
+                                  }}
+                                  requestId={ticketRequestId}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
