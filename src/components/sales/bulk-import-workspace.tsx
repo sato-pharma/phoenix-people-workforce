@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, Search, Upload, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, Search, Upload, X, XCircle } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
@@ -117,6 +117,19 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
     setActiveCode((prev) => (prev === code ? null : code));
   }
 
+  // Drops one distributor out of this bulk session (e.g. opened by mistake, or the user decided not
+  // to import it this round) without touching anyone else's progress — the only other way to shed a
+  // touched code is resetSession(), which wipes every distributor. Confirms only when a file was
+  // actually picked (statuses[code] already exists at "idle" the instant the slot mounts).
+  function removeCard(code: string) {
+    const hasProgress = Boolean(statuses[code]?.fileName);
+    if (hasProgress && !window.confirm(`Remove ${code} from this bulk session? Its picked file and progress will be discarded — the other distributors are unaffected.`)) return;
+    setTouchedCodes((prev) => prev.filter((c) => c !== code));
+    setStatuses((prev) => { const next = { ...prev }; delete next[code]; return next; });
+    delete refsMap.current[code];
+    setActiveCode((prev) => (prev === code ? null : prev));
+  }
+
   const committableCodes = touchedCodes.filter((c) => {
     const stage = statuses[c]?.stage;
     return stage === "ready" || stage === "commit_failed";
@@ -214,9 +227,14 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
             <Card className="space-y-3 rounded-[6px] border border-[#E2E8F0] bg-white p-5">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-black tracking-tight text-slate-950">{distributor.name} <span className="font-mono text-sm text-[#94A3B8]">{distributor.code}</span></h3>
-                <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] px-2.5 text-xs font-bold text-[#64748B] transition hover:bg-[#F8FAFC]" onClick={() => setActiveCode(null)} type="button">
-                  <ChevronDown className="h-3.5 w-3.5" /> Collapse
-                </button>
+                <div className="flex items-center gap-2">
+                  <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] px-2.5 text-xs font-bold text-[#64748B] transition hover:bg-[#F8FAFC]" onClick={() => setActiveCode(null)} type="button">
+                    <ChevronDown className="h-3.5 w-3.5" /> Collapse
+                  </button>
+                  <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#FCA5A5] px-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50" onClick={() => removeCard(code)} type="button">
+                    <X className="h-3.5 w-3.5" /> Remove from this import
+                  </button>
+                </div>
               </div>
               <MonthlyUpload
                 aiEnabled={aiEnabled}
@@ -270,7 +288,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
               {confirmBusy ? "Importing…" : `Confirm & Import All (${committableCodes.length})`}
             </button>
             {blockingCodes.length > 0 ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"><XCircle className="h-3.5 w-3.5" /> Open and resolve: {blockingCodes.map((c) => monthly.find((d) => d.code === c)?.name ?? c).join(", ")}</span>
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"><XCircle className="h-3.5 w-3.5" /> Open and resolve, or remove: {blockingCodes.map((c) => monthly.find((d) => d.code === c)?.name ?? c).join(", ")}</span>
             ) : (
               <span className="text-xs font-medium text-[#64748B]">Each distributor imports through its own strict validation — this just confirms all of them at once.</span>
             )}
