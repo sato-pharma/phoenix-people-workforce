@@ -6,7 +6,7 @@ import {
   scoreForwardConfidence,
 } from "@/lib/geocoding/locationiq";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { GOVERNORATE_TO_REGION, AMBIGUOUS_GOVERNORATES, type BrickCentroid } from "@/lib/sales/normalizer/geo-validate";
+import { resolveGovernorateRegion, type BrickCentroid } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Brick centroid acquisition + lookup. A centroid is the approximate coordinate of a brick
@@ -47,10 +47,9 @@ function median(values: number[]): number {
 }
 
 function centroidPassesRegionGate(governorate: string | null, brickRegionCode: string): boolean {
-  const key = String(governorate ?? "").toLowerCase().trim();
-  if (!key) return false;
-  if (AMBIGUOUS_GOVERNORATES.has(key)) return brickRegionCode === "D2" || brickRegionCode === "D3";
-  return GOVERNORATE_TO_REGION[key] === brickRegionCode;
+  const govRegion = resolveGovernorateRegion(governorate);
+  if (govRegion.ambiguous) return brickRegionCode === "D2" || brickRegionCode === "D3";
+  return govRegion.regionCode != null && govRegion.regionCode === brickRegionCode;
 }
 
 type BrickGeoComponents = { governorate: string | null; lat: number; lng: number; markaz: string | null };
