@@ -284,6 +284,28 @@ const adminNavigationSectionSeeds = [
     id: "workspace-marketing-requests",
     items: [
       { href: "/admin/marketing-roi", icon: Megaphone, label: "Marketing & ROI", roles: ["Super Admin", "CEO", "SFE Manager", "District Manager"] },
+      // ROI Tracker is pulled OUT of the hub and onto the sidebar directly: it is the ROI source
+      // of truth, and burying it one click inside a hub of four competing ROI cards was the
+      // discoverability problem this module set out to fix. The role list mirrors
+      // assertMarketingAdminPageAccess({ allowCompanyOversight: true }) exactly — note the hub
+      // button above admits neither Finance Manager nor Financial Advisor, so before this entry
+      // the finance roles the guard allows had no sidebar route to the page at all. Row-level
+      // visibility is still scoped per viewer inside getMarketingRoiReport; this widens nothing.
+      {
+        href: "/admin/marketing-roi-tracker",
+        icon: Target,
+        label: "ROI Tracker",
+        roles: [
+          "Super Admin",
+          "CEO",
+          "SFE Manager",
+          "Marketing Manager",
+          "Product Manager",
+          "Group Product Manager",
+          "Finance Manager",
+          "Financial Advisor",
+        ],
+      },
     ],
     label: "Marketing & ROI",
   },
@@ -786,6 +808,25 @@ const employeePortalNavigationSectionSeeds = [
           "SFE Manager",
           "Finance Manager",
           "Financial Advisor",
+          "CEO",
+          "Super Admin",
+        ],
+      },
+      // Mirrors canUseEmployeePortalMarketingRoiTracking exactly. Its own URL rather than a
+      // shared page with /admin/marketing-roi-tracker — owner rule, 2026-07-28.
+      {
+        href: "/employee-portals/roi-tracker",
+        icon: Target,
+        label: "ROI Tracker",
+        roles: [
+          "Medical Rep",
+          "District Manager",
+          "Regional Manager",
+          "National Sales Manager",
+          "Product Manager",
+          "Group Product Manager",
+          "Marketing Manager",
+          "SFE Manager",
           "CEO",
           "Super Admin",
         ],
@@ -1518,7 +1559,19 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     icon: Target,
     label: "ROI Tracker",
     description: "Every request with its forecast, attributed sales, products, target pharmacies and approval chain — one place, one set of numbers.",
-    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
+    // Mirrors assertMarketingAdminPageAccess({ allowCompanyOversight: true }) and the sidebar
+    // entry above. Previously omitted Marketing Manager / Product Manager / Group Product
+    // Manager even though the page guard admits them.
+    roles: [
+      "Super Admin",
+      "CEO",
+      "SFE Manager",
+      "Marketing Manager",
+      "Product Manager",
+      "Group Product Manager",
+      "Finance Manager",
+      "Financial Advisor",
+    ],
   },
   {
     href: "/admin/sales-marketing-intelligence",

@@ -20,17 +20,7 @@ export default async function ArchivedMarketingRequestsPage() {
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
-      <div className="rounded-sm border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-semibold text-slate-900">Historical records — imported from Excel</p>
-        <p className="mt-1 text-sm text-slate-600">
-          These requests were migrated from the historical marketing sheet before Phoenix became the
-          system of record on 1 August 2026. They are kept separate because they were never validated
-          at entry: their pharmacy codes were not checked against the reference database and they
-          carry no live approval chain. Read them as history, not as live performance — the live
-          numbers are in ROI Tracker.
-        </p>
-      </div>
-      <MarketingRoiTracker basePath="/admin" origin="xlsx_import" />
+      <MarketingRoiTracker origin="xlsx_import" />
     </div>
   );
 }
