@@ -707,6 +707,21 @@ async function validateTerritory(input: {
   };
 }
 
+/**
+ * Resolve a canonical Egyptian governorate from the first of several candidate
+ * strings that yields a confident match. Used so a residence/destination whose
+ * governorate lives in a secondary field (area / address) still resolves.
+ */
+function resolveFirstGovernorate(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    const governorate = resolveGovernorate(value ?? "");
+    if (governorate) return governorate;
+  }
+  return null;
+}
+
 async function validateCapturedLocation(
   params: ValidationContext,
 ): Promise<ValidatedLocationBundle> {
@@ -826,14 +841,20 @@ async function validateCapturedLocation(
 
   // Residence-vs-destination governorate rule: a trip must be OUTSIDE the
   // employee's residence governorate. Canonicalize both via resolveGovernorate so a
-  // plain compare is valid; only reject when both resolve and match (fail-open).
-  const residenceGovernorate =
-    resolveGovernorate(
-      residence.residenceCity ?? residence.residenceArea ?? residence.residenceAddress ?? "",
-    ) ?? null;
-  const destinationGovernorate =
-    resolveGovernorate(reverse?.governorate ?? reverse?.formattedAddress ?? reverse?.city ?? "") ??
-    null;
+  // plain compare is valid. Each side is resolved from MULTIPLE fields (first hit
+  // wins) so a town-only value in one field does not defeat the check when another
+  // field carries the governorate.
+  const residenceGovernorate = resolveFirstGovernorate(
+    residence.residenceCity,
+    residence.residenceArea,
+    residence.residenceAddress,
+  );
+  const destinationGovernorate = resolveFirstGovernorate(
+    reverse?.governorate,
+    reverse?.formattedAddress,
+    reverse?.city,
+    reverse?.area,
+  );
   if (
     eligibilityStatus !== "not_eligible" &&
     residenceGovernorate &&
@@ -843,6 +864,10 @@ async function validateCapturedLocation(
     eligibilityStatus = "not_eligible";
     eligibilityReason = `Destination is within the same governorate as your residence (${residenceGovernorate}) and is not eligible for an outstation expense.`;
   }
+  // Owner rule: when a governorate can NOT be confirmed (either side unresolved),
+  // do not silently auto-pay — hold the request for Super Admin review instead.
+  const governorateReviewRequired =
+    eligibilityStatus !== "not_eligible" && (!residenceGovernorate || !destinationGovernorate);
 
   const result: OutstationCaptureResult = {
     capturedAccuracyMeters: params.capturedAccuracyMeters,
@@ -854,6 +879,7 @@ async function validateCapturedLocation(
     durationMinutes,
     eligibilityReason,
     eligibilityStatus,
+    governorateReviewRequired,
     employeeArea: identity.employeeArea,
     employeeHrId: identity.employeeHrId,
     employeeLine: identity.employeeLine,
@@ -1052,10 +1078,14 @@ async function resolveOutstationSubmitAlertHrIds(): Promise<string[]> {
 // through approveOutstationRequestForPayroll immediately after insert (that
 // immediate auto-approve is what actually makes the request "submitted" in
 // practice). Not fired on later edits to an already-approved request.
-async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
+async function notifyOutstationSubmitted(
+  request: OutstationExpenseRequest,
+  options: { heldForReview?: boolean } = {},
+) {
   try {
     const recipients = await resolveOutstationSubmitAlertHrIds();
     if (recipients.length === 0) return;
+    const heldForReview = Boolean(options.heldForReview);
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
     const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
@@ -1069,6 +1099,15 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
     const managerName = text(employeeRow?.managerName) || "—";
 
     const metrics = [
+      ...(heldForReview
+        ? [
+            {
+              label: "Action needed",
+              value:
+                "Held for Super Admin review — the residence/destination governorate could not be confirmed. NOT added to payroll until you approve or reject it.",
+            },
+          ]
+        : []),
       { label: "Employee", value: `${request.employeeName} (${request.employeeHrId})` },
       { label: "Role", value: request.employeeRole },
       // Separate "Line"/"Area" labels (replacing the old combined "Line / Area" one) are what
@@ -1130,6 +1169,11 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
     // template's metrics table) already carry every detail, so repeating them here as a
     // second wall of text made the email read as duplicated content.
     const messageLines = [
+      ...(heldForReview
+        ? [
+            `HELD FOR REVIEW: this request's residence/destination governorate could not be confirmed automatically, so it was NOT added to payroll. Approve or reject it in the Expense Command Center.`,
+          ]
+        : []),
       `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
       `Trip: ${formatDateValue(request.tripStartDate)} to ${formatDateValue(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
       `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
@@ -1153,10 +1197,12 @@ async function notifyOutstationSubmitted(request: OutstationExpenseRequest) {
           status: "Submitted",
         },
         module: "outstation",
-        priority: "normal",
+        priority: heldForReview ? "high" : "normal",
         recordId: String(request.id),
         telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
-        title: `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
+        title: heldForReview
+          ? `Outstation request needs review — ${request.employeeName} (${claimedAmount})`
+          : `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
       },
       recipients,
     );
@@ -1277,14 +1323,27 @@ export async function submitOutstationRequest(
     evidence: workloadPayload.workload_evidence_snapshot,
   });
   // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
-  // campaign rule; otherwise accept. Rejected requests are PERSISTED (not thrown) so the
-  // employee sees them in their expense list with a reason, and a Super Admin can override.
+  // campaign rule; HOLD for Super Admin review when a governorate could not be confirmed;
+  // otherwise accept. Rejected AND held requests are PERSISTED (not thrown) so the employee
+  // sees them in their expense list, and a Super Admin can decide/override.
   const systemRejectionReason =
     calculation.eligibilityStatus === "not_eligible"
       ? calculation.eligibilityReason
       : campaignRejectionReason;
-  const decisionStatus = systemRejectionReason ? "rejected_by_system" : "accepted_by_system";
-  const decisionReason = systemRejectionReason ?? calculation.approvalReason;
+  const requiresGovernorateReview =
+    !systemRejectionReason && Boolean(calculation.governorateReviewRequired);
+  const governorateReviewReason =
+    "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
+  const decisionStatus = systemRejectionReason
+    ? "rejected_by_system"
+    : requiresGovernorateReview
+      ? "submitted"
+      : "accepted_by_system";
+  const decisionReason = systemRejectionReason
+    ? systemRejectionReason
+    : requiresGovernorateReview
+      ? governorateReviewReason
+      : calculation.approvalReason;
 
   const insertPayload = {
     allowance_amount: calculation.allowanceAmount,
@@ -1397,6 +1456,12 @@ export async function submitOutstationRequest(
   if (decisionStatus === "rejected_by_system") {
     // Persisted, employee notified, no payroll push. Super Admin can override later.
     await notifyOutstationDecision({ comment: decisionReason, decision: "reject", request: submitted });
+    return submitted;
+  }
+  if (decisionStatus === "submitted") {
+    // Held for Super Admin review (governorate unconfirmed): persisted as pending, NOT
+    // pushed to payroll. Alert Super Admins so they can accept/override or reject it.
+    await notifyOutstationSubmitted(submitted, { heldForReview: true });
     return submitted;
   }
   await pushAcceptedOutstationExpenseToPayroll(submitted, systemAccessContext);
@@ -1571,6 +1636,53 @@ async function attachCarEvidenceSignedUrls(
       };
     }),
   );
+}
+
+export type PendingOutstationReviewRequest = {
+  id: number;
+  tripStartDate: string;
+  tripEndDate: string;
+  destination: string;
+  amount: number;
+  transportationType: string;
+  reason: string;
+  submittedAt: string;
+};
+
+/**
+ * The caller's OWN outstation requests that are held for Super Admin review
+ * (status "submitted"). These never enter the payroll ledger, so they are
+ * invisible on the ledger-backed expense dashboard — this surfaces them to the
+ * submitter so a governorate-held request is not silently lost.
+ */
+export async function getOwnPendingOutstationReviewRequests(
+  access: AccessContext,
+): Promise<PendingOutstationReviewRequest[]> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .eq("status", "submitted")
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return (data as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
+    .map((row) => ({
+      id: row.id,
+      tripStartDate: row.tripStartDate,
+      tripEndDate: row.tripEndDate,
+      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+      amount: row.claimedTotalAmount || row.expectedTotalAmount || 0,
+      transportationType: row.transportationType,
+      reason:
+        text(row.approvalReason) ||
+        text(row.eligibilityReason) ||
+        "Held for Super Admin review.",
+      submittedAt: row.submittedAt || row.createdAt,
+    }));
 }
 
 export async function listOutstationRequests(options?: { includeCarEvidenceSignedUrls?: boolean }) {
