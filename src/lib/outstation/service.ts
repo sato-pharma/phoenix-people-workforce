@@ -1723,6 +1723,172 @@ export async function getOwnPendingOutstationReviewRequests(
     }));
 }
 
+export type OwnTicketExpenseRequest = {
+  id: number;
+  tripStartDate: string;
+  tripEndDate: string;
+  destination: string;
+  transportationType: string;
+  total: number;
+  status: string;
+  ticketCount: number;
+};
+
+/**
+ * The caller's OWN train/bus requests that can still receive an extra ticket
+ * (not rejected). Used to power the "+ extra ticket" control on the portal.
+ */
+export async function getOwnTicketExpenseRequests(
+  access: AccessContext,
+): Promise<OwnTicketExpenseRequest[]> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .select("*")
+    .in("transportation_type", ["train", "bus"])
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+  return (data as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
+    .filter((row) => !row.status.startsWith("rejected"))
+    .map((row) => ({
+      id: row.id,
+      tripStartDate: row.tripStartDate,
+      tripEndDate: row.tripEndDate,
+      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+      transportationType: row.transportationType,
+      total: row.claimedTotalAmount || row.expectedTotalAmount || 0,
+      status: row.status,
+      ticketCount: row.ticketAttachmentPaths.length,
+    }));
+}
+
+/**
+ * Employee self-service: add ONE extra ticket (attachment + cost + reason) to
+ * their own already-submitted train/bus request — e.g. an unplanned extra leg.
+ * The extra cost is ADDED to the ticket/travel total (allowance is never
+ * touched), and, when the request is already accepted and linked to an unpaid
+ * payroll expense, the linked payroll addition is re-synced to the new total.
+ * Blocked once the expense has been paid, for car trips, and for other people's
+ * requests.
+ */
+export async function addExtraTicketToOwnOutstationRequest(
+  requestId: number,
+  access: AccessContext,
+  input: { ticket: OutstationTicketAttachmentUploadInput; amount: number; reason: string },
+): Promise<OutstationExpenseRequest> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) {
+    throw new Error("Your session is not linked to an employee. Please sign in again.");
+  }
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+  if (normalizeHrIdForAccess(existing.employeeHrId) !== callerHrId) {
+    throw new Error("Forbidden: you can only add a ticket to your own expense request.");
+  }
+  if (existing.transportationType !== "train" && existing.transportationType !== "bus") {
+    throw new Error("Extra tickets can only be added to train or bus expense requests.");
+  }
+  if (existing.status.startsWith("rejected")) {
+    throw new Error("This request was rejected and cannot accept an extra ticket.");
+  }
+
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
+  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+
+  const extraAmount = roundMoney(Math.max(0, Number(input.amount)));
+  if (!(extraAmount > 0)) {
+    throw new Error("Enter a valid ticket cost greater than zero.");
+  }
+  const reason = cleanText(input.reason);
+  if (!reason) {
+    throw new Error("A reason for the extra ticket is required.");
+  }
+
+  const requestDraftId = `outstation-extra-${randomUUID()}`;
+  const uploaded = await uploadOutstationTicketAttachments([
+    { ...input.ticket, employeeHrId: existing.employeeHrId, requestDraftId },
+  ]);
+
+  try {
+    const newTicketAmount = roundMoney(existing.ticketAmount + extraAmount);
+    const existingTravelCost =
+      existing.reportTravelCost ?? roundMoney(existing.fuelAmount + existing.ticketAmount);
+    const newTravelCost = roundMoney(existingTravelCost + extraAmount);
+    const newExpectedTotal = reportExpectedTotal({
+      allowanceAmount: existing.allowanceAmount,
+      eligibilityStatus: existing.eligibilityStatus,
+      meetingAmount: existing.reportMeetingAmount,
+      otherAmount: existing.reportOtherAmount,
+      travelCost: newTravelCost,
+    });
+    const newClaimedTotal =
+      existing.claimedTotalAmount > 0
+        ? roundMoney(existing.claimedTotalAmount + extraAmount)
+        : newExpectedTotal;
+
+    const mergedPaths = [...existing.ticketAttachmentPaths, ...uploaded.map((a) => a.path)];
+    const mergedMetadata = [...existing.ticketAttachmentMetadata, ...uploaded];
+    const noteLine = `Extra ticket added (${formatEgp(extraAmount)}): ${reason}`;
+    const newNotes = existing.notes ? `${existing.notes}\n${noteLine}` : noteLine;
+    const now = new Date().toISOString();
+
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .update({
+        attachment_count: mergedMetadata.length,
+        claimed_total_amount: newClaimedTotal,
+        expected_total_amount: newExpectedTotal,
+        notes: newNotes,
+        report_travel_cost: newTravelCost,
+        ticket_amount: newTicketAmount,
+        ticket_attachment_metadata: mergedMetadata,
+        ticket_attachment_paths: mergedPaths,
+        updated_at: now,
+      })
+      .eq("id", requestId)
+      .eq("status", existing.status)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("This request just changed status. Refresh and try again.");
+
+    const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+    const syncedPayrollRows = await syncLinkedOutstationPayrollExpense({
+      access,
+      linkedPayroll,
+      request: updated,
+    });
+
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+      entityId: String(updated.id),
+      entityType: "outstation_request",
+      newValues: {
+        extraTicketAmount: extraAmount,
+        newExpectedTotal: updated.expectedTotalAmount,
+        payrollExpenseRows: syncedPayrollRows,
+        reason,
+        source: "employee_extra_ticket",
+        status: updated.status,
+      },
+      summary: `Employee added an extra ticket (${formatEgp(extraAmount)}) to outstation request ${updated.id}.`,
+    });
+
+    return updated;
+  } catch (error) {
+    await deleteOutstationTicketAttachments(uploaded.map((a) => a.path));
+    throw error;
+  }
+}
+
 export async function listOutstationRequests(options?: { includeCarEvidenceSignedUrls?: boolean }) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
