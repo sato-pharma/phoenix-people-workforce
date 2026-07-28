@@ -1767,18 +1767,21 @@ export async function getOwnTicketExpenseRequests(
 }
 
 /**
- * Employee self-service: add ONE extra ticket (attachment + cost + reason) to
- * their own already-submitted train/bus request — e.g. an unplanned extra leg.
- * The extra cost is ADDED to the ticket/travel total (allowance is never
- * touched), and, when the request is already accepted and linked to an unpaid
- * payroll expense, the linked payroll addition is re-synced to the new total.
- * Blocked once the expense has been paid, for car trips, and for other people's
- * requests.
+ * Employee self-service: add ONE OR MORE extra tickets (each an attachment +
+ * cost) plus a shared reason to their own already-submitted train/bus request —
+ * e.g. an unplanned multi-leg trip needing several ticket legs. The summed extra
+ * cost is ADDED to the ticket/travel total (allowance is never touched); when the
+ * request is already accepted and linked to an unpaid payroll expense, the linked
+ * payroll addition is re-synced to the new total. Blocked once the expense has
+ * been paid, for car trips, and for other people's requests.
  */
-export async function addExtraTicketToOwnOutstationRequest(
+export async function addExtraTicketsToOwnOutstationRequest(
   requestId: number,
   access: AccessContext,
-  input: { ticket: OutstationTicketAttachmentUploadInput; amount: number; reason: string },
+  input: {
+    tickets: Array<{ ticket: OutstationTicketAttachmentUploadInput; amount: number }>;
+    reason: string;
+  },
 ): Promise<OutstationExpenseRequest> {
   const callerHrId = normalizeHrIdForAccess(access.hrId);
   if (!callerHrId) {
@@ -1788,13 +1791,13 @@ export async function addExtraTicketToOwnOutstationRequest(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
   if (normalizeHrIdForAccess(existing.employeeHrId) !== callerHrId) {
-    throw new Error("Forbidden: you can only add a ticket to your own expense request.");
+    throw new Error("Forbidden: you can only add tickets to your own expense request.");
   }
   if (existing.transportationType !== "train" && existing.transportationType !== "bus") {
     throw new Error("Extra tickets can only be added to train or bus expense requests.");
   }
   if (existing.status.startsWith("rejected")) {
-    throw new Error("This request was rejected and cannot accept an extra ticket.");
+    throw new Error("This request was rejected and cannot accept extra tickets.");
   }
 
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
@@ -1802,25 +1805,34 @@ export async function addExtraTicketToOwnOutstationRequest(
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
 
-  const extraAmount = roundMoney(Math.max(0, Number(input.amount)));
-  if (!(extraAmount > 0)) {
-    throw new Error("Enter a valid ticket cost greater than zero.");
+  const tickets = input.tickets ?? [];
+  if (tickets.length === 0) {
+    throw new Error("Upload at least one ticket to add.");
   }
+  const amounts = tickets.map((entry) => roundMoney(Math.max(0, Number(entry.amount))));
+  if (amounts.some((amount) => !(amount > 0))) {
+    throw new Error("Enter a valid cost greater than zero for every ticket.");
+  }
+  const extraTotal = roundMoney(amounts.reduce((sum, amount) => sum + amount, 0));
   const reason = cleanText(input.reason);
   if (!reason) {
-    throw new Error("A reason for the extra ticket is required.");
+    throw new Error("A reason for the extra tickets is required.");
   }
 
   const requestDraftId = `outstation-extra-${randomUUID()}`;
-  const uploaded = await uploadOutstationTicketAttachments([
-    { ...input.ticket, employeeHrId: existing.employeeHrId, requestDraftId },
-  ]);
+  const uploaded = await uploadOutstationTicketAttachments(
+    tickets.map((entry) => ({
+      ...entry.ticket,
+      employeeHrId: existing.employeeHrId,
+      requestDraftId,
+    })),
+  );
 
   try {
-    const newTicketAmount = roundMoney(existing.ticketAmount + extraAmount);
+    const newTicketAmount = roundMoney(existing.ticketAmount + extraTotal);
     const existingTravelCost =
       existing.reportTravelCost ?? roundMoney(existing.fuelAmount + existing.ticketAmount);
-    const newTravelCost = roundMoney(existingTravelCost + extraAmount);
+    const newTravelCost = roundMoney(existingTravelCost + extraTotal);
     const newExpectedTotal = reportExpectedTotal({
       allowanceAmount: existing.allowanceAmount,
       eligibilityStatus: existing.eligibilityStatus,
@@ -1830,12 +1842,12 @@ export async function addExtraTicketToOwnOutstationRequest(
     });
     const newClaimedTotal =
       existing.claimedTotalAmount > 0
-        ? roundMoney(existing.claimedTotalAmount + extraAmount)
+        ? roundMoney(existing.claimedTotalAmount + extraTotal)
         : newExpectedTotal;
 
     const mergedPaths = [...existing.ticketAttachmentPaths, ...uploaded.map((a) => a.path)];
     const mergedMetadata = [...existing.ticketAttachmentMetadata, ...uploaded];
-    const noteLine = `Extra ticket added (${formatEgp(extraAmount)}): ${reason}`;
+    const noteLine = `${uploaded.length} extra ticket(s) added (${formatEgp(extraTotal)}): ${reason}`;
     const newNotes = existing.notes ? `${existing.notes}\n${noteLine}` : noteLine;
     const now = new Date().toISOString();
 
@@ -1872,14 +1884,15 @@ export async function addExtraTicketToOwnOutstationRequest(
       entityId: String(updated.id),
       entityType: "outstation_request",
       newValues: {
-        extraTicketAmount: extraAmount,
+        extraTicketCount: uploaded.length,
+        extraTicketTotal: extraTotal,
         newExpectedTotal: updated.expectedTotalAmount,
         payrollExpenseRows: syncedPayrollRows,
         reason,
         source: "employee_extra_ticket",
         status: updated.status,
       },
-      summary: `Employee added an extra ticket (${formatEgp(extraAmount)}) to outstation request ${updated.id}.`,
+      summary: `Employee added ${uploaded.length} extra ticket(s) (${formatEgp(extraTotal)}) to outstation request ${updated.id}.`,
     });
 
     return updated;
