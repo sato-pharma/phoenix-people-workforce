@@ -9,9 +9,11 @@ import { CrmTabBar, type CrmActiveTab } from "@/components/crm/crm-tab-bar";
 import { CrmUnmappedIdentitiesPanel } from "@/components/crm/crm-unmapped-identities-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
+import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
 import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
+import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
@@ -39,8 +41,8 @@ function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | null {
-  return value === "unmapped" || value === "recovered" || value === "region_mapping" ? value : null;
+function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | null {
+  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" ? value : null;
 }
 
 // Deeper, same-data tools over the CRM mirror — one click from the master table. Unmapped-identity
@@ -84,6 +86,11 @@ export default async function CrmHubPage({
     const [regions, latestSyncRuns] = await Promise.all([getUnmappedCrmRegions(), getLatestVisitsSyncRuns()]);
     syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
     derivedView = <CrmRegionMappingPanel pathname={HUB_PATHNAME} regions={regions} />;
+  } else if (view === "customer_mapping") {
+    activeTab = "customer_mapping";
+    const [customers, latestSyncRuns] = await Promise.all([getUnmappedCrmCustomers(), getLatestVisitsSyncRuns()]);
+    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    derivedView = <CrmCustomerMappingPanel customers={customers} pathname={HUB_PATHNAME} />;
   } else if (view === "recovered") {
     activeTab = "recovered";
     const [recoveredChains, latestSyncRuns] = await Promise.all([

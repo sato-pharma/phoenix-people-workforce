@@ -262,6 +262,50 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
   return rows;
 }
 
+export type CurrentBrickInfo = { areaCode: string | null; regionCode: string | null };
+
+/**
+ * Lightweight validation index for "is this brick ID a valid target for a NEW mapping right now" —
+ * used by both the Region Mapping and Customer Mapping resolvers (single-row resolve + bulk import)
+ * so a superseded pre-rebuild brick can never be accepted just because it was typed/pasted correctly
+ * (see getActiveBricksForTemplateReference's doc comment for why "active" alone is the wrong test).
+ * Mirrors that function's exact per-area "current bricks" rule, but as an INDEPENDENT query rather
+ * than a refactor of it — so the already-shipped template/reference behavior can never be put at
+ * risk by a later change here.
+ */
+export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; current: Map<string, CurrentBrickInfo> }> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_bricks")
+    .select("brick_id, area_code, region_code, active, effective_from");
+  if (error) throw new Error(error.message);
+
+  const allBricks = (data ?? []) as Array<{
+    active: boolean | null;
+    area_code: string | null;
+    brick_id: string | null;
+    effective_from: string | null;
+    region_code: string | null;
+  }>;
+
+  const allKnown = new Set<string>();
+  const rebuiltAreas = new Set<string>();
+  for (const b of allBricks) {
+    if (b.brick_id) allKnown.add(b.brick_id);
+    if (b.area_code && b.effective_from && (b.active ?? true)) rebuiltAreas.add(b.area_code);
+  }
+
+  const current = new Map<string, CurrentBrickInfo>();
+  for (const b of allBricks) {
+    if (!b.brick_id || !(b.active ?? true)) continue;
+    const areaCode = b.area_code ?? "";
+    const isCurrent = b.effective_from != null || !rebuiltAreas.has(areaCode);
+    if (isCurrent) current.set(b.brick_id, { areaCode: b.area_code, regionCode: b.region_code });
+  }
+
+  return { allKnown, current };
+}
+
 /**
  * Records an admin's decision for one CRM region:
  * - "ignored": stores the decision only — the region drops out of getUnmappedCrmRegions, on
