@@ -1535,23 +1535,21 @@ export function MobileOutstationWizard({
             />
           </Field>
 
-          <Field label="AM Workload">
-            <Input
-              onChange={(event) => setAmWorkload(event.target.value)}
-              placeholder="e.g. 1"
-              type="number"
-              value={amWorkload}
-            />
-          </Field>
+          {/*
+            The editable "AM Workload" / "PM Workload" inputs that used to sit here were removed.
+            They contradicted the read-only "AM Visits" / "PM Visits" fields further down, which
+            already say workload is resolved automatically: every write path runs
+            resolveOutstationWorkloadPayload (src/lib/outstation/service.ts) and overwrites
+            am_workload / pm_workload from the published Double Visit Analytics snapshot, so a
+            typed value never survived there.
 
-          <Field label="PM Workload">
-            <Input
-              onChange={(event) => setPmWorkload(event.target.value)}
-              placeholder="e.g. 7"
-              type="number"
-              value={pmWorkload}
-            />
-          </Field>
+            It did still reach report_am_workload / report_pm_workload, which payroll-expense-
+            mapping.ts prefers over am_workload. That preference is already effectively
+            unconditional — those columns are NOT NULL DEFAULT 0, so its `!= null` fallback to the
+            resolved value can never fire — meaning a rep who left these blank (which the adjacent
+            "resolved automatically" note tells them to do) already sent 0. Removing the inputs
+            makes that the uniform behaviour rather than introducing it.
+          */}
 
           <Field label="Notes">
             <textarea
