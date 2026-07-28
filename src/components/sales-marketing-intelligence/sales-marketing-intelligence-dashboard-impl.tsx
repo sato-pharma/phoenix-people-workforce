@@ -44,6 +44,7 @@ import {
 import { RoiRefreshPanel } from "@/components/sales-marketing-intelligence/roi-refresh-panel";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
 import { Button } from "@/components/ui/button";
+import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   SalesMarketingAttributionQuality,
   SalesMarketingCustomerImpactRow,
@@ -263,15 +264,14 @@ function RoiTrendChart({ snapshot }: { snapshot: SalesMarketingDashboardSnapshot
 
 function RoiStatusBadge({ status }: { status: SalesMarketingRoiStatus }) {
   const config = {
+    awaiting_data: "border-sky-200 bg-sky-50 text-sky-700",
     behind: "border-amber-200 bg-amber-50 text-amber-700",
     no_data: "border-slate-200 bg-slate-50 text-slate-500",
     on_track: "border-emerald-200 bg-emerald-50 text-emerald-700",
   }[status];
-  const label = {
-    behind: "Behind",
-    no_data: "No data",
-    on_track: "On track",
-  }[status];
+  // Labels come from the shared ROI label module so this dashboard can never disagree with
+  // ROI Tracking about the same request's verdict.
+  const label = ROI_RESULT_STATUS_LABEL[status];
 
   return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", config)}>{label}</span>;
 }

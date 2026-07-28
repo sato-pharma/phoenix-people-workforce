@@ -111,9 +111,31 @@ function testSurfaceSourceGuards() {
     assert.match(engine, new RegExp(`\\b${value}\\b`), `filter engine must keep the ${value} status value`);
   }
 
-  const workspace = readFileSync("src/components/employee-portal/marketing-roi-tracking-workspace.tsx", "utf8");
-  assert.match(workspace, /Actual coverage/, "portal workspace must label coverage as Actual coverage");
-  assert.match(workspace, /Expected \(forecast\)/, "portal workspace must label expected as forecast");
+  // The XLSX exports are the surface this guard used to miss entirely: both workbooks carried
+  // their own byte-identical RESULT_LABELS fork, so a request rendered "No attributed sales" on
+  // screen and "No data" in the downloaded file. They must source the canonical map instead.
+  for (const file of [
+    "src/lib/export/marketing-roi-workbook.ts",
+    "src/lib/export/marketing-coverage-workbook.ts",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /ROI_RESULT_STATUS_LABEL/, `${file} must source ROI verdict labels from roi-labels.ts`);
+    assert.doesNotMatch(
+      source,
+      /RESULT_LABELS[^=]*=\s*\{/,
+      `${file} must not re-declare its own ROI verdict label map`,
+    );
+  }
+
+  // The executive ROI Dashboard (SMI) must carry the same four verdicts as ROI Tracking, or a
+  // still-measuring campaign reads "Behind" there and "Data pending" here.
+  const smiTypes = readFileSync("src/lib/sales-marketing-intelligence/types.ts", "utf8");
+  assert.match(smiTypes, /"awaiting_data"/, "SalesMarketingRoiStatus must include awaiting_data");
+  const smiDashboard = readFileSync(
+    "src/components/sales-marketing-intelligence/sales-marketing-intelligence-dashboard-impl.tsx",
+    "utf8",
+  );
+  assert.match(smiDashboard, /ROI_RESULT_STATUS_LABEL/, "ROI Dashboard must source verdict labels from roi-labels.ts");
 
   const types = readFileSync("src/lib/marketing-requests/roi-report-types.ts", "utf8");
   assert.match(types, /forecastCoverageRatio: number/, "report row must carry forecastCoverageRatio");
