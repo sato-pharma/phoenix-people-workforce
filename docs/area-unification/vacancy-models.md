@@ -86,27 +86,60 @@ history, to exactly the six seats already fixed.
 
 - **Brand-new headcount** (a vacancy with no `replacement_for_hr_id`, i.e. real growth beyond the
   132 seeded seats) — there is no seat to inherit and no safe way to pick one. No-ops silently.
-- **Employee transfers** between seats while remaining employed — `au.transfer_occupant` still
-  has no application caller either. A separate gap; this migration does not add one.
+- **Brand-new headcount** and **employee transfers** — still out of scope; see the two sections
+  below, which record what was investigated and why neither is wired yet.
 - **Retroactive backfill** — the six vacancies above are still open as of this writing. When one
   is genuinely filled, the trigger handles it going forward; nothing was replayed for the past.
 
-**Newly discovered while designing this fix (not fixed here — out of scope, narrow):** the
-seat-resignation lookup inside `public.phx_resign_employee_and_open_vacancy` —
-```sql
-select seat_id into v_seat_id from au.occupancy_history
-where occupant_canonical_hr_id = ... and effective_to is null and node_type = 'person'
-limit 1;
-```
-has no `order by`. This is safe today because exactly one seat model role,
-`SEAT-AIF-ADM-UE-1` (the sole `ACTING_DM`, occupant `B-1`), holds **two simultaneously open**
-person spans — their original REP seat plus the acting-DM seat. If that specific person ever
-resigns, this `limit 1` could non-deterministically vacate only one of the two seats, leaving the
-other showing them as occupant forever — the exact "vacated seat still reads as staffed" defect
-class this whole area has been about, just on the resign side instead of the hire side. Blast
-radius is exactly one seat today (the only multi-seat occupant in the model). Worth an `order by`
-fix whenever that RPC is next touched; not bundled into this PR since it wasn't asked for and
-nothing has actually broken yet.
+## Resign side: vacate EVERY open seat, not just the first (FIXED 2026-07-28)
+
+Shipped in `supabase/migrations/20260728100000_au_resign_vacate_all_open_seats.sql`.
+
+`public.phx_resign_employee_and_open_vacancy` step 5 used to locate the resigning employee's `au`
+seat with `select seat_id ... limit 1` (no `order by`) and vacate that single seat.
+`au.occupancy_history` has no per-HR_ID uniqueness — one person can hold more than one open span
+at once. Exactly one occupant does today: `B-1` (the sole `ACTING_DM`), holding both
+`SEAT-AIF-REP-UE1` and `SEAT-AIF-ADM-UE-1` open. Under the old code, B-1 resigning would close
+one and leave the other showing a departed occupant forever — the same defect class as the
+`area_state`/`seat_label` bugs, on the resign side.
+
+Fixed by **looping over all open person-spans** rather than making the single pick deterministic:
+a resigned employee cannot occupy any seat, so every one must close. For the 131 single-seat
+occupants the loop runs exactly once (byte-identical behaviour); only B-1 changes. Applying the
+migration mutates no existing row — it only changes what a *future* multi-seat resignation does.
+Verified on staging via the real RPC against a synthetic dual-seat employee: both seats vacated,
+rolled back. Guarded in `tests/au-seat-occupant-resolver.test.ts` (§6, forbids `limit 1`, requires
+the loop).
+
+## Employee transfers: investigated, deliberately NOT wired (2026-07-28)
+
+`au.transfer_occupant` (move an employee between seats while they stay employed) has zero
+application callers, same as `au.hire_into_seat` did. But unlike the replacement-hire case, there
+is **no safe existing link to wire it to.** What the investigation found:
+
+- **No transfer feature exists in the app at all.** `grep -rn "transfer" src/lib/employees
+  src/lib/workforce app/api/employees` returns nothing. Changing an active employee's
+  `area_id`/`line_id` today goes through the ordinary "Edit Employee" upsert
+  (`employee-directory.ts` `upsertEmployee`), which treats it as a plain field edit — its only
+  seat-adjacent side effect is gated behind `if (!isUpdate)` (the hire branch), so an update
+  touches `au.*` **not at all**. `bulkUpdateEmployees` exists but is called nowhere (dead code).
+- **Consequence — a real latent gap:** editing an active employee's area/line is invisible to the
+  seat model. If they occupy an `au` seat, it stays open under the old occupant forever, and no
+  new span opens. Nothing reconciles this today.
+- **No `replacement_for_hr_id` equivalent.** `public.employees` has no previous-area/-line/
+  transfer-date column; nothing writes an audit row on an area/line change. There is no
+  deterministic "employee X moved from Y to Z" signal anywhere for a still-employed person — only
+  for departures (via `au.occupancy_history` itself, which nothing populates on a lateral move).
+- **Destination-seat resolution is only *partially* safer than headcount.** The *source* tier is
+  knowable (resolve the employee's currently-open span), but the *destination* seat still needs
+  either explicit UI/API selection or a "same-tier, new-area" inference — and there's no existing
+  `public.areas`/`public.lines` → `au (line_code, area_code)` resolver outside the one-time seed,
+  nor any signal distinguishing a lateral transfer from a promotion (which would change the tier).
+
+**Verdict:** wiring transfers is *not* "connect an existing link" the way the replacement-hire was.
+It needs net-new infrastructure (an open-span reverse resolver + a destination-seat source, either
+a UI field or a justified inference rule). Left unbuilt on purpose; this is an owner decision about
+whether transfers are common enough to warrant that build, not a safe drop-in fix.
 
 **Observability limit, stated honestly:** `closeVacancyOnHire()` clears `replacement_for_hr_id`
 to `NULL` in the same update that sets `status='filled'` — so by the time anything reads the

@@ -191,6 +191,21 @@ export function runAuSeatOccupantResolverTests() {
     /effective_to\s+is\s+null/.test(resign.body) && resign.body.includes("au.resign_occupant"),
     "phx_resign_employee_and_open_vacancy must close the OPEN span via au.resign_occupant",
   );
+  // A resigned employee cannot occupy ANY seat, so EVERY open person-span of theirs must
+  // close — not just the first one a `limit 1` happens to return. au.occupancy_history has
+  // no per-hr_id uniqueness (B-1, the sole ACTING_DM, holds two open spans at once), so a
+  // single-row vacate leaves the second seat showing a departed occupant forever. Fixed in
+  // 20260728100000 by looping over all open spans.
+  assert.ok(
+    /\bfor\s+v_seat_id\s+in\b/.test(resign.body) && /\bloop\b/.test(resign.body),
+    "phx_resign_employee_and_open_vacancy must LOOP over every open person-span (for v_seat_id in ... loop), " +
+      "not vacate a single row — the model's one dual-seat occupant would otherwise keep a stale occupant on the second seat",
+  );
+  assert.ok(
+    !/\blimit\s+1\b/.test(resign.body),
+    "phx_resign_employee_and_open_vacancy must not vacate the au seat with `limit 1` — that closes only one of a " +
+      "multi-seat occupant's seats and (without an ORDER BY) does so non-deterministically",
+  );
 
   // ── 7. area_state follows the seat, in BOTH directions ──────────────────────
   // Vacating a seat without releasing its area left six July-2026 rep areas reading
