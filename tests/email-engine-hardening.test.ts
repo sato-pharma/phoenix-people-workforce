@@ -83,6 +83,38 @@ export function runEmailEngineHardeningTests() {
   assert.match(emailSource, /idempotencyKey:\s*requestId/, "Resend idempotency key must remain");
   assert.match(emailSource, /dedupe_key/, "dedupe key must remain");
 
+  // --- Source locks: migrated-template shared context tokens (2026-07-28 fix) -------
+  // notificationMetricStatus() used to join EVERY metric into one pipe-separated string
+  // for the {{status}} token — a giant wall of text on any caller with more than a
+  // handful of metrics (e.g. outstation). It must not come back, and status/managerName/
+  // duration/approvalFlow must stay wired to the caller's own metrics via metricValue(),
+  // not a blanket dump — see memory outstation-email-status-token-dump-bug.
+  assert.doesNotMatch(
+    emailSource,
+    /function notificationMetricStatus/,
+    "notificationMetricStatus (join-all-metrics into {{status}}) must not be reintroduced",
+  );
+  assert.match(
+    emailSource,
+    /status:\s*metricValue\(input,\s*"Status"\)/,
+    "{{status}} must read the caller's own Status metric, not a dump of every metric",
+  );
+  assert.match(
+    emailSource,
+    /managerName:\s*metricValue\(input,\s*"Manager"\)/,
+    "{{managerName}} must be wired in the shared context (outstation + leave_rejection use it)",
+  );
+  assert.match(
+    emailSource,
+    /duration:\s*metricValue\(input,\s*"Duration"\)/,
+    "{{duration}} must be wired in the shared context (outstation + excuse_decision use it)",
+  );
+  assert.match(
+    emailSource,
+    /approvalFlow:\s*metricValue\(input,\s*"Approval Flow"\)/,
+    "{{approvalFlow}} must be wired in the shared context",
+  );
+
   // --- Source locks: deferred-delivery drain (system.ts) ---------------------------
   const systemSource = readFileSync("src/lib/notifications/system.ts", "utf8");
   assert.match(systemSource, /export async function processDeferredDeliveryRetries/, "deferred drain must exist");

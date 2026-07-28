@@ -1247,12 +1247,6 @@ function employeeNameFromNotification(input: NotificationEmailInput) {
   return employee.replace(/\s+\([^)]*\)\s*$/, "").trim() || metricValue(input, "Login ID") || input.employeeHrId || "";
 }
 
-function notificationMetricStatus(input: NotificationEmailInput) {
-  return (input.metrics ?? [])
-    .map((metric) => `${metric.label}: ${metric.value}`)
-    .join(" | ");
-}
-
 function isAuthTemplateKey(templateKey: string) {
   return (
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP ||
@@ -1467,10 +1461,12 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         detailsTable: renderPhoenixMetadataTable(input.metrics),
         detailsTableText: renderPhoenixMetadataTableText(input.metrics),
         amount: metricValue(input, "Amount"),
+        approvalFlow: metricValue(input, "Approval Flow"),
         candidateName: metricValue(input, "Candidate") || metricValue(input, "Candidate Name"),
         date: metricValue(input, "Birthday") || metricValue(input, "Effective date") || metricValue(input, "Date") || new Date().toISOString().slice(0, 10),
         area: metricValue(input, "Area"),
         destination: metricValue(input, "Destination"),
+        duration: metricValue(input, "Duration") || metricValue(input, "Trip length"),
         endDate: metricValue(input, "Renewal date") || metricValue(input, "Trip end"),
         employeeHrId: input.employeeHrId || metricValue(input, "HR_ID") || metricValue(input, "Login ID"),
         employeeName: employeeNameFromNotification(input),
@@ -1478,6 +1474,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         // Offer/recruitment callers label the position metric "Role".
         jobTitle: metricValue(input, "Job Title") || metricValue(input, "Role"),
         line: metricValue(input, "Line"),
+        managerName: metricValue(input, "Manager") || metricValue(input, "Manager Name"),
         planTable: input.planTableHtml,
         planTableText: input.planTableText,
         honorific: input.recipientHonorific ?? "",
@@ -1485,7 +1482,9 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
           ? systemNotificationEmailText.userRecipientName
           : input.recipientName || employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
         startDate: metricValue(input, "Hire date") || metricValue(input, "Trip start"),
-        status: notificationMetricStatus(input),
+        // The caller's own explicit "Status" metric (e.g. "Pending manager approval",
+        // "Approved") — NOT a dump of every metric (see removed notificationMetricStatus).
+        status: metricValue(input, "Status"),
         subject: input.subject,
         summary: input.summary,
         // Caller-supplied template fields (e.g. marketing financials, products table) — merged
