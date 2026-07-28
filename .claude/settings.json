@@ -62,7 +62,27 @@
       "mcp__cloud-run__list_services",
       "mcp__cloud-run__get_service",
       "mcp__cloud-run__get_service_log",
-      "mcp__cloud-run__list_projects"
+      "mcp__cloud-run__list_projects",
+      "Bash(gcloud logging read *)",
+      "Bash(pnpm run test *)",
+      "Bash(tasklist *)",
+      "Bash(pnpm run typecheck *)",
+      "Bash(pnpm run check:edit *)",
+      "Bash(gcloud scheduler jobs describe *)",
+      "Bash(gcloud compute ssl-certificates describe *)",
+      "Bash(pnpm run lint *)",
+      "mcp__sentry__search_issues",
+      "mcp__Claude_Browser__preview_list",
+      "mcp__github__get_file_contents",
+      "mcp__supabase-staging__get_advisors",
+      "mcp__sentry__search_events",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__supabase-production__get_advisors",
+      "mcp__supabase-staging__get_project",
+      "mcp__supabase-staging__list_migrations",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__supabase-production__get_project",
+      "mcp__supabase-staging__list_tables"
     ]
   }
 }
