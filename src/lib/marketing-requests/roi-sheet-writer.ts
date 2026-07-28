@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateMarketingRoiPreview, roundMarketingMoney } from "@/lib/marketing-requests/roi";
 import { normalizeMarketingLookupKey } from "@/lib/marketing-requests/reference-importer";
+import { resolvePharmacyCodeReference } from "@/lib/marketing-requests/service";
 import {
   aliasProductLookupKey,
   mapSheetRequestType,
@@ -418,6 +419,19 @@ export async function importRoiSheetRequests(opts: {
         if (pharmacyError) throw pharmacyError;
         const pharmacyId = (pharmacyRow as { id: string }).id;
 
+        // Run the SAME reference lookup the Customer Validation UI runs
+        // (createMarketingValidationRecord). This used to hardcode `reference_status: "pending"`
+        // and never consult the 20,097-row reference database at all — which is why 286 of 287
+        // links in production sat unvalidated with reference_match_count = 0. A code the
+        // reference DB cannot find is ~21x more likely to be dead (27.9% of `not_found` codes
+        // have no sales, vs 1.3% of `matched` ones), so skipping this threw away the module's
+        // single best early warning that a target pharmacy code is wrong.
+        const reference = await resolvePharmacyCodeReference({
+          distributorId,
+          normalizedPharmacyCode: identity.normalizedCode,
+          supabase,
+        });
+
         const { data: codeRow, error: codeError } = await supabase
           .from("marketing_pharmacy_distributor_codes")
           .upsert(
@@ -426,7 +440,11 @@ export async function importRoiSheetRequests(opts: {
               distributor_id: distributorId,
               distributor_pharmacy_code: identity.pharmacyCode,
               normalized_pharmacy_code: identity.normalizedCode,
-              reference_status: "pending",
+              reference_id: reference.referenceId,
+              reference_match_count: reference.matchCount,
+              reference_status: reference.status,
+              validation_notes:
+                reference.status === "matched" ? null : `Reference ${reference.status.replace(/_/g, " ")}.`,
             },
             { onConflict: "pharmacy_id,distributor_id,normalized_pharmacy_code" },
           )
