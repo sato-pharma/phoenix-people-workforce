@@ -456,6 +456,7 @@ import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
+import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
 import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -931,6 +932,7 @@ await runTest("territory drilldown root-scope line resolution (fail-closed)", ru
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
+await runTest("au hire_into_seat wiring (replacement-hire vacancy fill trigger)", runAuHireIntoSeatWiringTests);
 await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly 1)", runSalesImsRatioTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
