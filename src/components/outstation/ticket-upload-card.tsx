@@ -21,7 +21,7 @@ export function TicketUploadCard({
     transportationType === "car"
       ? "Upload any supporting attachment for the trip if needed. The request amount still comes from the server calculation."
       : transportationType === "train" || transportationType === "bus"
-        ? "Attach go and return tickets. Ticket-based requests use the attached tickets as proof of travel."
+        ? "Attach go and return tickets — required to submit a train or bus request. They are kept as proof of travel."
         : "Attach any supporting document for this expense request.";
 
   return (
