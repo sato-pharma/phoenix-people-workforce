@@ -58,7 +58,11 @@
       "mcp__supabase-production__list_projects",
       "mcp__supabase-staging__list_organizations",
       "mcp__claude-in-chrome__list_connected_browsers",
-      "mcp__claude-in-chrome__read_page"
+      "mcp__claude-in-chrome__read_page",
+      "mcp__cloud-run__list_services",
+      "mcp__cloud-run__get_service",
+      "mcp__cloud-run__get_service_log",
+      "mcp__cloud-run__list_projects"
     ]
   }
 }

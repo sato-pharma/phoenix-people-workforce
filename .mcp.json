@@ -35,6 +35,14 @@
         "shadcn@latest",
         "mcp"
       ]
+    },
+    "cloud-run": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@google-cloud/cloud-run-mcp"
+      ]
     }
   }
 }
