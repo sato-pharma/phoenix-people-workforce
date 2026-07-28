@@ -29,6 +29,10 @@ export type Crosswalks = {
   territoryAliasByKey: Map<string, { targetType: string; targetCode: string }>; // -> brick/area/block code
   areaAliasByKey: Map<string, { areaCode: string; regionCode: string }>;
   regionAliasByKey: Map<string, string>; // -> region code
+  // Alias keys that pointed at two different targets and were therefore dropped from every index
+  // above (Egypt reuses place names across governorates). Present so callers can say "ambiguous"
+  // rather than "unknown". Optional so hand-built test fixtures stay valid.
+  ambiguousAliasKeys?: Set<string>;
   // customer crosswalk: `${distributor} ${customerCode}` -> brick id
   customerBrickByKey: Map<string, string>;
   // ── Leading-zero / number-vs-text drift guards (additive fallbacks; never replace the exact maps) ──
