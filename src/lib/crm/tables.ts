@@ -21,3 +21,8 @@ export const CRM_IDENTITY_RESOLUTIONS_TABLE = "ireports360_crm_identity_resoluti
 
 /** Manual CRM-region -> Phoenix-brick resolutions (see the Region Mapping admin tab). */
 export const CRM_REGION_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_region_brick_resolutions";
+
+/** Manual CRM-customer/contact -> Phoenix-brick resolutions (see the Customer Mapping admin tab).
+ * One level finer than CRM_REGION_BRICK_RESOLUTIONS_TABLE: a region groups many customers into one
+ * rough locality, a customer mapping is the single most precise thing Phoenix can resolve. */
+export const CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_customer_brick_resolutions";
