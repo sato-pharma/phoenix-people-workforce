@@ -5,6 +5,7 @@ import {
   GOVERNORATE_TO_REGION,
   haversineKm,
   normalizeMarkaz,
+  resolveGovernorateRegion,
   scoreCustomerBrick,
   type BrickCentroid,
 } from "../src/lib/sales/normalizer/geo-validate.ts";
@@ -120,4 +121,55 @@ export function runPharmacyGeoValidateTests() {
     { governorate: null, lat: 0, lng: 0, markaz: null, status: "region_mismatch" },
   );
   assert.equal(emptyMarkaz.signals.markazMatch, false);
+
+  runGovernorateRegionTests();
+}
+
+// Regression: governorate→region used to be an exact lowercase lookup against raw geocoder
+// output, so every one of these REAL production spellings (taken from geo_locations rows that
+// were rejected as 'region_mismatch') failed to resolve — and a correct coordinate was thrown
+// away. centroidPassesRegionGate in brick-centroids.ts is a thin wrapper over the same
+// resolveGovernorateRegion, so these cover both call sites.
+function runGovernorateRegionTests() {
+  // ── Shapes that previously failed ──────────────────────────────────────────
+  // "Al-"/"El-" prefixes and hyphens.
+  assert.equal(resolveGovernorateRegion("Kafr El-Sheikh").regionCode, "D1");
+  assert.equal(resolveGovernorateRegion("Al-Qalyubia").regionCode, "D1");
+  assert.equal(resolveGovernorateRegion("Marsa Matrouh").regionCode, "AB");
+  assert.equal(resolveGovernorateRegion("The New Valley").regionCode, "OT");
+
+  // Arabic governorate names.
+  assert.equal(resolveGovernorateRegion("محافظة الإسكندرية").regionCode, "AB");
+  assert.equal(resolveGovernorateRegion("محافظة الجيزة").regionCode, "GZ");
+  assert.equal(resolveGovernorateRegion("محافظة الدقهلية").regionCode, "D2");
+
+  // Sharkia stays ambiguous through every spelling — it is split D2/D3, so governorate
+  // alone must never resolve a region.
+  for (const spelling of ["Al-Sharqia", "Sharqia", "Sharkia", "الشرقية"]) {
+    const match = resolveGovernorateRegion(spelling);
+    assert.equal(match.ambiguous, true, `${spelling} should be ambiguous`);
+    assert.equal(match.regionCode, null, `${spelling} must not resolve a region`);
+  }
+
+  // ── Genuine mismatches must STILL be rejected ──────────────────────────────
+  // The gate's whole purpose is refusing a coordinate that is provably elsewhere.
+  assert.equal(resolveGovernorateRegion("Assiut").regionCode, "UE"); // ≠ AB → still rejected
+  assert.equal(resolveGovernorateRegion("Dakahlia").regionCode, "D2"); // ≠ UE → still rejected
+  assert.notEqual(resolveGovernorateRegion("Cairo").regionCode, "D2");
+
+  // Unrecognised / empty input resolves to nothing (never a false accept).
+  for (const empty of [null, undefined, "", "   ", "Nowhere"]) {
+    const match = resolveGovernorateRegion(empty);
+    assert.equal(match.regionCode, null, `${String(empty)} must not resolve`);
+    assert.equal(match.ambiguous, false);
+  }
+
+  // ── End-to-end through scoreCustomerBrick ─────────────────────────────────
+  // Previously "Al-Sharqia" fell to the unknown-governorate tier (35); it must now reach the
+  // Sharkia ambiguity tier (58) for a D2 brick.
+  assert.equal(scoreCustomerBrick(pharmacyAt(30.7, 31.6, "Al-Sharqia"), brick("D2"), undefined).confidence, 58);
+  // "Kafr El-Sheikh" must reach the governorate-match tier (70) for a D1 brick.
+  assert.equal(scoreCustomerBrick(pharmacyAt(31.1, 30.9, "Kafr El-Sheikh"), brick("D1"), undefined).confidence, 70);
+  // ...and still register a mismatch (12) against a brick in another region.
+  assert.equal(scoreCustomerBrick(pharmacyAt(31.1, 30.9, "Kafr El-Sheikh"), brick("UE"), undefined).confidence, 12);
 }

@@ -1,3 +1,4 @@
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import type { PharmacyGeo } from "@/lib/sales/normalizer/pharmacy-geocode";
 import type { SalesBrickReference } from "@/lib/sales/monthly-distributor-import";
 
@@ -53,6 +54,74 @@ export const GOVERNORATE_TO_REGION: Record<string, string> = {
 // Sharkia governorate bricks were carved between D2 and D3; governorate alone cannot resolve
 // which sub-region a brick belongs to.
 export const AMBIGUOUS_GOVERNORATES = new Set(["sharqia", "sharkia", "ash sharqiyah"]);
+
+// ── Canonical governorate → region ───────────────────────────────────────────
+// GOVERNORATE_TO_REGION above is keyed on RAW geocoder output and is matched by exact
+// lowercase string. That silently fails on the shapes providers actually return —
+// "Al-Sharqia", "Kafr El-Sheikh", "Marsa Matrouh", "The New Valley", and Arabic
+// ("محافظة الدقهلية") — because none of them equal a key. A brick or pharmacy in one of
+// those governorates then reads as "unknown governorate" and its (correct) coordinate is
+// rejected. Both maps are kept: the raw one for backward compatibility, this one keyed on
+// the canonical names `resolveGovernorate` returns.
+//
+// INPUT CONTRACT: pass a governorate-level field (Google's administrative_area_level_1,
+// LocationIQ's `state`), NOT a full free-text address. `resolveGovernorate` also recognises
+// town names, so a whole address could resolve via a town and mask a genuine mismatch.
+const CANONICAL_GOVERNORATE_TO_REGION: Record<string, string> = {
+  Cairo: "CA",
+  Giza: "GZ",
+  Fayoum: "GZ",
+  "Beni Suef": "GZ",
+  Minya: "UE",
+  Assiut: "UE",
+  Sohag: "UE",
+  Qena: "UE",
+  Luxor: "UE",
+  Alexandria: "AB",
+  Beheira: "AB",
+  Matrouh: "AB",
+  Qalyubia: "D1",
+  Menoufia: "D1",
+  Gharbia: "D1",
+  "Kafr El-Sheikh": "D1",
+  Dakahlia: "D2",
+  Damietta: "D2",
+  "Port Said": "D2",
+  Suez: "D3",
+  Ismailia: "D3",
+  "South Sinai": "OT",
+  "North Sinai": "OT",
+  "Red Sea": "OT",
+  "New Valley": "OT",
+  Aswan: "OT",
+};
+
+// Canonical form of AMBIGUOUS_GOVERNORATES — `resolveGovernorate` folds every Sharkia
+// spelling to this single label.
+const AMBIGUOUS_CANONICAL_GOVERNORATES = new Set(["Sharqia"]);
+
+export type GovernorateRegionMatch = {
+  /** Canonical governorate name, or null when nothing was confidently recognised. */
+  canonical: string | null;
+  /** Phoenix region code. Null when unrecognised OR ambiguous — check `ambiguous`. */
+  regionCode: string | null;
+  /** Sharkia: split D2/D3, so governorate alone cannot decide the region. */
+  ambiguous: boolean;
+};
+
+/**
+ * Resolve any governorate spelling (English, Arabic, "Al-"/"El-" prefixed, hyphenated) to a
+ * Phoenix region code. This is the single entry point for governorate→region — never index
+ * GOVERNORATE_TO_REGION directly, that is what caused the rejected-coordinate bug.
+ */
+export function resolveGovernorateRegion(raw: string | null | undefined): GovernorateRegionMatch {
+  const canonical = resolveGovernorate(raw);
+  if (!canonical) return { ambiguous: false, canonical: null, regionCode: null };
+  if (AMBIGUOUS_CANONICAL_GOVERNORATES.has(canonical)) {
+    return { ambiguous: true, canonical, regionCode: null };
+  }
+  return { ambiguous: false, canonical, regionCode: CANONICAL_GOVERNORATE_TO_REGION[canonical] ?? null };
+}
 
 export type BrickCentroid = {
   lat: number;
@@ -121,8 +190,8 @@ export function scoreCustomerBrick(
   const centroidMarkaz = normalizeMarkaz(centroid?.markaz);
   signals.markazMatch = pharmacyMarkaz !== "" && pharmacyMarkaz === centroidMarkaz;
 
-  const governorateKey = String(pharmacy.governorate ?? "").toLowerCase().trim();
-  const mappedRegion = governorateKey ? GOVERNORATE_TO_REGION[governorateKey] : undefined;
+  const govRegion = resolveGovernorateRegion(pharmacy.governorate);
+  const mappedRegion = govRegion.regionCode;
   signals.governorateMatch = mappedRegion != null && mappedRegion === brick.regionCode;
 
   if (signals.distanceKm != null && signals.distanceKm < 5) return { confidence: 95, signals };
@@ -132,7 +201,7 @@ export function scoreCustomerBrick(
 
   if (signals.governorateMatch) return { confidence: 70, signals };
 
-  if (governorateKey && AMBIGUOUS_GOVERNORATES.has(governorateKey)) {
+  if (govRegion.ambiguous) {
     if (brick.regionCode === "D2" || brick.regionCode === "D3") return { confidence: 58, signals };
   }
 
