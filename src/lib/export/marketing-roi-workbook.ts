@@ -10,6 +10,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingRoiExportDetail,
   MarketingRoiReport,
@@ -31,12 +32,10 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 
-const RESULT_LABELS: Record<string, string> = {
-  on_track: "On track",
-  behind: "Behind",
-  awaiting_data: "Awaiting data",
-  no_data: "No data",
-};
+// Sourced from roi-labels.ts, never re-declared: a forked copy here previously wrote
+// "No data" / "Awaiting data" into the workbook while the on-screen report said
+// "No attributed sales" / "Data pending" for the very same request.
+const RESULT_LABELS: Record<string, string> = ROI_RESULT_STATUS_LABEL;
 
 /** Human-readable summary of the applied filters for the cover sheet. */
 export function describeRoiFilters(filters: RoiFilterState): string {

@@ -9,6 +9,7 @@ import {
   type CellValue,
   type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+import { ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingCoverageExportSalesDetailRow,
   MarketingCoverageFilterState,
@@ -47,12 +48,8 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 
-const RESULT_LABELS: Record<string, string> = {
-  on_track: "On track",
-  behind: "Behind",
-  awaiting_data: "Awaiting data",
-  no_data: "No data",
-};
+// Sourced from roi-labels.ts, never re-declared — see the note in marketing-roi-workbook.ts.
+const RESULT_LABELS: Record<string, string> = ROI_RESULT_STATUS_LABEL;
 
 const CONFIDENTIAL_INCLUDED =
   "CONFIDENTIAL — contains restricted products (LA003 / LA004 / SS001). Authorized for CEO / Super Admin only. Do not distribute.";

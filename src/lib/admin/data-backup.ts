@@ -64,7 +64,9 @@ const MARKETING_TABLES: BackupTableConfig[] = [
   { module: "marketing", name: "Marketing Request Products", table: "marketing_request_products", orderBy: "id" },
   { module: "marketing", name: "Marketing Request Pharmacies", table: "marketing_request_pharmacies", orderBy: "id" },
   { module: "marketing", name: "Marketing Approval Steps", table: "marketing_request_approval_steps", orderBy: "id" },
-  { module: "marketing", name: "Marketing Finance Requirements", table: "marketing_request_finance_requirements", orderBy: "id" },
+  // PK is request_id — this table has no `id` column, and ordering by one made the whole
+  // marketing backup throw ("Failed to load ...") rather than skip a single table.
+  { module: "marketing", name: "Marketing Finance Requirements", table: "marketing_request_finance_requirements", orderBy: "request_id" },
   // Customers & pharmacies
   { module: "marketing", name: "Marketing Customers", table: "marketing_customers", orderBy: "id" },
   { module: "marketing", name: "Marketing Customer Contacts", table: "marketing_customer_contacts", orderBy: "id" },
@@ -79,7 +81,8 @@ const MARKETING_TABLES: BackupTableConfig[] = [
   { module: "marketing", name: "Marketing Products", table: "marketing_products", orderBy: "id" },
   { module: "marketing", name: "Marketing Workflow Steps", table: "marketing_workflow_steps", orderBy: "sequence" },
   { module: "marketing", name: "Marketing Review Routing", table: "marketing_review_routing", orderBy: "id" },
-  { module: "marketing", name: "Marketing Control Settings", table: "marketing_control_settings", orderBy: "id" },
+  // PK is setting_key — no `id` column here either.
+  { module: "marketing", name: "Marketing Control Settings", table: "marketing_control_settings", orderBy: "setting_key" },
   // ROI facts & analytics
   { module: "marketing", name: "Marketing ROI Request Facts", table: "marketing_roi_request_facts", orderBy: "id" },
   { module: "marketing", name: "Marketing ROI Product Facts", table: "marketing_roi_product_facts", orderBy: "id" },

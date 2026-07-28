@@ -108,7 +108,9 @@ function normalizeOption(value: unknown): SalesMarketingFilterOption {
 }
 
 function normalizeRoiStatus(value: unknown): SalesMarketingRoiStatus {
-  return value === "behind" || value === "on_track" || value === "no_data" ? value : "no_data";
+  return value === "behind" || value === "on_track" || value === "no_data" || value === "awaiting_data"
+    ? value
+    : "no_data";
 }
 
 function normalizeAttributionQuality(value: unknown): SalesMarketingAttributionQuality {

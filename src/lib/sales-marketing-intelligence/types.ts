@@ -103,7 +103,14 @@ export type SalesMarketingRoiComparisonRow = {
   value: string;
 };
 
-export type SalesMarketingRoiStatus = "behind" | "no_data" | "on_track";
+/**
+ * ACTUAL realized-ROI verdict. Must stay value-compatible with
+ * `MarketingRoiResultStatus` (ROI Tracking / Coverage Report) so the same request cannot
+ * carry a different verdict on two surfaces. `awaiting_data` means the request's ROI
+ * window extends past the latest validated Source-of-Sales period — it is still being
+ * measured, and must NOT be counted as behind or as spend at risk.
+ */
+export type SalesMarketingRoiStatus = "awaiting_data" | "behind" | "no_data" | "on_track";
 
 export type SalesMarketingAttributionQuality = "brick_fallback" | "exact_customer" | "mixed" | "no_sales";
 
