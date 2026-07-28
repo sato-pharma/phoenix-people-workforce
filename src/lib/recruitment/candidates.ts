@@ -11,6 +11,7 @@ import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitmen
 import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
+  findDuplicateFlags,
   findMatchingCandidate,
   normalizeEmail,
   normalizeNationalId,
@@ -144,9 +145,16 @@ export async function listCandidates(): Promise<Candidate[]> {
   if (error) throw error;
   const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
   const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). Purely
+  // a "worth a look" marker for Talent Acquisition — never merges anything.
+  const dupFlags = findDuplicateFlags(
+    candidates.map((candidate) => ({ fullName: candidate.fullName, id: candidate.id, phoneNorm: normalizePhone(candidate.phone) })),
+  );
   for (const candidate of candidates) {
     const context = sourceContext.get(candidate.id);
     if (context) candidate.sourceContext = context;
+    const flag = dupFlags.get(candidate.id);
+    candidate.possibleDuplicate = flag ? { candidateId: flag.id, reason: flag.reason } : null;
   }
   return candidates;
 }

@@ -98,6 +98,37 @@ export type SoftDuplicateMatch = { id: string; reason: "name" | "phone_tail" };
 export type SoftMatchableCandidate = { id: string; fullName?: string | null; phoneNorm?: string | null };
 
 /**
+ * Flags every candidate that shares a phone-tail (stronger) or normalized name with ANOTHER
+ * candidate in the set — the advisory "possible duplicate" markers the candidate list shows. O(n)
+ * via two indexes rather than an O(n²) pairwise scan, so it stays cheap on the whole pool. Advisory
+ * only: it points at a record to eyeball, never merges anything.
+ */
+export function findDuplicateFlags(candidates: readonly SoftMatchableCandidate[]): Map<string, SoftDuplicateMatch> {
+  const idsByPhone = new Map<string, string[]>();
+  const idsByName = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    const tail = phoneTailForMatch(candidate.phoneNorm);
+    if (tail) (idsByPhone.get(tail) ?? idsByPhone.set(tail, []).get(tail)!).push(candidate.id);
+    const name = normalizeNameForMatch(candidate.fullName);
+    if (name) (idsByName.get(name) ?? idsByName.set(name, []).get(name)!).push(candidate.id);
+  }
+
+  const flags = new Map<string, SoftDuplicateMatch>();
+  for (const candidate of candidates) {
+    const tail = phoneTailForMatch(candidate.phoneNorm);
+    const phoneMatch = tail ? (idsByPhone.get(tail) ?? []).find((id) => id !== candidate.id) : undefined;
+    if (phoneMatch) {
+      flags.set(candidate.id, { id: phoneMatch, reason: "phone_tail" });
+      continue;
+    }
+    const name = normalizeNameForMatch(candidate.fullName);
+    const nameMatch = name ? (idsByName.get(name) ?? []).find((id) => id !== candidate.id) : undefined;
+    if (nameMatch) flags.set(candidate.id, { id: nameMatch, reason: "name" });
+  }
+  return flags;
+}
+
+/**
  * The first existing candidate that SOFT-matches by phone-tail (stronger) or, failing that, by
  * normalized full name. Advisory only — surface it as a "possible duplicate" flag, never a merge.
  */

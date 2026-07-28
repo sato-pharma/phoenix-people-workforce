@@ -205,6 +205,11 @@ export type Candidate = {
   // their most recent inbound-intake event. Undefined for a manually-added candidate, or when the
   // list wasn't asked to load it. See src/lib/recruitment/candidate-source-context.ts.
   sourceContext?: CandidateSourceContext;
+  // Advisory "might be the same applicant as another candidate" flag — a soft match on phone-tail
+  // or normalized name (e.g. the same person applied via both email and WhatsApp). NEVER an
+  // auto-merge: the exact-key identity rule stays authoritative; this just points Talent
+  // Acquisition at a record worth eyeballing. Populated by listCandidates; see findDuplicateFlags.
+  possibleDuplicate?: { candidateId: string; reason: "name" | "phone_tail" } | null;
 };
 
 export type CandidateSourceContext = {

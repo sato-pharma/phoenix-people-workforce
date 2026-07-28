@@ -30,13 +30,10 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { createCandidate } from "@/lib/recruitment/candidates";
 import {
   candidateIdentityFromCvFields,
-  extractCandidateFieldsFromCv,
   extractCvFieldsFromBytes,
-  looksLikeCv,
   persistCvExtraction,
   type CvFieldExtraction,
 } from "@/lib/recruitment/cv-extraction";
-import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { uploadCandidateFile } from "@/lib/recruitment/files";
@@ -232,17 +229,24 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { outcome: "ignored_unsupported_attachment" };
     }
 
-    // Best-effort content check — file TYPE alone (checked above) can't tell a real CV apart
-    // from a vendor pitch or supplier letter that happens to arrive as a PDF. A classifier
-    // failure must never block a real candidate, so any error here is swallowed and treated
-    // as "yes, keep going" — only a clear "no" suppresses candidate creation.
-    let attachmentIsCv = true;
+    // ONE AI call both SCREENS (is_cv) and EXTRACTS the fields — see extractCvFieldsFromBytes.
+    // Runs on the bytes before the candidate exists so a bulk forward-import can build the profile
+    // from the CV's own name/email/phone rather than the forwarding account's. Best-effort: a
+    // read failure fails OPEN (no gate, no fields — a real applicant is never blocked by an AI
+    // hiccup), and only a confident is_cv:false suppresses a candidate (a vendor pitch / invoice /
+    // letter that merely arrived as a PDF). This replaces the previous separate looksLikeCv call —
+    // exactly one AI round-trip per CV now instead of a classify then an extract.
+    let extraction: CvFieldExtraction | null = null;
     try {
-      attachmentIsCv = await looksLikeCv(input.attachment.bytes, input.attachment.mimeType, input.attachment.fileName);
+      extraction = await extractCvFieldsFromBytes({
+        bytes: input.attachment.bytes,
+        fileName: input.attachment.fileName,
+        mimeType: input.attachment.mimeType,
+      });
     } catch {
-      /* best-effort */
+      /* best-effort — fail open (proceed without the gate or the fields) */
     }
-    if (!attachmentIsCv) {
+    if (extraction && extraction.isCv === false) {
       await finalizeIntakeEvent(eventId, {
         errorMessage: "Attachment does not appear to be a CV/resume (automated content check).",
         outcome: "ignored_unsupported_attachment",
@@ -250,28 +254,13 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { outcome: "ignored_unsupported_attachment" };
     }
 
-    // Bulk forward-import: read the CV BEFORE the candidate exists, so the profile is built
-    // from the applicant's own name/email/phone rather than the forwarding account's. Best-effort
-    // — candidateIdentityFromCvFields turns a failed read into null match keys, which yields a
-    // separate profile for Talent Acquisition to complete, never a merge onto the forwarder.
-    let identity = {
-      email: input.candidate.email ?? null,
-      fullName: input.candidate.fullName,
-      phone: input.candidate.phone ?? null,
-    };
-    let preExtraction: CvFieldExtraction | null = null;
-    if (input.identitySource === "cv") {
-      try {
-        preExtraction = await extractCvFieldsFromBytes({
-          bytes: input.attachment.bytes,
-          fileName: input.attachment.fileName,
-          mimeType: input.attachment.mimeType,
-        });
-      } catch {
-        /* best-effort */
-      }
-      identity = candidateIdentityFromCvFields(preExtraction, input.candidate.fullName);
-    }
+    // A bulk forward-import reads identity from the CV itself (the sender is the forwarder, not the
+    // applicant); a direct applicant's own email/phone is their real contact detail. A failed read
+    // yields null match keys, so the worst case is a correctly-separate profile, never a merge.
+    const identity =
+      input.identitySource === "cv"
+        ? candidateIdentityFromCvFields(extraction, input.candidate.fullName)
+        : { email: input.candidate.email ?? null, fullName: input.candidate.fullName, phone: input.candidate.phone ?? null };
 
     const { candidate, created, matchReason } = await createCandidate(
       {
@@ -313,20 +302,12 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { candidateId: candidate.id, matchReason, outcome: "error" };
     }
 
-    // Best-effort — an AI/extraction failure must never undo the candidate/file that already
-    // exist; Talent Acquisition can always run extraction manually from the review board.
-    // A CV-sourced import already ran the AI above to learn who this is, so it only persists
-    // that same result here — one extraction per CV either way, never two.
+    // Persist the ONE extraction we already ran (both channels, both identity sources) against the
+    // uploaded file — best-effort; an AI/DB hiccup must never undo the candidate + file that
+    // already exist. No second AI call: classify + extract were merged above.
     try {
-      if (preExtraction) {
-        await persistCvExtraction({
-          access: systemAccessContext,
-          candidateId: candidate.id,
-          extraction: preExtraction,
-          fileId,
-        });
-      } else {
-        await extractCandidateFieldsFromCv(candidate.id, systemAccessContext, defaultCvPositionKey, { fileId });
+      if (extraction) {
+        await persistCvExtraction({ access: systemAccessContext, candidateId: candidate.id, extraction, fileId });
       }
     } catch {
       /* best-effort */
