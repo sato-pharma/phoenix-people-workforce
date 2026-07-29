@@ -33,6 +33,8 @@ type Props = {
 };
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
+const bonusCell = (row: DirectOrderApprovalListItem) =>
+  row.dealType === "discount" ? (row.discountPct == null ? "—" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
 const STATUS_TONE: Record<string, string> = {
   pending_approval: "bg-amber-100 text-amber-800",
@@ -374,7 +376,7 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
                       <div className="text-[11px] text-slate-500">{r.line}</div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.qty.toLocaleString("en-US")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.bonus.toLocaleString("en-US")}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{bonusCell(r)}</td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                     <td className="px-3 py-2">{r.pharmacyName}</td>
                     <td className="px-3 py-2">
