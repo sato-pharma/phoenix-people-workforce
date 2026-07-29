@@ -79,12 +79,26 @@ const CONFIDENTIAL_INCLUDED =
 const CONFIDENTIAL_EXCLUDED =
   "Confidential products (LA003 / LA004 / SS001) are excluded from this report and its totals.";
 
+/** One line-level matched-sales row for the bulk report receipt, tagged with its request. */
+export type BulkMatchedSalesLine = {
+  requestCode: string;
+  invoicePeriod: string;
+  distributorName: string;
+  productName: string;
+  customerCode: string;
+  customerName: string | null;
+  regionName: string | null;
+  qty: number;
+  value: number;
+};
+
 export async function buildMarketingRoiReportWorkbook(input: {
   report: MarketingRoiReport;
   detail: MarketingRoiExportDetail;
+  matchedSales?: BulkMatchedSalesLine[];
   meta: RoiWorkbookMeta;
 }): Promise<ArrayBuffer> {
-  const { report, detail, meta } = input;
+  const { report, detail, matchedSales, meta } = input;
   const workbook = new ExcelJS.Workbook();
   workbook.created = new Date(meta.generatedAtIso);
 
@@ -218,6 +232,35 @@ export async function buildMarketingRoiReportWorkbook(input: {
     rows: detail.approvals.map((a) => [a.requestCode, a.sequence, a.stepName, a.assignedRole, a.assignedHrId ?? "—", a.status, a.decisionByHrId ?? "—", a.decisionAt ?? "—", a.isCc ? "Yes" : "No", a.decisionNote ?? ""]),
     note: `${detail.approvals.length} approval step(s).`,
   });
+
+  // ── Matched Sales (all requests) ─────────────────────────────────────────────
+  // Line-level attribution behind every request's total, so Finance can tie out the whole
+  // report in one place instead of exporting each request one at a time. Sourced from the SAME
+  // authoritative View Sales service as the per-request receipt — never a second attribution
+  // path. Absent when the caller did not gather it (kept optional for backward compatibility).
+  if (matchedSales) {
+    const matchedSheet = workbook.addWorksheet(sanitizeSheetName("Matched Sales"));
+    const totalUnits = matchedSales.reduce((sum, r) => sum + r.qty, 0);
+    const totalValue = matchedSales.reduce((sum, r) => sum + r.value, 0);
+    const requestCount = new Set(matchedSales.map((r) => r.requestCode)).size;
+    writeTable(matchedSheet, 1, {
+      title: "Matched sales — every request, line by line",
+      columns: [
+        { label: "Request", width: 14 },
+        { label: "Period", width: 10 },
+        { label: "Distributor", width: 16 },
+        { label: "Product", width: 28 },
+        { label: "Customer code", width: 18 },
+        { label: "Pharmacy", width: 28 },
+        { label: "Region", width: 16 },
+        { label: "Units", numFmt: UNITS_FMT, right: true, width: 10 },
+        { label: "Value", numFmt: VALUE_FMT, right: true, width: 14, dataBar: true },
+      ],
+      rows: matchedSales.map((r) => [r.requestCode, r.invoicePeriod, r.distributorName, r.productName, r.customerCode, r.customerName ?? "—", r.regionName ?? "—", r.qty, r.value]),
+      totals: ["TOTAL", null, null, null, null, null, null, totalUnits, totalValue],
+      note: `${matchedSales.length} matched line(s) across ${requestCount} request(s).`,
+    });
+  }
 
   return bufferOf(workbook);
 }

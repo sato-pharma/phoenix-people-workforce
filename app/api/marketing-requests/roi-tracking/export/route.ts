@@ -6,8 +6,9 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
-import { buildMarketingRoiReportWorkbook } from "@/lib/export/marketing-roi-workbook";
+import { buildMarketingRoiReportWorkbook, type BulkMatchedSalesLine } from "@/lib/export/marketing-roi-workbook";
 import {
+  getMarketingRequestViewSales,
   getMarketingRoiReport,
   loadMarketingRoiExportDetail,
   parseRoiFilterState,
@@ -56,11 +57,42 @@ export async function POST(request: Request) {
       report.rows.map((row) => ({ requestId: row.requestId, requestCode: row.requestCode })),
       report.includedRestricted,
     );
+    // Bulk line-level matched sales — the SAME authoritative View Sales source as the per-request
+    // receipt, gathered per request (bounded concurrency + a hard cap so a huge report can't blow
+    // the 60s budget). Best-effort per request: one failure never sinks the whole export.
+    const MATCHED_SALES_REQUEST_CAP = 300;
+    const matchedSales: BulkMatchedSalesLine[] = [];
+    const cappedRows = report.rows.slice(0, MATCHED_SALES_REQUEST_CAP);
+    for (let i = 0; i < cappedRows.length; i += 8) {
+      const batchResults = await Promise.all(
+        cappedRows.slice(i, i + 8).map(async (row) => {
+          try {
+            const vs = await getMarketingRequestViewSales(access, row.requestId, null, null, generatedAtIso);
+            return vs.rows.map((r) => ({
+              requestCode: row.requestCode,
+              invoicePeriod: r.invoicePeriod,
+              distributorName: r.distributorName,
+              productName: r.productName,
+              customerCode: r.customerCode,
+              customerName: r.customerName ?? null,
+              regionName: r.regionName ?? null,
+              qty: r.qty,
+              value: r.value,
+            })) as BulkMatchedSalesLine[];
+          } catch {
+            return [] as BulkMatchedSalesLine[]; // one request failing must not sink the bulk export
+          }
+        }),
+      );
+      for (const rows of batchResults) matchedSales.push(...rows);
+    }
+
     const exportId = randomUUID();
     const exportedBy = access.hrId ?? access.loginId ?? "system";
     const buffer = await buildMarketingRoiReportWorkbook({
       report,
       detail,
+      matchedSales,
       meta: { exportedByName: exportedBy, exportedByHrId: exportedBy, role: access.role, exportId, generatedAtIso },
     });
 
@@ -71,7 +103,7 @@ export async function POST(request: Request) {
       filterJson: filters as unknown as Record<string, unknown>,
       rowCount: report.rows.length,
       includedRestricted: report.includedRestricted,
-      sheets: ["Cover", "Requests", "Products", "Target Pharmacies", "Approvals"],
+      sheets: ["Cover", "Requests", "Products", "Target Pharmacies", "Approvals", "Matched Sales"],
       salesDataAsOf: report.kpi.salesDataAsOf,
     });
 
