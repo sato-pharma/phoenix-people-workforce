@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, RefreshCw, Send } from "lucide-react";
+import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, RefreshCw, Send, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -9,6 +9,7 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
 import {
   MonthlyClosingFilters,
@@ -44,6 +45,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
   const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
   const [published, setPublished] = useState<boolean | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [tab, setTab] = useState<"matrix" | "details">("matrix");
 
   const selectedLine = matrix?.line ?? "";
   const selectedPeriod = matrix?.period ?? "";
@@ -292,27 +294,61 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
                 This month is published — sales managers and product managers can see it in their portal (scoped to their line / products).
               </div>
             ) : null}
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
-              <MonthlyClosingFilters
-                areas={filterOptions.areas}
-                onChange={setFilter}
-                products={filterOptions.products}
-                regions={filterOptions.regions}
-                value={filter}
-              />
-              <button
-                className={cn(
-                  "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50",
-                )}
-                disabled={isExporting || filteredMatrix.columns.length === 0}
-                onClick={() => void handleExport()}
-                type="button"
-              >
-                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                Export XLSX
-              </button>
+            {/* Matrix = the published headline. Details = the invoice lines underneath it,
+                so the arithmetic can be checked without leaving the page. */}
+            <div className="flex items-center gap-1 border-b border-slate-100 px-4 pt-3 md:px-5">
+              {([
+                { icon: <CalendarRange className="h-4 w-4" />, key: "matrix" as const, label: "Closing Matrix" },
+                { icon: <Table2 className="h-4 w-4" />, key: "details" as const, label: "Details" },
+              ]).map((entry) => (
+                <button
+                  className={cn(
+                    "inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition",
+                    tab === entry.key
+                      ? "border-[#F97316] text-[#0B0B0B]"
+                      : "border-transparent text-slate-500 hover:text-slate-800",
+                  )}
+                  key={entry.key}
+                  onClick={() => setTab(entry.key)}
+                  type="button"
+                >
+                  {entry.icon}
+                  {entry.label}
+                </button>
+              ))}
             </div>
-            <ClosingMatrixTable matrix={filteredMatrix} />
+
+            {tab === "matrix" ? (
+              <>
+                <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+                  <MonthlyClosingFilters
+                    areas={filterOptions.areas}
+                    onChange={setFilter}
+                    products={filterOptions.products}
+                    regions={filterOptions.regions}
+                    value={filter}
+                  />
+                  <button
+                    className={cn(
+                      "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50",
+                    )}
+                    disabled={isExporting || filteredMatrix.columns.length === 0}
+                    onClick={() => void handleExport()}
+                    type="button"
+                  >
+                    {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    Export XLSX
+                  </button>
+                </div>
+                <ClosingMatrixTable matrix={filteredMatrix} />
+              </>
+            ) : (
+              <ClosingDetailsPanel
+                line={selectedLine}
+                period={selectedPeriod}
+                showConfidentialToggle
+              />
+            )}
           </>
         )}
       </AdminTableShell>

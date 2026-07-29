@@ -10,6 +10,7 @@ export const CLOSING_TABS = [
   { href: "/admin/analytics/monthly-closing",              label: "Overview"     },
   { href: "/admin/analytics/monthly-closing/by-line",      label: "By Line"      },
   { href: "/admin/analytics/monthly-closing/by-employee",  label: "By Employee"  },
+  { href: "/admin/analytics/monthly-closing/details",      label: "Details"      },
 ] as const;
 
 export const WEEKLY_TABS = [

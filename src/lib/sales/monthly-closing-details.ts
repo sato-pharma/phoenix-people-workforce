@@ -1,0 +1,619 @@
+import type { AccessContext } from "@/lib/auth/permissions";
+import {
+  applyProductCodeAllowlist,
+  canViewHeadOfficeLine,
+  canonicalizeRegionName,
+  isHeadOfficeLine,
+  isRestrictedProductCode,
+  normalizeLineKey,
+  resolveSalesAccessScope,
+} from "@/lib/sales/access-scope";
+import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monthly Closing — DETAILS.
+//
+// The Closing Matrix is an area x product aggregate. This module is the layer under it:
+// every distributor sheet row exactly as it was imported, with the Phoenix master joined on
+// so a reader can see how a brick rolls up to an area and re-add the numbers by hand.
+//
+// It is the audit surface, so it deliberately shows rows the matrix DROPS and says why:
+//
+//   • Direct rows            -> excluded from phx_monthly_closing_matrix (`not f.is_direct`)
+//                               and reported by phx_monthly_closing_direct instead.
+//   • Confidential products  -> LA003 / LA004 / SS001, excluded by the matrix RPC and visible
+//                               here only to a CEO / Super Admin who explicitly opts in.
+//
+// Those are the ONLY two exclusions. Verified against production 2026-06: with exactly this
+// predicate the detail rows reproduce phx_monthly_closing_matrix to the cent on every line —
+// Pedia 11,095u / 2,434,468.50, Anti Infective 7,522u / 696,563.10, CNS 66,656u / 4,109,041.65.
+//
+// A missing client code is NOT an exclusion. (source_of_sales_fact_rollup's customer-grain
+// population path filters on `client_code is not null`, but the matrix RPC reads the
+// area/product grain, which keeps those rows. Checked directly: adding a client-code filter
+// here understated CNS by 11,205 units.) It is still surfaced as a data-quality flag, because
+// a sale with no customer identity cannot be traced back to an outlet.
+//
+// `includedInClosing` is the single flag that says whether a row is inside the headline
+// number; `reconciliation` totals both sides so the two can never silently drift again.
+//
+// Scope: resolveSalesAccessScope is the authority (line + region + per-user product allowlist).
+// Confidential products and the Head Office line stay CEO / Super Admin only — the caller's
+// `includeConfidential` request is ignored for every other role, so an API/URL/export tamper
+// cannot widen visibility.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Why a row is not part of the Closing Matrix headline. Empty when it is. */
+export type ClosingDetailExclusion = "direct" | "confidential";
+
+export type ClosingDetailRow = {
+  /** Stable identity for UI keys and keyset paging. */
+  id: number;
+  rowNumber: number | null;
+  distributorCode: string;
+  invoicePeriod: string;
+  invoiceDate: string | null;
+  officialLine: string;
+
+  /** As-imported geography, straight off the distributor sheet. */
+  sheetAreaCode: string;
+  sheetAreaName: string;
+  sheetRegionCode: string;
+  sheetRegionName: string;
+  blockCode: string;
+  brickId: string;
+
+  /** Phoenix master geography, resolved from the BRICK (the authoritative key). */
+  brickName: string;
+  areaCode: string;
+  areaName: string;
+  regionCode: string;
+  regionName: string;
+  /** True when the sheet's area disagrees with the brick's Phoenix area. */
+  areaMismatch: boolean;
+  /** True when the brick id is absent from the Phoenix master (cannot roll up). */
+  brickUnmapped: boolean;
+
+  clientCode: string;
+  clientName: string;
+  clientAddress: string;
+
+  productCode: string;
+  productName: string;
+  family: string;
+  factoryPrice: number;
+
+  qty: number;
+  bonusQty: number;
+  discount: number;
+  /** qty x (1 - discount) — the base the matrix values (mirrors fact_rollup.effective_units). */
+  effectiveUnits: number;
+  /** effectiveUnits x factoryPrice — the matrix's sales_value contribution. */
+  salesValue: number;
+  /** The value column as it appeared on the distributor sheet, untouched. */
+  sheetValue: number;
+
+  isDirect: boolean;
+  isConfidential: boolean;
+  /** Data quality, NOT an exclusion — the row still counts, it just has no traceable outlet. */
+  missingClientCode: boolean;
+  validationState: string;
+
+  /** True when this row is inside the Closing Matrix headline. */
+  includedInClosing: boolean;
+  exclusions: ClosingDetailExclusion[];
+};
+
+export type ClosingDetailsTotals = {
+  rows: number;
+  units: number;
+  effectiveUnits: number;
+  salesValue: number;
+};
+
+export type ClosingDetailsFilters = {
+  regionCodes?: string[];
+  areaCodes?: string[];
+  productCodes?: string[];
+  distributorCodes?: string[];
+  /** "included" | "excluded" | "" (all) — slices by whether the row feeds the closing. */
+  inclusion?: string;
+  /** Free text over brick / area / customer / product / client code. */
+  search?: string;
+};
+
+export type ClosingDetailsResult = {
+  line: string | null;
+  period: string | null;
+  availableLines: string[];
+  availablePeriods: string[];
+  /** The requested page of rows (already filtered + scoped). */
+  rows: ClosingDetailRow[];
+  /** Row count after filters, before paging — what `totals` covers. */
+  filteredRowCount: number;
+  page: number;
+  pageSize: number;
+  /** Filter options built from everything in scope, so a filter never hides its own choices. */
+  options: {
+    regions: { code: string; name: string }[];
+    areas: { code: string; name: string; regionCode: string }[];
+    products: { code: string; name: string }[];
+    distributors: string[];
+  };
+  /** All rows the viewer may see, after filters (not just this page). */
+  totals: ClosingDetailsTotals;
+  reconciliation: {
+    /** Rows that feed the Closing Matrix — these must tie to it exactly. */
+    includedInClosing: ClosingDetailsTotals;
+    /** Everything the matrix drops, split by reason. */
+    excludedDirect: ClosingDetailsTotals;
+    excludedConfidential: ClosingDetailsTotals;
+    /** Counted in the closing, but with no customer identity to trace it to. */
+    missingClientCode: ClosingDetailsTotals;
+    /** Rows whose brick is missing from the Phoenix master (roll up to no area). */
+    unmappedBricks: ClosingDetailsTotals;
+    /** Rows where the sheet area disagrees with the brick's Phoenix area. */
+    areaMismatches: ClosingDetailsTotals;
+  };
+  /** True when the viewer was allowed to reveal LA003 / LA004 / SS001 and asked to. */
+  confidentialIncluded: boolean;
+  /** True when the viewer's role may toggle confidential products at all. */
+  canRevealConfidential: boolean;
+  /** True when scope resolved to "nothing" — the UI shows an explicit empty state, not a zero. */
+  outOfScope: boolean;
+};
+
+const PAGE = 1000;
+
+function text(value: unknown): string {
+  return value == null ? "" : String(value).trim();
+}
+
+function num(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function emptyTotals(): ClosingDetailsTotals {
+  return { rows: 0, units: 0, effectiveUnits: 0, salesValue: 0 };
+}
+
+function addTo(totals: ClosingDetailsTotals, row: ClosingDetailRow) {
+  totals.rows += 1;
+  totals.units += row.qty;
+  totals.effectiveUnits += row.effectiveUnits;
+  totals.salesValue += row.salesValue;
+}
+
+function roundTotals(totals: ClosingDetailsTotals): ClosingDetailsTotals {
+  return {
+    rows: totals.rows,
+    units: Number(totals.units.toFixed(6)),
+    effectiveUnits: Number(totals.effectiveUnits.toFixed(6)),
+    salesValue: Number(totals.salesValue.toFixed(6)),
+  };
+}
+
+/**
+ * Every validated batch id for a period. The matrix RPC joins
+ * `source_of_sales_import_batches ... status = 'validated'`; the details read has to apply the
+ * same gate or it would show rows the closing never counted.
+ */
+async function validatedBatchIdsForPeriod(period: string): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_import_batches")
+    .select("id")
+    .eq("status", "validated")
+    .eq("period", period);
+  if (error) throw error;
+  return (data ?? []).map((row) => text((row as { id?: unknown }).id)).filter(Boolean);
+}
+
+/**
+ * Read every import row for the batches, KEYSET-paged on the bigint primary key.
+ *
+ * Not `.range()`: PostgREST offset paging without an ORDER BY has no stable row order, so
+ * consecutive pages can repeat rows and skip others at random. That exact bug dropped 1,262 of
+ * 49,713 customer mappings in the June 2026 import. Ordering by `id` and seeking past the last
+ * id read is immune to it, and to concurrent inserts shifting rows across a page boundary.
+ */
+async function readImportRows(batchIds: string[], line: string): Promise<Array<Record<string, unknown>>> {
+  if (batchIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const rows: Array<Record<string, unknown>> = [];
+  let cursor: number | null = null;
+  for (;;) {
+    let query = supabase
+      .from("source_of_sales_import_rows")
+      .select(
+        "id,row_number,batch_id,distributor_code,invoice_period,invoice_date,official_line," +
+          "region_code,region_name,area_code,area_name,block_code,brick_id," +
+          "client_code,client_name,client_address,product_code,product_name," +
+          "qty,bonus_qty,discount,value,is_direct,validation_state",
+      )
+      .in("batch_id", batchIds)
+      .order("id", { ascending: true })
+      .limit(PAGE);
+    if (cursor !== null) query = query.gt("id", cursor);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    if (page.length === 0) break;
+    for (const row of page) {
+      if (normalizeLineKey(text(row.official_line)) === normalizeLineKey(line)) rows.push(row);
+    }
+    if (page.length < PAGE) break;
+    const last = Number(page[page.length - 1]?.id);
+    if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
+    cursor = last;
+  }
+  return rows;
+}
+
+export type LoadClosingDetailsInput = {
+  access: AccessContext;
+  line?: string | null;
+  period?: string | null;
+  /** Honoured only for a role allowed to reveal confidential products. */
+  includeConfidential?: boolean;
+  availableLines?: string[];
+  availablePeriods?: string[];
+  filters?: ClosingDetailsFilters;
+  page?: number;
+  pageSize?: number;
+  /** Return every filtered row rather than one page. Used by the workbook export. */
+  unpaged?: boolean;
+};
+
+const DEFAULT_PAGE_SIZE = 200;
+const MAX_PAGE_SIZE = 2000;
+
+/**
+ * Pure filter over already-scoped rows. Separate from `applyDetailScope` on purpose:
+ * scope is a security boundary, this is a user convenience. Exported for unit tests.
+ */
+export function applyDetailFilters(
+  rows: ClosingDetailRow[],
+  filters: ClosingDetailsFilters | undefined,
+): ClosingDetailRow[] {
+  if (!filters) return rows;
+  const set = (values?: string[]) =>
+    values && values.length > 0 ? new Set(values.map((value) => value.trim().toUpperCase())) : null;
+  const regions = set(filters.regionCodes);
+  const areas = set(filters.areaCodes);
+  const products = set(filters.productCodes);
+  const distributors = set(filters.distributorCodes);
+  const inclusion = text(filters.inclusion).toLowerCase();
+  const search = text(filters.search).toLowerCase();
+
+  return rows.filter((row) => {
+    if (regions && !regions.has(row.regionCode.toUpperCase())) return false;
+    if (areas && !areas.has(row.areaCode.toUpperCase())) return false;
+    if (products && !products.has(row.productCode.toUpperCase())) return false;
+    if (distributors && !distributors.has(row.distributorCode.toUpperCase())) return false;
+    if (inclusion === "included" && !row.includedInClosing) return false;
+    if (inclusion === "excluded" && row.includedInClosing) return false;
+    if (search) {
+      const haystack = [
+        row.brickId, row.brickName, row.areaCode, row.areaName, row.regionName,
+        row.clientCode, row.clientName, row.clientAddress, row.productCode, row.productName,
+        row.distributorCode,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Load the raw distributor rows behind one line/month's closing, joined to the Phoenix
+ * brick -> area -> region master and scoped to the caller. Pure IO + mapping; every
+ * aggregate the UI shows is derived from the returned rows so the two cannot disagree.
+ */
+export async function loadMonthlyClosingDetails(
+  input: LoadClosingDetailsInput,
+): Promise<ClosingDetailsResult> {
+  const { access } = input;
+  const period = text(input.period) || null;
+  const availablePeriods = input.availablePeriods ?? [];
+
+  const scope = await resolveSalesAccessScope(access, {
+    includeRestricted: input.includeConfidential === true,
+  });
+
+  // Only offer the lines this viewer may actually open. Doing it here (rather than in the route)
+  // keeps the picker and the data on the same authority, so a portal user never sees a line in
+  // the dropdown that then renders "out of scope".
+  const availableLines = (input.availableLines ?? []).filter((candidate) => {
+    if (isHeadOfficeLine(candidate) && !canViewHeadOfficeLine(access.role)) return false;
+    if (!scope.allowedLineNames) return true;
+    const allowed = new Set([...scope.allowedLineNames].map(normalizeLineKey));
+    return allowed.has(normalizeLineKey(candidate));
+  });
+
+  const requestedLine = text(input.line) || null;
+  const line = requestedLine && availableLines.includes(requestedLine)
+    ? requestedLine
+    : availableLines[0] ?? null;
+  const canRevealConfidential = scope.canViewRestrictedProducts;
+  // `restrictedIncluded` is already role-gated inside the scope engine — a non-CEO asking for
+  // confidential products gets `false` here, never the rows.
+  const confidentialIncluded = scope.restrictedIncluded;
+
+  const page = Math.max(1, Math.floor(input.page ?? 1));
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(input.pageSize ?? DEFAULT_PAGE_SIZE)));
+
+  const empty = (outOfScope: boolean): ClosingDetailsResult => ({
+    line,
+    period,
+    availableLines,
+    availablePeriods,
+    rows: [],
+    filteredRowCount: 0,
+    page,
+    pageSize,
+    options: { regions: [], areas: [], products: [], distributors: [] },
+    totals: emptyTotals(),
+    reconciliation: {
+      includedInClosing: emptyTotals(),
+      excludedDirect: emptyTotals(),
+      missingClientCode: emptyTotals(),
+      excludedConfidential: emptyTotals(),
+      unmappedBricks: emptyTotals(),
+      areaMismatches: emptyTotals(),
+    },
+    confidentialIncluded,
+    canRevealConfidential,
+    outOfScope,
+  });
+
+  // No line survived the scope filter even though lines exist → an access boundary, not an
+  // empty month. The UI must say so rather than render a misleading zero.
+  if ((input.availableLines ?? []).length > 0 && availableLines.length === 0) return empty(true);
+  if (!line || !period) return empty(false);
+
+  // Head Office is a confidential LINE (whole line + all its products, CEO / Super Admin only).
+  if (isHeadOfficeLine(line) && !canViewHeadOfficeLine(access.role)) return empty(true);
+
+  // Line bound. `allowedLineNames === null` means every line (COMPANY scope); an empty set is
+  // fail-closed and must render "out of scope", never an innocent-looking zero.
+  if (scope.allowedLineNames) {
+    if (scope.allowedLineNames.size === 0) return empty(true);
+    const allowed = new Set([...scope.allowedLineNames].map(normalizeLineKey));
+    if (!allowed.has(normalizeLineKey(line))) return empty(true);
+  }
+
+  const [batchIds, references] = await Promise.all([
+    validatedBatchIdsForPeriod(period),
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+  ]);
+  if (batchIds.length === 0) return empty(false);
+
+  const rawRows = await readImportRows(batchIds, line);
+
+  // Phoenix master lookups. The BRICK is the authoritative geography key — a row's area is
+  // resolved from its brick, and the sheet's own area is kept alongside so the two can be
+  // compared rather than silently overwritten.
+  const brickById = new Map(
+    (references.bricks ?? []).map((brick) => [text(brick.brickId).toUpperCase(), brick]),
+  );
+  const areaByCode = new Map(
+    (references.areas ?? []).map((area) => [text(area.areaCode).toUpperCase(), area]),
+  );
+  const regionNameByCode = new Map(
+    (references.regions ?? []).map((region) => [
+      text(region.regionCode).toUpperCase(),
+      text(region.regionName),
+    ]),
+  );
+  const productByCode = new Map(
+    (references.products ?? []).map((product) => [text(product.productCode).toUpperCase(), product]),
+  );
+
+  const allowedRegionCodes = await resolveRegionCodes(scope.allowedRegionNames, references);
+
+  const mapped: ClosingDetailRow[] = rawRows.map((raw) => {
+    const brickId = text(raw.brick_id);
+    const brick = brickId ? brickById.get(brickId.toUpperCase()) : undefined;
+    const sheetAreaCode = text(raw.area_code);
+    const sheetRegionCode = text(raw.region_code);
+
+    // Prefer the brick's master area; fall back to the sheet's area when the brick is unmapped.
+    const areaCode = text(brick?.areaCode) || sheetAreaCode;
+    const area = areaCode ? areaByCode.get(areaCode.toUpperCase()) : undefined;
+    const regionCode = text(brick?.regionCode) || text(area?.regionCode) || sheetRegionCode;
+
+    const productCode = text(raw.product_code);
+    const product = productCode ? productByCode.get(productCode.toUpperCase()) : undefined;
+    const factoryPrice = num(product?.factoryPrice);
+
+    const qty = num(raw.qty);
+    const discount = num(raw.discount);
+    const effectiveUnits = qty * (1 - discount);
+    const isDirect = raw.is_direct === true;
+    const clientCode = text(raw.client_code);
+    const isConfidential = isRestrictedProductCode(productCode);
+
+    const exclusions: ClosingDetailExclusion[] = [];
+    if (isDirect) exclusions.push("direct");
+    if (isConfidential) exclusions.push("confidential");
+
+    return {
+      id: num(raw.id),
+      rowNumber: raw.row_number == null ? null : num(raw.row_number),
+      distributorCode: text(raw.distributor_code),
+      invoicePeriod: text(raw.invoice_period),
+      invoiceDate: text(raw.invoice_date) || null,
+      officialLine: text(raw.official_line),
+
+      sheetAreaCode,
+      sheetAreaName: text(raw.area_name),
+      sheetRegionCode,
+      sheetRegionName: text(raw.region_name),
+      blockCode: text(raw.block_code) || text(brick?.blockCode),
+      brickId,
+
+      brickName: text(brick?.brickName),
+      areaCode,
+      areaName: text(brick?.areaName) || text(area?.areaName) || text(raw.area_name),
+      regionCode,
+      regionName: regionNameByCode.get(regionCode.toUpperCase()) ?? text(raw.region_name),
+      areaMismatch:
+        Boolean(brick) &&
+        Boolean(sheetAreaCode) &&
+        sheetAreaCode.toUpperCase() !== text(brick?.areaCode).toUpperCase(),
+      brickUnmapped: Boolean(brickId) && !brick,
+
+      clientCode,
+      clientName: text(raw.client_name),
+      clientAddress: text(raw.client_address),
+
+      productCode,
+      productName: text(product?.productName) || text(raw.product_name),
+      family: text(product?.family),
+      factoryPrice,
+
+      qty,
+      bonusQty: num(raw.bonus_qty),
+      discount,
+      effectiveUnits: Number(effectiveUnits.toFixed(6)),
+      salesValue: Number((effectiveUnits * factoryPrice).toFixed(6)),
+      sheetValue: num(raw.value),
+
+      isDirect,
+      isConfidential,
+      missingClientCode: !clientCode,
+      validationState: text(raw.validation_state),
+
+      includedInClosing: exclusions.length === 0,
+      exclusions,
+    };
+  });
+
+  const scoped = applyDetailScope(mapped, {
+    allowedRegionCodes,
+    allowedProductCodes: scope.allowedProductCodes,
+    dropConfidential: !confidentialIncluded,
+  });
+
+  // Options come from everything in scope (pre-filter) so choosing one area never removes the
+  // other areas from the dropdown.
+  const options = buildFilterOptions(scoped);
+
+  const filtered = applyDetailFilters(scoped, input.filters);
+  const start = (page - 1) * pageSize;
+
+  return {
+    line,
+    period,
+    availableLines,
+    availablePeriods,
+    rows: input.unpaged ? filtered : filtered.slice(start, start + pageSize),
+    filteredRowCount: filtered.length,
+    page,
+    pageSize,
+    options,
+    totals: summarize(filtered, () => true),
+    reconciliation: {
+      includedInClosing: summarize(filtered, (row) => row.includedInClosing),
+      excludedDirect: summarize(filtered, (row) => row.isDirect),
+      missingClientCode: summarize(filtered, (row) => row.missingClientCode),
+      excludedConfidential: summarize(filtered, (row) => row.isConfidential),
+      unmappedBricks: summarize(filtered, (row) => row.brickUnmapped),
+      areaMismatches: summarize(filtered, (row) => row.areaMismatch),
+    },
+    confidentialIncluded,
+    canRevealConfidential,
+    outOfScope: false,
+  };
+}
+
+/** Distinct filter choices present in the viewer's scoped rows, each sorted for a stable UI. */
+export function buildFilterOptions(rows: ClosingDetailRow[]): ClosingDetailsResult["options"] {
+  const regions = new Map<string, string>();
+  const areas = new Map<string, { code: string; name: string; regionCode: string }>();
+  const products = new Map<string, string>();
+  const distributors = new Set<string>();
+
+  for (const row of rows) {
+    if (row.regionCode) regions.set(row.regionCode, row.regionName || row.regionCode);
+    if (row.areaCode && !areas.has(row.areaCode)) {
+      areas.set(row.areaCode, {
+        code: row.areaCode,
+        name: row.areaName || row.areaCode,
+        regionCode: row.regionCode,
+      });
+    }
+    if (row.productCode) products.set(row.productCode, row.productName || row.productCode);
+    if (row.distributorCode) distributors.add(row.distributorCode);
+  }
+
+  const byName = (left: { name: string }, right: { name: string }) => left.name.localeCompare(right.name);
+  return {
+    regions: [...regions].map(([code, name]) => ({ code, name })).sort(byName),
+    areas: [...areas.values()].sort(byName),
+    products: [...products].map(([code, name]) => ({ code, name })).sort(byName),
+    distributors: [...distributors].sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+/**
+ * Pure row guard. Region + per-user product allowlist + the confidential drop, applied after
+ * mapping. Exported so it can be unit-tested without touching Supabase.
+ */
+export function applyDetailScope(
+  rows: ClosingDetailRow[],
+  scope: {
+    allowedRegionCodes: Set<string> | null;
+    allowedProductCodes: Set<string> | null;
+    dropConfidential: boolean;
+  },
+): ClosingDetailRow[] {
+  let out = rows;
+  if (scope.dropConfidential) out = out.filter((row) => !row.isConfidential);
+  if (scope.allowedRegionCodes) {
+    const allowed = scope.allowedRegionCodes;
+    // Empty set = the viewer's region resolved to no code — fail closed.
+    out = out.filter((row) => allowed.has(row.regionCode.trim().toUpperCase()));
+  }
+  out = applyProductCodeAllowlist(out, scope.allowedProductCodes);
+  return out;
+}
+
+/** Totals over the rows matching `predicate`. */
+export function summarize(
+  rows: ClosingDetailRow[],
+  predicate: (row: ClosingDetailRow) => boolean,
+): ClosingDetailsTotals {
+  const totals = emptyTotals();
+  for (const row of rows) if (predicate(row)) addTo(totals, row);
+  return roundTotals(totals);
+}
+
+/** Map canonical employee region NAMES onto Source-of-Sales region CODES via the master. */
+async function resolveRegionCodes(
+  allowedRegionNames: Set<string> | null,
+  references: Awaited<ReturnType<typeof loadSalesReferenceData>>,
+): Promise<Set<string> | null> {
+  if (!allowedRegionNames) return null;
+  const codesByName = new Map<string, Set<string>>();
+  for (const region of references.regions ?? []) {
+    const key = canonicalizeRegionName(region.regionName);
+    const code = text(region.regionCode).toUpperCase();
+    if (!key || !code) continue;
+    const bucket = codesByName.get(key) ?? new Set<string>();
+    bucket.add(code);
+    codesByName.set(key, bucket);
+  }
+  const codes = new Set<string>();
+  for (const name of allowedRegionNames) {
+    for (const code of codesByName.get(name) ?? []) codes.add(code);
+  }
+  // An empty result means the region didn't resolve to any code → fail closed.
+  return codes;
+}

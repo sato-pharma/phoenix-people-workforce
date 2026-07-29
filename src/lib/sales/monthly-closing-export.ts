@@ -3,12 +3,24 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import type { MonthlyClosingCell, MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
+import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 
-// Phoenix-branded Monthly Closing workbook. A hidden "Data" sheet holds the granular facts;
+// Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
-// that references the Data sheet, written with a cached result so the file opens showing the
+// that references the Calc sheet, written with a cached result so the file opens showing the
 // right values and recalculates when edited. No charts. The selection/order of top-N rows and
 // the white-space lists are decided in code; the numbers inside them are formulas.
+//
+// On top of that sit two VISIBLE audit sheets, so the closing can be re-added by hand:
+//
+//   "Data"  — one row per distributor invoice line exactly as imported, with the Phoenix
+//             brick -> area -> region master joined on and an Included-in-Closing flag.
+//   "Total" — an Area x Product grid whose every number is a live SUMIFS over "Data",
+//             plus a reconciliation block that proves it ties to the Closing Matrix.
+//
+// Confidential products (LA003 / LA004 / SS001) never appear on Data/Total. When a CEO or
+// Super Admin opts in they get their own separate "Confidential" sheet, so the audit grid
+// keeps tying to the published headline either way.
 
 const BLACK = "FF000000";
 const ORANGE = "FFF97316";
@@ -51,7 +63,11 @@ const countifs = (criteria: [string, string | number][]) =>
 const sumAll = (range: string) => `SUM(${range})`;
 const div0 = (numerator: string, denominator: string) => `IFERROR(${numerator}/${denominator},0)`;
 
-// ── Hidden Data sheet (single source of truth for the formulas) ──────────────
+// ── Hidden Calc sheet (single source of truth for the report-sheet formulas) ──
+
+// The hidden aggregate sheet used to be called "Data". It was renamed when the visible raw
+// "Data" sheet was added — the report formulas below all resolve through this constant.
+const CALC_SHEET = "Calc";
 
 type DataRefs = {
   abdArea: string; abdDist: string; abdValue: string;
@@ -91,7 +107,8 @@ function planDataLayout(data: ClosingExportData): { blocks: DataBlock[]; ref: Da
   });
 
   const lastOf = (block: DataBlock) => block.firstData + Math.max(1, block.rows.length) - 1;
-  const range = (col: string, block: DataBlock) => `Data!$${col}$${block.firstData}:$${col}$${lastOf(block)}`;
+  const range = (col: string, block: DataBlock) =>
+    `${CALC_SHEET}!$${col}$${block.firstData}:$${col}$${lastOf(block)}`;
   const [dp, cust, brk, pbd, abd, ma, mb] = blocks;
   const ref: DataRefs = {
     abdArea: range("B", abd), abdDist: range("A", abd), abdValue: range("C", abd),
@@ -105,10 +122,10 @@ function planDataLayout(data: ClosingExportData): { blocks: DataBlock[]; ref: Da
 }
 
 function writeDataSheet(workbook: ExcelJS.Workbook, blocks: DataBlock[]) {
-  const sheet = workbook.addWorksheet("Data");
+  const sheet = workbook.addWorksheet(CALC_SHEET);
   sheet.state = "hidden";
   const intro = sheet.getCell(1, 1);
-  intro.value = "Source data — the report sheets reference these cells with live formulas. Editing these recalculates the report.";
+  intro.value = "Pre-aggregated facts — the report sheets reference these cells with live formulas. Editing these recalculates the report. The raw invoice lines are on the visible \"Data\" sheet.";
   intro.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 10 };
   blocks.forEach((block) => {
     block.headers.forEach((header, index) => {
@@ -121,6 +138,323 @@ function writeDataSheet(workbook: ExcelJS.Workbook, blocks: DataBlock[]) {
     });
   });
   for (let col = 1; col <= 9; col += 1) sheet.getColumn(col).width = 16;
+}
+
+// ── Visible audit sheets: raw "Data" + formula-driven "Total" ────────────────
+
+// One column spec per Data-sheet column. `key` reads the value off a detail row; the order here
+// IS the sheet order, and the Total sheet resolves its SUMIFS ranges from this array by name —
+// so inserting a column can never silently point a formula at the wrong data.
+type RawColumn = {
+  name: string;
+  width: number;
+  numFmt?: string;
+  value: (row: ClosingDetailRow) => string | number;
+};
+
+const RAW_COLUMNS: RawColumn[] = [
+  { name: "Distributor", width: 13, value: (r) => r.distributorCode },
+  { name: "Invoice Date", width: 12, value: (r) => r.invoiceDate ?? "" },
+  { name: "Region Code", width: 11, value: (r) => r.regionCode },
+  { name: "Region", width: 18, value: (r) => r.regionName },
+  { name: "Area Code", width: 11, value: (r) => r.areaCode },
+  { name: "Area", width: 22, value: (r) => r.areaName },
+  { name: "Block", width: 11, value: (r) => r.blockCode },
+  { name: "Brick ID", width: 12, value: (r) => r.brickId },
+  { name: "Brick Name", width: 22, value: (r) => r.brickName },
+  { name: "Sheet Area Code", width: 14, value: (r) => r.sheetAreaCode },
+  { name: "Client Code", width: 13, value: (r) => r.clientCode },
+  { name: "Client Name", width: 30, value: (r) => r.clientName },
+  { name: "Client Address", width: 30, value: (r) => r.clientAddress },
+  { name: "Product Code", width: 12, value: (r) => r.productCode },
+  { name: "Product", width: 22, value: (r) => r.productName },
+  { name: "Family", width: 14, value: (r) => r.family },
+  { name: "Factory Price", width: 13, numFmt: VALUE_FMT, value: (r) => r.factoryPrice },
+  { name: "Qty", width: 10, numFmt: UNITS_FMT, value: (r) => r.qty },
+  { name: "Bonus Qty", width: 11, numFmt: UNITS_FMT, value: (r) => r.bonusQty },
+  { name: "Discount", width: 10, numFmt: "0.00%", value: (r) => r.discount },
+  { name: "Effective Units", width: 14, numFmt: VALUE_FMT, value: (r) => r.effectiveUnits },
+  { name: "Sales Value", width: 15, numFmt: VALUE_FMT, value: (r) => r.salesValue },
+  { name: "Sheet Value", width: 15, numFmt: VALUE_FMT, value: (r) => r.sheetValue },
+  { name: "Direct", width: 9, value: (r) => (r.isDirect ? "Yes" : "No") },
+  { name: "In Closing", width: 11, value: (r) => (r.includedInClosing ? "Yes" : "No") },
+  { name: "Excluded Because", width: 22, value: (r) => r.exclusions.join(" + ") },
+  { name: "Area Mismatch", width: 13, value: (r) => (r.areaMismatch ? "Yes" : "") },
+  { name: "Brick Unmapped", width: 14, value: (r) => (r.brickUnmapped ? "Yes" : "") },
+  { name: "Sheet Row #", width: 11, numFmt: UNITS_FMT, value: (r) => r.rowNumber ?? "" },
+];
+
+/** Whole-column reference on a raw sheet for a named column (e.g. `'Data'!$R:$R`). */
+function rawCol(sheetName: string, columnName: string): string {
+  const index = RAW_COLUMNS.findIndex((column) => column.name === columnName);
+  if (index === -1) throw new Error(`Unknown Data column: ${columnName}`);
+  const letter = columnLetter(index + 1);
+  return `'${sheetName}'!$${letter}:$${letter}`;
+}
+
+/** 1-based column index → Excel column letter. */
+function columnLetter(index: number): string {
+  let n = index;
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+/**
+ * One row per imported invoice line, exactly as it came off the distributor sheet, with the
+ * Phoenix master joined on. This is the sheet a reader re-adds by hand to check the closing.
+ */
+function writeRawDataSheet(
+  workbook: ExcelJS.Workbook,
+  sheetName: string,
+  rows: ClosingDetailRow[],
+  subtitle: string,
+  line: string | null,
+  period: string | null,
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName(sheetName), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+  bandHeader(sheet, line, period, subtitle, RAW_COLUMNS.length);
+
+  const headerRow = sheet.getRow(5);
+  RAW_COLUMNS.forEach((column, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = column.name;
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+    sheet.getColumn(index + 1).width = column.width;
+  });
+  headerRow.height = 20;
+
+  rows.forEach((row, rowIndex) => {
+    const excelRow = sheet.getRow(6 + rowIndex);
+    RAW_COLUMNS.forEach((column, index) => {
+      const cell = excelRow.getCell(index + 1);
+      const value = column.value(row);
+      cell.value = value === "" ? "" : value;
+      if (typeof value === "number" && column.numFmt) cell.numFmt = column.numFmt;
+      cell.font = {
+        color: { argb: row.includedInClosing ? SLATE : MUTED },
+        name: "Calibri",
+        size: 10,
+      };
+      cell.border = gridBorder();
+      // Excluded rows are tinted so "why doesn't this match the headline?" answers itself.
+      if (!row.includedInClosing) {
+        cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
+      } else if (rowIndex % 2 === 1) {
+        cell.fill = { fgColor: { argb: ZEBRA }, pattern: "solid", type: "pattern" };
+      }
+    });
+  });
+
+  if (rows.length > 0) sheet.autoFilter = { from: { column: 1, row: 5 }, to: { column: RAW_COLUMNS.length, row: 5 } };
+  return sheet;
+}
+
+/**
+ * Area x Product grid where every number is a live SUMIFS over the visible Data sheet — the
+ * Phoenix equivalent of the SFE closing file's Total tab. Edit a Qty on Data and this
+ * recalculates, which is the whole point: the arithmetic is checkable in the file itself.
+ */
+// The company-wide grand total to reconcile Data/Total against, when one is available. A scoped
+// export (a viewer with no whole-line/whole-company visibility) has no such headline to compare
+// to — writeTotalSheet degrades to showing only its own internal totals in that case.
+type ClosingHeadline = { salesUnits: number; salesValue: number };
+
+function writeTotalSheet(
+  workbook: ExcelJS.Workbook,
+  headline: ClosingHeadline | null,
+  details: ClosingDetailsResult,
+  dataSheetName: string,
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+  const columns: TableColumn[] = [
+    { label: "Region Code", width: 11 },
+    { label: "Region", width: 18 },
+    { label: "Area Code", width: 11 },
+    { label: "Area", width: 24 },
+    { label: "Product Code", width: 12 },
+    { label: "Product", width: 22 },
+    { label: "Factory Price", numFmt: VALUE_FMT, right: true },
+    { label: "Sales Units", numFmt: UNITS_FMT, right: true },
+    { label: "Effective Units", numFmt: VALUE_FMT, right: true, width: 14 },
+    { label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 15 },
+  ];
+  bandHeader(sheet, details.line, details.period, "Total — live SUMIFS over the Data sheet", columns.length);
+
+  const areaRange = rawCol(dataSheetName, "Area Code");
+  const productRange = rawCol(dataSheetName, "Product Code");
+  const inClosingRange = rawCol(dataSheetName, "In Closing");
+  const qtyRange = rawCol(dataSheetName, "Qty");
+  const effRange = rawCol(dataSheetName, "Effective Units");
+  const valueRange = rawCol(dataSheetName, "Sales Value");
+
+  // Only rows that feed the closing are summed here (In Closing = "Yes"), so this grid is
+  // directly comparable to the Closing Matrix. The excluded buckets are reconciled below.
+  const cellFor = (sumRange: string, areaCode: string, productCode: string) =>
+    sumifs(sumRange, [
+      [areaRange, areaCode],
+      [productRange, productCode],
+      [inClosingRange, "Yes"],
+    ]);
+
+  // Grid keys: every (area, product) pair that actually has a row, ordered region → area → product.
+  const included = details.rows.filter((row) => row.includedInClosing);
+  const keys = new Map<string, ClosingDetailRow>();
+  for (const row of included) {
+    const key = `${row.areaCode}||${row.productCode}`;
+    if (!keys.has(key)) keys.set(key, row);
+  }
+  const ordered = [...keys.values()].sort(
+    (left, right) =>
+      left.regionCode.localeCompare(right.regionCode) ||
+      left.areaName.localeCompare(right.areaName) ||
+      left.productName.localeCompare(right.productName),
+  );
+
+  const sumOf = (predicate: (row: ClosingDetailRow) => boolean, pick: (row: ClosingDetailRow) => number) =>
+    details.rows.reduce((total, row) => (predicate(row) ? total + pick(row) : total), 0);
+
+  const rows: CellValue[][] = ordered.map((row) => {
+    const match = (candidate: ClosingDetailRow) =>
+      candidate.includedInClosing &&
+      candidate.areaCode === row.areaCode &&
+      candidate.productCode === row.productCode;
+    return [
+      row.regionCode,
+      row.regionName,
+      row.areaCode,
+      row.areaName,
+      row.productCode,
+      row.productName,
+      row.factoryPrice,
+      F(cellFor(qtyRange, row.areaCode, row.productCode), sumOf(match, (r) => r.qty)),
+      F(cellFor(effRange, row.areaCode, row.productCode), sumOf(match, (r) => r.effectiveUnits)),
+      F(cellFor(valueRange, row.areaCode, row.productCode), sumOf(match, (r) => r.salesValue)),
+    ];
+  });
+
+  const totalsRow: CellValue[] = [
+    "TOTAL",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    F(sumifs(qtyRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.units),
+    F(sumifs(effRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.effectiveUnits),
+    F(sumifs(valueRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.salesValue),
+  ];
+
+  const row = writeTable(sheet, 4, {
+    columns,
+    note:
+      "Every number above is =SUMIFS over the Data sheet, filtered to In Closing = \"Yes\". " +
+      "Change a Qty on Data and this grid recalculates.",
+    rows,
+    title: "Area × Product (matrix-eligible rows only)",
+    totals: totalsRow,
+  });
+
+  // ── Reconciliation: does the grid tie to the published headline, and what was dropped? ──
+  const recon = details.reconciliation;
+  // writeTable returns (note row + 2) when it wrote both a totals row and a note, so the TOTAL
+  // row sits 3 above the returned cursor. With no data rows it writes neither — fall back to a
+  // plain number so the reconciliation never points at an empty cell.
+  const totalValueRef: CellValue = rows.length > 0
+    ? F(`${columnLetter(10)}${row - 3}`, recon.includedInClosing.salesValue)
+    : recon.includedInClosing.salesValue;
+  const differenceRef: CellValue = !headline
+    ? null
+    : rows.length > 0
+      ? F(
+        `${columnLetter(10)}${row - 3}-${headline.salesValue}`,
+        recon.includedInClosing.salesValue - headline.salesValue,
+      )
+      : recon.includedInClosing.salesValue - headline.salesValue;
+
+  const headlineRows: CellValue[][] = headline
+    ? [
+      [
+        "Closing Matrix grand total",
+        headline.salesUnits,
+        headline.salesValue,
+        "Published headline for this line and month.",
+      ],
+      [
+        "Difference",
+        recon.includedInClosing.units - headline.salesUnits,
+        differenceRef,
+        "Zero means the audit sheet reproduces the headline exactly.",
+      ],
+    ]
+    : [];
+
+  writeTable(sheet, row, {
+    columns: [
+      { label: "Reconciliation", width: 42 },
+      { label: "Units", numFmt: UNITS_FMT, right: true },
+      { label: "Value (EGP)", numFmt: VALUE_FMT, right: true, width: 16 },
+      { label: "Note", width: 52 },
+    ],
+    note: headline
+      ? "The closing matrix counts every imported row except Direct orders and confidential products. " +
+        "The two Excluded lines below are real sales the headline does not include; the Data-quality " +
+        "lines ARE included in the headline but point at rows worth fixing."
+      : "This export is scoped to your access and has no company-wide Closing Matrix to compare " +
+        "against — the totals below are internal to this Data sheet only.",
+    rows: [
+      [
+        headline ? "Data sheet — rows feeding the closing" : "Data sheet — rows feeding the closing (in scope)",
+        recon.includedInClosing.units,
+        totalValueRef,
+        headline ? "Should equal the Closing Matrix grand total." : "Sum of every in-scope row below marked \"In Closing\".",
+      ],
+      ...headlineRows,
+      [
+        "Excluded — Direct orders",
+        recon.excludedDirect.units,
+        recon.excludedDirect.salesValue,
+        "Reported separately by the Direct rows on the Closing Matrix.",
+      ],
+      [
+        "Excluded — confidential products",
+        recon.excludedConfidential.units,
+        recon.excludedConfidential.salesValue,
+        "LA003 / LA004 / SS001 — on the Confidential sheet when revealed.",
+      ],
+      [
+        "Data quality — no client code",
+        recon.missingClientCode.units,
+        recon.missingClientCode.salesValue,
+        "Counted in the headline, but the sale cannot be traced to an outlet.",
+      ],
+      [
+        "Data quality — brick not in Phoenix master",
+        recon.unmappedBricks.units,
+        recon.unmappedBricks.salesValue,
+        "These bricks roll up to no area; fix the master or the sheet.",
+      ],
+      [
+        "Data quality — sheet area ≠ brick's area",
+        recon.areaMismatches.units,
+        recon.areaMismatches.salesValue,
+        "Counted under the brick's Phoenix area, not the area printed on the sheet.",
+      ],
+    ],
+    title: "Reconciliation",
+  });
 }
 
 // ── Generic table writer ─────────────────────────────────────────────────────
@@ -600,20 +934,93 @@ function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparis
   });
 }
 
-export async function buildMonthlyClosingWorkbook(matrix: MonthlyClosingMatrix, comparison: MonthlyClosingComparison): Promise<Buffer> {
+export async function buildMonthlyClosingWorkbook(
+  matrix: MonthlyClosingMatrix,
+  comparison: MonthlyClosingComparison,
+  details?: ClosingDetailsResult,
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
   workbook.created = new Date();
 
-  // Plan the Data layout first (for the formula ranges), write the visible report sheets,
-  // then add the hidden Data sheet LAST so a report sheet stays the active tab.
+  // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
+  // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
   writeMatrixSheet(workbook, matrix, ref);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
   writeGapsSheet(workbook, comparison, ref);
   writeSummarySheet(workbook, comparison, ref);
+
+  // Audit pair. Confidential rows are split onto their own sheet so "Data" + "Total" keep
+  // reconciling to the published headline whether or not they were revealed.
+  if (details) {
+    const visible = details.rows.filter((row) => !row.isConfidential);
+    const confidential = details.rows.filter((row) => row.isConfidential);
+    writeRawDataSheet(
+      workbook,
+      "Data",
+      visible,
+      "Data — every imported invoice line",
+      details.line,
+      details.period,
+    );
+    const headline: ClosingHeadline = {
+      salesUnits: matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+      salesValue: matrix.grandTotal.rowTotal.salesValue,
+    };
+    writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data");
+    if (confidential.length > 0) {
+      writeRawDataSheet(
+        workbook,
+        "Confidential",
+        confidential,
+        "Confidential products — excluded from Data, Total and the Closing Matrix",
+        details.line,
+        details.period,
+      );
+    }
+  }
+
   writeDataSheet(workbook, blocks);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+/**
+ * Details-only export: just "Data" (+ "Total" + "Confidential" when applicable) — no Matrix,
+ * Comparison, Rankings, Gaps, or Summary. For a viewer whose access is scoped to part of the
+ * company (a single line, region, or product allowlist), the full Closing Matrix + distributor
+ * comparison are unscoped, company-wide reads (loadMonthlyClosing / loadMonthlyClosingComparison
+ * have no region/product narrowing) — sending them to a scoped viewer would leak data outside
+ * their access. `loadMonthlyClosingDetails`, by contrast, is already correctly scoped (region,
+ * per-user product allowlist, confidential lock), so this builder is safe for any caller: it can
+ * only ever contain what the viewer was already allowed to see.
+ *
+ * `Total`'s reconciliation section has no company-wide headline to compare against here — it
+ * shows only the totals of the rows in this export (writeTotalSheet(..., headline: null, ...)).
+ */
+export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = systemIdentity.appName;
+  workbook.created = new Date();
+
+  const visible = details.rows.filter((row) => !row.isConfidential);
+  const confidential = details.rows.filter((row) => row.isConfidential);
+
+  writeRawDataSheet(workbook, "Data", visible, "Data — every invoice line in your scope", details.line, details.period);
+  writeTotalSheet(workbook, null, { ...details, rows: visible }, "Data");
+  if (confidential.length > 0) {
+    writeRawDataSheet(
+      workbook,
+      "Confidential",
+      confidential,
+      "Confidential products — excluded from Data and Total",
+      details.line,
+      details.period,
+    );
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
