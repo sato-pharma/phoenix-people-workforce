@@ -8,11 +8,23 @@
 
 import type { CrmMasterColumn } from "@/lib/crm/master";
 
+// Hoisted, reused Intl.DateTimeFormat instances — constructing one is expensive (locale data
+// lookup/compilation), and these functions run per CELL. A large streaming export (the 2026-07-29
+// incident: ~110k Visits rows × several date/datetime columns each) was constructing 400k+ fresh
+// formatters, which alone accounted for several MINUTES of the export's total time — the actual
+// dominant cost, well past the DB-query-latency fixes made alongside it. A formatter is stateless
+// across calls (`.format(date)` takes the instant as an argument), so reusing one is behavior-
+// identical, pure performance.
+const DATE_ONLY_UTC = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" });
+const DATE_CAIRO = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+const TIME_CAIRO = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo" });
+const TIME_UTC = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" });
+
 /** Date only, e.g. "11 Jul 2026" (UTC — a plain calendar date has no time-of-day). */
 export function formatDateOnly(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+  return DATE_ONLY_UTC.format(date);
 }
 
 /** Date + 12-hour time in Cairo, e.g. "11 Jul 2026, 4:59 PM" — for a true UTC instant we recorded
@@ -20,9 +32,7 @@ export function formatDateOnly(value: unknown): string {
 export function formatDateTimeCairo(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo" }).format(date);
-  return `${datePart}, ${timePart}`;
+  return `${DATE_CAIRO.format(date)}, ${TIME_CAIRO.format(date)}`;
 }
 
 /** Vendor timestamps (saveDate / checkDate) are already Cairo wall-clock but stored tagged UTC
@@ -31,9 +41,7 @@ export function formatDateTimeCairo(value: unknown): string {
 export function formatVendorLocal(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
-  return `${datePart}, ${timePart}`;
+  return `${DATE_ONLY_UTC.format(date)}, ${TIME_UTC.format(date)}`;
 }
 
 /** Cell rendering: vendor local datetimes render as their stored Cairo wall-clock; our UTC
@@ -52,7 +60,7 @@ export function renderCell(value: unknown, kind: CrmMasterColumn["kind"]): strin
 export function formatVendorTimeOnly(value: unknown): string {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
+  return TIME_UTC.format(date);
 }
 
 /** Label for a recognition_score value — shared by the on-screen badge and the XLSX export cell. */

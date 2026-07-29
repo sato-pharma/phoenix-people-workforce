@@ -410,7 +410,40 @@ function visitTimeSourceLabel(source: "gps_checkin" | "save_time" | "none"): str
   return source === "gps_checkin" ? "GPS check-in" : source === "save_time" ? "Logged/save" : null;
 }
 
-async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
+/** Columns attachNearestCheckins needs from ireports360_checkins — shared by the per-page fetch
+ * (paginated master view) and the whole-export preload (streaming export; see
+ * preloadCheckinsIndexForExport). */
+const NEAREST_CHECKIN_COLUMNS =
+  "crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at";
+
+/**
+ * Pre-loads EVERY check-in for the export's own date range (or the whole table, if unfiltered) ONCE
+ * and indexes it by agent+contact+day, so attachNearestCheckins never re-queries per page. The
+ * naive per-page approach — filtering by that page's own (often 80-90) agent ids via `.in(...)`
+ * combined with a date range — doesn't hit this table's `(agent_crm_id, check_date)` composite index
+ * cleanly (same query shape the queryCheckins docstring already measured at up to 12.8s for a single
+ * 30-day/112-agent call); multiplied across ~20-100+ export pages that's the several-MINUTE export
+ * duration behind the 2026-07-29 incident (a real-world request that slow gets its connection cut
+ * before the workbook's closing zip bytes are written, producing a corrupted .xlsx). Fetching the
+ * full range ONCE lets queryCheckins use its own efficient no-agent-filter, keyset-by-check_date scan
+ * instead. Checkins are a bounded table (~91k rows total as of 2026-07), so holding the whole result
+ * in memory once is trivial next to the per-cell-styling memory blowup the streaming rewrite already
+ * fixed — an entirely different order of magnitude.
+ */
+async function preloadCheckinsIndexForExport(range: { dateFrom: string | null; dateTo: string | null }): Promise<Map<string, CheckinLite[]>> {
+  try {
+    const data = await queryCheckins<CheckinLite>({
+      dateFrom: range.dateFrom ?? undefined,
+      dateTo: range.dateTo ?? undefined,
+      columns: NEAREST_CHECKIN_COLUMNS,
+    });
+    return indexCheckinsByAgentContactDay(data);
+  } catch {
+    return new Map();
+  }
+}
+
+async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<string, CheckinLite[]>): Promise<void> {
   for (const row of rows) {
     for (const key of CHECKIN_MERGE_KEYS) row[key] = null;
     // Save-tier visit time up front (no check-in correlated yet); upgraded to the GPS tier below
@@ -422,28 +455,30 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
     row.visit_time = saveTier.time;
     row.visit_time_source = visitTimeSourceLabel(saveTier.source);
   }
-  const agentIds = Array.from(
-    new Set(rows.map((r) => r.agent_crm_id).filter((v): v is number => typeof v === "number")),
-  );
-  const days = rows
-    .map((r) => (typeof r.visit_date === "string" ? r.visit_date.slice(0, 10) : null))
-    .filter((v): v is string => Boolean(v));
-  if (agentIds.length === 0 || days.length === 0) return;
-  const from = days.reduce((a, b) => (a < b ? a : b));
-  const to = days.reduce((a, b) => (a > b ? a : b));
 
-  // Full keyset scan via queryCheckins — complete check-in coverage for the page's agents + dates
-  // (no silent 20k cap). Best-effort overlay: any failure leaves the check-in columns null.
-  let data: CheckinLite[];
-  try {
-    data = await queryCheckins<CheckinLite>({
-      agentCrmIds: agentIds,
-      dateFrom: from,
-      dateTo: to,
-      columns: "crm_checkin_id, check_date, agent_crm_id, agent_hr_id, contact_crm_id, contact_name, lat, lon, address, synced_at",
-    });
-  } catch {
-    return;
+  let index: Map<string, CheckinLite[]>;
+  if (preloadedIndex) {
+    index = preloadedIndex;
+  } else {
+    // No pre-built index (the paginated master table view — one page at a time, so the per-call
+    // cost this function's own docstring warns about never gets multiplied): fall back to the
+    // original per-call scoped fetch.
+    const agentIds = Array.from(
+      new Set(rows.map((r) => r.agent_crm_id).filter((v): v is number => typeof v === "number")),
+    );
+    const days = rows
+      .map((r) => (typeof r.visit_date === "string" ? r.visit_date.slice(0, 10) : null))
+      .filter((v): v is string => Boolean(v));
+    if (agentIds.length === 0 || days.length === 0) return;
+    const from = days.reduce((a, b) => (a < b ? a : b));
+    const to = days.reduce((a, b) => (a > b ? a : b));
+    let data: CheckinLite[];
+    try {
+      data = await queryCheckins<CheckinLite>({ agentCrmIds: agentIds, dateFrom: from, dateTo: to, columns: NEAREST_CHECKIN_COLUMNS });
+    } catch {
+      return;
+    }
+    index = indexCheckinsByAgentContactDay(data);
   }
 
   // Brick centroids for the GPS-geography columns below (cached; empty list = columns stay null).
@@ -451,7 +486,6 @@ async function attachNearestCheckins(rows: CrmMasterRow[]): Promise<void> {
 
   // Same agent + CONTACT + day matcher as the Visits Report (crm/checkin-match.ts), tie broken by
   // crm_save_date — so a given visit resolves to the SAME check-in on both surfaces.
-  const index = indexCheckinsByAgentContactDay(data);
   for (const row of rows) {
     const best = pickCheckinForVisit(
       {
@@ -1251,6 +1285,7 @@ type DeriveResources = {
   agentMeta?: Map<string, AgentMeta>;
   brickMapping?: Map<number, BrickMapping>;
   triples?: Map<number, { third: string; unspecified: boolean }>;
+  checkinsIndex?: Map<string, CheckinLite[]>;
 };
 
 /** Merge derived columns onto rows (nearest check-in for visit datasets, triple flag for double
@@ -1266,7 +1301,7 @@ async function attachDerived(
   // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
   // (attachBrickMapping below), so this is deliberately check-ins-only.
   if (dataset === "checkins") await attachGeoBrick(rows);
-  if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows);
+  if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows, resources?.checkinsIndex);
   // The two No-Check-in tabs never correlate a check-in (they're defined by NOT having one), so seed
   // the Logged/save visit time directly — otherwise the Visit Time column renders blank for them.
   else if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") attachSaveTierVisitTime(rows);
@@ -1527,13 +1562,19 @@ export async function* streamCrmMasterExportPages(
   }
 
   // DB-backed datasets — walk every page (NO cap) and derive per page. Pre-load the derive overlays
-  // ONCE so a large export doesn't re-query the roster / brick map / triple self-join per page.
-  const [agentMeta, brickMapping] = await Promise.all([
+  // ONCE so a large export doesn't re-query the roster / brick map / triple self-join / check-ins
+  // per page — the check-ins preload in particular is what fixes the 2026-07-29 incident (see
+  // preloadCheckinsIndexForExport): re-querying it once per page multiplied a query shape that
+  // doesn't hit this table's index well into a multi-minute export that got its connection cut
+  // before finishing, producing a corrupted .xlsx.
+  const needsCheckins = dataset === "visits" || dataset === "double_visits";
+  const [agentMeta, brickMapping, checkinsIndex] = await Promise.all([
     loadAgentMetaByHrId(),
     isVisitDataset(dataset) ? loadBrickMappingByRegionId() : Promise.resolve(new Map<number, BrickMapping>()),
+    needsCheckins ? preloadCheckinsIndexForExport(range) : Promise.resolve(new Map<string, CheckinLite[]>()),
   ]);
   const triples = dataset === "double_visits" ? (await computeTriplesInRange(range)).byVisitId : undefined;
-  const resources: DeriveResources = { agentMeta, brickMapping, triples };
+  const resources: DeriveResources = { agentMeta, brickMapping, triples, checkinsIndex };
 
   const supabase = getSupabaseAdmin();
   const table =
@@ -1547,7 +1588,13 @@ export async function* streamCrmMasterExportPages(
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
   const excludedInList = await getEffectiveExcludedInList();
 
-  const PAGE = 1000;
+  // 5000, not the master view's usual 1000: fewer outer round trips for the same total row count.
+  // Confirmed empirically (2026-07-29 incident) that PostgREST honours a 5000-row .range() with no
+  // silent cap — `.range(0, 4999)` returns exactly 5000 rows on this project, not truncated to some
+  // smaller default. The real fix for that incident's multi-minute export duration was eliminating
+  // the per-page check-ins correlation query (see preloadCheckinsIndexForExport above) — this PAGE
+  // size increase is a smaller, secondary win on top of that for the base fetch itself.
+  const PAGE = 5000;
   // Pure runaway stop (NOT a product cap): far above the whole mirror (~108k visits today), so every
   // real filtered export streams in full. Guards against an infinite loop if a query somehow returned
   // full pages forever.
