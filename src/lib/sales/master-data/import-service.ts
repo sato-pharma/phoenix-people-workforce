@@ -172,7 +172,8 @@ function matchAllowedValue(column: MasterColumn, value: string): string | undefi
 }
 
 async function preloadKeyed(table: string, keyColumn: string) {
-  const rows = await selectAllRows(table);
+  // Ordered by the key we are about to index on — unordered paging silently drops rows (see list.ts).
+  const rows = await selectAllRows(table, keyColumn);
   const map = new Map<string, Record<string, unknown>>();
   for (const row of rows) {
     const key = normalizeCode(row[keyColumn]);

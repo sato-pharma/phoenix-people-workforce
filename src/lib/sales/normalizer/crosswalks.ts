@@ -48,20 +48,40 @@ export function buildAliasIndex<T>(
 
 // Read EVERY active row of an alias / crosswalk table, paging past PostgREST's 1000-row default cap.
 // Without this, large tables (territory aliases + customer_map have thousands of rows) silently
-// truncate to the first 1000, so freshly-saved mappings (highest ids, past row 1000) would never load
-// and the rows they fix would re-appear as "needs mapping" on re-analyze. Tolerant of a missing table
-// (returns what it gathered) so pre-migration setups still work.
+// truncate to the first 1000, so freshly-saved mappings would never load and the rows they fix would
+// re-appear as "needs mapping" on re-analyze. Tolerant of a missing table (returns what it gathered)
+// so pre-migration setups still work.
+//
+// KEYSET, NOT OFFSET. This paged with `.range(from, from+999)` and NO `.order()`. Postgres gives no
+// stable row order without ORDER BY, so consecutive pages could return the same row twice and skip
+// others entirely — at random, differently on every run. The June 2026 import lost 1,262 of 49,713
+// customer→brick mappings that way (2.5%), scattered evenly across the id range, every one of them
+// active with a valid brick. The sales landed unmapped and the cause looked like missing data.
+//
+// Two separate faults, both fixed by keyset:
+//   1. no ORDER BY  -> arbitrary page boundaries, silent row loss;
+//   2. OFFSET even when ordered -> the import WRITES to source_of_sales_customer_map while this
+//      reads it, and every insert below the cursor shifts later rows across a page boundary.
+// Ordering by the table's bigint primary key and seeking past the last id read is immune to both.
 async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: string): Promise<Array<Record<string, unknown>>> {
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
-  let from = 0;
+  // `id` is needed as the cursor; every table read here has a bigint identity PK.
+  const select = columns.split(",").map((c) => c.trim()).includes("id") ? columns : `id,${columns}`;
+  let cursor: number | null = null;
   for (;;) {
-    const result = await supabase.from(table).select(columns).eq("active", true).range(from, from + pageSize - 1);
+    let query = supabase.from(table).select(select).eq("active", true)
+      .order("id", { ascending: true }).limit(pageSize);
+    if (cursor !== null) query = query.gt("id", cursor);
+    const result = await query;
     if (result.error) break; // tolerate (e.g. table absent); return rows gathered so far
     const page = (result.data ?? []) as unknown as Array<Record<string, unknown>>;
+    if (page.length === 0) break;
     rows.push(...page);
     if (page.length < pageSize) break;
-    from += pageSize;
+    const last = Number(page[page.length - 1]?.id);
+    if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
+    cursor = last;
   }
   return rows;
 }
