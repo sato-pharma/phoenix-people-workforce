@@ -42,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
+import { draftCaptureConfidence, type RoiConfidenceBand } from "@/lib/marketing-requests/roi-confidence";
 import {
   ROI_ACTUAL_IN_TRACKING_NOTE,
   ROI_FORECAST_COVERAGE_LABEL,
@@ -212,6 +213,12 @@ function egp(value: number) {
     style: "currency",
   }).format(Number.isFinite(value) ? value : 0);
 }
+
+const CAPTURE_BAND_STYLE: Record<RoiConfidenceBand, string> = {
+  high: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  medium: "border-amber-200 bg-amber-50 text-amber-800",
+  low: "border-rose-200 bg-rose-50 text-rose-700",
+};
 
 function fieldNumber(value: string) {
   const parsed = Number(value || 0);
@@ -797,6 +804,27 @@ function MarketingRequestDraftWorkspaceInner() {
         .filter((id) => !deselectedPharmacyIds.includes(id)),
     [pharmacyOptions, deselectedPharmacyIds],
   );
+
+  // Capture quality — the same trust score the ROI tracker shows after submission, computed live
+  // from only what the requester can still change (verified codes, a forecast, a pay date). Shown
+  // on the preview so "is this request even measurable?" is answerable before Save, not months later.
+  const captureConfidence = useMemo(() => {
+    const suspectByCode = new Map(
+      pharmacyOptions.map((option) => [
+        option.distributorCodeId,
+        option.referenceStatus === "not_found" || option.referenceStatus === "ambiguous",
+      ]),
+    );
+    return draftCaptureConfidence({
+      pharmacySuspect: selectedPharmacyIds.map((id) => suspectByCode.get(id) ?? false),
+      forecastUnits: productLines.reduce(
+        (sum, line) => sum + (line.productId ? fieldNumber(line.quantity) : 0),
+        0,
+      ),
+      productCount: productLines.filter((line) => line.productId).length,
+      hasPayDate: Boolean(payDate),
+    });
+  }, [pharmacyOptions, selectedPharmacyIds, productLines, payDate]);
 
   const customerNameMap = useMemo(
     () =>
@@ -1919,6 +1947,24 @@ function MarketingRequestDraftWorkspaceInner() {
                 style={{ width: `${coveragePct}%` }}
               />
             </div>
+          </div>
+
+          {/* Capture quality — trust in the FUTURE ROI, scored from what the requester can still fix. */}
+          <div className={`mt-3 rounded-sm border px-3 py-2 ${CAPTURE_BAND_STYLE[captureConfidence.band]}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.10em]">
+                Capture Quality
+              </span>
+              <span className="text-[13px] font-black">
+                {captureConfidence.score}
+                <span className="text-[10px] font-bold">/100</span>
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] font-medium leading-snug">
+              {captureConfidence.weakest
+                ? captureConfidence.weakest.detail
+                : "Everything needed to measure this request is captured."}
+            </p>
           </div>
 
           {/* Product ROI table --- Desktop */}
