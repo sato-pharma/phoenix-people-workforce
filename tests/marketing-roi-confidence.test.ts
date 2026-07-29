@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { roiConfidenceOf } from "../src/lib/marketing-requests/roi-confidence.ts";
+import { draftCaptureConfidence, roiConfidenceOf } from "../src/lib/marketing-requests/roi-confidence.ts";
 import type { RoiTrackerRow } from "../src/lib/marketing-requests/roi-tracker-service.ts";
 
 // The confidence score answers "can I trust this number", NOT "did the campaign do well". Those
@@ -105,6 +105,67 @@ function testBandThresholds() {
   );
 }
 
+// ── Draft capture score (shown while the request is still being written) ─────────────────────
+
+function testDraftScoresOnlyWhatTheRequesterControls() {
+  // A complete draft must be able to reach 100. Sales coverage is unknowable at submission and is
+  // not the requester's fault; if it counted, every request would be permanently capped and people
+  // would learn to ignore the number entirely.
+  const clean = draftCaptureConfidence({
+    forecastUnits: 500,
+    hasPayDate: true,
+    pharmacySuspect: [false, false],
+    productCount: 1,
+  });
+  assert.equal(clean.score, 100, "a fully-formed draft must be able to reach 100");
+  assert.equal(clean.band, "high");
+  assert.equal(clean.weakest, null);
+}
+
+function testDraftPharmacyCodesDominate() {
+  const half = draftCaptureConfidence({
+    forecastUnits: 500,
+    hasPayDate: true,
+    pharmacySuspect: [true, false],
+    productCount: 1,
+  });
+  assert.equal(half.score, 70, "half the codes unverified costs half of the 60-point weight");
+  assert.equal(half.weakest?.key, "pharmacy_codes");
+  assert.match(half.weakest?.detail ?? "", /will not count/i, "must say what the consequence is");
+}
+
+function testDraftMissingPiecesEachCost() {
+  const noPayDate = draftCaptureConfidence({ forecastUnits: 500, hasPayDate: false, pharmacySuspect: [false], productCount: 1 });
+  assert.equal(noPayDate.score, 80, "no pay date costs the 20-point window weight");
+
+  const noForecast = draftCaptureConfidence({ forecastUnits: 0, hasPayDate: true, pharmacySuspect: [false], productCount: 1 });
+  assert.equal(noForecast.score, 90, "a product with no forecast costs half the 20-point weight");
+
+  const empty = draftCaptureConfidence({ forecastUnits: 0, hasPayDate: false, pharmacySuspect: [], productCount: 0 });
+  assert.equal(empty.score, 0, "an empty draft scores zero");
+  assert.equal(empty.weakest?.key, "pharmacy_codes");
+}
+
+function testDraftMessagesAreNextActions() {
+  // The reason to move this earlier is that it can still be fixed — so every message has to tell
+  // the requester what to DO, not merely what is wrong.
+  const empty = draftCaptureConfidence({ forecastUnits: 0, hasPayDate: false, pharmacySuspect: [], productCount: 0 });
+  const details = empty.factors.map((factor) => factor.detail);
+  assert.ok(details.some((d) => /^Add at least one target pharmacy/.test(d)), "pharmacy message must be an instruction");
+  assert.ok(details.some((d) => /^Set a pay date/.test(d)), "pay-date message must be an instruction");
+  assert.ok(details.some((d) => /^Add at least one promoted product/.test(d)), "product message must be an instruction");
+}
+
+function testBothScorersShareOneVocabulary() {
+  // Two scores that drift apart is the exact failure this module family exists to prevent.
+  const draft = draftCaptureConfidence({ forecastUnits: 500, hasPayDate: true, pharmacySuspect: [false], productCount: 1 });
+  assert.equal(draft.band, "high", "both scorers must use the same band thresholds");
+  for (const factor of draft.factors) {
+    assert.ok(typeof factor.label === "string" && factor.label.length > 0);
+    assert.ok(factor.ratio >= 0 && factor.ratio <= 1, "ratios stay normalised in both scorers");
+  }
+}
+
 export function runMarketingRoiConfidenceTests() {
   testCleanRequestScoresFull();
   testConfidenceIsAboutMeasurementNotPerformance();
@@ -113,4 +174,9 @@ export function runMarketingRoiConfidenceTests() {
   testUnmeasuredWindowLowersConfidence();
   testWeakestIsTheCostliestNotTheLowest();
   testBandThresholds();
+  testDraftScoresOnlyWhatTheRequesterControls();
+  testDraftPharmacyCodesDominate();
+  testDraftMissingPiecesEachCost();
+  testDraftMessagesAreNextActions();
+  testBothScorersShareOneVocabulary();
 }

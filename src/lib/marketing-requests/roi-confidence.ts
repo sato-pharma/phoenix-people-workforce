@@ -46,6 +46,87 @@ function bandOf(score: number): RoiConfidenceBand {
   return "low";
 }
 
+/**
+ * The same judgement, applied WHILE the request is still being written.
+ *
+ * Deliberately scores only what the requester can still change. Sales-data coverage is the
+ * heaviest factor after submission, but at submission it is both unknowable and not their fault —
+ * a campaign paid next month cannot possibly have covering sales today. Including it would show
+ * every single request a permanent 70/100, and a score that never reaches 100 no matter what you
+ * do is a score people learn to ignore. That would be worse than showing nothing.
+ *
+ * So the weights are renormalised over the three things a requester controls before pressing
+ * submit. Pharmacy codes still dominate, for the same measured reason as the post-submission
+ * score: a code the reference database cannot find has no sales ~21x more often.
+ *
+ * Shares RoiConfidence/RoiConfidenceFactor with roiConfidenceOf on purpose. One vocabulary, one
+ * band scale, one idea of "weakest" — a second, subtly different score would be exactly the
+ * disagreement this module family exists to prevent.
+ */
+const DRAFT_WEIGHTS = { pharmacy_codes: 60, products: 20, window: 20 } as const;
+
+export type DraftCaptureInput = {
+  /** One entry per chosen pharmacy; true when its code is unverified (`not_found`/`ambiguous`). */
+  pharmacySuspect: boolean[];
+  /** Total forecast units across the promoted products. */
+  forecastUnits: number;
+  productCount: number;
+  /** A pay date has been chosen — without one there is no measurement window at all. */
+  hasPayDate: boolean;
+};
+
+export function draftCaptureConfidence(input: DraftCaptureInput): RoiConfidence {
+  const pharmacyCount = input.pharmacySuspect.length;
+  const suspect = input.pharmacySuspect.filter(Boolean).length;
+  const codeRatio = pharmacyCount === 0 ? 0 : (pharmacyCount - suspect) / pharmacyCount;
+  const productRatio = input.productCount === 0 ? 0 : input.forecastUnits > 0 ? 1 : 0.5;
+
+  // Every message is phrased as the next action, not as a complaint. The whole point of moving
+  // this earlier is that the requester can still fix it in seconds.
+  const factors: RoiConfidenceFactor[] = [
+    {
+      detail:
+        pharmacyCount === 0
+          ? "Add at least one target pharmacy — without one, no sale can ever be matched to this request."
+          : suspect > 0
+            ? `${suspect} of ${pharmacyCount} pharmacy code(s) are unverified. Sales at those pharmacies will not count towards this request.`
+            : `All ${pharmacyCount} pharmacy code(s) are verified.`,
+      key: "pharmacy_codes",
+      label: "Pharmacy codes",
+      ratio: codeRatio,
+      weight: DRAFT_WEIGHTS.pharmacy_codes,
+    },
+    {
+      detail: input.hasPayDate
+        ? "Pay date set — the measurement window has a start."
+        : "Set a pay date so the measurement window has a start.",
+      key: "targets",
+      label: "Pay date",
+      ratio: input.hasPayDate ? 1 : 0,
+      weight: DRAFT_WEIGHTS.window,
+    },
+    {
+      detail:
+        input.productCount === 0
+          ? "Add at least one promoted product."
+          : input.forecastUnits > 0
+            ? `${input.productCount} product(s), ${Math.round(input.forecastUnits)} units forecast.`
+            : "Add a forecast quantity — without one there is nothing to measure the result against.",
+      key: "products",
+      label: "Products & forecast",
+      ratio: productRatio,
+      weight: DRAFT_WEIGHTS.products,
+    },
+  ];
+
+  const score = Math.round(factors.reduce((sum, factor) => sum + factor.ratio * factor.weight, 0));
+  const weakest = factors
+    .filter((factor) => factor.ratio < 1)
+    .sort((left, right) => (right.weight * (1 - right.ratio)) - (left.weight * (1 - left.ratio)))[0] ?? null;
+
+  return { band: bandOf(score), factors, score, weakest };
+}
+
 export function roiConfidenceOf(row: RoiTrackerRow): RoiConfidence {
   const pharmacyCount = row.pharmacies.length;
   const verified = pharmacyCount - row.suspectPharmacyCount;
