@@ -41,6 +41,7 @@ import type {
   MarketingRequestCreateDraft,
   MarketingRequestDraftDetail,
   MarketingRequestDraftPharmacyInput,
+  MarketingRequestPharmacyOption,
   MarketingRequestDraftProductInput,
   MarketingRequestPharmacy,
   MarketingRequestProduct,
@@ -456,6 +457,14 @@ export type MarketingRequestDraftWorkspace = {
   customers: MarketingCustomer[];
   distributors: MarketingDistributor[];
   drafts: MarketingRequest[];
+  /**
+   * Selectable target pharmacies keyed by customer id.
+   *
+   * Without this the form had nothing to offer, so every Phoenix request was saved with zero
+   * target pharmacies — and a request with no targets can never attribute a sale, making its ROI
+   * permanently zero regardless of how the campaign actually performed.
+   */
+  pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
@@ -3781,14 +3790,20 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, returnedResult, inApprovalResult] = await Promise.all([
+  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, pharmaciesResult, distributorCodesResult, returnedResult, inApprovalResult] = await Promise.all([
     supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
     supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
     supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
     supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true").order("display_name"),
+    // Also carries the pharmacy detail now, not just customer_id: the request form has to let the
+    // requester CHOOSE which pharmacies a campaign targets. Until it could, every Phoenix request
+    // was saved with no targets at all — and a request with no target pharmacies can never
+    // attribute a single sale, so its ROI would read zero forever no matter how well it performed.
+    // A customer has at most 8 linked pharmacies in production (median 1-3), so this is a handful
+    // of extra rows, not a second data set.
     supabase
       .from("marketing_customer_pharmacies")
-      .select("customer_id")
+      .select("customer_id, distributor_code_id, pharmacy_id")
       .or("active.is.null,active.eq.true")
       .in("validation_status", ["system_validated", "sfe_validated"]),
     supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(100),
@@ -3798,6 +3813,12 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .in("status", approvedMarketingRequestStatuses)
       .order("pay_date", { ascending: false, nullsFirst: false })
       .limit(100),
+    // Display data for the target-pharmacy picker. Both tables are small reference sets.
+    supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code"),
+    supabase
+      .from("marketing_pharmacy_distributor_codes")
+      .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
+      .or("active.is.null,active.eq.true"),
     supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(100),
     supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(200),
   ]);
@@ -3924,6 +3945,44 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const validatedCustomerIds = new Set(
     ((validatedLinksResult.data ?? []) as Array<{ customer_id: string }>).map((row) => row.customer_id),
   );
+
+  // Target-pharmacy options, grouped by customer, so the form can offer exactly the pharmacies
+  // that belong to the customer being requested for. In production a customer has 1-8 of them,
+  // which is why this is a short explicit list rather than a search over the 45k-row master.
+  if (pharmaciesResult.error) throw pharmaciesResult.error;
+  if (distributorCodesResult.error) throw distributorCodesResult.error;
+  const pharmacyNameById = new Map(
+    ((pharmaciesResult.data ?? []) as Array<{ id: string; display_name: string | null; pharmacy_code: string | null }>)
+      .map((row) => [row.id, { code: row.pharmacy_code ?? "", name: row.display_name ?? "" }] as const),
+  );
+  const distributorNameById = new Map(
+    ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map((row) => [Number(row.id), row.display_name]),
+  );
+  const codeById = new Map(
+    ((distributorCodesResult.data ?? []) as Array<{
+      id: string; pharmacy_id: string; distributor_id: number | string;
+      distributor_pharmacy_code: string | null; reference_status: MarketingPharmacyCodeReferenceStatus | null;
+    }>).map((row) => [row.id, row] as const),
+  );
+
+  const pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]> = {};
+  for (const link of (validatedLinksResult.data ?? []) as Array<{
+    customer_id: string; distributor_code_id: string; pharmacy_id: string;
+  }>) {
+    const code = codeById.get(link.distributor_code_id);
+    if (!code) continue;
+    const pharmacy = pharmacyNameById.get(link.pharmacy_id);
+    const list = pharmaciesByCustomer[link.customer_id] ?? [];
+    list.push({
+      distributorCodeId: link.distributor_code_id,
+      distributorName: distributorNameById.get(Number(code.distributor_id)) ?? "Unknown distributor",
+      pharmacyCode: code.distributor_pharmacy_code ?? "",
+      pharmacyName: pharmacy?.name || pharmacy?.code || "Unnamed pharmacy",
+      // Surfaced so the form can warn BEFORE submission rather than the server refusing after.
+      referenceStatus: code.reference_status ?? "pending",
+    });
+    pharmaciesByCustomer[link.customer_id] = list;
+  }
   const allCustomerRows = (customersResult.data ?? []) as MarketingCustomerDbRow[];
   const allCustomers = allCustomerRows.map(mapCustomer);
   const customers = allCustomerRows
@@ -3940,6 +3999,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     }),
     canCreateDraft: productScope.canCreateDraft,
     customers,
+    pharmaciesByCustomer,
     distributors: ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor),
     drafts,
     inApproval,

@@ -269,6 +269,17 @@ export type MarketingPharmacyDistributorCode = {
   validationNotes: string | null;
 };
 
+/** One selectable target pharmacy, already resolved to what the picker needs to show. */
+export type MarketingRequestPharmacyOption = {
+  /** The value the form submits — attribution is keyed on this, not on the pharmacy id. */
+  distributorCodeId: string;
+  pharmacyName: string;
+  pharmacyCode: string;
+  distributorName: string;
+  /** Lets the form warn about an unverified code before submitting, not after being refused. */
+  referenceStatus: MarketingPharmacyCodeReferenceStatus;
+};
+
 export type MarketingCustomerPharmacy = {
   active: boolean;
   createdAt: string;
