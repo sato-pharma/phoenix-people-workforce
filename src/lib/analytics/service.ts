@@ -349,8 +349,6 @@ export type ClosingFilters = {
   families?: string[];
   employeeHrId?: string | null;
   territory?: string | null;
-  batchStatus?: string[];
-  batchId?: string | null;
   /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
   canViewHeadOffice?: boolean;
 };

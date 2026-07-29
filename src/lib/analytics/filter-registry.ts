@@ -21,8 +21,7 @@ export type FilterSource =
   | "areas"           // loaded from analytics.dim_areas
   | "employees"       // loaded from employee directory
   | "territories"     // distinct territories from closing_fact
-  | "customers"        // loaded from analytics.sos_by_customer (period-scoped)
-  | "batchStatuses";   // static: staged/approved/rejected (closing batches only)
+  | "customers";       // loaded from analytics.sos_by_customer (period-scoped)
 
 export type FilterDescriptor = {
   key: string;
