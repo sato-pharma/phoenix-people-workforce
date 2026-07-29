@@ -78,6 +78,7 @@ type NearMissScanRow = {
 async function loadNearMisses(params: {
   factoryByCode: Map<string, number>;
   nameBySosCode: Map<string, string>;
+  siblingCodes: string[];
   supabase: ReturnType<typeof getSupabaseAdmin>;
   targetCodes: string[];
   targetCodeSet: Set<string>;
@@ -87,7 +88,7 @@ async function loadNearMisses(params: {
   windowPeriods: string[];
 }): Promise<RoiNearMissReport | null> {
   const {
-    factoryByCode, nameBySosCode, supabase, targetCodes, targetCodeSet,
+    factoryByCode, nameBySosCode, siblingCodes, supabase, targetCodes, targetCodeSet,
     targetDistributorCodes, targetProductCodes, validatedBatchIds, windowPeriods,
   } = params;
 
@@ -231,7 +232,30 @@ async function loadNearMisses(params: {
     }
   }
 
-  const groups = (["outside_window", "other_product", "other_distributor", "unvalidated_batch"] as RoiNearMissKind[])
+  // (5) sibling_customer_code — right product + distributor + period, but sold to ANOTHER pharmacy of
+  // the SAME customer that this request did not target. The lead: the customer bought it, just at a
+  // branch/code you left out — add that code to the request's targets. Bounded to the customer's own
+  // codes (1-8 in production), so it stays a lead rather than "every pharmacy that bought the product".
+  if (siblingCodes.length > 0 && targetDistributorCodes.length > 0 && targetProductCodes.size > 0) {
+    const rows = await scan((batchIds) =>
+      supabase
+        .from("source_of_sales_import_rows")
+        .select("distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
+        .in("client_code", siblingCodes)
+        .in("distributor_code", targetDistributorCodes)
+        .in("product_code", Array.from(targetProductCodes))
+        .in("invoice_period", windowPeriods)
+        .in("batch_id", batchIds)
+        .eq("validation_state", "valid")
+        .limit(NEAR_MISS_ROW_CAP + 1),
+    );
+    for (const row of rows) {
+      if (targetCodeSet.has(normalizePharmacyCode(row.client_code))) continue; // a real target, not a sibling
+      push("sibling_customer_code", row);
+    }
+  }
+
+  const groups = (["outside_window", "other_product", "other_distributor", "unvalidated_batch", "sibling_customer_code"] as RoiNearMissKind[])
     .map((kind) => {
       const rows = rowsByKind.get(kind) ?? [];
       return {
@@ -532,9 +556,44 @@ export async function explainMarketingRequestRoi(
   // key and holds the other three fixed, so a hit names precisely which key to investigate.
   // Wrapped so a scan failure degrades to `nearMisses: null` rather than taking down the whole
   // explanation — this is a lead generator, never a dependency of the verdict.
+  // Sibling pharmacy codes — validated pharmacies of THIS request's customer that the request did
+  // NOT target. Best-effort: a failure here must never sink the whole explain, so it degrades to
+  // "no siblings" rather than throwing. One customer has 1-8 codes in production, so this is tiny.
+  let siblingCodes: string[] = [];
+  try {
+    const reqRow = await supabase.from("marketing_requests").select("customer_id").eq("id", cleanId).maybeSingle();
+    const customerId = (reqRow.data as { customer_id?: string | null } | null)?.customer_id ?? null;
+    if (!reqRow.error && customerId) {
+      const links = await supabase
+        .from("marketing_customer_pharmacies")
+        .select("distributor_code_id")
+        .eq("customer_id", customerId)
+        .or("active.is.null,active.eq.true");
+      const custCodeIds = uniqueStrings(
+        ((links.data ?? []) as Array<{ distributor_code_id: string }>).map((row) => row.distributor_code_id),
+      );
+      if (!links.error && custCodeIds.length > 0) {
+        const codesData = await supabase
+          .from("marketing_pharmacy_distributor_codes")
+          .select("normalized_pharmacy_code")
+          .in("id", custCodeIds);
+        if (!codesData.error) {
+          siblingCodes = uniqueStrings(
+            ((codesData.data ?? []) as Array<{ normalized_pharmacy_code?: string | null }>).map(
+              (row) => row.normalized_pharmacy_code ?? null,
+            ),
+          ).filter((code) => !targetCodeSet.has(code));
+        }
+      }
+    }
+  } catch (error) {
+    logRoiServiceFailure("explainMarketingRequestRoi:siblingCodes", error, { role: access.role });
+  }
+
   const nearMisses = await loadNearMisses({
     factoryByCode: sosFactoryByCode,
     nameBySosCode,
+    siblingCodes,
     supabase,
     targetCodes,
     targetCodeSet,

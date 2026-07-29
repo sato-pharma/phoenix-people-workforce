@@ -81,13 +81,16 @@ export type RoiNearMissKind =
   /** Right pharmacy, product and period — booked under a distributor the request does not target. */
   | "other_distributor"
   /** Every key matches, but the batch carrying it has not been validated yet. */
-  | "unvalidated_batch";
+  | "unvalidated_batch"
+  /** Right product, distributor and period — sold to ANOTHER pharmacy of the same customer the request did not target. */
+  | "sibling_customer_code";
 
 export const ROI_NEAR_MISS_LABEL: Record<RoiNearMissKind, string> = {
   other_distributor: "Sold through a distributor this request does not target",
   other_product: "The pharmacy bought other products, not the promoted ones",
   outside_window: "Sold to the right pharmacy, outside the measurement window",
   unvalidated_batch: "Matches on every key, but its sales batch is not validated yet",
+  sibling_customer_code: "Sold to another branch of the same customer that this request did not target",
 };
 
 /** What a reader should actually do about each kind — a lead is only useful if it is actionable. */
@@ -96,6 +99,7 @@ export const ROI_NEAR_MISS_ACTION: Record<RoiNearMissKind, string> = {
   other_product: "Check whether the promoted product list matches what this pharmacy actually stocks.",
   outside_window: "Check the pay date and duration — the window may have opened late or closed early.",
   unvalidated_batch: "Validate the Source-of-Sales batch; these sales will then attribute normally.",
+  sibling_customer_code: "Add that pharmacy code to the request — it is the same customer, just a branch you left out.",
 };
 
 export type RoiNearMissRow = {
