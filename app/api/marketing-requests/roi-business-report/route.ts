@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
-import { getMarketingRoiBusinessOptions, getMarketingRoiBusinessRows } from "@/lib/marketing-requests/roi-business-report-service";
+import { getMarketingRoiBusinessOptions, getMarketingRoiBusinessRows, getMarketingRoiCohorts } from "@/lib/marketing-requests/roi-business-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +59,10 @@ export async function GET(request: Request) {
     if (!groupBy) {
       const options = await getMarketingRoiBusinessOptions(access);
       return NextResponse.json(options);
+    }
+
+    if (groupBy === "cohorts") {
+      return NextResponse.json(await getMarketingRoiCohorts(access));
     }
 
     if (groupBy !== "requester" && groupBy !== "customer") {

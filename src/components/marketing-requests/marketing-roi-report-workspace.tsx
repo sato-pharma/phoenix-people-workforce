@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, ClipboardList, ExternalLink, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, ClipboardList, ExternalLink, TrendingUp, Users } from "lucide-react";
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -10,6 +10,8 @@ import {
   ROI_NEXT_ACTION_LABEL,
   SIMPLE_ROI_STATUS_LABEL,
   type RoiBusinessRow,
+  type RoiCohortRow,
+  type RoiCohorts,
   type SimpleRoiStatus,
 } from "@/lib/marketing-requests/roi-business-report";
 import type { MarketingRoiExplain } from "@/lib/marketing-requests/roi-explain";
@@ -283,7 +285,80 @@ function SummaryStat({ label, value, hint }: { label: string; value: string; hin
   );
 }
 
-type Tab = "requester" | "customer";
+type Tab = "requester" | "customer" | "performance";
+
+function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityLabel: string; title: string; hint: string; rows: RoiCohortRow[]; showForecast?: boolean }) {
+  return (
+    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="border-b border-[#E2E8F0] px-4 py-2.5">
+        <h3 className="text-[13px] font-black text-[#0F172A]">{title}</h3>
+        <p className="text-[11px] font-medium text-[#64748B]">{hint}</p>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-4 py-6 text-center text-[12px] font-medium text-[#94A3B8]">No data.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-[12px]">
+            <thead className="bg-[#F8FAFC] text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
+              <tr>
+                <th className="px-3 py-2">{entityLabel}</th>
+                <th className="px-3 py-2 text-right">Reqs</th>
+                <th className="px-3 py-2 text-right">Cost</th>
+                <th className="px-3 py-2 text-right">Actual</th>
+                <th className="px-3 py-2 text-right">Coverage</th>
+                <th className="px-3 py-2 text-right">Efficiency</th>
+                {showForecast ? <th className="px-3 py-2 text-right">Forecast acc.</th> : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#F1F5F9]">
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td className="px-3 py-2 font-bold text-[#0F172A]">{row.label}</td>
+                  <td className="px-3 py-2 text-right text-[#475569]">{row.requestCount}</td>
+                  <td className="px-3 py-2 text-right text-[#475569]">{money(row.totalCost)}</td>
+                  <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{money(row.totalActual)}</td>
+                  <td className="px-3 py-2 text-right text-[#475569]">{percent(row.coverageRatio)}</td>
+                  <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{row.efficiencyRatio.toFixed(2)}×</td>
+                  {showForecast ? (
+                    <td className="px-3 py-2 text-right text-[#475569]">
+                      {row.forecastAccuracyRatio === null ? "—" : percent(row.forecastAccuracyRatio)}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PerformanceCohorts({ cohorts, loading, error }: { cohorts: RoiCohorts | null; loading: boolean; error: string | null }) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-8 text-[13px] font-medium text-[#64748B] shadow-sm">
+        <LoadingSpinner /> Building performance cohorts…
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{error}</div>;
+  }
+  if (!cohorts) return null;
+  return (
+    <div className="space-y-4">
+      <p className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 py-2 text-[11px] font-medium text-[#64748B]">
+        ROI-weighted across every visible request. <b>Efficiency</b> = EGP returned per EGP spent · <b>Coverage</b> = actual ÷ required · <b>Forecast acc.</b> = actual ÷ forecast. Approver-role totals can exceed the whole — a request with several approvers counts under each.
+      </p>
+      <CohortTable entityLabel="Request type" title="By request type" hint="Which activity types actually return." rows={cohorts.byRequestType} showForecast />
+      <CohortTable entityLabel="Requester" title="By requester" hint="Realized return and forecast accuracy per requester." rows={cohorts.byRequester} showForecast />
+      <CohortTable entityLabel="Approver role" title="By approver role" hint="Do MM-approved campaigns beat DM-approved?" rows={cohorts.byApproverRole} showForecast />
+      <CohortTable entityLabel="Line" title="Efficiency league — by line" hint="Ranked by EGP returned per EGP spent." rows={cohorts.byLine} />
+      <CohortTable entityLabel="Region" title="Efficiency league — by region" hint="Ranked by EGP returned per EGP spent." rows={cohorts.byRegion} />
+    </div>
+  );
+}
 
 export function MarketingRoiReportWorkspace() {
   const [tab, setTab] = React.useState<Tab>("requester");
@@ -295,6 +370,9 @@ export function MarketingRoiReportWorkspace() {
   const [rowsLoading, setRowsLoading] = React.useState(false);
   const [rowsError, setRowsError] = React.useState<string | null>(null);
   const [selectedRow, setSelectedRow] = React.useState<RoiBusinessRow | null>(null);
+  const [cohorts, setCohorts] = React.useState<RoiCohorts | null>(null);
+  const [cohortsLoading, setCohortsLoading] = React.useState(false);
+  const [cohortsError, setCohortsError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     void (async () => {
@@ -321,11 +399,24 @@ export function MarketingRoiReportWorkspace() {
     setRowsLoading(false);
   }, []);
 
+  const loadCohorts = React.useCallback(async () => {
+    setCohortsLoading(true);
+    setCohortsError(null);
+    const { data, error } = await fetchJson<RoiCohorts>("/api/marketing-requests/roi-business-report?groupBy=cohorts");
+    if (error) setCohortsError(error);
+    setCohorts(data);
+    setCohortsLoading(false);
+  }, []);
+
   function switchTab(nextTab: Tab) {
     setTab(nextTab);
     setRows([]);
     setSelectedRow(null);
     setRowsError(null);
+    if (nextTab === "performance") {
+      if (!cohorts && !cohortsLoading) void loadCohorts();
+      return;
+    }
     void loadRows(nextTab, nextTab === "requester" ? selectedRequesterHrId : selectedCustomerName);
   }
 
@@ -354,8 +445,22 @@ export function MarketingRoiReportWorkspace() {
           >
             <ClipboardList className="h-3.5 w-3.5" /> By Customer
           </button>
+          <button
+            type="button"
+            onClick={() => switchTab("performance")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
+              tab === "performance" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:bg-[#F8FAFC]",
+            )}
+          >
+            <TrendingUp className="h-3.5 w-3.5" /> Performance
+          </button>
         </div>
 
+        {tab === "performance" ? (
+          <PerformanceCohorts cohorts={cohorts} loading={cohortsLoading} error={cohortsError} />
+        ) : (
+          <>
         {/* Selector */}
         <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
           {tab === "requester" ? (
@@ -425,6 +530,8 @@ export function MarketingRoiReportWorkspace() {
         </section>
 
         {selectedRow ? <RequestDetailPanel row={selectedRow} /> : null}
+          </>
+        )}
       </div>
     </WorkspaceErrorBoundary>
   );
