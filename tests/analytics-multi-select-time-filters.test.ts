@@ -130,7 +130,19 @@ export function runAnalyticsMultiSelectTimeFiltersTests() {
   assert.match(service, /export type ClosingFilters = \{\s*\n\s*period\?: string\[\]/, "ClosingFilters.period must be string[]");
   assert.match(service, /export type WeeklyFilters = \{\s*\n\s*weekStart\?: string\[\]/, "WeeklyFilters.weekStart must be string[]");
   assert.match(service, /year\?: number\[\]/, "WeeklyFilters.year must be number[]");
-  assert.ok(!/p_period:/.test(service), "no RPC call may still send the old scalar p_period param");
+  // p_period (scalar) is intentionally still used by the phx_monthly_achievement call inside
+  // loadClosingByEmployeeUncached (rep-level achievement, sourced from the seat-model Targets
+  // engine since 2026-07-29) — that RPC is a seat-occupancy snapshot "as of" one period's end,
+  // not a range/multi-select query, so it has no array shape to migrate to. Every OTHER call
+  // site must still have moved to the array param; only that one call site is allowed to keep
+  // the old-looking scalar key.
+  for (const match of service.matchAll(/p_period:/g)) {
+    const context = service.slice(Math.max(0, match.index - 400), match.index);
+    assert.ok(
+      /phx_monthly_achievement/.test(context),
+      "no RPC call other than phx_monthly_achievement (a single-period snapshot function with no range query shape) may send the old scalar p_period param",
+    );
+  }
   assert.ok(!/p_channel:/.test(service), "no RPC call may still send the old scalar p_channel param");
   assert.ok(!/p_week_start:/.test(service), "no RPC call may still send the old scalar p_week_start param");
   assert.ok(service.includes("p_periods:"), "RPC calls must send the new array param p_periods");

@@ -428,6 +428,7 @@ import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independ
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
+import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
 import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
 import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
@@ -930,6 +931,7 @@ await runTest("analytics filter independence (no cross-dimension leakage)", runA
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
+await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
 await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
 await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
