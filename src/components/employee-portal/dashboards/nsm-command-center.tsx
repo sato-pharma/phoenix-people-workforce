@@ -36,8 +36,12 @@ import {
   type ActionStripItem,
   type DashboardLink,
 } from "@/components/employee-portal/portal-command-center";
+import { Suspense } from "react";
+
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import type { AccessContext } from "@/lib/auth/permissions";
 
 type NsmBoard = NonNullable<PortalHomeSnapshot["nsmBoard"]>;
 type CrmData = NsmBoard["crm"];
@@ -282,7 +286,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 
 /* ── NSM command center ────────────────────────────────────────────── */
 
-export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
@@ -318,6 +322,12 @@ export function NsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <CrmBoard crm={nsmBoard?.crm ?? null} />
 
       <ActionStrip items={ACTIONS} />
+
+      {access ? (
+        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
+          <LineSalesPacingSection access={access} />
+        </Suspense>
+      ) : null}
 
       <DoubleVisitFocusSection focus={dvFocus} />
     </div>

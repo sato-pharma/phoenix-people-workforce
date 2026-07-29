@@ -6,7 +6,11 @@ import {
 } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { isRestrictedProductCode } from "@/lib/sales/access-scope";
+import {
+  canonicalizeRegionName,
+  isRestrictedProductCode,
+  resolveSalesAccessScope,
+} from "@/lib/sales/access-scope";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
 import {
   loadMonthlyClosing,
@@ -23,9 +27,15 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // managers and product managers. The viewer NEVER picks a line — it is resolved
 // from their HR_ID. Two scoping tiers:
 //
-//  • territory  — District / Regional / National Sales Manager: their whole line.
+//  • territory  — District / Regional Manager: their line, narrowed to their own
+//                 region (they only see their scope). National Sales Manager is
+//                 line-scoped and sees the whole line.
 //  • product    — Product / Group Product Manager: their line, filtered down to
 //                 ONLY the products they own (weekly product-scope sheet).
+//
+// Region narrowing for DM/RM comes from the shared sales access-scope engine
+// (resolveSalesAccessScope) so there is one source of truth for "who sees which
+// region", matching the analytics dashboards.
 //
 // Visibility is gated by `monthly_closing_publications`: a month appears here
 // only after the admin publishes that (line, period). Restricted products
@@ -61,6 +71,13 @@ export type PortalClosingScope = {
   line: string | null;
   /** Allowed product codes for product-scoped roles; null means "the whole line". */
   productCodes: Set<string> | null;
+  /**
+   * Canonical region names the viewer may see (from resolveSalesAccessScope). A set narrows the
+   * matrix to those regions (District/Regional Manager); null means every region (National Sales
+   * Manager, company roles, or a viewer whose own region could not be resolved — fail-open to the
+   * whole line, never a blank sheet).
+   */
+  regionNames: Set<string> | null;
 };
 
 /** Resolve the viewer's line from the employee directory (any role). */
@@ -80,7 +97,16 @@ async function resolveEmployeeLineName(access: AccessContext): Promise<string | 
 export async function resolvePortalClosingScope(
   access: AccessContext,
 ): Promise<PortalClosingScope> {
-  const line = await resolveEmployeeLineName(access);
+  // "Everyone sees his scope only": the shared sales access-scope engine is the single source of
+  // truth for which regions a viewer may see. District/Regional Managers come back region-bound
+  // (a set = their region); National Sales Managers are line-scoped and company roles unrestricted
+  // (null = the whole line). A region-scoped viewer whose own region can't be resolved also comes
+  // back null there — fail-open to the whole line rather than showing a blank sheet.
+  const [line, salesScope] = await Promise.all([
+    resolveEmployeeLineName(access),
+    resolveSalesAccessScope(access),
+  ]);
+  const regionNames = salesScope.allowedRegionNames;
 
   if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
     const hrKey = canonicalHrIdKey(
@@ -88,11 +114,12 @@ export async function resolvePortalClosingScope(
     );
     const productCodes = await getWeeklyProductScopeCodes(hrKey);
     // No explicit assignment → fall back to showing their full line (null = whole line, no column filter).
-    return { line, productCodes: productCodes.size > 0 ? productCodes : null };
+    return { line, productCodes: productCodes.size > 0 ? productCodes : null, regionNames };
   }
 
-  // Territory roles (DM / RM / NSM) see the whole line.
-  return { line, productCodes: null };
+  // Territory roles: DM/RM are narrowed to their own region (regionNames set by the scope engine);
+  // NSM is line-scoped so regionNames is null ⇒ the whole line.
+  return { line, productCodes: null, regionNames };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -202,6 +229,50 @@ export function stripRestrictedColumns(matrix: MonthlyClosingMatrix): MonthlyClo
   };
 }
 
+/**
+ * Narrow a closing matrix to the SoS regions whose CANONICAL name is in `names`, recomputing the
+ * grand total from the surviving regions and dropping the national-direct / company totals a
+ * region-scoped viewer must not see. Matches by canonical region NAME because the sales access-scope
+ * engine resolves a viewer's regions by name (resolveSalesAccessScope.allowedRegionNames, already
+ * canonicalized). Pure — no IO.
+ */
+export function scopeMatrixToRegionNames(
+  matrix: MonthlyClosingMatrix,
+  names: Set<string>,
+): MonthlyClosingMatrix {
+  const regions = matrix.regions.filter((region) => names.has(canonicalizeRegionName(region.regionName)));
+  const columnCount = matrix.columns.length;
+  const grandCells = Array.from({ length: columnCount }, (_, index) =>
+    sumCells(
+      regions
+        .map((region) => region.subtotal.cells[index])
+        .filter((cell): cell is MonthlyClosingCell => Boolean(cell)),
+    ),
+  );
+  const grandTotal: MonthlyClosingGrandTotalRow = {
+    kind: "grandTotal",
+    cells: grandCells,
+    rowTotal: sumCells(grandCells),
+  };
+  return { ...matrix, regions, grandTotal, directNational: null, companyTotal: null };
+}
+
+/**
+ * Apply the viewer's region scope to a matrix, failing OPEN. A region-bound viewer (DM/RM) is
+ * narrowed to their region; but if their region name maps to no region in this matrix — a data gap,
+ * e.g. a Regional Manager whose region is the aggregate "Alexandria + Delta" rather than a single SoS
+ * region — fall back to the un-narrowed matrix rather than showing a blank sheet. The line filter
+ * still applies upstream, so this only ever broadens WITHIN the viewer's own line, never across lines.
+ */
+export function applyRegionScope(
+  matrix: MonthlyClosingMatrix,
+  regionNames: Set<string> | null,
+): MonthlyClosingMatrix {
+  if (!regionNames) return matrix;
+  const narrowed = scopeMatrixToRegionNames(matrix, regionNames);
+  return narrowed.regions.length > 0 ? narrowed : matrix;
+}
+
 export type PortalClosingResult = {
   matrix: MonthlyClosingMatrix | null;
   line: string | null;
@@ -253,7 +324,8 @@ export async function loadPortalMonthlyClosing(input: {
   // Always strip confidential products first; territory roles (productCodes === null) would
   // otherwise see the raw matrix including LA003 / LA004.
   const safe = stripRestrictedColumns(locked);
-  const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const matrix = applyRegionScope(productScoped, scope.regionNames);
 
   return {
     matrix,
@@ -290,7 +362,8 @@ export async function loadPortalClosingTrend(input: {
     periods.map(async (period) => {
       const raw = await loadMonthlyClosing({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
-      const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+      const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+      const matrix = applyRegionScope(productScoped, scope.regionNames);
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),
@@ -359,7 +432,8 @@ export async function loadPortalLiveMonthly(input: {
       : availablePeriods[0];
 
   const safe = stripRestrictedColumns(raw);
-  const matrix = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
+  const matrix = applyRegionScope(productScoped, scope.regionNames);
 
   return {
     matrix,

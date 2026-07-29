@@ -11,15 +11,19 @@ import {
   egp,
 } from "@/components/employee-portal/portal-command-center";
 import { InsightPreviewPanel } from "@/components/employee-portal/dashboards/insight-preview-panel";
+import { Suspense } from "react";
+
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import type { AccessContext } from "@/lib/auth/permissions";
 
 function monthLabel(ym: string) {
   const [y, m] = ym.split("-");
   return new Date(Number(y), Number(m) - 1).toLocaleString("en-US", { month: "short", year: "numeric" });
 }
 
-export function RmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, plansAwaitingManagerApproval, dvFocus } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -81,6 +85,12 @@ export function RmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) 
       </div>
 
       <InsightPreviewPanel note="Regional coverage and coaching recommendations are coming soon." />
+
+      {access ? (
+        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
+          <LineSalesPacingSection access={access} />
+        </Suspense>
+      ) : null}
 
       <DoubleVisitFocusSection focus={dvFocus} />
 
