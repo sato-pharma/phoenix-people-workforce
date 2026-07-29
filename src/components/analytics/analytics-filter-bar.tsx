@@ -41,7 +41,6 @@ function optionsFor(
 ): MultiSelectFilterOption[] {
   switch (descriptor.source) {
     case "static":
-    case "batchStatuses":
       return (descriptor.staticOptions ?? []).map((o) => ({ code: o.value, label: o.label }));
     case "periods":
       return dimensions.periods.map((p) => ({ code: p.period, label: p.periodLabel || p.period }));

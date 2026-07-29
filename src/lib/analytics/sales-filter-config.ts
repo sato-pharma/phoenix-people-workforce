@@ -174,20 +174,6 @@ export const CUSTOMER_FILTER: FilterDescriptor = {
   pipeline: "sos",
 };
 
-// ── Batch (closing only) ─────────────────────────────────────────────────────
-// NOTE: no Batch Status filter by design. The analytics.closing_fact view is hard-filtered to
-// approved batches (WHERE b.status = 'approved'), so Staged/Rejected options would always return
-// zero rows. Closing analytics reflects APPROVED closings only.
-
-export const BATCH_ID_FILTER: FilterDescriptor = {
-  key: "batchId",
-  label: "Batch",
-  type: "text-search",
-  source: "static",
-  placeholder: "Batch UUID",
-  pipeline: "closing",
-};
-
 // ── Pre-built sets per dashboard ──────────────────────────────────────────────
 
 export const SOS_FILTERS: FilterDescriptor[] = [
@@ -227,7 +213,6 @@ export const CLOSING_FILTERS: FilterDescriptor[] = [
   FAMILY_FILTER,
   EMPLOYEE_FILTER,
   TERRITORY_FILTER,
-  BATCH_ID_FILTER,
 ];
 
 export const WEEKLY_FILTERS: FilterDescriptor[] = [

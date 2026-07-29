@@ -46,8 +46,6 @@ async function ByLineContent({
     families:     Array.isArray(filters.families)          ? filters.families      : [],
     employeeHrId: typeof filters.employeeHrId === "string" ? filters.employeeHrId : null,
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
-    batchStatus:  Array.isArray(filters.batchStatus)        ? filters.batchStatus  : [],
-    batchId:      typeof filters.batchId      === "string" ? filters.batchId      : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
   };
   const scoped = scopeAnalyticsFilters(closingFilters, scope);

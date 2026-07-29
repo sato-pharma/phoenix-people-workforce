@@ -268,7 +268,10 @@ export function SalesQueue({ initialData, initialError }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const canUpload = Boolean(line && selectedFile && !isUploading);
+  // Sales Queue uploads are retired at the UI level (2026-07-29): Monthly Closing now reads Source of
+  // Sales, so keep the primary upload button disabled and treat this page as a view-only history. The
+  // upload endpoint itself is deliberately left intact — it still backs the Reconciliation dashboard.
+  const canUpload = false;
   const isUploadFailure = uploadResult?.success === false;
   const failureReasons = useMemo(() => uploadResult?.details?.topFailureReasons ?? [], [uploadResult]);
   const invalidRows = useMemo(() => uploadResult?.details?.invalidRows ?? [], [uploadResult]);
@@ -416,6 +419,17 @@ export function SalesQueue({ initialData, initialError }: Props) {
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
+      <AdminCallout tone="warning">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <p className="font-semibold">Sales Queue uploads have been retired</p>
+          <p className="mt-1 leading-6">
+            Monthly Closing rep achievement now reads live Source of Sales data, not sheets uploaded here,
+            so the upload form here is disabled. Existing sheets below stay viewable for reference. To bring
+            in sales, use the Source of Sales importer.
+          </p>
+        </div>
+      </AdminCallout>
       <input
         accept=".xlsx,.xls"
         className="hidden"
