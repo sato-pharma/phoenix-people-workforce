@@ -291,6 +291,8 @@ async function loadExistingCustomerKeys(supabase: ReturnType<typeof getSupabaseA
     const result = await supabase
       .from("source_of_sales_customer_map")
       .select("distributor_code,customer_code")
+      // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (result.error) break;
     const page = (result.data ?? []) as Array<{ customer_code?: string; distributor_code?: string }>;
