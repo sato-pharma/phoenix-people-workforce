@@ -15,6 +15,8 @@ import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/li
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "-");
+const bonusCell = (row: DirectOrderApprovalListItem) =>
+  row.dealType === "discount" ? (row.discountPct == null ? "-" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
 const STATUS_TONE: Record<string, string> = {
   pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
@@ -69,7 +71,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
             fields={[
               { label: "Line", value: row.line },
               { label: "Qty", value: row.qty.toLocaleString("en-US") },
-              { label: "Bonus", value: row.bonus.toLocaleString("en-US") },
+              { label: "Bonus", value: bonusCell(row) },
               { label: "Pharmacy", value: row.pharmacyName },
               { label: showWaiting ? "Waiting on" : "Submitted", value: showWaiting ? row.activeStepLabel || "-" : shortDate(row.createdAt) },
             ]}
@@ -103,7 +105,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
                   <div className="text-[11px] text-slate-500">{row.line}</div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{row.bonus.toLocaleString("en-US")}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{bonusCell(row)}</td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
                 <td className="px-3 py-2">
                   <div className="text-slate-800">{row.pharmacyName}</div>
