@@ -10,10 +10,10 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// The workbook is built in memory in one pass; a large table (e.g. the CRM Visits export, capped at
-// CRM_MASTER_EXPORT_MAX_ROWS) can take tens of seconds. Give it explicit headroom instead of the
-// platform default so it isn't killed mid-build. A future streaming/server-side builder would let
-// this drop back down and lift the row cap.
+// The workbook is built in memory in one pass; a large table can take tens of seconds. Give it
+// explicit headroom instead of the platform default so it isn't killed mid-build. (The CRM master
+// export no longer uses this route — it streams its own workbook via /api/admin/crm/master-export —
+// but other admin tables still POST their rendered rows here.)
 export const maxDuration = 300;
 
 // Generic, reusable export endpoint. Any admin table can POST its already-rendered

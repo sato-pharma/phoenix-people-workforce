@@ -4,8 +4,12 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, TriangleAlert, X } from "lucide-react";
 
-import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
-import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import {
+  formatVendorLocal,
+  formatVendorTimeOnly,
+  recognitionLabel,
+  renderCell,
+} from "@/lib/crm/master-cell-format";
 import type {
   CrmMasterAmpm,
   CrmMasterColumn,
@@ -13,89 +17,11 @@ import type {
   CrmMasterMappingStatus,
   CrmMasterRow,
 } from "@/lib/crm/master";
-// Value import from the dependency-free sibling file, NOT master.ts itself — master.ts pulls in
-// the Supabase admin client + employee-directory/PDF chain, which must never reach this "use
-// client" component's bundle (see CRM_MASTER_DATASETS' own doc comment).
-import { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-function datasetLabel(dataset: CrmMasterDataset): string {
-  return CRM_MASTER_DATASETS.find((tab) => tab.id === dataset)?.label ?? dataset;
-}
-
-/** Date only, e.g. "11 Jul 2026" (UTC — a plain calendar date has no time-of-day). */
-function formatDateOnly(value: unknown): string {
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
-}
-
-/** Date + 12-hour time in Cairo, e.g. "11 Jul 2026, 4:59 PM" — for a true UTC instant we recorded
- * (synced_at), converted to Cairo. */
-function formatDateTimeCairo(value: unknown): string {
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "Africa/Cairo" }).format(date);
-  return `${datePart}, ${timePart}`;
-}
-
-/** Vendor timestamps (saveDate / checkDate) are already Cairo wall-clock but stored tagged UTC
- * (iReports360 sends zone-less local times). Render the stored clock reading with NO timezone
- * shift, e.g. "16 Jul 2026, 6:13 PM" — converting would read ~2–3h too late. */
-function formatVendorLocal(value: unknown): string {
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
-  return `${datePart}, ${timePart}`;
-}
-
-/** Cell rendering: vendor local datetimes render as their stored Cairo wall-clock; our UTC
- * datetimes convert to Cairo; dates → date only; everything else raw. The full untouched value
- * is always available in the row's raw JSON. */
-function renderCell(value: unknown, kind: CrmMasterColumn["kind"]): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (kind === "datetime_local") return formatVendorLocal(value);
-  if (kind === "datetime") return formatDateTimeCairo(value);
-  if (kind === "date") return formatDateOnly(value);
-  return String(value);
-}
-
-/** Africa/Cairo, 12-hour clock only (no date) — for the Visit Time cell's inline badge, mirroring
- * the Visits Report's time+source display. Vendor-local, so no timezone shift (see formatVendorLocal). */
-function formatVendorTimeOnly(value: unknown): string {
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: "UTC" }).format(date);
-}
-
-/** Label for a recognition_score value — shared by the on-screen badge and the XLSX export cell. */
-function recognitionLabel(score: unknown): string {
-  if (score === 100) return "100% Recognized";
-  if (score === 75) return "75% Partial";
-  if (score === 50) return "50% Half Data";
-  return "Unrecognized";
-}
-
-/** Export-only rendering: no JSX badge in an XLSX cell, so the visit_time_source is folded into
- * the text as a "(GPS)"/"(Logged)" suffix — otherwise removing the dedicated source column would
- * silently drop that information from exports, not just from the on-screen table. Same idea for
- * recognition_score: the export gets the plain label + what's missing, not a raw 100/75/50/null. */
-function renderExportCell(row: Record<string, unknown>, col: CrmMasterColumn): string {
-  if (col.key === "visit_time") {
-    const value = row[col.key];
-    if (value === null || value === undefined || value === "") return "—";
-    const source = row.visit_time_source;
-    const suffix = source === "GPS check-in" ? " (GPS)" : source === "Logged/save" ? " (Logged)" : "";
-    return `${formatVendorLocal(value)}${suffix}`;
-  }
-  if (col.key === "recognition_score") {
-    const label = recognitionLabel(row[col.key]);
-    const missing = row.recognition_missing;
-    return typeof missing === "string" && missing ? `${label} (missing: ${missing})` : label;
-  }
-  return renderCell(row[col.key], col.kind);
-}
+// renderCell / formatVendorLocal / formatVendorTimeOnly / recognitionLabel — and the export-only
+// renderExportCell — now live in the shared, server-safe @/lib/crm/master-cell-format, so the
+// server-side streaming XLSX export renders every cell exactly as this table does. The four helpers
+// used on screen are imported at the top of this file.
 
 /** The Visit Time cell: date+time on top, a GPS/Logged source badge below — the same visual as
  * the Visits Report's Visit Time column, so the two screens read identically. `source` is the raw
@@ -319,8 +245,12 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
     });
   }
 
-  // Export the FULL filtered result of the current tab (not just the page): fetch every matching
-  // row from the server, render each cell the same way the table does, then build the XLSX.
+  // Export the FULL filtered result of the current tab — every matching row, no cap. A single GET
+  // streams a server-built XLSX straight to a download: the workbook is generated row-by-row on the
+  // server (flat memory, any sheet size), so it can't OOM/time out the way the old path did (it
+  // fetched every row as JSON then POSTed it back to be styled in one in-memory pass, which hung
+  // past ~20k rows and surfaced to the user as "Export failed"). The blob lives only in the user's
+  // own browser, never on the 1Gi server.
   async function handleExport() {
     if (exportBusy || data.totalCount === 0) return;
     setExportBusy(true);
@@ -331,28 +261,32 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       params.delete("page");
       params.delete("pageSize");
       const response = await fetch(`/api/admin/crm/master-export?${params.toString()}`);
-      if (!response.ok) throw new Error(`Export request failed (${response.status})`);
-      const payload = (await response.json()) as { rows: Array<Record<string, unknown>>; truncated: boolean };
-      const columns: ExportColumn[] = data.columns.map((col) => ({ key: col.key, label: col.label }));
-      const rows: ExportRow[] = payload.rows.map((row) => {
-        const out: ExportRow = {};
-        for (const col of data.columns) out[col.key] = renderExportCell(row, col);
-        return out;
-      });
-      await downloadXlsxExport({
-        columns,
-        rows,
-        sheetName: datasetLabel(data.dataset),
-        subtitle: payload.truncated
-          ? `Capped at the first ${CRM_MASTER_EXPORT_MAX_ROWS.toLocaleString()} rows — narrow the date range to export the rest`
-          : undefined,
-        title: `CRM — ${datasetLabel(data.dataset)}`,
-      });
+      if (!response.ok) {
+        // The stream only starts after the server has passed auth + started the query, so a non-ok
+        // response is always a JSON error body here — surface its message, not a bare status.
+        let message = `Export failed (${response.status})`;
+        try {
+          const body = (await response.json()) as { error?: string };
+          if (body?.error) message = body.error;
+        } catch {
+          // non-JSON body — keep the status-based message
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="(.+?)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? `crm-${data.dataset}-export.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("CRM master export failed:", error);
-      setExportError(
-        error instanceof Error ? error.message : "Export failed. Try narrowing the filters and exporting again.",
-      );
+      setExportError(error instanceof Error ? error.message : "Export failed. Try again.");
     } finally {
       setExportBusy(false);
     }

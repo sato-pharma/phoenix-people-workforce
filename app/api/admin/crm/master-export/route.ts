@@ -2,19 +2,38 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
-  getCrmMasterExportRows,
+  crmMasterExportColumns,
+  crmMasterExportLabel,
+  streamCrmMasterExportPages,
   type CrmMasterAmpm,
   type CrmMasterDataset,
+  type CrmMasterFilter,
   type CrmMasterMappingStatus,
 } from "@/lib/crm/master";
+import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// The workbook streams row-by-row (flat memory), but a very large unfiltered export still has to walk
+// every page of the mirror — give it generous headroom so it isn't killed mid-stream.
+export const maxDuration = 300;
 
-// Returns ALL rows for the current CRM master dataset + filters (unpaginated, capped at 50k) so the
-// client can build an XLSX. Super-Admin only, matching the /admin/crm page gate. raw_payload is
-// stripped — the sheet only needs the displayed columns.
+// Streams the CRM master dataset + filters as a premium XLSX download, unpaginated and UNCAPPED, so
+// the export always covers the whole on-screen sheet. Super-Admin only, matching the /admin/crm page
+// gate. Rows are generated + styled on the server one page at a time (see streamCrmMasterExportPages
+// + streamCrmMasterWorkbookResponse), never held in memory all at once — the old path fetched every
+// row as JSON then styled it in a single in-memory pass, which OOM'd/timed out past ~20-50k rows.
+
+function exportFileName(label: string): string {
+  const slug =
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 50) || "export";
+  return `crm-${slug}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+}
+
 export async function GET(request: NextRequest) {
   const access = await resolveAccessContext(request);
   if (!access.loginId && !access.hrId) {
@@ -27,10 +46,9 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const minDurationRaw = params.get("minDuration");
   const minDuration = minDurationRaw != null && Number.isFinite(Number(minDurationRaw)) ? Number(minDurationRaw) : null;
-  // Forward ALL 13 filters the master table supports — previously only 8 were passed, so an export
-  // filtered by Line / Hire-date / Min-duration / Half-days-only silently returned a SUPERSET of the
-  // on-screen rows. getCrmMasterExportRows already honours every one of these.
-  const result = await getCrmMasterExportRows({
+  // Forward ALL 13 filters the master table supports so the export matches the on-screen rows exactly
+  // (Line / Hire-date / Min-duration / Half-days-only were once dropped, silently exporting a superset).
+  const filter: CrmMasterFilter = {
     agentHrId: params.get("agentHrId"),
     ampm: (params.get("ampm") ?? undefined) as CrmMasterAmpm | undefined,
     dataset: (params.get("dataset") ?? undefined) as CrmMasterDataset | undefined,
@@ -44,13 +62,13 @@ export async function GET(request: NextRequest) {
     minDuration,
     search: params.get("search"),
     visitType: params.get("visitType"),
-  });
+  };
 
-  const rows = result.rows.map((row) => {
-    const copy = { ...row } as Record<string, unknown>;
-    delete copy.raw_payload;
-    return copy;
+  const label = crmMasterExportLabel(filter);
+  return streamCrmMasterWorkbookResponse({
+    filename: exportFileName(label),
+    sheetName: label,
+    columns: crmMasterExportColumns(filter),
+    pages: streamCrmMasterExportPages(filter),
   });
-
-  return NextResponse.json({ dataset: result.dataset, rows, truncated: result.truncated });
 }
