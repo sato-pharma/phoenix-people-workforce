@@ -57,6 +57,12 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
+import {
+  describeOverlap,
+  findRequestOverlaps,
+  windowMonths,
+  type OverlapCandidate,
+} from "@/lib/marketing-requests/request-overlap";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -173,6 +179,22 @@ export type MarketingRequestDecisionSummary = {
   requiredRoiValue: number;
   roiDurationMonths: number;
   roiWindow: string | null;
+  /**
+   * Other live requests that would be credited the SAME invoice lines as this one.
+   *
+   * Surfaced to the approver rather than blocked at submission on purpose: overlapping campaigns
+   * are sometimes deliberate, and only a human can tell an intentional double-push from an
+   * accidental double-count. The approver is already the control point and already has
+   * "Return for edit" — this just makes sure they are not approving it blind.
+   */
+  contestedBy: MarketingDecisionOverlap[];
+};
+
+export type MarketingDecisionOverlap = {
+  requestCode: string;
+  status: string;
+  /** One human sentence naming the consequence — never raw ids. */
+  description: string;
 };
 
 type MarketingControlSettingDbRow = {
@@ -1312,6 +1334,28 @@ export function prepareMarketingRequestDraft(params: {
       throw notFoundError("Distributor pharmacy code was not found or is inactive.", "pharmacy_code_not_found");
     }
 
+    // CAPTURE GATE — a pharmacy code the reference database cannot find must not enter a request.
+    //
+    // Attribution matches on exact distributor + pharmacy code + product + period, so a code that
+    // does not exist in the reference data can never attribute a single sale. Measured on
+    // production: a `not_found` code has no sales 27.9% of the time versus 1.3% for a matched one
+    // — roughly 21x worse. Until now this was only LABELLED (the request was marked "pending"
+    // rather than "system_validated") and still allowed through, which is how 122 unusable codes
+    // accumulated in the historical set. By the time anyone notices, the ROI window has closed and
+    // the evidence cannot be reconstructed — so this has to be refused at write time, not reported
+    // at read time.
+    //
+    // Deliberately scoped to `not_found` only. `ambiguous` (a code registered against more than one
+    // distributor) and `pending` (a genuinely new code the matcher has not processed yet) are both
+    // recoverable and still attribute; blocking them would stop legitimate submissions the day a
+    // new pharmacy is added. Those two stay visible as a warning and via the confidence score.
+    if (code.reference_status === "not_found") {
+      throw validationError(
+        `Pharmacy code "${code.distributor_pharmacy_code ?? code.normalized_pharmacy_code ?? code.id}" is not recognised by the reference database, so no sale could ever be matched to it. Correct the code in Customer Validation before submitting.`,
+        "pharmacy_code_not_in_reference",
+      );
+    }
+
     return {
       distributor_code_id: code.id,
       notes: pharmacy.notes,
@@ -2288,6 +2332,10 @@ export async function getMarketingRequestDecisionSummary(
     }));
   const pharmacyCount = ((pharmaciesResult.data ?? []) as Array<{ id: string }>).length;
   const customerName = cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name);
+
+  // Double-count check. Never allowed to break the approval screen: an approver must always be
+  // able to decide, so a failure here degrades to "no overlaps known" rather than a dead page.
+  const contestedBy = await loadMarketingRequestOverlaps(supabase, request).catch(() => [] as MarketingDecisionOverlap[]);
   const requester = employeeRowByHrId(employeeRows).get(normalizeHrId(request.requesterHrId) ?? "");
   const chain: MarketingDecisionChainStep[] = steps
     .filter((step) => !step.isCc)
@@ -2323,7 +2371,101 @@ export async function getMarketingRequestDecisionSummary(
     requiredRoiValue: request.requiredRoiValue,
     roiDurationMonths: request.roiDurationMonths,
     roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
+    contestedBy,
   };
+}
+
+/**
+ * Load the pharmacy/product/window footprint of every other live request and return those that
+ * would be credited the same invoice lines as `request`.
+ *
+ * Bounded deliberately: only requests whose window can possibly touch this one's are considered,
+ * and inert statuses are dropped by findRequestOverlaps. Attribution matches on exact distributor
+ * + pharmacy code + product + period with nothing exclusive about it, so without this check two
+ * campaigns can each report the same sale as their own return.
+ */
+async function loadMarketingRequestOverlaps(
+  supabase: SupabaseClient,
+  request: MarketingRequest,
+): Promise<MarketingDecisionOverlap[]> {
+  const subjectMonths = windowMonths(request.payDate, request.roiDurationMonths);
+  if (subjectMonths.length === 0) return [];
+
+  const [ownPharmacies, ownProducts] = await Promise.all([
+    supabase.from("marketing_request_pharmacies").select("pharmacy_id").eq("request_id", request.id),
+    supabase.from("marketing_request_products").select("product_id").eq("request_id", request.id),
+  ]);
+  if (ownPharmacies.error) throw ownPharmacies.error;
+  if (ownProducts.error) throw ownProducts.error;
+
+  const pharmacyIds = Array.from(
+    new Set(((ownPharmacies.data ?? []) as Array<{ pharmacy_id: string }>).map((row) => String(row.pharmacy_id ?? "").trim()).filter(Boolean)),
+  );
+  const productIds = Array.from(
+    new Set(((ownProducts.data ?? []) as Array<{ product_id: number | string }>).map((row) => Number(row.product_id))),
+  ).filter((id) => Number.isFinite(id));
+  if (pharmacyIds.length === 0 || productIds.length === 0) return [];
+
+  // Only requests sharing at least one pharmacy can contest — that narrows the candidate set to a
+  // handful before any window maths.
+  const sharedPharmacyLinks = await supabase
+    .from("marketing_request_pharmacies")
+    .select("request_id, pharmacy_id")
+    .in("pharmacy_id", pharmacyIds);
+  if (sharedPharmacyLinks.error) throw sharedPharmacyLinks.error;
+
+  const pharmaciesByRequest = new Map<string, string[]>();
+  for (const row of (sharedPharmacyLinks.data ?? []) as Array<{ request_id: string; pharmacy_id: string }>) {
+    if (row.request_id === request.id) continue;
+    const list = pharmaciesByRequest.get(row.request_id) ?? [];
+    list.push(row.pharmacy_id);
+    pharmaciesByRequest.set(row.request_id, list);
+  }
+  const candidateIds = Array.from(pharmaciesByRequest.keys());
+  if (candidateIds.length === 0) return [];
+
+  const [candidateRows, candidateProducts] = await Promise.all([
+    supabase.from("marketing_requests").select("id, request_code, status, pay_date, roi_duration_months").in("id", candidateIds),
+    supabase.from("marketing_request_products").select("request_id, product_id").in("request_id", candidateIds),
+  ]);
+  if (candidateRows.error) throw candidateRows.error;
+  if (candidateProducts.error) throw candidateProducts.error;
+
+  const productsByRequest = new Map<string, number[]>();
+  for (const row of (candidateProducts.data ?? []) as Array<{ request_id: string; product_id: number | string }>) {
+    const list = productsByRequest.get(row.request_id) ?? [];
+    list.push(Number(row.product_id));
+    productsByRequest.set(row.request_id, list);
+  }
+
+  const others: OverlapCandidate[] = ((candidateRows.data ?? []) as Array<{
+    id: string; request_code: string; status: string; pay_date: string | null; roi_duration_months: number | string;
+  }>).map((row) => ({
+    payDate: row.pay_date,
+    pharmacyIds: pharmaciesByRequest.get(row.id) ?? [],
+    productIds: productsByRequest.get(row.id) ?? [],
+    requestCode: row.request_code,
+    requestId: row.id,
+    roiDurationMonths: Number(row.roi_duration_months) || 1,
+    status: row.status,
+  }));
+
+  return findRequestOverlaps(
+    {
+      payDate: request.payDate,
+      pharmacyIds,
+      productIds,
+      requestCode: request.requestCode,
+      requestId: request.id,
+      roiDurationMonths: request.roiDurationMonths,
+      status: request.status,
+    },
+    others,
+  ).map((overlap) => ({
+    description: describeOverlap(overlap),
+    requestCode: overlap.requestCode,
+    status: overlap.status,
+  }));
 }
 
 export async function decideMarketingRequestWorkflow(

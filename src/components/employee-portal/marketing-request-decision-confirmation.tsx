@@ -192,6 +192,31 @@ export function MarketingRequestDecisionConfirmation({
             </>
           ) : null}
 
+          {/*
+            Double-count warning, placed immediately above the decision buttons so it cannot be
+            scrolled past. Deliberately a warning and not a block: overlapping campaigns are
+            sometimes intentional, and only the approver can tell a deliberate double-push from an
+            accidental double-count. "Return for edit" right below is the intended response.
+          */}
+          {summary.contestedBy.length > 0 ? (
+            <div className="mt-6 border border-amber-300 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-900">
+                The same sales would be counted for {summary.contestedBy.length === 1 ? "another request" : `${summary.contestedBy.length} other requests`}
+              </p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {summary.contestedBy.map((overlap) => (
+                  <li className="text-xs text-amber-900" key={overlap.requestCode}>
+                    {overlap.description}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-amber-800">
+                Approve only if this overlap is intended. Otherwise return it for edit so the targets or the
+                measurement window can be separated.
+              </p>
+            </div>
+          ) : null}
+
           <div className="mt-6 border-t border-slate-200 pt-4">
             <p className="text-sm font-medium text-slate-950">Your decision</p>
             <p className="mt-0.5 text-xs text-slate-500">
