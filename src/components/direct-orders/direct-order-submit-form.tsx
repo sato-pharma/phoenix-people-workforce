@@ -15,6 +15,7 @@ import type {
 } from "@/lib/direct-orders/types";
 
 type ProductOption = { productCode: string; productName: string; line: string; factoryPrice: number; publicPrice: number | null };
+type AreaOption = { areaCode: string; areaName: string; regionCode: string };
 type BrickOption = { brickId: string; brickName: string; areaCode: string; regionCode: string };
 type DistributorOption = { distributorCode: string; distributorName: string };
 export type SubmitFormCaps = {
@@ -25,6 +26,7 @@ export type SubmitFormCaps = {
 
 type Props = {
   products: ProductOption[];
+  areas: AreaOption[];
   bricks: BrickOption[];
   distributors: DistributorOption[];
   caps: SubmitFormCaps;
@@ -50,7 +52,7 @@ function inputClass() {
   return "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
 }
 
-export function DirectOrderSubmitForm({ products, bricks, distributors, caps, initialPharmacies, myRequests }: Props) {
+export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, initialPharmacies, myRequests }: Props) {
   const router = useRouter();
   const [pharmacies, setPharmacies] = useState<DirectOrderPharmacy[]>(initialPharmacies);
 
@@ -65,6 +67,7 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
   const [pharmacyMode, setPharmacyMode] = useState<"existing" | "new">(initialPharmacies.length ? "existing" : "new");
   const [pharmacyId, setPharmacyId] = useState(initialPharmacies[0]?.id ?? "");
   const [newName, setNewName] = useState("");
+  const [newAreaCode, setNewAreaCode] = useState("");
   const [newBrickId, setNewBrickId] = useState("");
   const [newDoctor, setNewDoctor] = useState("");
   const [newAddress, setNewAddress] = useState("");
@@ -92,6 +95,10 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
     : dealType === "discount"
       ? computeDiscountSalesValue({ qty: qtyNum, publicPrice: product.publicPrice ?? 0, discountPct: discountNum })
       : computeDirectOrderSalesValue({ qty: qtyNum, factoryPrice: product.factoryPrice });
+  const visibleBricks = useMemo(
+    () => (newAreaCode ? bricks.filter((b) => b.areaCode === newAreaCode) : []),
+    [bricks, newAreaCode],
+  );
   const selectedBrick = bricks.find((b) => b.brickId === newBrickId) ?? null;
 
   function updateDistRow(index: number, patch: Partial<{ distributorCode: string; customerCode: string }>) {
@@ -293,11 +300,31 @@ export function DirectOrderSubmitForm({ products, bricks, distributors, caps, in
             ) : (
               <div className="space-y-2">
                 <input className={inputClass()} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pharmacy name *" />
-                <select className={inputClass()} value={newBrickId} onChange={(e) => setNewBrickId(e.target.value)}>
-                  <option value="">Select brick (sets area/region)…</option>
-                  {bricks.map((b) => (
+                <select
+                  className={inputClass()}
+                  value={newAreaCode}
+                  onChange={(e) => {
+                    setNewAreaCode(e.target.value);
+                    setNewBrickId("");
+                  }}
+                >
+                  <option value="">Select area…</option>
+                  {areas.map((a) => (
+                    <option key={a.areaCode} value={a.areaCode}>
+                      {a.areaName} — {a.areaCode}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={inputClass()}
+                  value={newBrickId}
+                  onChange={(e) => setNewBrickId(e.target.value)}
+                  disabled={!newAreaCode}
+                >
+                  <option value="">{newAreaCode ? "Select brick…" : "Select an area first…"}</option>
+                  {visibleBricks.map((b) => (
                     <option key={b.brickId} value={b.brickId}>
-                      {b.brickName} — {b.areaCode}
+                      {b.brickName}
                     </option>
                   ))}
                 </select>
