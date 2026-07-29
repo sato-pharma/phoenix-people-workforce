@@ -1167,11 +1167,11 @@ export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHome
     case "Marketing Manager":
       return <MarketingManagerCommandCenter snapshot={snapshot} access={access} />;
     case "District Manager":
-      return <DsmCommandCenter snapshot={snapshot} />;
+      return <DsmCommandCenter snapshot={snapshot} access={access} />;
     case "National Sales Manager":
-      return <NsmCommandCenter snapshot={snapshot} />;
+      return <NsmCommandCenter snapshot={snapshot} access={access} />;
     case "Regional Manager":
-      return <RmCommandCenter snapshot={snapshot} />;
+      return <RmCommandCenter snapshot={snapshot} access={access} />;
   }
   if (snapshot.role.toLowerCase() === "medical rep") return <MedicalRepCommandCenter snapshot={snapshot} />;
   return <StandardCommandCenter snapshot={snapshot} />;

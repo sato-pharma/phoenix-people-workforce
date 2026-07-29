@@ -24,8 +24,12 @@ import {
   type DashboardLink,
   type Keycard,
 } from "@/components/employee-portal/portal-command-center";
+import { Suspense } from "react";
+
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
+import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import type { AccessContext } from "@/lib/auth/permissions";
 
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Team Performance" },
@@ -43,7 +47,7 @@ const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
 ];
 
-export function DsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
@@ -80,6 +84,12 @@ export function DsmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <RankingPanel title="My Reps" subtitle="by achievement %" icon={Trophy} rows={dsmTeam?.members ?? []} />
 
       <ActionStrip items={ACTIONS} />
+
+      {access ? (
+        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
+          <LineSalesPacingSection access={access} />
+        </Suspense>
+      ) : null}
 
       <DoubleVisitFocusSection focus={dvFocus} />
     </div>

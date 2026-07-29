@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { scopeMatrixToRegions } from "../src/lib/sales/monthly-closing-portal.ts";
+import {
+  applyRegionScope,
+  scopeMatrixToRegionNames,
+  scopeMatrixToRegions,
+} from "../src/lib/sales/monthly-closing-portal.ts";
 import type {
   MonthlyClosingCell,
   MonthlyClosingMatrix,
@@ -72,4 +76,31 @@ export function runMonthlyClosingRegionScopeTests() {
   const none = scopeMatrixToRegions(buildMatrix(), new Set());
   assert.equal(none.regions.length, 0, "empty allow-set keeps no regions");
   assert.equal(none.grandTotal.cells[0].salesValue, 0, "empty scope => zero grand total");
+
+  // ── Name-based scoping (portal: the sales access-scope engine resolves viewer regions by NAME) ──
+  // Allow tokens are canonical (lower-cased) region names, matched against the matrix's region names.
+  const byName = scopeMatrixToRegionNames(buildMatrix(), new Set(["alex-bhr", "delta (1)"]));
+  assert.deepEqual(byName.regions.map((r) => r.regionName), ["Alex-BHR", "Delta (1)"], "keeps regions matched by canonical name");
+  assert.equal(byName.grandTotal.cells[0].salesValue, 400, "name-scoped grand col0 = AB(100)+D1(300)");
+  assert.equal(byName.directNational, null, "national-direct dropped for name-scoped viewer");
+  assert.equal(byName.companyTotal, null, "company total dropped for name-scoped viewer");
+
+  const single = scopeMatrixToRegionNames(buildMatrix(), new Set(["cairo"]));
+  assert.deepEqual(single.regions.map((r) => r.regionName), ["Cairo"], "canonical 'cairo' matches 'Cairo'");
+
+  // ── Fail-open: a region name that maps to no matrix region (aggregate "Alexandria + Delta" RM) ──
+  // scopeMatrixToRegionNames alone would blank the sheet…
+  const blank = scopeMatrixToRegionNames(buildMatrix(), new Set(["alexandria + delta"]));
+  assert.equal(blank.regions.length, 0, "unmapped aggregate region matches no matrix region");
+  // …but applyRegionScope falls back to the whole line so the viewer never sees a blank sheet.
+  const failOpen = applyRegionScope(buildMatrix(), new Set(["alexandria + delta"]));
+  assert.equal(failOpen.regions.length, 3, "fail-open: unmapped region keeps the whole line");
+  // A null scope (NSM / company) is an explicit whole-line pass-through.
+  assert.equal(applyRegionScope(buildMatrix(), null).regions.length, 3, "null region scope = whole line");
+  // A resolvable region still narrows.
+  assert.deepEqual(
+    applyRegionScope(buildMatrix(), new Set(["cairo"])).regions.map((r) => r.regionName),
+    ["Cairo"],
+    "matched region scope narrows to that region",
+  );
 }

@@ -203,7 +203,7 @@ export async function MmFieldHealthSection({ access }: { access: AccessContext }
 
 /* ── Line Sales Pacing (published monthly closing, confidential-stripped at source) ── */
 
-export async function MmPacingSection({ access }: { access: AccessContext }) {
+export async function LineSalesPacingSection({ access }: { access: AccessContext }) {
   let monthly: Awaited<ReturnType<typeof loadPortalMonthlyClosing>>;
   let trend: Awaited<ReturnType<typeof loadPortalClosingTrend>>;
   try {

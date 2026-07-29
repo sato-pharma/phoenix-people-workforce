@@ -27,7 +27,7 @@ import {
 } from "@/components/employee-portal/portal-command-center";
 import {
   MmFieldHealthSection,
-  MmPacingSection,
+  LineSalesPacingSection,
   MmPeopleSection,
   MmRoiSection,
   MmSectionSkeleton,
@@ -142,7 +142,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
             <MmFieldHealthSection access={access} />
           </Suspense>
           <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
-            <MmPacingSection access={access} />
+            <LineSalesPacingSection access={access} />
           </Suspense>
           <Suspense fallback={<MmSectionSkeleton title="My Line People" />}>
             <MmPeopleSection access={access} />
