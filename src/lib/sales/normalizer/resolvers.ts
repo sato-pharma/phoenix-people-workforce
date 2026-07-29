@@ -77,12 +77,13 @@ export type BrickResolution = { areaCode: string; brickId: string; regionCode: s
 //  1. a direct Phoenix brick id the sheet already carries (most reliable — the sheet says so directly),
 //  2. a territory text (brick name / district / street / governorate) via the territory alias,
 //  3. an area text via the area alias (gives area+region, brick stays empty),
-//  4. a customer code already mapped to a brick — ONLY when the sheet itself gave no usable
-//     brick/territory signal for this row (blank cell, or text not yet a known alias).
-// The sheet's own brick/territory value ALWAYS wins over a previously-stored customer mapping; a
-// stored mapping never silently overrides what the current sheet says. See engine.ts's
-// customerBrickCorrections for the self-heal that keeps the stored mapping in sync when the sheet
-// disagrees with it.
+//  4. a customer code already mapped to a brick — when the sheet gave no BRICK-level signal.
+// The sheet naming a BRICK always wins over a previously-stored customer mapping; a stored mapping
+// never silently overrides what the current sheet says at the same precision. An AREA-only signal
+// is coarser than a customer→brick mapping, so it does NOT win: the stored brick is used when it
+// lies inside that area, and the area is kept when it does not (never move a sale across areas on a
+// stored mapping). See engine.ts's customerBrickCorrections for the self-heal that keeps the stored
+// mapping in sync when the sheet disagrees with it.
 export function resolveBrick(
   input: { brickIdValues?: (string | null | undefined)[]; customerKey?: string | null; customerCanonicalKey?: string | null; territoryValues?: (string | null | undefined)[] },
   maps: Crosswalks,
@@ -96,6 +97,17 @@ export function resolveBrick(
     }
   }
   // 2) territory text -> brick / area (via the territory alias)
+  //
+  // An AREA-only hit is remembered, NOT returned. The sheet naming a brick outranks a stored
+  // customer mapping — but the sheet naming only an AREA does not: the customer map may hold the
+  // exact brick INSIDE that area, and taking the area instead throws that precision away. Returning
+  // here is what put 3,282 of January's rows (1,356 customers) at area level while their exact
+  // brick sat in source_of_sales_customer_map, active and valid — 733 of them the same customers
+  // that failed the same way in June. It also contradicts the standing rule: always map on the
+  // smallest brick available.
+  // First area signal wins, preserving the old column-order behaviour.
+  let areaOnly: NonNullable<BrickResolution> | null = null;
+
   for (const raw of input.territoryValues ?? []) {
     const key = normalizeAliasKey(raw);
     if (!key) continue;
@@ -106,23 +118,41 @@ export function resolveBrick(
         if (b) return { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode, source: "territory" };
       } else if (hit.targetType === "area") {
         const a = maps.areaByCode.get(normalizeCodeKey(hit.targetCode));
-        if (a) return { areaCode: a.areaCode, brickId: "", regionCode: a.regionCode, source: "territory-area" };
+        if (a && !areaOnly) {
+          areaOnly = { areaCode: a.areaCode, brickId: "", regionCode: a.regionCode, source: "territory-area" };
+        }
       }
     }
     // 3) area alias
     const areaHit = maps.areaAliasByKey.get(key);
-    if (areaHit) return { areaCode: normalizeCodeKey(areaHit.areaCode), brickId: "", regionCode: normalizeCodeKey(areaHit.regionCode), source: "area" };
+    if (areaHit && !areaOnly) {
+      areaOnly = {
+        areaCode: normalizeCodeKey(areaHit.areaCode),
+        brickId: "",
+        regionCode: normalizeCodeKey(areaHit.regionCode),
+        source: "area",
+      };
+    }
   }
-  // 4) customer -> brick (fallback only — exact key, then numeric-canonical fallback for leading-zero drift)
+
+  // 4) customer -> brick (exact key, then numeric-canonical fallback for leading-zero drift)
   if (input.customerKey) {
     const brickId = maps.customerBrickByKey.get(input.customerKey)
       ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
     if (brickId && maps.brickById.has(brickId)) {
       const b = maps.brickById.get(brickId)!;
-      return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
+      // Only sharpen WITHIN the area the sheet named. If the stored brick sits in a different area,
+      // the sheet wins and we keep the area — moving a sale across areas on a stored mapping is
+      // exactly the cross-area auto-apply that is never allowed, and it would silently shift a
+      // rep's numbers.
+      if (!areaOnly || areaOnly.areaCode === b.areaCode) {
+        return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
+      }
     }
   }
-  return null;
+
+  // The sheet's area, used only once the customer map had nothing better to offer inside it.
+  return areaOnly;
 }
 
 // Brick id (or area code) -> full hierarchy names. Area/Region are NEVER typed by the user.
