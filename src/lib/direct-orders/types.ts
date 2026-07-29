@@ -169,6 +169,8 @@ export type DirectOrderApprovalListItem = {
   /** The rung currently waiting (empty for terminal requests). */
   activeStepLabel: string;
   activeStepOrder: number | null;
+  /** True when the bonus/discount exceeds its product cap (only the CEO may finalize it). */
+  bonusOverCap: boolean;
 };
 
 /** Everything the detail page needs, including the viewer's allowed actions. */

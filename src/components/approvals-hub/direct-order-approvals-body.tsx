@@ -55,7 +55,14 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
                 <div className="text-[11px] text-slate-500">{row.line}</div>
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{bonusCell(row)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {bonusCell(row)}
+                {row.bonusOverCap ? (
+                  <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
+                    over cap
+                  </span>
+                ) : null}
+              </td>
               <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
               <td className="px-3 py-2">
                 <div className="text-slate-800">{row.pharmacyName}</div>

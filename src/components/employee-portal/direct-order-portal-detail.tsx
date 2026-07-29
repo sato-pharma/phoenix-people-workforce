@@ -251,10 +251,12 @@ export function DirectOrderPortalDetail({
               { label: "Pharmacy address", value: pharmacy?.pharmacyAddress || "-" },
               { label: "Collection date", value: request.collectionDate ?? "-" },
               {
-                label: "Bonus",
+                label: request.dealType === "discount" ? "Discount" : "Bonus",
                 value: (
                   <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                    {request.bonus.toLocaleString("en-US")}
+                    {request.dealType === "discount"
+                      ? `${(request.discountPct ?? 0).toLocaleString("en-US")}%`
+                      : request.bonus.toLocaleString("en-US")}
                     {bonusOverCap ? " - over cap (CEO override)" : ""}
                   </span>
                 ),

@@ -69,10 +69,12 @@ export function DirectOrderRequestDetail({
           <Field label="Pharmacy address" value={pharmacy?.pharmacyAddress || "—"} />
           <Field label="Collection date" value={request.collectionDate ?? "—"} />
           <Field
-            label="Bonus"
+            label={request.dealType === "discount" ? "Discount" : "Bonus"}
             value={
               <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                {request.bonus.toLocaleString("en-US")}
+                {request.dealType === "discount"
+                  ? `${(request.discountPct ?? 0).toLocaleString("en-US")}%`
+                  : request.bonus.toLocaleString("en-US")}
                 {bonusOverCap ? " · over cap (CEO override)" : ""}
               </span>
             }
