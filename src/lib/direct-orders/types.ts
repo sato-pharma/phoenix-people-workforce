@@ -157,6 +157,9 @@ export type DirectOrderApprovalListItem = {
   productName: string;
   qty: number;
   bonus: number;
+  /** 'bonus' → `bonus` is the meaningful number; 'discount' → `discountPct` is. */
+  dealType: DirectOrderDealType;
+  discountPct: number | null;
   salesValue: number;
   pharmacyName: string;
   pharmacyCode: string;

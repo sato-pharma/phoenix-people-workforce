@@ -931,6 +931,8 @@ function toApprovalListItem(
     productName: request.productName,
     qty: request.qty,
     bonus: request.bonus,
+    dealType: request.dealType,
+    discountPct: request.discountPct,
     salesValue: request.salesValue,
     pharmacyName: pharmacy?.pharmacyName ?? "—",
     pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",

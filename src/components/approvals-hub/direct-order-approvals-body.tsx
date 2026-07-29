@@ -4,6 +4,8 @@ import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/li
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
+const bonusCell = (row: DirectOrderApprovalListItem) =>
+  row.dealType === "discount" ? (row.discountPct == null ? "—" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
 function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] }) {
   const tone: Record<string, string> = {
@@ -53,7 +55,7 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
                 <div className="text-[11px] text-slate-500">{row.line}</div>
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{row.bonus.toLocaleString("en-US")}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{bonusCell(row)}</td>
               <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
               <td className="px-3 py-2">
                 <div className="text-slate-800">{row.pharmacyName}</div>
