@@ -141,11 +141,19 @@ export function resolveBrick(
       ?? (input.customerCanonicalKey ? maps.customerBrickByCanonicalKey.get(input.customerCanonicalKey) : undefined);
     if (brickId && maps.brickById.has(brickId)) {
       const b = maps.brickById.get(brickId)!;
-      // Only sharpen WITHIN the area the sheet named. If the stored brick sits in a different area,
-      // the sheet wins and we keep the area — moving a sale across areas on a stored mapping is
-      // exactly the cross-area auto-apply that is never allowed, and it would silently shift a
-      // rep's numbers.
-      if (!areaOnly || areaOnly.areaCode === b.areaCode) {
+      // An owner-verified mapping (confidence=100, set by an explicit owner ruling) is absolute: it
+      // outranks even a sheet AREA that names a DIFFERENT area, moving the sale onto the ruled brick.
+      // This is the ONE exception to the cross-area guard below, and it is deliberately narrow — only
+      // the owner can mint a confidence=100 mapping (algorithmic scores cap at 95).
+      const ownerVerified =
+        (maps.ownerVerifiedCustomerKeys?.has(input.customerKey) ?? false)
+        || (input.customerCanonicalKey ? (maps.ownerVerifiedCustomerKeys?.has(input.customerCanonicalKey) ?? false) : false);
+      // Otherwise only sharpen WITHIN the area the sheet named. If the stored brick sits in a different
+      // area, the sheet wins and we keep the area — moving a sale across areas on an UNVERIFIED stored
+      // mapping is exactly the cross-area auto-apply that is never allowed (it would silently shift a
+      // rep's numbers). Source stays "customer" either way, so engine.ts's self-heal never mistakes an
+      // owner-verified resolution for a fresh sheet signal and overwrites the ruling.
+      if (!areaOnly || areaOnly.areaCode === b.areaCode || ownerVerified) {
         return { areaCode: b.areaCode, brickId, regionCode: b.regionCode, source: "customer" };
       }
     }

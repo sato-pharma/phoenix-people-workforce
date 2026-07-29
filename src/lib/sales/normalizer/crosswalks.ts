@@ -63,7 +63,7 @@ export function buildAliasIndex<T>(
 //   2. OFFSET even when ordered -> the import WRITES to source_of_sales_customer_map while this
 //      reads it, and every insert below the cursor shifts later rows across a page boundary.
 // Ordering by the table's bigint primary key and seeking past the last id read is immune to both.
-async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: string): Promise<Array<Record<string, unknown>>> {
+async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: string, fallbackColumns?: string): Promise<Array<Record<string, unknown>>> {
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
   // `id` is needed as the cursor; every table read here has a bigint identity PK.
@@ -74,7 +74,16 @@ async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: 
       .order("id", { ascending: true }).limit(pageSize);
     if (cursor !== null) query = query.gt("id", cursor);
     const result = await query;
-    if (result.error) break; // tolerate (e.g. table absent); return rows gathered so far
+    if (result.error) {
+      // A first-page error with a provided fallback means an OPTIONAL column is absent (one that only
+      // lands with a later migration). Retry the whole read with the reduced column set instead of
+      // returning nothing: this helper swallows errors, so a single missing column would otherwise
+      // drop EVERY row of a critical crosswalk silently.
+      if (cursor === null && rows.length === 0 && fallbackColumns && fallbackColumns !== columns) {
+        return selectAllActive(supabase, table, fallbackColumns);
+      }
+      break; // tolerate (e.g. table absent); return rows gathered so far
+    }
     const page = (result.data ?? []) as unknown as Array<Record<string, unknown>>;
     if (page.length === 0) break;
     rows.push(...page);
@@ -98,8 +107,9 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
     selectAllActive(supabase, "source_of_sales_territory_aliases", "alias,target_type,target_code"),
     selectAllActive(supabase, "source_of_sales_area_aliases", "alias,area_code,region_code"),
     selectAllActive(supabase, "source_of_sales_region_aliases", "alias,region_code"),
-    // customer→brick crosswalk (added by the normalizer migration; tolerate absence pre-migration)
-    selectAllActive(supabase, "source_of_sales_customer_map", "distributor_code,customer_code,brick_id"),
+    // customer→brick crosswalk (added by the normalizer migration; tolerate absence pre-migration).
+    // confidence lands with the phase-4 migration — fall back to the base columns if it is absent.
+    selectAllActive(supabase, "source_of_sales_customer_map", "distributor_code,customer_code,brick_id,confidence", "distributor_code,customer_code,brick_id"),
   ]);
 
   const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), {
@@ -169,19 +179,28 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
   // Numeric-canonical customer index (collision-safe): tolerates leading-zero / number-vs-text drift.
   const customerBrickByCanonicalKey = new Map<string, string>();
   const customerCanonConflict = new Set<string>();
+  // Owner-verified (confidence=100) customer keys. An explicit owner ruling is absolute: resolveBrick
+  // lets these outrank an area-only sheet signal even ACROSS areas, whereas every other mapping keeps
+  // the same-area guard (#1458). confidence 100 is a deliberate sentinel — algorithmic scores top out
+  // at 95 — so this stays a tiny, owner-curated set. Indexed under both the exact and canonical keys.
+  const ownerVerifiedCustomerKeys = new Set<string>();
   for (const row of custMap) {
     const dist = normalizeCodeKey(row.distributor_code);
     const brick = normalizeCodeKey(row.brick_id);
     if (!brick) continue;
-    customerBrickByKey.set(`${dist} ${normalizeCodeKey(row.customer_code)}`, brick);
+    const ownerVerified = Number(row.confidence) === 100;
+    const exactKey = `${dist} ${normalizeCodeKey(row.customer_code)}`;
+    customerBrickByKey.set(exactKey, brick);
+    if (ownerVerified) ownerVerifiedCustomerKeys.add(exactKey);
     const canon = numericCanonicalKey(row.customer_code);
     if (!canon) continue;
     const ckey = `${dist} ${canon}`;
+    if (ownerVerified) ownerVerifiedCustomerKeys.add(ckey);
     if (customerCanonConflict.has(ckey)) continue;
     const existing = customerBrickByCanonicalKey.get(ckey);
     if (existing === undefined) customerBrickByCanonicalKey.set(ckey, brick);
     else if (existing !== brick) { customerBrickByCanonicalKey.delete(ckey); customerCanonConflict.add(ckey); }
   }
 
-  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
+  return { ambiguousAliasKeys, areaAliasByKey, areaByCode, brickById, customerBrickByKey, customerBrickByCanonicalKey, ownerVerifiedCustomerKeys, productAliasByKey, productByCode, productByName, productByCanonicalCode, regionAliasByKey, regionByCode, territoryAliasByKey };
 }

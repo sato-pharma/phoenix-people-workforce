@@ -42,6 +42,10 @@ export type Crosswalks = {
   // other. Built collision-safe: if two distinct raw codes canonicalize to the same value the entry
   // is dropped, so a fallback never mis-resolves.
   customerBrickByCanonicalKey: Map<string, string>; // `${distributor} ${canonicalCustomerCode}` -> brick id
+  // Customer keys (exact AND numeric-canonical) whose stored mapping is owner-verified (confidence=100).
+  // resolveBrick lets these outrank an area-only sheet signal even across areas — an explicit owner
+  // ruling is absolute. Optional so hand-built test fixtures stay valid; loadCrosswalks always sets it.
+  ownerVerifiedCustomerKeys?: Set<string>;
   productByCanonicalCode: Map<string, string>; // canonicalProductCode -> Phoenix product code
 };
 
