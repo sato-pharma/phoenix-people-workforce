@@ -33,8 +33,16 @@ export function runSosResolveBrickPrecedenceTests() {
       ["B205-4", brick("B205-4", "CA2")],   // a brick in a DIFFERENT area
       ["B114-80", brick("B114-80", "AB5")], // what a territory alias points at
     ]),
-    customerBrickByKey: new Map([["PS 0001506606", "B114-87"]]),
-    customerBrickByCanonicalKey: new Map([["PS 1506606", "B114-87"]]),
+    customerBrickByKey: new Map([
+      ["PS 0001506606", "B114-87"],
+      ["PS OWNER", "B205-4"], // owner-verified customer whose brick sits in a DIFFERENT area (CA2)
+    ]),
+    customerBrickByCanonicalKey: new Map([
+      ["PS 1506606", "B114-87"],
+      ["PS 9999", "B205-4"], // owner-verified reachable via the numeric-canonical key, also cross-area
+    ]),
+    // confidence=100 owner rulings — outrank an area-only sheet signal even across areas.
+    ownerVerifiedCustomerKeys: new Set(["PS OWNER", "PS 9999"]),
     productAliasByKey: new Map(),
     productByCode: new Map(),
     regionAliasByKey: new Map(),
@@ -86,6 +94,33 @@ export function runSosResolveBrickPrecedenceTests() {
   assert.equal(crossArea?.brickId, "", "a stored brick in a different area must NOT be applied");
   assert.equal(crossArea?.areaCode, "AB5", "the sheet's area is kept instead");
   assert.equal(crossArea?.source, "area");
+
+  // ── 3b. OWNER-VERIFIED (confidence=100): the ONE exception — outranks the area across areas ──
+  // Identical shape to the guarded case above, but this customer's mapping is owner-verified, so the
+  // ruling wins and the sale moves onto the owner's brick and its area.
+  const ownerVerified = resolveBrick(
+    { customerKey: "PS OWNER", territoryValues: ["Behira 2"] },
+    maps,
+  );
+  assert.equal(ownerVerified?.brickId, "B205-4", "an owner-verified mapping outranks an area-only signal, even across areas");
+  assert.equal(ownerVerified?.areaCode, "CA2", "and the sale moves to the owner-ruled brick's own area");
+  assert.equal(ownerVerified?.source, "customer", "source stays 'customer' so the self-heal never overwrites the ruling");
+
+  // Owner-verified also fires via the numeric-canonical key.
+  const ownerVerifiedCanonical = resolveBrick(
+    { customerKey: "PS unknown", customerCanonicalKey: "PS 9999", territoryValues: ["Behira 2"] },
+    maps,
+  );
+  assert.equal(ownerVerifiedCanonical?.brickId, "B205-4", "owner-verified override also fires on the canonical key");
+  assert.equal(ownerVerifiedCanonical?.areaCode, "CA2");
+
+  // But an owner-verified mapping still does NOT override a brick the sheet explicitly names.
+  const sheetBrickBeatsOwnerVerified = resolveBrick(
+    { customerKey: "PS OWNER", territoryValues: ["Abu Homs"] },
+    maps,
+  );
+  assert.equal(sheetBrickBeatsOwnerVerified?.brickId, "B114-80", "a sheet-named brick still wins over an owner-verified mapping");
+  assert.equal(sheetBrickBeatsOwnerVerified?.source, "territory");
 
   // ── 4. Behaviour with no area signal is unchanged ────────────────────────────
   const customerOnly = resolveBrick({ customerKey: "PS 0001506606" }, maps);
