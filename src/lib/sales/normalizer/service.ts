@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
+import { logError } from "@/lib/observability/log";
+import { computeBrickCoverage, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
@@ -388,6 +390,47 @@ export async function persistNormalizedBatch(input: {
     if (error) throw error;
   }
 
+  // RECONCILIATION GATE: what we meant to write must equal what is actually there.
+  //
+  // The chunked inserts above throw on error, which catches a failed chunk — but not a chunk that
+  // succeeds while landing fewer rows than it was given (a policy filter, a partial write, a
+  // silently-dropped row). Nothing downstream would notice: the batch records `total_rows` from the
+  // in-memory array, so a short table still reports a full, healthy import. Every sales figure
+  // derived from it would then be quietly low, exactly like the 2026-06 mapping loss.
+  //
+  // Counting is cheap next to the insert we just did, and this is the last moment the intended
+  // number is still known.
+  const { count: persistedRows, error: persistedError } = await supabase
+    .from("source_of_sales_import_rows")
+    .select("id", { count: "exact", head: true })
+    .eq("batch_id", batchId);
+  if (persistedError) throw persistedError;
+  if ((persistedRows ?? 0) !== inserts.length) {
+    // Leave the batch pending + blocked rather than deleting anything: the rows stay on disk for
+    // diagnosis, and a blocked batch cannot be superseded into the live rollups.
+    await supabase
+      .from("source_of_sales_import_batches")
+      .update({
+        status: "blocked",
+        blocking_reasons: [
+          `Row reconciliation failed — ${inserts.length} row(s) sent, ${persistedRows ?? 0} stored. The import was NOT applied.`,
+        ],
+      })
+      .eq("id", batchId);
+    logError("SoS import row reconciliation failed", {
+      labels: {
+        event: "sos_import_row_reconciliation_failed",
+        batchId,
+        distributorCode: input.distributorCode,
+        sentRows: String(inserts.length),
+        storedRows: String(persistedRows ?? 0),
+      },
+    });
+    throw new Error(
+      `Import blocked: ${inserts.length} row(s) were sent but ${persistedRows ?? 0} were stored. Nothing was applied — re-run the upload.`,
+    );
+  }
+
   const summaries = buildNormalizedSummaryRows(rows, batchId);
   for (let i = 0; i < summaries.length; i += 500) {
     const { error } = await supabase.from("source_of_sales_import_summaries").insert(summaries.slice(i, i + 500));
@@ -425,6 +468,33 @@ export async function persistNormalizedBatch(input: {
   // (see engine.ts's customerBrickCorrections) — only after the batch is validated, never on a preview.
   if (input.result.customerBrickCorrections.length > 0) {
     await applyCustomerBrickCorrections(input.result.customerBrickCorrections, { actorLoginId: input.uploadedBy });
+  }
+
+  // Record REAL brick coverage for this batch and warn when it is poor.
+  //
+  // This path wrote no coverage snapshot at all until now — the newest row in the table predated
+  // the June 2026 import entirely — and the metric it would have written (`importable_rows /
+  // total_rows`) is 100% by construction here, since both are set to `rows.length` above. So the
+  // one mechanism that could have caught June's 3,184 brick-less rows was simultaneously not
+  // running and incapable of failing. Best-effort: a coverage record must never fail an import
+  // that already committed successfully.
+  try {
+    const coverage = computeBrickCoverage(rows);
+    await saveBrickCoverageSnapshot({
+      batchId,
+      coverage,
+      details: rows
+        .filter((r) => String(r.brickId ?? "").trim() === "" && !r.isDirect && r.clientCode)
+        .map((r) => ({ address: r.clientAddress ?? "", code: String(r.clientCode), name: r.clientName ?? "" })),
+      distributorCode: input.distributorCode,
+      period,
+      totalRows: rows.length,
+    });
+  } catch (error) {
+    logError("Failed to record SoS brick coverage for batch", {
+      labels: { event: "sos_coverage_record_failed", batchId, distributorCode: input.distributorCode },
+      error,
+    });
   }
 
   return { batchId, period, importedRows: rows.length };

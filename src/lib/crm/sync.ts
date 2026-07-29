@@ -347,17 +347,31 @@ export async function syncIReports360Visits(input: {
       const freshIds = new Set(dedupedVisitRows.map((row) => row.crm_visit_id));
       const existingIds: number[] = [];
       const reconcilePageSize = 5000;
-      for (let from = 0; ; from += reconcilePageSize) {
-        const { data, error } = await supabase
+      // KEYSET, NOT OFFSET. This paged with `.range()` and no `.order()`; Postgres gives no stable
+      // row order without ORDER BY, so pages could repeat rows and skip others. That is bad here in
+      // BOTH directions: a skipped id is never considered for deletion (a voided visit lingers in
+      // the mirror), and a repeated id inflates existingIds.length — which is the denominator of the
+      // 50% sanity cap below, so a genuinely truncated CRM response becomes MORE likely to slip past
+      // the guard and delete real rows. Same fault class as the crosswalk loader (PR #1446).
+      let cursor: number | null = null;
+      for (;;) {
+        let query = supabase
           .from(visitsTable)
           .select("crm_visit_id")
           .gte("visit_date", input.dateFrom)
           .lte("visit_date", input.dateTo)
-          .range(from, from + reconcilePageSize - 1);
+          .order("crm_visit_id", { ascending: true })
+          .limit(reconcilePageSize);
+        if (cursor !== null) query = query.gt("crm_visit_id", cursor);
+        const { data, error } = await query;
         if (error) throw new Error(error.message);
         const page = (data ?? []) as Array<{ crm_visit_id: number }>;
+        if (page.length === 0) break;
         existingIds.push(...page.map((row) => row.crm_visit_id));
         if (page.length < reconcilePageSize) break;
+        const last = Number(page[page.length - 1]?.crm_visit_id);
+        if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
+        cursor = last;
       }
       const staleIds = existingIds.filter((id) => !freshIds.has(id));
       if (existingIds.length > 0 && staleIds.length / existingIds.length > 0.5) {
@@ -380,17 +394,26 @@ export async function syncIReports360Visits(input: {
         const freshCheckinIds = new Set(dedupedCheckinRows.map((row) => row.crm_checkin_id));
         const existingCheckinIds: number[] = [];
         const reconcilePageSize = 5000;
-        for (let from = 0; ; from += reconcilePageSize) {
-          const { data, error } = await supabase
+        // Keyset for the same reason as the visits reconcile above — this list also drives deletes.
+        let checkinCursor: number | null = null;
+        for (;;) {
+          let query = supabase
             .from(checkinsTable)
             .select("crm_checkin_id")
             .gte("check_date", `${input.dateFrom}T00:00:00`)
             .lte("check_date", `${input.dateTo}T23:59:59`)
-            .range(from, from + reconcilePageSize - 1);
+            .order("crm_checkin_id", { ascending: true })
+            .limit(reconcilePageSize);
+          if (checkinCursor !== null) query = query.gt("crm_checkin_id", checkinCursor);
+          const { data, error } = await query;
           if (error) throw new Error(error.message);
           const page = (data ?? []) as Array<{ crm_checkin_id: number }>;
+          if (page.length === 0) break;
           existingCheckinIds.push(...page.map((row) => row.crm_checkin_id));
           if (page.length < reconcilePageSize) break;
+          const last = Number(page[page.length - 1]?.crm_checkin_id);
+          if (!Number.isFinite(last)) break;
+          checkinCursor = last;
         }
         const staleCheckinIds = existingCheckinIds.filter((id) => !freshCheckinIds.has(id));
         if (!(existingCheckinIds.length > 0 && staleCheckinIds.length / existingCheckinIds.length > 0.5)) {

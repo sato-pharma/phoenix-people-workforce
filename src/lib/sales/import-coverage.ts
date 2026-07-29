@@ -88,6 +88,147 @@ function mapSnapshot(row: Record<string, unknown>): CoverageSnapshot {
 
 const MAX_SNAPSHOT_DETAILS = 300;
 
+/**
+ * Coverage below which an import is worth shouting about. June 2026 landed at 95.1% (15,443 units
+ * with no brick) and nothing anywhere noticed.
+ */
+export const BRICK_COVERAGE_WARN_PCT = 98;
+
+export type BrickCoverage = {
+  /** Distinct customers on rows that needed a brick and did not get one. */
+  unmappedCustomerCodes: string[];
+  /** Rows that need a brick (i.e. excluding DIRECT-style brick-level channels). */
+  rowsNeedingBrick: number;
+  rowsWithBrick: number;
+  /** rowsWithBrick / rowsNeedingBrick * 100, 1 dp. 100 when nothing needed a brick. */
+  coveragePct: number;
+  unitsNeedingBrick: number;
+  unitsWithBrick: number;
+  customersNeedingBrick: number;
+  customersWithBrick: number;
+};
+
+type CoverageInputRow = {
+  brickId?: string | null;
+  bonusQty?: number | null;
+  clientCode?: string | null;
+  isDirect?: boolean | null;
+  qty?: number | null;
+};
+
+function num(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * REAL brick coverage — how many rows that NEEDED a brick actually got one.
+ *
+ * The metric this replaces was `importableRows / totalRows`, which on the normalizer path is
+ * `rows.length / rows.length` — 100% by construction, every single time, no matter how many rows
+ * landed with an empty brick_id. It reported 100% for an import that had 3,184 unmapped rows.
+ * "Importable" means the parser accepted the row; it says nothing about whether the row found a
+ * place on the map.
+ *
+ * DIRECT (and any other `isDirect` channel) is excluded from the denominator, not counted as a
+ * failure: those sell at brick level and carry no customer code by design, so they can never have
+ * a per-customer brick and would permanently drag the number down.
+ *
+ * Pure so the invariant is unit-tested without a database.
+ */
+export function computeBrickCoverage(rows: readonly CoverageInputRow[]): BrickCoverage {
+  const needing = rows.filter((row) => !row.isDirect);
+  const hasBrick = (row: CoverageInputRow) => String(row.brickId ?? "").trim() !== "";
+
+  const withBrick = needing.filter(hasBrick);
+  const units = (list: readonly CoverageInputRow[]) =>
+    list.reduce((sum, row) => sum + num(row.qty) + num(row.bonusQty), 0);
+
+  const customerCodes = (list: readonly CoverageInputRow[]) => {
+    const set = new Set<string>();
+    for (const row of list) {
+      const code = String(row.clientCode ?? "").trim();
+      if (code) set.add(code);
+    }
+    return set;
+  };
+
+  const unmappedCodes = customerCodes(needing.filter((row) => !hasBrick(row)));
+
+  return {
+    coveragePct:
+      needing.length === 0
+        ? 100
+        : Math.round((withBrick.length / needing.length) * 1000) / 10,
+    customersNeedingBrick: customerCodes(needing).size,
+    customersWithBrick: customerCodes(withBrick).size,
+    rowsNeedingBrick: needing.length,
+    rowsWithBrick: withBrick.length,
+    unitsNeedingBrick: units(needing),
+    unitsWithBrick: units(withBrick),
+    unmappedCustomerCodes: [...unmappedCodes].sort(),
+  };
+}
+
+/**
+ * Records real brick coverage for a committed normalizer batch, and shouts when it is bad.
+ *
+ * `persistNormalizedBatch` — the path every distributor upload actually takes — never wrote a
+ * coverage snapshot at all: the newest row in the table on 2026-07-29 predated the June import
+ * entirely. So the one place that could have caught June was both measuring the wrong thing AND
+ * not running.
+ *
+ * Deliberately NOT fire-and-forget-silent: a failure here is logged, because the whole point of
+ * this record is to notice things nobody was watching.
+ */
+export async function saveBrickCoverageSnapshot(input: {
+  batchId: string;
+  coverage: BrickCoverage;
+  details?: NewCustomerDetail[];
+  distributorCode: string;
+  period: string | null;
+  totalRows: number;
+}): Promise<void> {
+  const { coverage } = input;
+  if (coverage.coveragePct < BRICK_COVERAGE_WARN_PCT) {
+    logError("SoS import landed below the brick-coverage threshold", {
+      labels: {
+        event: "sos_import_low_brick_coverage",
+        batchId: input.batchId,
+        distributorCode: input.distributorCode,
+        coveragePct: String(coverage.coveragePct),
+        rowsMissingBrick: String(coverage.rowsNeedingBrick - coverage.rowsWithBrick),
+        unitsMissingBrick: String(coverage.unitsNeedingBrick - coverage.unitsWithBrick),
+      },
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("sos_import_coverage_snapshots").insert({
+    batch_id: input.batchId,
+    brick_drift_count: 0,
+    distinct_customers: coverage.customersNeedingBrick,
+    distributor_code: input.distributorCode,
+    importable_rows: coverage.rowsWithBrick,
+    importable_value: coverage.unitsWithBrick,
+    mapped_customers: coverage.customersWithBrick,
+    new_customer_codes: coverage.unmappedCustomerCodes.slice(0, MAX_SNAPSHOT_DETAILS),
+    new_customer_details: (input.details ?? []).slice(0, MAX_SNAPSHOT_DETAILS) || null,
+    new_customers: coverage.customersNeedingBrick - coverage.customersWithBrick,
+    period: input.period ?? null,
+    resolved_pct: coverage.coveragePct,
+    total_rows: input.totalRows,
+    unmapped_products: [],
+    unmapped_products_count: 0,
+  });
+  if (error) {
+    logError("Failed to save SoS brick-coverage snapshot", {
+      labels: { event: "sos_coverage_snapshot_save_failed", batchId: input.batchId, distributorCode: input.distributorCode },
+      error,
+    });
+  }
+}
+
 export async function saveCoverageSnapshot(input: {
   batchId: string;
   details?: NewCustomerDetail[];
