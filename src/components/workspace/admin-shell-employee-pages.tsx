@@ -14,9 +14,7 @@ import {
   PlusCircle,
   ReceiptText,
   ScrollText,
-  ShieldCheck,
   Sparkles,
-  WalletCards,
 } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
@@ -25,10 +23,6 @@ import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-a
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
 import { MarketingRequestInbox } from "@/components/employee-portal/marketing-request-inbox";
-import { MarketingOverviewDashboard } from "@/components/marketing-requests/marketing-overview-dashboard";
-import { MarketingRoiFilterEngine } from "@/components/marketing-requests/roi-filter-engine";
-import { MarketingRequestSalesView } from "@/components/marketing-requests/marketing-request-sales-view";
-import { MarketingValidationWorkspace } from "@/components/employee-portal/marketing-validation-workspace";
 import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/personal-expense-workload-dashboard";
 import { PlanningCalendar } from "@/components/employee-portal/planning-calendar";
 import { PlansWorkspace } from "@/components/employee-portal/plans-workspace";
@@ -62,7 +56,6 @@ import { compactDeductionHrId, listPublishedDeductionsForPortal } from "@/lib/de
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
-  getMarketingOverview,
   getMarketingRequestDecisionSummary,
   parseMarketingRequestDecision,
 } from "@/lib/marketing-requests/service";
@@ -398,56 +391,6 @@ export async function WorkspaceFingerprintReportPage() {
   );
 }
 
-export async function WorkspaceMarketingOverviewPage() {
-  const access = await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
-  // Marketing Manager moved into the Employee Portal (role-based landing redesign) and now has
-  // its own dashboard there showing this same overview data. This workspace page is retired as
-  // MM's landing — redirect any direct/bookmarked visit to the new home instead of duplicating it.
-  // Every other workspace marketing page (inbox, validation, roi-tracking) stays reachable for MM.
-  if (access.role === "Marketing Manager") {
-    redirect("/employee-portals");
-  }
-  let data = null;
-  try {
-    data = await getMarketingOverview(access);
-  } catch (error) {
-    logPortalFailure(
-      { hrId: access.hrId, module: "marketing-overview", role: access.role, route: "/workspace/marketing-requests/overview" },
-      error,
-    );
-  }
-  if (!data) {
-    return (
-      <WorkspaceUnavailable
-        message="The marketing overview is temporarily unavailable. Please refresh in a moment."
-        title="Overview Unavailable"
-      />
-    );
-  }
-  return (
-    <WorkspaceFrame
-      description="Your marketing approvals, in-flight requests, and validation status at a glance."
-      icon={<LayoutDashboard className="h-3.5 w-3.5" />}
-      title="Marketing Overview"
-    >
-      <MarketingOverviewDashboard basePath="/workspace/marketing-requests" data={data} />
-    </WorkspaceFrame>
-  );
-}
-
-export async function WorkspaceMarketingValidationPage() {
-  await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
-  return (
-    <WorkspaceFrame
-      description="Validate healthcare providers, pharmacies, and distributor codes before marketing request use."
-      icon={<ShieldCheck className="h-3.5 w-3.5" />}
-      title="Customer Validation"
-    >
-      <MarketingValidationWorkspace />
-    </WorkspaceFrame>
-  );
-}
-
 export async function WorkspaceMarketingRequestsPage() {
   await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
   return (
@@ -470,32 +413,6 @@ export async function WorkspaceMarketingInboxPage() {
       title="Approval Inbox"
     >
       <MarketingRequestInbox decisionBasePath="/workspace/marketing-requests/decision" />
-    </WorkspaceFrame>
-  );
-}
-
-export async function WorkspaceMarketingRoiPage() {
-  await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
-  return (
-    <WorkspaceFrame
-      description="Track marketing request ROI using the same source data in the admin shell."
-      icon={<WalletCards className="h-3.5 w-3.5" />}
-      title="ROI Tracking"
-    >
-      <MarketingRoiFilterEngine viewSalesBasePath="/workspace" />
-    </WorkspaceFrame>
-  );
-}
-
-export async function WorkspaceMarketingSalesViewPage({ requestId }: { requestId: string }) {
-  await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
-  return (
-    <WorkspaceFrame
-      description="Realized sales of this request's promoted products at its target pharmacies — ROI window or a custom range."
-      icon={<WalletCards className="h-3.5 w-3.5" />}
-      title="View Sales"
-    >
-      <MarketingRequestSalesView requestId={requestId} viewSalesBasePath="/workspace" />
     </WorkspaceFrame>
   );
 }
