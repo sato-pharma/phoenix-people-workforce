@@ -11,10 +11,14 @@ import { readFileSync } from "node:fs";
 // functions (e.g. tests/sales-restricted-products.test.ts).
 export function runSalesMasterDataPaginationTests() {
   const listSource = readFileSync("src/lib/sales/master-data/list.ts", "utf8");
+  // orderColumn was OPTIONAL when this test was written, and preloadKeyed omitted it. Paging with
+  // .range() over an unordered result silently drops and duplicates rows — that is how the June 2026
+  // import lost 1,262 customer→brick mappings. It is now required; see
+  // tests/sos-crosswalk-pagination.test.ts.
   assert.match(
     listSource,
-    /export async function selectAllRows\(table: string, orderColumn\?: string\): Promise<Record<string, unknown>\[\]>/,
-    "a shared paginated-read helper exists",
+    /export async function selectAllRows\(table: string, orderColumn: string\): Promise<Record<string, unknown>\[\]>/,
+    "a shared paginated-read helper exists, and ordering is mandatory",
   );
   assert.match(
     listSource,
@@ -40,8 +44,8 @@ export function runSalesMasterDataPaginationTests() {
   );
   assert.match(
     importServiceSource,
-    /async function preloadKeyed\(table: string, keyColumn: string\) \{\s*const rows = await selectAllRows\(table\);/,
-    "preloadKeyed now reads through the paginated helper instead of a bare .select(\"*\")",
+    /async function preloadKeyed\(table: string, keyColumn: string\) \{[\s\S]{0,200}?const rows = await selectAllRows\(table, keyColumn\);/,
+    "preloadKeyed reads through the paginated helper AND orders by the key it indexes on",
   );
   assert.doesNotMatch(
     importServiceSource,
