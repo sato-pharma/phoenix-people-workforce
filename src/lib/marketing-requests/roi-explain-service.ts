@@ -14,6 +14,7 @@ import {
   chunk,
   getMarketingRequestViewSales,
   isRestrictedMarketingProduct,
+  logRoiServiceFailure,
   monthAdd,
 } from "@/lib/marketing-requests/roi-report-service";
 import {
@@ -24,6 +25,9 @@ import {
   type RoiExplainLedgerRow,
   type RoiExplainPharmacy,
   type RoiExplainProduct,
+  type RoiNearMissKind,
+  type RoiNearMissReport,
+  type RoiNearMissRow,
 } from "@/lib/marketing-requests/roi-explain";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -44,6 +48,187 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
  * Read-only ROI explainability for one request. Access + confidential masking are inherited
  * from `getMarketingRequestViewSales` (which throws `Forbidden: …` for out-of-scope viewers).
  */
+/**
+ * Find sales that failed to attribute on EXACTLY ONE of the four attribution keys.
+ *
+ * Each probe below fixes three keys and relaxes one, which is what makes a hit actionable: the
+ * relaxed key IS the diagnosis. Nothing here is ever added to actuals — `valueIfMatched` is
+ * explicitly hypothetical, and the attribution RPC remains the only thing that decides ROI.
+ *
+ * Every probe is bounded by a row cap and by the request's own target lists, so the scan stays
+ * proportional to one request rather than to the sales table. Hitting a cap sets `truncated`, so
+ * the totals are reported as a floor instead of silently understating.
+ */
+const NEAR_MISS_ROW_CAP = 2000;
+const NEAR_MISS_SAMPLE = 5;
+/** How far either side of the window to look for late/early sales. */
+const NEAR_MISS_WINDOW_PAD_MONTHS = 3;
+
+type NearMissScanRow = {
+  distributor_code?: string | null;
+  client_code?: string | null;
+  product_code?: string | null;
+  invoice_period?: string | null;
+  qty?: unknown;
+  discount?: unknown;
+  is_direct?: unknown;
+  value?: unknown;
+};
+
+async function loadNearMisses(params: {
+  factoryByCode: Map<string, number>;
+  nameBySosCode: Map<string, string>;
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  targetCodes: string[];
+  targetCodeSet: Set<string>;
+  targetDistributorCodes: string[];
+  targetProductCodes: Set<string>;
+  validatedBatchIds: Array<string | number>;
+  windowPeriods: string[];
+}): Promise<RoiNearMissReport | null> {
+  const {
+    factoryByCode, nameBySosCode, supabase, targetCodes, targetCodeSet,
+    targetDistributorCodes, targetProductCodes, validatedBatchIds, windowPeriods,
+  } = params;
+
+  // Without a pharmacy list there is nothing to anchor a near miss to — every row in the database
+  // would qualify, which is noise rather than a lead.
+  if (targetCodes.length === 0 || windowPeriods.length === 0) return null;
+
+  const windowSet = new Set(windowPeriods);
+  const first = windowPeriods[0];
+  const last = windowPeriods[windowPeriods.length - 1];
+  const paddedPeriods = new Set<string>(windowPeriods);
+  for (let i = 1; i <= NEAR_MISS_WINDOW_PAD_MONTHS; i += 1) {
+    paddedPeriods.add(monthAdd(first, -i));
+    paddedPeriods.add(monthAdd(last, i));
+  }
+
+  let truncated = false;
+  const rowsByKind = new Map<RoiNearMissKind, RoiNearMissRow[]>();
+  const push = (kind: RoiNearMissKind, row: NearMissScanRow) => {
+    const productCode = String(row.product_code ?? "").trim().toUpperCase();
+    // The promoted-product masking rules still apply: a near miss must never become a side channel
+    // that reveals a confidential product the viewer could not otherwise see.
+    const productName = nameBySosCode.get(productCode) ?? productCode;
+    const qty = Number(row.qty) || 0;
+    const valueRaw = row.is_direct === true
+      ? Number(row.value) || 0
+      : qty * (1 - (Number(row.discount) || 0)) * (factoryByCode.get(productCode) ?? 0);
+    const list = rowsByKind.get(kind) ?? [];
+    list.push({
+      clientCode: normalizePharmacyCode(row.client_code),
+      distributorCode: String(row.distributor_code ?? "").trim(),
+      invoicePeriod: String(row.invoice_period ?? "").trim(),
+      kind,
+      productCode,
+      productName,
+      qty,
+      valueIfMatched: roundMarketingMoney(valueRaw),
+    });
+    rowsByKind.set(kind, list);
+  };
+
+  const scan = async (build: (batchIds: Array<string | number>) => PromiseLike<{ data: unknown; error: unknown }>) => {
+    const out: NearMissScanRow[] = [];
+    for (const part of chunk(validatedBatchIds, 200)) {
+      const result = await build(part);
+      if (result.error) throw result.error;
+      const data = (result.data ?? []) as NearMissScanRow[];
+      out.push(...data);
+    }
+    if (out.length > NEAR_MISS_ROW_CAP) truncated = true;
+    return out.slice(0, NEAR_MISS_ROW_CAP);
+  };
+
+  // (1) outside_window — right pharmacy + distributor + product, wrong period.
+  if (targetDistributorCodes.length > 0 && targetProductCodes.size > 0) {
+    const rows = await scan((batchIds) =>
+      supabase
+        .from("source_of_sales_import_rows")
+        .select("distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
+        .in("client_code", targetCodes)
+        .in("distributor_code", targetDistributorCodes)
+        .in("product_code", Array.from(targetProductCodes))
+        .in("invoice_period", Array.from(paddedPeriods))
+        .in("batch_id", batchIds)
+        .eq("validation_state", "valid")
+        .limit(NEAR_MISS_ROW_CAP + 1),
+    );
+    for (const row of rows) {
+      const period = String(row.invoice_period ?? "").trim();
+      if (windowSet.has(period)) continue; // attributed already — not a near miss
+      if (!targetCodeSet.has(normalizePharmacyCode(row.client_code))) continue;
+      push("outside_window", row);
+    }
+  }
+
+  // (2) other_product — right pharmacy + distributor + period, a product not promoted.
+  if (targetDistributorCodes.length > 0) {
+    const rows = await scan((batchIds) =>
+      supabase
+        .from("source_of_sales_import_rows")
+        .select("distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
+        .in("client_code", targetCodes)
+        .in("distributor_code", targetDistributorCodes)
+        .in("invoice_period", windowPeriods)
+        .in("batch_id", batchIds)
+        .eq("validation_state", "valid")
+        .limit(NEAR_MISS_ROW_CAP + 1),
+    );
+    for (const row of rows) {
+      const productCode = String(row.product_code ?? "").trim().toUpperCase();
+      if (targetProductCodes.has(productCode)) continue; // attributed already
+      if (!targetCodeSet.has(normalizePharmacyCode(row.client_code))) continue;
+      push("other_product", row);
+    }
+  }
+
+  // (3) other_distributor — right pharmacy + product + period, a distributor not targeted.
+  if (targetProductCodes.size > 0) {
+    const targetDistributorSet = new Set(targetDistributorCodes.map((code) => code.trim().toUpperCase()));
+    const rows = await scan((batchIds) =>
+      supabase
+        .from("source_of_sales_import_rows")
+        .select("distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value")
+        .in("client_code", targetCodes)
+        .in("product_code", Array.from(targetProductCodes))
+        .in("invoice_period", windowPeriods)
+        .in("batch_id", batchIds)
+        .eq("validation_state", "valid")
+        .limit(NEAR_MISS_ROW_CAP + 1),
+    );
+    for (const row of rows) {
+      const distributor = String(row.distributor_code ?? "").trim().toUpperCase();
+      if (targetDistributorSet.has(distributor)) continue; // attributed already
+      if (!targetCodeSet.has(normalizePharmacyCode(row.client_code))) continue;
+      push("other_distributor", row);
+    }
+  }
+
+  const groups = (["outside_window", "other_product", "other_distributor", "unvalidated_batch"] as RoiNearMissKind[])
+    .map((kind) => {
+      const rows = rowsByKind.get(kind) ?? [];
+      return {
+        kind,
+        rows: rows.length,
+        sample: rows
+          .slice()
+          .sort((left, right) => right.valueIfMatched - left.valueIfMatched)
+          .slice(0, NEAR_MISS_SAMPLE),
+        units: rows.reduce((sum, row) => sum + row.qty, 0),
+        valueIfMatched: roundMarketingMoney(rows.reduce((sum, row) => sum + row.valueIfMatched, 0)),
+      };
+    })
+    .filter((group) => group.rows > 0);
+
+  return {
+    groups,
+    totalValueIfMatched: roundMarketingMoney(groups.reduce((sum, group) => sum + group.valueIfMatched, 0)),
+    truncated,
+  };
+}
+
 export async function explainMarketingRequestRoi(
   access: AccessContext,
   requestId: string,
@@ -316,6 +501,27 @@ export async function explainMarketingRequestRoi(
     }
   }
 
+  // 6b) Near misses — validated sales that failed on EXACTLY ONE attribution key.
+  //
+  // Read-only and strictly additive: nothing here is ever added to actuals. Each probe relaxes one
+  // key and holds the other three fixed, so a hit names precisely which key to investigate.
+  // Wrapped so a scan failure degrades to `nearMisses: null` rather than taking down the whole
+  // explanation — this is a lead generator, never a dependency of the verdict.
+  const nearMisses = await loadNearMisses({
+    factoryByCode: sosFactoryByCode,
+    nameBySosCode,
+    supabase,
+    targetCodes,
+    targetCodeSet,
+    targetDistributorCodes: Array.from(rolledUpSosCodes),
+    targetProductCodes,
+    validatedBatchIds,
+    windowPeriods,
+  }).catch((error) => {
+    logRoiServiceFailure("explainMarketingRequestRoi:loadNearMisses", error, { role: access.role });
+    return null;
+  });
+
   // 7) Diagnostic classification.
   const productsMatched = products.filter((product) => product.matchedToSos).length;
   const pharmaciesFound = pharmacies.filter((pharmacy) => pharmacy.foundInSos).length;
@@ -362,6 +568,7 @@ export async function explainMarketingRequestRoi(
       monthsPending: pendingPeriodsInWindow.length,
       hasAttributedSales: viewSales.actualValue > 0,
     },
+    nearMisses,
     includedRestricted: reveal,
     generatedAtIso,
   };

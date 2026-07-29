@@ -1,4 +1,4 @@
-import { MarketingRoiTracker } from "@/components/marketing-requests/marketing-roi-tracker";
+import { MarketingRoiLiveTracker } from "@/components/marketing-requests/marketing-roi-live-tracker";
 import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/page-guards";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function EmployeePortalRoiTrackerPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <MarketingRoiTracker />
+      <MarketingRoiLiveTracker />
     </div>
   );
 }

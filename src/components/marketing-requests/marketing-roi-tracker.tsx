@@ -39,6 +39,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { ROI_DATA_COVERAGE_LABEL, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import type { MarketingRoiExplain } from "@/lib/marketing-requests/roi-explain";
+import { ROI_NEAR_MISS_ACTION, ROI_NEAR_MISS_LABEL } from "@/lib/marketing-requests/roi-explain";
 import type { MarketingRoiResultStatus, RoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 import type { RoiTrackerReport, RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service";
@@ -596,8 +597,14 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(`/api/marketing-requests/${row.requestId}/roi-explain`, { cache: "no-store" });
-        const payload = (await response.json()) as MarketingRoiExplain & { message?: string };
+        let response: Response;
+        try {
+          response = await fetch(`/api/marketing-requests/${row.requestId}/roi-explain`, { cache: "no-store" });
+        } catch {
+          // Same rule as the report fetch: never surface the browser's raw "Failed to fetch".
+          throw new Error("Could not reach Phoenix to explain this number. Close and reopen to retry.");
+        }
+        const payload = (await response.json().catch(() => ({}))) as MarketingRoiExplain & { message?: string };
         if (!response.ok) throw new Error(payload.message ?? "Could not load the diagnosis.");
         if (!cancelled) {
           setExplain(payload);
@@ -642,6 +649,56 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
           </>
         ) : null}
       </section>
+
+      {/*
+        Near misses — real validated sales that failed on exactly ONE attribution key.
+        This is the difference between "no sales found" (a dead end) and "the pharmacy bought
+        80 units of something else" (a lead). Explicitly NOT part of ROI: the heading and every
+        figure say "would have", so nobody can mistake it for money earned.
+      */}
+      {explain?.nearMisses && explain.nearMisses.groups.length > 0 ? (
+        <section className="flex flex-col gap-2 rounded-sm border border-amber-200 bg-amber-50/50 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="text-xs font-black uppercase tracking-wide text-amber-800">
+              Near misses — sales that just failed to count
+            </h4>
+            <span className="text-xs text-amber-800">
+              {money(explain.nearMisses.totalValueIfMatched)} would have counted
+              {explain.nearMisses.truncated ? " (at least — scan capped)" : ""}
+            </span>
+          </div>
+          <p className="text-xs text-slate-600">
+            None of this is included in the ROI above. Each line is real validated sales that missed on exactly one
+            of the four matching keys — distributor, pharmacy code, product, or month.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {explain.nearMisses.groups.map((group) => (
+              <li className="flex flex-col gap-0.5 rounded-sm border border-amber-200 bg-white p-2" key={group.kind}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-800">{ROI_NEAR_MISS_LABEL[group.kind]}</span>
+                  <span className="text-xs font-semibold tabular-nums text-slate-700">
+                    {money(group.valueIfMatched)} · {units(group.units)} units · {group.rows} line(s)
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500">{ROI_NEAR_MISS_ACTION[group.kind]}</span>
+                {group.sample.length > 0 ? (
+                  <ul className="mt-1 flex flex-col gap-0.5">
+                    {group.sample.map((sample, index) => (
+                      <li className="flex flex-wrap gap-x-2 text-[11px] tabular-nums text-slate-500" key={`${group.kind}-${index}`}>
+                        <span className="font-mono">{sample.invoicePeriod}</span>
+                        <span>{sample.productName}</span>
+                        <span>· {sample.distributorCode}</span>
+                        <span>· code {sample.clientCode}</span>
+                        <span className="ml-auto">{money(sample.valueIfMatched)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="flex flex-col gap-2">
@@ -782,13 +839,25 @@ export function MarketingRoiTracker({
 
   const fetchReport = useCallback(async (): Promise<RoiTrackerReport> => {
     const filters: RoiFilterState = emptyRoiFilterState();
-    const response = await fetch("/api/marketing-requests/roi-tracker", {
-      body: JSON.stringify({ filters, origin }),
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    });
-    const payload = (await response.json()) as RoiTrackerReport & { message?: string };
+    let response: Response;
+    try {
+      response = await fetch("/api/marketing-requests/roi-tracker", {
+        body: JSON.stringify({ filters, origin }),
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+    } catch {
+      // fetch() rejects only on a TRANSPORT failure — server unreachable, offline, DNS. Its native
+      // message is the raw string "Failed to fetch", which is browser jargon, not an explanation.
+      throw new Error("Could not reach Phoenix. Check your connection, then press Refresh.");
+    }
+    let payload: RoiTrackerReport & { message?: string };
+    try {
+      payload = (await response.json()) as RoiTrackerReport & { message?: string };
+    } catch {
+      throw new Error("Phoenix returned an unexpected response. Press Refresh, and report this if it repeats.");
+    }
     if (!response.ok) throw new Error(payload.message ?? "Could not load the ROI tracker.");
     return payload;
   }, [origin]);

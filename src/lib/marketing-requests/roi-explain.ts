@@ -64,6 +64,68 @@ export type RoiExplainDistributorFamily = {
   sosDistributorCodes: string[];
 };
 
+/**
+ * A near miss: real validated sales that failed to attribute because EXACTLY ONE of the four
+ * attribution keys did not line up (distributor, pharmacy code, product, invoice period).
+ *
+ * Attribution is all-or-nothing on those four keys, which makes "no sales found" indistinguishable
+ * from "sales found, one key off". That ambiguity is what turned a routine question — do these
+ * campaigns have sales? — into a multi-hour investigation. A near miss is not a correction and is
+ * never counted in ROI; it is a lead, telling a human exactly which key to look at.
+ */
+export type RoiNearMissKind =
+  /** Right pharmacy, distributor and product — sold outside the ROI window. */
+  | "outside_window"
+  /** Right pharmacy, distributor and period — a product the request does not promote. */
+  | "other_product"
+  /** Right pharmacy, product and period — booked under a distributor the request does not target. */
+  | "other_distributor"
+  /** Every key matches, but the batch carrying it has not been validated yet. */
+  | "unvalidated_batch";
+
+export const ROI_NEAR_MISS_LABEL: Record<RoiNearMissKind, string> = {
+  other_distributor: "Sold through a distributor this request does not target",
+  other_product: "The pharmacy bought other products, not the promoted ones",
+  outside_window: "Sold to the right pharmacy, outside the measurement window",
+  unvalidated_batch: "Matches on every key, but its sales batch is not validated yet",
+};
+
+/** What a reader should actually do about each kind — a lead is only useful if it is actionable. */
+export const ROI_NEAR_MISS_ACTION: Record<RoiNearMissKind, string> = {
+  other_distributor: "Check whether the request named the right distributor for this pharmacy.",
+  other_product: "Check whether the promoted product list matches what this pharmacy actually stocks.",
+  outside_window: "Check the pay date and duration — the window may have opened late or closed early.",
+  unvalidated_batch: "Validate the Source-of-Sales batch; these sales will then attribute normally.",
+};
+
+export type RoiNearMissRow = {
+  kind: RoiNearMissKind;
+  distributorCode: string;
+  clientCode: string;
+  productCode: string;
+  productName: string;
+  invoicePeriod: string;
+  qty: number;
+  /** What this row WOULD have contributed had the key lined up. Never added to actuals. */
+  valueIfMatched: number;
+};
+
+export type RoiNearMissGroup = {
+  kind: RoiNearMissKind;
+  rows: number;
+  units: number;
+  valueIfMatched: number;
+  /** A few representative rows; the full set lives in the export. */
+  sample: RoiNearMissRow[];
+};
+
+export type RoiNearMissReport = {
+  groups: RoiNearMissGroup[];
+  totalValueIfMatched: number;
+  /** True when a scan hit its row cap, so the figures are a floor rather than a total. */
+  truncated: boolean;
+};
+
 export type RoiExplainDiagnostic = {
   reason: RoiExplainReason;
   pharmaciesTargeted: number;
@@ -100,6 +162,8 @@ export type MarketingRoiExplain = {
   };
   ledger: RoiExplainLedgerRow[];
   diagnostic: RoiExplainDiagnostic;
+  /** Sales that failed to attribute on exactly one key. Null when the scan could not run. */
+  nearMisses: RoiNearMissReport | null;
   includedRestricted: boolean;
   generatedAtIso: string;
 };
